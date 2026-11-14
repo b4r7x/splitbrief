@@ -9,7 +9,7 @@ import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factori
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { buildSeatDownIssue, switchSeatOffer } from './builders/task.js';
 import { loadSeatSwapContext, readSeatOfRecord } from './seat-swap-context.js';
-import type { CliProviderAuth } from '../../../core/discovery/detection.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
 
 const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
 vi.mock('../../detection/runner-evidence.js', async (importOriginal) => ({

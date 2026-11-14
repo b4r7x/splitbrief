@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { readRunnerPids } from '../../../../../src/core/sessions/runner-pids.js';
-import { deriveRunStatus } from '../../../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../../../src/core/sessions/run/status.js';
 import { gateLiveMatrixRow } from '../../../helpers/live-harness.js';
 import {
   buildCallState,

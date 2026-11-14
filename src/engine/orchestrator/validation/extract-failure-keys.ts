@@ -2,7 +2,7 @@ import {
   FAILURE_KEY_PATH,
   fileFromFailureKey,
   isTestNodeKey,
-} from '../../../core/review/fix-task.js';
+} from '../../../core/review/fix/task.js';
 import { realpathOrResolve } from '../../../core/trust/path-classification.js';
 import { captureText, type ProcessOutputCapture } from '../../../lib/process/errors.js';
 import { normalizeProjectRelativePath } from '../../../utils/path/patterns.js';

@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import YAML from 'yaml';
 import { configPath } from '../../../src/core/config/load/document.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';

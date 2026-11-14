@@ -10,8 +10,8 @@ import { createInitialState, transition } from '../../../../src/core/state/machi
 import { PlanSchema } from '../../../../src/core/schemas/plan.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { PLAN_FILE, PLAN_JSON_FILE, sessionDir } from '../../../../src/core/paths.js';
-import { ensureSessionDir, writeSpecFile } from '../../../../src/core/paths-io.js';
-import { resumeStep } from '../../../../src/core/sessions/run-status.js';
+import { ensureSessionDir, writeSpecFile } from '../../../../src/core/sessions/spec-files.js';
+import { resumeStep } from '../../../../src/core/sessions/run/status.js';
 import { saveState } from '../../../../src/core/state/persistence.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run/init.js';

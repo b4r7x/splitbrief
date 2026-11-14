@@ -10,12 +10,14 @@ import {
 import { dirname, isAbsolute, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   CLI_TOOL_CATALOG,
-  CURSOR_CLI_ADMISSION_VERDICT,
   IMPLEMENTER_CLI_TOOL_IDS,
-} from '../../../src/core/runners/cli-tool-catalog.js';
-import type { CliImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
+} from '../../../src/core/runners/cli-tool/catalog.js';
+import {
+  ANTIGRAVITY_CLI_ADMISSION_VERDICT,
+  CURSOR_CLI_ADMISSION_VERDICT,
+} from '../../../src/core/runners/cli-tool/builders.js';
+import type { CliImplementerConfig } from '../../../src/core/schemas/runner/implementer.js';
 import type { ImplementerCliToolId } from '../../../src/core/schemas/enums.js';
 import { RUNNER_OUTCOME_STATES } from '../../../src/engine/runners/errors.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';

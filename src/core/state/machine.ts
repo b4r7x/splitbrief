@@ -1,145 +1,33 @@
-import { fixBriefDescription } from '../review/fix-task.js';
-import { awaitsApply, deriveRunStatus } from '../sessions/run-status.js';
+import { fixBriefDescription } from '../review/fix/task.js';
+import { awaitsApply, deriveRunStatus } from '../sessions/run/status.js';
 import type { MachineAction, StateAction } from './types.js';
 import {
   WORKFLOW_STATE_VERSION,
   fixCyclesOf,
-  type ConsultRecord,
-  type FixCycles,
-  type LineageRecord,
-  type ReviewRecord,
   type WorkflowState,
-} from '../schemas/workflow.js';
+} from '../schemas/workflow/state.js';
+import type { FixCycles, ReviewRecord } from '../schemas/workflow/review-record.js';
+import type { ConsultRecord } from '../schemas/workflow/consult-record.js';
 import { isTaskCompleted, isTaskSettled, type Task, type TaskId } from '../schemas/task.js';
-import type { TriageInput } from '../schemas/review.js';
-import type { ReportedDecision } from '../schemas/consult.js';
-import type { Phase, TaskStatus } from '../schemas/enums.js';
+import type { TriageInput } from '../schemas/review/verdict.js';
+import type { TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
-import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
+import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue/state.js';
 import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { insertTasksAfter, lineageIdOf } from './task-insert.js';
-import { isInDeclaredSet, taskDeclaredPatterns } from '../scope/declared-set.js';
 import { transitionError } from './errors.js';
 import { truncateByChars } from '../../utils/display-text/truncate.js';
-
-/** The text a reported implementer decision contributes to the plan ledger. */
-export function decisionLedgerText(decision: ReportedDecision): string {
-  return decision.why === null ? decision.what : `${decision.what} — ${decision.why}`;
-}
-
-const anytimeActions = [
-  'CLOSE_RUN',
-  'RECORD_WORKSPACE',
-  'INTERRUPT_STEP',
-  'RESUME_STEP',
-  'CONTINUE_STEP',
-  'RECORD_REJECT',
-  'RESTORE_BRIEF_PARK',
-  'SET_PLANNER_CONVERSATION',
-  'CLEAR_PLANNER_CONVERSATION',
-  'SET_PLANNER_SESSION_ID',
-  'ENQUEUE_USER_MSG',
-  'MARK_INJECTING_NATIVE',
-  'MARK_DELIVERED_NATIVE',
-  'MARK_NATIVE_DELIVERY_FAILED',
-  'MARK_POSSIBLE_DUPLICATE',
-  'DRAIN_QUEUE',
-  'CLEAR_QUEUE',
-  'SET_PENDING_RECOVERY',
-  'MARK_RECOVERY_APPLYING',
-  'RESOLVE_PENDING_RECOVERY',
-  'RESTART_ATTEMPT_ON_SEAT',
-  'RECORD_SEAT_SWITCH',
-  'REPLACE_TASK',
-  'INSERT_TASKS',
-  'RECORD_CONSULT',
-  'RECORD_DECISIONS',
-  'RECORD_CORRECTION',
-  'COUNT_ATTEMPT',
-  'RECORD_DISPATCH',
-  'RECORD_CHECK_RESULTS',
-  'SET_SEAT_WAIT',
-  'CLEAR_SEAT_WAIT',
-  'DECIDE_FOR_ME',
-  'START_SCHEDULED_REVIEW',
-  'CLEAR_SCHEDULED_REVIEW',
-] as const satisfies readonly MachineAction['type'][];
-
-const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
-  'VALIDATION_PASS',
-  'SKIP_TASK',
-  'RESET_TASK',
-] as const satisfies readonly MachineAction['type'][];
-
-const phaseActions = {
-  idle: ['START', 'BEGIN_PLANNING'],
-  researching: ['PLAN_DONE', 'BEGIN_PLANNING'],
-  specifying: ['PLAN_DONE', 'BEGIN_PLANNING'],
-  'reviewing-spec': ['PLAN_DONE', 'BEGIN_PLANNING'],
-  clarifying: ['BEGIN_PLANNING'],
-  'constitution-check': ['BEGIN_PLANNING'],
-  planning: ['PLAN_DONE', 'PLAN_COMPILED', 'BEGIN_IMPLEMENTATION'],
-  'reviewing-plan': [
-    'CORRECT_PLAN',
-    'PLAN_DONE',
-    'PLAN_COMPILED',
-    'BEGIN_IMPLEMENTATION',
-    'BEGIN_PLANNING',
-  ],
-  'reviewing-briefs': ['BEGIN_IMPLEMENTATION', 'BEGIN_PLANNING'],
-  analyzing: ['PLAN_DONE', 'BEGIN_PLANNING'],
-  implementing: [
-    'START_TASK',
-    'UPDATE_TASK_CODE',
-    'TASK_SENT',
-    'VALIDATION_PASS',
-    'SKIP_TASK',
-    'RESET_TASK',
-    'ALL_DONE',
-    'REVIEW_DONE',
-    'RECORD_REVIEW',
-    'RECORD_TRIAGE',
-    'START_FIX_CYCLE',
-    'REVIEW_CORRECTION',
-    'QUEUE_TRIAGE',
-    'ACCEPT_AS_IS',
-  ],
-  'validating-task': [
-    ...VALIDATION_OR_ESCALATION_SHARED_ACTIONS,
-    'RESUME_TASK',
-    'VALIDATION_FAIL',
-    'ESCALATE',
-  ],
-  escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE'],
-  'final-review': [
-    'REVIEW_DONE',
-    'REVIEW_CORRECTION',
-    'RECORD_APPLY_RECHECK',
-    'BIND_APPLY_INTEGRATED',
-    'RECORD_REVIEW',
-    'RECORD_TRIAGE',
-    'START_FIX_CYCLE',
-    'QUEUE_TRIAGE',
-  ],
-  complete: [
-    'START_FIX_CYCLE',
-    'REVIEW_CORRECTION',
-    'RECORD_TRIAGE',
-    'QUEUE_TRIAGE',
-    'ACCEPT_AS_IS',
-    'APPLY_REVIEW_START',
-    'APPLY_RECHECK_START',
-    'RECORD_APPLY_INTEGRATED',
-    'BIND_APPLY_INTEGRATED',
-    'APPLY_START',
-    'APPLY_DONE',
-    'APPLY_RESTORED',
-    'APPLY_UNDONE',
-  ],
-} as const satisfies Record<Phase, readonly MachineAction['type'][]>;
+import { canApplyAction } from './phase-actions.js';
+import {
+  decisionLedgerText,
+  dropClosedLineageStart,
+  keepReplacedStart,
+  lineageKeyFor,
+  withLineage,
+} from './lineage.js';
 
 /**
  * The review that judges a fix cycle: the next final review for a final review's cycle, the task
@@ -158,10 +46,6 @@ function judgesCycle(
     review.scope === 'task' &&
     review.afterTaskId === open.lastFixTaskId
   );
-}
-
-function canApplyAction(phase: Phase, action: MachineAction['type']): boolean {
-  return includes(anytimeActions, action) || includes(phaseActions[phase], action);
 }
 
 export function createInitialState(feature: string, now: Date = new Date()): WorkflowState {
@@ -189,84 +73,6 @@ function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus)
     ...(state.retryProfile?.taskId === taskId &&
       isTaskSettled(status) && { retryProfile: undefined }),
   };
-}
-
-const EMPTY_LINEAGE: LineageRecord = {
-  attempts: 0,
-  dispatchedRevision: {},
-  consultRecords: [],
-  replacedParents: [],
-};
-
-export function lineageKeyFor(state: WorkflowState, taskId: TaskId): TaskId {
-  const task = state.tasks.find((t) => t.id === taskId);
-  return task === undefined ? taskId : lineageIdOf(task);
-}
-
-export function briefCorrections(state: WorkflowState, taskId: TaskId): readonly string[] {
-  return state.lineages?.[lineageKeyFor(state, taskId)]?.corrections ?? [];
-}
-
-function withLineage(
-  state: WorkflowState,
-  key: TaskId,
-  update: (lineage: LineageRecord) => LineageRecord,
-): WorkflowState {
-  const lineages = state.lineages ?? {};
-  return {
-    ...state,
-    lineages: { ...lineages, [key]: update(lineages[key] ?? EMPTY_LINEAGE) },
-  };
-}
-
-/** Whether a brief of the lineage `key`, other than `exceptId`, is still open. */
-export function lineageHasOpenBrief(
-  tasks: readonly Task[],
-  key: TaskId,
-  exceptId?: TaskId,
-): boolean {
-  return tasks.some((t) => lineageIdOf(t) === key && t.id !== exceptId && !isTaskSettled(t.status));
-}
-
-/**
- * The files of a lineage's `unbooked` changes that a brief books: the ones its declared set names
- * when it passes, or every one when it closes the lineage. A file two briefs name goes to the first
- * to pass, because it is booked from then on.
- */
-export function lineageFilesToBook(
-  brief: Task,
-  closesLineage: boolean,
-  unbooked: readonly string[],
-): string[] {
-  if (closesLineage) return [...unbooked];
-  const declared = taskDeclaredPatterns(brief);
-  return unbooked.filter((file) => isInDeclaredSet(file, declared));
-}
-
-/**
- * A rewrite or a split ends the brief's task-start snapshot, which records the writes of its
- * attempts. The lineage keeps it with the briefs done by then, which are the briefs done when the
- * replaced brief started, so a skip that closes the lineage can take those writes back.
- */
-function keepReplacedStart(state: WorkflowState, key: TaskId): WorkflowState {
-  const snapshot = state.changedFilesBaseline?.activeTaskSnapshot;
-  if (snapshot === undefined) return state;
-  const doneAtStart = state.tasks
-    .filter((task) => isTaskCompleted(task.status))
-    .map((task) => task.id);
-  return withLineage(state, key, (lineage) => ({
-    ...lineage,
-    replacedStarts: [...(lineage.replacedStarts ?? []), { snapshot, doneAtStart }],
-  }));
-}
-
-/** A lineage keeps its task starts only while one of its briefs is still open. */
-function dropClosedLineageStart(state: WorkflowState, taskId: TaskId): WorkflowState {
-  const key = lineageKeyFor(state, taskId);
-  const lineage = state.lineages?.[key];
-  if (lineage === undefined || lineageHasOpenBrief(state.tasks, key)) return state;
-  const { startSnapshot: _closedStart, replacedStarts: _closedReplacedStarts, ...closed } = lineage;
-  return { ...state, lineages: { ...state.lineages, [key]: closed } };
 }
 
 function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {

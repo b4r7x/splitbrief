@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { retentionError } from '../isolation/retention.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { SpecMetadata } from '../../../core/paths-io.js';
+import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
@@ -61,7 +61,7 @@ import {
   recordLastFailure,
 } from '../state-ops.js';
 import { SANDBOX_DIR, sessionDir } from '../../../core/paths.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import { resumeStep } from '../../../core/sessions/run/status.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';

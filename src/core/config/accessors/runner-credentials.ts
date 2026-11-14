@@ -1,7 +1,7 @@
 import { PROVIDER_CATALOG } from '../../providers/catalog.js';
 import { isApiProviderId } from '../../providers/api-provider-catalog.js';
-import type { ImplementerConfig } from '../../schemas/implementer-config.js';
-import type { PlannerConfig } from '../../schemas/planner-config.js';
+import type { ImplementerConfig } from '../../schemas/runner/implementer.js';
+import type { PlannerConfig } from '../../schemas/runner/planner.js';
 
 type RunnerCredentialConfig = PlannerConfig | ImplementerConfig;
 

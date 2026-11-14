@@ -5,7 +5,7 @@ import {
   nameDraftsNotRemoved,
   reportDraftNotSaved,
 } from '../../stores/ui/session-drafts.js';
-import { readRunRecord } from '../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import { assertCanCloseRun, endRunAtRest } from '../../engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { addTuiEvent } from './tui-sink.js';

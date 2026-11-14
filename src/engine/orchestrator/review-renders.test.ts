@@ -13,7 +13,7 @@ import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { deriveReviewOutcome, verificationKey } from '../../core/review/verdict.js';
 import { taskId, type Check } from '../../core/schemas/task.js';
 import type { EvidenceCheckEntry, EvidenceLedger } from '../../core/schemas/evidence.js';
-import type { ReviewVerdict } from '../../core/schemas/review.js';
+import type { ReviewVerdict } from '../../core/schemas/review/verdict.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import {
   MAX_RENDER_IMAGES_PER_CHECK,

@@ -1,10 +1,10 @@
 import { createDefaultConfig } from '../config/load/defaults.js';
 import { getRunnerModelName, type RunnerConfig } from '../config/accessors/runner-config.js';
 import type { SavedCatalogOf } from '../discovery/catalog-read-merge.js';
-import type { CliToolDetection, ProviderDetection } from '../discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../discovery/detection/tool.js';
 import { routeAuthState } from '../runners/route-auth.js';
 import { seatRouteModel } from '../providers/automatic-model.js';
-import { cliToolSupportsRole, LISTED_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import { cliToolSupportsRole, LISTED_CLI_TOOL_IDS } from '../runners/cli-tool/catalog.js';
 import type { Config } from '../schemas/config.js';
 import {
   resolveEffectiveConfig,

@@ -1,9 +1,10 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
-import { dueCriterionIds } from '../../../core/review/verdict.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
+import { dueCriterionIds } from '../../../core/review/scope.js';
 import { resolveEndChecks, resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
-import { fixCheckKeys, splitFixCheckIds } from '../../../core/review/fix-task.js';
-import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
+import { fixCheckKeys, splitFixCheckIds } from '../../../core/review/fix/task.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue/state.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';

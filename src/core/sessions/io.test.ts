@@ -12,7 +12,7 @@ import {
 import { join } from 'node:path';
 import { listSessions, saveSummary, readSession } from './io.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, LOCKFILE, sessionDir } from '../paths.js';
-import { HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
+import { HEARTBEAT_STALENESS_MS } from './lock/status.js';
 import { saveState } from '../state/persistence.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';

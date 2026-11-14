@@ -1,4 +1,4 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { runApplyAtRest } from '../../../engine/orchestrator/apply/at-rest.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { closedChangesSuffix, closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';

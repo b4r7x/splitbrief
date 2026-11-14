@@ -15,8 +15,9 @@ import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factor
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfig } from '../../../core/config/load/io.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import type { CliImplementerConfig } from '../../../core/schemas/implementer-config.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
+import type { CliImplementerConfig } from '../../../core/schemas/runner/implementer.js';
 import { createCliImplementer } from '../../implementers/cli.js';
 import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
 import { runTaskLoop } from './loop.js';

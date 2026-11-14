@@ -3,7 +3,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import { taskId, type Task } from '../../../core/schemas/task.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
-import type { ConsultRecord } from '../../../core/schemas/workflow.js';
+import type { ConsultRecord } from '../../../core/schemas/workflow/consult-record.js';
 import { buildConsultPrompt, type ConsultPromptInput } from './consult.js';
 import { DIRECT_WRITER_TASK_RULE, TASK_CMD_CHECK_RULE } from './plan-session.js';
 

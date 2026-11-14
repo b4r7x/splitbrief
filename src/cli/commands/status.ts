@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import { plainTheme } from '../../core/theme/resolve.js';
 import { paint } from '../../core/theme/paint.js';
 import { loadState } from '../../core/state/persistence.js';
-import { readSeatIdentityRecord } from '../../core/state/seats.js';
+import { readSeatIdentityRecord } from '../../core/state/seats/record.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -13,9 +13,9 @@ import { canonicalizeProjectDir } from '../setup.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
 import { sessionStatusWord } from '../../core/sessions/display.js';
 import { rowFor } from '../../core/sessions/io.js';
-import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
-import { readSessionSummary } from '../../core/sessions/run-record-io.js';
-import { deriveRunStatus } from '../../core/sessions/run-status.js';
+import { checkSessionLiveness } from '../../core/sessions/lock/file.js';
+import { readSessionSummary } from '../../core/sessions/run/record-io.js';
+import { deriveRunStatus } from '../../core/sessions/run/status.js';
 import { sessionDir } from '../../core/paths.js';
 import {
   CREW_SEAT_IDS,
@@ -24,8 +24,8 @@ import {
   candidateIdsOf,
   formatSeatIdentity,
   type CrewSeatId,
-  type SeatIds,
 } from '../../core/crew/identity.js';
+import type { SeatIds } from '../../core/crew/seat-ids.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import type { RunnerKind } from '../../core/schemas/enums.js';
 import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';

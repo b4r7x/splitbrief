@@ -1,15 +1,9 @@
-import type { ReviewVerdict, SetAside } from '../schemas/review.js';
-import type { RedCheck, ReviewRecord } from '../schemas/workflow.js';
+import type { ReviewVerdict, SetAside } from '../schemas/review/verdict.js';
+import type { RedCheck, ReviewRecord } from '../schemas/workflow/review-record.js';
 import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 import { namedFailures } from './base-split.js';
-import {
-  acceptedCounts,
-  acceptedNote,
-  redCheckLine,
-  reviewOutcomeWord,
-  setAsideLine,
-  type ReviewOutcome,
-} from './verdict.js';
+import { reviewOutcomeWord, setAsideLine, type ReviewOutcome } from './verdict.js';
+import { acceptedCounts, acceptedNote, redCheckLine } from './accepted.js';
 
 const PRE_EXISTING_LEAD =
   "These reviewer checks failed at the run base too. Their failures below also fail before this run's changes, so they raise no finding.";

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
 import { createValidator } from '../../../src/engine/orchestrator/validation/run.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';

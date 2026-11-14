@@ -20,7 +20,7 @@ import {
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
-import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
+import { ensureSessionDir, writeSpecFile } from '../../core/sessions/spec-files.js';
 import {
   DRIFT_REPORT_FILE,
   REVIEW_PACKET_JSON_FILE,
@@ -30,7 +30,7 @@ import {
   sessionDir,
 } from '../../core/paths.js';
 import { REVIEW_CHANGES_FILE } from '../../core/evidence/review-changes.js';
-import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
+import { ReviewPacketSchema } from '../../core/schemas/review/packet.js';
 import type { Check } from '../../core/schemas/task.js';
 import { saveState } from '../../core/state/persistence.js';
 import { applyConsultAnswer } from './consult/apply.js';

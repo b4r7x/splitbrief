@@ -2,7 +2,7 @@ import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { Box } from 'ink';
 import { listRowLead } from '../../components/list-row.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
-import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import {
   padTerminalDisplayTextEnd,

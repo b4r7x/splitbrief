@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { CommitStrategy } from '../../src/core/schemas/enums.js';
 import type { HooksConfig } from '../../src/core/schemas/hooks.js';
-import type { WorkflowState } from '../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { makeConfig } from './factories/config.js';
 import { makeTask } from './factories/task.js';

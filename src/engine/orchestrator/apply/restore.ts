@@ -1,4 +1,4 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';
 import { rmdir } from 'node:fs/promises';

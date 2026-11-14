@@ -1,14 +1,13 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
+import type { CrewSeatId, formatSeatIdentity } from '../../../core/crew/identity.js';
 import {
   idsOf,
   isSeatIdentity,
   sameSeatIds,
   seatIdsOf,
-  type CrewSeatId,
-  type formatSeatIdentity,
   type SeatIds,
-} from '../../../core/crew/identity.js';
+} from '../../../core/crew/seat-ids.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';

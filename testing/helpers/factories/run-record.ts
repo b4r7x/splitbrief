@@ -1,6 +1,6 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { RunRecord } from '../../../src/core/sessions/run-record.js';
+import type { RunRecord } from '../../../src/core/sessions/run/record.js';
 
 const DEFAULTS: RunRecord = {
   ref: {

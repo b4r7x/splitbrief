@@ -15,7 +15,7 @@ import { HomeScreen } from '../../../src/app/screens/home.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { sessionSelectDeps } from '../../../src/app/prepare-resume.js';
 import type { DraftSubmission } from '../../../src/core/composer/submission.js';
-import { readSessionLog } from '../../../src/core/sessions/log-reader.js';
+import { readSessionLog } from '../../../src/core/sessions/log/reader.js';
 import type { SessionLogEntry } from '../../../src/core/schemas/session-log.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';

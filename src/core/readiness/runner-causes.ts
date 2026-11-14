@@ -1,4 +1,4 @@
-import { CLI_TOOL_CATALOG } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../runners/cli-tool/catalog.js';
 import type { ReadinessCheck, RunnerReadinessCause } from './types.js';
 
 export function runnerCauseKey(cause: RunnerReadinessCause): string {

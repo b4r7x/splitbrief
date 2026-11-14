@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
-import type { CliImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
+import type { CliImplementerConfig } from '../../../src/core/schemas/runner/implementer.js';
 import { SessionLogEntrySchema } from '../../../src/core/schemas/session-log.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';

@@ -8,7 +8,7 @@ import {
   SUMMARY_FILE,
   sessionDir,
 } from '../../../../core/paths.js';
-import { checkSessionLiveness } from '../../../../core/sessions/lockfile.js';
+import { checkSessionLiveness } from '../../../../core/sessions/lock/file.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../../../engine/orchestrator/run/heartbeat.js';
 import {
   requestLeaveSession,

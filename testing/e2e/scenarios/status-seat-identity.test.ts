@@ -8,8 +8,9 @@ import { configWithSwitchedSeat } from '../../../src/engine/orchestrator/recover
 import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
-import { recordSeatIdentities, reconcileSeatIdentities } from '../../../src/core/state/seats.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import { recordSeatIdentities } from '../../../src/core/state/seats/record.js';
+import { reconcileSeatIdentities } from '../../../src/core/state/seats/changes.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { spawnCli } from '../helpers/live-cli-harness.js';

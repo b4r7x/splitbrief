@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import type { TypedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
+import type { TypedOutputCapability } from '../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import type { RunnerCallResult } from '../calls/types.js';

@@ -7,7 +7,7 @@ import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { hermeticPath } from '#testing/helpers/compatible-cli-shim.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 

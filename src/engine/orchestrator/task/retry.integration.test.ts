@@ -24,7 +24,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { appendEngineEvent } from '../../../core/sessions/log-writer.js';
+import { appendEngineEvent } from '../../../core/sessions/log/writer.js';
 import type { Validator } from '../validation/types.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';

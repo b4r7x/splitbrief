@@ -10,11 +10,10 @@ import {
   existsInProject,
   isBareCommandResolvedInsideProject,
   isInsideProject,
-  isPackageManagerScriptInvocation,
   isPathLike,
-  isProjectDrivenProgram,
-  runsProjectDefinedCode,
 } from './path-classification.js';
+import { isProjectDrivenProgram, runsProjectDefinedCode } from './project-driven-programs.js';
+import { isPackageManagerScriptInvocation } from './package-scripts.js';
 
 type ShellWord = Readonly<{ value: string; redirect: boolean }>;
 

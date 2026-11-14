@@ -13,7 +13,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
-import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { CliImplementerConfig } from '../../core/schemas/runner/implementer.js';
 import { createCliImplementer as createCliImplementerImpl } from './cli.js';
 import type { ImplementerFactoryOptions } from './types.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';

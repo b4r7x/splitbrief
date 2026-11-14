@@ -1,12 +1,8 @@
 import type { CheckResult, Task, TaskId } from '../schemas/task.js';
-import type {
-  QueuedMessage,
-  WorkflowState,
-  PlannerConversation,
-  RedCheck,
-  SeatSwitchRecord,
-  SeatWait,
-} from '../schemas/workflow.js';
+import type { WorkflowState, PlannerConversation } from '../schemas/workflow/state.js';
+import type { SeatSwitchRecord, SeatWait } from '../schemas/workflow/seat.js';
+import type { RedCheck } from '../schemas/workflow/review-record.js';
+import type { QueuedMessage } from '../schemas/workflow/queue.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
 import type {
   ConsultAnswer,
@@ -16,7 +12,7 @@ import type {
 } from '../schemas/consult.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
-import type { TriageInput } from '../schemas/review.js';
+import type { TriageInput } from '../schemas/review/verdict.js';
 import type { StepCut, StepRef } from '../schemas/run-step.js';
 
 export type MachineAction = StateAction;

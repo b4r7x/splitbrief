@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
-import { ChangedFilesSnapshotSchema } from '../../../core/schemas/workflow.js';
+import { ChangedFilesSnapshotSchema } from '../../../core/schemas/workflow/changed-files.js';
 
 const control = vi.hoisted(() => ({
   editAfterRename: '',

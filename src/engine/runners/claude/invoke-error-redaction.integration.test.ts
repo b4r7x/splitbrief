@@ -1,7 +1,7 @@
 import { chmodSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { prependPath } from '#testing/helpers/command-shim.js';
 import { invokeTestClaude } from '#testing/helpers/claude-planner-steer-test-invoke.js';

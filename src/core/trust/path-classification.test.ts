@@ -6,14 +6,16 @@ import {
   commandTokensAfterInterpreter,
   interpreterOperands,
   isBareCommandResolvedInsideProject,
-  isPackageManagerScriptInvocation,
   isPathLike,
   isProjectFile,
   isRepoLocal,
+} from './path-classification.js';
+import {
+  isPackageManagerScriptInvocation,
   packageManagerScriptName,
   packageManagerScriptNames,
   scriptsRunFor,
-} from './path-classification.js';
+} from './package-scripts.js';
 
 describe('isPathLike', () => {
   it('treats tokens with slashes as path-like', () => {

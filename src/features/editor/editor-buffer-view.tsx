@@ -1,7 +1,7 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { Box } from 'ink';
 import { wrapVisualLines } from '../../core/editor/grapheme-motions.js';
-import { selectionRange } from '../../core/editor/editor-state.js';
+import { selectionRange } from '../../core/editor/state.js';
 import { buildEditorRowSegments } from './editor-line-segments.js';
 import { caretVisualPosition, computeEditorScrollTop } from './editor-viewport.js';
 import { editorStore } from '../../stores/ui/editor.js';

@@ -6,8 +6,8 @@ import {
   CREW_LABEL_WIDTH,
   CREW_SEAT_LABELS,
   PLANNER_INHERITANCE,
-  cutSeatIdentity,
 } from '../../core/crew/identity.js';
+import { cutSeatIdentity } from '../../core/crew/seat-line/wrap.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';

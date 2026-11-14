@@ -8,9 +8,9 @@ import { configError } from '../errors.js';
 import { resolveReviewerRunner } from './reviewer-runner.js';
 import type { ActiveRunnerRole } from '../../runners/seat-roles.js';
 import type { Config } from '../../schemas/config.js';
-import type { ImplementerConfig } from '../../schemas/implementer-config.js';
-import type { PlannerConfig } from '../../schemas/planner-config.js';
-import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
+import type { ImplementerConfig } from '../../schemas/runner/implementer.js';
+import type { PlannerConfig } from '../../schemas/runner/planner.js';
+import type { ReviewerConfig } from '../../schemas/runner/reviewer.js';
 import { contentIdentityId } from './content-identity.js';
 
 export type ActiveRunnerConfig = PlannerConfig | ImplementerConfig;

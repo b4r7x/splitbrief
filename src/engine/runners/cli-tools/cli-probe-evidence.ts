@@ -1,11 +1,10 @@
-import type {
-  CliAuthState,
-  CliExecutableIdentity,
-  CliProviderAuth,
-} from '../../../core/discovery/detection.js';
+import type { CliAuthState } from '../../../core/discovery/detection/tool.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import { deriveCliReadiness, type CliReadinessResult } from '../../../core/schemas/readiness.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
+import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
+import { deriveCliReadiness } from '../../../core/readiness/cli-remediation.js';
 import type { CliAuthProbe, CliProbeOutput, CliVersionProbe } from './contract.js';
 import { parseProviderOracleOutput } from './provider-oracle.js';
 

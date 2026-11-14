@@ -1,4 +1,4 @@
-import { deriveRunStatus } from '../../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../../src/core/sessions/run/status.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { makeMessage } from '../../../helpers/queue.js';
 import { scenarioId } from '../../contracts/identifiers.js';

@@ -7,7 +7,7 @@ import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays
 import { windowSlice } from '../../components/pickers/scroll-window.js';
 import { parseApiKeyEnvRef } from '../../core/config/credentials.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import {

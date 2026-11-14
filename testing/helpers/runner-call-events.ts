@@ -1,6 +1,6 @@
 import type { Phase } from '../../src/core/schemas/enums.js';
 import type { SessionLogEventEntry } from '../../src/core/schemas/session-log.js';
-import { toEngineEventEntry } from '../../src/core/sessions/log-writer.js';
+import { toEngineEventEntry } from '../../src/core/sessions/log/writer.js';
 import { projectRunnerCallEvent } from '../../src/engine/calls/event-projection.js';
 import type { RunnerCallEvent } from '../../src/engine/calls/types.js';
 import { addEvent } from '../../src/stores/workflow/actions/event.js';

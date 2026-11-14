@@ -3,7 +3,7 @@ import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { isRecord, optionalString } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 

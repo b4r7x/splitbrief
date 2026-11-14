@@ -5,7 +5,7 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { join } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { lineageAttemptsOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import { lineageAttemptsOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';

@@ -1,6 +1,6 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
 
-import { writeSpecFile } from '../../../core/paths-io.js';
+import { writeSpecFile } from '../../../core/sessions/spec-files.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
@@ -36,9 +36,9 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Plan } from '../../../core/schemas/plan.js';
-import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review.js';
+import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review/verdict.js';
 import { taskId, type Check, type Task } from '../../../core/schemas/task.js';
 import type { BoundaryPark, OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { Validator } from '../validation/types.js';
@@ -49,7 +49,7 @@ import type {
   RetryOptions,
 } from '../../implementers/types.js';
 import { createContinuationHolder, type ContinuationHolder } from '../continuation.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
@@ -58,7 +58,7 @@ import { transition } from '../../../core/state/machine.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import type { TypedCallContext } from '../../planners/types.js';
 import { runBaseTreesRoot, sessionDir } from '../../../core/paths.js';
-import { readMessages } from '../../../core/sessions/log-reader.js';
+import { readMessages } from '../../../core/sessions/log/reader.js';
 import { listSnapshots, readManifest } from '../../snapshots/manifest.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { runTasksAndReview } from './task-execution.js';

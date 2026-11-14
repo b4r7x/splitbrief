@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { loadRememberedSnapshot } from '../../../src/engine/detection/cache.js';
 import { createDetectionService } from '../../../src/engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../../src/engine/detection/store-publication.js';

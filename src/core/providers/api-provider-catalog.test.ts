@@ -19,7 +19,7 @@ import {
   PROVIDER_CATALOG,
   resolveDefaultApiBase,
 } from './catalog.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../runners/cli-tool/catalog.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();

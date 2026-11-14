@@ -1,12 +1,12 @@
 import type { Session } from '../../core/schemas/session.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { OwnedResumeState } from '../../core/state/resume-hydration.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { OverlayType } from '../../core/navigation/types.js';
-import type { RunRecord } from '../../core/sessions/run-record.js';
-import { readRunRecord } from '../../core/sessions/run-record-io.js';
+import type { RunRecord } from '../../core/sessions/run/record.js';
+import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import { APPLY_RUNNING_REFUSAL } from '../../core/runtime/commands/messages.js';
 import type { PreparationOutcome } from '../../engine/runners/prepared-execution.js';
 import { toErrorMessage } from '../../utils/format/errors.js';

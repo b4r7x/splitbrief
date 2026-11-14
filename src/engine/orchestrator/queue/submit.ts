@@ -1,6 +1,7 @@
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
-import { isLivePhase, isQueuePhase } from '../../../core/phases.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
+import { isLivePhase, isQueuePhase } from '../../../core/phases/roles.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 import type { Planner } from '../../planners/types.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
@@ -9,14 +10,14 @@ import { recordUserMessage } from '../transcript/user-message.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../../lib/warn.js';
 import type { WriteSequencer } from '../serial-executor.js';
-import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
+import { formatQueuedMessagePreview } from '../../../core/queue/preview.js';
 import {
   isQueuedMessagePendingFirstDelivery,
   messageSeat,
   queuedUserMessage,
-} from '../../../core/queue-state.js';
+} from '../../../core/queue/state.js';
 import { noWordsRefusal } from '../../../core/recovery/typed-words.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import { resumeStep } from '../../../core/sessions/run/status.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import type { QueueSubmissionResult, WorkflowContext } from '../types.js';
 import { deliverToRunningCall } from '../../calls/steering.js';

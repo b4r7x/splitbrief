@@ -15,7 +15,7 @@ import { activeFile, SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js
 import { createInitialState } from '../../../core/state/machine.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import {
   finalizeEndedRun,
   finalizeRunAtRest,
@@ -23,8 +23,8 @@ import {
   saveFinalSession,
 } from './finalize.js';
 import { readSession } from '../../../core/sessions/io.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
-import { writeSeatIdentities } from '../../../core/state/seats.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
+import { writeSeatIdentities } from '../../../core/state/seats/record.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 

@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   cli,

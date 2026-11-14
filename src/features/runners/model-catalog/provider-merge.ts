@@ -1,6 +1,6 @@
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
-import type { CliProviderAuth } from '../../../core/discovery/detection.js';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import { bestMembership } from './membership.js';
 import { peelOptionSuffix } from './option-merge.js';
 import { modelProviderAuthKey, routeAuthState } from '../../../core/runners/route-auth.js';

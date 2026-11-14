@@ -1,4 +1,5 @@
-import { diffEventKey, type Section } from '../../../core/sections/event-sections.js';
+import { diffEventKey } from '../../../core/sections/events.js';
+import type { Section } from '../../../core/sections/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type {
   ConversationRowInputs,

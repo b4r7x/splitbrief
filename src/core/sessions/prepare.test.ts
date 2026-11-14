@@ -25,11 +25,10 @@ import { readActive, writeActive, type PreparedNewSession } from './active-point
 import {
   createSessionPreparationCandidate,
   prepareNewSession,
-  releasePreparedSession,
-  rollbackPreparedSession,
   type PrepareNewSessionInput,
   type SessionMutationBoundary,
 } from './prepare.js';
+import { releasePreparedSession, rollbackPreparedSession } from './prepared-rollback.js';
 
 const tempDirs: string[] = [];
 const OWNERSHIP_FILE = '.prepare-owner.json';
@@ -443,7 +442,7 @@ describe('prepareNewSession', () => {
     const session = preparedSession(prepareInput(project, sessionId, signal));
 
     vi.resetModules();
-    const coldModule = await import('./prepare.js');
+    const coldModule = await import('./prepared-rollback.js');
     coldModule.rollbackPreparedSession({
       ref: session.ref,
       ownership: session.ownership,
@@ -463,7 +462,7 @@ describe('prepareNewSession', () => {
     const readiness = readFileSync(readinessPath, 'utf8');
 
     vi.resetModules();
-    const coldReleaseModule = await import('./prepare.js');
+    const coldReleaseModule = await import('./prepared-rollback.js');
     const ownership = { ref: session.ref, ownership: session.ownership };
     coldReleaseModule.releasePreparedSession(ownership);
 
@@ -473,7 +472,7 @@ describe('prepareNewSession', () => {
     expect(existsSync(join(directory, OWNERSHIP_FILE))).toBe(false);
 
     vi.resetModules();
-    const coldRollbackModule = await import('./prepare.js');
+    const coldRollbackModule = await import('./prepared-rollback.js');
     expect(() => coldRollbackModule.rollbackPreparedSession(ownership)).toThrowError(
       expect.objectContaining({
         kind: 'session-prepare-io',

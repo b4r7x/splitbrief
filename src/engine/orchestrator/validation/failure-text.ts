@@ -1,13 +1,15 @@
 import {
-  fixCheckCounts,
-  fixCheckVerdict,
   fileFromFailureKey,
   isTestNodeKey,
+  type FixCheckKeys,
+} from '../../../core/review/fix/task.js';
+import {
+  fixCheckCounts,
+  fixCheckVerdict,
   judgeFixCheck,
   leftTo,
   pairFailureKeys,
-  type FixCheckKeys,
-} from '../../../core/review/fix-task.js';
+} from '../../../core/review/fix/checks.js';
 import { redactSecrets } from '../../../utils/redact/secrets.js';
 import { truncateByChars } from '../../../utils/display-text/truncate.js';
 import type { FailureKeys } from './extract-failure-keys.js';

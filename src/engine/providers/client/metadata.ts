@@ -5,7 +5,7 @@ import type {
   ProviderModelListOptions,
   ProviderOverrides,
 } from '../types.js';
-import type { DetectedModel } from '../../../core/discovery/detection.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { warnError } from '../../../lib/warn.js';
 import { error as createError } from '../../../utils/error.js';
 import { createProviderShell } from './shell.js';

@@ -1,10 +1,10 @@
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { BoundaryPark, WorkflowContext } from '../types.js';
 import { recordSteer } from '../continuation.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
-import { afterLastBrief } from '../../../core/sessions/run-status.js';
+import { afterLastBrief } from '../../../core/sessions/run/status.js';
 
 /**
  * The run held in place at a brief or review boundary. The state records the step the run

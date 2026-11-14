@@ -1,10 +1,7 @@
 import { briefContinuation, changedDeclaredFiles, changedDeclaredFilesNote } from '../kept-work.js';
 import type { Task } from '../../../core/schemas/task.js';
-import {
-  lineageAttemptsOf,
-  type ChangedFilesSnapshot,
-  type WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import { lineageAttemptsOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';

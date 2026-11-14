@@ -1,4 +1,4 @@
-import type { CliToolDetection, ProviderDetection } from './detection.js';
+import type { CliToolDetection, ProviderDetection } from './detection/tool.js';
 import { cloneDetectedModel } from './clone-model.js';
 
 export function cloneCliToolDetection(cli: CliToolDetection): CliToolDetection {

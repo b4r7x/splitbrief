@@ -1,5 +1,5 @@
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';

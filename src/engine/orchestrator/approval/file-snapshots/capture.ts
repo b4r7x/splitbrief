@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { lstat, mkdir, readlink } from 'node:fs/promises';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
 import { isProcessOutputSink } from '../../../../lib/process/stdio-sinks.js';
-import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow/changed-files.js';
 import { uniqueInOrder } from '../../../../utils/collections.js';
 import { getCommittedFilesSince } from '../../../../lib/git/diff.js';
 import {

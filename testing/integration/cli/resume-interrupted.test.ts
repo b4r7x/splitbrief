@@ -16,9 +16,9 @@ import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState, loadState } from '../../../src/core/state/persistence.js';
-import { writeLockfile } from '../../../src/core/sessions/lockfile.js';
+import { writeLockfile } from '../../../src/core/sessions/lock/file.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE, RESEARCH_FILE, sessionDir } from '../../../src/core/paths.js';
-import { resumeStep } from '../../../src/core/sessions/run-status.js';
+import { resumeStep } from '../../../src/core/sessions/run/status.js';
 
 // Resume runs the same readiness gate as start, and the default config points the
 // implementer at a local Ollama. The shared no-claim mock keeps the verdict off

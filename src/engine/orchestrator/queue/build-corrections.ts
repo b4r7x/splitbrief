@@ -1,6 +1,6 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
 import type { EventBus } from '../../events/types.js';

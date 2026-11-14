@@ -1,5 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
-import type { ApiImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { ApiImplementerConfig } from '../../core/schemas/runner/implementer.js';
 import type {
   Implementer,
   ImplementerFactoryOptions,
@@ -18,7 +18,7 @@ import { providerError } from '../providers/errors.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';
 import type { StreamClient } from '../providers/openai-stream/request.js';
-import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner/fields.js';
 import { apiInvocationEvidence } from '../runners/invocation-identity.js';
 import {
   admitApiCall,

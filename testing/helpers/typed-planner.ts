@@ -3,8 +3,8 @@ import { vi, type Mock } from 'vitest';
 import type { PlanProposal, PlanResult } from '../../src/core/schemas/plan.js';
 import type { ClarificationQuestion } from '../../src/core/schemas/question.js';
 import type { ConsultAnswer } from '../../src/core/schemas/consult.js';
-import type { ReviewAnswer, ReviewVerdict } from '../../src/core/schemas/review.js';
-import type { ReviewScope } from '../../src/core/review/verdict.js';
+import type { ReviewAnswer, ReviewVerdict } from '../../src/core/schemas/review/verdict.js';
+import type { ReviewScope } from '../../src/core/review/scope.js';
 import { taskId, type Task } from '../../src/core/schemas/task.js';
 import type {
   Planner,

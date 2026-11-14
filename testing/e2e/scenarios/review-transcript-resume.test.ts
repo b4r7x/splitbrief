@@ -5,7 +5,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
-import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/group.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {

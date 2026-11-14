@@ -14,7 +14,7 @@ import {
 } from '../setup.js';
 import { cliError, withCliErrors } from '../errors.js';
 import { PLAN_FILE, PLAN_JSON_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
-import { writeSpecFile } from '../../core/paths-io.js';
+import { writeSpecFile } from '../../core/sessions/spec-files.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
 import { oneLineDisplayText, stripTerminalControls } from '../../utils/display-text/sanitize.js';
 import {

@@ -2,7 +2,7 @@ import http from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { createLlamaCppProvider } from './llama-cpp.js';
 import { detectProviderCatalog } from './catalog-detection.js';
-import { DetectedModelSchema } from '../../core/discovery/detection.js';
+import { DetectedModelSchema } from '../../core/discovery/detection/model.js';
 
 /**
  * Fixtures follow the llama.cpp server contract as documented for the supported

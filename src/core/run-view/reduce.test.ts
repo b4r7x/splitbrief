@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import type { StepRef } from '../schemas/run-step.js';
 import { taskId } from '../schemas/task.js';
-import type { SeatWait } from '../schemas/workflow.js';
+import type { SeatWait } from '../schemas/workflow/seat.js';
 import { EMPTY_RUN_VIEW, reduceRunView, type RunView } from './reduce.js';
 
 const RESET_AT = '2026-10-27T12:00:00.000Z';

@@ -10,7 +10,7 @@ import {
   makeCallbacks,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
-import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
+import { ensureSessionDir, writeSpecFile } from '../../core/sessions/spec-files.js';
 import {
   DRIFT_REPORT_FILE,
   REVIEW_FILE,

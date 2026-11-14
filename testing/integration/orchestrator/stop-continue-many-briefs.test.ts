@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readSession } from '../../../src/core/sessions/io.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { createStdoutTextSink } from '../../../src/engine/events/sinks/stdout-text.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';

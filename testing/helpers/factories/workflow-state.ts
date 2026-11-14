@@ -1,5 +1,5 @@
 import type { Task } from '../../../src/core/schemas/task.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 
 export function makeImplState(tasks: Task[], overrides?: Partial<WorkflowState>): WorkflowState {

@@ -1,7 +1,7 @@
 import type { ProjectContext, CodeContext } from '../../core/state/types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { Plan } from '../../core/schemas/plan.js';
-import type { ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
+import type { ImplementerWriteMode } from '../../core/schemas/runner/implementer.js';
 import type { BuildOutputContract } from '../implementers/file-bundle.js';
 import { extractFunctionContext } from '../parsers/scope-extractor.js';
 import { DECLARATION_NAME_RE } from '../parsers/code-patterns.js';

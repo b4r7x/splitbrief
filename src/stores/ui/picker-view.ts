@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
+import type { CustomCommandRunnerKind } from '../../core/config/custom-commands/tuple.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 
 export type PickerSubView =

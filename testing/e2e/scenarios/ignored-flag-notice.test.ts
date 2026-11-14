@@ -4,7 +4,7 @@ import XtermHeadless from '@xterm/headless';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configPath } from '../../../src/core/config/load/document.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

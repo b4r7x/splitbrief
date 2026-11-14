@@ -2,7 +2,7 @@ import type OpenAI from 'openai';
 import type { EndpointPolicyFetchOwner } from '../../core/providers/endpoint-policy.js';
 import { endpointPolicyError, endpointPolicyFetch } from '../../core/providers/endpoint-policy.js';
 import { createEndpointPolicyFetch } from '../../lib/http/policy-fetch.js';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import type { OpenAICompatPolicy } from './openai-compat-policy.js';
 import { createClientFromProvider } from './client/connection.js';
 import { extractOpenAIModelList, fetchModelList, isOpenAIModelList } from './client/request.js';

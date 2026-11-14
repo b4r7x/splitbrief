@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow/changed-files.js';
 import { uniqueProjectFiles } from './types.js';
 import { getChangedFilesSinceSnapshot, getChangedFilesSnapshot } from './capture.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

@@ -13,7 +13,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionDir, STATE_FILE } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { readyToApplyMessage } from '../../../src/cli/sessions/resolve.js';
 import { applyBackupDir } from '../../../src/engine/orchestrator/apply/backup.js';
 import { undoApply } from '../../../src/engine/orchestrator/apply/restore.js';

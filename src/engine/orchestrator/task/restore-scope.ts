@@ -1,4 +1,4 @@
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';

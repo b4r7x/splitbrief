@@ -24,7 +24,7 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
 import type { TypedCallContext } from '../../../src/engine/planners/types.js';
 import type { TypedSeatCall } from '../../../src/engine/runners/typed-output.js';
-import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
+import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import {
   failedReviewVerdict,

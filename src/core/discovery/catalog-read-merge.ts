@@ -1,6 +1,6 @@
 import { cloneDetectedModel } from './clone-model.js';
-import type { DetectedModel } from './detection.js';
-import type { CliToolId } from '../runners/cli-tool-catalog.js';
+import type { DetectedModel } from './detection/model.js';
+import type { CliToolId } from '../runners/cli-tool/types.js';
 
 export const MAX_CLI_CATALOG_READ_MODELS = 1_000;
 

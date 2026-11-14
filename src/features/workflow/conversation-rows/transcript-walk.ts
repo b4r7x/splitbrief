@@ -1,9 +1,5 @@
-import {
-  isSettledSection,
-  type ReviewStage,
-  type Section,
-} from '../../../core/sections/event-sections.js';
-import { isProcessWentAwayMark } from '../../../core/event-phase.js';
+import { isSettledSection, type ReviewStage, type Section } from '../../../core/sections/types.js';
+import { isProcessWentAwayMark } from '../../../core/phases/of-event.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import {

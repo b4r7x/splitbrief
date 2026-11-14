@@ -25,7 +25,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 const { startHeartbeat, LOCKFILE_PING_INTERVAL_MS } = await import('./heartbeat.js');
 const { writeLockfile, readLockfile, updateHeartbeat } = await import(
-  '../../../core/sessions/lockfile.js'
+  '../../../core/sessions/lock/file.js'
 );
 
 // A tick kicks off a real fs chain (stat → readFile → lstat → writeFile → rename).

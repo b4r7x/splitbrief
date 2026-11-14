@@ -14,19 +14,20 @@ import {
   formatConfigSaveSuccess,
   reportConfigSaveFailure,
 } from '../../stores/project/save-feedback.js';
-import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../core/state/seats.js';
+import { seatIdentitiesFromConfig } from '../../core/state/seats/record.js';
+import { seatIdentityChanges } from '../../core/state/seats/changes.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
-import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
+import type { CustomCommandRunnerKind } from '../../core/config/custom-commands/tuple.js';
 
 import {
   CREW_SEAT_LABELS,
   formatSeatIdentity,
-  isSeatIdentity,
   PLANNER_INHERITANCE,
   REVIEW_NONE,
 } from '../../core/crew/identity.js';
+import { isSeatIdentity } from '../../core/crew/seat-ids.js';
 import { seatFallback } from '../../core/crew/fallback.js';
 import { seatChangeWords, type SeatChangePoint } from '../../core/crew/seats.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
@@ -44,8 +45,8 @@ import {
 } from '../../core/config/accessors/active-runner.js';
 import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { detectProviderCatalog } from '../../engine/providers/catalog-detection.js';
-import type { PlannerConfig } from '../../core/schemas/planner-config.js';
-import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { PlannerConfig } from '../../core/schemas/runner/planner.js';
+import type { ImplementerConfig } from '../../core/schemas/runner/implementer.js';
 import {
   localConnectionProvider,
   type LocalConnectionProbe,
@@ -53,7 +54,7 @@ import {
   type LocalConnectionSeat,
 } from './local-connection-form.js';
 import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
-import { CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import {
   PICKER_ROLE_SEAT_IDS,
   seatPickerLane,

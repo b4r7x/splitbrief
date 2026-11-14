@@ -1,6 +1,6 @@
 import { relative } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
-import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
+import type { DiscoveredValidation } from '../../../core/schemas/workflow/state.js';
 import { findAffectedTestFiles } from '../../../core/validation/stacks/registry.js';
 import type { Stack } from '../../../core/validation/stacks/types.js';
 import {

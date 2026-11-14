@@ -1,7 +1,7 @@
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import { computeCrewPresets, type CrewPreset } from '../../core/crew/presets.js';
 import { deriveCrewRows, type CrewRow } from '../../core/crew/rows.js';
-import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import { servedProviders } from '../../core/runners/route-auth.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';

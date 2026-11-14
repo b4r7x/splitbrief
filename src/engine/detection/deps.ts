@@ -11,8 +11,8 @@ import { isApiProviderId, type ApiProviderId } from '../../core/providers/api-pr
 import {
   defaultCliAuthChannel,
   NATIVE_CLI_CATALOG_TOOL_IDS,
-  type CliToolId,
-} from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { includes } from '../../utils/type-guards.js';
 import { detectAll } from './detect.js';

@@ -23,7 +23,7 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { runBaseTreesRoot } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { processError } from '../../../lib/process/errors.js';
 import { createEventBus } from '../../events/bus.js';
 import type { EngineEvent } from '../../events/types.js';

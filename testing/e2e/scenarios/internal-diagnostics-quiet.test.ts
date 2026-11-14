@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { STATE_FILE, SUMMARY_FILE, sessionDir } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

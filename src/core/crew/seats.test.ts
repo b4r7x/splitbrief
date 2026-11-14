@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { CrewSeatId } from './identity.js';
-import { LISTED_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import { LISTED_CLI_TOOL_IDS } from '../runners/cli-tool/catalog.js';
 import {
   crewCliTools,
   deriveCrewSeats,

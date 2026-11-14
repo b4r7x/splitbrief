@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
 import { admitStart } from '../../core/discovery/runner-evidence.js';
-import { CLI_TOOL_CATALOG, type CliAuthChannelId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
+import type { CliAuthChannelId } from '../../core/runners/cli-tool/auth-channels.js';
 import type { CliReadinessProbeEvidence } from '../runners/cli-tools/cli-probe-evidence.js';
 import type { probeDeclaredCliReadinessEvidence } from '../runners/cli-tools/readiness-probe.js';
 import type { CliExecutableResolver } from '../runners/resolve-cli-executable.js';

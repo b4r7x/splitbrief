@@ -3,10 +3,12 @@ import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import type { WorkflowState, QueuedMessage } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { briefCorrections, createInitialState } from '../../../core/state/machine.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { briefCorrections } from '../../../core/state/lineage.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { STATE_FILE, sessionDir } from '../../../core/paths.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -17,7 +19,7 @@ import { setupProject, makeResearchingState } from '#testing/helpers/queue.js';
 import { createWriteSequencer } from '../serial-executor.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createQueueHandler } from './submit.js';
-import { readMessages } from '../../../core/sessions/log-reader.js';
+import { readMessages } from '../../../core/sessions/log/reader.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import {
   attachedMessage,
@@ -27,7 +29,7 @@ import {
 import {
   isQueuedMessageClearable,
   isQueuedMessagePendingDelivery,
-} from '../../../core/queue-state.js';
+} from '../../../core/queue/state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createSteeringPort, type RunningCall, type SteerOutcome } from '../../calls/steering.js';
 import { settleMidCallDeliveries } from './mid-call.js';

@@ -1,20 +1,16 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-  CliAuthState,
-  CliExecutableIdentity,
-  CliProviderAuth,
-} from '../../../core/discovery/detection.js';
+import type { CliAuthState } from '../../../core/discovery/detection/tool.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import type { ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
-import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
-import {
-  CLI_TOOL_CATALOG,
-  cliAuthChannelPlatformSupported,
-  defaultCliAuthChannel,
-  type CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
-import { deriveCliReadiness, type CliReadinessResult } from '../../../core/schemas/readiness.js';
+import { classifyCliAdmittedVersion } from '../../../core/runners/cli-tool/version.js';
+import { CLI_TOOL_CATALOG, defaultCliAuthChannel } from '../../../core/runners/cli-tool/catalog.js';
+import { cliAuthChannelPlatformSupported } from '../../../core/runners/cli-tool/auth-channels.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
+import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
+import { deriveCliReadiness } from '../../../core/readiness/cli-remediation.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import {
   authFactFromDeclaredProbe,

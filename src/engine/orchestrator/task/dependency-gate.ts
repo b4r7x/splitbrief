@@ -1,5 +1,5 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { WorkflowContext } from '../types.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';

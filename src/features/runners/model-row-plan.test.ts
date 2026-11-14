@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { formatContextLength } from '../../core/formatting.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseAntigravityModelCatalog,
@@ -22,7 +23,7 @@ import { buildRightModels } from './model-catalog/catalog.js';
 import { assemblePickerDescriptors, buildPickerOptions } from './model-catalog/options.js';
 import { buildRightRows, type RightRow } from './model-catalog/rows.js';
 import { planModelRows } from './model-row-plan.js';
-import { formatModelName } from '../../core/model-display.js';
+import { formatModelName } from '../../core/providers/model-display.js';
 
 const FIXTURES = join(import.meta.dirname, '../../../testing/fixtures');
 

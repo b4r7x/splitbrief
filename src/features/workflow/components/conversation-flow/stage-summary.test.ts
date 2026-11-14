@@ -3,10 +3,8 @@ import { createElement } from 'react';
 import { TaskSummary } from '../../../../components/task-summary.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import {
-  groupEventsIntoSections,
-  type StageSummary,
-} from '../../../../core/sections/event-sections.js';
+import type { StageSummary } from '../../../../core/sections/types.js';
+import { groupEventsIntoSections } from '../../../../core/sections/group.js';
 import { interruptedCallEvents } from '../../../../engine/calls/interrupted.js';
 import { EngineEventSchema } from '../../../../engine/events/schema.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';

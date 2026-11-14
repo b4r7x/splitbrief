@@ -2,10 +2,11 @@ import { plainUserMessage } from '../../core/types/user-input.js';
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { QueuedMessage } from '../../core/schemas/workflow/queue.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { createEventBus } from '../events/bus.js';
 import type { EngineEvent } from '../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -17,14 +18,14 @@ import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-fact
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
 import { createHash } from 'node:crypto';
-import { deriveRunStatus } from '../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../core/sessions/run/status.js';
 import { clearPendingQueue } from './queue/clear.js';
 import { enqueueUserMessage } from './queue/submit.js';
 import { dispatchNativeInjection } from './queue/native-injection.js';
 import { readQueueForPrompt, releaseQueuedMessage } from './queue/drain.js';
-import { isQueuedMessagePendingDelivery } from '../../core/queue-state.js';
+import { isQueuedMessagePendingDelivery } from '../../core/queue/state.js';
 import { sessionDir } from '../../core/paths.js';
-import { resumeStep } from '../../core/sessions/run-status.js';
+import { resumeStep } from '../../core/sessions/run/status.js';
 import {
   stateOpsError,
   transitionAndSave,

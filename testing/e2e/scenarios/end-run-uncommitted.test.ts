@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { SPLITBRIEF_IDENTITY } from '../../../src/core/identity.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { checkoutEntries } from '#testing/helpers/checkout.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {

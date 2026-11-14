@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { readSession } from '../../../src/core/sessions/io.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { stagedWorkspaceRoot } from '../../../src/engine/orchestrator/isolation/retention.js';
 import { createSnapshot } from '../../../src/engine/snapshots/create.js';

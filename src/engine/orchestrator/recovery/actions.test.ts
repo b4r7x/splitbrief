@@ -11,14 +11,20 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
+import {
+  ensureSessionDir,
+  readSpecFile,
+  writeSpecFile,
+} from '../../../core/sessions/spec-files.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { writeSeatIdentities } from '../../../core/state/seats.js';
+import { writeSeatIdentities } from '../../../core/state/seats/record.js';
 import { seatWaitToolWord } from '../../../core/sessions/seat-wait-line.js';
-import type { CrewSeatId, SeatIds } from '../../../core/crew/identity.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
+import type { SeatIds } from '../../../core/crew/seat-ids.js';
 import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
 import {

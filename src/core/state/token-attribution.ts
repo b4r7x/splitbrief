@@ -1,6 +1,6 @@
 import type { TokenUsage } from '../schemas/tokens.js';
 import type { Phase } from '../schemas/enums.js';
-import { phaseTokenRole } from '../phases.js';
+import { phaseTokenRole } from '../phases/roles.js';
 
 export interface PhaseTokenDelta {
   input: number;

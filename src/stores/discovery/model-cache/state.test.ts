@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { modelCacheStore } from './state.js';
 import type {
   CliToolDetection,
-  DetectedModel,
   ProviderDetection,
-} from '../../../core/discovery/detection.js';
+} from '../../../core/discovery/detection/tool.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { API_PROVIDER_CATALOG } from '../../../core/providers/api-provider-catalog.js';
 import { readClaudeCodeModelOptions } from '../../../core/providers/claude-code-options.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';

@@ -3,7 +3,7 @@ import { resolveRenderAttachment } from '../../core/attachments/resolve.js';
 import { verificationKey } from '../../core/review/verdict.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { EvidenceCheckEntry, EvidenceLedger } from '../../core/schemas/evidence.js';
-import type { ReviewVerdict } from '../../core/schemas/review.js';
+import type { ReviewVerdict } from '../../core/schemas/review/verdict.js';
 import type { Check } from '../../core/schemas/task.js';
 
 /** The most images one render check sends the reviewer; the prompt names the rest. */

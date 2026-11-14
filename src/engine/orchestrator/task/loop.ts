@@ -1,5 +1,5 @@
 import { isTaskSettled, type Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { BoundaryPark, WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';

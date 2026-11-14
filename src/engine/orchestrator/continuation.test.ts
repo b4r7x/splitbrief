@@ -1,6 +1,6 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
 import { describe, it, expect, afterEach } from 'vitest';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
 import { taskId } from '../../core/schemas/task.js';
 import { createInitialState } from '../../core/state/machine.js';
@@ -8,7 +8,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { STATE_FILE } from '../../core/paths.js';
 import {
   createContinuationHolder,
@@ -17,9 +17,9 @@ import {
   type ContinuationLoopCtx,
 } from './continuation.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
-import { appendEngineEvent, appendMessage } from '../../core/sessions/log-writer.js';
+import { appendEngineEvent, appendMessage } from '../../core/sessions/log/writer.js';
 import { createEventBus } from '../events/bus.js';
-import { readMessages } from '../../core/sessions/log-reader.js';
+import { readMessages } from '../../core/sessions/log/reader.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import { processError } from '../../lib/process/errors.js';
 import type { WorkflowSinks } from './types.js';

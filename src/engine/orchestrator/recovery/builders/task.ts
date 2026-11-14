@@ -1,6 +1,7 @@
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase, RecoveryAction } from '../../../../core/schemas/enums.js';
-import type { ReviewRecord, SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
+import type { SeatSwitchRecord } from '../../../../core/schemas/workflow/seat.js';
+import type { ReviewRecord } from '../../../../core/schemas/workflow/review-record.js';
 import type { CannotNextStep } from '../../../../core/schemas/consult.js';
 import {
   routeNoCredential,
@@ -17,10 +18,10 @@ import type {
 import {
   candidateIdsOf,
   formatSeatCandidateIdentity,
-  isSeatIdentity,
   sameSeatCandidate,
   type CrewSeatId,
 } from '../../../../core/crew/identity.js';
+import { isSeatIdentity } from '../../../../core/crew/seat-ids.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { automaticSwitchUsed } from '../../../../core/crew/fallback.js';
 import { replacedFilesSavedIn } from '../../../../core/runtime/commands/messages.js';
@@ -37,7 +38,7 @@ import { accountCauseAdvice, formatAccountCause } from '../../../../core/recover
 import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-} from '../../../../core/runners/cli-tool-catalog.js';
+} from '../../../../core/runners/cli-tool/catalog.js';
 import { runnerRoleForActiveRole } from '../../../../core/runners/seat-roles.js';
 import { cliPromptLimit } from '../../../runners/cli-tools/registry.js';
 import type { PromptLength } from '../../../runners/input-limit.js';
@@ -61,8 +62,8 @@ import {
   type PromptSize,
 } from '../../../runners/input-limit.js';
 import { usageLimitAdvice } from '../../../runners/usage-limit.js';
+import { formatRecoveryHeadline } from '../../../../core/recovery/headline.js';
 import {
-  formatRecoveryHeadline,
   leftIsolationCause,
   repositoryChangedCause,
   retryExhaustedCause,
@@ -72,7 +73,7 @@ import {
   reviewSeatNoImagesCause,
   reviewUnverifiedCause,
   cannotDetail,
-} from '../../../../core/recovery/headline.js';
+} from '../../../../core/recovery/causes.js';
 import { REVIEW_SEAT_IMAGE_FIX } from '../../../../core/runners/capabilities.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';

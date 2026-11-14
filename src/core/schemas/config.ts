@@ -1,12 +1,11 @@
 import { z } from 'zod';
 import { CommitStrategySchema, ApproveLevelSchema, IsolationStrategySchema } from './enums.js';
-import { PlannerConfigSchema } from './planner-config.js';
-import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
-import { ReviewerConfigSchema } from './reviewer-config.js';
-import { CodebaseConfigSchema } from './codebase.js';
+import { PlannerConfigSchema } from './runner/planner.js';
+import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './runner/implementer.js';
+import { ReviewerConfigSchema } from './runner/reviewer.js';
 import { HooksConfigSchema } from './hooks.js';
 import { CompactionFormatSchema } from './compaction.js';
-import { CustomCommandsConfigSchema } from '../config/custom-commands.js';
+import { CustomCommandsConfigSchema } from '../config/custom-commands/schema.js';
 import { STACK_IDS } from '../validation/stacks/types.js';
 
 const PaletteCustomActionSchema = z.object({
@@ -56,6 +55,13 @@ export const ApprovalConfigSchema = z.strictObject({
 });
 
 export const CONFIG_VERSION = 3;
+
+export const CodebaseConfigSchema = z.strictObject({
+  enabled: z.boolean().default(true),
+  tokenBudget: z.number().int().positive().max(50_000).default(4000),
+  include: z.array(z.string()).optional(),
+  exclude: z.array(z.string()).optional(),
+});
 
 export const ConfigSchema = z.object({
   version: z.literal(CONFIG_VERSION),

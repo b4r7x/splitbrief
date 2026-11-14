@@ -9,7 +9,7 @@ import {
 import type { Config } from '../../core/schemas/config.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import { recoveryActionLabel } from '../../core/recovery/action-label.js';
 import { leavesWordsUnread, stepReadsNoWords } from '../../core/recovery/typed-words.js';
@@ -18,7 +18,7 @@ import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { formatSubmissionFailure } from '../../components/composer/home-hint.js';
-import { deriveRunStatus, resumeStep } from '../../core/sessions/run-status.js';
+import { deriveRunStatus, resumeStep } from '../../core/sessions/run/status.js';
 import type { EventSink } from '../../engine/events/types.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { publishRetainedWorkspaceNotice } from '../../engine/orchestrator/isolation/retention.js';

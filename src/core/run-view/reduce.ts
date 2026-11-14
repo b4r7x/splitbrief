@@ -1,8 +1,12 @@
-import { eventPhase, isInfrastructurePhaseEvent, type EventTypeCarrier } from '../event-phase.js';
+import {
+  eventPhase,
+  isInfrastructurePhaseEvent,
+  type EventTypeCarrier,
+} from '../phases/of-event.js';
 import type { Phase } from '../schemas/enums.js';
 import type { ClarificationQuestion } from '../schemas/question.js';
 import type { StepRef } from '../schemas/run-step.js';
-import type { SeatWait } from '../schemas/workflow.js';
+import type { SeatWait } from '../schemas/workflow/seat.js';
 import { EMPTY_BRIEFS, reduceBriefs, type RunBriefs } from './briefs.js';
 import type {
   BriefKeptEvent,

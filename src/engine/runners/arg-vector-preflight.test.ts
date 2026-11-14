@@ -12,7 +12,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import {
   type ArgVectorPreflightCheckInput,
   checkRunnerArgVector,

@@ -5,7 +5,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { PlannerConfig } from '../../core/schemas/planner-config.js';
+import type { PlannerConfig } from '../../core/schemas/runner/planner.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import { createProductionDetectionDeps } from './deps.js';
 

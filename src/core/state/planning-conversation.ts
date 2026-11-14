@@ -1,5 +1,5 @@
 import type { ClarificationQuestion } from '../schemas/question.js';
-import type { PlannerConversation, WorkflowState } from '../schemas/workflow.js';
+import type { PlannerConversation, WorkflowState } from '../schemas/workflow/state.js';
 
 /** One question on one line with what it offers: `<text> (a / b)`, `<text> (yes / no)`. */
 export function questionLine(question: ClarificationQuestion): string {

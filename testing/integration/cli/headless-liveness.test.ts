@@ -11,24 +11,24 @@ import {
   writeMinimalHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { sessionDir, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import {
   readLockfile,
   checkSessionLiveness,
   markExited,
-} from '../../../src/core/sessions/lockfile.js';
-import type { LockfileData } from '../../../src/core/sessions/lockfile.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+} from '../../../src/core/sessions/lock/file.js';
+import type { LockfileData } from '../../../src/core/sessions/lock/status.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
 import { runHeadless } from '../../../src/cli/headless.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { readSession } from '../../../src/core/sessions/io.js';
 import { sessionStatusWord } from '../../../src/core/sessions/display.js';
 
-vi.mock('../../../src/core/sessions/lockfile.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/core/sessions/lockfile.js')>();
+vi.mock('../../../src/core/sessions/lock/file.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/core/sessions/lock/file.js')>();
   return { ...actual, markExited: vi.fn(actual.markExited) };
 });
 

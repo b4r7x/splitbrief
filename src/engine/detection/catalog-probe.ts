@@ -5,17 +5,16 @@ import { delimiter, dirname, join } from 'node:path';
 import type {
   CliExecutableIdentity,
   CliExecutableReceipt,
-  DetectedModel,
-} from '../../core/discovery/detection.js';
+} from '../../core/discovery/detection/executable.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import type { ProbeOutcome } from '../../core/discovery/runner-evidence.js';
+import { CLI_TOOL_CATALOG, defaultCliAuthChannel } from '../../core/runners/cli-tool/catalog.js';
 import {
-  CLI_TOOL_CATALOG,
   cliAuthChannelPlatformSupported,
-  defaultCliAuthChannel,
   type CliAuthChannel,
-  type CliToolId,
-} from '../../core/runners/cli-tool-catalog.js';
-import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
+} from '../../core/runners/cli-tool/auth-channels.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
+import { classifyCliAdmittedVersion } from '../../core/runners/cli-tool/version.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseCompleteCommandCodeNativeModelCatalog,

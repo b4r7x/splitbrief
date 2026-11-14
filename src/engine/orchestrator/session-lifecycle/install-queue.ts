@@ -1,5 +1,5 @@
 import type { Config } from '../../../core/schemas/config.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { EventBus } from '../../events/types.js';
 import { createQueueHandler } from '../queue/submit.js';
 import { createClearQueueHandler } from '../queue/clear.js';

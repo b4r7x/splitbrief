@@ -1,7 +1,9 @@
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
-import { CliExecutableReceiptSchema, type DetectedModel } from '../../core/discovery/detection.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection/executable.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import type { ProbeOutcome, ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
-import { defaultCliAuthChannel, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { defaultCliAuthChannel } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 
 /**
  * A catalog belongs to one CLI executable, not to a seat.

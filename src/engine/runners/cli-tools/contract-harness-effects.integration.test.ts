@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CliExecutableReceipt } from '../../../core/discovery/detection.js';
+import type { CliExecutableReceipt } from '../../../core/discovery/detection/executable.js';
 import { effectScenario, runEffect } from '#testing/helpers/factories/cli-effect-fixture.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { CLI_CONFORMANCE_EXIT_CODES } from './contract-harness.js';

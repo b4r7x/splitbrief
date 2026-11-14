@@ -1,6 +1,6 @@
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import { clearActiveReceipt } from '../../core/sessions/active-pointer.js';
-import { rollbackPreparedSession } from '../../core/sessions/prepare.js';
+import { rollbackPreparedSession } from '../../core/sessions/prepared-rollback.js';
 import type {
   PreparationOutcome,
   PreparedExecution,

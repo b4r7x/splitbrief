@@ -1,5 +1,5 @@
 import { setupProject } from '#testing/helpers/planning-phase.js';
-import { writeSpecFile } from '../../../../core/paths-io.js';
+import { writeSpecFile } from '../../../../core/sessions/spec-files.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -8,7 +8,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
 import { REVIEW_FILE, REVIEW_JSON_FILE, sessionDir } from '../../../../core/paths.js';
-import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
+import type { ReviewPacket } from '../../../../core/schemas/review/packet.js';
 import { buildFinalReview, resolveChangedFiles, resolveRunUniverse } from './sections-io.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';

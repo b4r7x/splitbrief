@@ -9,12 +9,9 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { registerStatusCommand } from './status.js';
 import { SPLITBRIEF_DIR, STATE_FILE, SESSION_LOG_FILE, SEATS_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
-import {
-  recordSeatIdentities,
-  reconcileSeatIdentities,
-  seatIdentitiesFromConfig,
-} from '../../core/state/seats.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { recordSeatIdentities, seatIdentitiesFromConfig } from '../../core/state/seats/record.js';
+import { reconcileSeatIdentities } from '../../core/state/seats/changes.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { plainTheme, resolveTheme } from '../../core/theme/resolve.js';

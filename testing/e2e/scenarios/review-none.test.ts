@@ -5,7 +5,7 @@ import XtermHeadless from '@xterm/headless';
 import { expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import { fixCyclesOf } from '../../../src/core/schemas/workflow.js';
+import { fixCyclesOf } from '../../../src/core/schemas/workflow/state.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';

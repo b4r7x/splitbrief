@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { routeAuthState } from '../../../src/core/runners/route-auth.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';

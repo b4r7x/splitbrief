@@ -1,8 +1,8 @@
 import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
   copilotImplementerAdapter,

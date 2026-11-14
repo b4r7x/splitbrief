@@ -6,9 +6,9 @@ import type { Summary } from '../schemas/summary.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { SessionSchema } from '../schemas/session.js';
 import { parsePersistedSession } from './summary-parser.js';
-import { loadRunRecord, type RunRecordDeps } from './run-record.js';
-import { defaultRunRecordDeps } from './run-record-io.js';
-import type { RunStatus } from './run-status.js';
+import { loadRunRecord, type RunRecordDeps } from './run/record.js';
+import { defaultRunRecordDeps } from './run/record-io.js';
+import type { RunStatus } from './run/status.js';
 import {
   sessionDir,
   sessionsRoot,

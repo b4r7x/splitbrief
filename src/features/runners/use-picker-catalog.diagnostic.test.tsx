@@ -7,7 +7,7 @@ import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import type { CliToolDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection } from '../../core/discovery/detection/tool.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
 import type { ScopedCliCatalogAttempt } from '../../engine/detection/cli-catalog-outcomes.js';
 import type { DetectionServiceResult } from '../../engine/detection/service.js';

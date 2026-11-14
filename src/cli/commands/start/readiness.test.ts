@@ -3,15 +3,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  CliExecutableReceiptSchema,
-  type CliProviderAuth,
-} from '../../../core/discovery/detection.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
+import { CliExecutableReceiptSchema } from '../../../core/discovery/detection/executable.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { sessionDir } from '../../../core/paths.js';
-import { deriveCliReadiness } from '../../../core/schemas/readiness.js';
+import { deriveCliReadiness } from '../../../core/readiness/cli-remediation.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
@@ -23,7 +21,7 @@ import {
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import { buildConfigChecks } from '../../../core/readiness/checks/config.js';
 import { buildRepoChecks } from '../../../core/readiness/checks/repo.js';
-import { buildRunnerChecks } from '../../../core/readiness/checks/runners.js';
+import { buildRunnerChecks } from '../../../core/readiness/checks/runner/build.js';
 import {
   cliPreparationPolicy,
   detectConfiguredCliReadiness,

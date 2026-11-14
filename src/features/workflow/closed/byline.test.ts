@@ -1,5 +1,5 @@
 import type { StepRef } from '../../../core/schemas/run-step.js';
-import type { RunStatus } from '../../../core/sessions/run-status.js';
+import type { RunStatus } from '../../../core/sessions/run/status.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WIDE, endedInBuild, makeView } from '#testing/helpers/factories/summary-view.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';

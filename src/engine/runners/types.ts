@@ -1,13 +1,13 @@
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import type { ChangedFilesSnapshot } from '../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../core/schemas/workflow/changed-files.js';
 import { MAX_DECLARED_ARTIFACT_BYTES } from '../../core/schemas/planner-artifact.js';
 import type {
   RunnerCallTextChannel,
   RUNNER_CALL_USAGE_SEMANTICS,
   RUNNER_CALL_WARNING_SEVERITIES,
   RUNNER_CALL_WARNING_SURFACES,
-} from '../../core/runner-call-contract.js';
+} from '../../core/schemas/runner-call.js';
 import type { RunnerCallTextSemantics } from '../calls/types.js';
 import type {
   PlannerArtifactTransport,

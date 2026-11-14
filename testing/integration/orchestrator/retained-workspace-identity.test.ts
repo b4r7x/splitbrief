@@ -17,7 +17,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { createRunIsolation } from '../../../src/engine/orchestrator/isolation/create.js';
 import { promoteStagedChanges } from '../../../src/engine/orchestrator/approval/staged-project.js';

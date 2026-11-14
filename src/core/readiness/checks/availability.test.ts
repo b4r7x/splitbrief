@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { buildRunnerChecks } from './runners.js';
+import { buildRunnerChecks } from './runner/build.js';
 import type { RunnerAvailabilityFact } from './availability.js';
 
 const NO_IMAGE_FACT = () => undefined;

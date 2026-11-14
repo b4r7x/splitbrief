@@ -1,5 +1,5 @@
 import type { SavedCatalog } from '../../core/discovery/catalog-read-merge.js';
-import type { CliProviderAuth } from '../../core/discovery/detection.js';
+import type { CliProviderAuth } from '../../core/discovery/detection/auth.js';
 import {
   seatPickerLane,
   type PickerSlot,
@@ -9,7 +9,7 @@ import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { formatModelName } from '../../core/model-display.js';
+import { formatModelName } from '../../core/providers/model-display.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { modelRowMatchesId, readPickerRunner } from './model-catalog/catalog.js';
@@ -24,7 +24,7 @@ import {
 } from './model-catalog/option-axis.js';
 import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
 import { effortLadderFor, offersEffortLadder, type RightRow } from './model-catalog/rows.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { routeAuthState } from '../../core/runners/route-auth.js';
 import type { CycleOutcome, RightActivation } from './two-column-picker/types.js';
 import type { PickerActions } from './use-picker-actions.js';

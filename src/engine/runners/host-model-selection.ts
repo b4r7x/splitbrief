@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { DetectedModel } from '../../core/discovery/detection.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { takesHostModel } from '../../core/providers/automatic-model.js';
 import { assertNever, isRecord } from '../../utils/type-guards.js';
 

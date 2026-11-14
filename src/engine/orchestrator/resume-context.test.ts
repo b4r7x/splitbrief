@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { sessionDir, SESSION_LOG_FILE, STATE_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import type { ResumeContextHolder } from './types.js';

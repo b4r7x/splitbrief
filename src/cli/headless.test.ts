@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createInitialState } from '../core/state/machine.js';
-import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import type { RecoveryIssue } from '../core/schemas/recovery/schemas.js';
 import { buildReviewFailedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { isTaskSettled, type Task, type TaskId } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowContext } from '../types.js';
 import { publishError, publishWarning } from '../events.js';
 import { raisePendingRecovery } from '../state-ops.js';
@@ -30,7 +31,7 @@ import { EVIDENCE_FILE, revertedDir, sessionDir } from '../../../core/paths.js';
 import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
 import { sessionFileFailure } from '../../../core/sessions/errors.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
-import { checkSessionLockStatus } from '../../../core/sessions/lockfile-status.js';
+import { checkSessionLockStatus } from '../../../core/sessions/lock/status.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
 import { changedSinceAtRest } from '../../snapshots/run/rest-changes.js';

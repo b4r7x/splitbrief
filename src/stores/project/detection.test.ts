@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { detectionStore } from './detection.js';
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 
 describe('detectionStore', () => {
   beforeEach(() => {

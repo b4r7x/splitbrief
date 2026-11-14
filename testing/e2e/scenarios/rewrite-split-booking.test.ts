@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { sessionDir, sessionsRoot } from '../../../src/core/paths.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { filesRows } from '../../../src/features/workflow/closed/copy.js';
 import { changedFileCount } from '../../../src/features/workflow/closed/projections.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';

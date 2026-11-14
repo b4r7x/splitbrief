@@ -1,12 +1,12 @@
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { readActiveRunner } from '../config/accessors/active-runner.js';
-import type { CliToolId } from '../runners/cli-tool-catalog.js';
+import type { CliToolId } from '../runners/cli-tool/types.js';
 import { detectedSeatReady, type CrewDetection } from './default.js';
 import type { Config } from '../schemas/config.js';
 import type { ImplementerCliToolId, PlannerCliToolId } from '../schemas/enums.js';
-import type { ImplementerConfig } from '../schemas/implementer-config.js';
-import type { PlannerConfig } from '../schemas/planner-config.js';
-import type { ReviewerConfig } from '../schemas/reviewer-config.js';
+import type { ImplementerConfig } from '../schemas/runner/implementer.js';
+import type { PlannerConfig } from '../schemas/runner/planner.js';
+import type { ReviewerConfig } from '../schemas/runner/reviewer.js';
 
 export type CrewPresetSeats = Readonly<{
   planner: PlannerConfig;

@@ -7,8 +7,8 @@ import { registerResumeCommand, resumeCommand, type ResumeDeps } from './resume.
 import { resumeSavedSession } from './continue/resume.js';
 import { writeActive } from '../../core/sessions/active-pointer.js';
 import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
-import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { checkSessionLiveness } from '../../core/sessions/lock/file.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { parsePreparedConfig, type RunnerGate } from '../../engine/runners/prepared-execution.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';

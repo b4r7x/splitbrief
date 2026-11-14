@@ -11,7 +11,7 @@ import {
 } from '../../engine/detection/store-publication.js';
 import { listsProjectProvidersOnRequest } from '../../engine/detection/route-catalog.js';
 import { crewCliTools } from '../../core/crew/seats.js';
-import { isCliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { isCliToolId } from '../../core/runners/cli-tool/catalog.js';
 import {
   hydrateDetectionIntoStores,
   hydrateModelsDevCatalogIntoStores,

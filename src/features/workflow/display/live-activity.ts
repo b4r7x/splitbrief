@@ -2,7 +2,7 @@ import { PHASES, type Phase, type RunnerKind } from '../../../core/schemas/enums
 import { type BriefClockState, briefClockMs } from '../../../core/brief-clock.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { PhaseFirstSeen } from '../../../core/run-view/reduce.js';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import {
   activeVerb,
   suiteStatusParts,
@@ -20,7 +20,7 @@ import {
   getRailActiveIndex,
   railStageCompletionTimesFromPhaseFirstSeen,
   railStageSeat,
-} from '../../../core/rail-stages.js';
+} from '../../../core/phases/rail.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';

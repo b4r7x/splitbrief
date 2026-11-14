@@ -4,7 +4,7 @@ import {
   type BriefMarkId,
   briefWorkedMs,
 } from '../../../core/brief-clock.js';
-import { readEvents } from '../../../core/sessions/log-reader.js';
+import { readEvents } from '../../../core/sessions/log/reader.js';
 import type { SessionLogEventEntry } from '../../../core/schemas/session-log.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { isRecord } from '../../../utils/type-guards.js';

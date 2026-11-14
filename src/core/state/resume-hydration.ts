@@ -1,7 +1,7 @@
-import type { WorkflowState } from '../schemas/workflow.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { loadState } from './persistence.js';
-import { classifyStateVersion, readRawState, statePath } from './state-file.js';
+import { classifyStateVersion, readRawState, statePath } from './file.js';
 import type { ResumeLoadResult } from './types.js';
 
 export type OwnedResumeState = ResumeLoadResult;

@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { addRunnerCallUsageToTokenUsage, addUsage, recordTaskUsage } from './tokens.js';
 import { splitSeatTokenTotals } from '../../core/providers/seat-totals.js';
 import { totalOutputTokens } from '../../core/schemas/tokens.js';
-import type { RunnerCallCounterCoverage } from '../../core/runner-call-contract.js';
+import type { RunnerCallCounterCoverage } from '../../core/schemas/runner-call.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { createEventBus } from '../events/bus.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
 import { ZERO_TOKEN_USAGE, TokenUsageSchema } from '../../core/schemas/tokens.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 
 function baseState(): WorkflowState {
   return createInitialState('feature');

@@ -10,7 +10,7 @@ import {
   type ActiveSessionReceipt,
 } from '../core/sessions/active-pointer.js';
 import { createInitialState } from '../core/state/machine.js';
-import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import {
   parsePreparedConfig,
   type PreparationOutcome,

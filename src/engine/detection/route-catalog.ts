@@ -1,6 +1,6 @@
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import {
   modelProviderAuthKey,
   servedProviders,

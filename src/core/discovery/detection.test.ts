@@ -1,28 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { API_PROVIDER_CATALOG, KNOWN_API_PROVIDER_IDS } from '../providers/api-provider-catalog.js';
-import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../runners/cli-tool/catalog.js';
 import {
   CLI_READINESS_STATES,
   CliCompatibilityStateSchema,
-  CliExecutableFingerprintSchema,
   CliToolDetectionSchema,
   CliTrustStateSchema,
-  DetectedModelSchema,
-  DetectedPricingProvenanceSchema,
-  DetectedPricingTierSchema,
   PROVIDER_DETECTION_FAILURE_KINDS,
   ProviderDetectionSchema,
-  cliProviderAuthFacts,
-  normalizeProviderAuth,
-  formatDigestBoundExecutableFingerprint,
-  parseDigestBoundExecutableFingerprint,
   type CliCompatibilityState,
   type CliDiagnostic,
   type CliToolDetection,
   type CliReadinessState,
   type CliTrustState,
+} from './detection/tool.js';
+import { cliProviderAuthFacts, normalizeProviderAuth } from './detection/auth.js';
+import {
+  CliExecutableFingerprintSchema,
+  formatDigestBoundExecutableFingerprint,
+  parseDigestBoundExecutableFingerprint,
+} from './detection/executable.js';
+import {
+  DetectedModelSchema,
+  DetectedPricingProvenanceSchema,
+  DetectedPricingTierSchema,
   type DetectedPricingProvenance,
-} from './detection.js';
+} from './detection/model.js';
 import { cloneDetectedModel } from './clone-model.js';
 
 const TRUST_STATES: readonly CliTrustState[] = ['trusted', 'untrusted', 'not-checked'];

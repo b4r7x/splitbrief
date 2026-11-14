@@ -1,5 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { getOrCreateLedger } from '../evidence/persistence.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from '../evidence/approval.js';

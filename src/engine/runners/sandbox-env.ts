@@ -2,16 +2,16 @@ import { mkdir, rm } from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
+import { defaultCliAuthChannel } from '../../core/runners/cli-tool/catalog.js';
 import {
   cliAuthChannelHostStateAccess,
-  defaultCliAuthChannel,
   type CliAuthChannel,
   type CliHostStateAccess,
-  type CliToolId,
-} from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/runners/cli-tool/auth-channels.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import type { RunnerRole } from '../../core/runners/seat-roles.js';
-import type { PlannerConfig } from '../../core/schemas/planner-config.js';
-import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { PlannerConfig } from '../../core/schemas/runner/planner.js';
+import type { ImplementerConfig } from '../../core/schemas/runner/implementer.js';
 import { apiKeyEnvReference } from '../providers/client/api-key.js';
 import { SECURE_DIR_MODE } from '../../lib/fs/secure.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';

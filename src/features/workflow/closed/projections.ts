@@ -4,19 +4,16 @@ import type {
   EvidenceReview,
   EvidenceTask,
 } from '../../../core/schemas/evidence.js';
-import type { SetAside } from '../../../core/schemas/review.js';
+import type { SetAside } from '../../../core/schemas/review/verdict.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import {
-  fixCyclesOf,
-  type ReviewRecord,
-  type WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
 import { isTestScript } from '../../../core/validation/stacks/registry.js';
 import { namedFailures } from '../../../core/review/base-split.js';
 import { reviewOutcomeOf } from '../../../core/review/verdict.js';
-import { finalReviewAnchor, reviewName } from '../../../core/recovery/headline.js';
+import { finalReviewAnchor, reviewName } from '../../../core/recovery/causes.js';
 import type {
   BriefRow,
   BriefRowState,

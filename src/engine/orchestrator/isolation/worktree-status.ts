@@ -5,8 +5,8 @@ import { SPLITBRIEF_DIR, STATE_FILE, SESSIONS_DIR } from '../../../core/paths.js
 import { readJsonSafeAsync } from '../../../lib/fs/read.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { PhaseSchema, type Phase } from '../../../core/schemas/enums.js';
-import { isTerminalPhase } from '../../../core/phases.js';
-import { checkSessionLiveness, readLockfile } from '../../../core/sessions/lockfile.js';
+import { isTerminalPhase } from '../../../core/phases/roles.js';
+import { checkSessionLiveness, readLockfile } from '../../../core/sessions/lock/file.js';
 
 async function readSessionState(
   worktreeDir: string,

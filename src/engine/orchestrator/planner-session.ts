@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { SteeringPort } from '../calls/steering.js';
 import type { EventBus } from '../events/types.js';

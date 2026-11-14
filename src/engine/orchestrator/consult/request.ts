@@ -7,12 +7,13 @@ import {
 } from '../../../core/schemas/consult.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { TriageResult } from '../../../core/schemas/review.js';
+import type { TriageResult } from '../../../core/schemas/review/verdict.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { plannerFixWork, stuckAnswerErrors } from '../../../core/review/stuck.js';
-import { dueCriterionIds } from '../../../core/review/verdict.js';
+import { dueCriterionIds } from '../../../core/review/scope.js';
 import type { Plan } from '../../../core/schemas/plan.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';

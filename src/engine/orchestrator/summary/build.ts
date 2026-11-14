@@ -3,13 +3,13 @@ import {
   reviewOutcomeOf,
   reviewOutcomeWord,
 } from '../../../core/review/verdict.js';
-import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { readFinalReviewRecord } from '../../../core/review/store.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';

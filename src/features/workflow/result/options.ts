@@ -1,5 +1,5 @@
-import { acceptedCounts, redCheckLine } from '../../../core/review/verdict.js';
-import type { RedCheck } from '../../../core/schemas/workflow.js';
+import { acceptedCounts, redCheckLine } from '../../../core/review/accepted.js';
+import type { RedCheck } from '../../../core/schemas/workflow/review-record.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';

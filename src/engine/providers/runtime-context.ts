@@ -1,4 +1,4 @@
-import type { DetectedModelRuntime } from '../../core/discovery/detection.js';
+import type { DetectedModelRuntime } from '../../core/discovery/detection/model.js';
 import type { SelectedProviderModelProbe } from './selected-model.js';
 import type { StreamMessage } from './types.js';
 

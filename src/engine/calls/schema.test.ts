@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUNNER_CALL_TEXT_CHANNELS } from '../../core/runner-call-contract.js';
+import { RUNNER_CALL_TEXT_CHANNELS } from '../../core/schemas/runner-call.js';
 import {
   RunnerCallEventSchema,
   RunnerCallResultSchema,

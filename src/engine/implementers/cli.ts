@@ -1,4 +1,4 @@
-import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { CliImplementerConfig } from '../../core/schemas/runner/implementer.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import {

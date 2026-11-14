@@ -51,8 +51,8 @@ vi.mock('../engine/runners/prepare-execution/prepare-execution.js', async (impor
   >()),
   prepareExecution: production.prepareExecution,
 }));
-vi.mock('../core/sessions/run-record-io.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../core/sessions/run-record-io.js')>()),
+vi.mock('../core/sessions/run/record-io.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../core/sessions/run/record-io.js')>()),
   readRunRecord: production.readRunRecord,
 }));
 vi.mock('../features/runners/refresh-detection.js', async (importOriginal) => ({

@@ -1,16 +1,16 @@
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
-import type { SetAside } from '../../../core/schemas/review.js';
+import type { SetAside } from '../../../core/schemas/review/verdict.js';
 import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run-record.js';
-import { awaitsApply, canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run/record.js';
+import { awaitsApply, canUndoApply, type RunStatus } from '../../../core/sessions/run/status.js';
 import {
   oneLineDisplayText,
   sanitizeTerminalDisplayText,
 } from '../../../utils/display-text/sanitize.js';
-import type { RailStageState } from '../../../core/rail-stages.js';
-import { acceptedCounts, acceptedNote } from '../../../core/review/verdict.js';
+import type { RailStageState } from '../../../core/phases/rail.js';
+import { acceptedCounts, acceptedNote } from '../../../core/review/accepted.js';
 import { atRestRailStages } from '../at-rest.js';
 import {
   briefRows,

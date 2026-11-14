@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { sessionDir } from '../../core/paths.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';

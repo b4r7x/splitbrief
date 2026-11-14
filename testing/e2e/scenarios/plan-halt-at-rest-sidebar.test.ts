@@ -6,7 +6,7 @@ import { App, type AppProps } from '../../../src/app/root.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';

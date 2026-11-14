@@ -5,7 +5,7 @@ import {
   foldBriefClock,
 } from '../../core/brief-clock.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
-import { isInfrastructurePhaseEvent } from '../../core/event-phase.js';
+import { isInfrastructurePhaseEvent } from '../../core/phases/of-event.js';
 import type { Phase, RunnerKind } from '../../core/schemas/enums.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { EngineEvent } from '../../engine/events/types.js';

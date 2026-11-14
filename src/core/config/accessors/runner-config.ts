@@ -3,9 +3,9 @@ import { resolveAutoModel } from '../../providers/model-selection.js';
 import { getProviderDisplayName, getRunnerIdentityDisplayName } from '../../providers/catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ActiveRunnerConfig } from './active-runner.js';
-import type { ImplementerConfig } from '../../schemas/implementer-config.js';
-import type { PlannerConfig } from '../../schemas/planner-config.js';
-import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
+import type { ImplementerConfig } from '../../schemas/runner/implementer.js';
+import type { PlannerConfig } from '../../schemas/runner/planner.js';
+import type { ReviewerConfig } from '../../schemas/runner/reviewer.js';
 import { runnerRoleForActiveRole, type RunnerRole } from '../../runners/seat-roles.js';
 
 export type RunnerConfig = ActiveRunnerConfig;

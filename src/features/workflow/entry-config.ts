@@ -1,9 +1,10 @@
 import { readImplementerProfileConfig } from '../../core/config/accessors/implementer-profiles.js';
-import { sameSeatIds, seatIdsOf } from '../../core/crew/identity.js';
+import { sameSeatIds, seatIdsOf } from '../../core/crew/seat-ids.js';
 import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../core/state/seats.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import { seatIdentitiesFromConfig } from '../../core/state/seats/record.js';
+import { seatIdentityChanges } from '../../core/state/seats/changes.js';
 import { configStore } from '../../stores/project/config.js';
 
 /**

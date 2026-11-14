@@ -6,7 +6,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { ToolModelPicker } from '../../app/overlays/runners.js';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import { __testResetProbeActivity, trackProbe } from '../../engine/probe-activity.js';
 import type { ProviderCatalogOutcome } from '../../engine/providers/types.js';
 import { configStore } from '../../stores/project/config.js';

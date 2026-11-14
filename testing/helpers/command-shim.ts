@@ -9,7 +9,8 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll } from 'vitest';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../src/core/runners/cli-tool/types.js';
 import type { CliStartGate } from '../../src/engine/runners/start-gate.js';
 import { shellQuoteArg } from '../../src/utils/shell-quote.js';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';

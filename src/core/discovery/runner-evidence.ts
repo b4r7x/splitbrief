@@ -1,5 +1,7 @@
-import type { CliProviderAuth, DetectedModel, ExecutableIdentity } from './detection.js';
-import { signInOutranksUnreadVersion } from '../runners/cli-tool-catalog.js';
+import type { CliProviderAuth } from './detection/auth.js';
+import type { ExecutableIdentity } from './detection/executable.js';
+import type { DetectedModel } from './detection/model.js';
+import { signInOutranksUnreadVersion } from '../runners/cli-tool/catalog.js';
 import type { RouteAuthState } from '../runners/route-auth.js';
 
 export type { ExecutableIdentity };

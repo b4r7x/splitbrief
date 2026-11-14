@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import { endpointPolicyFetch } from '../../core/providers/endpoint-policy.js';
 import { getKnownProviderBaseURL } from '../../core/providers/catalog.js';
 import { composeAbortSignal, throwIfAborted } from '../../utils/abort.js';

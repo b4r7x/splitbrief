@@ -10,15 +10,11 @@ import {
   formatReadinessBlockers,
   readinessBlockerMessage,
   readinessBlockerPointer,
-  READINESS_DIAGNOSTIC_REMEDIATION,
-  serializeReadinessCheckJson,
   startReadinessWarnings,
 } from './format.js';
-import {
-  codexKeyringSignInFix,
-  deriveCliReadiness,
-  StartReadinessRecordSchema,
-} from '../schemas/readiness.js';
+import { READINESS_DIAGNOSTIC_REMEDIATION, serializeReadinessCheckJson } from './json.js';
+import { StartReadinessRecordSchema } from '../schemas/readiness.js';
+import { codexKeyringSignInFix, deriveCliReadiness } from './cli-remediation.js';
 
 const NO_IMAGE_FACT = () => undefined;
 

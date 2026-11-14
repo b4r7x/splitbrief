@@ -13,8 +13,8 @@ import {
   assertPathConfined,
   assertWritablePathConfined,
   pathConfinementError,
-  reachesControlPlane,
 } from '../../../lib/fs/confinement.js';
+import { reachesControlPlane } from '../../../core/scope/control-plane.js';
 import { isENOENT } from '../../../utils/errno.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { error } from '../../../utils/error.js';

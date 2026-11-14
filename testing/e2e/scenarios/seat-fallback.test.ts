@@ -6,8 +6,11 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { configPath } from '../../../src/core/config/load/document.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
-import { readSeatIdentities, seatIdentitiesFromConfig } from '../../../src/core/state/seats.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import {
+  readSeatIdentities,
+  seatIdentitiesFromConfig,
+} from '../../../src/core/state/seats/record.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

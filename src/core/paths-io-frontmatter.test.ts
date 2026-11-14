@@ -5,10 +5,10 @@ import {
   writeSpecFile,
   readSpecFile,
   buildSpecFrontmatter,
-  getSplitbriefVersion,
   type SpecMetadata,
-} from './paths-io.js';
-import * as pathsIo from './paths-io.js';
+} from './sessions/spec-files.js';
+import { getSplitbriefVersion } from './version.js';
+import * as pathsIo from './sessions/spec-files.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { extractFrontmatter } from '../utils/frontmatter.js';
 

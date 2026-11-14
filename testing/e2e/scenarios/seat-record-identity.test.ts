@@ -2,16 +2,16 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { PLAN_FILE, REVIEW_FILE, TASKS_FILE, sessionDir } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import {
   readSeatIdentities,
   seatIdentitiesFromConfig,
   writeSeatIdentities,
-} from '../../../src/core/state/seats.js';
+} from '../../../src/core/state/seats/record.js';
 import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';

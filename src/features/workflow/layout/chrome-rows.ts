@@ -1,10 +1,10 @@
-import { formatStageLabel } from '../../../core/phase-display.js';
-import { isImplementerPhase } from '../../../core/phases.js';
+import { formatStageLabel } from '../../../core/phases/labels.js';
+import { isImplementerPhase } from '../../../core/phases/roles.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { ROW_LEADING } from '../../../components/row-leading.js';
-import type { RailStage, RailStageState } from '../../../core/rail-stages.js';
+import type { RailStage, RailStageState } from '../../../core/phases/rail.js';
 
 // The workflow screen's one left line: the column the transcript's marks land on past its own
 // lead, where the rail marker, every box border and the rows flanking the composer start too. The

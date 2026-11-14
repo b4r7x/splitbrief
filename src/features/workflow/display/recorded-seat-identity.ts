@@ -1,4 +1,5 @@
-import { formatSeatIdentity, type SeatIds } from '../../../core/crew/identity.js';
+import { formatSeatIdentity } from '../../../core/crew/identity.js';
+import type { SeatIds } from '../../../core/crew/seat-ids.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import {
   recordedSeatIdentityInput as buildRecordedSeatIdentityInput,

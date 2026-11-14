@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compactTranscript, type TranscriptCompactionPlanner } from './compaction.js';
-import { readCompactedMessages } from './log-reader.js';
+import { readCompactedMessages } from './log/reader.js';
 import type { StructuredSummary } from '../schemas/compaction.js';
 
 let sessionDir: string;

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { generateSessionId } from './session-id.js';
+import { generateSessionId } from './id.js';
 import { SPLITBRIEF_DIR } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 

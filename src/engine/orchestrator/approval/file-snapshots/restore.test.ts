@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow/changed-files.js';
 import { restoreDirtyFilesFromSnapshot } from './restore.js';
 
 const directories: string[] = [];

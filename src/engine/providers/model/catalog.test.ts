@@ -7,7 +7,7 @@ import {
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
 } from '../cli-model-catalog.js';
-import { formatModelName } from '../../../core/model-display.js';
+import { formatModelName } from '../../../core/providers/model-display.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP, resolveModelCatalog } from './catalog.js';
 import { getModelsDevEntries, type ModelCacheAccessor } from './resolution.js';

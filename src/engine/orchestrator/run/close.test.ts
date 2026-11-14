@@ -6,7 +6,7 @@ import { makeLegacyV3State, RUN_CREW } from '#testing/helpers/factories/workflow
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { readActive, reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { readSession } from '../../../core/sessions/io.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
@@ -14,7 +14,7 @@ import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { sessionDir } from '../../../core/paths.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { writeRunPatch } from '../apply/patch.js';
 import { recordLocalTaskEvidence, recordSkippedTaskEvidence } from '../evidence/task.js';
 import { removeRunWorkspace } from '../isolation/remove-worktree.js';

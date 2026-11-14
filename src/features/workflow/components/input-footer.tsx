@@ -10,7 +10,7 @@ import {
   getActiveRailStage,
   railStageSeat,
   type RailStageState,
-} from '../../../core/rail-stages.js';
+} from '../../../core/phases/rail.js';
 import { stepWord } from '../stop/copy.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
 import { seatRetrySentence, seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
@@ -41,7 +41,7 @@ import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitiz
 import { glyph } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../engine/events/workflow-cancel.js';
-import { formatStageLabel } from '../../../core/phase-display.js';
+import { formatStageLabel } from '../../../core/phases/labels.js';
 import {
   buildInputFooterByline,
   fitCheckingRow,
@@ -51,7 +51,7 @@ import { formatSeatIdentity, isReviewNone } from '../../../core/crew/identity.js
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { queueCopy } from '../queue-copy.js';
-import { messageSeat } from '../../../core/queue-state.js';
+import { messageSeat } from '../../../core/queue/state.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';

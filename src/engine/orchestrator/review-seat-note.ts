@@ -1,6 +1,6 @@
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { EventBus } from '../events/types.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import { reviewSeatRunNote } from '../spec/plan-checks.js';

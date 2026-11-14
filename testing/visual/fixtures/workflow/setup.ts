@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
+import { toEngineEventEntry } from '../../../../src/core/sessions/log/writer.js';
 import { cliDetectionFor } from '../../../helpers/factories/detection.js';
 import { makeSummary } from '../../../helpers/factories/summary.js';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';

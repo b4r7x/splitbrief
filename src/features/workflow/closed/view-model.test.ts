@@ -5,12 +5,13 @@ import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidenc
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import type { RunRecord } from '../../../core/sessions/run-record.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { arrowSep } from '../../../core/separators.js';
@@ -22,7 +23,7 @@ import { atRestRailStages } from '../at-rest.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { readSessionSummary } from '../../../core/sessions/run-record-io.js';
+import { readSessionSummary } from '../../../core/sessions/run/record-io.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 
 function ledgerTask(overrides: Partial<EvidenceTask> & Pick<EvidenceTask, 'id'>): EvidenceTask {

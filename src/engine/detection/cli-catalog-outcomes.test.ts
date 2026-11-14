@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NATIVE_CLI_CATALOG_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { NATIVE_CLI_CATALOG_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import {
   cloneScopedCliCatalogAttempt,
   scopedCliCatalogConnection,

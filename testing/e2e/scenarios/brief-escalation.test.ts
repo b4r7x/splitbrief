@@ -5,7 +5,7 @@ import { readyToApplyMessage } from '../../../src/cli/sessions/resolve.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import type { ConsultAnswer } from '../../../src/core/schemas/consult.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';

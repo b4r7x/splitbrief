@@ -4,12 +4,10 @@ import {
   blockingKeys,
   blockingRedInputs,
   openFindings,
-  recordedFixWork,
-  redCheckLine,
-  redChecksOf,
   reviewOutcomeOf,
-  reviewsAgain,
 } from '../../../core/review/verdict.js';
+import { recordedFixWork, redCheckLine, redChecksOf } from '../../../core/review/accepted.js';
+import { reviewsAgain } from '../../../core/review/scope.js';
 import { writeAcceptedReview } from '../../../core/review/store.js';
 import { requireReviewSeat } from '../../../core/config/accessors/reviewer-runner.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
@@ -19,7 +17,7 @@ import { nowIso } from '../../../utils/format/time.js';
 import { error } from '../../../utils/error.js';
 import { publishError } from '../events.js';
 import { recordUserMessage } from '../transcript/user-message.js';
-import { queuedUserMessage } from '../../../core/queue-state.js';
+import { queuedUserMessage } from '../../../core/queue/state.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { consultReplyAnswer } from '../consult/apply.js';
 import {
@@ -28,7 +26,7 @@ import {
   type FinalReviewFailure,
   type FinalReviewResult,
 } from '../final-review.js';
-import { reviewName } from '../../../core/recovery/headline.js';
+import { reviewName } from '../../../core/recovery/causes.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
 import { reviewSeatDetails } from '../recovery/builders/details.js';
@@ -48,13 +46,10 @@ import {
   transitionsAndSave,
 } from '../state-ops.js';
 import { askOperator } from '../planning/call-loop.js';
-import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
+import type { TriageInput, TriageResult } from '../../../core/schemas/review/verdict.js';
 import type { ReviewOutcome } from '../../../core/review/verdict.js';
-import {
-  fixCyclesOf,
-  type ReviewRecord,
-  type WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
 import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
 
 function noVerdictFailure(review: FinalReviewResult, name: string): FinalReviewFailure | undefined {

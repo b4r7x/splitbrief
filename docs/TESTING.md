@@ -154,7 +154,7 @@ npm test -- src/core/schemas/recovery.test.ts
 npm test -- src/core/schemas/workflow.test.ts
 npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
-npm test -- src/core/state/persistence.test.ts src/core/sessions/log-writer.test.ts src/core/payload-bounds.test.ts
+npm test -- src/core/state/persistence.test.ts src/core/sessions/log/writer.test.ts src/core/payload-bounds.test.ts
 npm test -- src/engine/orchestrator/recovery/actions.test.ts src/engine/orchestrator/recovery/actions-persistence.test.ts src/engine/orchestrator/recovery/builders/task.test.ts
 npm run test:integration -- src/engine/orchestrator/task/loop-happy-path.integration.test.ts
 npm run test:integration -- src/engine/orchestrator/task/step.integration.test.ts

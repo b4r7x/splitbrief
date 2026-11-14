@@ -4,12 +4,12 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { sessionDir } from '../../../core/paths.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { registerProcess } from '../../../lib/process/registry.js';
 import { awaitActiveWorkflowShutdown, shutdownWorkflow, withShutdownHandlers } from './shutdown.js';
 

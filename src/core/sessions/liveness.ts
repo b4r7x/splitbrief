@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sessionDir, STATE_FILE, SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
-import { isTerminalPhase } from '../phases.js';
+import { isTerminalPhase } from '../phases/roles.js';
 import { PhaseSchema, type Phase } from '../schemas/enums.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';
 import { rejectSymlinkTarget } from '../../lib/fs/secure.js';
@@ -14,7 +14,7 @@ import {
   type ProcessIdentityStatus,
   type SessionLockStatus,
   type SessionLockStatusOptions,
-} from './lockfile-status.js';
+} from './lock/status.js';
 
 export type SessionLivenessReason =
   | 'state-missing'

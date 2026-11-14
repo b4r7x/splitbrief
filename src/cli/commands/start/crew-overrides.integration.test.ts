@@ -17,7 +17,7 @@ import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { selectDefaultCrew } from '../../../core/crew/default.js';
 import { checkCrewAvailability } from '../../../engine/detection/crew.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
 import { saveDetectionCache } from '../../../engine/detection/cache.js';
 import {

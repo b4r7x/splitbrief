@@ -5,13 +5,11 @@ import {
   collectReadiness,
   type CollectedReadiness,
 } from '../../core/readiness/collect.js';
-import {
-  formatReadinessReport,
-  serializeReadinessReportJson,
-} from '../../core/readiness/format.js';
+import { formatReadinessReport } from '../../core/readiness/format.js';
+import { serializeReadinessReportJson } from '../../core/readiness/json.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import { sameRunnerCause } from '../../core/readiness/runner-causes.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import { cliReadinessCheckId } from '../../core/schemas/readiness.js';
 import {
   collectArgVectorPreflightChecks,

@@ -14,7 +14,7 @@ import {
   isAutomaticModel,
   normalizeConfiguredModel,
 } from '../../core/providers/automatic-model.js';
-import { CLI_TOOL_IDS, hasNativeCliCatalog } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS, hasNativeCliCatalog } from '../../core/runners/cli-tool/catalog.js';
 import {
   PICKER_ROLE_SEAT_IDS,
   seatPickerLane,
@@ -22,7 +22,7 @@ import {
   type SeatPickerRole,
 } from '../../core/runners/seat-roles.js';
 import type { SavedCatalog } from '../../core/discovery/catalog-read-merge.js';
-import type { CliProviderAuth } from '../../core/discovery/detection.js';
+import type { CliProviderAuth } from '../../core/discovery/detection/auth.js';
 import { seatAxisFocusSeat, toolRowFocusTool } from '../../core/navigation/types.js';
 import { includes } from '../../utils/type-guards.js';
 import type { ModelCatalogDiagnostic } from './picker-format.js';

@@ -1,6 +1,7 @@
 import { readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { confinedReadLockfile, type LockfileData } from '../../core/sessions/lockfile.js';
+import { confinedReadLockfile } from '../../core/sessions/lock/file.js';
+import type { LockfileData } from '../../core/sessions/lock/status.js';
 import {
   sessionsRoot,
   sessionDir,

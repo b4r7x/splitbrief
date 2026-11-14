@@ -4,7 +4,7 @@ import type { EffectiveConfigWarning } from '../../../core/config/runtime/effect
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../../core/readiness/collect.js';
 import { exemptLiveSessionBlocker } from '../../../core/readiness/checks/repo.js';
-import { variantWithoutModelChecks } from '../../../core/readiness/checks/runners.js';
+import { variantWithoutModelChecks } from '../../../core/readiness/checks/runner/fields.js';
 import {
   aggregateReadinessStatus,
   countReadinessChecks,
@@ -13,10 +13,11 @@ import {
 } from '../../../core/readiness/status.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
 import { buildRunnerAdmissionChecks } from '../../../core/readiness/runner-causes.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { SessionOwnershipReceipt } from '../../../core/sessions/active-pointer.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { inspectSessionLiveness } from '../../../core/sessions/liveness.js';

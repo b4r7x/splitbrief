@@ -1,6 +1,6 @@
 import type { SummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { taskId } from '../../../src/core/schemas/task.js';
-import { getRailStages } from '../../../src/core/rail-stages.js';
+import { getRailStages } from '../../../src/core/phases/rail.js';
 
 /** A width no line ever has to shed a fact to fit. */
 export const WIDE = 200;

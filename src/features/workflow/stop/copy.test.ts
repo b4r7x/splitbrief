@@ -9,7 +9,7 @@ import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { buildInputFooterByline } from '../input-footer-byline.js';
 import { stepWord, stopByline, stopPoint, type StopBylineInput } from './copy.js';
 

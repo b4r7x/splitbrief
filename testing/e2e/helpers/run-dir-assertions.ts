@@ -12,7 +12,7 @@ import {
   STATE_FILE,
   SUMMARY_FILE,
 } from '../../../src/core/paths.js';
-import { phaseTokenRole } from '../../../src/core/phases.js';
+import { phaseTokenRole } from '../../../src/core/phases/roles.js';
 import { DriftReportSchema } from '../../../src/core/schemas/drift.js';
 import { EvidenceLedgerSchema } from '../../../src/core/schemas/evidence.js';
 import { SessionSchema } from '../../../src/core/schemas/session.js';
@@ -21,7 +21,7 @@ import {
   SessionLogEventEntrySchema,
 } from '../../../src/core/schemas/session-log.js';
 import type { Task } from '../../../src/core/schemas/task.js';
-import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
+import { WorkflowStateSchema } from '../../../src/core/schemas/workflow/state.js';
 import { isRecord } from '../../../src/utils/type-guards.js';
 
 export const PLAIN_LINE =

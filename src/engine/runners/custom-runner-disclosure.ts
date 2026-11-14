@@ -1,5 +1,5 @@
-import type { CustomCommandContract } from '../../core/config/custom-commands.js';
-import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
+import type { CustomCommandContract } from '../../core/config/custom-commands/tuple.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection/executable.js';
 import { escapeTrustLiteral } from '../../core/trust/literal.js';
 import { assertNever } from '../../utils/type-guards.js';
 import {

@@ -8,7 +8,7 @@ import {
   readSpecFile,
   readSpecFileOrEmpty,
   validateFilename,
-} from './paths-io.js';
+} from './sessions/spec-files.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, sessionDir } from './paths.js';
 import { sessionError } from './sessions/errors.js';

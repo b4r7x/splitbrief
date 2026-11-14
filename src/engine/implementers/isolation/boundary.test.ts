@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import { parseAntigravityLine } from '../../streaming/parse-antigravity.js';
 import type { CliProtocolEvent } from '../../runners/cli-tools/contract.js';
 import { commandCodeProtocolEvents } from '../../runners/cli-tools/command-code.js';
@@ -863,11 +863,11 @@ describe('the warning a read outside the workspace raises', () => {
 
   it('says the path is outside the workspace and spells a sibling of it from the workspace', () => {
     const { guard, reads } = loggingGuard(boundary);
-    const mistyped = `${TREES}/2026-07-seat-fallback/src/core/schemas/runner-fields.ts`;
+    const mistyped = `${TREES}/2026-07-seat-fallback/src/core/schemas/runner/fields.ts`;
 
     expect(guard({ name: 'read', input: { filePath: mistyped } })).toBeNull();
     expect(reads).toEqual([
-      'read ../2026-07-seat-fallback/src/core/schemas/runner-fields.ts (outside the workspace) with read',
+      'read ../2026-07-seat-fallback/src/core/schemas/runner/fields.ts (outside the workspace) with read',
     ]);
   });
 

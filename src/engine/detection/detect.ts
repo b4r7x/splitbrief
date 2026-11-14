@@ -1,19 +1,19 @@
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import {
   CLI_TOOL_CATALOG,
   LISTED_CLI_TOOL_IDS,
   PROVIDER_ORACLE_TOOL_IDS,
-  type CliToolId,
-} from '../../core/runners/cli-tool-catalog.js';
-import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
+} from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
+import { classifyCliAdmittedVersion } from '../../core/runners/cli-tool/version.js';
 import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import type { CliReadinessResult } from '../../core/schemas/readiness.js';
+import { cliReadinessCheckId } from '../../core/schemas/readiness.js';
 import {
   cliExecutableTrustRemediation,
-  cliReadinessCheckId,
   cliReadinessRemediation,
   deriveCliReadiness,
-} from '../../core/schemas/readiness.js';
+} from '../../core/readiness/cli-remediation.js';
 import { matches } from '../../utils/error.js';
 import { includes } from '../../utils/type-guards.js';
 import { throwIfAborted } from '../../utils/abort.js';

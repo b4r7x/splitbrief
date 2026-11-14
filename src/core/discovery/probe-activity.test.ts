@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CliToolId } from '../runners/cli-tool-catalog.js';
+import type { CliToolId } from '../runners/cli-tool/types.js';
 import { type ProbeActivity, slowProbeText } from './probe-activity.js';
 
 function probe(input: Omit<ProbeActivity, 'id'> & { tool: CliToolId; id?: number }): ProbeActivity {

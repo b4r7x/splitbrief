@@ -5,13 +5,18 @@ import {
   CustomCommandDefinitionSchema,
   CustomCommandsConfigSchema,
   NormalizedCustomCommandSchema,
+  matchesCustomCommandRunner,
+  normalizeCustomCommand,
+} from './custom-commands/schema.js';
+import {
   customCommandTuple,
   customCommandTupleForRunner,
   isCustomCommandRunner,
-  matchesCustomCommandRunner,
-  normalizeCustomCommand,
-} from './custom-commands.js';
-import { findConfiguredCustomCommand, readCustomCommandCatalog } from './custom-command-catalog.js';
+} from './custom-commands/tuple.js';
+import {
+  findConfiguredCustomCommand,
+  readCustomCommandCatalog,
+} from './custom-commands/catalog.js';
 
 const safeDefinition = {
   label: 'Review changes',

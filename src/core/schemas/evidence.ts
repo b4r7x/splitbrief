@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SetAsideSchema } from './review.js';
+import { SetAsideSchema } from './review/verdict.js';
 import { CheckStatusSchema, TaskIdSchema } from './task.js';
 import {
   ActionClassSchema,

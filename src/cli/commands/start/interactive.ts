@@ -5,7 +5,7 @@ import { initStoresForTuiMount } from '../../bootstrap/init.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { CHECKING_TOOLS_STAGE, preparationStore } from '../../../stores/navigation/preparation.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
-import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import {
   releasePreparedExecutionOwnership,
   type PreparationOutcome,

@@ -9,7 +9,7 @@ import {
   IMPLEMENTER_CLI_TOOL_IDS,
   isCliToolId,
   isListedCliTool,
-} from '../core/runners/cli-tool-catalog.js';
+} from '../core/runners/cli-tool/catalog.js';
 import type { CliEffortChannel } from '../core/runners/effort-channel.js';
 import {
   EFFORT_LEVELS,

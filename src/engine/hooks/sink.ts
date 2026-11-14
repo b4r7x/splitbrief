@@ -1,7 +1,7 @@
 import type { HookEvent, HookEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent, EventBus, EventSink } from '../events/types.js';
-import { eventPhase } from '../../core/event-phase.js';
+import { eventPhase } from '../../core/phases/of-event.js';
 import { hookTrustRefusal, runTrustedHook } from './dispatch.js';
 import type { HookContext, HookOutcome } from './types.js';
 import { toErrorMessage } from '../../utils/format/errors.js';

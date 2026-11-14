@@ -20,7 +20,7 @@ import { HELP_EXAMPLES } from './cli/help-examples.js';
 import { watchSlowProbeLines } from './cli/slow-probe-line.js';
 import { toErrorMessage } from './utils/format/errors.js';
 import { createLogger } from './lib/logger.js';
-import { getSplitbriefVersion } from './core/paths-io.js';
+import { getSplitbriefVersion } from './core/version.js';
 import { SPLITBRIEF_IDENTITY } from './core/identity.js';
 
 const program = new Command();

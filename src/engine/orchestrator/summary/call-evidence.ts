@@ -1,6 +1,6 @@
 import { sessionDir } from '../../../core/paths.js';
 import { SessionLogEntrySchema } from '../../../core/schemas/session-log.js';
-import { readSessionLogValuesSync } from '../../../core/sessions/log-reader.js';
+import { readSessionLogValuesSync } from '../../../core/sessions/log/reader.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { engineEventFromLogEntry } from '../../events/replay.js';

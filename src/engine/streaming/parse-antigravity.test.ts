@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { RunnerCallCounterCoverage } from '../../core/runner-call-contract.js';
+import type { RunnerCallCounterCoverage } from '../../core/schemas/runner-call.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { addUsage } from '../orchestrator/tokens.js';
 import type { CliProtocolEvent } from '../runners/cli-tools/contract.js';

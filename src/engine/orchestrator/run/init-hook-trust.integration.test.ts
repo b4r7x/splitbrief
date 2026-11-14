@@ -19,11 +19,11 @@ import { rejectUntrustedRunners } from '../../runners/trust.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { SummaryBase } from '../summary/build.js';
-import type { SpecMetadata } from '../../../core/paths-io.js';
+import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
 import { parsePreparedConfig } from '../../runners/prepared-execution.js';
 
 function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {

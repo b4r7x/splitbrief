@@ -18,7 +18,7 @@ import { registerStartCommand } from '../../../src/cli/commands/start/register.j
 import type { StartDeps } from '../../../src/cli/commands/start/types.js';
 import { runHeadless } from '../../../src/cli/headless.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';

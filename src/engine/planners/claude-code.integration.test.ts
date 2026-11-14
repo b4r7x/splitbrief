@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
-import {
-  cliAuthChannelHostStateAccess,
-  defaultCliAuthChannel,
-} from '../../core/runners/cli-tool-catalog.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
+import { defaultCliAuthChannel } from '../../core/runners/cli-tool/catalog.js';
+import { cliAuthChannelHostStateAccess } from '../../core/runners/cli-tool/auth-channels.js';
 import { createClaudeCodePlanner } from './claude-code.js';
 import { writeCommandShim, writeFakeCli } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

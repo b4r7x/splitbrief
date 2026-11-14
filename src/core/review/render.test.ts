@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { ReviewVerdict } from '../schemas/review.js';
+import type { ReviewVerdict } from '../schemas/review/verdict.js';
 import { taskId } from '../schemas/task.js';
 import { renderReviewMarkdown } from './render.js';
-import { deriveReviewOutcome, reviewFindingCounts, type ReviewScope } from './verdict.js';
+import { deriveReviewOutcome, reviewFindingCounts } from './verdict.js';
+import type { ReviewScope } from './scope.js';
 
 type Finding = ReviewVerdict['findings'][number];
 

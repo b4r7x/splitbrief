@@ -5,7 +5,7 @@ import type {
   ActiveOperation,
   RunningSuiteStage,
 } from '../../../stores/workflow/operations/state.js';
-import { phaseStage } from '../../../core/rail-stages.js';
+import { phaseStage } from '../../../core/phases/rail.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { capitalize } from '../../../utils/capitalize.js';
 import { planCheckName } from '../../../core/validation/plan-check-name.js';

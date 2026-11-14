@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import type { ConfiguredProviderRuntime } from '../detection/provider-outcomes.js';
 import {
   deriveProviderConnectionState,

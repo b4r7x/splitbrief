@@ -1,0 +1,139 @@
+import { fileFromFailureKey, isTestNodeKey, type FixCheckKeys } from './task.js';
+
+function diagnosticIdentity(key: string): string | null {
+  const file = fileFromFailureKey(key);
+  if (file === null || isTestNodeKey(key)) return null;
+  return `${file}${key.slice(file.length).replace(/^(?:\(\d+,\d+\)|:\d+(?::\d+)?)/, '')}`;
+}
+
+/** Pair exact keys first, then diagnostic identities, each re-run key at most once. */
+export function pairFailureKeys(input: { carried: readonly string[]; rerun: readonly string[] }) {
+  const { carried, rerun } = input;
+  const remaining = new Set(rerun.map((_key, index) => index));
+  const matched = new Set<number>();
+  for (const [index, key] of carried.entries()) {
+    const rerunIndex = rerun.findIndex((candidate, i) => candidate === key && remaining.has(i));
+    if (rerunIndex < 0) continue;
+    matched.add(index);
+    remaining.delete(rerunIndex);
+  }
+  const rerunIdentities = rerun.map(diagnosticIdentity);
+  for (const [index, key] of carried.entries()) {
+    const identity = diagnosticIdentity(key);
+    if (identity === null || matched.has(index)) continue;
+    const rerunIndex = rerunIdentities.findIndex(
+      (candidate, i) => candidate === identity && remaining.has(i),
+    );
+    if (rerunIndex < 0) continue;
+    matched.add(index);
+    remaining.delete(rerunIndex);
+  }
+  return { matched, remaining };
+}
+
+export type FixCheckJudgement = {
+  own: number;
+  /** Own failures the re-run still shows that no unfinished sibling carries: they fail the gate. */
+  left: string[];
+  /** Own failures the re-run still shows that unfinished siblings carry, left to them. */
+  deferred: { key: string; taskIds: readonly string[] }[];
+  /** Re-run failures the task does not own: their fix tasks or the next review answer them. */
+  others: number;
+};
+
+/**
+ * A fix check settles when `left` is empty: failures the task does not own never gate it. Null
+ * when the check must pass: the task carries no failure of it and is not exempt, the command
+ * passes with no own failure, or the red names no failure (an incomplete capture).
+ */
+export function judgeFixCheck(
+  carried: FixCheckKeys | undefined,
+  failure: { keys: readonly string[]; placeholder?: string | undefined } | null,
+): FixCheckJudgement | null {
+  if (carried === undefined || failure?.placeholder !== undefined) return null;
+  const own = carried.failureKeys.length;
+  if (own === 0 && (failure === null || !carried.exempt)) return null;
+  if (failure === null) return { own, left: [], deferred: [], others: 0 };
+  const { matched, remaining } = pairFailureKeys({
+    carried: carried.failureKeys,
+    rerun: failure.keys,
+  });
+  const present = carried.failureKeys.filter((_key, index) => matched.has(index));
+  return {
+    own,
+    left: present.filter((key) => !carried.sharedWith.has(key)),
+    deferred: present.flatMap((key) => {
+      const taskIds = carried.sharedWith.get(key);
+      return taskIds === undefined ? [] : [{ key, taskIds }];
+    }),
+    others: remaining.size,
+  };
+}
+
+export type FixCheckCounts = {
+  own: number;
+  ownLeft: number;
+  deferred: number;
+  deferredTo: readonly string[];
+  others: number;
+};
+
+/** The counts a fix check row and its failure text show for one judgement. */
+export function fixCheckCounts(judged: FixCheckJudgement): FixCheckCounts {
+  return {
+    own: judged.own,
+    ownLeft: judged.left.length,
+    deferred: judged.deferred.length,
+    deferredTo: [...new Set(judged.deferred.flatMap((entry) => entry.taskIds))],
+    others: judged.others,
+  };
+}
+
+function failures(count: number): string {
+  return `${count} ${count === 1 ? 'failure' : 'failures'}`;
+}
+
+/** The fix tasks a failure is left to, as one verdict segment names them. */
+export function leftTo(taskIds: readonly string[]): string {
+  return taskIds.length <= 2
+    ? taskIds.join(' and ')
+    : `${taskIds[0]} and ${taskIds.length - 1} other fix tasks`;
+}
+
+/** The verdict segments of a fix check; each segment wraps whole. */
+export function fixCheckVerdict(input: FixCheckCounts): string[] {
+  const { own, ownLeft, deferred, deferredTo, others } = input;
+  const rest =
+    others > 0
+      ? [
+          `${others} ${others === 1 ? 'other' : 'others'} left for their fix tasks or the next review`,
+        ]
+      : [];
+  const toSibling = `left to ${leftTo(deferredTo)}`;
+  const gone = own - deferred;
+  const segments =
+    own === 0
+      ? ['no failure of yours', ...rest]
+      : ownLeft > 0
+        ? [
+            own === 1
+              ? 'your 1 failure remains'
+              : `${ownLeft} of your ${failures(own)} ${ownLeft === 1 ? 'remains' : 'remain'}`,
+            ...(deferred > 0 ? [`${deferred} ${toSibling}`] : []),
+            ...rest,
+          ]
+        : [
+            ...(gone > 0
+              ? [
+                  deferred === 0
+                    ? `your ${failures(own)} gone`
+                    : `${gone} of your ${failures(own)} gone`,
+                ]
+              : []),
+            ...(deferred > 0
+              ? [gone === 0 ? `your ${failures(own)} ${toSibling}` : `${deferred} ${toSibling}`]
+              : []),
+            ...rest,
+          ];
+  return segments.map((segment) => segment.replaceAll(' ', '\u00a0'));
+}

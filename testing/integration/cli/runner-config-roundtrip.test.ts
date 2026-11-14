@@ -5,8 +5,8 @@ import { loadConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { resolveImplementerProfiles } from '../../../src/core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../../src/core/schemas/config.js';
-import type { ImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
-import type { PlannerConfig } from '../../../src/core/schemas/planner-config.js';
+import type { ImplementerConfig } from '../../../src/core/schemas/runner/implementer.js';
+import type { PlannerConfig } from '../../../src/core/schemas/runner/planner.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import {

@@ -2,7 +2,7 @@ import {
   readReviewChanges,
   REVIEW_CHANGES_FILE,
 } from '../../../../core/evidence/review-changes.js';
-import type { ReviewFileEntry, ReviewProvenance } from '../../../../core/schemas/review-changes.js';
+import type { ReviewFileEntry, ReviewProvenance } from '../../../../core/schemas/review/changes.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../../core/scope/declared-set.js';
 import type { SessionRef } from '../../../../core/types/session-ref.js';

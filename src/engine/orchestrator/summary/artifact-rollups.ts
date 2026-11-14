@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { ReviewPacketCheckpoint } from '../../../core/schemas/review-packet.js';
-import { ReviewPacketSchema } from '../../../core/schemas/review-packet.js';
+import type { ReviewPacketCheckpoint } from '../../../core/schemas/review/packet.js';
+import { ReviewPacketSchema } from '../../../core/schemas/review/packet.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildEvidenceSummary } from '../evidence/reporting.js';
 import { readDriftReport } from '../drift/io.js';

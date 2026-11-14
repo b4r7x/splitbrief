@@ -5,7 +5,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeMessage, setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { briefCorrections } from '../../../core/state/machine.js';
+import { briefCorrections } from '../../../core/state/lineage.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { ImplementerResult } from '../../implementers/types.js';

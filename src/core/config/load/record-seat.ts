@@ -3,7 +3,7 @@ import { fromYaml, loadedKey, toYaml } from './transform.js';
 import { readConfigDocument, type ConfigDocumentEdit } from './document.js';
 import { transactConfigDocument } from './io.js';
 import type { RunnerConfig } from '../accessors/runner-config.js';
-import type { ImplementerProfileConfig } from '../../schemas/implementer-config.js';
+import type { ImplementerProfileConfig } from '../../schemas/runner/implementer.js';
 import type { CrewSeatId } from '../../crew/identity.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 

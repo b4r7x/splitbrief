@@ -13,7 +13,7 @@ import { ContractChip, StepIndicator, tierColor } from './contract-chip.js';
 import {
   contractForRunnerKind,
   type CustomCommandRunnerKind,
-} from '../../core/config/custom-commands.js';
+} from '../../core/config/custom-commands/tuple.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 
 interface ContractCard {

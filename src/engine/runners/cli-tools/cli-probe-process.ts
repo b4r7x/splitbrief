@@ -1,11 +1,11 @@
 import type { ChildProcess } from 'node:child_process';
 import { delimiter, dirname } from 'node:path';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import {
   cliAuthChannelHostStateAccess,
   type CliAuthChannel,
-  type CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
+} from '../../../core/runners/cli-tool/auth-channels.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import {
   createBoundedOutput,
   type BoundedOutput,

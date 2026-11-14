@@ -16,7 +16,7 @@ import {
 } from '#testing/helpers/orchestrator-task-context.js';
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { loadState } from '../../../core/state/persistence.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, RetryOptions } from '../../implementers/types.js';
 import type { Validator } from '../validation/types.js';

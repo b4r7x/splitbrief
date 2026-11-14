@@ -5,7 +5,7 @@ import { createClaudeCodePlanner } from '../../planners/claude-code.js';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import {
   replayRunnerCallEventsIntoOperations,
   runnerCallErrors,

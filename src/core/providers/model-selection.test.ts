@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { resolveCliModel } from './automatic-model.js';
 import { hasAutomaticModelDefault, resolveAutoModel } from './model-selection.js';
 import { KNOWN_API_PROVIDER_IDS } from './api-provider-catalog.js';
-import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../runners/cli-tool/catalog.js';
 
 describe('resolveAutoModel', () => {
   it.each([

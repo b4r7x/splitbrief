@@ -1,5 +1,5 @@
-import { getRailActiveIndex } from '../../../core/rail-stages.js';
-import { seatLineText } from '../../../core/crew/identity.js';
+import { getRailActiveIndex } from '../../../core/phases/rail.js';
+import { seatLineText } from '../../../core/crew/seat-line/collapse.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';

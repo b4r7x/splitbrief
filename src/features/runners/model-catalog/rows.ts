@@ -1,8 +1,8 @@
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { ProvenanceWord } from '../../../core/providers/provenance.js';
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
-import type { CliProviderAuth } from '../../../core/discovery/detection.js';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
 import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';

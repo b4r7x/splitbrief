@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
-import { writeSpecFile } from '../../../src/core/paths-io.js';
+import { writeSpecFile } from '../../../src/core/sessions/spec-files.js';
 import { SPEC_FILE } from '../../../src/core/paths.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

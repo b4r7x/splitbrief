@@ -1,19 +1,19 @@
 import type { Config } from '../../../core/schemas/config.js';
-import { ImplementerConfigSchema } from '../../../core/schemas/implementer-config.js';
+import { ImplementerConfigSchema } from '../../../core/schemas/runner/implementer.js';
 import {
   readImplementerProfileConfig,
   updateDefaultImplementerConfig,
   updateNamedImplementerConfig,
 } from '../../../core/config/accessors/implementer-profiles.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
-import { PlannerConfigSchema } from '../../../core/schemas/planner-config.js';
-import { ReviewerConfigSchema } from '../../../core/schemas/reviewer-config.js';
+import { PlannerConfigSchema } from '../../../core/schemas/runner/planner.js';
+import { ReviewerConfigSchema } from '../../../core/schemas/runner/reviewer.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import { runnerEffortChannel } from '../../../core/runners/effort-channel.js';
-import { carriedSeatSettings } from '../../../core/config/runtime/build-runner.js';
+import { carriedSeatSettings } from '../../../core/config/runtime/carried-settings.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 /**

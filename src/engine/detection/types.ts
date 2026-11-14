@@ -1,5 +1,5 @@
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import type { ScopedCliCatalogAttempt } from './cli-catalog-outcomes.js';
 

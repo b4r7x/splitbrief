@@ -10,8 +10,8 @@ import {
   type WorkspaceOwner,
 } from '../../../core/schemas/retained-workspace.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { sessionError, sessionFileFailure } from '../../../core/sessions/errors.js';
 import {
   WORKSPACE_KEPT_CODE,

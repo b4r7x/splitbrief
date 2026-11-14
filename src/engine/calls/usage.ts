@@ -5,7 +5,7 @@ import {
   type RunnerCallCounterCoverage,
   type RunnerCallCounterCoverageState,
   type RunnerCallProviderTotals,
-} from '../../core/runner-call-contract.js';
+} from '../../core/schemas/runner-call.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { RunnerCallUsageSchema } from './schema.js';
 import type { RunnerCallUsage, RunnerCallUsageSemantics } from './types.js';

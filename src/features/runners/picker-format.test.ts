@@ -21,11 +21,11 @@ import {
 } from './picker-format.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
-import { cliReadinessRemediation } from '../../core/schemas/readiness.js';
+import { cliReadinessRemediation } from '../../core/readiness/cli-remediation.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { cliPermissions, deriveModelCatalogCapability } from './model-catalog/posture.js';
-import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import { overlayWidth } from '../../core/navigation/overlay-rect.js';
 import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';

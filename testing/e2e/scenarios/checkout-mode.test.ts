@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readReviewChanges } from '../../../src/core/evidence/review-changes.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';

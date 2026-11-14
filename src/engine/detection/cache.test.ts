@@ -9,7 +9,7 @@ import { resetLoggerForTests } from '../../lib/logger.js';
 import { cliDetectionFor, PROBE_EXECUTABLE } from '#testing/helpers/factories/detection.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import {
   MAX_CLI_CATALOG_READ_MODELS,
   mergeCatalogRead,

@@ -1,4 +1,4 @@
-import type { RailHalt } from '../../../core/rail-stages.js';
+import type { RailHalt } from '../../../core/phases/rail.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 
 export type WorkflowDisplayKind = 'working' | 'waiting' | 'stopped';

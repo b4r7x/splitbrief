@@ -14,7 +14,7 @@ import type { CrewSeat } from '../../core/crew/seats.js';
 import type { PickerDetectionSnapshot } from '../../features/runners/model-catalog/status.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
-import { cliSignInStep } from '../../core/schemas/readiness.js';
+import { cliSignInStep } from '../../core/readiness/cli-remediation.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import {
   BOOT_MANIFEST_TITLE,
@@ -45,7 +45,7 @@ import { useStartPreparation } from '../../features/start-preparation/use-start-
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
-import { readRunRecord } from '../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { persistedConfigForSave } from '../../stores/project/config-persistence.js';

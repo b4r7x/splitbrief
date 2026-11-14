@@ -2,9 +2,9 @@ import { assertNever } from '../../utils/type-guards.js';
 import type {
   RunnerCallCounterCoverage,
   RunnerCallCounterCoverageState,
-} from '../../core/runner-call-contract.js';
+} from '../../core/schemas/runner-call.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import {
   definedTaskUsageFields,
   TASK_USAGE_ATTEMPT_KEYS,

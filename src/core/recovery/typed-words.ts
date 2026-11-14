@@ -1,7 +1,7 @@
 import type { RecoveryAction, RecoveryReason } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { StepRef } from '../schemas/run-step.js';
-import type { RunStatus } from '../sessions/run-status.js';
+import type { RunStatus } from '../sessions/run/status.js';
 
 /** Whether a step reads no words typed for it: Apply never does, and under REVIEW None no review does, as no seat runs it. */
 export function stepReadsNoWords(step: StepRef, reviewNone: boolean): boolean {

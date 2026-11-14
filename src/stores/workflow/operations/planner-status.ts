@@ -1,5 +1,5 @@
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { isLivePhase } from '../../../core/phases.js';
+import { isLivePhase } from '../../../core/phases/roles.js';
 import {
   cleanOperationText,
   cleanOptionalOperationText,

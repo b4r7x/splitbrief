@@ -17,7 +17,7 @@ import {
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { transition } from '../../../core/state/machine.js';
 import { reviewPacketJsonPath } from '../../../core/paths.js';
-import type { ReviewPacket } from '../../../core/schemas/review-packet.js';
+import type { ReviewPacket } from '../../../core/schemas/review/packet.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
 
 type SummaryState = Parameters<typeof buildSummary>[0]['state'];

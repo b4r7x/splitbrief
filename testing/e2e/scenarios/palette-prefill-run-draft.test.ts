@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { readSessionDraft } from '../../../src/core/sessions/draft.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';

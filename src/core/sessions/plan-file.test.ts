@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { readSpecFile } from '../paths-io.js';
+import { readSpecFile } from './spec-files.js';
 import { PLAN_JSON_FILE } from '../paths.js';
 import { parsePlanJson, writePlanJson } from './plan-file.js';
 

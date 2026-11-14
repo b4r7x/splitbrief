@@ -14,7 +14,7 @@ import { writeConfig } from '../../core/config/load/io.js';
 import { configPath } from '../../core/config/load/document.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { reactivateExistingSession } from '../../core/sessions/active-pointer.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
@@ -33,7 +33,7 @@ import {
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { afterLastBrief, resumeStep } from '../../core/sessions/run-status.js';
+import { afterLastBrief, resumeStep } from '../../core/sessions/run/status.js';
 import {
   plainAnswer,
   type QuestionAnswer,
@@ -45,13 +45,13 @@ import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { join } from 'node:path';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
-import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
+import { ensureSessionDir, writeSpecFile } from '../../core/sessions/spec-files.js';
 import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
 import { addTuiEvent } from './tui-sink.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
 import { attachedMessage, expectCompactMessage } from '#testing/helpers/user-message.js';
 import { eventsStore } from '../../stores/workflow/events.js';
-import { readMessages } from '../../core/sessions/log-reader.js';
+import { readMessages } from '../../core/sessions/log/reader.js';
 
 let dirs: string[] = [];
 

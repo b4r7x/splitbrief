@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../../core/discovery/detection.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { isAutomaticModel, resolveCliModel } from '../../../core/providers/automatic-model.js';
 import {
   isApiProviderId,
@@ -8,11 +8,8 @@ import type { KnownModel } from '../../../core/providers/known-models.js';
 import { KNOWN_MODELS, knownModelAnswersTo } from '../../../core/providers/known-models.js';
 import type { ProviderId, RunnerKind } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import {
-  CLI_TOOL_IDS,
-  isCliToolId,
-  type CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS, isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { ConfiguredProviderRuntime } from '../../detection/provider-outcomes.js';
 import type { ScopedCliCatalogRuntime } from '../../detection/cli-catalog-outcomes.js';

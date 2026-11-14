@@ -25,9 +25,8 @@ import {
 } from './active-pointer.js';
 import { sessionPreparationError } from './errors.js';
 import { isSessionLive } from './liveness.js';
-import { generateSessionId } from './session-id.js';
+import { generateSessionId } from './id.js';
 import {
-  assertNoNewerSameSessionActive,
   assertOwnedDirectory,
   assertOwnershipContext,
   claimRelativePath,
@@ -39,9 +38,9 @@ import {
   sessionRelativePath,
   OWNERSHIP_FILE,
   type SessionDirectoryIdentity,
-  type SessionOwnershipMutationOptions,
   type SessionOwnershipProof,
 } from './ownership-marker.js';
+import { rollbackPreparedSessionLocked } from './prepared-rollback.js';
 
 export type SessionMutationBoundary = 'allocation' | 'readiness' | 'active';
 
@@ -64,36 +63,6 @@ function abortBefore(input: PrepareNewSessionInput, boundary: SessionMutationBou
   return input.signal?.aborted === true;
 }
 
-function claimOwnedDirectoryLocked(
-  session: NewSessionOwnership,
-  options: SessionOwnershipMutationOptions,
-): string {
-  const original = sessionRelativePath(session.ref.sessionId);
-  const snapshot = assertOwnedDirectory(session, original);
-  assertNoNewerSameSessionActive(session);
-  const claim = claimRelativePath(session.ref, 'directory');
-  const originalPath = join(session.ref.projectDir, original);
-  const claimPath = join(session.ref.projectDir, claim);
-  assertWritablePathConfined(original, session.ref.projectDir);
-  assertWritablePathConfined(claim, session.ref.projectDir);
-  options._beforeMutation?.('directory-claim');
-  renameSync(originalPath, claimPath);
-  options._beforeMutation?.('directory-captured');
-
-  const captured = assertOwnedDirectory(session, claim, snapshot.directory);
-  if (
-    captured.marker.dev !== snapshot.marker.dev ||
-    captured.marker.ino !== snapshot.marker.ino ||
-    captured.bytes !== snapshot.bytes
-  ) {
-    throw ownershipFailure(session.ref, 'the ownership proof changed during quarantine');
-  }
-  if (pathExists(originalPath)) {
-    throw ownershipFailure(session.ref, 'the canonical session path was recreated');
-  }
-  return claim;
-}
-
 function removeAllocatedDirectory(ref: SessionRef, identity: SessionDirectoryIdentity): void {
   const original = sessionRelativePath(ref.sessionId);
   directoryIdentity(ref, original, identity);
@@ -108,24 +77,6 @@ function removeAllocatedDirectory(ref: SessionRef, identity: SessionDirectoryIde
     throw ownershipFailure(ref, 'the canonical session path was recreated');
   }
   rmSync(claimPath, { recursive: true });
-}
-
-export function rollbackPreparedSessionLocked(
-  session: NewSessionOwnership,
-  options: SessionOwnershipMutationOptions = {},
-): void {
-  assertOwnershipContext(session);
-  const canonical = sessionDir(session.ref.projectDir, session.ref.sessionId);
-  if (!pathExists(canonical)) return;
-
-  const claim = claimOwnedDirectoryLocked(session, options);
-  assertNoNewerSameSessionActive(session);
-  const initialActive: ActiveSessionReceipt = session.ownership;
-  clearActiveReceiptLocked(session.ref, initialActive);
-  if (pathExists(canonical)) {
-    throw ownershipFailure(session.ref, 'the canonical session path was recreated');
-  }
-  rmSync(join(session.ref.projectDir, claim), { recursive: true });
 }
 
 export function createSessionPreparationCandidate(
@@ -144,34 +95,6 @@ export function createSessionPreparationCandidate(
   };
   assertSessionOwnershipReceipt(receipt);
   return receipt;
-}
-
-export function rollbackPreparedSession(
-  session: NewSessionOwnership,
-  options: SessionOwnershipMutationOptions = {},
-): void {
-  try {
-    assertOwnershipContext(session);
-    withSessionMutationLock(session.ref.projectDir, () =>
-      rollbackPreparedSessionLocked(session, options),
-    );
-  } catch (cause) {
-    throw sessionPreparationError.io('rollback-session', session.ref, cause);
-  }
-}
-
-export function releasePreparedSession(
-  session: NewSessionOwnership,
-  options: SessionOwnershipMutationOptions = {},
-): void {
-  try {
-    assertOwnershipContext(session);
-    withSessionMutationLock(session.ref.projectDir, () =>
-      removeOwnershipProofLocked(session, options),
-    );
-  } catch (cause) {
-    throw sessionPreparationError.io('release-session', session.ref, cause);
-  }
 }
 
 function cleanupAfterReadinessFailure(session: NewSessionOwnership, keepDirectory: boolean): void {

@@ -4,7 +4,7 @@ import {
   readSpecFile,
   buildSpecFrontmatter,
   type SpecMetadata,
-} from '../../../src/core/paths-io.js';
+} from '../../../src/core/sessions/spec-files.js';
 import { TASKS_FILE } from '../../../src/core/paths.js';
 import { formatTasks } from '../../../src/engine/spec/formatter.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

@@ -1,7 +1,8 @@
 import type { ConsultAnswer } from '../schemas/consult.js';
-import type { TriageResult } from '../schemas/review.js';
+import type { TriageResult } from '../schemas/review/verdict.js';
 import type { Task, TaskId } from '../schemas/task.js';
-import type { ConsultRecord, WorkflowState } from '../schemas/workflow.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import type { ConsultRecord } from '../schemas/workflow/consult-record.js';
 import { lineageIdOf } from '../state/task-insert.js';
 import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 

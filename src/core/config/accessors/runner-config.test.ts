@@ -6,7 +6,7 @@ import {
 } from './runner-config.js';
 import { projectRunnerDiscoveryContext } from './runner-discovery-context.js';
 import { createDefaultConfig } from '../load/defaults.js';
-import type { PlannerConfig } from '../../schemas/planner-config.js';
+import type { PlannerConfig } from '../../schemas/runner/planner.js';
 import type { Config } from '../../schemas/config.js';
 
 function keyedEndpointConfig(input: { plannerApiKey: string; implementerApiKey: string }): Config {

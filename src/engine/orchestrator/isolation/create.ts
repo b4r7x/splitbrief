@@ -3,14 +3,14 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type {
   RetainedWorkspace,
   WorkspaceOwner,
 } from '../../../core/schemas/retained-workspace.js';
 import type { IsolationStrategy } from '../../../core/schemas/enums.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { createGitClient, type GitClient } from '../../../lib/git/client.js';
 import { getCurrentCommitSha } from '../../../lib/git/refs.js';
 import {

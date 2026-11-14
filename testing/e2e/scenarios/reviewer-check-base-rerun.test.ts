@@ -11,11 +11,11 @@ import {
   sessionDir,
   sessionsRoot,
 } from '../../../src/core/paths.js';
-import type { Finding } from '../../../src/core/review/verdict.js';
-import { ReviewPacketSchema } from '../../../src/core/schemas/review-packet.js';
-import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import type { Finding } from '../../../src/core/review/scope.js';
+import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/group.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { factSpans, runRows } from '../../../src/features/workflow/closed/copy.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';

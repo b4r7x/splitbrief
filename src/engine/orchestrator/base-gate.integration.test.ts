@@ -8,7 +8,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { runBaseTreesRoot } from '../../core/paths.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { saveState } from '../../core/state/persistence.js';
 import { processError } from '../../lib/process/errors.js';
 import * as commandRunner from '../../lib/process/spawn/run-command.js';

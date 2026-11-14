@@ -4,7 +4,7 @@ import {
 } from '../display/activity-display-text.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import type { RunnerActivityLedgerLabel } from '../display/runner-activity-display.js';
-import { cutSeatIdentity } from '../../../core/crew/identity.js';
+import { cutSeatIdentity } from '../../../core/crew/seat-line/wrap.js';
 import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
 import { segmentsForRowText } from '../../../utils/display-text/width.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';

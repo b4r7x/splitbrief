@@ -4,23 +4,19 @@ import { initStores } from '../../bootstrap/init.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
 import { oneLineDisplayText } from '../../../utils/display-text/sanitize.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { hydrateRun } from '../../../features/workflow/run-history.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { resolveSelectedSkills, runHeadless } from '../../headless.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
 import { resolveRunConfig } from '../../build-overrides.js';
-import {
-  formatSeatChangeNotice,
-  readSeatIdentities,
-  seatIdentitiesFromConfig,
-  seatIdentityChanges,
-} from '../../../core/state/seats.js';
+import { readSeatIdentities, seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
+import { formatSeatChangeNotice, seatIdentityChanges } from '../../../core/state/seats/changes.js';
 import { labelSeatChange } from '../../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ContinueDeps } from './command.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../start/readiness.js';

@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 
 export interface ProviderModelListOptions {

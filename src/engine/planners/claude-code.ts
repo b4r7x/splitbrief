@@ -19,7 +19,7 @@ import {
 import type { RunnerCallContext } from '../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
 import type { TypedSchemaInput } from '../runners/typed-output.js';
-import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
+import { typedOutputCapability } from '../../core/runners/cli-tool/catalog.js';
 import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
 import type { CliSeat } from '../runners/start-gate.js';
 

@@ -9,7 +9,7 @@ import {
   CliExecutableReceiptSchema,
   formatDigestBoundExecutableFingerprint,
   type CliExecutableReceipt,
-} from '../../../src/core/discovery/detection.js';
+} from '../../../src/core/discovery/detection/executable.js';
 import type { Task } from '../../../src/core/schemas/task.js';
 import {
   runFactoryEffectConformance,

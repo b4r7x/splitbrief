@@ -1,4 +1,5 @@
-import { CREW_LABEL_WIDTH, cutSeatIdentity } from '../../core/crew/identity.js';
+import { CREW_LABEL_WIDTH } from '../../core/crew/identity.js';
+import { cutSeatIdentity } from '../../core/crew/seat-line/wrap.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { crewSeatWord } from '../../core/crew/seats.js';

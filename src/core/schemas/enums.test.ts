@@ -10,12 +10,12 @@ import {
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS as CATALOG_CLI_TOOL_IDS,
-  EXCLUDED_CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-} from '../runners/cli-tool-catalog.js';
+} from '../runners/cli-tool/catalog.js';
+import { EXCLUDED_CLI_TOOL_IDS } from '../runners/cli-tool/custom-only.js';
 import { peelAxisTokensFromModelId } from '../runners/effort-channel.js';
-import { PlannerConfigSchema } from './planner-config.js';
+import { PlannerConfigSchema } from './runner/planner.js';
 import {
   ActionClassSchema,
   CliToolIdSchema,
@@ -47,8 +47,8 @@ const SYNTHETIC_IMPLEMENTER_ONLY_TOOL = 'synthetic-implementer-cli';
 // The admitted catalog is currently all-roles, so the implementer-only branch of the role
 // projection only executes against an injected descriptor.
 function mockCatalogWithImplementerOnlyTool(): void {
-  vi.doMock('../runners/cli-tool-catalog.js', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../runners/cli-tool-catalog.js')>();
+  vi.doMock('../runners/cli-tool/catalog.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../runners/cli-tool/catalog.js')>();
     const roles: Record<string, readonly string[]> = Object.fromEntries([
       ...Object.entries(actual.CLI_TOOL_CATALOG).map(([id, descriptor]) => [id, descriptor.roles]),
       [SYNTHETIC_IMPLEMENTER_ONLY_TOOL, ['implementer']],
@@ -185,7 +185,7 @@ describe('runner role enums', () => {
 
 describe('synthetic implementer-only CLI descriptor', () => {
   afterEach(() => {
-    vi.doUnmock('../runners/cli-tool-catalog.js');
+    vi.doUnmock('../runners/cli-tool/catalog.js');
     vi.resetModules();
   });
 

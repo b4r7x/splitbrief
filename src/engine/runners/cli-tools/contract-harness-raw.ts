@@ -1,4 +1,4 @@
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../../constants.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import { RawCliCandidateContract, replaceProjectDirSentinel } from './candidate-contract.js';

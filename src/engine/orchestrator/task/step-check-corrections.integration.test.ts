@@ -12,9 +12,9 @@ import {
   setupTaskProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { briefCorrections } from '../../../core/state/machine.js';
-import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue-state.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { briefCorrections } from '../../../core/state/lineage.js';
+import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Implementer } from '../../implementers/types.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { enqueueUserMessage } from '../queue/submit.js';

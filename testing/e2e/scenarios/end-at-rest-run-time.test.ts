@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {

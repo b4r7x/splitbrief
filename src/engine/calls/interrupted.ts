@@ -1,5 +1,5 @@
-import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { deriveRunStatus, processWentAway } from '../../core/sessions/run-status.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import { deriveRunStatus, processWentAway } from '../../core/sessions/run/status.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { readRunEvents } from '../events/replay.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';

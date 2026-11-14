@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { compactResumeTranscript, keepRecentCountForThreshold } from './compaction.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -13,7 +13,7 @@ import { createEventBus } from '../../events/bus.js';
 import { recordSteer } from '../continuation.js';
 import { buildResumeContext } from './rebuild.js';
 import { drainQueue } from '../queue/drain.js';
-import { findLatestSummary, readSessionLog } from '../../../core/sessions/log-reader.js';
+import { findLatestSummary, readSessionLog } from '../../../core/sessions/log/reader.js';
 
 let dirs: string[] = [];
 

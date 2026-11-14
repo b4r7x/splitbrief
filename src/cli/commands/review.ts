@@ -23,13 +23,16 @@ import {
 import {
   deriveReviewOutcome,
   reviewOutcomeWord,
-  verdictCoverageErrors,
   type ReviewOutcome,
-  type ReviewScope,
 } from '../../core/review/verdict.js';
+import { verdictCoverageErrors } from '../../core/review/scope.js';
+import type { ReviewScope } from '../../core/review/scope.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
-import { REVIEW_VERDICT_JSON_SCHEMA, ReviewVerdictSchema } from '../../core/schemas/review.js';
-import type { ReviewRecord } from '../../core/schemas/workflow.js';
+import {
+  REVIEW_VERDICT_JSON_SCHEMA,
+  ReviewVerdictSchema,
+} from '../../core/schemas/review/verdict.js';
+import type { ReviewRecord } from '../../core/schemas/workflow/review-record.js';
 import { createReviewer } from '../../engine/runners/factory.js';
 import { prepareReviewExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { buildRunnerChecks } from '../../readiness/checks/runners.js';
+import { buildRunnerChecks } from '../../readiness/checks/runner/build.js';
 import type { Config } from '../../schemas/config.js';
 import { createDefaultConfig } from '../load/defaults.js';
 import { resolveEffectiveConfig } from './effective-config.js';

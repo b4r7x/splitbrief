@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { SeatWait } from '../../core/schemas/workflow.js';
+import type { SeatWait } from '../../core/schemas/workflow/seat.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { runViewStore } from './run-view.js';
 import { addEvent } from './actions/event.js';

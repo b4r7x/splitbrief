@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
-import type { CliToolId } from '../runners/cli-tool-catalog.js';
+import type { CliToolId } from '../runners/cli-tool/types.js';
 import { computeCrewPresets } from './presets.js';
 
 function readyDetection(readyTools: readonly CliToolId[]) {

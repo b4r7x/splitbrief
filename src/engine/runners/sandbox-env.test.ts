@@ -18,12 +18,14 @@ import { tmpdir, userInfo } from 'node:os';
 import { basename, delimiter, dirname, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import {
-  cliAuthChannelHostStateAccess,
   defaultCliAuthChannel,
   IMPLEMENTER_CLI_TOOL_IDS,
+} from '../../core/runners/cli-tool/catalog.js';
+import {
+  cliAuthChannelHostStateAccess,
   type CliAuthChannel,
-} from '../../core/runners/cli-tool-catalog.js';
-import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
+} from '../../core/runners/cli-tool/auth-channels.js';
+import type { ImplementerConfig } from '../../core/schemas/runner/implementer.js';
 import {
   cliAuthChannelEnvKeys,
   createRunnerSandboxEnv,

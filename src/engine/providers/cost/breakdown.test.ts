@@ -4,10 +4,10 @@ import {
   describeOfferingBillingPresentation,
   resolveProviderRunMetadata,
 } from './breakdown.js';
-import type { ProviderRunMetadata } from '../../../core/schemas/summary.js';
+import type { ProviderRunMetadata } from '../../../core/schemas/cost.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { CostBreakdownSchema } from '../../../core/schemas/summary.js';
+import { CostBreakdownSchema } from '../../../core/schemas/cost.js';
 import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
 
 // Pricing follows the model, so a metered seat needs a catalog to rate against;

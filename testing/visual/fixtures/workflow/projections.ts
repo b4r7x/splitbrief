@@ -20,9 +20,9 @@ import { checkFailureText } from '../../../../src/engine/orchestrator/validation
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
 import type { StepRef } from '../../../../src/core/schemas/run-step.js';
-import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
+import type { RunRecord } from '../../../../src/core/sessions/run/record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
-import { redCheckLine, redChecksOf } from '../../../../src/core/review/verdict.js';
+import { redCheckLine, redChecksOf } from '../../../../src/core/review/accepted.js';
 import { RED_CHECK_INPUT } from './at-rest-projections.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { closedQueueProjection } from './closed-queue-projection.js';
@@ -37,12 +37,13 @@ import { approvalDraftDeletedProjection } from './approval-draft-deleted-project
 import { approvalWordsStayProjection } from './approval-words-stay-projection.js';
 import { taskId, type Check, type Task } from '../../../../src/core/schemas/task.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
-import { variantWithoutModelChecks } from '../../../../src/core/readiness/checks/runners.js';
+import { variantWithoutModelChecks } from '../../../../src/core/readiness/checks/runner/fields.js';
 import {
   createStartReadinessRecord,
   startReadinessWarnings,
 } from '../../../../src/core/readiness/format.js';
-import type { SeatSwitchRecord, WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../../src/core/schemas/workflow/state.js';
+import type { SeatSwitchRecord } from '../../../../src/core/schemas/workflow/seat.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeRunRecord } from '../../../helpers/factories/run-record.js';
 import { makeSummary } from '../../../helpers/factories/summary.js';
@@ -74,7 +75,7 @@ import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
 import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
 import { transition } from '../../../../src/core/state/machine.js';
-import { deriveRunStatus } from '../../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../../src/core/sessions/run/status.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../../../../src/engine/events/types.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-rows/approval.js';
@@ -115,7 +116,7 @@ import { getRunnerCatalogDisplayName } from '../../../../src/core/config/accesso
 import { timedOutMessage } from '../../../../src/lib/process/errors.js';
 import { executableChangedMessage } from '../../../../src/engine/runners/resolve-cli-executable.js';
 import { cliToolCheckError } from '../../../../src/engine/runners/start-gate.js';
-import { CLI_TOOL_CATALOG } from '../../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../../src/core/runners/cli-tool/catalog.js';
 import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
   consultHaltDetails,
@@ -164,7 +165,7 @@ import {
   VISUAL_WIDE_CREW,
 } from '../screen-fixtures.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
-import { RUNNER_IDLE_WARN_MS } from '../../../../src/core/schemas/runner-fields.js';
+import { RUNNER_IDLE_WARN_MS } from '../../../../src/core/schemas/runner/fields.js';
 import { seatAxisWords } from '../../../../src/core/runners/effort-channel.js';
 import { formatSeatChangeIdentities } from '../../../../src/core/crew/identity.js';
 import { formatRecoveryHeadline } from '../../../../src/core/recovery/headline.js';

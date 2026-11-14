@@ -14,7 +14,8 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { EngineEvent } from '../../events/types.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';

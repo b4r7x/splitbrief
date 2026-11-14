@@ -26,7 +26,7 @@ import {
 import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { PLAN_FILE, rendersDir, sessionDir } from '../../core/paths.js';
-import { writeSpecFile } from '../../core/paths-io.js';
+import { writeSpecFile } from '../../core/sessions/spec-files.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import type { TypedCallContext } from '../planners/types.js';
 import {

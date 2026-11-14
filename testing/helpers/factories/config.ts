@@ -9,8 +9,8 @@ import type {
   ApiImplementerConfig,
   ImplementerConfig,
   ImplementerProfileConfig,
-} from '../../../src/core/schemas/implementer-config.js';
-import type { ApiPlannerConfig, PlannerConfig } from '../../../src/core/schemas/planner-config.js';
+} from '../../../src/core/schemas/runner/implementer.js';
+import type { ApiPlannerConfig, PlannerConfig } from '../../../src/core/schemas/runner/planner.js';
 import type { ProjectContext } from '../../../src/core/state/types.js';
 
 const defaultApiImplementer: ApiImplementerConfig = {

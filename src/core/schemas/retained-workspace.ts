@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ChangedFilesSnapshotSchema } from './workflow.js';
+import { ChangedFilesSnapshotSchema } from './workflow/changed-files.js';
 
 export const WorkspaceOwnerSchema = z.union([
   z.object({ runId: z.string(), buildSeat: z.string() }),

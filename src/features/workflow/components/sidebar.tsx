@@ -11,12 +11,8 @@ import { taskRowLabel } from '../../../core/run-view/brief-labels.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import {
-  CREW_LABEL_WIDTH,
-  cutSeatIdentity,
-  formatSeatIdentity,
-  wrapSeatIdentity,
-} from '../../../core/crew/identity.js';
+import { CREW_LABEL_WIDTH, formatSeatIdentity } from '../../../core/crew/identity.js';
+import { cutSeatIdentity, wrapSeatIdentity } from '../../../core/crew/seat-line/wrap.js';
 import {
   CREW_SEAT_ROLES,
   crewSeatWord,
@@ -24,7 +20,7 @@ import {
   type CrewSeat,
 } from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
-import type { RailHalt } from '../../../core/rail-stages.js';
+import type { RailHalt } from '../../../core/phases/rail.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { routeBriefMark } from '../at-rest.js';
 import { seatIdentityPieces } from '../closed/copy.js';

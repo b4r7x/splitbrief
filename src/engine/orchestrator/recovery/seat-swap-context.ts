@@ -3,7 +3,7 @@ import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
-import type { ReviewerConfig } from '../../../core/schemas/reviewer-config.js';
+import type { ReviewerConfig } from '../../../core/schemas/runner/reviewer.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import {
   fallbackBlockedReason,
@@ -12,10 +12,10 @@ import {
 } from '../../../core/crew/fallback.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
-import type { CliProviderAuth } from '../../../core/discovery/detection.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
 import { classifyHaltSignature } from '../../../core/pipeline-spec/halts.js';
 import { seatRouteModel } from '../../../core/providers/automatic-model.js';
-import { PROVIDER_ORACLE_TOOL_IDS } from '../../../core/runners/cli-tool-catalog.js';
+import { PROVIDER_ORACLE_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
 import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 import { includes } from '../../../utils/type-guards.js';

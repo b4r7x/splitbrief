@@ -1,7 +1,7 @@
 import { withCommandRun } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EvidenceCommandRun } from '../../../core/schemas/evidence.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format/time.js';

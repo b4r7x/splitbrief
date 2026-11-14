@@ -1,6 +1,6 @@
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { StepRef } from '../schemas/run-step.js';
-import type { EventTypeCarrier } from '../event-phase.js';
+import type { EventTypeCarrier } from '../phases/of-event.js';
 import { stepReadsNoWords } from '../recovery/typed-words.js';
 import type { RecoveryPromptedEvent, RecoveryResolvedEvent } from './events.js';
 

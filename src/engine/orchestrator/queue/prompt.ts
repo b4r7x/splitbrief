@@ -1,4 +1,4 @@
-import type { QueuedMessage } from '../../../core/schemas/workflow.js';
+import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 

@@ -5,16 +5,17 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
-import { readSpecFile } from '../../core/paths-io.js';
+import { readSpecFile } from '../../core/sessions/spec-files.js';
 import { TASKS_FILE } from '../../core/paths.js';
-import type { ReviewVerdict, TriageResult } from '../../core/schemas/review.js';
-import type { ReviewScope } from '../../core/review/verdict.js';
+import type { ReviewVerdict, TriageResult } from '../../core/schemas/review/verdict.js';
+import type { ReviewScope } from '../../core/review/scope.js';
 import { taskId } from '../../core/schemas/task.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import type { Plan } from '../../core/schemas/plan.js';
-import type { ReviewRecord, WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../core/schemas/workflow/review-record.js';
 import {
   applyTriage,
   claimVerification,

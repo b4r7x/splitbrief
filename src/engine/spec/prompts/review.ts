@@ -1,6 +1,6 @@
-import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
-import type { TriageInput } from '../../../core/schemas/review.js';
-import type { TriageRecord } from '../../../core/schemas/workflow.js';
+import type { ImplementerWriteMode } from '../../../core/schemas/runner/implementer.js';
+import type { TriageInput } from '../../../core/schemas/review/verdict.js';
+import type { TriageRecord } from '../../../core/schemas/workflow/review-record.js';
 import {
   buildPrompt,
   fenced,

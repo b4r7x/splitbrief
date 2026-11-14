@@ -1,4 +1,5 @@
-import type { CliModelPolicy, CliToolDescriptor } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolDescriptor } from '../../../core/runners/cli-tool/types.js';
+import type { CliModelPolicy } from '../../../core/runners/cli-tool/types.js';
 import type { RunnerRole } from '../../../core/runners/seat-roles.js';
 import { getRunnerTrustMeta } from '../../../core/runners/trust.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';

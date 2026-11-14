@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { sessionDir } from '../../../src/core/paths.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
 import {

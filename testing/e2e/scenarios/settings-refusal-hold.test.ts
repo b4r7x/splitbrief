@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import XtermHeadless from '@xterm/headless';
 import { describe, expect, it, vi } from 'vitest';
 import { writeConfig } from '../../../src/core/config/load/io.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

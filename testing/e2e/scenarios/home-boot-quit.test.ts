@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, it, vi } from 'vitest';
 import { writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import {
   cacheIdentity,
   catalogState,

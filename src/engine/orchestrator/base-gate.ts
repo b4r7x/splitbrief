@@ -1,7 +1,7 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Check, TaskId } from '../../core/schemas/task.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { redactSecrets } from '../../utils/redact/secrets.js';

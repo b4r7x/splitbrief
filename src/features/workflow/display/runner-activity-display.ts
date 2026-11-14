@@ -1,5 +1,5 @@
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
-import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool/catalog.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';

@@ -1,9 +1,6 @@
 import { isProviderId, RUNNER_KINDS, type ProviderId, type RunnerKind } from '../schemas/enums.js';
-import {
-  CLI_TOOL_CATALOG,
-  cliToolIdForCommand,
-  type CliToolDescriptor,
-} from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, cliToolIdForCommand } from '../runners/cli-tool/catalog.js';
+import type { CliToolDescriptor } from '../runners/cli-tool/types.js';
 import { mapRecord } from '../../utils/type-guards.js';
 import {
   API_PROVIDER_CATALOG,

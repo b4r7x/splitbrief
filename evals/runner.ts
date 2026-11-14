@@ -13,7 +13,7 @@ import {
   type ModelsDevCatalogSnapshot,
 } from '../src/engine/providers/models-dev-cache.js';
 import { prepareExecution } from '../src/engine/runners/prepare-execution/prepare-execution.js';
-import { releasePreparedSession } from '../src/core/sessions/prepare.js';
+import { releasePreparedSession } from '../src/core/sessions/prepared-rollback.js';
 import { createCassetteRecorder } from '#testing/helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '#testing/helpers/cassette/replayer.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';

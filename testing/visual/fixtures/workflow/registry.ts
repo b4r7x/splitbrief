@@ -5,13 +5,13 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { AGY_QUOTA_LEAD } from '#testing/helpers/events/agy-quota.js';
 import { flushEffects } from '#testing/helpers/ink.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
-import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
+import { toEngineEventEntry } from '../../../../src/core/sessions/log/writer.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
 import { endRunAtRest } from '../../../../src/engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../../../src/engine/orchestrator/recovery/bus.js';
 import { saveState } from '../../../../src/core/state/persistence.js';
 import { writeEvidenceLedger } from '../../../../src/core/evidence/ledger-storage.js';
-import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
+import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow/state.js';
 import { getWorkflowSidebarWidth } from '../../../../src/features/workflow/layout/rect.js';
 import {
   RAIL_SHORT_LABEL,

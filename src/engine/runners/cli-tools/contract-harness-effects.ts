@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { CliExecutableReceipt } from '../../../core/discovery/detection.js';
-import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
+import type { CliExecutableReceipt } from '../../../core/discovery/detection/executable.js';
+import { CliExecutableReceiptSchema } from '../../../core/discovery/detection/executable.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ImplementerResult } from '../../implementers/types.js';
@@ -10,7 +10,7 @@ import {
   changedFilesSinceBaseline,
   type ChangedFilesBaseline,
 } from '../../orchestrator/changed-files-baseline.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { createImplementer, createPlanner } from '../factory.js';
 import type { RunnerGate } from '../prepared-execution.js';
 import { executableChangedMessage } from '../resolve-cli-executable.js';

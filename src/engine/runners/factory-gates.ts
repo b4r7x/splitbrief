@@ -2,7 +2,7 @@ import type { Config } from '../../core/schemas/config.js';
 import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-} from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/runners/cli-tool/catalog.js';
 import type { PlannerTierRole, ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { semanticConfiguredArgViolations } from './arg-vector-preflight.js';
 import { error } from '../../utils/error.js';

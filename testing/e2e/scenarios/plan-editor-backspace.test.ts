@@ -4,7 +4,7 @@ import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';

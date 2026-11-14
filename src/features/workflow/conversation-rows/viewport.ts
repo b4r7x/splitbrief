@@ -1,4 +1,4 @@
-import { isSettledSection, type Section } from '../../../core/sections/event-sections.js';
+import { isSettledSection, type Section } from '../../../core/sections/types.js';
 
 export interface ConversationViewportSplit {
   queuedRows: number;

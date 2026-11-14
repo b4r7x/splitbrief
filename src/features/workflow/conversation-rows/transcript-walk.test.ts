@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
+import { groupEventsIntoSections } from '../../../core/sections/group.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';

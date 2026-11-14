@@ -10,7 +10,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { error } from '../../utils/error.js';
 import { cliToolHome, hasCliToolHome, xdgBaseDir } from './host-model-selection.js';
 import { addStateRedactionValue, collectStateStrings } from './sandbox-credential-values.js';

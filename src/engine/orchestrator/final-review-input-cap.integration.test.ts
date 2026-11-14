@@ -23,7 +23,7 @@ import {
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
-import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
+import { ensureSessionDir, writeSpecFile } from '../../core/sessions/spec-files.js';
 import {
   REVIEW_FILE,
   REVIEW_JSON_FILE,
@@ -34,10 +34,10 @@ import {
 } from '../../core/paths.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { recoveryFactNumber } from '../../core/schemas/recovery/facts.js';
-import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
+import { ReviewPacketSchema } from '../../core/schemas/review/packet.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { awaitsApply } from '../../core/sessions/run-status.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import { awaitsApply } from '../../core/sessions/run/status.js';
 import type { Planner } from '../planners/types.js';
 import {
   getChangedFilesSinceSnapshot,
@@ -53,8 +53,9 @@ import { applyRecoveryAction } from './recovery/actions.js';
 import { haltVerdictlessReview } from './run/review.js';
 import { buildSummary } from './summary/build.js';
 import { createCliPlanner } from '../planners/cli.js';
-import type { CliPlannerConfig } from '../../core/schemas/planner-config.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliPlannerConfig } from '../../core/schemas/runner/planner.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { prependPath, trustedShimGate, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 

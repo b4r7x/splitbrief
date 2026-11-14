@@ -16,8 +16,8 @@ import {
   viewerRestoresScreen,
   type ViewerArgv,
 } from './editor-command.js';
-import { isQueuePhase } from '../../core/phases.js';
-import { messageSeat } from '../../core/queue-state.js';
+import { isQueuePhase } from '../../core/phases/roles.js';
+import { messageSeat } from '../../core/queue/state.js';
 import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
 import { selectBuildMessageBrief } from '../../core/run-view/briefs.js';
 import { queueCopy } from './queue-copy.js';

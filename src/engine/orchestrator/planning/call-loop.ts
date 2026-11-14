@@ -3,7 +3,7 @@ import { abortError, throwIfAborted } from '../../../utils/abort.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRejectionContext } from '../evidence/reporting.js';
 import type { PlannerCallbacksContext } from '../types.js';
-import type { PlannerConversation, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { PlannerConversation, WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { PlannerReplyAnswer } from '../../../core/schemas/question.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';

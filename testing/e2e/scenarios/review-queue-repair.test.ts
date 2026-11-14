@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { beforeAll, expect, it } from 'vitest';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue-state.js';
+import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import {

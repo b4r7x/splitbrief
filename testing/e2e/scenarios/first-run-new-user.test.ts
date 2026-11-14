@@ -7,7 +7,7 @@ import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { configPath } from '../../../src/core/config/load/document.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, sessionsRoot } from '../../../src/core/paths.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

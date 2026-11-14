@@ -11,7 +11,7 @@ import { createWorktree } from './create-worktree.js';
 import { removeRunWorkspace, removeWorktree } from './remove-worktree.js';
 import { resolveConfinedIsolationWorktreePath } from './path.js';
 import { getGitCommonDir } from '../../../lib/git/repository.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import {
   SPLITBRIEF_DIR,
   ACTIVE_FILE,

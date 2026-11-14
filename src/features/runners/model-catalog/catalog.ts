@@ -7,7 +7,7 @@ import {
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
-import type { CliProviderAuth } from '../../../core/discovery/detection.js';
+import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
 import type { Config } from '../../../core/schemas/config.js';
 import {
   CATALOG_SUGGESTION_MEMBERSHIP,
@@ -20,7 +20,8 @@ import {
   type ModelIdentity,
 } from '../../../core/providers/canonical-model-id.js';
 import { resolveModelDisplayName } from '../../../core/discovery/model-catalog.js';
-import { isCliToolId, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
 import { EFFORT_LEVELS } from '../../../core/schemas/enums.js';
 import { assertNever, includes } from '../../../utils/type-guards.js';

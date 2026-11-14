@@ -11,8 +11,9 @@ import {
   CliExecutableReceiptSchema,
   formatDigestBoundExecutableFingerprint,
   type CliExecutableReceipt,
-} from '../../core/discovery/detection.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/discovery/detection/executable.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { detectionRuntimeNamespace } from './cli-context.js';
 import { detectRunnerEvidence } from './runner-evidence.js';

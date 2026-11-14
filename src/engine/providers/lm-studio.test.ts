@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
 import { createLmStudioProvider } from './lm-studio.js';
-import { DetectedModelSchema } from '../../core/discovery/detection.js';
+import { DetectedModelSchema } from '../../core/discovery/detection/model.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
 import { detectProviderCatalog } from './catalog-detection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';

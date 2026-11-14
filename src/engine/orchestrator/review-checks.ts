@@ -1,9 +1,11 @@
 import { resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
-import { fixCheckCounts, judgeFixCheck, type FixCheckKeys } from '../../core/review/fix-task.js';
+import type { FixCheckKeys } from '../../core/review/fix/task.js';
+import { fixCheckCounts, judgeFixCheck } from '../../core/review/fix/checks.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { TriageInput } from '../../core/schemas/review.js';
-import type { ReviewRecord, WorkflowState } from '../../core/schemas/workflow.js';
+import type { TriageInput } from '../../core/schemas/review/verdict.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../core/schemas/workflow/review-record.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import type { EventBus } from '../events/types.js';
 import { recordCheckRuns } from './evidence/record-checks.js';

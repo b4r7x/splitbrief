@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readSessionSummary } from '../../../src/core/sessions/run-record-io.js';
+import { readSessionSummary } from '../../../src/core/sessions/run/record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';

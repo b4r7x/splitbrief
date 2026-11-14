@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { RunnerCallCounterCoverage } from '../../core/runner-call-contract.js';
+import type { RunnerCallCounterCoverage } from '../../core/schemas/runner-call.js';
 import {
   BackendTokenUsageSchema,
   accumulateRunnerCallUsage,

@@ -9,7 +9,7 @@ import {
   TOOL_CHECK_FAILED_TITLE,
   TOOLS_NOT_CHECKED_TITLE,
 } from '../../core/discovery/copy.js';
-import { formatCollapsedSeatSpans, seatLineText } from '../../core/crew/identity.js';
+import { formatCollapsedSeatSpans, seatLineText } from '../../core/crew/seat-line/collapse.js';
 import { CREW_SEAT_ROLES, collapsedReviewSeat } from '../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
@@ -37,7 +37,7 @@ import { saveHomeDraft } from '../../stores/ui/session-drafts.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { useStores } from '../../stores/use-stores.js';
 import type { Session } from '../../core/schemas/session.js';
-import { readRunRecord } from '../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import {
   handleSessionSelect,
   type SessionSelectDeps,

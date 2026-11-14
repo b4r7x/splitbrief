@@ -1,10 +1,8 @@
 import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
 import { readActiveRunner } from '../../src/core/config/accessors/active-runner.js';
-import {
-  inlineRunnerCommand,
-  isCustomCommandRunner,
-} from '../../src/core/config/custom-commands.js';
-import { findConfiguredCustomCommand } from '../../src/core/config/custom-command-catalog.js';
+import { inlineRunnerCommand } from '../../src/core/config/custom-commands/schema.js';
+import { isCustomCommandRunner } from '../../src/core/config/custom-commands/tuple.js';
+import { findConfiguredCustomCommand } from '../../src/core/config/custom-commands/catalog.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import {
   inlineRunnerSecurityPosture,

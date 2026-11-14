@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import { error } from '../../utils/error.js';
 import { probeCliReadiness } from '../runners/cli-tools/readiness-probe.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';

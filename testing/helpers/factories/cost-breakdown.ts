@@ -1,4 +1,4 @@
-import type { CostBreakdown } from '../../../src/core/schemas/summary.js';
+import type { CostBreakdown } from '../../../src/core/schemas/cost.js';
 
 export function makeCostBreakdown(overrides: Partial<CostBreakdown> = {}): CostBreakdown {
   return {

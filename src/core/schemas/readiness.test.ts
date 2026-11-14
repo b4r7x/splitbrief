@@ -2,11 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   CliInstallationStateSchema,
   CliReadinessResultSchema,
-  cliReadinessRemediation,
-  deriveCliReadiness,
   type CliInstallationState,
   type CliReadinessFacts,
 } from './readiness.js';
+import { cliReadinessRemediation, deriveCliReadiness } from '../readiness/cli-remediation.js';
 
 const executable = {
   path: '/opt/splitbrief/bin/codex',

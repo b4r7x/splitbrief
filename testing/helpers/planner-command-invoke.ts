@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { afterEach, it } from 'vitest';
-import { normalizeCustomCommand } from '../../src/core/config/custom-commands.js';
+import { normalizeCustomCommand } from '../../src/core/config/custom-commands/schema.js';
 import { SPLITBRIEF_DIR } from '../../src/core/paths.js';
 import {
   beginDeclaredArtifactReview,

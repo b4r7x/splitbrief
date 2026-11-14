@@ -11,7 +11,7 @@ import { providerOracleCommand } from '../../engine/runners/cli-tools/provider-o
 import { configStore } from '../../stores/project/config.js';
 
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE, REVIEW_NONE } from '../../core/crew/identity.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import {
   PICKER_ROLE_SEAT_IDS,
   type PickerSlot,
@@ -23,7 +23,7 @@ import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { localProviderStartup } from '../../core/readiness/checks/availability.js';
 import { sortPickerOptions, type PickerOption } from './model-catalog/options.js';
 import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';
-import { formatModelName } from '../../core/model-display.js';
+import { formatModelName } from '../../core/providers/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { routeDraftOf } from './model-catalog/option-axis.js';
 import { rightRowKey, sectionOf, type RightRow } from './model-catalog/rows.js';

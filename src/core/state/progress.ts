@@ -1,4 +1,4 @@
-import { pairFailureKeys } from '../review/fix-task.js';
+import { pairFailureKeys } from '../review/fix/checks.js';
 
 /** A failure as two judgements compare it: each failing source with its failure keys. */
 export type FailureMark = readonly { source: string; keys: readonly string[] }[];

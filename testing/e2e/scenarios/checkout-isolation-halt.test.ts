@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects } from '#testing/helpers/ink.js';

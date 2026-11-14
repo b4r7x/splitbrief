@@ -4,7 +4,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import { error } from '../../../utils/error.js';
 import { CURSOR_MODEL_REFUSAL } from '#testing/helpers/cursor-refusal.js';
 import { inputTooLargeRefusal } from '../../runners/input-limit.js';

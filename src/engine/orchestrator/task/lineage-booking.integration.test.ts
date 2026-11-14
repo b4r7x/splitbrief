@@ -20,7 +20,7 @@ import {
 } from '#testing/helpers/typed-planner.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
-import type { ReviewAnswer } from '../../../core/schemas/review.js';
+import type { ReviewAnswer } from '../../../core/schemas/review/verdict.js';
 import type { TypedCallContext } from '../../planners/types.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { TypedSchemaInput } from '../../runners/typed-output.js';

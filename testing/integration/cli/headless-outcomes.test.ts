@@ -11,10 +11,10 @@ import {
   writeMinimalHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
-import { generateSessionId } from '../../../src/core/sessions/session-id.js';
+import { generateSessionId } from '../../../src/core/sessions/id.js';
 import { listSessions } from '../../../src/core/sessions/io.js';
 import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { processError } from '../../../src/lib/process/errors.js';

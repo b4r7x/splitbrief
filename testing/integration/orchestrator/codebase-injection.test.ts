@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { runPlanningPhase } from '../../../src/engine/orchestrator/planning/run.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';

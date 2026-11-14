@@ -16,10 +16,10 @@ import {
   findLatestSummary,
   readCompactedMessages,
   readSessionLog,
-} from '../../../core/sessions/log-reader.js';
+} from '../../../core/sessions/log/reader.js';
 import type { SessionLogEntry } from '../../../core/schemas/session-log.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue/state.js';
 import {
   isStillPendingQueuedTranscriptMessage,
   reconstructPlannerConversation,

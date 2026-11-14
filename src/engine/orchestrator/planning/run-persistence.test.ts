@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { auto, runPlanningTurn, type RunOpts } from '#testing/helpers/planning-phase.js';
-import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import { PLAN_FILE, PLAN_JSON_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { loadState } from '../../../core/state/persistence.js';

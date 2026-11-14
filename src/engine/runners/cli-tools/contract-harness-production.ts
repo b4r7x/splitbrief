@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { z } from 'zod';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import { INTERNAL_SKIP_DIRS } from '../../../core/paths.js';
 import { createRunnerCallId } from '../../calls/call-id.js';
 import { RunnerCallResultSchema } from '../../calls/schema.js';

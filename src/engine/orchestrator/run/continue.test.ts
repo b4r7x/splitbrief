@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { describe, it, expect } from 'vitest';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { composeContinuation } from '../../spec/prompts/continuation.js';

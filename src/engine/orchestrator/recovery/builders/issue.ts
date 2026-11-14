@@ -12,7 +12,7 @@ import {
   sanitizeTerminalDisplayText,
 } from '../../../../utils/display-text/sanitize.js';
 import { truncateByChars } from '../../../../utils/display-text/truncate.js';
-import { isAskedDetail } from '../../../../core/recovery/headline.js';
+import { isAskedDetail } from '../../../../core/recovery/causes.js';
 
 export const MAX_SUMMARY_LENGTH = 320;
 

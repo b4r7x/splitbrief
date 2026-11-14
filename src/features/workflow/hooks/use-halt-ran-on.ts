@@ -1,6 +1,6 @@
-import type { SeatIds } from '../../../core/crew/identity.js';
+import type { SeatIds } from '../../../core/crew/seat-ids.js';
 import type { RunHalt } from '../../../core/run-view/halt.js';
-import { haltedSeatIds } from '../../../core/state/seats.js';
+import { haltedSeatIds } from '../../../core/state/seats/record.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';

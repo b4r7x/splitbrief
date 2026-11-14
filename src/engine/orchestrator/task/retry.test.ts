@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../../../core/state/machine.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { consultHandedBackToLoop } from './retry.js';
 

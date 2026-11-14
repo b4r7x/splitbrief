@@ -1,4 +1,4 @@
-import { ReviewPacketSchema, type ReviewPacket } from '../../../src/core/schemas/review-packet.js';
+import { ReviewPacketSchema, type ReviewPacket } from '../../../src/core/schemas/review/packet.js';
 import { makeUsage } from './summary.js';
 
 export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacket {

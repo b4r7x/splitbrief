@@ -5,18 +5,19 @@ import {
   formatSeatChangeIdentities,
   type CrewSeatId,
   type formatSeatIdentity,
-  type SeatIds,
 } from '../../../core/crew/identity.js';
-import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import type { SeatIds } from '../../../core/crew/seat-ids.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool/catalog.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
-import { seatIdentitiesFromConfig, type SeatChange } from '../../../core/state/seats.js';
-import type { SpecMetadata } from '../../../core/paths-io.js';
+import { seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
+import type { SeatChange } from '../../../core/state/seats/changes.js';
+import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import { cliVocabularyTool, formatModelName } from '../../../core/model-display.js';
+import { cliVocabularyTool, formatModelName } from '../../../core/providers/model-display.js';
 import { resolveModelCatalog } from './catalog.js';
 import type { ModelCacheAccessor } from './resolution.js';
 

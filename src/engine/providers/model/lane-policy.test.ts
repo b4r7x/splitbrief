@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
 import { modelRowLanes } from './lane-policy.js';
 
 describe('modelRowLanes', () => {

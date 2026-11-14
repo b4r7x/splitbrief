@@ -1,4 +1,4 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Reviewer } from '../../reviewers/types.js';
 import type {
   Planner,

@@ -1,10 +1,7 @@
 import type { RunnerKind } from '../schemas/enums.js';
-import {
-  CLI_TOOL_TRUST,
-  type CliToolId,
-  type RunnerRoleTrustMetadata,
-  type RunnerTrustMetadata,
-} from './cli-tool-catalog.js';
+import { CLI_TOOL_TRUST } from './cli-tool/catalog.js';
+import type { CliToolId } from './cli-tool/types.js';
+import type { RunnerRoleTrustMetadata, RunnerTrustMetadata } from './cli-tool/types.js';
 import type { RunnerRole } from './seat-roles.js';
 
 type RunnerTrustConfig = { kind: 'cli'; tool: CliToolId } | { kind: Exclude<RunnerKind, 'cli'> };

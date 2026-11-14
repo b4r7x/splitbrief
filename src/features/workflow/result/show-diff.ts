@@ -1,4 +1,4 @@
-import type { RunRecord } from '../../../core/sessions/run-record.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { writeRunPatch } from '../../../engine/orchestrator/apply/patch.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { labelError } from '../../../utils/format/errors.js';

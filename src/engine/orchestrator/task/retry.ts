@@ -1,6 +1,7 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ConsultQuestion } from '../../../core/schemas/consult.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';

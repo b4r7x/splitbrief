@@ -1,14 +1,14 @@
 import type { Config } from '../../../core/schemas/config.js';
 import { isRetiredRecoveryReason } from '../../../core/recovery/halt.js';
 import { stepReadsNoWords } from '../../../core/recovery/typed-words.js';
-import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
+import { isImplementerPhase, isLivePhase } from '../../../core/phases/roles.js';
 import {
   createStartReadinessRecord,
   notAppliedWarnings,
   startReadinessWarnings,
 } from '../../../core/readiness/format.js';
 import type { ProjectContext } from '../../../core/state/types.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { isTaskCompleted, isTaskSettled } from '../../../core/schemas/task.js';
@@ -29,13 +29,14 @@ import { sameSeatCandidate } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { resolveReviewCadence, resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { reconcileSeatIdentities, recordSeatIdentities } from '../../../core/state/seats.js';
+import { recordSeatIdentities } from '../../../core/state/seats/record.js';
+import { reconcileSeatIdentities } from '../../../core/state/seats/changes.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import {
   ensureSessionDir,
   ensureSplitbriefDir,
   type SpecMetadata,
-} from '../../../core/paths-io.js';
+} from '../../../core/sessions/spec-files.js';
 import { projectName } from '../../../core/project-meta.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { readRunEvents } from '../../events/replay.js';
@@ -75,7 +76,7 @@ import {
   recordSteer,
   type ContinuationHolder,
 } from '../continuation.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import { resumeStep } from '../../../core/sessions/run/status.js';
 import { sessionConversation } from '../../../core/state/planning-conversation.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';

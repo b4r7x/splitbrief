@@ -5,7 +5,7 @@ import YAML from 'yaml';
 import { initConfig, loadConfig, writeConfig } from './io.js';
 import { createDefaultConfig, mergeWithDefaults } from './defaults.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
-import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner/fields.js';
 import { expectApi } from '#testing/helpers/config-narrowing.js';
 import { writeConfigYaml, writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

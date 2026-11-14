@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } fr
 import { join } from 'node:path';
 import { beforeAll, expect, it } from 'vitest';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue-state.js';
+import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { steeringPaths } from '../helpers/steer-e2e-shims.js';

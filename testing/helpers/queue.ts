@@ -1,7 +1,8 @@
-import type { WorkflowState, QueuedMessage } from '../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
+import type { QueuedMessage } from '../../src/core/schemas/workflow/queue.js';
 import { plainUserMessage } from '../../src/core/types/user-input.js';
 import { createInitialState, transition } from '../../src/core/state/machine.js';
-import { ensureSessionDir } from '../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../src/core/sessions/spec-files.js';
 import { createTempDir } from './temp-dir.js';
 
 export function setupProject(dirs: string[]): { projectDir: string; sessionId: string } {

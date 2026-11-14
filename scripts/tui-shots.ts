@@ -2,7 +2,7 @@ import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import { z } from 'zod';
-import { getSplitbriefVersion } from '../src/core/paths-io.js';
+import { getSplitbriefVersion } from '../src/core/version.js';
 import { getCurrentCommitSha } from '../src/lib/git/refs.js';
 import { listVisualScenarios, VISUAL_CATALOG_VERSION } from '../testing/visual/catalog.js';
 import { getFailureProvenance } from '../testing/visual/contracts/failure-identity.js';

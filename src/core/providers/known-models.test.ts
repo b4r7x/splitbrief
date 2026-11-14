@@ -18,10 +18,10 @@ import {
   CLI_TOOL_IDS,
   cliModelPolicyViolations,
   getCliModelPolicy,
-} from '../runners/cli-tool-catalog.js';
+} from '../runners/cli-tool/catalog.js';
 import type { RunnerRole } from '../runners/seat-roles.js';
-import { ImplementerConfigSchema } from '../schemas/implementer-config.js';
-import { PlannerConfigSchema } from '../schemas/planner-config.js';
+import { ImplementerConfigSchema } from '../schemas/runner/implementer.js';
+import { PlannerConfigSchema } from '../schemas/runner/planner.js';
 import { resolveAndSort } from '../../features/runners/model-catalog/catalog.js';
 
 const RUNNER_ROLES = ['planner', 'implementer'] as const satisfies readonly RunnerRole[];

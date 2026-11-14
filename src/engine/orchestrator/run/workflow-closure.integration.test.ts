@@ -21,14 +21,14 @@ import {
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
 import { sessionDir } from '../../../core/paths.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
-import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { readSession } from '../../../core/sessions/io.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { EngineEvent } from '../../events/types.js';
 import { readRunEvents } from '../../events/replay.js';

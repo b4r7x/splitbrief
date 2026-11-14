@@ -1,15 +1,15 @@
 import {
   fileFromFailureKey,
-  fixCheckCounts,
   fixCheckKeys,
   fixReviewChecks,
   isTestNodeKey,
-  judgeFixCheck,
   type FixCheckKeys,
-} from '../../../core/review/fix-task.js';
+} from '../../../core/review/fix/task.js';
+import { fixCheckCounts, judgeFixCheck } from '../../../core/review/fix/checks.js';
 import { resolveEndChecks } from '../../../core/config/runtime/resolve.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowContext } from '../types.js';
 import {
   planCheckRow,

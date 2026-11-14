@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { WorkflowState } from '../schemas/workflow.js';
-import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../schemas/workflow.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../schemas/workflow/state.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { LEGACY_STATE_VERSION, legacyWorkflowStateSchema } from './migration/legacy-state.js';
 import { mapV3StateToV4 } from './migration/map-v3.js';
@@ -15,7 +15,7 @@ import {
   readRawState,
   serializedState,
   statePath,
-} from './state-file.js';
+} from './file.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { rejectSymlinkTarget, SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import { confinedEnsureDir } from '../../lib/fs/confined.js';

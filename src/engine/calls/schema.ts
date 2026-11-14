@@ -14,7 +14,7 @@ import {
   RUNNER_CALL_WARNING_SEVERITIES,
   RUNNER_CALL_WARNING_SURFACES,
   RUNNER_CALL_USAGE_SEMANTICS,
-} from '../../core/runner-call-contract.js';
+} from '../../core/schemas/runner-call.js';
 import {
   PlannerArtifactTransportSchema,
   PlannerSessionScopeSchema,

@@ -6,7 +6,7 @@ import type { ProjectContext } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
-import type { SpecMetadata } from '../../core/paths-io.js';
+import type { SpecMetadata } from '../../core/sessions/spec-files.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Validator } from './validation/types.js';
 import type { BaseGate } from './base-gate.js';
@@ -24,7 +24,7 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { RoutingDecision } from './context-routing/types.js';
-import type { PlannerConversation } from '../../core/schemas/workflow.js';
+import type { PlannerConversation } from '../../core/schemas/workflow/state.js';
 import type { PlannerReplyAnswer } from '../../core/schemas/question.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 export interface OrchestratorCallbacks {

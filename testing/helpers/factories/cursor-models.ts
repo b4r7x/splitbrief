@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { DetectedModel } from '../../../src/core/discovery/detection.js';
+import type { DetectedModel } from '../../../src/core/discovery/detection/model.js';
 import { parseCursorModels } from '../../../src/engine/providers/cli-model-catalog.js';
 import type { ModelOption } from '../../../src/features/runners/model-catalog/recency.js';
 

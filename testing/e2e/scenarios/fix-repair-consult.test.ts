@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
+import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import type { StreamingOutputState } from '../../../src/stores/workflow/streaming-output.js';

@@ -2,7 +2,7 @@ import { realpathSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createDefaultConfig } from '../../src/core/config/load/defaults.js';
 import { isolationWorktreeRoot } from '../../src/core/paths.js';
-import type { WorkflowState } from '../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import { reconcileWorkspaceToBase } from '../../src/engine/orchestrator/isolation/acquisition.js';
 import { createRunIsolation } from '../../src/engine/orchestrator/isolation/create.js';
 import { createSnapshot } from '../../src/engine/snapshots/create.js';

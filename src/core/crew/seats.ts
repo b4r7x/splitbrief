@@ -4,7 +4,8 @@ import {
   resolveReviewerRunner,
 } from '../config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
-import { CLI_TOOL_IDS, isListedCliTool, type CliToolId } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS, isListedCliTool } from '../runners/cli-tool/catalog.js';
+import type { CliToolId } from '../runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/runner-billing.js';
 import type { Config } from '../schemas/config.js';

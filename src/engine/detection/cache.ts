@@ -6,23 +6,26 @@ import { writeConfinedSecureFileAsync } from '../../lib/fs/secure.js';
 import { warnError } from '../../lib/warn.js';
 import { MAX_CLI_CATALOG_READ_MODELS } from '../../core/discovery/catalog-read-merge.js';
 import {
-  CliExecutableFingerprintSchema,
   CliAuthStateSchema,
   CliCompatibilityStateSchema,
   CliReadinessStateSchema,
   CliTrustStateSchema,
   CliToolDetectionSchema,
   ProviderDetectionSchema,
-  normalizeProviderAuth,
-  type CliExecutableFingerprint,
   type CliToolDetection,
   type ProviderDetection,
-} from '../../core/discovery/detection.js';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+} from '../../core/discovery/detection/tool.js';
+import { normalizeProviderAuth } from '../../core/discovery/detection/auth.js';
+import {
+  CliExecutableFingerprintSchema,
+  type CliExecutableFingerprint,
+} from '../../core/discovery/detection/executable.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import { getSplitbriefPath, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CacheVersionStringBaseSchema } from '../../core/schemas/cache-version.js';
 import { CliToolIdSchema } from '../../core/schemas/enums.js';
-import { CLI_AUTH_CHANNEL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_AUTH_CHANNEL_IDS } from '../../core/runners/cli-tool/auth-channels.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1_000;

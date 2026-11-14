@@ -4,7 +4,7 @@ import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { useStores } from '../../../stores/use-stores.js';
-import type { RailStageState } from '../../../core/rail-stages.js';
+import type { RailStageState } from '../../../core/phases/rail.js';
 import type { RailForm } from '../layout/chrome-rows.js';
 import { measureRailCells, resolveRailStages } from '../components/rail.js';
 import { displayedRailStages } from '../at-rest.js';

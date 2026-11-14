@@ -15,7 +15,7 @@ import {
   readSpecFileOrEmpty,
   writeSpecFile,
   type SpecFileRef,
-} from '../../../core/paths-io.js';
+} from '../../../core/sessions/spec-files.js';
 import {
   PLAN_ANSWER_JSON_SCHEMA,
   PlanAnswerSchema,
@@ -24,16 +24,16 @@ import {
   type PlanProposal,
 } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
-import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import {
   isSessionConversation,
   questionsText,
   sessionConversation,
 } from '../../../core/state/planning-conversation.js';
-import { appendMessage } from '../../../core/sessions/log-writer.js';
+import { appendMessage } from '../../../core/sessions/log/writer.js';
 import { parsePlanJson, writePlanJson } from '../../../core/sessions/plan-file.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import { resumeStep } from '../../../core/sessions/run/status.js';
 import { readManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { detectStack } from '../../../core/validation/stacks/registry.js';
 import { createLogger } from '../../../lib/logger.js';

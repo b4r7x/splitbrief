@@ -19,15 +19,12 @@ import {
   passingReviewVerdict,
   planFromTasks,
 } from '#testing/helpers/typed-planner.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import {
-  createInitialState,
-  transition,
-  briefCorrections,
-} from '../../../src/core/state/machine.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
+import { createInitialState, transition } from '../../../src/core/state/machine.js';
+import { briefCorrections } from '../../../src/core/state/lineage.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { reactivateExistingSession } from '../../../src/core/sessions/active-pointer.js';
-import { appendMessage } from '../../../src/core/sessions/log-writer.js';
+import { appendMessage } from '../../../src/core/sessions/log/writer.js';
 import type { Phase } from '../../../src/core/schemas/enums.js';
 import type {
   RunningCall,

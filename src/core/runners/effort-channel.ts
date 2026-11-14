@@ -1,7 +1,8 @@
 import type { EffortLevel } from '../schemas/enums.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from './cli-tool-catalog.js';
-import { classifyCliAdmittedVersion } from './cli-version.js';
+import { CLI_TOOL_CATALOG } from './cli-tool/catalog.js';
+import type { CliToolId } from './cli-tool/types.js';
+import { classifyCliAdmittedVersion } from './cli-tool/version.js';
 import {
   getRunnerCatalogDisplayName,
   type RunnerConfig,

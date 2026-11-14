@@ -21,9 +21,9 @@ import {
   makePlanner,
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import { sessionDir } from '../../../src/core/paths.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';

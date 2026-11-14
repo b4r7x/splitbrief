@@ -4,7 +4,7 @@ import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { WORKFLOW_GUTTER_X } from '../../../src/features/workflow/layout/chrome-rows.js';

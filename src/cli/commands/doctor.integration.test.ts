@@ -10,25 +10,24 @@ import {
   installCompatibleCliShim,
 } from '#testing/helpers/compatible-cli-shim.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import {
-  cliAuthRemediation,
-  deriveCliReadiness,
   READINESS_DIAGNOSTIC_STATE_IDS,
   type CliReadinessResult,
   type ReadinessDiagnosticStateId,
 } from '../../core/schemas/readiness.js';
+import { cliAuthRemediation, deriveCliReadiness } from '../../core/readiness/cli-remediation.js';
+import { formatReadinessReport } from '../../core/readiness/format.js';
 import {
   deriveReadinessDiagnosticState,
-  formatReadinessReport,
   READINESS_DIAGNOSTIC_REMEDIATION,
   readinessCheckRemediation,
   serializeReadinessReportJson,
   type ReadinessReportJson,
-} from '../../core/readiness/format.js';
+} from '../../core/readiness/json.js';
 import type { RunnerAvailabilityFact } from '../../core/readiness/checks/availability.js';
 import type { ReadinessCheck } from '../../core/readiness/types.js';
-import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection/executable.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
 import {
   detectRunnerEvidence,

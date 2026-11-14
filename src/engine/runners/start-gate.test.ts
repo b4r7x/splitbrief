@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { chmod, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection/executable.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import {
   admitFreshCliStart,

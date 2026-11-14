@@ -5,7 +5,7 @@ import { PLAN_ANSWER_JSON_SCHEMA } from '../../core/schemas/plan.js';
 import {
   REVIEW_ANSWER_JSON_SCHEMA,
   REVIEW_VERDICT_JSON_SCHEMA,
-} from '../../core/schemas/review.js';
+} from '../../core/schemas/review/verdict.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
 

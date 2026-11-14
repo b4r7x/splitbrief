@@ -8,20 +8,18 @@ import type {
   SeatView,
   SummaryView,
 } from './view-model.js';
+import { PLANNER_INHERITANCE, REVIEW_NONE, type CrewSeatId } from '../../../core/crew/identity.js';
 import {
-  PLANNER_INHERITANCE,
-  REVIEW_NONE,
   formatCollapsedSeatSpansFromIdentities,
-  type CrewSeatId,
   type SeatLineSpan,
-} from '../../../core/crew/identity.js';
-import { formatStageLabel } from '../../../core/phase-display.js';
+} from '../../../core/crew/seat-line/collapse.js';
+import { formatStageLabel } from '../../../core/phases/labels.js';
 import { formatScoreSummaryParts } from '../../../core/formatting.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format/time.js';
 import { countNoun } from '../../../utils/pluralize.js';
-import type { SetAside } from '../../../core/schemas/review.js';
+import type { SetAside } from '../../../core/schemas/review/verdict.js';
 import { findingFacts, setAsideLabel, setAsideLine } from '../../../core/review/verdict.js';
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 import { passedFractionSpans } from '../display/build-progress.js';

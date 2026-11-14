@@ -1,6 +1,6 @@
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
-import type { DetectedPricingTier } from '../../core/discovery/detection.js';
+import type { DetectedPricingTier } from '../../core/discovery/detection/model.js';
 import type { ResolvedPricing } from './pricing-resolver.js';
 
 export type ProviderCostEntry = {

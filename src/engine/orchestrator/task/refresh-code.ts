@@ -1,5 +1,5 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import { confinedExists, confinedReadFileAsync } from '../../../lib/fs/confined.js';

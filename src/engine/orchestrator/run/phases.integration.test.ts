@@ -41,14 +41,14 @@ import {
   TASKS_FILE,
   sessionDir,
 } from '../../../core/paths.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
+import { writeSpecFile } from '../../../core/sessions/spec-files.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createValidator } from '../validation/run.js';
 import { createContinuationHolder } from '../continuation.js';
 import type { OrchestratorCallbacks, WorkflowContext, WorkflowSinks } from '../types.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ApproveLevel, WorkflowMode } from '../../../core/schemas/enums.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';

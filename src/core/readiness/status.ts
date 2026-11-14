@@ -6,7 +6,7 @@ import type {
   ReadinessSection,
 } from './types.js';
 import { isUnverifiedAuth } from '../discovery/runner-evidence.js';
-import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../runners/cli-tool/catalog.js';
 import {
   cliReadinessCheckId,
   type ReadinessNextActionKind,

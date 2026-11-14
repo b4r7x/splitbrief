@@ -8,7 +8,7 @@ import {
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import type { NavigateArgs } from './router.js';
-import type { RunStatus } from '../../core/sessions/run-status.js';
+import type { RunStatus } from '../../core/sessions/run/status.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 function preparedExecution(feature: string): PreparedExecution {

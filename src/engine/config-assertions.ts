@@ -4,12 +4,12 @@ import type {
   ApiPlannerConfig,
   CliPlannerConfig,
   ShellPlannerConfig,
-} from '../core/schemas/planner-config.js';
+} from '../core/schemas/runner/planner.js';
 import type {
   AgentImplementerConfig,
   ApiImplementerConfig,
   ShellImplementerConfig,
-} from '../core/schemas/implementer-config.js';
+} from '../core/schemas/runner/implementer.js';
 import { configError } from '../core/config/errors.js';
 
 export function assertPlannerKind(config: Config, kind: 'api'): ApiPlannerConfig;

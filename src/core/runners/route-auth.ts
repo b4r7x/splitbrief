@@ -2,10 +2,11 @@ import type {
   CliProviderAuth,
   CliProviderAuthFact,
   CliProviderAuthUnreadableReason,
-} from '../discovery/detection.js';
+} from '../discovery/detection/auth.js';
 import type { SavedCatalog } from '../discovery/catalog-read-merge.js';
 import { includes } from '../../utils/type-guards.js';
-import { CLI_TOOL_CATALOG, PROVIDER_ORACLE_TOOL_IDS, type CliToolId } from './cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, PROVIDER_ORACLE_TOOL_IDS } from './cli-tool/catalog.js';
+import type { CliToolId } from './cli-tool/types.js';
 
 /**
  * Whether one model route can call. `configured`: a credential in the tool's

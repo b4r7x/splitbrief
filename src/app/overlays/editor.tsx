@@ -8,7 +8,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { configStore } from '../../stores/project/config.js';
 import { externalEditRequestStore } from '../../stores/ui/external-edit-request.js';
-import { writeSpecFile } from '../../core/paths-io.js';
+import { writeSpecFile } from '../../core/sessions/spec-files.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { planSaveErrors } from '../../features/editor/plan-save.js';
 import { SOFT_SEP } from '../../core/separators.js';

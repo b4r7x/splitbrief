@@ -14,9 +14,9 @@ import {
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-  type CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
-import type { DetectedModel } from '../../../core/discovery/detection.js';
+} from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { RunnerRole } from '../../../core/runners/seat-roles.js';
 import type { PlannerCliToolId, ImplementerCliToolId } from '../../../core/schemas/enums.js';
 import { includes, isRecord } from '../../../utils/type-guards.js';

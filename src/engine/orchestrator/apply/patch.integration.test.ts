@@ -14,7 +14,7 @@ import {
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { snapshotFilesDir, SNAPSHOT_BASELINE_ID, SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createSnapshot } from '../../snapshots/create.js';

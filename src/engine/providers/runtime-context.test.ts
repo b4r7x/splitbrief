@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import {
   APPLICATION_DEFAULT_CONTEXT_TOKENS,
   resolveApiRuntimeContext,

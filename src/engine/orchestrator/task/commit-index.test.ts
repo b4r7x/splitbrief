@@ -10,7 +10,7 @@ import {
   registerCommitTestDir,
 } from '#testing/helpers/orchestrator-commit.js';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { validateCommitAndAdvance } from './commit.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 

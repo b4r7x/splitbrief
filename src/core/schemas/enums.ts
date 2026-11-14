@@ -11,7 +11,7 @@ import {
   IMPLEMENTER_CLI_TOOL_IDS,
   isListedCliTool,
   PLANNER_CLI_TOOL_IDS,
-} from '../runners/cli-tool-catalog.js';
+} from '../runners/cli-tool/catalog.js';
 
 export const META_PROVIDER_IDS = ['shell', 'agent'] as const;
 

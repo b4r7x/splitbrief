@@ -1,4 +1,4 @@
-import type { SpecMetadata } from '../../src/core/paths-io.js';
+import type { SpecMetadata } from '../../src/core/sessions/spec-files.js';
 import type { WorkflowSinks } from '../../src/engine/orchestrator/types.js';
 
 export const TEST_WORKFLOW_SINKS: WorkflowSinks = {

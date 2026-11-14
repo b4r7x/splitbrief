@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { DetectedModel, DetectedModelInstance } from '../../core/discovery/detection.js';
+import type { DetectedModel, DetectedModelInstance } from '../../core/discovery/detection/model.js';
 import { endpointPolicyFetch } from '../../core/providers/endpoint-policy.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { assertNever } from '../../utils/type-guards.js';

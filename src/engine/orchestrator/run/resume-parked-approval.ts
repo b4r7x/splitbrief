@@ -1,5 +1,5 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { reopensPlanCard } from '../../../core/sessions/run-status.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { reopensPlanCard } from '../../../core/sessions/run/status.js';
 import type { PlannerCallbacksContext, WorkflowContext } from '../types.js';
 import type { Planner } from '../../planners/types.js';
 import type { PlanningPhaseResult } from '../planning/types.js';

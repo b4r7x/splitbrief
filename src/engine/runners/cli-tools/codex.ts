@@ -9,7 +9,7 @@ import type {
 } from './contract.js';
 import { lastMessageGroupText } from './final-group.js';
 import { validateCliArgs } from './validate-args.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { isRecord, optionalString } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 

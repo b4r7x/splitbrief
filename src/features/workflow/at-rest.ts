@@ -7,9 +7,9 @@ import {
   type RailHalt,
   type RailStageState,
   type RailStageStatus,
-} from '../../core/rail-stages.js';
-import type { RunRecord } from '../../core/sessions/run-record.js';
-import { awaitsApply, type StopReason } from '../../core/sessions/run-status.js';
+} from '../../core/phases/rail.js';
+import type { RunRecord } from '../../core/sessions/run/record.js';
+import { awaitsApply, type StopReason } from '../../core/sessions/run/status.js';
 import type { RunHalt } from '../../core/run-view/halt.js';
 import type { RouteData } from '../../stores/navigation/router.js';
 import type { DepartureKind } from '../../stores/workflow/departure.js';

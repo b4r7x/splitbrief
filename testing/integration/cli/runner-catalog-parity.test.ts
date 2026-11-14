@@ -11,13 +11,13 @@ import type { SeatPickerRole } from '../../../src/core/runners/seat-roles.js';
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
-  EXCLUDED_CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
   isListedCliTool,
   LISTED_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   cliToolSupportsRole,
-} from '../../../src/core/runners/cli-tool-catalog.js';
+} from '../../../src/core/runners/cli-tool/catalog.js';
+import { EXCLUDED_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool/custom-only.js';
 import {
   ImplementerApiProviderIdSchema,
   ImplementerCliToolIdSchema,

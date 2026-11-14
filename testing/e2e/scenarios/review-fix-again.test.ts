@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { arrowSep } from '../../../src/core/separators.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';

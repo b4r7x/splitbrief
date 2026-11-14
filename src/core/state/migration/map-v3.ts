@@ -1,5 +1,5 @@
-import { WORKFLOW_STATE_VERSION, WorkflowStateSchema } from '../../schemas/workflow.js';
-import type { WorkflowState } from '../../schemas/workflow.js';
+import { WORKFLOW_STATE_VERSION, WorkflowStateSchema } from '../../schemas/workflow/state.js';
+import type { WorkflowState } from '../../schemas/workflow/state.js';
 import type { SessionRef } from '../../types/session-ref.js';
 import { legacyWorkflowStateSchema, type LegacyWorkflowState } from './legacy-state.js';
 

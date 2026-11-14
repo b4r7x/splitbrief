@@ -62,7 +62,7 @@ import { stopPoint } from '../../stop/copy.js';
 import { recoveryActionParts } from '../../../../core/recovery/action-label.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import type { RecoveryFold, SettledTranscriptSection } from '../transcript-walk.js';
-import { phaseStage } from '../../../../core/rail-stages.js';
+import { phaseStage } from '../../../../core/phases/rail.js';
 import { queueCopy } from '../../queue-copy.js';
 import { formatRejectRunMessage } from '../../../../core/runtime/commands/messages.js';
 

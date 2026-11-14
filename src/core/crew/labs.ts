@@ -1,4 +1,4 @@
-import type { CliToolId } from '../runners/cli-tool-catalog.js';
+import type { CliToolId } from '../runners/cli-tool/types.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { assertNever } from '../../utils/type-guards.js';
 

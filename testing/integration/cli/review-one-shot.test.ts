@@ -31,7 +31,7 @@ import {
   SPLITBRIEF_DIR,
 } from '../../../src/core/paths.js';
 import { AUTOMATIC_MODEL } from '../../../src/core/providers/automatic-model.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { registerReviewCommand } from '../../../src/cli/commands/review.js';
 import { resolveBareCommandOnPath } from '../../../src/lib/process/command-path.js';
 

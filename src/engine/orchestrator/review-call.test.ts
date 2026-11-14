@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { loadState } from '../../core/state/persistence.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -15,7 +15,7 @@ import {
   REVIEW_ANSWER_JSON_SCHEMA,
   ReviewAnswerSchema,
   type ReviewAnswer,
-} from '../../core/schemas/review.js';
+} from '../../core/schemas/review/verdict.js';
 import { taskId } from '../../core/schemas/task.js';
 import { fallbackInstruction } from '../runners/typed-output.js';
 import { runReviewerCall } from './review-call.js';

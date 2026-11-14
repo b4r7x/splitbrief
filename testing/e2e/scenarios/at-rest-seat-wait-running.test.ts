@@ -3,11 +3,11 @@ import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
-import type { SeatWait } from '../../../src/core/schemas/workflow.js';
+import type { SeatWait } from '../../../src/core/schemas/workflow/seat.js';
 import {
   createSessionLogAppender,
   toEngineEventEntry,
-} from '../../../src/core/sessions/log-writer.js';
+} from '../../../src/core/sessions/log/writer.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { acquireLiveness } from '../../../src/engine/orchestrator/run/liveness.js';

@@ -2,16 +2,18 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CLI_READINESS_STATES } from '../../src/core/discovery/detection.js';
+import { CLI_READINESS_STATES } from '../../src/core/discovery/detection/tool.js';
 import {
-  ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   CLI_TOOL_TRUST,
+} from '../../src/core/runners/cli-tool/catalog.js';
+import { EXCLUDED_CLI_TOOL_IDS } from '../../src/core/runners/cli-tool/custom-only.js';
+import {
+  ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   CURSOR_CLI_ADMISSION_VERDICT,
-  EXCLUDED_CLI_TOOL_IDS,
-  type CliToolId,
-} from '../../src/core/runners/cli-tool-catalog.js';
+} from '../../src/core/runners/cli-tool/builders.js';
+import type { CliToolId } from '../../src/core/runners/cli-tool/types.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const DOC_PATH = join(REPO_ROOT, 'docs/PLANNERS-AND-IMPLEMENTERS.md');

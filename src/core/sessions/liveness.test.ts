@@ -7,7 +7,7 @@ import { LOCKFILE, sessionDir, STATE_FILE } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../state/machine.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
-import { HEARTBEAT_STALENESS_MS, type SessionLockStatus } from './lockfile-status.js';
+import { HEARTBEAT_STALENESS_MS, type SessionLockStatus } from './lock/status.js';
 
 let tmp: string;
 

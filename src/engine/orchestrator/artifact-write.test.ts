@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { readSpecFile, type SpecMetadata } from '../../core/paths-io.js';
+import { readSpecFile, type SpecMetadata } from '../../core/sessions/spec-files.js';
 import { PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeAndPublishPlanArtifacts } from './artifact-write.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { seatIdentitiesFromConfig } from '../../core/state/seats.js';
+import { seatIdentitiesFromConfig } from '../../core/state/seats/record.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
 
 const SESSION_ID = 'artifact-write-test';

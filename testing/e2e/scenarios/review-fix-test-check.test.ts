@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
+import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
 import type { Check } from '../../../src/core/schemas/task.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

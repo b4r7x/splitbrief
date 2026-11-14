@@ -41,7 +41,7 @@ import {
   type ChangeDetector,
   type ChangeDetectorBaseline,
 } from '../../change-detection.js';
-import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../../core/schemas/runner-fields.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../../core/schemas/runner/fields.js';
 import { classifyHaltSignature } from '../../../core/pipeline-spec/halts.js';
 import {
   ABORTED_OUTCOME_TEXT,

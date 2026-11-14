@@ -1,6 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { RunSnapshotKind } from '../../../core/schemas/snapshot.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { EventBus } from '../../events/types.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { hasBaseline } from '../../snapshots/manifest.js';

@@ -1,13 +1,13 @@
-import {
-  cliProviderAuthFacts,
-  type CliToolDetection,
-  type ProviderDetection,
-} from '../../../core/discovery/detection.js';
-import type { CliReadinessState } from '../../../core/discovery/detection.js';
+import type {
+  CliToolDetection,
+  ProviderDetection,
+} from '../../../core/discovery/detection/tool.js';
+import { cliProviderAuthFacts } from '../../../core/discovery/detection/auth.js';
+import type { CliReadinessState } from '../../../core/discovery/detection/tool.js';
 import type { SavedCatalog, SavedCatalogOf } from '../../../core/discovery/catalog-read-merge.js';
 import type { ApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
 import { hasApiKey } from '../../../core/providers/catalog.js';
-import type { CliToolDescriptor } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolDescriptor } from '../../../core/runners/cli-tool/types.js';
 import { servedProviders } from '../../../core/runners/route-auth.js';
 import {
   seatPickerLane,
@@ -15,7 +15,7 @@ import {
   type SeatPickerRole,
 } from '../../../core/runners/seat-roles.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
-import { cliReadinessRemediation, thenRecheck } from '../../../core/schemas/readiness.js';
+import { cliReadinessRemediation, thenRecheck } from '../../../core/readiness/cli-remediation.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
 export type PickerStatusState = CliReadinessState;

@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../../core/discovery/detection.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import {
@@ -13,7 +13,7 @@ import {
   TOOL_EFFORT_LADDERS,
   type KnownModel,
 } from '../../../core/providers/known-models.js';
-import { isCliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
 import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { isProviderId, type ProviderId, type RunnerKind } from '../../../core/schemas/enums.js';

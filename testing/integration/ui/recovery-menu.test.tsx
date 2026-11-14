@@ -12,7 +12,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';

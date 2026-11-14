@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
 import {

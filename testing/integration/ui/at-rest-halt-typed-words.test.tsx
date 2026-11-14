@@ -21,7 +21,7 @@ import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';

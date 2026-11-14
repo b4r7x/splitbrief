@@ -10,7 +10,8 @@ import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { routeAuthState } from '../../../core/runners/route-auth.js';
-import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import {
   formatReadinessBlockers,

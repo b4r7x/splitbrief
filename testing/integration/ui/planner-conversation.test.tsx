@@ -18,7 +18,7 @@ import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { clearAllHandlers } from '../../../src/features/workflow/handlers.js';
 import { cancelEscapeAction } from '../../../src/lib/terminal/escape-debounce.js';
 import type { ClarificationQuestion } from '../../../src/core/schemas/question.js';
-import type { PlannerConversation } from '../../../src/core/schemas/workflow.js';
+import type { PlannerConversation } from '../../../src/core/schemas/workflow/state.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';

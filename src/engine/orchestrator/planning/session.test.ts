@@ -24,10 +24,10 @@ import {
   TASKS_FILE,
   sessionDir,
 } from '../../../core/paths.js';
-import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import type { PlanResult } from '../../../core/schemas/plan.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
@@ -1092,7 +1092,7 @@ describe('the planning session on the live path', () => {
 
   it('starts an old run that stopped inside the multi-step chain on one session with its documents', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
-    const { writeSpecFile } = await import('../../../core/paths-io.js');
+    const { writeSpecFile } = await import('../../../core/sessions/spec-files.js');
     writeSpecFile({ projectDir, sessionId }, 'research.md', '# Research\n\nOld findings', null);
     const typed = scriptedTypedCall([makePlanProposal({ tasks: [makeTaskSpec()] })]);
     const state: WorkflowState = {

@@ -7,21 +7,17 @@ import {
   getFailedTaskIds,
   getSkippedTaskIds,
 } from './selectors.js';
-import {
-  WorkflowStateSchema,
-  fixCyclesOf,
-  type ChangedFilesSnapshot,
-  type LineageRecord,
-  type QueuedMessage,
-  type WorkflowState,
-} from '../schemas/workflow.js';
+import { WorkflowStateSchema, fixCyclesOf, type WorkflowState } from '../schemas/workflow/state.js';
+import type { LineageRecord } from '../schemas/workflow/lineage.js';
+import type { QueuedMessage } from '../schemas/workflow/queue.js';
+import type { ChangedFilesSnapshot } from '../schemas/workflow/changed-files.js';
 import { taskId, type Task } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
-import { deriveRunStatus } from '../sessions/run-status.js';
-import { reviewsAgain } from '../review/verdict.js';
+import { deriveRunStatus } from '../sessions/run/status.js';
+import { reviewsAgain } from '../review/scope.js';
 import { plainUserMessage } from '../types/user-input.js';
 
 function makeQueuedMessage(overrides: Partial<QueuedMessage> = {}): QueuedMessage {

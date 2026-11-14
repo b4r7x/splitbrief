@@ -5,7 +5,7 @@ import {
 } from '../../core/config/accessors/runner-config.js';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import { getRunnerIdentityDisplayName } from '../../core/providers/catalog.js';
-import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import {
   modelProviderAuthKey,
   routeSignInCommand,

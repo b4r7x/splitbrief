@@ -1,7 +1,7 @@
 import { TASKS_FILE } from '../../src/core/paths.js';
-import { writeSpecFile } from '../../src/core/paths-io.js';
+import { writeSpecFile } from '../../src/core/sessions/spec-files.js';
 import type { SessionRef } from '../../src/core/types/session-ref.js';
-import type { WorkflowState } from '../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import { saveState } from '../../src/core/state/persistence.js';
 import { formatTasks } from '../../src/engine/spec/formatter.js';
 import { readWorkflowStateHead } from '../../src/engine/orchestrator/state-ops.js';

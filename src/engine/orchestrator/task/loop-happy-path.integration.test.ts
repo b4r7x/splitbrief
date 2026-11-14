@@ -14,7 +14,7 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import { resumeStep } from '../../../core/sessions/run/status.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];

@@ -1,4 +1,4 @@
-import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
+import type { ImplementerWriteMode } from '../../../core/schemas/runner/implementer.js';
 import { scopeEntryPatterns, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { declaredPathProblem } from '../../implementers/bundle-baseline.js';

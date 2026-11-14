@@ -3,7 +3,7 @@ import {
   toEngineEventEntry,
   type SessionLogAppendFailure,
   type SessionLogAppender,
-} from '../../../core/sessions/log-writer.js';
+} from '../../../core/sessions/log/writer.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { boundEngineEventForConsumer } from '../bound.js';
 import type { EngineEvent, EventSink } from '../types.js';

@@ -1,4 +1,4 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { Planner } from '../../planners/types.js';

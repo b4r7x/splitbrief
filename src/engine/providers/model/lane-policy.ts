@@ -3,11 +3,8 @@
  * `api` providers only — a CLI tool's rows come from its own listing, its
  * bundled table, and (claude-code) its account options (REQ-B08).
  */
-import {
-  CLI_TOOL_CATALOG,
-  isCliToolId,
-  type CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { ProviderId, RunnerKind } from '../../../core/schemas/enums.js';
 
 export interface ModelRowLanes {

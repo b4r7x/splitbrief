@@ -1,5 +1,5 @@
 import { PLAN_JSON_FILE } from '../paths.js';
-import { writeSpecFile, type SpecFileRef } from '../paths-io.js';
+import { writeSpecFile, type SpecFileRef } from './spec-files.js';
 import { PlanProposalSchema, type PlanProposal } from '../schemas/plan.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 

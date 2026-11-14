@@ -1,8 +1,8 @@
-import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
+import type { ReviewPacket } from '../../../../core/schemas/review/packet.js';
 import {
   ReviewPacketSchema,
   REVIEW_PACKET_VERSION,
-} from '../../../../core/schemas/review-packet.js';
+} from '../../../../core/schemas/review/packet.js';
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE } from '../../../../core/paths.js';
 import { nowIso } from '../../../../utils/format/time.js';
 import { readEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';

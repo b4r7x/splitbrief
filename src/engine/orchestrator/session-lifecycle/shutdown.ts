@@ -1,6 +1,6 @@
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { warnStderr } from '../../../lib/warn.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';

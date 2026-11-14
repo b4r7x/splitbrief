@@ -2,7 +2,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach } from 'vitest';
 
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';

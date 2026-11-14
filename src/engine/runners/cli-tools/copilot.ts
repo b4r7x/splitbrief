@@ -1,6 +1,6 @@
 import { accumulateTokenUsage } from '../../calls/usage.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { ParsedLine } from '../types.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';

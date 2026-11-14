@@ -1,4 +1,4 @@
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { ParsedLine } from '../types.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';

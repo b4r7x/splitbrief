@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { deriveRunStatus } from '../../../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../../../src/core/sessions/run/status.js';
 import { resolveSessionDir } from '../../../helpers/live-cli-harness.js';
 import { gateLiveMatrixRow } from '../../../helpers/live-harness.js';
 import {

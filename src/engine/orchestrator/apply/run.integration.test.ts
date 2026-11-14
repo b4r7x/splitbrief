@@ -21,14 +21,14 @@ import {
   makeWctx,
   makeWorktreeIsolation,
 } from '#testing/helpers/orchestrator-factories.js';
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
+import { groupEventsIntoSections } from '../../../core/sections/group.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';

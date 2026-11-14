@@ -4,17 +4,15 @@ import { cliReadinessFactsFor, PROBE_EXECUTABLE } from '#testing/helpers/factori
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   CLI_READINESS_STATES,
-  type CliExecutableIdentity,
   type CliReadinessState,
-} from '../../../src/core/discovery/detection.js';
+} from '../../../src/core/discovery/detection/tool.js';
+import type { CliExecutableIdentity } from '../../../src/core/discovery/detection/executable.js';
 import {
   CLI_TOOL_CATALOG,
   LISTED_CLI_TOOL_IDS,
-} from '../../../src/core/runners/cli-tool-catalog.js';
-import {
-  deriveCliReadiness,
-  deriveCliReadinessStatus,
-} from '../../../src/core/schemas/readiness.js';
+} from '../../../src/core/runners/cli-tool/catalog.js';
+import { deriveCliReadinessStatus } from '../../../src/core/schemas/readiness.js';
+import { deriveCliReadiness } from '../../../src/core/readiness/cli-remediation.js';
 import { detectAll, detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import {

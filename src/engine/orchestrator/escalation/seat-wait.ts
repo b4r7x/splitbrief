@@ -4,7 +4,8 @@ import {
 } from '../../../core/config/accessors/runner-config.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { SeatWait, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { SeatWait } from '../../../core/schemas/workflow/seat.js';
 import { heldSeatOf, seatWaitMoved } from '../../../core/sessions/held-seat.js';
 import {
   seatRetrySentence,

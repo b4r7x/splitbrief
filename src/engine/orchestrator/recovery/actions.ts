@@ -1,7 +1,7 @@
 import { readReviewRecord, writeAcceptedReview } from '../../../core/review/store.js';
-import { acceptedOpen } from '../../../core/review/verdict.js';
+import { acceptedOpen } from '../../../core/review/accepted.js';
 import { randomUUID } from 'node:crypto';
-import { phaseRole } from '../../../core/phases.js';
+import { phaseRole } from '../../../core/phases/roles.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import {
   allowedActionsForHalt,
@@ -12,14 +12,14 @@ import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/rec
 import { sameSeatCandidate, type CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat, seatCandidateOfRunner } from './switch-seat.js';
 import { readSeatOfRecord } from './seat-swap-context.js';
-import { haltedSeatIds } from '../../../core/state/seats.js';
+import { haltedSeatIds } from '../../../core/state/seats/record.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { queuedUserMessage } from '../../../core/queue-state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { queuedUserMessage } from '../../../core/queue/state.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
@@ -51,7 +51,7 @@ import {
 } from '../state-ops.js';
 import { recordDecideForMe } from '../planning/call-loop.js';
 import { decidedRecovery } from '../../../core/recovery/decide.js';
-import { cannotDetail } from '../../../core/recovery/headline.js';
+import { cannotDetail } from '../../../core/recovery/causes.js';
 import { formatMessageInput } from '../queue/prompt.js';
 import { endRun } from '../run/close.js';
 import { haltCutApply } from '../apply/run.js';

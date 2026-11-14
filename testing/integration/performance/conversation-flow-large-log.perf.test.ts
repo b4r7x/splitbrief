@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Section } from '../../../src/core/sections/event-sections.js';
+import type { Section } from '../../../src/core/sections/types.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { StreamingOutputState } from '../../../src/stores/workflow/streaming-output.js';
 import type {

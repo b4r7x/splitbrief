@@ -8,7 +8,7 @@ import {
   selectRailStage,
   type RailStage,
   type RailStageState,
-} from '../../../core/rail-stages.js';
+} from '../../../core/phases/rail.js';
 import {
   getChromeContentWidth,
   railConnectorWidth,

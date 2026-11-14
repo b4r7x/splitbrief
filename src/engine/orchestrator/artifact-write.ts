@@ -1,5 +1,5 @@
-import type { SpecFileRef, SpecMetadata } from '../../core/paths-io.js';
-import { readSpecFile, writeSpecFile } from '../../core/paths-io.js';
+import type { SpecFileRef, SpecMetadata } from '../../core/sessions/spec-files.js';
+import { readSpecFile, writeSpecFile } from '../../core/sessions/spec-files.js';
 import { PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Task } from '../../core/schemas/task.js';

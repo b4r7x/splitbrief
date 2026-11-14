@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../src/core/readiness/format.js';
+import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../src/core/readiness/json.js';
 import type { RecoveryReason } from '../../src/core/schemas/enums.js';
 import {
   READINESS_DIAGNOSTIC_STATE_IDS,

@@ -1,8 +1,8 @@
 import * as ink from 'ink';
 import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
 import { resolveEditorKeyAction } from '../../core/keybindings/editor.js';
-import { selectionRange } from '../../core/editor/editor-state.js';
-import type { EditorEvent } from '../../core/editor/editor-state.js';
+import { selectionRange } from '../../core/editor/state.js';
+import type { EditorEvent } from '../../core/editor/types.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { copyToClipboard } from '../../lib/clipboard/clipboard.js';

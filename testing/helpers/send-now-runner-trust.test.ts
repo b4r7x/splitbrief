@@ -2,10 +2,8 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { requireReviewSeat } from '../../src/core/config/accessors/reviewer-runner.js';
-import {
-  inlineRunnerCommand,
-  isCustomCommandRunner,
-} from '../../src/core/config/custom-commands.js';
+import { inlineRunnerCommand } from '../../src/core/config/custom-commands/schema.js';
+import { isCustomCommandRunner } from '../../src/core/config/custom-commands/tuple.js';
 import {
   inlineRunnerSecurityPosture,
   readCustomRunnerTrust,

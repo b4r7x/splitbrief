@@ -3,7 +3,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { seatChangeWords, type SeatChangePoint } from '../../../core/crew/seats.js';
-import type { RunRecord } from '../../../core/sessions/run-record.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
 import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
 import { formatElapsedClock } from '../../../utils/format/time.js';

@@ -1,6 +1,6 @@
 import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue-state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue/state.js';
 import {
   _tokensInternal,
   taskAttemptTotalTokens,

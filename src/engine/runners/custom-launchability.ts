@@ -20,8 +20,8 @@ import {
   resolveCustomExecutable,
   type ResolveCustomExecutableOptions,
 } from './resolve-cli-executable.js';
-import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
-import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection/executable.js';
+import type { CliExecutableReceipt } from '../../core/discovery/detection/executable.js';
 
 export type CustomRunnerLaunchability =
   | Readonly<{

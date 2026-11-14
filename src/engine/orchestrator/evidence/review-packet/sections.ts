@@ -1,16 +1,17 @@
-import { costAmountBasis, type Summary } from '../../../../core/schemas/summary.js';
-import type { WorkflowState } from '../../../../core/schemas/workflow.js';
+import type { Summary } from '../../../../core/schemas/summary.js';
+import { costAmountBasis } from '../../../../core/schemas/cost.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { RunnerKind } from '../../../../core/schemas/enums.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../core/schemas/evidence.js';
-import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
+import type { ReviewPacket } from '../../../../core/schemas/review/packet.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { BRIEF_QUALITY_FILE, DRIFT_REPORT_FILE, EVIDENCE_FILE } from '../../../../core/paths.js';
 import { countBySeverity, countByValue, uniqueSorted } from '../../../../utils/collections.js';
 import type { DriftFinding, DriftReport } from '../../../../core/schemas/drift.js';
 import type { BuildReviewPacketOptions, BriefQualityArtifact, PacketEvent } from './types.js';
 import { retryCountsFromEvents } from '../retry-counts.js';
-import { readSeatIdentities } from '../../../../core/state/seats.js';
-import type { SeatIds } from '../../../../core/crew/identity.js';
+import { readSeatIdentities } from '../../../../core/state/seats/record.js';
+import type { SeatIds } from '../../../../core/crew/seat-ids.js';
 
 function taskEvidence(task: Task, ledger: EvidenceLedger | null): EvidenceTask | undefined {
   return ledger?.tasks.find((entry) => entry.id === task.id);

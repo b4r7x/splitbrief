@@ -1,8 +1,8 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
-import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run/status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import { noWordsRefusal, statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
 import { sanitizePasteBody } from '../../../lib/terminal/filtered-stdin/paste.js';

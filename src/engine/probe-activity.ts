@@ -4,7 +4,7 @@ import type {
   ProbeCheck,
   ProbeSubject,
 } from '../core/discovery/probe-activity.js';
-import type { CliToolId } from '../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../core/runners/cli-tool/types.js';
 
 const probes = new Map<number, ProbeActivity>();
 const toolChecks = new Map<CliToolId, number>();

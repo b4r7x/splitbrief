@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { transition } from '../../../core/state/machine.js';
 import { ImplementerReportSchema, type ConsultAnswer } from '../../../core/schemas/consult.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

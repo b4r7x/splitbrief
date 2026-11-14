@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createProductionDetectionDeps } from './deps.js';
-import { cliAuthRemediation } from '../../core/schemas/readiness.js';
+import { cliAuthRemediation } from '../../core/readiness/cli-remediation.js';
 
 const HOST_ENV = ['PATH', 'HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME'] as const;
 

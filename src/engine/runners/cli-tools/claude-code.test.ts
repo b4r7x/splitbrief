@@ -18,7 +18,7 @@ import {
   claudeCodePlannerAdapter,
   claudeProtocolEvents,
 } from './claude-code.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from '../../../core/schemas/plan.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { RunningCall } from '../../calls/steering.js';

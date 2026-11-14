@@ -3,8 +3,9 @@ import { setupProject } from '#testing/helpers/planning-phase.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { readSpecFile, writeSpecFile } from '../paths-io.js';
-import type { ReviewRecord, WorkflowState } from '../schemas/workflow.js';
+import { readSpecFile, writeSpecFile } from '../sessions/spec-files.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import type { ReviewRecord } from '../schemas/workflow/review-record.js';
 import * as store from './store.js';
 import { readReviewRecord } from './store.js';
 

@@ -1,5 +1,5 @@
 import type { NormalizedKeySignature } from './normalize.js';
-import type { EditorEvent, EditorMotion } from '../editor/editor-state.js';
+import type { EditorEvent, EditorMotion } from '../editor/types.js';
 
 export type EditorKeyAction =
   | EditorEvent

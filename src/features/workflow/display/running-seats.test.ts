@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
-import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/identity.js';
+import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/seat-line/collapse.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import type { ActiveOperation } from '../../../stores/workflow/operations/state.js';
 import { EMPTY_BRIEFS, type RunBriefs, type WorkflowTask } from '../../../core/run-view/briefs.js';

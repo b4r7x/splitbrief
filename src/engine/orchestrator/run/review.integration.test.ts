@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createSnapshot } from '../../snapshots/create.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir, readSpecFile } from '../../../core/paths-io.js';
+import { ensureSessionDir, readSpecFile } from '../../../core/sessions/spec-files.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import {
   attachedMessage,
@@ -39,7 +39,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { blockingKeys, reviewOutcomeOf } from '../../../core/review/verdict.js';
 import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -48,8 +48,12 @@ import type { FinalReviewResult } from '../final-review.js';
 import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
-import type { ReviewVerdict, TriageInput, TriageResult } from '../../../core/schemas/review.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type {
+  ReviewVerdict,
+  TriageInput,
+  TriageResult,
+} from '../../../core/schemas/review/verdict.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';

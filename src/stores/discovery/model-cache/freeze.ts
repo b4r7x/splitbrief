@@ -1,4 +1,4 @@
-import type { DetectedModel } from '../../../core/discovery/detection.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { cloneDetectedModel } from '../../../core/discovery/clone-model.js';
 import { deepFreeze } from '../../../utils/deep-freeze.js';
 

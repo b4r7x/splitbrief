@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { configuredReviewerRunner, resolveReviewerRunner } from './reviewer-runner.js';
 import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
-import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
+import type { ReviewerConfig } from '../../schemas/runner/reviewer.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
 describe('resolveReviewerRunner', () => {

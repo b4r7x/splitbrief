@@ -21,12 +21,12 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { CREW_SEAT_LABELS } from '../../../src/core/crew/identity.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
-import { formatModelName } from '../../../src/core/model-display.js';
+import { formatModelName } from '../../../src/core/providers/model-display.js';
 import {
   CLI_READINESS_STATES,
   type CliToolDetection,
   type ProviderDetection,
-} from '../../../src/core/discovery/detection.js';
+} from '../../../src/core/discovery/detection/tool.js';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../../../src/core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../src/core/providers/catalog.js';
 import {
@@ -34,7 +34,7 @@ import {
   CLI_TOOL_IDS,
   isListedCliTool,
   PLANNER_CLI_TOOL_IDS,
-} from '../../../src/core/runners/cli-tool-catalog.js';
+} from '../../../src/core/runners/cli-tool/catalog.js';
 import {
   buildRightModels,
   countModelOptions,

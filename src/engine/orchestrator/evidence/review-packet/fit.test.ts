@@ -5,7 +5,7 @@ import {
 } from '../../../spec/prompts/review.js';
 import type { PromptLimit } from '../../../runners/input-limit.js';
 import { fallbackInstruction } from '../../../runners/typed-output.js';
-import { REVIEW_ANSWER_JSON_SCHEMA } from '../../../../core/schemas/review.js';
+import { REVIEW_ANSWER_JSON_SCHEMA } from '../../../../core/schemas/review/verdict.js';
 import { fitReviewPrompt } from './fit.js';
 
 const PREFIX = 'Read the workspace at /tmp/ws.\n\n';

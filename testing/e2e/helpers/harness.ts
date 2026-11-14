@@ -10,7 +10,7 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
-import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
+import { releasePreparedSession } from '../../../src/core/sessions/prepared-rollback.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { continueCommand } from '../../../src/cli/commands/continue/command.js';

@@ -1,9 +1,9 @@
 import type { Config } from '../../core/schemas/config.js';
-import { PlannerConfigSchema, type PlannerConfig } from '../../core/schemas/planner-config.js';
+import { PlannerConfigSchema, type PlannerConfig } from '../../core/schemas/runner/planner.js';
 import {
   ImplementerConfigSchema,
   type ImplementerConfig,
-} from '../../core/schemas/implementer-config.js';
+} from '../../core/schemas/runner/implementer.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import { updateActiveRunner } from '../../core/config/accessors/active-runner.js';

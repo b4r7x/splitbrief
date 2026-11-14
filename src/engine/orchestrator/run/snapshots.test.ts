@@ -7,7 +7,7 @@ import { readRunSnapshotLedger } from '../../snapshots/run/ledger.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../../snapshots/run/lifecycle.js';
 import { listSnapshots } from '../../snapshots/manifest.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import {
   ensureRunBaselineSnapshot,
   recordCheckoutRunSnapshot,

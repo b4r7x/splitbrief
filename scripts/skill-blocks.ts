@@ -9,7 +9,7 @@ import { CAPTURE_LIMITS, NARROWING_RULE } from '../src/core/pipeline-spec/gates.
 import { HALT_SIGNATURES } from '../src/core/pipeline-spec/halts.js';
 import { PROTECTED_PATHS_TEXT } from '../src/core/pipeline-spec/scope.js';
 import { TIMEOUTS } from '../src/core/pipeline-spec/timeouts.js';
-import { isListedCliTool } from '../src/core/runners/cli-tool-catalog.js';
+import { isListedCliTool } from '../src/core/runners/cli-tool/catalog.js';
 import type { CliEffortChannel } from '../src/core/runners/effort-channel.js';
 import {
   CONSULT_ANSWER_JSON_SCHEMA,
@@ -19,7 +19,7 @@ import {
 } from '../src/core/schemas/consult.js';
 import type { EffortLevel } from '../src/core/schemas/enums.js';
 import type { Plan } from '../src/core/schemas/plan.js';
-import { RUNNER_IDLE_WARN_MS } from '../src/core/schemas/runner-fields.js';
+import { RUNNER_IDLE_WARN_MS } from '../src/core/schemas/runner/fields.js';
 import { TaskSchema } from '../src/core/schemas/task.js';
 import { STACKS } from '../src/core/validation/stacks/registry.js';
 import type { Stack, TestNarrowing } from '../src/core/validation/stacks/types.js';

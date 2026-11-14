@@ -1,7 +1,7 @@
 import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { taskId } from '../../../src/core/schemas/task.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { makeSummary } from './summary.js';
 import { makeTask } from './task.js';

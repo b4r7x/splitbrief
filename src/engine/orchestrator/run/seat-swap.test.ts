@@ -7,7 +7,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { saveState } from '../../../core/state/persistence.js';

@@ -29,7 +29,7 @@ import { LocalConnectionForm } from '../../features/runners/local-connection-for
 import { TextInputOverlay } from '../../features/runners/text-input-overlay.js';
 import { ContractChoiceOverlay } from '../../features/runners/contract-choice-overlay.js';
 import { ContractRecap, StepIndicator } from '../../features/runners/contract-chip.js';
-import { contractForRunnerKind } from '../../core/config/custom-commands.js';
+import { contractForRunnerKind } from '../../core/config/custom-commands/tuple.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 import { configStore } from '../../stores/project/config.js';
 

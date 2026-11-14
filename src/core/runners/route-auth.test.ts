@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SavedCatalog } from '../discovery/catalog-read-merge.js';
-import type { CliProviderAuth, CliProviderAuthFact } from '../discovery/detection.js';
-import type { CliToolId } from './cli-tool-catalog.js';
+import type { CliProviderAuth, CliProviderAuthFact } from '../discovery/detection/auth.js';
+import type { CliToolId } from './cli-tool/types.js';
 import {
   routeAuthState,
   routeNoCredential,

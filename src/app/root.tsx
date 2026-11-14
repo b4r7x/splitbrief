@@ -1,6 +1,9 @@
 import { useApp, useInput } from 'ink';
 import { useEffect } from 'react';
-import { isConfiguredKeyDebugEnabled, logSplitbriefParsedKey } from '../core/key-debug.js';
+import {
+  isConfiguredKeyDebugEnabled,
+  logSplitbriefParsedKey,
+} from '../core/keybindings/debug-log.js';
 import { AppProvider } from './provider.js';
 import { Router } from './router.js';
 import { useAppKeys } from './keys.js';

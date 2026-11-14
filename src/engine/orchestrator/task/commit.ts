@@ -1,5 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';

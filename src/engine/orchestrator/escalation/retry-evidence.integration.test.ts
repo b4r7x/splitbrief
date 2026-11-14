@@ -13,7 +13,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
 import {
@@ -23,7 +23,7 @@ import {
 } from './retry-evidence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EscalationContext } from './types.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 
 let dirs: string[] = [];
 

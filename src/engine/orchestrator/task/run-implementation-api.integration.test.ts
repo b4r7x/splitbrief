@@ -19,7 +19,7 @@ import { localCatalogResponse, withLocalCatalog } from '#testing/helpers/faux/lo
 import { createApiImplementer } from '../../implementers/api.js';
 import { createContinuationHolder } from '../continuation.js';
 import { runImplementation } from './run-implementation.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';

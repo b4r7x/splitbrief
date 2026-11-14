@@ -4,8 +4,8 @@ import {
   CREW_SEAT_LABELS,
   formatSeatCandidateIdentity,
   type CrewSeatId,
-  type SeatLineSpan,
 } from '../crew/identity.js';
+import type { SeatLineSpan } from '../crew/seat-line/collapse.js';
 import { formatResetAt } from './reset-clock.js';
 
 const RESET_PREFIX = 'resets ';

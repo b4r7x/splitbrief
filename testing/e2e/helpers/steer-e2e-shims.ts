@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { GREET_FILE, GREET_SOURCE, MARKER_FILE, MARKER_SOURCE } from './stop-continue-fixture.js';
 

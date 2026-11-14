@@ -1,10 +1,10 @@
 import type { Check, Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { TriageInput } from '../../../core/schemas/review.js';
-import { reviewScopeFor, type ReviewScope } from '../../../core/review/verdict.js';
+import type { TriageInput } from '../../../core/schemas/review/verdict.js';
+import { reviewScopeFor, type ReviewScope } from '../../../core/review/scope.js';
 import { normalizeProjectRelativePath } from '../../../utils/path/patterns.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { nowIso } from '../../../utils/format/time.js';

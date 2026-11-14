@@ -1,16 +1,19 @@
 import type { Session } from '../../../core/schemas/session.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../../../core/schemas/workflow.js';
+import {
+  WORKFLOW_STATE_VERSION,
+  type WorkflowState,
+} from '../../../core/schemas/workflow/state.js';
 import {
   clearActiveReceipt,
   readActiveRecord,
   type ActiveSessionReceipt,
 } from '../../../core/sessions/active-pointer.js';
 import { readSession, rowFor, saveSummary } from '../../../core/sessions/io.js';
-import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run/status.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { recordedSeatIdentity } from '../../../core/state/seats.js';
+import { recordedSeatIdentity } from '../../../core/state/seats/record.js';
 import { activeTimeOf, phaseTimesOf, readRunMarks } from '../summary/active-time.js';
 import { buildSummary } from '../summary/build.js';
 

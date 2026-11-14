@@ -2,11 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import { taskId } from '../schemas/task.js';
-import {
-  formatRecoveryHeadline,
-  formatRecoveryHeadlineSpans,
-  retryExhaustedCause,
-} from './headline.js';
+import { formatRecoveryHeadline, formatRecoveryHeadlineSpans } from './headline.js';
+import { retryExhaustedCause } from './causes.js';
 
 const usageLimitIssue = makeRecoveryIssue({
   reason: 'runner-usage-limit',

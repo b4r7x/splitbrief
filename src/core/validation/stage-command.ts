@@ -1,5 +1,5 @@
 import type { Config } from '../schemas/config.js';
-import type { DiscoveredValidation } from '../schemas/workflow.js';
+import type { DiscoveredValidation } from '../schemas/workflow/state.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import type { ManifestCommands } from './manifest-commands.js';
 import type { Stack } from './stacks/types.js';

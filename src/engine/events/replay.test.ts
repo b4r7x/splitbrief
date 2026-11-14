@@ -2,7 +2,7 @@ import { appendFileSync, copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../core/schemas/session-log.js';
-import { createSessionLogAppender, toEngineEventEntry } from '../../core/sessions/log-writer.js';
+import { createSessionLogAppender, toEngineEventEntry } from '../../core/sessions/log/writer.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { boundEngineEventForConsumer } from './bound.js';
@@ -14,7 +14,7 @@ import { attachedMessage, expectCompactMessage } from '#testing/helpers/user-mes
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createJsonlSink } from './sinks/jsonl.js';
 import { recordSteer } from '../orchestrator/continuation.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';
 

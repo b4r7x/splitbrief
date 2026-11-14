@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { invokeTestClaude } from '#testing/helpers/claude-planner-steer-test-invoke.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import { prependPath } from '#testing/helpers/command-shim.js';
 import {
   installClaudeNodeShim,

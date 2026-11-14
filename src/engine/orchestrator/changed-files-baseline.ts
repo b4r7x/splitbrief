@@ -12,10 +12,8 @@ import { assertExistingPathConfined, assertPathConfined } from '../../lib/fs/con
 import { sha256Hex } from '../../utils/sha256.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
 import type { Task } from '../../core/schemas/task.js';
-import type {
-  ChangedFilesSnapshot,
-  PersistedChangedFilesBaseline,
-} from '../../core/schemas/workflow.js';
+import type { PersistedChangedFilesBaseline } from '../../core/schemas/workflow/changed-files.js';
+import type { ChangedFilesSnapshot } from '../../core/schemas/workflow/changed-files.js';
 import { readProjectSymlink } from './approval/file-snapshots/entry.js';
 import { listWorkspaceEntries } from '../snapshots/files.js';
 import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.js';

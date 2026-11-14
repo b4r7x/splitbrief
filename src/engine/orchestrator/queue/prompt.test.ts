@@ -1,7 +1,7 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
 
 import { describe, it, expect } from 'vitest';
-import type { QueuedMessage } from '../../../core/schemas/workflow.js';
+import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
 import { formatDrainedMessages, formatMessage } from './prompt.js';
 import { makeMessage } from '#testing/helpers/queue.js';
 

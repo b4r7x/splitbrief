@@ -10,7 +10,7 @@ const SESSION_ID = '2026-10-13-resumed-calls';
 
 const PROCESS_SCRIPT = `
 import { join } from 'node:path';
-import { appendEngineEvent } from './src/core/sessions/log-writer.ts';
+import { appendEngineEvent } from './src/core/sessions/log/writer.ts';
 import { makeConfig } from './testing/helpers/factories/config.ts';
 import { makeTask } from './testing/helpers/factories/task.ts';
 import { projectRunnerCallEvent } from './src/engine/calls/event-projection.ts';

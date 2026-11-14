@@ -1,5 +1,5 @@
 import type { SteeringPort } from '../calls/steering.js';
-import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
+import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner/fields.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type { TextChunkMarks } from '../events/types.js';
 import type {

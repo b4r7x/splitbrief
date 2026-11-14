@@ -1,10 +1,11 @@
 import { useRef, useEffect, useEffectEvent } from 'react';
 import type { SkillMeta } from '../../../core/skills/types.js';
-import type { RunRecord } from '../../../core/sessions/run-record.js';
-import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
+import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
-import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../../core/state/seats.js';
+import { seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
+import { seatIdentityChanges } from '../../../core/state/seats/changes.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -56,7 +57,7 @@ import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
 import { endRun, endRunError } from '../../../engine/orchestrator/run/close.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { stopInProgress, stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
 import {
   createProcessScope,

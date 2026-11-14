@@ -1,11 +1,16 @@
 import { join } from 'node:path';
-import type { WorkflowState, ReviewRecord } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../core/schemas/workflow/review-record.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { ContinuationHolder } from './continuation.js';
 import type { EventBus } from '../events/types.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
-import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
+import {
+  readSpecFileOrEmpty,
+  writeSpecFile,
+  type SpecMetadata,
+} from '../../core/sessions/spec-files.js';
 import {
   PLAN_FILE,
   DRIFT_REPORT_FILE,
@@ -18,9 +23,9 @@ import {
   TASKS_FILE,
   sessionDir,
 } from '../../core/paths.js';
-import { reviewName } from '../../core/recovery/headline.js';
-import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
-import { phaseStage } from '../../core/rail-stages.js';
+import { reviewName } from '../../core/recovery/causes.js';
+import { isQueuedMessagePendingReviewer } from '../../core/queue/state.js';
+import { phaseStage } from '../../core/phases/rail.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
@@ -113,20 +118,18 @@ import {
   type SetAside,
   type TriageInput,
   type TriageResult,
-} from '../../core/schemas/review.js';
+} from '../../core/schemas/review/verdict.js';
 import {
   blockingEntries,
   blockingKeys,
   blockingRedInputs,
   deriveReviewOutcome,
-  findingInReviewScope,
   setAsideInputs,
   verificationKey,
-  reviewScopeFor,
-  verdictCoverageErrors,
   type ReviewOutcome,
-  type ReviewScope,
 } from '../../core/review/verdict.js';
+import { verdictCoverageErrors } from '../../core/review/scope.js';
+import { findingInReviewScope, reviewScopeFor, type ReviewScope } from '../../core/review/scope.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
 import {
   checkRegistry,
@@ -140,7 +143,7 @@ import { forceUnverifiedRenderCriteria, reviewRenders } from './review-renders.j
 import { currentCandidateId } from './evidence/record-checks.js';
 import { deserializeChangedFilesBaseline } from './changed-files-baseline.js';
 import type { RequestTypedResult, SeatProtocolError } from '../runners/typed-output.js';
-import { fixCyclesOf } from '../../core/schemas/workflow.js';
+import { fixCyclesOf } from '../../core/schemas/workflow/state.js';
 import {
   claimVerification,
   fixTaskTargetErrors,

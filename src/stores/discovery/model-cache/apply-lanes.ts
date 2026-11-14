@@ -1,4 +1,4 @@
-import type { ProviderDetection } from '../../../core/discovery/detection.js';
+import type { ProviderDetection } from '../../../core/discovery/detection/tool.js';
 import { PROVIDER_IDS, type ProviderId } from '../../../core/schemas/enums.js';
 import type { DetectionLanePublication } from '../../../engine/detection/lane-channel.js';
 import type { ModelsDevRefreshOutcome } from '../../../engine/detection/models-dev-lane.js';

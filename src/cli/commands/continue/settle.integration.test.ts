@@ -8,7 +8,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { buildCommandContext } from '../../../app/command-context.js';
 import { listSessions, readSession } from '../../../core/sessions/io.js';
 import { sessionStatusWord } from '../../../core/sessions/display.js';
-import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { writeManifest } from '../../../engine/snapshots/manifest.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';

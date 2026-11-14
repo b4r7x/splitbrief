@@ -27,7 +27,7 @@ import {
   failedReviewVerdict,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
-import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
+import { ensureSessionDir, writeSpecFile } from '../../core/sessions/spec-files.js';
 import {
   sessionDir,
   REVIEW_FILE,
@@ -46,21 +46,21 @@ import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { Plan } from '../../core/schemas/plan.js';
-import { ReviewRecordSchema } from '../../core/schemas/workflow.js';
+import { ReviewRecordSchema } from '../../core/schemas/workflow/review-record.js';
 import { taskId, type Task } from '../../core/schemas/task.js';
-import type { ReviewVerdict } from '../../core/schemas/review.js';
+import type { ReviewVerdict } from '../../core/schemas/review/verdict.js';
 import { finalReviewError, runFinalReviewPhase } from './final-review.js';
 import { createContinuationHolder } from './continuation.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { Summary } from '../../core/schemas/summary.js';
-import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
+import { ReviewPacketSchema } from '../../core/schemas/review/packet.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { appendReviewChanges } from '../../core/evidence/review-changes.js';
 import { readConfinedEntry } from './approval/file-snapshots/entry.js';
 import { enqueueUserMessage } from './queue/submit.js';
-import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
+import { isQueuedMessagePendingReviewer } from '../../core/queue/state.js';
 import { runTasksAndReview } from './run/task-execution.js';
 import { createValidator } from './validation/run.js';
 

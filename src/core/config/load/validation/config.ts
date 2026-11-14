@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import { ConfigSchema } from '../../../schemas/config.js';
-import { REMOVED_RUNNER_KINDS } from '../../../schemas/runner-fields.js';
+import { REMOVED_RUNNER_KINDS } from '../../../schemas/runner/fields.js';
 import { RETIRED_APPROVE_LEVELS } from '../../../schemas/enums.js';
 import { includes, narrowRecord } from '../../../../utils/type-guards.js';
 import { apiKeyErrors } from './credentials.js';

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -18,7 +18,7 @@ import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { readRunEvents } from '../../events/replay.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { recordUserMessage } from './user-message.js';
-import { readMessages } from '../../../core/sessions/log-reader.js';
+import { readMessages } from '../../../core/sessions/log/reader.js';
 import {
   SESSION_LOG_MAX_ENTRY_BYTES,
   SESSION_LOG_MAX_STRING_BYTES,

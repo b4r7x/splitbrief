@@ -12,7 +12,7 @@ import {
   writeActiveReceiptLocked,
 } from './active-pointer.js';
 import { inspectSessionLiveness } from './liveness.js';
-import { HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
+import { HEARTBEAT_STALENESS_MS } from './lock/status.js';
 import { LOCKFILE, sessionDir, STATE_FILE } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

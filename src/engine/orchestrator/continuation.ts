@@ -1,4 +1,4 @@
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { ConsultQuestion } from '../../core/schemas/consult.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
 import type { TaskId } from '../../core/schemas/task.js';
@@ -9,7 +9,7 @@ import type { EventBus } from '../events/types.js';
 import { withPerCallAbort } from './cancellable-call.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from './state-ops.js';
 import { recordUserMessage } from './transcript/user-message.js';
-import { readSessionLog } from '../../core/sessions/log-reader.js';
+import { readSessionLog } from '../../core/sessions/log/reader.js';
 import { engineEventFromLogEntry } from '../events/replay.js';
 import { processError } from '../../lib/process/errors.js';
 import { throwIfAborted } from '../../utils/abort.js';

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
 import { getCurrentDiff } from '../../../../lib/git/diff.js';
 import { getGitStatus } from '../../../../lib/git/files.js';

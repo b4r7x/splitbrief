@@ -1,5 +1,5 @@
 import type { RunnerConfig } from '../../src/core/config/accessors/runner-config.js';
-import type { CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../src/core/runners/cli-tool/types.js';
 import type { RunnerGate, RunnerSlot } from '../../src/engine/runners/prepared-execution.js';
 import {
   createCliSeatGates,

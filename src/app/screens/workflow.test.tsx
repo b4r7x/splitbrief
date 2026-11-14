@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { ReactNode } from 'react';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
-import { writeSpecFile } from '../../core/paths-io.js';
-import { writeLockfile } from '../../core/sessions/lockfile.js';
+import { writeSpecFile } from '../../core/sessions/spec-files.js';
+import { writeLockfile } from '../../core/sessions/lock/file.js';
 import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
 import { buildApplyConflictRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -20,7 +20,7 @@ import {
 } from '../../stores/ui/session-drafts.js';
 import { departureStore } from '../../stores/workflow/departure.js';
 import { eventsStore } from '../../stores/workflow/events.js';
-import { diffEventKey } from '../../core/sections/event-sections.js';
+import { diffEventKey } from '../../core/sections/events.js';
 import { readLatestDiffKey } from '../../features/workflow/conversation-rows/read-row-actions.js';
 import { makeDiffReadCounter } from '#testing/helpers/events/implementer.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -35,7 +35,7 @@ import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
-import type { SeatWait } from '../../core/schemas/workflow.js';
+import type { SeatWait } from '../../core/schemas/workflow/seat.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import {

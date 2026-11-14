@@ -8,7 +8,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { setRunHalt } from '#testing/helpers/stores.js';
 import { withCaptureEnvironment } from '#testing/visual/gallery/environment.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { formatStageLabel } from '../../../core/phase-display.js';
+import { formatStageLabel } from '../../../core/phases/labels.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
@@ -21,7 +21,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { getRailStages, type RailStageStatus } from '../../../core/rail-stages.js';
+import { getRailStages, type RailStageStatus } from '../../../core/phases/rail.js';
 import {
   RAIL_MARKER_SLOT_WIDTH,
   railConnectorString,

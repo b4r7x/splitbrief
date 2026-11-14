@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { EditorLayout } from '../../core/editor/editor-state.js';
+import type { EditorLayout } from '../../core/editor/types.js';
 import { visualPositionOf, wrapVisualLines } from '../../core/editor/grapheme-motions.js';
 import { reviewStore } from '../workflow/review.js';
 import { editorStore } from './editor.js';

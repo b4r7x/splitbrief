@@ -1,6 +1,6 @@
-import type { ReviewChange, ReviewFileEntry } from '../../../core/schemas/review-changes.js';
+import type { ReviewChange, ReviewFileEntry } from '../../../core/schemas/review/changes.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { appendReviewChanges } from '../../../core/evidence/review-changes.js';
 import { warnError } from '../../../lib/warn.js';

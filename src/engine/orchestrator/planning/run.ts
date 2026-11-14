@@ -1,6 +1,6 @@
 import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
-import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import { planRevisedTurn } from '../../spec/prompts/plan-session.js';
 import { standingPlanCorrection } from './halt.js';
 import { runPlanApproval, runPlanningSession } from './session.js';

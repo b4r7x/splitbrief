@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSplitbriefDir, ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';

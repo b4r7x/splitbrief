@@ -1,5 +1,5 @@
 import type { SessionLogEventEntry } from '../../core/schemas/session-log.js';
-import { readSessionLogWithDiagnostics } from '../../core/sessions/log-reader.js';
+import { readSessionLogWithDiagnostics } from '../../core/sessions/log/reader.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { parseEngineEvent } from './schema.js';

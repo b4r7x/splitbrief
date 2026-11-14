@@ -2,7 +2,7 @@ import { lstat, mkdir, readlink, realpath } from 'node:fs/promises';
 import { existsSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 import { revertedDir, sessionDir } from '../../../core/paths.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { evidenceLedgerPath, mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { evidenceError } from '../../../core/evidence/errors.js';

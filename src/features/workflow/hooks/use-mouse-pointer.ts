@@ -7,7 +7,7 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { PROMPT_ZONE_Z } from '../components/approval-prompt.js';
-import { RAIL_STAGES } from '../../../core/rail-stages.js';
+import { RAIL_STAGES } from '../../../core/phases/rail.js';
 import { hitRailStage, hitTranscriptRow } from '../layout/hit-test.js';
 import {
   readConversationHoverSnapshot,

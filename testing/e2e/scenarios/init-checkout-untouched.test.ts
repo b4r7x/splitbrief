@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';

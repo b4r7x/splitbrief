@@ -2,7 +2,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { ResumeContextHolder } from './types.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { typedRunnerCallErrorCode } from '../implementers/pipeline/call-result.js';
 import { isSessionExpiredError } from '../session-expiry.js';
 import { publishDebug, publishWarning } from './events.js';

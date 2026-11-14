@@ -9,8 +9,8 @@ import {
   sessionDir,
   sessionsRoot,
 } from '../../../src/core/paths.js';
-import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';

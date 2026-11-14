@@ -11,9 +11,9 @@ import {
 } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
 import type { ExecutableIdentity } from '../../core/discovery/runner-evidence.js';
-import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import {
   resolveCliExecutable,
   resolveCliExecutableAliases,

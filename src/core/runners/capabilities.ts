@@ -1,6 +1,6 @@
 import { assertNever } from '../../utils/type-guards.js';
 import type { ActiveRunnerRole } from './seat-roles.js';
-import { CLI_TOOL_CATALOG, isCliToolId } from './cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, isCliToolId } from './cli-tool/catalog.js';
 import { type CliEffortChannel, runnerEffortChannel } from './effort-channel.js';
 import {
   getRunnerCatalogDisplayName,

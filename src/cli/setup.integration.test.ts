@@ -26,10 +26,10 @@ import { killOrphanRunner, plantOrphanRunner } from '#testing/helpers/orphan-run
 import { isCliError } from './errors.js';
 import { toErrorMessage } from '../utils/format/errors.js';
 import { execFileSync } from 'node:child_process';
-import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import { createInitialState, transition } from '../core/state/machine.js';
 import { saveState } from '../core/state/persistence.js';
-import { ensureSessionDir } from '../core/paths-io.js';
+import { ensureSessionDir } from '../core/sessions/spec-files.js';
 import { loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { createLogger, resetLoggerForTests } from '../lib/logger.js';
 import { warnStderr } from '../lib/warn.js';

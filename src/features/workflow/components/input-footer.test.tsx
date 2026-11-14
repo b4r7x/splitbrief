@@ -54,7 +54,7 @@ import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { markWorkflowResumed } from '../../../stores/workflow/actions/resume.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeMessage } from '#testing/helpers/queue.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
 const originalColorLevel = chalk.level;

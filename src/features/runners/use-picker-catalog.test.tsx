@@ -31,7 +31,7 @@ import {
 } from '../../engine/providers/cli-model-catalog.js';
 import { formatModelCatalogGuidance, formatToolsByline } from './picker-format.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
-import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool/catalog.js';
 import { glyph } from '../../lib/glyphs.js';
 import { renderModelRow } from './tool-row.js';
 

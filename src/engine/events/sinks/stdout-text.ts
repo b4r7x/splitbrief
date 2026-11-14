@@ -1,9 +1,9 @@
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
-import { fixCheckVerdict } from '../../../core/review/fix-task.js';
+import { fixCheckVerdict } from '../../../core/review/fix/checks.js';
 import { stuckAnswerWords } from '../../../core/review/stuck.js';
 import { setAsideLine } from '../../../core/review/verdict.js';
-import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool/catalog.js';
 import { EMPTY_RUN_VIEW, reduceRunView, type RunView } from '../../../core/run-view/reduce.js';
 import { seatRetrySentence, seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import { SOFT_SEP } from '../../../core/separators.js';

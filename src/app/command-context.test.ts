@@ -23,7 +23,7 @@ import type { EngineEventOf } from '../engine/events/types.js';
 import type { AcceptRunResult } from '../core/runtime/commands/types.js';
 import type { ApprovalReviewResult } from '../core/approval/types.js';
 import type { Phase } from '../core/schemas/enums.js';
-import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import { STATE_FILE, sessionDir } from '../core/paths.js';
 import {
   activeApply,

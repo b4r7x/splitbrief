@@ -1,6 +1,6 @@
 import { LIST_ROW_LABEL_FLOOR } from '../../components/list-row.js';
 import { formatContextLength } from '../../core/formatting.js';
-import { formatModelName } from '../../core/model-display.js';
+import { formatModelName } from '../../core/providers/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import {

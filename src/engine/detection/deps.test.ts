@@ -8,8 +8,8 @@ import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   LISTED_CLI_TOOL_IDS,
-  type CliToolId,
-} from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { createProductionDetectionDeps } from './deps.js';
 import { resolveDetectionSourceContexts } from './service.js';
 

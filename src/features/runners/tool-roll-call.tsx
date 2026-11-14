@@ -3,7 +3,7 @@ import { Box } from 'ink';
 import type { ReactNode } from 'react';
 import { glyph } from '../../lib/glyphs.js';
 import { probeCheckText, slowestProbe } from '../../core/discovery/probe-activity.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import { useProbeActivity } from '../../hooks/use-slow-probe-text.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 

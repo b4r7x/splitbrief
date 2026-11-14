@@ -3,7 +3,7 @@ import {
   RunnerCallCounterCoverageSchema,
   type RunnerCallCounterCoverage,
   type RunnerCallProviderTotals,
-} from '../runner-call-contract.js';
+} from './runner-call.js';
 import {
   CurrentCodeContextModeSchema,
   TaskCompletionMethodSchema,

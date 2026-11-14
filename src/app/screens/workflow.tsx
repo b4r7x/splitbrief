@@ -8,7 +8,7 @@ import {
   stopMenuLayout,
 } from '../../features/workflow/stop/options.js';
 import { ResultMenu } from '../../features/workflow/result/menu.js';
-import { acceptedNote } from '../../core/review/verdict.js';
+import { acceptedNote } from '../../core/review/accepted.js';
 import {
   RESULT_MENU_COMPOSER_HINT,
   resultMenuHeight,
@@ -51,7 +51,7 @@ import { departureStore } from '../../stores/workflow/departure.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { useSessionPreparationTakesPage } from '../session-preparation.js';
-import { isQueuePhase } from '../../core/phases.js';
+import { isQueuePhase } from '../../core/phases/roles.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { reviewStore } from '../../stores/workflow/review.js';
@@ -71,7 +71,7 @@ import {
   WORKFLOW_GUTTER_X,
 } from '../../features/workflow/layout/chrome-rows.js';
 import { useHeaderSeatLines } from '../../features/workflow/hooks/use-header-seat-lines.js';
-import { seatLineText } from '../../core/crew/identity.js';
+import { seatLineText } from '../../core/crew/seat-line/collapse.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { useRailCells } from '../../features/workflow/hooks/use-rail-cells.js';

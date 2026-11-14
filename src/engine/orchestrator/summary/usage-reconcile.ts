@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { PhaseSchema, type Phase } from '../../../core/schemas/enums.js';
-import { readSessionLogValuesSync } from '../../../core/sessions/log-reader.js';
+import { readSessionLogValuesSync } from '../../../core/sessions/log/reader.js';
 import { ZERO_TOKEN_USAGE, type TokenUsage } from '../../../core/schemas/tokens.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { isReviewSeatCall } from '../../calls/review-seat.js';

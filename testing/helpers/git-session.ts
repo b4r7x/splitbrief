@@ -1,4 +1,4 @@
-import { ensureSessionDir } from '../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../src/core/sessions/spec-files.js';
 import { createTestGitRepo } from './git.js';
 import { createTempDir } from './temp-dir.js';
 

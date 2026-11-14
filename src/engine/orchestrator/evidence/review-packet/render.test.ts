@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../../core/schemas/task.js';
-import { type ReviewPacket, ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
+import { type ReviewPacket, ReviewPacketSchema } from '../../../../core/schemas/review/packet.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { renderChecksLogForPrompt, renderReviewPacketMarkdown } from './render.js';
 import { reusedNote } from '../../../../core/validation/reused-note.js';

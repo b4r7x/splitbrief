@@ -8,7 +8,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, CheckStatus, Task } from '../../../core/schemas/task.js';
-import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow/state.js';
 import {
   captureText,
   processError,

@@ -1,6 +1,6 @@
 import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
+import { writeSpecFile } from '../../../core/sessions/spec-files.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import { buildSummary } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';

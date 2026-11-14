@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import type {
-  CliProviderAuthFact,
   CliToolDetection,
   ProviderDetection,
-} from '../../../core/discovery/detection.js';
+} from '../../../core/discovery/detection/tool.js';
+import type { CliProviderAuthFact } from '../../../core/discovery/detection/auth.js';
 import {
   API_PROVIDER_CATALOG,
   type ApiProviderDescriptor,
   type ApiProviderId,
 } from '../../../core/providers/api-provider-catalog.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 import {
   deriveApiStatus,

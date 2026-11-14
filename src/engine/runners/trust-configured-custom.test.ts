@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { CustomCommand } from '../../core/config/custom-commands.js';
+import type { CustomCommand } from '../../core/config/custom-commands/schema.js';
 import {
   admitCustomRunner,
   revalidateCustomRunnerInvocation,

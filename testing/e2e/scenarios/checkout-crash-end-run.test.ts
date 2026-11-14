@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';

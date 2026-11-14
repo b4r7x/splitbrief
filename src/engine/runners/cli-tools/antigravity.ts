@@ -1,4 +1,4 @@
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { parseAntigravityLine } from '../../streaming/parse-antigravity.js';
 import { error } from '../../../utils/error.js';
 import { CLI_PROJECT_DIR_SENTINEL } from './candidate-contract.js';

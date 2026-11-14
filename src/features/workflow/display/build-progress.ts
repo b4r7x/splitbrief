@@ -1,8 +1,9 @@
-import { CREW_SEAT_LABELS, cutSeatIdentity, type CrewSeatId } from '../../../core/crew/identity.js';
+import { CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
+import { cutSeatIdentity } from '../../../core/crew/seat-line/wrap.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool/catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { segmentsForRowText } from '../../../utils/display-text/width.js';

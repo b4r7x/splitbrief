@@ -1,4 +1,4 @@
-import { diffEventKey } from '../../../core/sections/event-sections.js';
+import { diffEventKey } from '../../../core/sections/events.js';
 import type {
   ConversationRowBlock,
   ConversationRowInputs,

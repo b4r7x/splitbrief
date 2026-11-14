@@ -22,7 +22,7 @@ import {
   resolveReleaseMatrixRun,
   resolveReleaseMatrixSeat,
 } from '../e2e/live/matrix.js';
-import { CLI_TOOL_IDS } from '../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../src/core/runners/cli-tool/catalog.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 

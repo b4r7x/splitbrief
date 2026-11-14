@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { settleUnderFakeTimers } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
+import { CliExecutableReceiptSchema } from '../../../core/discovery/detection/executable.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { ConfigSchema } from '../../../core/schemas/config.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import {

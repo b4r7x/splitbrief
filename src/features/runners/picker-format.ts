@@ -7,7 +7,8 @@ import {
 } from '../../core/crew/identity.js';
 import { countNoun } from '../../utils/pluralize.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
-import { isCliToolId, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { isCliToolId } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { billingWord, type RunnerBillingPosture } from '../../core/runners/runner-billing.js';
 import type { PickerModelCounts } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
@@ -20,7 +21,7 @@ import {
   type CatalogLane,
   type RightRow,
 } from './model-catalog/rows.js';
-import type { CliProviderAuthFact } from '../../core/discovery/detection.js';
+import type { CliProviderAuthFact } from '../../core/discovery/detection/auth.js';
 import {
   ROUTE_NEEDS_SIGN_IN,
   routeNoCredential,

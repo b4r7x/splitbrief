@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_TOOL_CATALOG } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../runners/cli-tool/catalog.js';
 import { API_PROVIDER_CATALOG } from './api-provider-catalog.js';
 import { PROVIDER_IDS } from '../schemas/enums.js';
 import {

@@ -1,5 +1,5 @@
 import type { Config } from '../../../core/schemas/config.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { boundEngineEventForConsumer } from '../../events/bound.js';
 import { createEventBus } from '../../events/bus.js';

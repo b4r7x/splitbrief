@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { InvocationIdentity } from '../../core/schemas/invocation-identity.js';
-import { createSessionLogAppender } from '../../core/sessions/log-writer.js';
+import { createSessionLogAppender } from '../../core/sessions/log/writer.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { readRunEvents } from '../events/replay.js';
 import { EngineEventSchema } from '../events/schema.js';

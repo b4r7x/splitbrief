@@ -1,5 +1,5 @@
-import type { ImplementerConfig } from '../../src/core/schemas/implementer-config.js';
-import type { PlannerConfig } from '../../src/core/schemas/planner-config.js';
+import type { ImplementerConfig } from '../../src/core/schemas/runner/implementer.js';
+import type { PlannerConfig } from '../../src/core/schemas/runner/planner.js';
 
 type RunnerConfig = ImplementerConfig | PlannerConfig;
 

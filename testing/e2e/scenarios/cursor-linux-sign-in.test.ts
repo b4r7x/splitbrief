@@ -12,7 +12,7 @@ import { stripVTControlCharacters } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome as createTrustHome } from '#testing/helpers/trust-home.js';

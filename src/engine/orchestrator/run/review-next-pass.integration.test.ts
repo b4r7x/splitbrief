@@ -23,7 +23,7 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Check } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';

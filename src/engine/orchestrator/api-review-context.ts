@@ -1,5 +1,5 @@
-import type { ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
-import type { TriageInput } from '../../core/schemas/review.js';
+import type { ImplementerWriteMode } from '../../core/schemas/runner/implementer.js';
+import type { TriageInput } from '../../core/schemas/review/verdict.js';
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { splitDiffByFile } from '../../lib/git/diff-sections.js';

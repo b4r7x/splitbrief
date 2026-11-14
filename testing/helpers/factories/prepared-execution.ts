@@ -1,6 +1,6 @@
 import { resolveImplementerProfiles } from '../../../src/core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../../src/core/schemas/config.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { ActiveSessionReceipt } from '../../../src/core/sessions/active-pointer.js';
 import {
   parsePreparedConfig,

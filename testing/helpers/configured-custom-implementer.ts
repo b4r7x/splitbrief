@@ -1,7 +1,7 @@
 import { mkdirSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach } from 'vitest';
-import { normalizeCustomCommand } from '../../src/core/config/custom-commands.js';
+import { normalizeCustomCommand } from '../../src/core/config/custom-commands/schema.js';
 import {
   createConfiguredCustomImplementer as createPreparedImplementer,
   type ConfiguredCustomImplementerOptions,

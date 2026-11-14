@@ -1,7 +1,7 @@
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { useEffect } from 'react';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
-import type { RunRecord } from '../../../core/sessions/run-record.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { render } from 'ink-testing-library';
@@ -22,7 +22,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer } from '../../../engine/implementers/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { questionsText } from '../../../core/state/planning-conversation.js';
-import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
+import type { PlannerConfig } from '../../../core/schemas/runner/planner.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/checks.js';
 import { writeConfig } from '../../../core/config/load/io.js';
@@ -77,22 +77,22 @@ import {
   readActiveRecord,
 } from '../../../core/sessions/active-pointer.js';
 import { inspectSessionLiveness } from '../../../core/sessions/liveness.js';
-import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
 import { saveSummary } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { sessionDir } from '../../../core/paths.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrides/from-options.js';
 import type { PrepareExecutionFn, RunWorkflowFn } from './use-run-loop.js';
 import { runSeatCall } from '../../../engine/orchestrator/escalation/seat-wait.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { publishRecoveryPrompted } from '../../../engine/orchestrator/events.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import { resumeStep } from '../../../core/sessions/run/status.js';
 import { addTuiEvent } from '../tui-sink.js';
 import { raisePendingRecovery } from '../../../engine/orchestrator/state-ops.js';
-import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../../core/state/seats.js';
+import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../../core/state/seats/record.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 

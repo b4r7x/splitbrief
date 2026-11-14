@@ -12,8 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
-import { ReviewAnswerSchema } from '../src/core/schemas/review.js';
-import { RUNNER_IDLE_WARN_MS } from '../src/core/schemas/runner-fields.js';
+import { ReviewAnswerSchema } from '../src/core/schemas/review/verdict.js';
+import { RUNNER_IDLE_WARN_MS } from '../src/core/schemas/runner/fields.js';
 import { GENERATED_BLOCK_IDS, renderBlock } from './skill-blocks.js';
 import { runSyncCli } from './sync-skills.js';
 

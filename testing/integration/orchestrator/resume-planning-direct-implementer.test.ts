@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';

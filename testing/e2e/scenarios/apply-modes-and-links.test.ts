@@ -12,9 +12,12 @@ import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import YAML from 'yaml';
 import { sessionDir } from '../../../src/core/paths.js';
-import { type WorkflowState, WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
+import {
+  type WorkflowState,
+  WorkflowStateSchema,
+} from '../../../src/core/schemas/workflow/state.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { checkoutEntries } from '#testing/helpers/checkout.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

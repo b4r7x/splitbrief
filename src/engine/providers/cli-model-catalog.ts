@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { MAX_CLI_CATALOG_READ_MODELS } from '../../core/discovery/catalog-read-merge.js';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import { normalizeDisplayLabel, stripTerminalControls } from '../../utils/display-text/sanitize.js';
 
 export type NativeCliCatalogTool =

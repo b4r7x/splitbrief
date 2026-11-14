@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseLegacyWorkflowState } from './legacy-state.js';
 import { mapV3StateToV4 } from './map-v3.js';
-import type { QueuedMessage } from '../../schemas/workflow.js';
+import type { QueuedMessage } from '../../schemas/workflow/queue.js';
 import { plainUserMessage } from '../../types/user-input.js';
 import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
 

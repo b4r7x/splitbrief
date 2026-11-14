@@ -11,7 +11,7 @@ import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { TextChunkMarks } from '../events/types.js';
 import type { CliSeat } from '../runners/start-gate.js';
 import type { Phase } from '../../core/schemas/enums.js';
-import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
+import type * as ImplementerConfig from '../../core/schemas/runner/implementer.js';
 import type { RunnerSlot } from '../runners/prepared-execution.js';
 import type { BundleApplyResult } from './file-bundle.js';
 import type { ImplementerReport } from '../../core/schemas/consult.js';

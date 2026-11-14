@@ -1,8 +1,8 @@
 import type {
   CliToolDetection,
-  DetectedModel,
   ProviderDetection,
-} from '../../../core/discovery/detection.js';
+} from '../../../core/discovery/detection/tool.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import type { RememberedCliCatalog } from '../../../engine/detection/cache.js';

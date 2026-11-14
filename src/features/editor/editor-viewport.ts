@@ -1,4 +1,4 @@
-import { clampScrollToDocument } from '../../core/editor/editor-state.js';
+import { clampScrollToDocument } from '../../core/editor/state.js';
 import {
   type EditorAffinity,
   type VisualLine,

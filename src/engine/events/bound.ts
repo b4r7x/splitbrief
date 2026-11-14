@@ -1,6 +1,6 @@
 import { boundConsumerPayload, type CallConsumerContext } from '../../core/payload-bounds.js';
 import { EngineEventSchema } from './schema.js';
-import { eventPhase } from '../../core/event-phase.js';
+import { eventPhase } from '../../core/phases/of-event.js';
 import type { EngineEvent, EngineEventOf } from './types.js';
 import { isRecord } from '../../utils/type-guards.js';
 

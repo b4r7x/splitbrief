@@ -13,7 +13,7 @@ import {
   readSeatIdentities,
   seatIdentitiesFromConfig,
   writeSeatIdentities,
-} from '../../../core/state/seats.js';
+} from '../../../core/state/seats/record.js';
 
 // A resume without --json or --plain mounts the TUI, which needs a terminal.
 beforeEach(() => {

@@ -24,7 +24,7 @@ import {
   recoveryMenuParts,
   recommendedRecoveryAction,
 } from '../recovery-prompt.js';
-import { isAskedDetail } from '../../../core/recovery/headline.js';
+import { isAskedDetail } from '../../../core/recovery/causes.js';
 import {
   clipPromptBodyRows,
   countPromptBodyRows,

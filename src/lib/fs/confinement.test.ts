@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   assertExistingPathConfined,
-  assertModelWritablePathConfined,
   assertPathConfined,
   assertWritablePathConfined,
   isInsideRoot,
   isPathConfined,
   nearestExistingAncestor,
 } from './confinement.js';
+import { assertModelWritablePathConfined } from '../../core/scope/control-plane.js';
 
 const ROOT = '/safe/root/dir';
 const itUnix = process.platform === 'win32' ? it.skip : it;

@@ -1,6 +1,7 @@
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
-import type { CliExecutableIdentity, DetectedModel } from '../../core/discovery/detection.js';
-import { ExecutableIdentitySchema } from '../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
+import { ExecutableIdentitySchema } from '../../core/discovery/detection/executable.js';
 import type {
   AuthFact,
   CompatibilityFact,
@@ -13,9 +14,9 @@ import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   signInOutranksUnreadVersion,
-  type CliCompatibility,
-} from '../../core/runners/cli-tool-catalog.js';
-import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
+} from '../../core/runners/cli-tool/catalog.js';
+import type { CliCompatibility } from '../../core/runners/cli-tool/types.js';
+import { classifyCliAdmittedVersion } from '../../core/runners/cli-tool/version.js';
 import type { CliReadinessResult } from '../../core/schemas/readiness.js';
 import { matches } from '../../utils/error.js';
 import { abortError, throwIfAborted } from '../../utils/abort.js';

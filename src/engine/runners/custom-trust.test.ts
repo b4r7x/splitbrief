@@ -9,8 +9,8 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CustomCommand } from '../../core/config/custom-commands.js';
-import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
+import type { CustomCommand } from '../../core/config/custom-commands/schema.js';
+import type { CliExecutableReceipt } from '../../core/discovery/detection/executable.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';

@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
-import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool/catalog.js';
 import { shellQuoteArg } from '../../src/utils/shell-quote.js';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';
 

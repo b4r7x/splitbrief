@@ -12,7 +12,7 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { transition } from '../../../core/state/machine.js';
 import { createRunnerCallRecorder } from '../../calls/recorder.js';
 import type { RunnerCallResult } from '../../calls/types.js';

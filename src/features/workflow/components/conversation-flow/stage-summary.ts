@@ -2,14 +2,14 @@ import type {
   TaskSummaryHeadingPart,
   TaskSummaryState,
 } from '../../../../components/task-summary.js';
-import type { ReviewStage, StageSummary } from '../../../../core/sections/event-sections.js';
+import type { ReviewStage, StageSummary } from '../../../../core/sections/types.js';
 import { formatDuration } from '../../../../utils/format/time.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
-import { formatStageLabel } from '../../../../core/phase-display.js';
+import { formatStageLabel } from '../../../../core/phases/labels.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { oneLineDisplayText } from '../../../../utils/display-text/sanitize.js';
-import { finalReviewAnchor, unverifiedCriteriaCount } from '../../../../core/recovery/headline.js';
+import { finalReviewAnchor, unverifiedCriteriaCount } from '../../../../core/recovery/causes.js';
 import { findingFacts } from '../../../../core/review/verdict.js';
 
 export function stageSummaryRow(summary: StageSummary): {

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Section } from '../../../core/sections/event-sections.js';
+import type { Section } from '../../../core/sections/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import type { TextTone } from '../../../core/theme/tone-color.js';

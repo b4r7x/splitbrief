@@ -1,13 +1,13 @@
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { TriageInput } from '../../../core/schemas/review.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { TriageInput } from '../../../core/schemas/review/verdict.js';
 import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
-import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run-status.js';
+import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run/status.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { error, matches } from '../../../utils/error.js';
 import { countNoun } from '../../../utils/pluralize.js';
-import { acceptedSentence } from '../../../core/review/verdict.js';
+import { acceptedSentence } from '../../../core/review/accepted.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import {

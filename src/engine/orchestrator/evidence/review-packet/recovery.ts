@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { WorkflowState } from '../../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import type { RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
-import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
+import type { ReviewPacket } from '../../../../core/schemas/review/packet.js';
 import { EVIDENCE_FILE, SESSION_LOG_FILE, STATE_FILE, sessionDir } from '../../../../core/paths.js';
 import type { PacketEvent } from './types.js';
 

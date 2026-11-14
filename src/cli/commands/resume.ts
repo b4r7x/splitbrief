@@ -1,12 +1,12 @@
 import type { Command } from 'commander';
-import { loadRunRecord } from '../../core/sessions/run-record.js';
-import { defaultRunRecordDeps } from '../../core/sessions/run-record-io.js';
+import { loadRunRecord } from '../../core/sessions/run/record.js';
+import { defaultRunRecordDeps } from '../../core/sessions/run/record-io.js';
 import { addWorkflowOptions } from '../options.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { sessionError } from '../../core/sessions/errors.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
-import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
+import { checkSessionLiveness } from '../../core/sessions/lock/file.js';
 import { sessionDir } from '../../core/paths.js';
 import { resolveRunConfig } from '../build-overrides.js';
 import { emitRecoveryAndFailIfPending, recordWriterFor } from '../headless.js';

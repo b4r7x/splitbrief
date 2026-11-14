@@ -4,21 +4,23 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { REVIEW_NONE } from '../crew/identity.js';
-import { ensureSessionDir } from '../paths-io.js';
+import { ensureSessionDir } from '../sessions/spec-files.js';
 import { SEATS_FILE, sessionDir } from '../paths.js';
 import { createInitialState, transition } from './machine.js';
 import { saveState } from './persistence.js';
 import {
-  formatSeatChangeNotice,
   readSeatIdentities,
   readSeatIdentityRecord,
-  reconcileSeatIdentities,
   recordSeatIdentities,
-  type SeatChange,
   seatIdentitiesFromConfig,
-  seatIdentityChanges,
   writeSeatIdentities,
-} from './seats.js';
+} from './seats/record.js';
+import {
+  formatSeatChangeNotice,
+  reconcileSeatIdentities,
+  seatIdentityChanges,
+} from './seats/changes.js';
+import type { SeatChange } from './seats/changes.js';
 
 let dirs: string[] = [];
 

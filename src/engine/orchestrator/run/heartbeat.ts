@@ -1,5 +1,5 @@
-import { updateHeartbeat } from '../../../core/sessions/lockfile.js';
-import { HEARTBEAT_STALENESS_MS } from '../../../core/sessions/lockfile-status.js';
+import { updateHeartbeat } from '../../../core/sessions/lock/file.js';
+import { HEARTBEAT_STALENESS_MS } from '../../../core/sessions/lock/status.js';
 
 // Four pings inside the staleness window: three can be lost before a live session reads stale.
 export const LOCKFILE_PING_INTERVAL_MS = HEARTBEAT_STALENESS_MS / 4;

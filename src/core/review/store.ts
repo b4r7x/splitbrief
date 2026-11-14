@@ -1,10 +1,12 @@
 import { error } from '../../utils/error.js';
 import { REVIEW_FILE, REVIEW_JSON_FILE } from '../paths.js';
-import { readSpecFile, rewriteSpecFile } from '../paths-io.js';
-import { ReviewRecordSchema, type ReviewRecord, type WorkflowState } from '../schemas/workflow.js';
+import { readSpecFile, rewriteSpecFile } from '../sessions/spec-files.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import { ReviewRecordSchema, type ReviewRecord } from '../schemas/workflow/review-record.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { renderReviewMarkdown, type AcceptedReview } from './render.js';
-import { recordedFixWork, reviewOutcomeOf, setAsideInputs } from './verdict.js';
+import { reviewOutcomeOf, setAsideInputs } from './verdict.js';
+import { recordedFixWork } from './accepted.js';
 
 export function parseReviewRecord(text: string): ReviewRecord {
   try {

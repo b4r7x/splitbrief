@@ -9,7 +9,7 @@ import {
 } from './sanitize-discovered-validation.js';
 import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
+import type { DiscoveredValidation } from '../../../core/schemas/workflow/state.js';
 
 const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 

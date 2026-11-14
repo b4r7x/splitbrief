@@ -4,10 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { projectRunnerCallActivity } from '../../calls/activity.js';
 import { toTokenDelta } from '../../calls/usage.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
-import {
-  CLI_TOOL_CATALOG,
-  COMMAND_CODE_CLI_ADMISSION_VERDICT,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
+import { COMMAND_CODE_CLI_ADMISSION_VERDICT } from '../../../core/runners/cli-tool/builders.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import { CLI_PROMPT_SENTINEL, UnregisteredCliCandidate } from './candidate-contract.js';
 import type { CliProtocolEvent } from './contract.js';

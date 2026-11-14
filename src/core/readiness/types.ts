@@ -7,7 +7,7 @@ import type {
 } from '../schemas/readiness.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
-import type { CliToolId } from '../runners/cli-tool-catalog.js';
+import type { CliToolId } from '../runners/cli-tool/types.js';
 
 export type RunnerReadinessCauseId =
   | ReadinessDiagnosticStateId

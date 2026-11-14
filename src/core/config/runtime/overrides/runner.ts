@@ -1,12 +1,13 @@
-import { buildRunnerConfig, inferKindFromTool, type BuildRunnerOpts } from '../build-runner.js';
+import { buildRunnerConfig, inferKindFromTool } from '../build-runner.js';
+import type { BuildRunnerOpts } from '../types.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { getProviderDisplayName } from '../../../providers/catalog.js';
-import { isCliToolId } from '../../../runners/cli-tool-catalog.js';
+import { isCliToolId } from '../../../runners/cli-tool/catalog.js';
 import { runnerEffortChannel, unusedEffortReason } from '../../../runners/effort-channel.js';
 import type { RunnerKind } from '../../../schemas/enums.js';
 import type { Config } from '../../../schemas/config.js';
-import type { PlannerConfig } from '../../../schemas/planner-config.js';
-import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
+import type { PlannerConfig } from '../../../schemas/runner/planner.js';
+import type { ImplementerConfig } from '../../../schemas/runner/implementer.js';
 import type { EffortLevel } from '../../../schemas/enums.js';
 import type { ActiveRunnerRole } from '../../../runners/seat-roles.js';
 import {
@@ -14,7 +15,7 @@ import {
   pickDefaultProfileName,
   stripProfileMetadata,
 } from '../../accessors/implementer-profiles.js';
-import type { ReviewerConfig } from '../../../schemas/reviewer-config.js';
+import type { ReviewerConfig } from '../../../schemas/runner/reviewer.js';
 import type { RunnerConfig } from '../../accessors/runner-config.js';
 import { readActiveRunner } from '../../accessors/active-runner.js';
 import { resolveReviewerRunner } from '../../accessors/reviewer-runner.js';

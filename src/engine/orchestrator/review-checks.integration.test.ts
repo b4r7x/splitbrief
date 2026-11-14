@@ -15,7 +15,7 @@ import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/led
 import { runBaseTreesRoot } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { saveState } from '../../core/state/persistence.js';
 import { processError } from '../../lib/process/errors.js';
 import { resetLoggerForTests } from '../../lib/logger.js';

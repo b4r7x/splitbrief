@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { runBaseTreesRoot } from '../../../core/paths.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { createGitClient, runGit } from '../../../lib/git/client.js';
 import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { isENOENT } from '../../../utils/errno.js';

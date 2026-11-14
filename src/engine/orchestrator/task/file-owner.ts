@@ -1,5 +1,5 @@
 import { isAbsolute, relative } from 'node:path';
-import { fileFromFailureKey } from '../../../core/review/fix-task.js';
+import { fileFromFailureKey } from '../../../core/review/fix/task.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import { normalizeProjectRelativePath } from '../../../utils/path/patterns.js';

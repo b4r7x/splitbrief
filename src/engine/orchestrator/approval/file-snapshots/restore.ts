@@ -1,4 +1,4 @@
-import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow/changed-files.js';
 import { join } from 'node:path';
 import { readEntryAtRef } from '../../../../lib/git/refs.js';
 import { sha256Hex } from '../../../../utils/sha256.js';

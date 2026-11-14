@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Command, InvalidArgumentError } from 'commander';
 import * as apiProviderCatalog from '../core/providers/api-provider-catalog.js';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
-import { IMPLEMENTER_CLI_TOOL_IDS, isListedCliTool } from '../core/runners/cli-tool-catalog.js';
+import { IMPLEMENTER_CLI_TOOL_IDS, isListedCliTool } from '../core/runners/cli-tool/catalog.js';
 import { EFFORT_LEVELS, META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import {

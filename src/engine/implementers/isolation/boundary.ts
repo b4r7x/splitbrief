@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import {
   GLOBAL_SKILL_SCAN_PATHS,
   PROJECT_SKILL_SCAN_PATHS,

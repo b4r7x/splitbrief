@@ -6,7 +6,7 @@ import type {
   DiscoveryRefreshRequest,
   DiscoverySourceContexts,
 } from '../discovery/model-cache/types.js';
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
 
 export const detectionStore = {

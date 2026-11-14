@@ -1,5 +1,5 @@
 import type { TypedSchemaInput } from '../runners/typed-output.js';
-import type { TypedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
+import type { TypedOutputCapability } from '../../core/runners/cli-tool/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';

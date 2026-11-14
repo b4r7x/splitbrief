@@ -5,7 +5,8 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { contentIdentityId } from './content-identity.js';
 import type { Config } from '../../schemas/config.js';
 import type { ActiveRunnerConfig } from './active-runner.js';
-import { defaultCliAuthChannel, type CliAuthChannelId } from '../../runners/cli-tool-catalog.js';
+import { defaultCliAuthChannel } from '../../runners/cli-tool/catalog.js';
+import type { CliAuthChannelId } from '../../runners/cli-tool/auth-channels.js';
 import {
   runnerRoleForActiveRole,
   type ActiveRunnerRole,

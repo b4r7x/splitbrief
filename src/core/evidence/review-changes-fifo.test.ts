@@ -3,7 +3,7 @@ import { constants, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../paths-io.js';
+import { ensureSessionDir } from '../sessions/spec-files.js';
 import { sessionDir } from '../paths.js';
 import { readReviewChanges, REVIEW_CHANGES_FILE } from './review-changes.js';
 

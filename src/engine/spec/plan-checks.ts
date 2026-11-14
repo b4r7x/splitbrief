@@ -2,7 +2,7 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { TaskContextFit } from '../../core/schemas/enums.js';
 import type { PlanProposal, TaskSpec } from '../../core/schemas/plan.js';
-import { REVIEW_CHECK_ID } from '../../core/schemas/review.js';
+import { REVIEW_CHECK_ID } from '../../core/schemas/review/verdict.js';
 import { topoSort } from '../../core/state/topo-sort.js';
 import { isPathConfined } from '../../lib/fs/confinement.js';
 import { isENOENT } from '../../utils/errno.js';

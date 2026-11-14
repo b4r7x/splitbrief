@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect } from 'vitest';
 import { formatAttachedText, resolveInputFile } from '../../src/core/attachments/resolve.js';
-import { readMessages } from '../../src/core/sessions/log-reader.js';
+import { readMessages } from '../../src/core/sessions/log/reader.js';
 import type { SessionRef } from '../../src/core/types/session-ref.js';
 import { plainUserMessage, type UserMessageInput } from '../../src/core/types/user-input.js';
 import { readRunEvents } from '../../src/engine/events/replay.js';

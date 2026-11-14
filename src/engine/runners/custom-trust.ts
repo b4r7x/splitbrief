@@ -3,9 +3,9 @@ import {
   CustomCommandIdSchema,
   InlineRunnerCommandSchema,
   NormalizedCustomCommandSchema,
-  type CustomCommandContract,
-} from '../../core/config/custom-commands.js';
-import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
+} from '../../core/config/custom-commands/schema.js';
+import type { CustomCommandContract } from '../../core/config/custom-commands/tuple.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection/executable.js';
 import {
   TRUST_STORE_MAX_RECEIPTS,
   readTrustStore,

@@ -4,10 +4,10 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/identity.js';
+import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/seat-line/collapse.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
-import type { SeatLineSpan } from '../../../core/crew/identity.js';
-import type { RailStageState } from '../../../core/rail-stages.js';
+import type { SeatLineSpan } from '../../../core/crew/seat-line/collapse.js';
+import type { RailStageState } from '../../../core/phases/rail.js';
 import {
   getChromeContentWidth,
   HEADER_RAIL_SEAT_GAP,

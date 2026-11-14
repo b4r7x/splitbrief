@@ -1,8 +1,8 @@
 import { mkdirSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createDefaultConfig } from '../../src/core/config/load/defaults.js';
-import { ensureSessionDir } from '../../src/core/paths-io.js';
-import type { WorkflowState } from '../../src/core/schemas/workflow.js';
+import { ensureSessionDir } from '../../src/core/sessions/spec-files.js';
+import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { saveState } from '../../src/core/state/persistence.js';
 import { reconcileWorkspaceToBase } from '../../src/engine/orchestrator/isolation/acquisition.js';

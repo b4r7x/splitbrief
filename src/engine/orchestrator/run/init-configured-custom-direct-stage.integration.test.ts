@@ -11,7 +11,7 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { ConfigSchema } from '../../../core/schemas/config.js';
 import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { createStagedProject } from '../approval/staged-project.js';

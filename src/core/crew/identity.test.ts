@@ -7,22 +7,22 @@ import { configuredReviewerRunner } from '../config/accessors/reviewer-runner.js
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { resolveTheme } from '../theme/resolve.js';
 import {
-  cutSeatIdentity,
-  formatCollapsedSeatSpans,
-  formatCollapsedSeatSpansFromIdentities,
   formatSeatCandidateIdentity,
   formatSeatChangeIdentities,
   formatSeatIdentity,
   formatSeatToolWord,
   formatShortSeatIdentity,
-  isSeatIdentity,
   PLANNER_INHERITANCE,
   REVIEW_NONE,
-  type SeatLineSpan,
-  seatIdsOf,
-  seatLineText,
-  wrapSeatIdentity,
 } from './identity.js';
+import { cutSeatIdentity, wrapSeatIdentity } from './seat-line/wrap.js';
+import {
+  formatCollapsedSeatSpans,
+  formatCollapsedSeatSpansFromIdentities,
+  type SeatLineSpan,
+  seatLineText,
+} from './seat-line/collapse.js';
+import { isSeatIdentity, seatIdsOf } from './seat-ids.js';
 import { CREW_SEAT_ROLES } from './seats.js';
 
 const planner: RunnerConfig = { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' };

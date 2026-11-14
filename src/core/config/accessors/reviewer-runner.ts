@@ -1,5 +1,5 @@
 import type { Config } from '../../schemas/config.js';
-import type { ReviewerConfig } from '../../schemas/reviewer-config.js';
+import type { ReviewerConfig } from '../../schemas/runner/reviewer.js';
 import { configError } from '../errors.js';
 
 export type ResolvedReviewerRunner =

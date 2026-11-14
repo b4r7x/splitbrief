@@ -1,7 +1,8 @@
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../core/schemas/workflow/changed-files.js';
 import { orderChangedFiles } from '../change-detection.js';
 import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.js';
 import { restorableFiles } from './isolation/entry-snapshot.js';

@@ -1,4 +1,4 @@
-import type { DetectedModel, DetectedPricingTier } from '../../core/discovery/detection.js';
+import type { DetectedModel, DetectedPricingTier } from '../../core/discovery/detection/model.js';
 import type { CatalogVendorId } from '../../core/providers/known-models.js';
 import type { ProviderId } from '../../core/schemas/enums.js';
 import type { ModelsDevCatalog, ModelsDevModel } from '../../core/schemas/models-dev.js';

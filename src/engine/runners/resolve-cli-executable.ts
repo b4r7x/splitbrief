@@ -6,15 +6,15 @@ import {
   CliExecutableReceiptSchema,
   EXECUTABLE_CONTENT_DIGEST_ALGORITHM,
   formatDigestBoundExecutableFingerprint,
-} from '../../core/discovery/detection.js';
+} from '../../core/discovery/detection/executable.js';
 import type {
   CliExecutableIdentity,
   CliExecutableReceipt,
   ExecutableIdentity,
-} from '../../core/discovery/detection.js';
-import type * as Detection from '../../core/discovery/detection.js';
-import { CLI_TOOL_CATALOG, cliToolIdForExecutable } from '../../core/runners/cli-tool-catalog.js';
-import { cliExecutableTrustRemediation } from '../../core/schemas/readiness.js';
+} from '../../core/discovery/detection/executable.js';
+import type * as Detection from '../../core/discovery/detection/executable.js';
+import { CLI_TOOL_CATALOG, cliToolIdForExecutable } from '../../core/runners/cli-tool/catalog.js';
+import { cliExecutableTrustRemediation } from '../../core/readiness/cli-remediation.js';
 import { isENOENT, isNodeError } from '../../utils/errno.js';
 import { error, matches } from '../../utils/error.js';
 

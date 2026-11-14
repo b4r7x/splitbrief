@@ -1,14 +1,14 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../../../core/paths-io.js';
-import { writeSeatIdentities } from '../../../../core/state/seats.js';
+import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
+import { writeSeatIdentities } from '../../../../core/state/seats/record.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../../../core/state/machine.js';
 import { createEvidenceLedger } from '../../../../core/evidence/ledger-state.js';
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import { taskId } from '../../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { buildChanges, buildChecks, buildRun, buildValidation } from './sections.js';
 import { renderReviewPacketMarkdown, renderWholeChecksLog } from './render.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';

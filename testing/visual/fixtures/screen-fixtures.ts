@@ -11,7 +11,7 @@ import type { CLIOverrides } from '../../../src/core/config/runtime/overrides/sc
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { trackToolCheck } from '../../../src/engine/probe-activity.js';
-import type { CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../../src/core/runners/cli-tool/types.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
@@ -41,7 +41,7 @@ import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../src/core/readiness/types.js';
 import { buildIsolationChecks } from '../../../src/core/readiness/checks/isolation.js';
 import { buildRepoChecks } from '../../../src/core/readiness/checks/repo.js';
-import { buildRunnerChecks } from '../../../src/core/readiness/checks/runners.js';
+import { buildRunnerChecks } from '../../../src/core/readiness/checks/runner/build.js';
 import { selectNextAction } from '../../../src/core/readiness/status.js';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
 import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
@@ -52,7 +52,8 @@ import {
 import { blockedCheck } from '../../../src/engine/runners/prepare-execution/runner-candidates.js';
 import { formatCustomRunnerTrustRequest } from '../../../src/engine/runners/custom-runner-disclosure.js';
 import { openApprovalPrompt } from '../../../src/stores/approval-prompt/prompt.js';
-import type { CliToolDetection, DetectedModel } from '../../../src/core/discovery/detection.js';
+import type { CliToolDetection } from '../../../src/core/discovery/detection/tool.js';
+import type { DetectedModel } from '../../../src/core/discovery/detection/model.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseOpenCodeNativeModelCatalog,
@@ -61,12 +62,15 @@ import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-c
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';
 import type { Config } from '../../../src/core/schemas/config.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { SkillMeta } from '../../../src/core/skills/types.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { listProjectFiles } from '../../../src/lib/fs/listing.js';
 import { saveState } from '../../../src/core/state/persistence.js';
-import { seatIdentitiesFromConfig, writeSeatIdentities } from '../../../src/core/state/seats.js';
+import {
+  seatIdentitiesFromConfig,
+  writeSeatIdentities,
+} from '../../../src/core/state/seats/record.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { makeConfig } from '../../helpers/factories/config.js';

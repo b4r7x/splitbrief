@@ -21,7 +21,7 @@ import {
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
-import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
+import { ensureSessionDir, writeSpecFile } from '../../core/sessions/spec-files.js';
 import { REVIEW_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { createEvidenceLedger } from '../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
@@ -29,11 +29,11 @@ import { createInitialState } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { allowedActionsForHalt, haltOf } from '../../core/recovery/halt.js';
 import { RecoveryIssueSchema, type RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
-import { deriveRunStatus } from '../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../core/sessions/run/status.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { ReviewVerdict } from '../../core/schemas/review.js';
+import type { ReviewVerdict } from '../../core/schemas/review/verdict.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { error } from '../../utils/error.js';
 import type { EngineEvent } from '../events/types.js';
 import type { ApiContextDiagnostic } from '../providers/api-context-diagnostic.js';

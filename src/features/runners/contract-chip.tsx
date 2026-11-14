@@ -3,7 +3,7 @@ import { Box } from 'ink';
 import { SOFT_SEP } from '../../core/separators.js';
 import type { Theme } from '../../core/theme/palette.js';
 import { glyph } from '../../lib/glyphs.js';
-import type { CustomCommandContract } from '../../core/config/custom-commands.js';
+import type { CustomCommandContract } from '../../core/config/custom-commands/tuple.js';
 
 export function tierColor(t: Theme, tier: CustomCommandContract): string | undefined {
   return tier === 'output' ? t.info : t.warning;

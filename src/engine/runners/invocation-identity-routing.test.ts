@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { CliImplementerConfig } from '../../core/schemas/runner/implementer.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';

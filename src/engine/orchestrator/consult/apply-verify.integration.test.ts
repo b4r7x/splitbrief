@@ -9,16 +9,13 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
-import type {
-  ChangedFilesSnapshot,
-  PlannerConversation,
-  WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import type { PlannerConversation, WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { readReviewChanges } from '../../../core/evidence/review-changes.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
-import { appendEngineEvent } from '../../../core/sessions/log-writer.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
+import { appendEngineEvent } from '../../../core/sessions/log/writer.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { EngineEvent } from '../../events/types.js';

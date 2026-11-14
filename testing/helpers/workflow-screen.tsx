@@ -5,7 +5,7 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../src/core/schemas/config.js';
-import type { WorkflowState } from '../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import {
   createSessionPreparationCandidate,
   prepareNewSession,

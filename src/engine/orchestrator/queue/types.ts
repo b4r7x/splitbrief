@@ -1,6 +1,6 @@
 import type { EventBus } from '../../events/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { SteeringPort } from '../../calls/steering.js';
 

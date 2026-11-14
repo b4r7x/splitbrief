@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
-import type { TriageInput } from '../../../core/schemas/review.js';
+import type { TriageInput } from '../../../core/schemas/review/verdict.js';
 import {
   buildFinalReviewPrompt,
   planBody,

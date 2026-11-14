@@ -1,10 +1,12 @@
-import type { CLI_TOOL_CATALOG, CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import type { CliExecutableIdentity, DetectedModel } from '../../../core/discovery/detection.js';
+import type { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
 import type {
   RunnerCallTextChannel,
   RUNNER_CALL_WARNING_SEVERITIES,
-} from '../../../core/runner-call-contract.js';
+} from '../../../core/schemas/runner-call.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';

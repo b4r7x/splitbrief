@@ -15,8 +15,8 @@ import {
 import { saveState } from '../../core/state/persistence.js';
 import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
-import type { RunRecord } from '../../core/sessions/run-record.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { RunRecord } from '../../core/sessions/run/record.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type {
   PreparationOutcome,
   PreparedExecution,

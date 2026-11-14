@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import { CLI_IMPLEMENTER_ADAPTERS, CLI_PLANNER_ADAPTERS } from './cli-tools/registry.js';
 
 const CODEX_PROMPT_LIMIT = { max: 1_048_576, unit: 'characters' } as const;

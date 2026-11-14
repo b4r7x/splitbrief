@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/group.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { mergeEventLog } from '../../../src/stores/workflow/events.js';

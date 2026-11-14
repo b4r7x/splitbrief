@@ -1,9 +1,10 @@
 import { statSync } from 'node:fs';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import {
   CliExecutableReceiptSchema,
   parseDigestBoundExecutableFingerprint,
-} from '../../core/discovery/detection.js';
+} from '../../core/discovery/detection/executable.js';
 import {
   admitStart,
   type RunnerEvidence,
@@ -23,7 +24,7 @@ import type {
   CliExecutableReceipt,
   CliExecutableTrust,
   ExecutableIdentity,
-} from '../../core/discovery/detection.js';
+} from '../../core/discovery/detection/executable.js';
 
 export type CliStartGate = Readonly<{
   tool: CliToolId;

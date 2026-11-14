@@ -9,7 +9,7 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../stores/project/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { reactivateExistingSession } from '../../core/sessions/active-pointer.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';

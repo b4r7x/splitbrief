@@ -5,7 +5,8 @@ import type {
   ProviderDef,
   ProviderOverrides,
 } from './types.js';
-import type { DetectedModel, ProviderDetection } from '../../core/discovery/detection.js';
+import type { ProviderDetection } from '../../core/discovery/detection/tool.js';
+import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import {
   API_PROVIDER_CATALOG,
   LISTED_API_PROVIDER_IDS,

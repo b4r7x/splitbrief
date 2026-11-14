@@ -18,10 +18,10 @@ import { fsError, nameWriteTarget } from '../../../../lib/fs/secure.js';
 import {
   assertExistingPathConfined,
   assertPathConfined,
-  assertProjectWritablePathConfined,
-  CONTROL_PLANE_SEGMENTS,
   pathConfinementError,
 } from '../../../../lib/fs/confinement.js';
+import { assertProjectWritablePathConfined } from '../../../../core/scope/control-plane.js';
+import { CONTROL_PLANE_SEGMENTS } from '../../../../core/scope/control-plane.js';
 import { isENOENT, isNodeError } from '../../../../utils/errno.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { collectTrackedFiles } from '../../../snapshots/files.js';

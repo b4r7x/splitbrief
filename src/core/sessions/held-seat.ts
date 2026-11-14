@@ -4,7 +4,7 @@ import { readImplementerProfileConfig } from '../config/accessors/implementer-pr
 import type { CrewSeatId } from '../crew/identity.js';
 import { CREW_SEAT_ROLES } from '../crew/seats.js';
 import type { Config } from '../schemas/config.js';
-import type { HeldSeat, SeatWait } from '../schemas/workflow.js';
+import type { HeldSeat, SeatWait } from '../schemas/workflow/seat.js';
 
 export function heldSeatOf(runner: RunnerConfig, profile: string | undefined): HeldSeat {
   return {

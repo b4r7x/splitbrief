@@ -10,22 +10,19 @@ import {
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
-import { normalizeCustomCommand } from '../../../core/config/custom-commands.js';
+import { normalizeCustomCommand } from '../../../core/config/custom-commands/schema.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import type {
-  AttemptFailure,
-  ChangedFilesSnapshot,
-  ConsultRecord,
-  LineageRecord,
-  WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { AttemptFailure, LineageRecord } from '../../../core/schemas/workflow/lineage.js';
+import type { ConsultRecord } from '../../../core/schemas/workflow/consult-record.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { taskId, type Task } from '../../../core/schemas/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { revertedDir } from '../../../core/paths.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -63,7 +60,7 @@ import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
-import { fixBriefDescription, type FixFinding } from '../../../core/review/fix-task.js';
+import { fixBriefDescription, type FixFinding } from '../../../core/review/fix/task.js';
 import {
   captureProjectFileHashes,
   getChangedFilesSinceSnapshot,

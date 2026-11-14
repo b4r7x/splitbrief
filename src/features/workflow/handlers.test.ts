@@ -11,7 +11,7 @@ import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import {
   activeApply,
   trackActiveApply,

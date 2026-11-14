@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import type { ConsultAnswer } from '../../../src/core/schemas/consult.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {

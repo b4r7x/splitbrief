@@ -1,7 +1,8 @@
 import type { Task } from '../../../core/schemas/task.js';
 import { relative } from 'node:path';
 import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { labelError } from '../../../utils/format/errors.js';
 import { pluralize } from '../../../utils/pluralize.js';

@@ -10,7 +10,7 @@ import {
   lookupRuntimeModel,
   type ModelCacheAccessor,
 } from './resolution.js';
-import { isCliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
 
 export type ContextWindowSource = 'models-dev' | 'runtime' | 'known-catalog' | 'automatic-catalog';
 

@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cursorDetectedModels } from '#testing/helpers/factories/cursor-models.js';
-import type { CliProviderAuthFact, DetectedModel } from '../../../core/discovery/detection.js';
+import type { CliProviderAuthFact } from '../../../core/discovery/detection/auth.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
 import {
   nativeCliCatalogToDetectedModels,

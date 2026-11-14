@@ -1,13 +1,18 @@
 import { mkdirSync } from 'node:fs';
-import type { CliReadinessState, CliToolDetection } from '../../../src/core/discovery/detection.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
+import type {
+  CliReadinessState,
+  CliToolDetection,
+} from '../../../src/core/discovery/detection/tool.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../src/core/runners/cli-tool/types.js';
 import { cliDetectionFromReadiness } from '../../../src/engine/detection/detect.js';
 import {
   type RememberedCliCatalog,
   saveDetectionCache,
 } from '../../../src/engine/detection/cache.js';
 import { getSplitbriefPath } from '../../../src/core/paths.js';
-import { deriveCliReadiness, type CliReadinessFacts } from '../../../src/core/schemas/readiness.js';
+import type { CliReadinessFacts } from '../../../src/core/schemas/readiness.js';
+import { deriveCliReadiness } from '../../../src/core/readiness/cli-remediation.js';
 
 export const PROBE_EXECUTABLE = Object.freeze({
   path: '/opt/splitbrief/bin/cli-tool',

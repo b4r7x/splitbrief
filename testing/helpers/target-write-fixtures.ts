@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import type { EvidenceLedger } from '../../src/core/schemas/evidence.js';
 import type { Task } from '../../src/core/schemas/task.js';
 import type { SessionRef } from '../../src/core/types/session-ref.js';
-import { ensureSessionDir } from '../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../src/core/sessions/spec-files.js';
 import {
   createEvidenceLedger,
   findOrSeed,

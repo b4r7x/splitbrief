@@ -15,19 +15,18 @@ import {
 } from '../../core/schemas/enums.js';
 import { AttachedInputSchema } from '../../core/schemas/attachment.js';
 import { DriftFindingsSchema } from '../../core/schemas/drift.js';
-import { ReviewFindingCountsSchema, SetAsideSchema } from '../../core/schemas/review.js';
+import { ReviewFindingCountsSchema, SetAsideSchema } from '../../core/schemas/review/verdict.js';
 import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
 import {
   AnsweredQuestionSchema,
   ClarificationQuestionSchema,
 } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
+import { SeatSwitchCauseSchema, SeatWaitSchema } from '../../core/schemas/workflow/seat.js';
 import {
   CONSULT_ACTION_KINDS,
   ConsultRecordSchema,
-  SeatSwitchCauseSchema,
-  SeatWaitSchema,
-} from '../../core/schemas/workflow.js';
+} from '../../core/schemas/workflow/consult-record.js';
 import { CONSULT_REASONS } from '../../core/schemas/consult.js';
 import {
   readSavedRecoveryActions,
@@ -38,7 +37,7 @@ import {
 import { CREW_SEAT_IDS } from '../../core/crew/identity.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
-import { RunnerCallTextChannelSchema } from '../../core/runner-call-contract.js';
+import { RunnerCallTextChannelSchema } from '../../core/schemas/runner-call.js';
 import { WORKFLOW_CANCEL_REASONS } from './workflow-cancel.js';
 import { SeatAccountCauseSchema } from '../../core/recovery/account-cause.js';
 import { TASK_REVIEW_COMMANDS } from './workflow-events.js';

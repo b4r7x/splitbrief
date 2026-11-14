@@ -11,19 +11,19 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
 import { buildRunnerConfig } from '../../../core/config/runtime/build-runner.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
 import { saveState } from '../../../core/state/persistence.js';
-import { appendMessage } from '../../../core/sessions/log-writer.js';
+import { appendMessage } from '../../../core/sessions/log/writer.js';
 import {
   readSeatIdentities,
   recordSeatIdentities,
-  reconcileSeatIdentities,
   seatIdentitiesFromConfig,
-} from '../../../core/state/seats.js';
+} from '../../../core/state/seats/record.js';
+import { reconcileSeatIdentities } from '../../../core/state/seats/changes.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { ResumeContextHolder } from '../types.js';
 import { initializeWorkflow } from '../run/init.js';

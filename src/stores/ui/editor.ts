@@ -4,8 +4,8 @@ import {
   clampScrollToDocument,
   createEditorState,
   followCaretScroll,
-} from '../../core/editor/editor-state.js';
-import type { EditorEvent, EditorLayout, EditorState } from '../../core/editor/editor-state.js';
+} from '../../core/editor/state.js';
+import type { EditorEvent, EditorLayout, EditorState } from '../../core/editor/types.js';
 import { wrapVisualLines } from '../../core/editor/grapheme-motions.js';
 
 interface OpenParams {

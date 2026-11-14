@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
-import type { DetectedModel } from '../../../core/discovery/detection.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type {
   ScopedCliCatalogAttempt,
   ScopedCliCatalogRuntime,

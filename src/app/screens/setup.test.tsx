@@ -12,7 +12,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import { loadConfig } from '../../core/config/load/io.js';

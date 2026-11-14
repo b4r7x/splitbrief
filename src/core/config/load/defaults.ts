@@ -1,5 +1,5 @@
 import { CONFIG_VERSION, type Config } from '../../schemas/config.js';
-import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner/fields.js';
 import { getKnownProviderBaseURL } from '../../providers/catalog.js';
 import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
 import { narrowRecord } from '../../../utils/type-guards.js';

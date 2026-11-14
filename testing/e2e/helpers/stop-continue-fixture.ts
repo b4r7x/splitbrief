@@ -23,7 +23,7 @@ import {
   type PersistedWorkflowState,
   type WorkflowState,
   WorkflowStateSchema,
-} from '../../../src/core/schemas/workflow.js';
+} from '../../../src/core/schemas/workflow/state.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';

@@ -6,7 +6,7 @@ import { makeResearchingState, setupProject } from '#testing/helpers/queue.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createRuntimeCommands } from '../../../src/core/runtime/commands/registry.js';
-import { phaseStage } from '../../../src/core/rail-stages.js';
+import { phaseStage } from '../../../src/core/phases/rail.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { clearPendingQueue } from '../../../src/engine/orchestrator/queue/clear.js';
 import {

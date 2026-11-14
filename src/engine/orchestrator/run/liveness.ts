@@ -1,6 +1,6 @@
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { LOCKFILE, sessionDir } from '../../../core/paths.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { warnStderr } from '../../../lib/warn.js';
 import { sessionError, sessionFileFailure } from '../../../core/sessions/errors.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -12,7 +12,7 @@ import {
   markExited,
   writeLockfile,
   type SessionLivenessStatus,
-} from '../../../core/sessions/lockfile.js';
+} from '../../../core/sessions/lock/file.js';
 
 const workflowLivenessError = {
   sessionAlreadyLive: (sessionId: string, pid: number) =>

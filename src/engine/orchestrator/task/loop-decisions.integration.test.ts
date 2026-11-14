@@ -20,7 +20,7 @@ import { loadState } from '../../../core/state/persistence.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import type { ConsultAnswer, ReportedDecision } from '../../../core/schemas/consult.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../implementers/types.js';
 import type { Validator } from '../validation/types.js';
@@ -46,7 +46,7 @@ const HOW_TOO: Decision = {
 };
 const UNREASONED: Decision = { what: 'Kept the old helper name', why: null };
 const TS_ERROR =
-  "src/engine/orchestrator/task/loop.ts(5,15): error TS2305: Module '../../../core/schemas/review.js' has no exported member 'ReviewRecord'.";
+  "src/engine/orchestrator/task/loop.ts(5,15): error TS2305: Module '../../../core/schemas/review/verdict.js' has no exported member 'ReviewRecord'.";
 const LINT_ERROR = 'prior-run.test.ts:224 Formatter would have printed different content.';
 
 let dirs: string[] = [];
@@ -146,7 +146,7 @@ function guidance(): ConsultAnswer {
     answer: {
       diagnosis: 'The import is still wrong.',
       action: 'guidance',
-      instructions: 'Import ReviewRecord from src/core/schemas/workflow.ts.',
+      instructions: 'Import ReviewRecord from src/core/schemas/workflow/review-record.ts.',
       context: null,
     },
   };

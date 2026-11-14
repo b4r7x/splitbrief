@@ -32,7 +32,7 @@ import {
   TEST_METADATA,
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { saveState } from '../../core/state/persistence.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { runPlanningPhase } from '../orchestrator/planning/run.js';

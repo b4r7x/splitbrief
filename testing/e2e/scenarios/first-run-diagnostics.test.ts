@@ -7,7 +7,7 @@ import { SetupScreen } from '../../../src/app/screens/setup.js';
 import { SettingsOverlay } from '../../../src/app/overlays/settings.js';
 import { configPath } from '../../../src/core/config/load/document.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';

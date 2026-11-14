@@ -14,7 +14,7 @@ import {
 } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
 import { writeActive } from '../sessions/active-pointer.js';
-import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
+import { HEARTBEAT_STALENESS_MS } from '../sessions/lock/status.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { applyRunnerPreparationChecks, collectReadiness } from './collect.js';
 import { initConfig } from '../config/load/io.js';

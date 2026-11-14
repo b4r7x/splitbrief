@@ -12,10 +12,10 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../paths-io.js';
+import { ensureSessionDir } from '../sessions/spec-files.js';
 import { sessionDir } from '../paths.js';
 import { taskId } from '../schemas/task.js';
-import type { ReviewChange } from '../schemas/review-changes.js';
+import type { ReviewChange } from '../schemas/review/changes.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { appendReviewChanges, readReviewChanges, REVIEW_CHANGES_FILE } from './review-changes.js';
 

@@ -8,7 +8,7 @@ import type { SessionRef } from '../core/types/session-ref.js';
 import type { SeatDownPolicy } from '../core/types/config-options.js';
 import type { Config } from '../core/schemas/config.js';
 import { configuredReviewerRunner } from '../core/config/accessors/reviewer-runner.js';
-import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import { resolveReviewCadence } from '../core/config/runtime/resolve.js';
 import { recoveryFactString } from '../core/schemas/recovery/facts.js';
 import { readSession } from '../core/sessions/io.js';
@@ -27,14 +27,14 @@ import {
 } from '../core/skills/scan-paths.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
-import { deriveRunStatus, isAnsweredApplyRecovery } from '../core/sessions/run-status.js';
+import { deriveRunStatus, isAnsweredApplyRecovery } from '../core/sessions/run/status.js';
 import {
   continueRunCommand,
   continuesHeadless,
   formatResumeCommand,
 } from '../core/recovery/resume-command.js';
 import { recoveryActionLabel } from '../core/recovery/action-label.js';
-import { cannotDetail, reviewFailedCause, reviewName } from '../core/recovery/headline.js';
+import { cannotDetail, reviewFailedCause, reviewName } from '../core/recovery/causes.js';
 import { haltOf, recoveryHaltLabel } from '../core/recovery/halt.js';
 import { formatResetAt } from '../core/recovery/reset-clock.js';
 import { cliError } from './errors.js';

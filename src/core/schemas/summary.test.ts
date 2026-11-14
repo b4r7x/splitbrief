@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { SummarySchema, costKnownFlags } from './summary.js';
+import { SummarySchema } from './summary.js';
+import { costKnownFlags } from './cost.js';
 import { calculateCostBreakdown } from '../../engine/providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../engine/providers/model/resolution.js';
 import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { RunnerCallCounterCoverage } from '../../core/runner-call-contract.js';
+import type { RunnerCallCounterCoverage } from '../../core/schemas/runner-call.js';
 import type { RecoveryFact, RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
-import type { CostBreakdown } from '../../core/schemas/summary.js';
+import type { CostBreakdown } from '../../core/schemas/cost.js';
 import { ZERO_TOKEN_USAGE, type TokenUsage } from '../../core/schemas/tokens.js';
 import {
   deriveUsageDetails,

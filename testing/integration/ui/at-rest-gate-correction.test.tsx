@@ -17,8 +17,8 @@ import { handleSessionSelect } from '../../../src/stores/navigation/session-sele
 import { loadOwnerWorkflowState } from '../../../src/core/state/resume-hydration.js';
 import { hydrateRun, readRunHistory } from '../../../src/features/workflow/run-history.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { makePassingTask } from '#testing/helpers/planning-phase.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';

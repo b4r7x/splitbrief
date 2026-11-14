@@ -11,7 +11,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { briefCorrections } from '../../../core/state/machine.js';
+import { briefCorrections } from '../../../core/state/lineage.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
@@ -28,7 +28,7 @@ import {
 } from '../evidence/task.js';
 import { withContinuationLoop } from '../continuation.js';
 import { addUsageAndSave, recordBriefCorrection } from '../state-ops.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 
 const directories: string[] = [];

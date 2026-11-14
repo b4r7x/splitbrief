@@ -9,7 +9,7 @@ import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { buildApplyConflictRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/apply.js';
 import { saveFinalSession } from '../../../src/engine/orchestrator/session-lifecycle/finalize.js';

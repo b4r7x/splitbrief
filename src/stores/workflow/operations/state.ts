@@ -1,4 +1,4 @@
-import { isProcessWentAwayMark } from '../../../core/event-phase.js';
+import { isProcessWentAwayMark } from '../../../core/phases/of-event.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { createStore, storeBase } from '../../create-store.js';

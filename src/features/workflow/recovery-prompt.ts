@@ -9,8 +9,8 @@ import { formatResetAt, stripRecoveryResetClause } from '../../core/recovery/res
 import {
   formatRecoveryHeadline,
   formatRecoveryHeadlineSpans,
-  isAskedDetail,
 } from '../../core/recovery/headline.js';
+import { isAskedDetail } from '../../core/recovery/causes.js';
 import {
   recoveryActionLabel,
   recoveryActionParts,

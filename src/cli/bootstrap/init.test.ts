@@ -5,7 +5,7 @@ import YAML from 'yaml';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import { initStores, initStoresForTuiMount, teardownStores } from './init.js';
 import { awaitBackgroundDiscovery } from './discovery.js';
 import { configStore } from '../../stores/project/config.js';

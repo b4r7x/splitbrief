@@ -11,15 +11,15 @@ import {
   resumeStep,
   type RunStatus,
   type StopReason,
-} from '../../core/sessions/run-status.js';
+} from '../../core/sessions/run/status.js';
 import { transition } from '../../core/state/machine.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { RunRecord } from '../../core/sessions/run-record.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { RunRecord } from '../../core/sessions/run/record.js';
 import type { RouteData } from '../../stores/navigation/router.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { ReviewPacketSummary } from '../../core/schemas/summary.js';
-import { getRailStages, type RailStageState } from '../../core/rail-stages.js';
+import { getRailStages, type RailStageState } from '../../core/phases/rail.js';
 import {
   applyRunning,
   atRestBriefMark,

@@ -8,7 +8,8 @@ import type { SkillMeta } from '../../../core/skills/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { DETECTING_TOOLS_STATUS } from '../../../core/discovery/copy.js';
-import { CREW_LABEL_WIDTH, formatCollapsedSeatSpans } from '../../../core/crew/identity.js';
+import { CREW_LABEL_WIDTH } from '../../../core/crew/identity.js';
+import { formatCollapsedSeatSpans } from '../../../core/crew/seat-line/collapse.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import {
   CREW_SEAT_ROLES,

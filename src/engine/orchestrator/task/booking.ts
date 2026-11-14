@@ -1,7 +1,8 @@
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { lineageFilesToBook, lineageHasOpenBrief } from '../../../core/state/machine.js';
+import { lineageFilesToBook, lineageHasOpenBrief } from '../../../core/state/lineage.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { unbookedFiles } from '../evidence/task.js';

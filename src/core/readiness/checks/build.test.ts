@@ -3,7 +3,7 @@ import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.
 import { buildReadinessReport } from './build.js';
 import type { BuildReadinessReportInput } from './build.js';
 import type { Config } from '../../schemas/config.js';
-import { deriveCliReadiness } from '../../schemas/readiness.js';
+import { deriveCliReadiness } from '../cli-remediation.js';
 
 function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
   const implementer = overrides.implementer;

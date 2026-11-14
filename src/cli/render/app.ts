@@ -15,7 +15,7 @@ import {
   configureSplitbriefKeyDebugLog,
   isConfiguredKeyDebugEnabled,
   logSplitbriefRawKeyChunk,
-} from '../../core/key-debug.js';
+} from '../../core/keybindings/debug-log.js';
 import {
   installTerminalOutputErrorGuard,
   isBrokenOutputError,

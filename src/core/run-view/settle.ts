@@ -1,5 +1,5 @@
-import type { WorkflowState } from '../schemas/workflow.js';
-import { afterLastBrief, reopensPlanCard, resumeStep } from '../sessions/run-status.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import { afterLastBrief, reopensPlanCard, resumeStep } from '../sessions/run/status.js';
 import { briefPosition } from '../state/selectors.js';
 import type { RunBriefs, WorkflowTask } from './briefs.js';
 import type { RunHalt } from './halt.js';

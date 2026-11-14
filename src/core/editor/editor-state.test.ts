@@ -5,11 +5,10 @@ import {
   clampScrollTop,
   clampScrollToDocument,
   createEditorState,
-  type EditorLayout,
-  type EditorState,
   selectionRange,
   UNDO_RING_CAP,
-} from './editor-state.js';
+} from './state.js';
+import type { EditorLayout, EditorState } from './types.js';
 
 const L: EditorLayout = { columns: 5, rows: 10 };
 

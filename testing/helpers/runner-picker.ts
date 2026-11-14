@@ -2,7 +2,7 @@ import {
   API_PROVIDER_CATALOG,
   LOCAL_API_PROVIDER_IDS,
 } from '../../src/core/providers/api-provider-catalog.js';
-import { isCliToolId } from '../../src/core/runners/cli-tool-catalog.js';
+import { isCliToolId } from '../../src/core/runners/cli-tool/catalog.js';
 import type { RunnerRole } from '../../src/core/runners/seat-roles.js';
 import {
   assemblePickerDescriptors,

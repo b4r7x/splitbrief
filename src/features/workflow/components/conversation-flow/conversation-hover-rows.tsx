@@ -1,6 +1,6 @@
 import { hoverStore } from '../../../../stores/ui/hover.js';
 import type { ConversationRow } from '../../conversation-rows/types.js';
-import type { RailHalt } from '../../../../core/rail-stages.js';
+import type { RailHalt } from '../../../../core/phases/rail.js';
 import { ConversationRowView } from './row-view.js';
 
 export function ConversationTranscriptRows({

@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import type {
   ReviewPacket,
   ReviewPacketCheckpoint,
-} from '../../../../core/schemas/review-packet.js';
-import { ReviewPacketSeatSwitchSchema } from '../../../../core/schemas/review-packet.js';
+} from '../../../../core/schemas/review/packet.js';
+import { ReviewPacketSeatSwitchSchema } from '../../../../core/schemas/review/packet.js';
 import {
   RECOVERY_ACTIONS,
   RECOVERY_REASONS,
@@ -23,7 +23,7 @@ import {
   SNAPSHOTS_DIR,
   sessionDir,
 } from '../../../../core/paths.js';
-import { readEvents } from '../../../../core/sessions/log-reader.js';
+import { readEvents } from '../../../../core/sessions/log/reader.js';
 import { readJsonSafe } from '../../../../lib/fs/read.js';
 import { includes, narrowRecord, optionalString } from '../../../../utils/type-guards.js';
 import {

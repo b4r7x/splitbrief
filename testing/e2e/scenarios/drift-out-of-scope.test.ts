@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REVIEW_PACKET_JSON_FILE } from '../../../src/core/paths.js';
-import { ReviewPacketSchema } from '../../../src/core/schemas/review-packet.js';
+import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
 import { makeE2eScenarioConfig } from '../helpers/config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';

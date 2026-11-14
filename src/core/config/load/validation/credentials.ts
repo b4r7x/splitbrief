@@ -8,9 +8,10 @@ import {
   parseApiKeyEnvRef,
   type RunnerCredentialConfig,
 } from '../../credentials.js';
-import { apiBaseValidationError } from '../../api-base.js';
 import type { ConfigError } from './types.js';
 import type { ActiveRunnerRole } from '../../../runners/seat-roles.js';
+import { toErrorMessage } from '../../../../utils/format/errors.js';
+import { validateApiBaseUrl } from '../../../providers/validate-api-base.js';
 
 function missingApiKeyError(opts: {
   role: ActiveRunnerRole;
@@ -98,4 +99,13 @@ export function apiKeyErrors(config: Config): ConfigError[] {
   }
 
   return errors;
+}
+
+export function apiBaseValidationError(apiBase: string): string | undefined {
+  try {
+    validateApiBaseUrl(apiBase);
+    return undefined;
+  } catch (err) {
+    return toErrorMessage(err);
+  }
 }

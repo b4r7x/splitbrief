@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
-import type { Section } from '../../../core/sections/event-sections.js';
+import type { Section } from '../../../core/sections/types.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';

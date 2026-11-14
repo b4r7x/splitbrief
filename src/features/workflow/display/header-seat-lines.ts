@@ -2,17 +2,13 @@ import { resolveImplementerProfiles } from '../../../core/config/accessors/imple
 import { collapsedReviewSeat } from '../../../core/crew/seats.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { RunRecord } from '../../../core/sessions/run-record.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
+import { isReviewNone, type REVIEW_NONE, type CrewSeatId } from '../../../core/crew/identity.js';
 import {
   formatCollapsedSeatSpans,
-  idsOf,
-  isReviewNone,
-  isSeatIdentity,
-  type REVIEW_NONE,
-  type CrewSeatId,
-  type SeatIds,
   type SeatLineSpan,
-} from '../../../core/crew/identity.js';
+} from '../../../core/crew/seat-line/collapse.js';
+import { idsOf, isSeatIdentity, type SeatIds } from '../../../core/crew/seat-ids.js';
 import type { RunHalt } from '../../../core/run-view/halt.js';
 import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RunningSeats } from './running-seats.js';

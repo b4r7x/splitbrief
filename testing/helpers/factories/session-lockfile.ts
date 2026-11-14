@@ -1,4 +1,4 @@
-import type { LockfileData } from '../../../src/core/sessions/lockfile-status.js';
+import type { LockfileData } from '../../../src/core/sessions/lock/status.js';
 import { currentProcessStartTimeMs } from '../../../src/lib/process/start-time.js';
 
 export function makeSessionLockfile(

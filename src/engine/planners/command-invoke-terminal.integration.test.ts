@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
+import { normalizeCustomCommand } from '../../core/config/custom-commands/schema.js';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
 import {

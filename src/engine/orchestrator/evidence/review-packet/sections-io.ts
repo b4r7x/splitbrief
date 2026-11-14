@@ -10,7 +10,7 @@ import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import type {
   ReviewPacket,
   ReviewPacketFinalReviewStatus,
-} from '../../../../core/schemas/review-packet.js';
+} from '../../../../core/schemas/review/packet.js';
 import { REVIEW_FILE, STATE_FILE, sessionDir } from '../../../../core/paths.js';
 import { getCommittedFilesSince, getCurrentDiff, getDiffSince } from '../../../../lib/git/diff.js';
 import { getGitStatus } from '../../../../lib/git/files.js';

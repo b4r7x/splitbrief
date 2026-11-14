@@ -21,7 +21,7 @@ import {
   parseKiloNativeModelCatalog,
   type NativeCliModelCatalog,
 } from '../../../engine/providers/cli-model-catalog.js';
-import type { DetectedModel } from '../../../core/discovery/detection.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 
 function pickerItem(

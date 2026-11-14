@@ -1,5 +1,5 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
-import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
+import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner/fields.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import { createRunnerCallId } from '../calls/call-id.js';
 import {

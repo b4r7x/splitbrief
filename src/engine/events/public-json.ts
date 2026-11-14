@@ -6,7 +6,7 @@ import {
   RecoveryReasonSchema,
   RecoveryStatusSchema,
 } from '../../core/schemas/enums.js';
-import { RedCheckSchema } from '../../core/schemas/workflow.js';
+import { RedCheckSchema } from '../../core/schemas/workflow/review-record.js';
 import { boundConsumerPayload, type CallConsumerContext } from '../../core/payload-bounds.js';
 import { EngineEventSchema } from './schema.js';
 import { boundEngineEventForConsumer } from './bound.js';

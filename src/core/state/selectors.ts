@@ -1,4 +1,4 @@
-import type { WorkflowState } from '../schemas/workflow.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
 import type { Task, TaskId } from '../schemas/task.js';
 import type { TaskStatus } from '../schemas/enums.js';
 

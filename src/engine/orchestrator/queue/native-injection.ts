@@ -1,4 +1,5 @@
-import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { Planner } from '../../planners/types.js';
 import type { EventBus } from '../../events/types.js';
@@ -11,9 +12,9 @@ import { claimQueuedMessage, releaseQueuedMessage } from './drain.js';
 import { publishDebug, publishInfo, publishRunnerCallEvent } from '../events.js';
 import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
 import { labelError } from '../../../utils/format/errors.js';
-import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
-import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
-import { phaseStage } from '../../../core/rail-stages.js';
+import { formatQueuedMessagePreview } from '../../../core/queue/preview.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue/state.js';
+import { phaseStage } from '../../../core/phases/rail.js';
 import { formatMessageInput } from './prompt.js';
 
 export type DispatchNativeInjectionOptions = {

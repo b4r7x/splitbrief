@@ -13,7 +13,7 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { useStores } from '../../stores/use-stores.js';
 import { assertNever } from '../../utils/type-guards.js';
-import type { CliToolDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection } from '../../core/discovery/detection/tool.js';
 import type { DiscoverySourceRefresh } from '../../stores/discovery/model-cache/types.js';
 
 interface SeatMarkInput {

@@ -1,6 +1,6 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { EventBus } from '../../events/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';

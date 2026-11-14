@@ -4,7 +4,7 @@ import { afterEach, expect, it } from 'vitest';
 import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
-import { toEngineEventEntry } from '../../../src/core/sessions/log-writer.js';
+import { toEngineEventEntry } from '../../../src/core/sessions/log/writer.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import {

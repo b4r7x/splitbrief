@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { sessionDir } from '../../../src/core/paths.js';
-import { ensureSplitbriefDir, ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { SessionLogEventEntrySchema } from '../../../src/core/schemas/session-log.js';
 import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';

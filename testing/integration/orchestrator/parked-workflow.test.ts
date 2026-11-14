@@ -16,7 +16,7 @@ import {
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import {
   guidanceConsult,
   planFromTasks,

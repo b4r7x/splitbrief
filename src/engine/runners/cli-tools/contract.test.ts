@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type {
   CliImplementerAdapter,
   CliOutputContract,

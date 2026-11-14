@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
-import { applyUnfinished, deriveRunStatus } from '../../../core/sessions/run-status.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { applyUnfinished, deriveRunStatus } from '../../../core/sessions/run/status.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { StagedWorkspaceLeafSchema } from '../../../core/schemas/retained-workspace.js';
 import { transition } from '../../../core/state/machine.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';

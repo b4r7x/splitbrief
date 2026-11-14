@@ -1,7 +1,7 @@
 import { readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isInternalGitStatusPath, SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { fsError } from '../../../lib/fs/secure.js';
 import { assertPathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
 import { isENOENT, isNodeError } from '../../../utils/errno.js';

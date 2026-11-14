@@ -6,7 +6,7 @@ import { createPlannerBase } from './base.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
-import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
+import { typedOutputCapability } from '../../core/runners/cli-tool/catalog.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { resolveSeatImageFact } from '../providers/model/resolution.js';
 import type { CliSchemaInput } from '../runners/cli-tools/contract.js';

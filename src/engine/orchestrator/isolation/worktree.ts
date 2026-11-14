@@ -3,7 +3,7 @@ import { chmod, lstat, mkdir, readFile, realpath, symlink, writeFile } from 'nod
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { ensureConfigGitignore } from '../../../core/config/load/document.js';
 import { isolationMarkerPath, SPLITBRIEF_DIR } from '../../../core/paths.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { GitClient } from '../../../lib/git/client.js';
 import { checkIgnoredPaths, getCurrentChangedFiles } from '../../../lib/git/files.js';
 import { getGitCommonDir } from '../../../lib/git/repository.js';

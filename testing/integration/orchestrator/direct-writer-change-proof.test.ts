@@ -13,8 +13,8 @@ import { join } from 'node:path';
 import {
   CliExecutableReceiptSchema,
   formatDigestBoundExecutableFingerprint,
-} from '../../../src/core/discovery/detection.js';
-import type { CliImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
+} from '../../../src/core/discovery/detection/executable.js';
+import type { CliImplementerConfig } from '../../../src/core/schemas/runner/implementer.js';
 import type { RunnerFailureOutcomeState } from '../../../src/engine/runners/errors.js';
 import { isolationWorktreePath, SANDBOX_DIR } from '../../../src/core/paths.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
@@ -47,7 +47,7 @@ import {
 } from '#testing/helpers/command-shim.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 import { shellQuoteArg } from '../../../src/utils/shell-quote.js';

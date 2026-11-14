@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { createElement, Fragment } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
+import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { sessionDir } from '../../core/paths.js';
 import { acquireLiveness } from '../../engine/orchestrator/run/liveness.js';
 import { createInitialState } from '../../core/state/machine.js';

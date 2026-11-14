@@ -1,7 +1,7 @@
 import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
-import { fixCheckVerdict } from '../../../core/review/fix-task.js';
+import { fixCheckVerdict } from '../../../core/review/fix/checks.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { reusedNote } from '../../../core/validation/reused-note.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../core/schemas/enums.js';

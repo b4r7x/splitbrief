@@ -24,14 +24,14 @@ import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
-import type { SpecMetadata } from '../../../core/paths-io.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
-import { appendMessage } from '../../../core/sessions/log-writer.js';
+import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
+import { appendMessage } from '../../../core/sessions/log/writer.js';
 import type { ResumeContextHolder } from '../types.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
@@ -53,7 +53,7 @@ import {
   readSeatIdentities,
   seatIdentitiesFromConfig,
   writeSeatIdentities,
-} from '../../../core/state/seats.js';
+} from '../../../core/state/seats/record.js';
 import type { SummaryBase } from '../summary/build.js';
 import { initializeWorkflow } from './init.js';
 import { createPlannerSeat } from './init-seats.js';
@@ -68,7 +68,7 @@ import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
 import { createRecoveryBus } from '../recovery/bus.js';
 import { buildConfigChecks } from '../../../core/readiness/checks/config.js';
 import { buildRepoChecks } from '../../../core/readiness/checks/repo.js';
-import { buildRunnerChecks } from '../../../core/readiness/checks/runners.js';
+import { buildRunnerChecks } from '../../../core/readiness/checks/runner/build.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 
 vi.mock('./init-seats.js', async (importOriginal) => {

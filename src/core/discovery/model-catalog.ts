@@ -1,4 +1,4 @@
-import type { DetectedModel } from './detection.js';
+import type { DetectedModel } from './detection/model.js';
 
 export type ModelKey = Readonly<{
   runnerId: string;

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
-import type { CliExecutableReceipt } from '../../src/core/discovery/detection.js';
+import type { CliExecutableReceipt } from '../../src/core/discovery/detection/executable.js';
 import {
   customRunnerSecurityPosture,
   resolveCustomRunnerAdmissionScope,

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { resumeStep } from '../../../src/core/sessions/run-status.js';
+import { resumeStep } from '../../../src/core/sessions/run/status.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';

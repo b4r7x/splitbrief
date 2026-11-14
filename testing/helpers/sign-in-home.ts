@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { vi } from 'vitest';
-import type { CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../src/core/runners/cli-tool/types.js';
 
 /** The file under HOME that holds the sign-in of each tool that keeps one in a file. */
 const SIGN_IN_FILES = {

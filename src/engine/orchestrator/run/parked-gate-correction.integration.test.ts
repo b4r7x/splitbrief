@@ -9,14 +9,14 @@ import { makeCallbacks, makePlanner, makeWctx } from '#testing/helpers/orchestra
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { PLAN_FILE, sessionDir } from '../../../core/paths.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { PlanSchema } from '../../../core/schemas/plan.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { writePlanJson } from '../../../core/sessions/plan-file.js';
 import type { OrchestratorCallbacks } from '../types.js';
-import { appendMessage } from '../../../core/sessions/log-writer.js';
-import { readMessages } from '../../../core/sessions/log-reader.js';
+import { appendMessage } from '../../../core/sessions/log/writer.js';
+import { readMessages } from '../../../core/sessions/log/reader.js';
 import { formatPlanMarkdown } from '../../spec/plan-markdown.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { createContinuationHolder } from '../continuation.js';

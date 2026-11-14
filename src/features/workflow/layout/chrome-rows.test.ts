@@ -9,7 +9,7 @@ import {
   isRailCurrent,
   railStageCompletionTimesFromPhaseFirstSeen,
   railStageRole,
-} from '../../../core/rail-stages.js';
+} from '../../../core/phases/rail.js';
 import {
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,

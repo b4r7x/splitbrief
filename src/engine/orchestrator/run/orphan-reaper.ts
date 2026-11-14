@@ -1,5 +1,5 @@
 import { sessionDir } from '../../../core/paths.js';
-import { checkSessionLockStatus } from '../../../core/sessions/lockfile-status.js';
+import { checkSessionLockStatus } from '../../../core/sessions/lock/status.js';
 import { listSessionIds, sessionsRootLabel } from '../../../core/sessions/orphans.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import {

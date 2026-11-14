@@ -1,8 +1,8 @@
-import type { EventTypeCarrier } from '../event-phase.js';
+import type { EventTypeCarrier } from '../phases/of-event.js';
 import type { SeatChangePoint } from '../crew/seats.js';
 import type { FileAction, Phase, RunnerKind, TaskStatus } from '../schemas/enums.js';
 import { isTaskSettled, type CheckResult } from '../schemas/task.js';
-import { isImplementerPhase } from '../phases.js';
+import { isImplementerPhase } from '../phases/roles.js';
 import { taskStatusForCompletionMethod } from '../task-completion.js';
 import type { BriefEvent } from './events.js';
 

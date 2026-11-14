@@ -16,7 +16,7 @@ import {
   writeMinimalHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { createInitialState, transition } from '../core/state/machine.js';
-import { ensureSessionDir } from '../core/paths-io.js';
+import { ensureSessionDir } from '../core/sessions/spec-files.js';
 import { loadState, saveState } from '../core/state/persistence.js';
 import { readConfigDocument } from '../core/config/load/document.js';
 import { loadConfig, writeConfig } from '../core/config/load/io.js';
@@ -31,7 +31,7 @@ import { formatResumeCommand } from '../core/recovery/resume-command.js';
 import { emitRecoveryAndFailIfPending, runHeadless } from './headless.js';
 import { saveSummary } from '../core/sessions/io.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import type { RecoveryIssue } from '../core/schemas/recovery/schemas.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';

@@ -1,6 +1,7 @@
 import { formatTime } from '../../utils/format/time.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS, type CliToolId } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../runners/cli-tool/catalog.js';
+import type { CliToolId } from '../runners/cli-tool/types.js';
 
 export type ProbeCheck = 'version' | 'sign-in' | 'model list' | 'options';
 

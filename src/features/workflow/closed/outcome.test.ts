@@ -6,7 +6,7 @@ import {
   makeView,
 } from '#testing/helpers/factories/summary-view.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { getRailStages } from '../../../core/rail-stages.js';
+import { getRailStages } from '../../../core/phases/rail.js';
 import { outcomeLineSpans, outcomeMarker } from './outcome.js';
 import { factSpans, recordRows } from './copy.js';
 import type { ScopeView, SummaryView } from './view-model.js';

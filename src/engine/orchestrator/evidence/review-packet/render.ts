@@ -1,7 +1,7 @@
 import type {
   ReviewPacket,
   ReviewPacketCheckpoint,
-} from '../../../../core/schemas/review-packet.js';
+} from '../../../../core/schemas/review/packet.js';
 import { narrowRecord } from '../../../../utils/type-guards.js';
 import { CREW_SEAT_LABELS, formatSeatIdentity } from '../../../../core/crew/identity.js';
 import { checksSummary } from '../../../../core/validation/checks-summary.js';

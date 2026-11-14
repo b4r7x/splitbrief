@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { readRunnerPids } from '../../../src/core/sessions/runner-pids.js';
 import { readRunHistory } from '../../../src/features/workflow/run-history.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';

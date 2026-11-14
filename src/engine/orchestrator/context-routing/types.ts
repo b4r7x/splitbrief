@@ -1,6 +1,6 @@
 import type { BuildOutputContract } from '../../implementers/file-bundle.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
-import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
+import type { ImplementerWriteMode } from '../../../core/schemas/runner/implementer.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';

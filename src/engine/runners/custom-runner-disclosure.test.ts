@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { CustomCommand } from '../../core/config/custom-commands.js';
-import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
+import type { CustomCommand } from '../../core/config/custom-commands/schema.js';
+import type { CliExecutableReceipt } from '../../core/discovery/detection/executable.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   buildCustomRunnerDisclosure,

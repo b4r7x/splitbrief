@@ -2,13 +2,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  ANTIGRAVITY_CLI_ADMISSION_VERDICT,
   CLI_TOOL_IDS,
-  CURSOR_CLI_ADMISSION_VERDICT,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   hasNativeCliCatalog,
-} from '../../../core/runners/cli-tool-catalog.js';
+} from '../../../core/runners/cli-tool/catalog.js';
+import {
+  ANTIGRAVITY_CLI_ADMISSION_VERDICT,
+  CURSOR_CLI_ADMISSION_VERDICT,
+} from '../../../core/runners/cli-tool/builders.js';
 import {
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,

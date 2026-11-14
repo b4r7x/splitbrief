@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import type {
   TypedOutputCapability,
   TypedOutputTransport,
-} from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { type AppError, error, matches } from '../../utils/error.js';

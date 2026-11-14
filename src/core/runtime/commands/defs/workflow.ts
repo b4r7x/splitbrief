@@ -5,7 +5,7 @@ import {
   type RuntimeCommandContext,
 } from '../types.js';
 import { assertNever, includes } from '../../../../utils/type-guards.js';
-import { isRunLivePhase } from '../../../phases.js';
+import { isRunLivePhase } from '../../../phases/roles.js';
 import { toErrorMessage } from '../../../../utils/format/errors.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import {

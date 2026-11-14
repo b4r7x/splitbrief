@@ -8,7 +8,7 @@ import {
 } from '../status.js';
 import { buildConfigChecks } from './config.js';
 import { buildPlanApprovalChecks } from './plan-approval.js';
-import { buildRunnerChecks } from './runners.js';
+import { buildRunnerChecks } from './runner/build.js';
 import { buildContextChecks } from './context.js';
 import { buildValidationChecks } from './validation.js';
 import { buildRepoChecks } from './repo.js';

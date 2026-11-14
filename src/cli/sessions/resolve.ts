@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { sessionDir } from '../../core/paths.js';
-import { deriveRunStatus } from '../../core/sessions/run-status.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { deriveRunStatus } from '../../core/sessions/run/status.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { continueRunCommand } from '../../core/recovery/resume-command.js';
 import { cliError } from '../errors.js';
 

@@ -1,4 +1,4 @@
-import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
+import type { ImplementerWriteMode } from '../../../core/schemas/runner/implementer.js';
 import type { PlanProposal } from '../../../core/schemas/plan.js';
 import { PROTECTED_PATHS_TEXT } from '../../../core/pipeline-spec/scope.js';
 import { PACKAGE_TEST_COMMAND } from '../../../core/validation/stacks/typescript.js';

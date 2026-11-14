@@ -12,7 +12,7 @@ import {
 } from '../../../core/evidence/ledger-state.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { restoreInterruptedTaskFiles } from './rollback.js';

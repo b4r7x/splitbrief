@@ -5,12 +5,9 @@ import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/sc
 import type { Task } from '../../../core/schemas/task.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { recordUserMessage } from '../transcript/user-message.js';
-import type {
-  ChangedFilesSnapshot,
-  PlannerConversation,
-  WorkflowState,
-} from '../../../core/schemas/workflow.js';
-import { briefCorrections } from '../../../core/state/machine.js';
+import type { PlannerConversation, WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
+import { briefCorrections } from '../../../core/state/lineage.js';
 import { insertTasks, lineageIdOf } from '../../../core/state/task-insert.js';
 import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';

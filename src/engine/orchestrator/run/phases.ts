@@ -1,8 +1,8 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
-import { awaitsApply, resumeStep } from '../../../core/sessions/run-status.js';
+import { awaitsApply, resumeStep } from '../../../core/sessions/run/status.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { runApply } from '../apply/run.js';
 import { publishWarning } from '../events.js';

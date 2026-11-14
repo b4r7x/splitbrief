@@ -3,7 +3,7 @@ import {
   ImplementerConfigSchema,
   ImplementerProfileConfigSchema,
   defaultImplementerWriteMode,
-} from '../../schemas/implementer-config.js';
+} from '../../schemas/runner/implementer.js';
 import type { Config } from '../../schemas/config.js';
 import type {
   ImplementerCapabilities,
@@ -11,7 +11,7 @@ import type {
   ImplementerProfileConfig,
   ImplementerProfilesConfig,
   ImplementerWriteMode,
-} from '../../schemas/implementer-config.js';
+} from '../../schemas/runner/implementer.js';
 
 export function pickDefaultProfileName(
   profileConfig: ImplementerProfilesConfig,

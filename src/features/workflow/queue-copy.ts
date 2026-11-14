@@ -1,5 +1,5 @@
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../../core/crew/identity.js';
-import { messageSeat } from '../../core/queue-state.js';
+import { messageSeat } from '../../core/queue/state.js';
 import { selectBuildMessageBrief } from '../../core/run-view/briefs.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';

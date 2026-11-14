@@ -3,7 +3,7 @@ import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { recoverInterruptedNativeDeliveries } from '../../../core/queue-state.js';
+import { recoverInterruptedNativeDeliveries } from '../../../core/queue/state.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {

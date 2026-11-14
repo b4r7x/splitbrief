@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { continueRun } from '../../../engine/orchestrator/run/continue.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import { rereadRunAtRest, resumeParkedRun } from '../handlers.js';

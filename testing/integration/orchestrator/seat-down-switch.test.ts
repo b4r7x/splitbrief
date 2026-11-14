@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import YAML from 'yaml';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { Task } from '../../../src/core/schemas/task.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
@@ -22,7 +22,7 @@ import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factori
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { prependPath } from '#testing/helpers/command-shim.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import {

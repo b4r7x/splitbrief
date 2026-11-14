@@ -10,7 +10,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { writeConfig } from '../../core/config/load/io.js';
 import { writeActive } from '../../core/sessions/active-pointer.js';
-import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
+import { checkSessionLiveness } from '../../core/sessions/lock/file.js';
 import { saveState } from '../../core/state/persistence.js';
 import { resumeSavedSession } from './continue/resume.js';
 import { registerResumeCommand } from './resume.js';

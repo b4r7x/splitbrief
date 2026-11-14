@@ -1,7 +1,8 @@
-import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
+import type { TriageInput, TriageResult } from '../../../core/schemas/review/verdict.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
-import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
 import { plannerFixWork, stuckConsult } from '../../../core/review/stuck.js';
 import { blockingRedInputs } from '../../../core/review/verdict.js';
 import { loadState } from '../../../core/state/persistence.js';

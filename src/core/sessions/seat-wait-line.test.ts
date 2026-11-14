@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { SeatWait, WorkflowState } from '../schemas/workflow.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import type { SeatWait } from '../schemas/workflow/seat.js';
 import { createInitialState } from '../state/machine.js';
 import { seatRetrySentence, seatWaitToolWord } from './seat-wait-line.js';
 

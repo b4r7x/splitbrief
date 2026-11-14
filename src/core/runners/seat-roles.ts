@@ -1,6 +1,6 @@
 import { assertNever } from '../../utils/type-guards.js';
 import type { CrewSeatId } from '../crew/identity.js';
-import type { RUNNER_CALL_ROLES } from '../runner-call-contract.js';
+import type { RUNNER_CALL_ROLES } from '../schemas/runner-call.js';
 
 export type RunnerRole = 'planner' | 'implementer';
 

@@ -1,9 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
-import {
-  lineageAttemptsOf,
-  type ChangedFilesSnapshot,
-  type WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import { lineageAttemptsOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks, type PreHookResult } from '../../hooks/run-pre.js';

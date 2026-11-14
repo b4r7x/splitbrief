@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { groupEventsIntoSections, diffEventKey, isSettledSection } from './event-sections.js';
-import type { Section, SectionableEvent } from './event-sections.js';
+import { diffEventKey } from './events.js';
+import { isSettledSection } from './types.js';
+import { groupEventsIntoSections } from './group.js';
+import type { SectionableEvent } from './events.js';
+import type { Section } from './types.js';
 import type { Phase } from '../schemas/enums.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { engineEventFromLogEntry } from '../../engine/events/replay.js';

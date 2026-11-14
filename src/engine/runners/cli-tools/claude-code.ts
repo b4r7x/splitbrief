@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
-import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
+import { classifyCliAdmittedVersion } from '../../../core/runners/cli-tool/version.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';

@@ -8,7 +8,8 @@ import { ConversationRowView } from '../components/conversation-flow/row-view.js
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
-import { groupEventsIntoSections, type Section } from '../../../core/sections/event-sections.js';
+import type { Section } from '../../../core/sections/types.js';
+import { groupEventsIntoSections } from '../../../core/sections/group.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';

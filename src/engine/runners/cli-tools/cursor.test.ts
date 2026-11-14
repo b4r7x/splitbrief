@@ -2,10 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { toTokenDelta } from '../../calls/usage.js';
-import {
-  CLI_TOOL_CATALOG,
-  CURSOR_CLI_ADMISSION_VERDICT,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
+import { CURSOR_CLI_ADMISSION_VERDICT } from '../../../core/runners/cli-tool/builders.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import {

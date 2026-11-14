@@ -9,7 +9,7 @@ import {
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CONFIRM_PHRASE, type TieredApprovalRequest } from '../../core/approval/types.js';
-import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
+import { normalizeCustomCommand } from '../../core/config/custom-commands/schema.js';
 import { taskId } from '../../core/schemas/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {

@@ -30,8 +30,8 @@ import {
   installOpencodeSteeringShim,
   type OpencodeSteeringShimMode,
 } from '#testing/helpers/opencode-steering-shim.js';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { killOrphanRunner } from '#testing/helpers/orphan-runner.js';
 import { canSignalProcess } from '../../../lib/process/liveness.js';

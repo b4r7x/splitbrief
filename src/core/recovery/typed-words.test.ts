@@ -4,10 +4,10 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import type { RecoveryAction, RecoveryReason } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
-import { deriveRunStatus, type RunStatus } from '../sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../sessions/run/status.js';
 import type { StepRef } from '../schemas/run-step.js';
 import { taskId } from '../schemas/task.js';
-import type { WorkflowState } from '../schemas/workflow.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
 import { leavesWordsUnread, statusLeavesWordsUnread } from './typed-words.js';
 
 describe('leavesWordsUnread', () => {

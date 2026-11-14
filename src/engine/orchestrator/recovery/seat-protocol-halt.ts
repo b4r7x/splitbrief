@@ -3,7 +3,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { nowIso } from '../../../utils/format/time.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { phaseStage } from '../../core/rail-stages.js';
+import { phaseStage } from '../../core/phases/rail.js';
 import { queueCopy } from './queue-copy.js';
 
 describe('queueCopy', () => {

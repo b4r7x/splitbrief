@@ -1,6 +1,6 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
-import { formatStageLabel } from '../../../core/phase-display.js';
+import { formatStageLabel } from '../../../core/phases/labels.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -24,7 +24,7 @@ import {
   skipReviewStage,
   type RailStageState,
   type RailStageStatus,
-} from '../../../core/rail-stages.js';
+} from '../../../core/phases/rail.js';
 import {
   measureFormB,
   railConnectorString,

@@ -2,11 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
-import {
-  ANTIGRAVITY_CLI_ADMISSION_VERDICT,
-  CLI_TOOL_CATALOG,
-} from '../../../core/runners/cli-tool-catalog.js';
-import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
+import { ANTIGRAVITY_CLI_ADMISSION_VERDICT } from '../../../core/runners/cli-tool/builders.js';
+import { classifyCliAdmittedVersion } from '../../../core/runners/cli-tool/version.js';
 import { CLI_PROJECT_DIR_SENTINEL, CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import type { CliSchemaInput } from './contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';

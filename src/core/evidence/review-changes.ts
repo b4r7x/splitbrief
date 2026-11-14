@@ -7,7 +7,7 @@ import {
   ReviewChangesSchema,
   type ReviewChange,
   type ReviewChanges,
-} from '../schemas/review-changes.js';
+} from '../schemas/review/changes.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,

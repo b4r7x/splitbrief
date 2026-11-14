@@ -26,7 +26,7 @@ import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import type { Check } from '../../../core/schemas/task.js';
 import { createValidator } from '../validation/run.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { runSingleTask } from './step.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import * as escalationHandle from '../escalation/handle.js';

@@ -1,6 +1,6 @@
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
-import type { RunStatus, StopReason } from '../../../core/sessions/run-status.js';
+import type { RunStatus, StopReason } from '../../../core/sessions/run/status.js';
 import type { SummaryView } from './view-model.js';
 import { haltOf, recoveryHaltLabel } from '../../../core/recovery/halt.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';

@@ -9,18 +9,15 @@ import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type {
   CliAuthState,
-  CliExecutableIdentity,
   CliToolDetection,
   ProviderDetection,
-} from '../../core/discovery/detection.js';
+} from '../../core/discovery/detection/tool.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
 import type { AuthFact } from '../../core/discovery/runner-evidence.js';
-import {
-  CLI_TOOL_CATALOG,
-  LISTED_CLI_TOOL_IDS,
-  type CliAuthChannelId,
-  type CliToolId,
-} from '../../core/runners/cli-tool-catalog.js';
-import { deriveCliReadiness } from '../../core/schemas/readiness.js';
+import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
+import type { CliAuthChannelId } from '../../core/runners/cli-tool/auth-channels.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
+import { deriveCliReadiness } from '../../core/readiness/cli-remediation.js';
 import { error } from '../../utils/error.js';
 import {
   isDeclaredCliProbeContract,

@@ -1,10 +1,8 @@
 import { z } from 'zod';
-import type { CliProviderAuthFact } from '../../../core/discovery/detection.js';
+import type { CliProviderAuthFact } from '../../../core/discovery/detection/auth.js';
 import type { AuthFact } from '../../../core/discovery/runner-evidence.js';
-import {
-  PROVIDER_ORACLE_TOOL_IDS,
-  type CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { PROVIDER_ORACLE_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
 import type { CliAuthProbeLegacy, CliProbeCommand, CliProbeOutput } from './contract.js';
 

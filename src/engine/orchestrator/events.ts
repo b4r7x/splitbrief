@@ -1,9 +1,6 @@
-import {
-  type ConsultRecord,
-  fixCyclesOf,
-  type SeatWait,
-  type WorkflowState,
-} from '../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { SeatWait } from '../../core/schemas/workflow/seat.js';
+import type { ConsultRecord } from '../../core/schemas/workflow/consult-record.js';
 import type { Check, CheckResult, CheckStatus, Task, TaskId } from '../../core/schemas/task.js';
 import type {
   RecoveryAction,

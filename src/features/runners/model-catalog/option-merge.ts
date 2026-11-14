@@ -3,7 +3,7 @@ import {
   formatModelName,
   peelDisplayLabel,
   splitTrailingParens,
-} from '../../../core/model-display.js';
+} from '../../../core/providers/model-display.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { EFFORT_AXIS_TOKENS } from '../../../core/runners/effort-channel.js';
 import { bestMembership } from './membership.js';

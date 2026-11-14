@@ -1,6 +1,6 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
-import { appendMessage } from '../../core/sessions/log-writer.js';
+import { appendMessage } from '../../core/sessions/log/writer.js';
 
 const MAX_BUFFER_BYTES = 16 * 1024;
 

@@ -21,7 +21,7 @@ import {
   scriptedTypedCall,
 } from '#testing/helpers/typed-planner.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowContext } from '../types.js';
 import { applyRecoveryAction } from '../recovery/actions.js';

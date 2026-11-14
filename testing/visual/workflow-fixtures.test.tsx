@@ -28,7 +28,7 @@ import { SOFT_SEP } from '../../src/core/separators.js';
 import { glyph } from '../../src/lib/glyphs.js';
 import { stripTerminalControls } from '../../src/utils/display-text/sanitize.js';
 import { EngineEventSchema } from '../../src/engine/events/schema.js';
-import { deriveRunStatus } from '../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../src/core/sessions/run/status.js';
 import {
   reviewFindingCounts,
   reviewOutcomeOf,

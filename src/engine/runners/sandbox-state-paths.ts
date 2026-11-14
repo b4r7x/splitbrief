@@ -2,7 +2,8 @@ import { realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
-import { CLI_TOOL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import { sha256Hex } from '../../utils/sha256.js';
 

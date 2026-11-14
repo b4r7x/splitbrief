@@ -1,7 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import type { ProviderDetection } from '../../core/discovery/detection.js';
+import type { ProviderDetection } from '../../core/discovery/detection/tool.js';
 import type { DetectionLanePublication } from './lane-channel.js';
 import type {
   DetectionDeps,

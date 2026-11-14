@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CLI_TOOL_IDS } from './cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from './cli-tool/catalog.js';
 import { getRunnerTrustMeta } from './trust.js';
 
 describe('runner trust metadata', () => {

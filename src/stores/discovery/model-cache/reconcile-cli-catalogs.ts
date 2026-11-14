@@ -1,6 +1,6 @@
 import { cloneDetectedModel } from '../../../core/discovery/clone-model.js';
 import { mergeCatalogRead } from '../../../core/discovery/catalog-read-merge.js';
-import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type {
   CliModelSnapshot,
   DetectionSourceError,

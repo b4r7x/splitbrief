@@ -7,7 +7,7 @@ import type { SetupScreenDeps } from '../../../src/app/screens/setup.js';
 import type { PickerEffectDeps } from '../../../src/features/runners/use-picker-actions.js';
 import type { SessionSelectDeps } from '../../../src/stores/navigation/session-select.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { ProviderCatalogOutcome } from '../../../src/engine/providers/types.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
 import { createCommandContext } from '../../../src/core/runtime/commands/context-factory.js';
@@ -18,7 +18,7 @@ import type {
   ToggleSidebarResult,
 } from '../../../src/core/runtime/commands/types.js';
 import { loadOwnerWorkflowState } from '../../../src/core/state/resume-hydration.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
 import { hydrateRun, readRunHistory } from '../../../src/features/workflow/run-history.js';
 import { closeApprovalPrompt } from '../../../src/stores/approval-prompt/prompt.js';

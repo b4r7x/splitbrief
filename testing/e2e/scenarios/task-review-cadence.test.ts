@@ -9,10 +9,10 @@ import {
   STATE_FILE,
   sessionsRoot,
 } from '../../../src/core/paths.js';
-import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
-import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
-import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/group.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
+import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
+import { WorkflowStateSchema } from '../../../src/core/schemas/workflow/state.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { recordRows } from '../../../src/features/workflow/closed/copy.js';

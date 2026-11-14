@@ -71,8 +71,8 @@ vi.mock('../../../src/features/workflow/editor-command.js', async (original) => 
   resolveEditorArgv: production.resolveEditorArgv,
   resolveViewerArgv: production.resolveViewerArgv,
 }));
-vi.mock('../../../src/core/sessions/run-record-io.js', async (original) => ({
-  ...(await original<typeof import('../../../src/core/sessions/run-record-io.js')>()),
+vi.mock('../../../src/core/sessions/run/record-io.js', async (original) => ({
+  ...(await original<typeof import('../../../src/core/sessions/run/record-io.js')>()),
   readRunRecord: production.readRunRecord,
 }));
 // The one seam a fixture setup can be made to fail at, armed for a single call.
@@ -91,8 +91,8 @@ vi.mock('#testing/helpers/stores.js', async (original) => {
 });
 
 const runRecordIo = await vi.importActual<
-  typeof import('../../../src/core/sessions/run-record-io.js')
->('../../../src/core/sessions/run-record-io.js');
+  typeof import('../../../src/core/sessions/run/record-io.js')
+>('../../../src/core/sessions/run/record-io.js');
 const { App } = await import('../../../src/app/root.js');
 const { glyph } = await import('../../../src/lib/glyphs.js');
 const { configStore } = await import('../../../src/stores/project/config.js');

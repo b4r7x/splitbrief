@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import type { SavedCatalog } from '../discovery/catalog-read-merge.js';
-import type { CliToolDetection } from '../discovery/detection.js';
+import type { CliToolDetection } from '../discovery/detection/tool.js';
 import {
   deriveFallbackRows,
   fallbackBlockedReason,

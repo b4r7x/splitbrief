@@ -6,10 +6,13 @@ import type {
   ActiveSessionReceipt,
   SessionOwnershipReceipt,
 } from '../../core/sessions/active-pointer.js';
-import { releasePreparedSession, rollbackPreparedSession } from '../../core/sessions/prepare.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
-import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
+import {
+  releasePreparedSession,
+  rollbackPreparedSession,
+} from '../../core/sessions/prepared-rollback.js';
+import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
+import type { CliExecutableReceipt } from '../../core/discovery/detection/executable.js';
 import type { DeepReadonly, RunnerConfigSlot } from '../../core/config/accessors/runner-config.js';
 import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
 import type { CliSeatGates } from './start-gate.js';

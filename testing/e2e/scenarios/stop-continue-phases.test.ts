@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { factSpans, recordRows } from '../../../src/features/workflow/closed/copy.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';

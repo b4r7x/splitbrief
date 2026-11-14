@@ -1,7 +1,7 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import { sameSeatCandidate, type CrewSeatId } from '../../../core/crew/identity.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { EventBus } from '../../events/types.js';
 import { prepareExecution } from '../../runners/prepare-execution/prepare-execution.js';
 import type { PreparationOutcome } from '../../runners/prepared-execution.js';

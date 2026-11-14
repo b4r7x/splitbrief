@@ -14,7 +14,7 @@ import {
   type CrewRowKey,
 } from '../../core/crew/rows.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { CliToolDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection } from '../../core/discovery/detection/tool.js';
 import type { SavedCatalogOf } from '../../core/discovery/catalog-read-merge.js';
 import {
   SETTINGS_SECTIONS,

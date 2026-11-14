@@ -1,4 +1,5 @@
-import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
 import {
   readWorkflowStateHead,
   rebaseOnPersistedWorkflowState,
@@ -7,7 +8,7 @@ import {
 import {
   isQueuedMessagePendingDelivery,
   isQueuedMessagePendingReviewer,
-} from '../../../core/queue-state.js';
+} from '../../../core/queue/state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { QueueStateMutationOptions } from './types.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';

@@ -5,8 +5,8 @@ import {
   reviewPassed,
 } from './review.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { reviewsAgain } from '../../../core/review/verdict.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { reviewsAgain } from '../../../core/review/scope.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowContext } from '../types.js';
 

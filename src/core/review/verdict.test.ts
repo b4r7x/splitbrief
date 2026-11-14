@@ -1,27 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { countNoun } from '../../utils/pluralize.js';
-import type { ReviewVerdict, TriageInput, TriageResult } from '../schemas/review.js';
+import type { ReviewVerdict, TriageInput, TriageResult } from '../schemas/review/verdict.js';
 import { taskId } from '../schemas/task.js';
-import type { ReviewRecord, WorkflowState } from '../schemas/workflow.js';
-import * as verdictModule from './verdict.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import type { ReviewRecord } from '../schemas/workflow/review-record.js';
+import * as verdictModule from './accepted.js';
 import {
   blockingEntries,
   blockingKeys,
   blockingRedInputs,
   deriveReviewOutcome,
   findingFacts,
-  findingInReviewScope,
   openFindings,
   reviewFindingCounts,
   reviewOutcomeOf,
-  type ReviewScope,
-  reviewsAgain,
   setAsideInputs,
   setAsideLabel,
   setAsideLine,
-  verdictCoverageErrors,
 } from './verdict.js';
+import { verdictCoverageErrors } from './scope.js';
+import { findingInReviewScope, type ReviewScope, reviewsAgain } from './scope.js';
 
 type Finding = ReviewVerdict['findings'][number];
 

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { beforeAll, expect, it } from 'vitest';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue-state.js';
+import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { GREET_SOURCE } from '../helpers/stop-continue-fixture.js';
 import { steeringPaths } from '../helpers/steer-e2e-shims.js';

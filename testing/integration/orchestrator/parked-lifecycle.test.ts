@@ -15,7 +15,7 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../src/engine/events/workflow-cancel.js';
 import { runSingleTask } from '../../../src/engine/orchestrator/task/step.js';

@@ -1,9 +1,10 @@
-import { CREW_SEAT_IDS, seatLineText, type SeatLineSpan } from '../../../core/crew/identity.js';
+import { CREW_SEAT_IDS } from '../../../core/crew/identity.js';
+import { seatLineText, type SeatLineSpan } from '../../../core/crew/seat-line/collapse.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { getHeaderLayout } from '../components/header.js';
 import { recordedCrewSeatLines } from '../display/header-seat-lines.js';
 import { selectRailFormAndLine, type RailForm } from '../layout/chrome-rows.js';
-import type { RunRecord } from '../../../core/sessions/run-record.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { crewLine } from './copy.js';
 import { recordedCrew, type RecordedCrew } from './view-model.js';
 

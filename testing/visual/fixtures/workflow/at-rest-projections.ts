@@ -7,21 +7,19 @@ import type {
   EvidenceReview,
   EvidenceTask,
 } from '../../../../src/core/schemas/evidence.js';
-import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
-import { deriveRunStatus, type RunStatus } from '../../../../src/core/sessions/run-status.js';
-import type {
-  ReviewRecord,
-  SeatWait,
-  WorkflowState,
-} from '../../../../src/core/schemas/workflow.js';
+import type { RunRecord } from '../../../../src/core/sessions/run/record.js';
+import { deriveRunStatus, type RunStatus } from '../../../../src/core/sessions/run/status.js';
+import type { WorkflowState } from '../../../../src/core/schemas/workflow/state.js';
+import type { SeatWait } from '../../../../src/core/schemas/workflow/seat.js';
+import type { ReviewRecord } from '../../../../src/core/schemas/workflow/review-record.js';
 import {
-  type Finding,
   reviewFindingCounts,
   reviewOutcomeOf,
   reviewOutcomeWord,
 } from '../../../../src/core/review/verdict.js';
+import type { Finding } from '../../../../src/core/review/scope.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
-import type { TriageInput } from '../../../../src/core/schemas/review.js';
+import type { TriageInput } from '../../../../src/core/schemas/review/verdict.js';
 import type { EngineEvent, EngineEventOf } from '../../../../src/engine/events/types.js';
 import {
   FIX_CYCLE_RUN_FEATURE,
@@ -30,13 +28,12 @@ import {
 } from '../../../helpers/factories/fix-cycle-run.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeMessage } from '../../../helpers/queue.js';
+import type { ReviewPacketSummary, Summary } from '../../../../src/core/schemas/summary.js';
+import type { CostBreakdown } from '../../../../src/core/schemas/cost.js';
 import type {
-  CostBreakdown,
   OfferingBillingPresentation,
   ProviderRunMetadata,
-  ReviewPacketSummary,
-  Summary,
-} from '../../../../src/core/schemas/summary.js';
+} from '../../../../src/core/schemas/cost.js';
 import { taskId, type Task } from '../../../../src/core/schemas/task.js';
 import type { TaskTokenUsage } from '../../../../src/core/schemas/tokens.js';
 import {

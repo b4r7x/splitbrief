@@ -10,9 +10,10 @@ import {
 } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { formatSlotLabel } from '../../core/crew/identity.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
 import { trackProbe } from '../probe-activity.js';

@@ -15,7 +15,7 @@ import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidenc
 import { validateAndCommit } from './validate-and-commit.js';
 import { boundedHandBack, failedRetry } from './types.js';
 import type { RetryInvokeResult, RetryStepOpts, RetryStepOutcome } from './types.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 import { isRecord } from '../../../utils/type-guards.js';

@@ -9,11 +9,8 @@ import {
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { hasAutomaticModelDefault } from '../../../core/providers/model-selection.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
-import {
-  CLI_TOOL_CATALOG,
-  LISTED_CLI_TOOL_IDS,
-  type CliToolDescriptor,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolDescriptor } from '../../../core/runners/cli-tool/types.js';
 import {
   runnerRoleForActiveRole,
   seatPickerLane,
@@ -23,8 +20,8 @@ import {
 } from '../../../core/runners/seat-roles.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
-import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
-import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
+import type { ImplementerConfig } from '../../../core/schemas/runner/implementer.js';
+import type { PlannerConfig } from '../../../core/schemas/runner/planner.js';
 import {
   cliPermissions,
   deriveModelCatalogCapability,

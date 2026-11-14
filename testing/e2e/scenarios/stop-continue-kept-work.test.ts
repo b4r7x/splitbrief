@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { PlannerConversation } from '../../../src/core/schemas/workflow.js';
-import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
-import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import type { PlannerConversation } from '../../../src/core/schemas/workflow/state.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/group.js';
+import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { EMPTY_RUN_VIEW } from '../../../src/core/run-view/reduce.js';
 import { settleRunView } from '../../../src/core/run-view/settle.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';

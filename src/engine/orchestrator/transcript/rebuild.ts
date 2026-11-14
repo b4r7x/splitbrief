@@ -1,9 +1,9 @@
-import { readCompactedMessages, readMessages } from '../../../core/sessions/log-reader.js';
+import { readCompactedMessages, readMessages } from '../../../core/sessions/log/reader.js';
 import type { SessionLogMessageEntry } from '../../../core/schemas/session-log.js';
 import { sessionDir } from '../../../core/paths.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';
 

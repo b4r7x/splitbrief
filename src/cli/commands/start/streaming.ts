@@ -1,6 +1,6 @@
 import { ensureHeadlessConfig, setupWorkflow } from '../../setup.js';
 import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrides/from-options.js';
-import { serializeReadinessReportJson } from '../../../core/readiness/format.js';
+import { serializeReadinessReportJson } from '../../../core/readiness/json.js';
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
 import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
 import { resolveSelectedSkills } from '../../headless.js';

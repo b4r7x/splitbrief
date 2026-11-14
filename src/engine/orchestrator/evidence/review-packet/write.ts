@@ -2,7 +2,7 @@ import { reviewPacketJsonPath, reviewPacketMarkdownPath } from '../../../../core
 import { writeSecureFile } from '../../../../lib/fs/secure.js';
 import { buildReviewPacket } from './build.js';
 import { stringifyReviewPacket, renderReviewPacketMarkdown } from './render.js';
-import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
+import type { ReviewPacket } from '../../../../core/schemas/review/packet.js';
 import type { BuildReviewPacketOptions } from './types.js';
 import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
 

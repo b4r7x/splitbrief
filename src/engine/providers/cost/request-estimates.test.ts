@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { RunnerCallCounterCoverage } from '../../../core/runner-call-contract.js';
-import { RequestEstimateSchema, type RequestEstimateItem } from '../../../core/schemas/summary.js';
+import type { RunnerCallCounterCoverage } from '../../../core/schemas/runner-call.js';
+import type { RequestEstimateItem } from '../../../core/schemas/cost.js';
+import { RequestEstimateSchema } from '../../../core/schemas/cost.js';
 import {
   CallUsageEvidenceSchema,
   type CallUsageEvidence,

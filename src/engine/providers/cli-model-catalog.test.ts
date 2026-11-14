@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { MAX_CLI_CATALOG_READ_MODELS } from '../../core/discovery/catalog-read-merge.js';
-import { type DetectedModel, DetectedModelSchema } from '../../core/discovery/detection.js';
+import { type DetectedModel, DetectedModelSchema } from '../../core/discovery/detection/model.js';
 import { resolveModelCatalog } from './model/catalog.js';
 import {
   nativeCliCatalogToDetectedModels,

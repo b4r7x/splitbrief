@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEventOf } from '../../../src/engine/events/types.js';

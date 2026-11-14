@@ -10,9 +10,9 @@ import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus
 import { finalizeRunAtRest } from '../../../src/engine/orchestrator/session-lifecycle/finalize.js';
 import { formatRecoveryHeadline } from '../../../src/core/recovery/headline.js';
 import { resolveReviewCadence } from '../../../src/core/config/runtime/resolve.js';
-import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { loadState } from '../../../src/core/state/persistence.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
@@ -22,7 +22,7 @@ import type {
   WorkflowSinks,
 } from '../../../src/engine/orchestrator/types.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
-import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
+import { releasePreparedSession } from '../../../src/core/sessions/prepared-rollback.js';
 import {
   DRIFT_REPORT_FILE,
   EVIDENCE_FILE,
@@ -34,7 +34,8 @@ import {
   SUMMARY_FILE,
   TASKS_FILE,
 } from '../../../src/core/paths.js';
-import { CLI_TOOL_IDS, type CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../src/core/runners/cli-tool/types.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { includes } from '../../../src/utils/type-guards.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';

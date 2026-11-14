@@ -2,22 +2,19 @@ import {
   runnerRoleForSlot,
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
-import { findConfiguredCustomCommand } from '../../../core/config/custom-command-catalog.js';
-import { inlineRunnerCommand } from '../../../core/config/custom-commands.js';
-import {
-  CLI_TOOL_CATALOG,
-  cliAuthChannelPlatformSupported,
-  defaultCliAuthChannel,
-  type CliToolId,
-} from '../../../core/runners/cli-tool-catalog.js';
+import { findConfiguredCustomCommand } from '../../../core/config/custom-commands/catalog.js';
+import { inlineRunnerCommand } from '../../../core/config/custom-commands/schema.js';
+import { CLI_TOOL_CATALOG, defaultCliAuthChannel } from '../../../core/runners/cli-tool/catalog.js';
+import { cliAuthChannelPlatformSupported } from '../../../core/runners/cli-tool/auth-channels.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import {
   CODEX_KEYRING_SIGN_IN,
   UNVERIFIED_AUTH_FIX,
   codexKeyringSignInFix,
   cliAuthRemediation,
   cliReadinessRemediation,
-} from '../../../core/schemas/readiness.js';
-import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../../core/readiness/format.js';
+} from '../../../core/readiness/cli-remediation.js';
+import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../../core/readiness/json.js';
 import { routeSignInCheck } from '../../../core/readiness/checks/cli-readiness.js';
 import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
 import { loadRememberedSnapshot } from '../../detection/cache.js';

@@ -23,11 +23,9 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { getRailStages } from '../../../core/rail-stages.js';
-import {
-  formatCollapsedSeatSpansFromIdentities,
-  PLANNER_INHERITANCE,
-} from '../../../core/crew/identity.js';
+import { getRailStages } from '../../../core/phases/rail.js';
+import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
+import { formatCollapsedSeatSpansFromIdentities } from '../../../core/crew/seat-line/collapse.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { getHeaderLayout, Header } from './header.js';
 

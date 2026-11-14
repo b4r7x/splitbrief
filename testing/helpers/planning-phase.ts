@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { WorkflowState } from '../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import { createInitialState, transition } from '../../src/core/state/machine.js';
 import { defaultContext, makeConfig } from './factories/config.js';
 import { makeTask } from './factories/task.js';
@@ -11,7 +11,7 @@ import {
   TEST_METADATA,
 } from './orchestrator-factories.js';
 import { createTempDir } from './temp-dir.js';
-import { ensureSessionDir } from '../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../src/core/sessions/spec-files.js';
 import { saveState } from '../../src/core/state/persistence.js';
 import { runPlanningPhase } from '../../src/engine/orchestrator/planning/run.js';
 import { runPlanningPhases } from '../../src/engine/orchestrator/run/phases.js';

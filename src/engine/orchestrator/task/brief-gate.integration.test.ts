@@ -11,7 +11,7 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { CheckSchema } from '../../../core/schemas/task.js';
-import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue/state.js';
 import { processError } from '../../../lib/process/errors.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { clearPendingQueue } from '../queue/clear.js';

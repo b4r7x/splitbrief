@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ImplementerConfig } from '../schemas/implementer-config.js';
+import type { ImplementerConfig } from '../schemas/runner/implementer.js';
 import {
   customEndpointCredentialSourceError,
   customProviderEnvApiKeyReferenceError,

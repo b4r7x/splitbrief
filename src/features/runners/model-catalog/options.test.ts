@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { LOCAL_API_DESCRIPTORS } from '#testing/helpers/runner-picker.js';
-import { CLI_READINESS_STATES, type ProviderDetection } from '../../../core/discovery/detection.js';
+import {
+  CLI_READINESS_STATES,
+  type ProviderDetection,
+} from '../../../core/discovery/detection/tool.js';
 import { LOCAL_API_PROVIDER_IDS } from '../../../core/providers/api-provider-catalog.js';
 import {
   CLI_TOOL_CATALOG,
@@ -10,7 +13,7 @@ import {
   isListedCliTool,
   LISTED_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-} from '../../../core/runners/cli-tool-catalog.js';
+} from '../../../core/runners/cli-tool/catalog.js';
 import { SEAT_PICKER_ROLES } from '../../../core/runners/seat-roles.js';
 import { isCurrentRunner } from './catalog.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';

@@ -11,7 +11,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
 import { buildContextOverflowRecoveryIssue } from '../recovery/builders/task.js';

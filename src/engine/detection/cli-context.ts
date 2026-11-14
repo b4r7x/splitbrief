@@ -2,14 +2,15 @@ import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-
 import { contentIdentityId } from '../../core/config/accessors/content-identity.js';
 import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
-import type { PlannerConfig } from '../../core/schemas/planner-config.js';
+import type { ImplementerConfig } from '../../core/schemas/runner/implementer.js';
+import type { PlannerConfig } from '../../core/schemas/runner/planner.js';
 import type {
   CliExecutableIdentity,
   CliExecutableReceipt,
-} from '../../core/discovery/detection.js';
-import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
-import { defaultCliAuthChannel, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+} from '../../core/discovery/detection/executable.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection/executable.js';
+import { defaultCliAuthChannel } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 
 export type CliRunnerDiscoveryContext = RunnerDiscoveryContext &
   Readonly<{ kind: 'cli'; id: CliToolId }>;

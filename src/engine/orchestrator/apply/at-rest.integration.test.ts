@@ -7,21 +7,21 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
-import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { saveState } from '../../../core/state/persistence.js';
 import * as stagedProject from '../approval/staged-project.js';
 import { activeApply, awaitActiveWorkflowShutdown } from '../session-lifecycle/shutdown.js';
 import { runApplyAtRest } from './at-rest.js';
 import * as backup from './backup.js';
-import * as lockfile from '../../../core/sessions/lockfile.js';
+import * as lockfile from '../../../core/sessions/lock/file.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
 
 vi.mock('../approval/staged-project.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../approval/staged-project.js')>();
   return { ...actual, promoteStagedChanges: vi.fn(actual.promoteStagedChanges) };
 });
-vi.mock('../../../core/sessions/lockfile.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../core/sessions/lockfile.js')>();
+vi.mock('../../../core/sessions/lock/file.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../core/sessions/lock/file.js')>();
   return { ...actual, markExited: vi.fn(actual.markExited) };
 });
 vi.mock('./backup.js', async (importOriginal) => {
@@ -66,8 +66,8 @@ const actualStaged = await vi.importActual<typeof import('../approval/staged-pro
   '../approval/staged-project.js',
 );
 const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
-const actualLockfile = await vi.importActual<typeof import('../../../core/sessions/lockfile.js')>(
-  '../../../core/sessions/lockfile.js',
+const actualLockfile = await vi.importActual<typeof import('../../../core/sessions/lock/file.js')>(
+  '../../../core/sessions/lock/file.js',
 );
 
 beforeEach(() => {

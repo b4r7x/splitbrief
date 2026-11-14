@@ -1,7 +1,7 @@
 import type { GlyphName } from '../../../lib/glyphs.js';
 import type { ReviewView, ScopeView, SummaryView } from './view-model.js';
-import { formatStageLabel } from '../../../core/phase-display.js';
-import { isRailCurrent, railStageSeat } from '../../../core/rail-stages.js';
+import { formatStageLabel } from '../../../core/phases/labels.js';
+import { isRailCurrent, railStageSeat } from '../../../core/phases/rail.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { segmentsForRowText } from '../../../utils/display-text/width.js';

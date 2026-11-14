@@ -1,0 +1,128 @@
+import { z } from 'zod';
+import { RUNNER_KINDS } from './enums.js';
+
+// Primitive runner-call vocabulary only. The canonical event/result schemas live
+// in `src/engine/calls/schema.ts`.
+export const RUNNER_CALL_ROLES = [
+  'planner',
+  'implementer',
+  'review',
+  'summary',
+  'compaction',
+  'escalation',
+] as const;
+
+export const RUNNER_CALL_BACKEND_KINDS = RUNNER_KINDS;
+
+export const RUNNER_CALL_TEXT_CHANNELS = ['stdout', 'assistant', 'result', 'system'] as const;
+export const RUNNER_CALL_NON_TEXT_CHANNELS = ['stderr', 'tool'] as const;
+
+export const RUNNER_CALL_CHANNELS = [
+  ...RUNNER_CALL_TEXT_CHANNELS,
+  ...RUNNER_CALL_NON_TEXT_CHANNELS,
+] as const;
+
+export const RUNNER_CALL_STATUSES = [
+  'completed',
+  'failed',
+  'truncated',
+  'aborted',
+  'timeout',
+  'refused',
+  'unsupported_tool',
+  'incomplete',
+] as const;
+
+export const RUNNER_CALL_FAILURE_STATUSES = [
+  'failed',
+  'truncated',
+  'aborted',
+  'timeout',
+  'refused',
+  'unsupported_tool',
+  'incomplete',
+] as const;
+
+export const RUNNER_CALL_USAGE_SEMANTICS = ['delta', 'cumulative', 'final'] as const;
+export const RUNNER_CALL_WARNING_SEVERITIES = ['debug', 'info', 'warning', 'error'] as const;
+export const RUNNER_CALL_WARNING_SURFACES = [
+  'hidden',
+  'status',
+  'activity',
+  'transcript',
+  'debug',
+] as const;
+export const RUNNER_CALL_ARTIFACT_SOURCES = ['stream', 'file', 'tool', 'derived'] as const;
+export const RUNNER_CALL_ACTIVITY_STAGES = [
+  'started',
+  'updated',
+  'completed',
+  'failed',
+  'aborted',
+  'timeout',
+  'truncated',
+  'refused',
+  'unsupported_tool',
+  'incomplete',
+  'warning',
+] as const;
+export const RUNNER_CALL_ACTIVITY_KINDS = [
+  'tool',
+  'file',
+  'text',
+  'read',
+  'write',
+  'edit',
+  'command',
+  'search',
+  'glob',
+  'task',
+  'mcp',
+  'web',
+  'plan',
+  'session',
+  'artifact',
+  'warning',
+  'error',
+  'unknown',
+] as const;
+
+const nonnegativeInteger = z.number().int().nonnegative();
+
+export const RunnerCallTextChannelSchema = z.enum(RUNNER_CALL_TEXT_CHANNELS);
+export type RunnerCallTextChannel = z.infer<typeof RunnerCallTextChannelSchema>;
+
+export const RUNNER_CALL_COUNTER_COVERAGE_STATES = ['reported', 'partial', 'missing'] as const;
+
+const counterCoverageState = z.enum(RUNNER_CALL_COUNTER_COVERAGE_STATES);
+
+export const RunnerCallCounterCoverageSchema = z.strictObject({
+  input: counterCoverageState,
+  output: counterCoverageState,
+  cacheRead: counterCoverageState,
+  cacheCreate: counterCoverageState,
+  reasoning: counterCoverageState,
+});
+
+// Inclusive totals exactly as the provider reported them. Metadata for pricing,
+// never counters to be summed into inputTokens/outputTokens.
+export const RunnerCallProviderTotalsSchema = z.strictObject({
+  input: nonnegativeInteger.optional(),
+  output: nonnegativeInteger.optional(),
+});
+
+export const runnerCallUsageFields = {
+  inputTokens: nonnegativeInteger,
+  outputTokens: nonnegativeInteger,
+  cacheReadTokens: nonnegativeInteger.optional(),
+  cacheCreateTokens: nonnegativeInteger.optional(),
+  reasoningTokens: nonnegativeInteger.optional(),
+  counterCoverage: RunnerCallCounterCoverageSchema.optional(),
+  providerTotals: RunnerCallProviderTotalsSchema.optional(),
+} as const;
+
+export const RunnerCallUsageContractSchema = z.strictObject(runnerCallUsageFields);
+
+export type RunnerCallCounterCoverageState = z.infer<typeof counterCoverageState>;
+export type RunnerCallCounterCoverage = z.infer<typeof RunnerCallCounterCoverageSchema>;
+export type RunnerCallProviderTotals = z.infer<typeof RunnerCallProviderTotalsSchema>;

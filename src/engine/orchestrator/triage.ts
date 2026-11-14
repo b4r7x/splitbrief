@@ -1,11 +1,16 @@
-import { fixBriefDescription, type FixFinding } from '../../core/review/fix-task.js';
+import { fixBriefDescription, type FixFinding } from '../../core/review/fix/task.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Plan, TaskSpec } from '../../core/schemas/plan.js';
-import { REVIEW_CHECK_ID, type TriageInput, type TriageResult } from '../../core/schemas/review.js';
-import type { SpecMetadata } from '../../core/paths-io.js';
+import {
+  REVIEW_CHECK_ID,
+  type TriageInput,
+  type TriageResult,
+} from '../../core/schemas/review/verdict.js';
+import type { SpecMetadata } from '../../core/sessions/spec-files.js';
 import type { Check, Task, TaskId } from '../../core/schemas/task.js';
-import { fixCyclesOf, type ReviewRecord, type WorkflowState } from '../../core/schemas/workflow.js';
-import { findingInReviewScope, type Finding, type ReviewScope } from '../../core/review/verdict.js';
+import { fixCyclesOf, type WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { ReviewRecord } from '../../core/schemas/workflow/review-record.js';
+import { findingInReviewScope, type Finding, type ReviewScope } from '../../core/review/scope.js';
 import { insertTasks } from '../../core/state/task-insert.js';
 import type { EventBus } from '../events/types.js';
 import { checkTaskIdentities } from '../spec/plan-checks.js';

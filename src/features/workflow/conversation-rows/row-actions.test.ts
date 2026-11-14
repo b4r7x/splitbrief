@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { groupEventsIntoSections, type Section } from '../../../core/sections/event-sections.js';
+import type { Section } from '../../../core/sections/types.js';
+import { groupEventsIntoSections } from '../../../core/sections/group.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';

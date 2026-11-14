@@ -12,7 +12,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { loadConfig, writeConfig } from '../../core/config/load/io.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { CliToolDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection } from '../../core/discovery/detection/tool.js';
 import { deriveFallbackRows } from '../../core/crew/fallback.js';
 import { deriveCrewRows } from '../../core/crew/rows.js';
 import { crewActivate, fallbackActivate } from '../../features/crew/rows.js';

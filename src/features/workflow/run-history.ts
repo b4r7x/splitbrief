@@ -1,4 +1,4 @@
-import type { RunRecord } from '../../core/sessions/run-record.js';
+import type { RunRecord } from '../../core/sessions/run/record.js';
 import { readRunEvents } from '../../engine/events/replay.js';
 import { reapOrphanRunners } from '../../engine/orchestrator/run/orphan-reaper.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
@@ -7,7 +7,7 @@ import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { extractLastJsonObject } from '../../engine/runners/typed-output.js';
 import { readImplementerReport } from '../../core/schemas/consult.js';
-import { processWentAway } from '../../core/sessions/run-status.js';
+import { processWentAway } from '../../core/sessions/run/status.js';
 import { interruptedCallEvents } from '../../engine/calls/interrupted.js';
 import { configStore } from '../../stores/project/config.js';
 

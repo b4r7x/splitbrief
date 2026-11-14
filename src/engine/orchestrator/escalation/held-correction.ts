@@ -1,5 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { publishNoProgressCut } from '../events.js';

@@ -1,6 +1,6 @@
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { SnapshotManifest } from '../../../core/schemas/snapshot.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { entryToRestore } from '../../orchestrator/approval/file-snapshots/restore.js';
 import type { ChangeEntry } from '../../orchestrator/approval/file-snapshots/entry.js';

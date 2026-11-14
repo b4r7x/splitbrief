@@ -1,8 +1,8 @@
-import { phaseStage } from '../../../core/rail-stages.js';
+import { phaseStage } from '../../../core/phases/rail.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { SessionLogEventEntrySchema } from '../../../core/schemas/session-log.js';
 import { endBeforeAtRest } from '../../../core/sessions/at-rest-end.js';
-import { readSessionLogValuesSync } from '../../../core/sessions/log-reader.js';
+import { readSessionLogValuesSync } from '../../../core/sessions/log/reader.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { entryTimestamp } from '../../events/replay.js';

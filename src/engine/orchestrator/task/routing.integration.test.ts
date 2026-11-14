@@ -5,7 +5,7 @@ import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factori
 import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
-import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
+import type { ImplementerConfig } from '../../../core/schemas/runner/implementer.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';

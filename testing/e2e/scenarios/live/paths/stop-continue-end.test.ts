@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PLAN_JSON_FILE } from '../../../../../src/core/paths.js';
-import { deriveRunStatus } from '../../../../../src/core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../../../src/core/sessions/run/status.js';
 import { loadState } from '../../../../../src/core/state/persistence.js';
 import { gateLiveMatrixRow } from '../../../helpers/live-harness.js';
 import {

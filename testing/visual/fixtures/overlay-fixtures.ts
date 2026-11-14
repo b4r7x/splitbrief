@@ -1,14 +1,14 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type OverlayType, seatAxisFocus } from '../../../src/core/navigation/types.js';
-import { LISTED_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool-catalog.js';
+import { LISTED_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool/catalog.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { commandPaletteMruStore } from '../../../src/stores/ui/command-palette-mru.js';
 import type {
   CliProviderAuth,
   CliProviderAuthUnreadableReason,
-  DetectedModel,
-} from '../../../src/core/discovery/detection.js';
+} from '../../../src/core/discovery/detection/auth.js';
+import type { DetectedModel } from '../../../src/core/discovery/detection/model.js';
 import {
   nativeCliCatalogToDetectedModels,
   parseAntigravityModelCatalog,
@@ -21,12 +21,13 @@ import {
 import { resolveSeatDisplayName } from '../../../src/engine/providers/model/display-names.js';
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
-import type { CostBreakdown, Summary } from '../../../src/core/schemas/summary.js';
+import type { Summary } from '../../../src/core/schemas/summary.js';
+import type { CostBreakdown } from '../../../src/core/schemas/cost.js';
 import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
 import type { Session } from '../../../src/core/schemas/session.js';
 import { type Task, taskId } from '../../../src/core/schemas/task.js';
 import { type TokenUsage, ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
-import { deriveRunStatus, type RunStatus } from '../../../src/core/sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../../../src/core/sessions/run/status.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
 import {
@@ -44,7 +45,7 @@ import {
 import { stateOpsError } from '../../../src/engine/orchestrator/state-ops.js';
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
 import { commitPlannerTierSelection } from '../../../src/features/runners/config-transforms.js';
-import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
+import type { CliToolDetection } from '../../../src/core/discovery/detection/tool.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
 import { trackActiveApply } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';

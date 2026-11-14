@@ -1,7 +1,7 @@
 import type { Phase, RecoveryReason } from '../../../../core/schemas/enums.js';
 import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../../core/schemas/task.js';
-import type { SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
+import type { SeatSwitchRecord } from '../../../../core/schemas/workflow/seat.js';
 import type {
   DeepReadonly,
   RunnerConfig,

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, type TestContext, vi } from 'vitest'
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import type { Config } from '../../../src/core/schemas/config.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';

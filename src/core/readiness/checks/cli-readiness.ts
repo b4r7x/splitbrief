@@ -1,7 +1,8 @@
 import { runnerSlotId, type RunnerConfigSlot } from '../../config/accessors/runner-config.js';
 import { formatSlotLabel } from '../../crew/identity.js';
 import type { SavedCatalog } from '../../discovery/catalog-read-merge.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../runners/cli-tool/types.js';
 import {
   routeAuthState,
   routeNoCredential,
@@ -9,11 +10,11 @@ import {
   type RouteAuthState,
 } from '../../runners/route-auth.js';
 import {
-  CODEX_KEYRING_SIGN_IN,
   cliReadinessCheckId,
   type CliReadinessResult,
   type ReadinessDiagnosticStateId,
 } from '../../schemas/readiness.js';
+import { CODEX_KEYRING_SIGN_IN } from '../cli-remediation.js';
 import type { ReadinessCheck, RunnerReadinessCauseId } from '../types.js';
 import { assertNever } from '../../../utils/type-guards.js';
 

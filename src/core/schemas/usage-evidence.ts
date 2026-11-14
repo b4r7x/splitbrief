@@ -3,7 +3,7 @@ import {
   RUNNER_CALL_BACKEND_KINDS,
   RUNNER_CALL_ROLES,
   RunnerCallUsageContractSchema,
-} from '../runner-call-contract.js';
+} from './runner-call.js';
 import { InvocationIdentitySchema } from './invocation-identity.js';
 import { PhaseSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';

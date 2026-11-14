@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
-import {
-  formatSeatChangeNotice,
-  seatIdentitiesFromConfig,
-  seatIdentityChanges,
-  type SeatChange,
-} from '../../../core/state/seats.js';
+import { seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
+import { formatSeatChangeNotice, seatIdentityChanges } from '../../../core/state/seats/changes.js';
+import type { SeatChange } from '../../../core/state/seats/changes.js';
 import { NULL_CACHE, type ModelCacheAccessor } from './resolution.js';
 import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';

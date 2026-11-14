@@ -2,7 +2,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CliExecutableReceipt } from '../../../src/core/discovery/detection.js';
+import type { CliExecutableReceipt } from '../../../src/core/discovery/detection/executable.js';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type { RunnerCallEvent } from '../../../src/engine/calls/types.js';
 import { createPlanner } from '../../../src/engine/runners/factory.js';

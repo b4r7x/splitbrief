@@ -3,7 +3,8 @@ import { CREW_SEAT_LABELS } from '../crew/identity.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import { formatResetNote } from '../recovery/reset-clock.js';
-import type { SeatWait, WorkflowState } from '../schemas/workflow.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import type { SeatWait } from '../schemas/workflow/seat.js';
 import { SOFT_SEP } from '../separators.js';
 
 /**

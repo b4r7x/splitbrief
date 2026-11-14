@@ -9,7 +9,7 @@ import {
   codexPlannerAdapter,
   codexProtocolEvents,
 } from './codex.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { invokeCliAdapter } from '../invoke-cli-adapter.js';
 import type { CliProtocolEvent } from './contract.js';
 

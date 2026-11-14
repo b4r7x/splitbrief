@@ -1,9 +1,9 @@
 import { createStore, storeBase } from '../../create-store.js';
 import type {
   CliToolDetection,
-  DetectedModel,
   ProviderDetection,
-} from '../../../core/discovery/detection.js';
+} from '../../../core/discovery/detection/tool.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import {
   cloneCliToolDetection,
   cloneProviderDetection,
@@ -16,7 +16,8 @@ import {
   readClaudeCodeModelOptions,
   type ClaudeCodeModelOption,
 } from '../../../core/providers/claude-code-options.js';
-import { CLI_TOOL_IDS, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { DetectionLanePublication } from '../../../engine/detection/lane-channel.js';
 import type { DetectionServiceResult } from '../../../engine/detection/service.js';

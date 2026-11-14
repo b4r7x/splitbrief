@@ -3,8 +3,8 @@ import { applyCLIOverrides } from './apply.js';
 import { buildRunnerConfig } from '../build-runner.js';
 import { applyRunnerOverrides, existingToOpts } from './runner.js';
 import type { Config } from '../../../schemas/config.js';
-import type { PlannerConfig } from '../../../schemas/planner-config.js';
-import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
+import type { PlannerConfig } from '../../../schemas/runner/planner.js';
+import type { ImplementerConfig } from '../../../schemas/runner/implementer.js';
 import { resolveImplementerProfiles } from '../../accessors/implementer-profiles.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 

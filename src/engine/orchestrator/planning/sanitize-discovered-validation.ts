@@ -3,8 +3,8 @@ import type { PackageScriptsReadinessInput } from '../../../core/readiness/check
 import { readPackageJson } from '../../../core/project-meta.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { VALIDATION_STAGES, type Phase } from '../../../core/schemas/enums.js';
-import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
-import { isPackageManager } from '../../../core/trust/path-classification.js';
+import type { DiscoveredValidation } from '../../../core/schemas/workflow/state.js';
+import { isPackageManager } from '../../../core/trust/package-scripts.js';
 import type { ManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { pythonStack } from '../../../core/validation/stacks/python.js';
 import { isTestScript, STACKS } from '../../../core/validation/stacks/registry.js';

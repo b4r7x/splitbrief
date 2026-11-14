@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { getSplitbriefVersion } from './core/paths-io.js';
+import { getSplitbriefVersion } from './core/version.js';
 
 const ROOT = join(import.meta.dirname, '..');
 const CLI_ENTRY = join(ROOT, 'src', 'cli.ts');

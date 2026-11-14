@@ -1,20 +1,16 @@
 import { readActiveRunner } from '../config/accessors/active-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import type { SavedCatalog, SavedCatalogOf } from '../discovery/catalog-read-merge.js';
-import type { CliToolDetection } from '../discovery/detection.js';
+import type { CliToolDetection } from '../discovery/detection/tool.js';
 import { seatRouteModel } from '../providers/automatic-model.js';
-import { isCliToolId } from '../runners/cli-tool-catalog.js';
+import { isCliToolId } from '../runners/cli-tool/catalog.js';
 import { ROUTE_NEEDS_SIGN_IN, routeAuthState } from '../runners/route-auth.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import type { Config } from '../schemas/config.js';
-import type { SeatSwitchRecord } from '../schemas/workflow.js';
+import type { SeatSwitchRecord } from '../schemas/workflow/seat.js';
 import { SOFT_SEP } from '../separators.js';
-import {
-  formatSeatIdentity,
-  isSeatIdentity,
-  type CrewSeatId,
-  type SeatDisplayName,
-} from './identity.js';
+import { formatSeatIdentity, type CrewSeatId, type SeatDisplayName } from './identity.js';
+import { isSeatIdentity } from './seat-ids.js';
 import { CREW_SEAT_ROLES, deriveCrewSeats, seatHasRunner } from './seats.js';
 
 export type SeatFallback = NonNullable<RunnerConfig['fallback']>;

@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
-import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
+import type { PlannerConfig } from '../../../core/schemas/runner/planner.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import { useInputMode } from './use-input-mode.js';
@@ -19,7 +19,7 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { configStore } from '../../../stores/project/config.js';
 import { clearAllHandlers } from '../handlers.js';
-import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import {
   clearActiveReceipt,
   reactivateExistingSession,

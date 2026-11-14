@@ -1,5 +1,5 @@
 import { queueCopy } from '../../features/workflow/queue-copy.js';
-import { phaseStage } from '../../core/rail-stages.js';
+import { phaseStage } from '../../core/phases/rail.js';
 import { beforeEach, afterEach, describe, it, expect, onTestFinished, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';

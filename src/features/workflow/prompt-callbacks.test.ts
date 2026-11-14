@@ -4,7 +4,7 @@ import { plainUserMessage, type UserMessageInput } from '../../core/types/user-i
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
 import { clearAllHandlers, requestSteer } from './handlers.js';
-import type { PlannerConversation } from '../../core/schemas/workflow.js';
+import type { PlannerConversation } from '../../core/schemas/workflow/state.js';
 import {
   plainAnswer,
   type QuestionAnswer,

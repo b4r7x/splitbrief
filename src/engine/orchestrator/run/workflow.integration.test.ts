@@ -37,14 +37,14 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
-import { WorkflowStateSchema, type WorkflowState } from '../../../core/schemas/workflow.js';
+import { WorkflowStateSchema, type WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
 import type { PlannerOutputCallbacks } from '../../../engine/planners/types.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createEventBus } from '../../../engine/events/bus.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import {
   LOCKFILE,
   READINESS_FILE,
@@ -63,16 +63,16 @@ import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { listSessions, readSession, saveSummary } from '../../../core/sessions/io.js';
-import { readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { loadOwnerWorkflowState } from '../../../core/state/resume-hydration.js';
-import { forgetCachedState, statePath } from '../../../core/state/state-file.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { forgetCachedState, statePath } from '../../../core/state/file.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import {
   reactivateExistingSession,
   readActive,
   writeActive,
 } from '../../../core/sessions/active-pointer.js';
-import { generateSessionId } from '../../../core/sessions/session-id.js';
+import { generateSessionId } from '../../../core/sessions/id.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
@@ -93,7 +93,7 @@ import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { shutdownWorkflow } from '../session-lifecycle/shutdown.js';
 import { boundEngineEventForConsumer } from '../../events/bound.js';
 import { readRunEvents } from '../../events/replay.js';
-import { readMessages } from '../../../core/sessions/log-reader.js';
+import { readMessages } from '../../../core/sessions/log/reader.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
 import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../../core/payload-bounds.js';
 import { buildResumeContext } from '../transcript/rebuild.js';
@@ -1630,7 +1630,7 @@ describe('runWorkflow — smoke', () => {
     // acquireLiveness writes the lockfile at the start of EVERY run (TUI/headless/RPC),
     // so checkSessionLiveness can refuse a concurrent resume/continue. Assert the record on disk.
     const { readLockfile, checkSessionLiveness } = await import(
-      '../../../core/sessions/lockfile.js'
+      '../../../core/sessions/lock/file.js'
     );
     const dir = sessionDir(projectDir, 'liveness-sid');
     const lock = readLockfile(dir);
@@ -1824,7 +1824,7 @@ describe('runWorkflow — smoke', () => {
     const sessionId = 'liveness-conflict-sid';
     const { callbacks } = makeCallbacks();
     const config = unavailablePlannerConfig();
-    const { writeLockfile } = await import('../../../core/sessions/lockfile.js');
+    const { writeLockfile } = await import('../../../core/sessions/lock/file.js');
     const dir = sessionDir(projectDir, sessionId);
     ensureSessionDir(projectDir, sessionId);
     await writeLockfile(dir, {

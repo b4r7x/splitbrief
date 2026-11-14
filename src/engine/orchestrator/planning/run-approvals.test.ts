@@ -6,7 +6,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
+import { writeSpecFile } from '../../../core/sessions/spec-files.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { scriptedTypedCall, typedCallFromTasks } from '#testing/helpers/typed-planner.js';

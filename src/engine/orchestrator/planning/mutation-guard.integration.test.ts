@@ -7,7 +7,7 @@ import {
 } from './mutation-guard.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 
 describe('planning mutation guard', () => {
   it('reports a common-basename artifact as a mutation with no tasks.md allowance', async () => {

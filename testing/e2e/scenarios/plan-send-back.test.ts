@@ -1,8 +1,8 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/group.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';

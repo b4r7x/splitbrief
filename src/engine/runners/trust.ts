@@ -2,8 +2,8 @@ import type { Config } from '../../core/schemas/config.js';
 import {
   isCustomCommandRunner,
   type CustomCommandRunner,
-} from '../../core/config/custom-commands.js';
-import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
+} from '../../core/config/custom-commands/tuple.js';
+import { findConfiguredCustomCommand } from '../../core/config/custom-commands/catalog.js';
 import { argvIsRepoLocal } from '../../core/trust/command-string-classification.js';
 import { stripProfileMetadata } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';

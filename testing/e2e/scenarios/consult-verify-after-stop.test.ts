@@ -12,7 +12,7 @@ import {
   sessionsRoot,
 } from '../../../src/core/paths.js';
 import type { ConsultAnswer } from '../../../src/core/schemas/consult.js';
-import { ReviewPacketSchema } from '../../../src/core/schemas/review-packet.js';
+import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';

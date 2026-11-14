@@ -1,7 +1,7 @@
 import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { parseEngineEvent } from '../events/schema.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';

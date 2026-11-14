@@ -4,7 +4,7 @@ import type { ClarificationQuestion } from '../schemas/question.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { StepRef } from '../schemas/run-step.js';
 import type { CheckResult } from '../schemas/task.js';
-import type { SeatWait } from '../schemas/workflow.js';
+import type { SeatWait } from '../schemas/workflow/seat.js';
 
 // The engine events the run view folds, by the fields it reads. `core/` cannot import the engine
 // schema; `engine/events/run-view-events.test.ts` checks each engine event is assignable here.

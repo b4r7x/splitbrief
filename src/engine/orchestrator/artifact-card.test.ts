@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
-import { buildSpecFrontmatter } from '../../core/paths-io.js';
+import { buildSpecFrontmatter } from '../../core/sessions/spec-files.js';
 import { taskId, type Task } from '../../core/schemas/task.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import type { EventBus } from '../events/types.js';

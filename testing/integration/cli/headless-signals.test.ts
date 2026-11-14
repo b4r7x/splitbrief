@@ -9,10 +9,10 @@ import {
   writeMinimalHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { listSessions } from '../../../src/core/sessions/io.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
 import { runHeadless } from '../../../src/cli/headless.js';
 
