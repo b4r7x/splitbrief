@@ -3,7 +3,7 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';
 import { rmdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { isENOENT, isNodeError } from '../../../utils/errno.js';
+import { hasErrnoCode, isENOENT } from '../../../utils/errno.js';
 import { writeConfinedEntryOrLink } from '../approval/file-snapshots/entry/write.js';
 import type { ChangeEntry } from '../approval/file-snapshots/entry/read.js';
 import {
@@ -116,7 +116,7 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
   for (const dir of [...backup.createdDirs].sort().reverse()) {
     await rmdir(resolve(projectDir, dir)).catch((cause: unknown) => {
       if (isENOENT(cause)) return;
-      if (isNodeError(cause) && (cause.code === 'ENOTEMPTY' || cause.code === 'ENOTDIR')) return;
+      if (hasErrnoCode(cause, 'ENOTEMPTY', 'ENOTDIR')) return;
       throw cause;
     });
   }

@@ -29,7 +29,7 @@ import {
   assertExistingPathConfined,
   assertWritablePathConfined,
 } from '../../lib/fs/confinement.js';
-import { isNodeError } from '../../utils/errno.js';
+import { isENOENT } from '../../utils/errno.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { sessionError } from './errors.js';
 import type { SessionLivenessResult } from './liveness.js';
@@ -158,7 +158,7 @@ function activeSnapshot(filePath: string): ActiveFileSnapshot | null {
   try {
     descriptor = openSync(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch (cause) {
-    if (isNodeError(cause) && cause.code === 'ENOENT') return null;
+    if (isENOENT(cause)) return null;
     throw cause;
   }
   try {

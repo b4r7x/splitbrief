@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { confinedEnsureDir } from '../../lib/fs/confined.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE, writeSecureFile } from '../../lib/fs/secure.js';
 import { assertWritablePathConfined } from '../../lib/fs/confinement.js';
-import { isNodeError } from '../../utils/errno.js';
+import { hasErrnoCode } from '../../utils/errno.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { DeepReadonly } from '../config/accessors/runner-config.js';
 import { READINESS_FILE, sessionDir, SESSIONS_DIR, SPLITBRIEF_DIR } from '../paths.js';
@@ -197,8 +197,7 @@ export function prepareNewSession(input: PrepareNewSessionInput): PrepareNewSess
     if (linkError) throw linkError;
     if (temporaryCleanupError) throw temporaryCleanupError;
   } catch (cause) {
-    const keepDirectory =
-      linkError !== undefined && isNodeError(linkError) && linkError.code === 'EEXIST';
+    const keepDirectory = hasErrnoCode(linkError, 'EEXIST');
     try {
       cleanupAfterReadinessFailure(owned, keepDirectory);
     } catch (cleanupCause) {

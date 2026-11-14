@@ -1,6 +1,7 @@
 import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { CliToolId } from '../../../../core/runners/cli-tool/types.js';
+import { hasErrnoCode, isENOENT } from '../../../../utils/errno.js';
 import { error } from '../../../../utils/error.js';
 import { collectStateStrings, addStateRedactionValue } from '../credential-values.js';
 
@@ -50,7 +51,7 @@ export async function existingPath(
     if (stat.isFile()) return 'file';
     return 'other';
   } catch (err) {
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return null;
+    if (isENOENT(err)) return null;
     throw err;
   }
 }
@@ -113,7 +114,7 @@ export async function copyReadOnlyStateEntry(
       flag: 'wx',
     });
   } catch (err) {
-    if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
+    if (!hasErrnoCode(err, 'EEXIST')) throw err;
     // A concurrent acquisition sealed the same snapshot between the check above
     // and this write (teardown runs outside the creation lock). Accept it only
     // when the content is already the intended copy; anything else is a genuine

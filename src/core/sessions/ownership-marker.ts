@@ -15,7 +15,7 @@ import {
   assertExistingPathConfined,
   assertWritablePathConfined,
 } from '../../lib/fs/confinement.js';
-import { isNodeError } from '../../utils/errno.js';
+import { isENOENT } from '../../utils/errno.js';
 import { error, type AppError } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../paths.js';
@@ -176,7 +176,7 @@ export function pathExists(path: string): boolean {
     lstatSync(path);
     return true;
   } catch (cause) {
-    if (isNodeError(cause) && cause.code === 'ENOENT') return false;
+    if (isENOENT(cause)) return false;
     throw cause;
   }
 }

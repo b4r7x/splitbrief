@@ -1,23 +1,20 @@
 import { lstatSync, realpathSync } from 'node:fs';
 import { lstat, realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { isENOENT, isNodeError } from '../../../utils/errno.js';
+import { hasErrnoCode, isENOENT } from '../../../utils/errno.js';
 import { fsError } from '../secure.js';
 import type { AtomicDirectoryIdentity, AtomicTarget } from './types.js';
 
 export function isNoFollowFailure(err: unknown): boolean {
-  return isNodeError(err) && err.code === 'ELOOP';
+  return hasErrnoCode(err, 'ELOOP');
 }
 
 export function isAlreadyExists(err: unknown): boolean {
-  return isNodeError(err) && err.code === 'EEXIST';
+  return hasErrnoCode(err, 'EEXIST');
 }
 
 export function isDirectorySyncUnsupported(err: unknown): boolean {
-  return (
-    isNodeError(err) &&
-    (err.code === 'EINVAL' || err.code === 'ENOTSUP' || err.code === 'EOPNOTSUPP')
-  );
+  return hasErrnoCode(err, 'EINVAL', 'ENOTSUP', 'EOPNOTSUPP');
 }
 
 function directoryIdentityMatches(

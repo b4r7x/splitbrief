@@ -1,6 +1,7 @@
 import { realpath, rm } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { CliToolId } from '../../../../core/runners/cli-tool/types.js';
+import { isENOENT } from '../../../../utils/errno.js';
 import { xdgBaseDir, hasCliToolHome, cliToolHome } from '../../host-model-selection.js';
 import { existingPath, stateBridgeFailure, copyReadOnlyStateEntry } from './copy.js';
 import { passthroughStateFile, passthroughStateEntry } from './passthrough.js';
@@ -115,7 +116,7 @@ export async function bridgedCliStatePresent(
     try {
       resolved = await realpath(destination);
     } catch (err) {
-      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') continue;
+      if (isENOENT(err)) continue;
       throw err;
     }
     if ((await existingPath(resolved)) === 'file') return true;

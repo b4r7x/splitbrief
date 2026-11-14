@@ -1,6 +1,7 @@
 import { lstat, mkdir, readFile, readlink, realpath, rm, symlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { CliToolId } from '../../../../core/runners/cli-tool/types.js';
+import { isENOENT } from '../../../../utils/errno.js';
 import {
   existingPath,
   MAX_STATE_FILE_BYTES,
@@ -38,7 +39,7 @@ export async function passthroughStateFile(
   try {
     resolvedSource = await realpath(source);
   } catch (err) {
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return [];
+    if (isENOENT(err)) return [];
     throw err;
   }
   if ((await existingPath(resolvedSource)) !== 'file') throw stateBridgeFailure(tool);
@@ -89,7 +90,7 @@ export async function passthroughStateEntry(
   try {
     resolvedSourceDir = await realpath(sourceDir);
   } catch (err) {
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return [];
+    if (isENOENT(err)) return [];
     throw err;
   }
   if ((await existingPath(resolvedSourceDir)) !== 'directory') throw stateBridgeFailure(tool);

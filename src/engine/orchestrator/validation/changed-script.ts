@@ -2,7 +2,7 @@ import { lstat, readFile, readdir } from 'node:fs/promises';
 import { join, posix, relative } from 'node:path';
 import { namesListedIn } from '../../../lib/fs/read.js';
 import { isPathConfined } from '../../../lib/fs/confinement.js';
-import { isNodeError } from '../../../utils/errno.js';
+import { hasErrnoCode } from '../../../utils/errno.js';
 import { isTestScript } from '../../../core/validation/stacks/registry.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';
@@ -31,7 +31,7 @@ async function orNoFiles<T>(listing: Promise<T[]>): Promise<T[]> {
   try {
     return await listing;
   } catch (err: unknown) {
-    if (isNodeError(err) && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) return [];
+    if (hasErrnoCode(err, 'ENOENT', 'ENOTDIR')) return [];
     throw err;
   }
 }

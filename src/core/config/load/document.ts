@@ -15,7 +15,7 @@ import { ensureGitignore } from '../../../lib/fs/gitignore.js';
 import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/fs/atomic-write/types.js';
 import { assertWritablePathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
-import { isENOENT, isNodeError } from '../../../utils/errno.js';
+import { hasErrnoCode, isENOENT } from '../../../utils/errno.js';
 import { configError } from '../errors.js';
 import { loadedKey } from './transform.js';
 
@@ -111,8 +111,7 @@ export function readConfigDocument(projectDir: string): ConfigDocumentSnapshot {
     descriptor = openSync(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch (err) {
     if (isENOENT(err)) return emptyConfigDocumentSnapshot();
-    if (isNodeError(err) && err.code === 'ELOOP')
-      throw pathConfinementError.symlinkRead(CONFIG_RELATIVE_PATH);
+    if (hasErrnoCode(err, 'ELOOP')) throw pathConfinementError.symlinkRead(CONFIG_RELATIVE_PATH);
     throw configError.unreadable(CONFIG_RELATIVE_PATH);
   }
 

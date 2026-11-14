@@ -6,7 +6,7 @@ import { assertProjectWritablePathConfined } from '../../../../../core/scope/con
 import { assertExistingPathConfined } from '../../../../../lib/fs/confinement.js';
 import { fsError, nameWriteTarget } from '../../../../../lib/fs/secure.js';
 import { warnError } from '../../../../../lib/warn.js';
-import { isENOENT, isNodeError } from '../../../../../utils/errno.js';
+import { hasErrnoCode } from '../../../../../utils/errno.js';
 import {
   type FileSnapshotEntry,
   observeConfinedEntry,
@@ -68,7 +68,7 @@ export async function removeWriteTemporaries(
   for (const [dir, names] of namesByDir) {
     // A folder you removed, or replaced with a file, holds no temporaries.
     const entries = await readdir(dir).catch((cause: unknown) => {
-      if (isENOENT(cause) || (isNodeError(cause) && cause.code === 'ENOTDIR')) return [];
+      if (hasErrnoCode(cause, 'ENOENT', 'ENOTDIR')) return [];
       throw cause;
     });
     for (const entry of entries) {

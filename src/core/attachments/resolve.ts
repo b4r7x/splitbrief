@@ -6,7 +6,7 @@ import { extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { EXT_TO_MIME, MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_EXTS } from '../schemas/attachment.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import { includes } from '../../utils/type-guards.js';
-import { isNodeError } from '../../utils/errno.js';
+import { hasErrnoCode } from '../../utils/errno.js';
 import type { Attachment } from '../schemas/attachment.js';
 
 export type InputFileFailureReason =
@@ -152,18 +152,10 @@ function inspectInputFile(opts: ResolveAttachmentOpts): InspectInputFileResult {
 }
 
 function inputFileFailure(err: unknown): { ok: false; reason: InputFileFailureReason } {
-  if (isNodeError(err)) {
-    switch (err.code) {
-      case 'ENOENT':
-      case 'ENOTDIR':
-      case 'ENAMETOOLONG':
-      case 'ELOOP':
-        return { ok: false, reason: 'not-found' };
-      case 'EACCES':
-      case 'EPERM':
-        return { ok: false, reason: 'unreadable' };
-    }
+  if (hasErrnoCode(err, 'ENOENT', 'ENOTDIR', 'ENAMETOOLONG', 'ELOOP')) {
+    return { ok: false, reason: 'not-found' };
   }
+  if (hasErrnoCode(err, 'EACCES', 'EPERM')) return { ok: false, reason: 'unreadable' };
   throw err;
 }
 

@@ -1,6 +1,6 @@
 import { pathConfinementError, assertPathConfined } from '../../../lib/fs/confinement.js';
 import { fsError } from '../../../lib/fs/secure.js';
-import { isNodeError, isENOENT } from '../../../utils/errno.js';
+import { hasErrnoCode, isENOENT } from '../../../utils/errno.js';
 import { linkStaysInProject } from '../approval/file-snapshots/entry/link.js';
 import { type ChangeEntry, readChangeEntry } from '../approval/file-snapshots/entry/read.js';
 import {
@@ -26,7 +26,7 @@ export function unsafeEntryError(cause: unknown): boolean {
     pathConfinementError.isSymlinkRead(cause) ||
     pathConfinementError.isSymlinkParent(cause) ||
     pathConfinementError.isEscapesRoot(cause) ||
-    (isNodeError(cause) && cause.code === 'ENOTDIR')
+    hasErrnoCode(cause, 'ENOTDIR')
   );
 }
 

@@ -7,7 +7,7 @@ import { StagedWorkspaceLeafSchema } from '../../../../core/schemas/retained-wor
 import type { SessionRef } from '../../../../core/types/session-ref.js';
 import { createGitClient, type GitClient } from '../../../../lib/git/client.js';
 import { getGitCommonDir } from '../../../../lib/git/repository.js';
-import { isENOENT, isNodeError } from '../../../../utils/errno.js';
+import { hasErrnoCode } from '../../../../utils/errno.js';
 import { clearWorkspaceRecord, stagedWorkspaceRoot, retentionError } from '../retention.js';
 import { isInsideRoot } from '../../../../lib/fs/confinement.js';
 import {
@@ -100,7 +100,7 @@ async function removeEmptyRepositoryRoot(worktreeDir: string): Promise<void> {
   try {
     await rmdir(dirname(worktreeDir));
   } catch (err) {
-    if (isENOENT(err) || (isNodeError(err) && err.code === 'ENOTEMPTY')) return;
+    if (hasErrnoCode(err, 'ENOENT', 'ENOTEMPTY')) return;
     throw err;
   }
 }

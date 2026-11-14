@@ -9,6 +9,7 @@ import {
 } from '../../lib/clipboard/image.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import { assertWritablePathConfined } from '../../lib/fs/confinement.js';
+import { hasErrnoCode } from '../../utils/errno.js';
 import { SPLITBRIEF_DIR } from '../paths.js';
 import { MAX_ATTACHMENT_BYTES } from '../schemas/attachment.js';
 
@@ -33,12 +34,7 @@ async function saveImage(bytes: Buffer, signal: AbortSignal): Promise<string> {
       SECURE_FILE_MODE,
     );
   } catch (error) {
-    if (
-      error instanceof Error &&
-      'code' in error &&
-      error.code === 'EEXIST' &&
-      (await readFile(path)).equals(bytes)
-    ) {
+    if (hasErrnoCode(error, 'EEXIST') && (await readFile(path)).equals(bytes)) {
       return path;
     }
     throw error;

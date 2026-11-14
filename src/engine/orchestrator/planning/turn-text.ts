@@ -12,6 +12,7 @@ import { PLAN_ANSWER_JSON_SCHEMA } from '../../../core/schemas/plan.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { type SpecFileRef, readSpecFile } from '../../../core/sessions/spec-files.js';
 import { isSessionConversation } from '../../../core/state/planning-conversation.js';
+import { hasErrnoCode } from '../../../utils/errno.js';
 import { buildRepoMap } from '../../codebase/repomap.js';
 import { absolutePathsNamed } from '../../planners/api-context/mentions.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
@@ -135,12 +136,7 @@ export async function planTurnText(opts: {
         const stats = await stat(path);
         return stats.isFile() || stats.isDirectory() ? [path] : [];
       } catch (err) {
-        if (
-          err instanceof Error &&
-          'code' in err &&
-          typeof err.code === 'string' &&
-          ['ENOENT', 'ENOTDIR', 'ENAMETOOLONG', 'ELOOP', 'EACCES', 'EPERM'].includes(err.code)
-        ) {
+        if (hasErrnoCode(err, 'ENOENT', 'ENOTDIR', 'ENAMETOOLONG', 'ELOOP', 'EACCES', 'EPERM')) {
           return [];
         }
         throw err;

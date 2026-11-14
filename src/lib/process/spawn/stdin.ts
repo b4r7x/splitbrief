@@ -1,10 +1,11 @@
 import type { Writable } from 'node:stream';
+import { hasErrnoCode } from '../../../utils/errno.js';
 import { spawnPipeError } from './fatal.js';
 import { invokeVoidGuarded, terminate } from './terminate.js';
 import type { SpawnRun, SpawnStdinWriter } from './types.js';
 
 function isStdinReaderGone(err: Error): boolean {
-  return 'code' in err && (err.code === 'EPIPE' || err.code === 'ENOTCONN');
+  return hasErrnoCode(err, 'EPIPE', 'ENOTCONN');
 }
 
 /** True when the child closed before its required prompt was written and ended. */

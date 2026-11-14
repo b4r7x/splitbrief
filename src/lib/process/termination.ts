@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { isNodeError } from '../../utils/errno.js';
+import { hasErrnoCode } from '../../utils/errno.js';
 import { processError, type ProcessTerminationTarget } from './errors.js';
 
 export const SIGKILL_DELAY_MS = 2000;
@@ -12,8 +12,8 @@ export function groupExists(pid: number): boolean {
     process.kill(-pid, 0);
     return true;
   } catch (err) {
-    if (isNodeError(err) && err.code === 'ESRCH') return false;
-    if (isNodeError(err) && err.code === 'EPERM') return true;
+    if (hasErrnoCode(err, 'ESRCH')) return false;
+    if (hasErrnoCode(err, 'EPERM')) return true;
     throw err;
   }
 }

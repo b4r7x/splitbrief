@@ -1,7 +1,7 @@
 import { openSync, closeSync, unlinkSync, statSync, writeFileSync, readFileSync } from 'node:fs';
 import { snapshotLockPath, snapshotsDir } from '../../core/paths.js';
 import { ensureSecureDir } from '../../lib/fs/secure.js';
-import { isNodeError } from '../../utils/errno.js';
+import { hasErrnoCode } from '../../utils/errno.js';
 import { canSignalProcess } from '../../lib/process/liveness.js';
 import { readProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { error } from '../../utils/error.js';
@@ -60,7 +60,7 @@ export async function acquireSnapshotLock(
       closeSync(fd);
       writeLockPayload(lockPath, ownPayload);
     } catch (err: unknown) {
-      if (isNodeError(err) && err.code === 'EEXIST') {
+      if (hasErrnoCode(err, 'EEXIST')) {
         if (!isRetry) {
           let mtime: number;
           try {

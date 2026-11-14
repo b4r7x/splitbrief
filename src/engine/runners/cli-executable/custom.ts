@@ -2,7 +2,7 @@ import { constants } from 'node:fs';
 import { access, realpath, stat } from 'node:fs/promises';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import type { CliExecutableReceipt } from '../../../core/discovery/detection/executable.js';
-import { isENOENT, isNodeError } from '../../../utils/errno.js';
+import { hasErrnoCode, isENOENT } from '../../../utils/errno.js';
 import { readExecutableIdentity, executableReceiptsEqual } from './identity.js';
 import type { CustomExecutableResolution, ResolveCustomExecutableOptions } from './types.js';
 
@@ -45,7 +45,7 @@ async function inspectCustomExecutableCandidate(
     return executable === null ? { kind: 'invalid' } : { kind: 'resolved', executable };
   } catch (cause) {
     if (isENOENT(cause)) return { kind: 'missing' };
-    if (isNodeError(cause) && cause.code === 'EACCES') return { kind: 'non-executable' };
+    if (hasErrnoCode(cause, 'EACCES')) return { kind: 'non-executable' };
     return { kind: 'invalid' };
   }
 }
