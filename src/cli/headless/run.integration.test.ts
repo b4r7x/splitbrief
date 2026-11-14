@@ -31,9 +31,11 @@ import { emitRecoveryAndFailIfPending } from './outcome.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
+import type { Task } from '../../core/schemas/task.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { Implementer } from '../../engine/implementers/types.js';
 import type { Planner } from '../../engine/planners/types.js';
+import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init/options.js';
 import {
   consultCallAnswering,
   guidanceConsult,
@@ -57,8 +59,12 @@ import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 // The two terminal guards read state and session after the run; skipping the run
 // itself is what makes them reachable without driving a whole workflow.
-// `signal` arrives while the skipped run would be running.
-const skipTheRun: { enabled: boolean; signal?: 'SIGINT' | 'SIGTERM' | undefined } = {
+// `signal` arrives while the skipped run would be running; `onRun` sees each skipped pass.
+const skipTheRun: {
+  enabled: boolean;
+  signal?: 'SIGINT' | 'SIGTERM' | undefined;
+  onRun?: ((opts: RunWorkflowOptions) => void) | undefined;
+} = {
   enabled: false,
 };
 vi.mock('../../engine/orchestrator/run/workflow.js', async (importOriginal) => {
@@ -68,6 +74,7 @@ vi.mock('../../engine/orchestrator/run/workflow.js', async (importOriginal) => {
     ...actual,
     runWorkflow: async (opts: Parameters<typeof actual.runWorkflow>[0]) => {
       if (!skipTheRun.enabled) return trackWorkflow(actual.runWorkflow, opts);
+      skipTheRun.onRun?.(opts);
       if (skipTheRun.signal !== undefined) process.emit(skipTheRun.signal, skipTheRun.signal);
       return undefined;
     },
@@ -1191,6 +1198,7 @@ describe('runHeadless — the seat-down policy and the record', () => {
   afterEach(async () => {
     await settleTrackedWorkflows();
     skipTheRun.enabled = false;
+    skipTheRun.onRun = undefined;
     stderrSpy.mockRestore();
     stdoutSpy.mockRestore();
     vi.clearAllMocks();
@@ -2037,6 +2045,135 @@ describe('runHeadless — the seat-down policy and the record', () => {
     expect(switched).toHaveLength(1);
     expect(switched[0]).toMatchObject({ seat: 'build', auto: true, to: { tool: 'claude-code' } });
     expect(loadConfig(projectDir).config.implementer).toMatchObject({ tool: 'claude-code' });
+  });
+
+  it('takes the seat swap, the resume preflight, the run and the decided step in that order', async () => {
+    const { projectDir, sessionId, state: seeded } = seedAutoSwitchSession('headless-step-order');
+    const ref = { projectDir, sessionId };
+    const first = makeTask({ id: 'T001' });
+    const second = makeTask({ id: 'T002' });
+    const cannot = (task: Task) =>
+      buildRetryExhaustedRecoveryIssue({
+        task,
+        validationSummary: 'expected 1 to be 2',
+        attempts: 3,
+        allowRetryOverride: true,
+        cannot: 'The SDK has no payment API.',
+        createdAt: '2026-04-28T12:00:00.000Z',
+      });
+    const state = makeImplState([first, second], {
+      pendingRecovery: cannot(first),
+      decideForMe: true,
+    });
+    saveState(ref, state);
+    // The first pass leaves the declared fallback's halt on T002, the second a halt with a
+    // decided step; each pass marks where it ran among the records.
+    const autoHalt = seeded.pendingRecovery && {
+      ...seeded.pendingRecovery,
+      taskId: second.id,
+      affectedTaskIds: [second.id],
+    };
+    const halts = [autoHalt, cannot(second)];
+    skipTheRun.onRun = (opts) => {
+      const seat = opts.prepared.config.implementer;
+      const pending = opts.savedState?.pendingRecovery?.reason ?? 'none';
+      stdoutChunks.push(`run:${seat.kind === 'cli' ? seat.tool : seat.kind}:${pending}\n`);
+      const halt = halts.shift();
+      const saved = loadState(ref);
+      if (halt !== undefined && saved !== null) saveState(ref, { ...saved, pendingRecovery: halt });
+    };
+
+    await runHeadless({
+      prepared: preparedHeadlessExecution({ ...ref, feature: state.feature, resumeState: state }),
+      _prepare: async (input) => ({
+        kind: 'prepared',
+        execution: makePreparedExecution({
+          ...ref,
+          feature: state.feature,
+          config: input.effectiveConfig,
+          resumeState: input.resumeState,
+          active: reactivateExistingSession(ref),
+        }),
+      }),
+    });
+
+    const order = stdoutChunks
+      .join('')
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => {
+        if (line.startsWith('run:')) return line;
+        const record = HeadlessJsonRecordSchema.parse(JSON.parse(line));
+        return record.type === 'event' ? record.data.type : record.type;
+      });
+    expect(order).toEqual([
+      'recovery_action_selected',
+      'task_skipped',
+      'recovery_resolved',
+      'run:opencode:none',
+      'recovery_action_selected',
+      'seat_switched',
+      'recovery_resolved',
+      'run:claude-code:none',
+      'recovery_action_selected',
+      'task_skipped',
+      'recovery_resolved',
+      'run:claude-code:none',
+    ]);
+  });
+
+  it('prints no error of an earlier pass as the cause when the last pass fails without one', async () => {
+    const { projectDir, sessionId } = seedAutoSwitchSession('headless-stale-error');
+    const ref = { projectDir, sessionId };
+    const first = makeTask({ id: 'T001' });
+    const state = makeImplState([first, makeTask({ id: 'T002' })], { decideForMe: true });
+    saveState(ref, state);
+    // Pass 1 prints an error and leaves a halt with a decided step; pass 2 fails with no error.
+    let passes = 0;
+    skipTheRun.onRun = (opts) => {
+      passes += 1;
+      const saved = loadState(ref);
+      if (saved === null) return;
+      if (passes === 1) {
+        opts.tuiSink?.({
+          type: 'error',
+          ts: Date.now(),
+          phase: 'implementing',
+          message: 'The first pass failed on T001.',
+        });
+        saveState(ref, {
+          ...saved,
+          pendingRecovery: buildRetryExhaustedRecoveryIssue({
+            task: first,
+            validationSummary: 'expected 1 to be 2',
+            attempts: 3,
+            allowRetryOverride: true,
+            cannot: 'The SDK has no payment API.',
+            createdAt: '2026-04-28T12:00:00.000Z',
+          }),
+        });
+      } else {
+        saveState(ref, {
+          ...saved,
+          lastFailure: {
+            message: 'call failed',
+            step: { kind: 'review', cycle: 0 },
+            at: '2026-10-10T00:00:00.000Z',
+          },
+        });
+      }
+    };
+
+    await expect(
+      runHeadless({
+        prepared: preparedHeadlessExecution({ ...ref, feature: state.feature, resumeState: state }),
+        plain: true,
+      }),
+    ).rejects.toThrow('Workflow failed');
+    expect(passes).toBe(2);
+    expect(stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('')).not.toContain(
+      'The first pass failed on T001.',
+    );
   });
 
   it('halts on the declared fallback when --on-seat-down is halt', async () => {
