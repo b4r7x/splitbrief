@@ -9,22 +9,21 @@ import {
   requestSteer,
 } from '../features/workflow/run-requests/handlers.js';
 import { requestEndRun } from '../features/workflow/run-requests/end-run.js';
-import {
-  findLatestConversationRowAction,
-  type ConversationRowAction,
-} from '../features/workflow/conversation-rows/row-actions/build.js';
+import type { ConversationRowAction } from '../features/workflow/conversation-rows/row-actions/build.js';
 import { readConversationRowActions } from '../features/workflow/conversation-rows/row-actions/read.js';
-import { toggleFoldedRows } from '../features/workflow/conversation-rows/toggle-folded-rows.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
+import {
+  scrollConversation,
+  toggleLatestActivityBatch,
+  type ConversationScrollMetrics,
+} from '../features/workflow/layout/scroll-commands.js';
+import { acceptRun, rejectRun } from '../features/workflow/result/run-commands.js';
 import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
 import { resolveCopyValue } from '../features/workflow/copy-target.js';
 import type { Phase } from '../core/schemas/enums.js';
-import type { WorkflowState } from '../core/schemas/workflow/state.js';
-import type { RunRecord } from '../core/sessions/run/record.js';
-import type { SessionRef } from '../core/types/session-ref.js';
+import type { Config } from '../core/schemas/config.js';
 import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
-import { sessionsStore } from '../stores/project/sessions.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
@@ -44,57 +43,34 @@ import { skillsStore } from '../stores/project/skills.js';
 import { refreshSkills } from './refresh-skills.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
 import { resolveAttachment } from '../core/attachments/resolve.js';
-import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/discovery/detection.js';
 import { readActive } from '../core/sessions/active-pointer.js';
 import type {
-  AcceptRunResult,
   AttachImageResult,
   CopyResult,
   CopyTarget,
   QueueClearCommandResult,
-  RejectRunResult,
   RuntimeCommandContext,
-  ScrollCommandTarget,
-  ScrollConversationResult,
   SkillCommandOption,
   SkillToggleResult,
-  ToggleLatestActivityBatchResult,
 } from '../core/runtime/commands/types.js';
 import { plannerSupportsImages } from '../engine/providers/capabilities.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
-import { acceptRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
-import { runApplyAtRest } from '../engine/orchestrator/apply/at-rest.js';
-import { resolveReviewCadence } from '../core/config/runtime/resolve.js';
 import { appPreparationError } from './prepare-resume.js';
 import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
-import { undoApply } from '../engine/orchestrator/apply/restore.js';
-import { canUndoApply, type RunStatus } from '../core/sessions/run/status.js';
-import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
-import { closeRunIfOpen, rejectCheckoutRun } from '../engine/orchestrator/run/close.js';
-import { finalizeRunAtRest } from '../engine/orchestrator/session-lifecycle/finalize.js';
-import { addTuiEvent } from '../features/workflow/tui-sink.js';
 import { readRunRecord } from '../core/sessions/run/record-io.js';
 import { writeUiPrefs } from '../core/settings/ui-prefs.js';
 import { error } from '../utils/error.js';
-import { assertNever } from '../utils/type-guards.js';
 import type { RouteData } from '../stores/navigation/router.js';
 import { createDraftDocument } from '../core/composer/document.js';
 import { prepareDraftSubmission, type DraftSubmission } from '../core/composer/submission.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { formatSubmissionFailure } from '../components/composer/home-hint.js';
 import { plainUserMessage } from '../core/types/user-input.js';
-
-export interface ConversationScrollMetrics {
-  renderableCount: number;
-  totalHeight: number;
-  maxOffset: number;
-  viewportHeight: number;
-}
 
 // Workflow-feature operations the runtime commands need but that the page tree must not
 // reach into. `useRuntimeCommands` (below, in this module) wires the real
@@ -118,188 +94,12 @@ function routeSessionId(route: RouteData, projectDir: string): string | null {
   return readActive(projectDir);
 }
 
-function runCommandState(
-  record: RunRecord,
-):
-  | { kind: 'snapshot' }
-  | { kind: 'workspace'; state: WorkflowState }
-  | { kind: 'unavailable'; message: string } {
-  const { hydration } = record;
-  if (hydration.kind === 'invalid') {
-    return { kind: 'unavailable', message: `Cannot read this run: ${hydration.message}` };
-  }
-  if (hydration.kind === 'missing') return { kind: 'snapshot' };
-  const { state } = hydration;
-  return state.workspace !== undefined ? { kind: 'workspace', state } : { kind: 'snapshot' };
-}
-
-function isRunAtRest(ref: SessionRef): boolean {
-  const route = routerStore.get();
-  return (
-    route.screen === 'workflow' &&
-    route.execution.kind === 'at-rest' &&
-    route.run.ref.projectDir === ref.projectDir &&
-    route.run.ref.sessionId === ref.sessionId
-  );
-}
-
-function closedRunMessage(as: Extract<RunStatus, { kind: 'closed' }>['as']): string {
-  return as === 'undone' ? 'Apply already undone; the run is closed.' : `Run is closed (${as}).`;
-}
-
-async function acceptRun(
-  projectDir: string,
-  sessionId: string,
-  confirm: boolean,
-): Promise<AcceptRunResult> {
-  const record = readRunRecord({ projectDir, sessionId }, configStore.reviewNone());
-  const run = runCommandState(record);
-  if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
-  if (run.kind === 'snapshot') {
-    return { status: 'snapshot-accepted', ...(await acceptRunSnapshot(projectDir, sessionId)) };
-  }
-  const { state } = run;
-  if (record.status.kind === 'closed') {
-    return {
-      status: 'unavailable',
-      message:
-        record.status.as === 'applied'
-          ? 'Run already applied.'
-          : closedRunMessage(record.status.as),
-    };
-  }
-  if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
-    return { status: 'unavailable', message: 'Apply is unavailable while the run is active.' };
-  }
-  if (state.workspace?.kind !== 'checkout' && record.status.kind !== 'ready-to-apply') {
-    return { status: 'unavailable', message: 'Run is not ready to apply.' };
-  }
-  const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
-  if (state.workspace?.kind === 'checkout') {
-    const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state);
-    if (closure.closedNow) {
-      finalizeRunAtRest({ ref: record.ref, state: closure.state });
-      sessionsStore.refresh();
-    }
-    return { status: 'ended' };
-  }
-  configStore.reloadIfChanged();
-  const config = configStore.get().config;
-  if (config === null) throw appPreparationError.configNotLoaded();
-  const reviewNone = resolveReviewCadence(config) === 'none';
-  const result = await runApplyAtRest({
-    wctx: { projectDir, sessionId, bus },
-    state,
-    reviewNone,
-    overrideConfirmed: confirm,
-  });
-  if (result.outcome === 'halted' || result.outcome === 'restored') {
-    sessionsStore.refresh();
-    return { status: 'halted' };
-  }
-  if (result.outcome === 'review') return { status: 'review', reviewNone };
-  if (result.outcome === 'needs-confirmation') return { status: 'confirm-override' };
-  sessionsStore.refresh();
-  return { status: 'applied', files: result.files };
-}
-
-async function rejectRun(projectDir: string, sessionId: string): Promise<RejectRunResult> {
-  const record = readRunRecord({ projectDir, sessionId }, configStore.reviewNone());
-  const run = runCommandState(record);
-  if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
-  if (record.status.kind === 'closed' && !(run.kind === 'workspace' && canUndoApply(run.state))) {
-    return { status: 'unavailable', message: closedRunMessage(record.status.as) };
-  }
-  if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
-    return {
-      status: 'unavailable',
-      message: 'Run rejection is unavailable while the run is active.',
-    };
-  }
-  if (run.kind === 'snapshot') {
-    const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
-    return (await rejectCheckoutRun({ projectDir, sessionId, bus }, null)).result;
-  }
-  const { state } = run;
-  if (record.status.kind === 'closed') {
-    return { status: 'undone', ...(await undoApply(record.ref, state)) };
-  }
-  const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
-  if (state.workspace?.kind === 'checkout') {
-    const { result, closure } = await rejectCheckoutRun({ projectDir, sessionId, bus }, state);
-    if (closure?.closedNow === true) {
-      finalizeRunAtRest({ ref: record.ref, state: closure.state });
-      sessionsStore.refresh();
-    }
-    return result;
-  }
-  const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
-  if (closure.closedNow) {
-    finalizeRunAtRest({ ref: record.ref, state: closure.state });
-    sessionsStore.refresh();
-  }
-  return { status: 'discarded' };
-}
-
 function insertImageIntoComposer(input: Parameters<typeof attachImage>[0]): AttachImageResult {
   if (!input.supportsImages) return { ok: false, reason: 'no-vision' };
   const result = resolveAttachment({ input: input.path, projectDir: input.projectDir });
   if (!result.ok) return { ok: false, reason: result.reason };
   composerDraftStore.requestImage(result.attachment);
   return { ok: true, path: result.attachment.path };
-}
-
-function conversationPageStep(viewportHeight: number): number {
-  return Math.max(1, viewportHeight - 1);
-}
-
-function scrollConversation(
-  target: ScrollCommandTarget,
-  readScrollMetrics: WorkflowCommandPorts['readScrollMetrics'],
-): ScrollConversationResult {
-  const metrics = readScrollMetrics();
-  switch (target) {
-    case 'top':
-      conversationScrollStore.scrollUp({
-        renderableCount: metrics.renderableCount,
-        totalHeight: metrics.totalHeight,
-        step: metrics.maxOffset,
-        maxOffset: metrics.maxOffset,
-      });
-      return { status: 'scrolled' };
-    case 'bottom':
-      conversationScrollStore.scrollToBottom(metrics.renderableCount);
-      return { status: 'scrolled' };
-    case 'page-up':
-      conversationScrollStore.scrollUp({
-        renderableCount: metrics.renderableCount,
-        totalHeight: metrics.totalHeight,
-        step: conversationPageStep(metrics.viewportHeight),
-        maxOffset: metrics.maxOffset,
-      });
-      return { status: 'scrolled' };
-    case 'page-down':
-      conversationScrollStore.scrollDown(conversationPageStep(metrics.viewportHeight));
-      return { status: 'scrolled' };
-    default:
-      return assertNever(target);
-  }
-}
-
-function toggleLatestActivityBatch(
-  getRowActions: WorkflowCommandPorts['getRowActions'],
-): ToggleLatestActivityBatchResult {
-  const action = findLatestConversationRowAction(getRowActions(), 'toggle-activity-batch');
-  if (action === null) {
-    return {
-      status: 'unavailable',
-      message: 'No folded rows to expand.',
-    };
-  }
-
-  const expanded = !conversationScrollStore.get().expandedActivityBatches.has(action.key);
-  toggleFoldedRows(action.key);
-  return { status: 'toggled', expanded };
 }
 
 // Project skills first, then the ones already selected this session — the in-session selection set
@@ -336,6 +136,13 @@ async function copyTarget(
   const value = resolveCopyValue(target);
   if (value === null || value.length === 0) return 'empty';
   return copyToClipboard(value);
+}
+
+function readLoadedConfig(): Config {
+  configStore.reloadIfChanged();
+  const config = configStore.get().config;
+  if (config === null) throw appPreparationError.configNotLoaded();
+  return config;
 }
 
 export function buildCommandContext({
@@ -394,7 +201,8 @@ export function buildCommandContext({
     plannerSupportsImages: () => plannerSupportsImages(configStore.get().config, modelCacheStore),
     detachImage,
     listAttachments,
-    acceptRun,
+    acceptRun: (projectDir, sessionId, confirm) =>
+      acceptRun(projectDir, sessionId, confirm, readLoadedConfig),
     rejectRun,
     refreshRun: () => {
       const route = routerStore.get();

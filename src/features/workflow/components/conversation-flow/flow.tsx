@@ -2,7 +2,6 @@ import { INLINE_LABEL_GAP } from '../../conversation-rows/row-format/label-card.
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
-import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { getWorkflowSidebarWidth } from '../../layout/rect.js';
 import { controlsStore } from '../../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
@@ -12,18 +11,14 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
-import { formatTaskHeading } from '../../../../core/run-view/brief-labels.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import type { ConversationRowBlock } from '../../conversation-rows/types.js';
-import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
 import { publishTranscriptTail } from '../../conversation-rows/transcript-tail.js';
-import { splitConversationViewport } from '../../conversation-rows/viewport.js';
+import { conversationViewportWindow } from '../../conversation-rows/viewport.js';
 import { queuedBriefs } from '../../conversation-rows/queued-briefs.js';
-import { row } from '../../conversation-rows/row-format/rows.js';
 import { rowLeadingCells } from '../../conversation-rows/row-format/markers.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
-import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
 import { ConversationTranscriptRows } from './hover-rows.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
@@ -37,16 +32,6 @@ interface ConversationFlowProps {
   onScrollBelow?: ((label: string) => void) | undefined;
   /** Blocks appended after the run's own events, inside this one scroller. */
   tail?: readonly ConversationRowBlock[] | undefined;
-}
-
-function computeScrollBannerLabel(
-  linesAbove: number,
-  linesBelow: number,
-): { above: string; below: string } {
-  return {
-    above: linesAbove > 0 ? `${countNoun(linesAbove, 'line')} above` : '',
-    below: linesBelow > 0 ? `${countNoun(linesBelow, 'line')} below` : '',
-  };
 }
 
 export function ConversationFlow({
@@ -92,8 +77,6 @@ export function ConversationFlow({
   const restMark = routerStore.use(routeBriefMark);
   const closedAtRest = routerStore.use(routeClosedAtRest);
   const sections = useSections();
-  const viewportHeight = Math.max(0, height);
-  const cols = conversationWidth;
   const sidebarShowsTasks =
     getWorkflowSidebarWidth({
       cols: terminalSize.cols,
@@ -105,68 +88,20 @@ export function ConversationFlow({
     sidebarShowsTasks,
     closed: closedAtRest,
   });
-  const viewportSplit = splitConversationViewport({
-    viewportHeight,
-    sections,
-    pendingTaskCount: pendingTasks.length,
-  });
-  // A block too short for every pending brief spends its last row saying how many it left out,
-  // unless that row would be its only one: then the heading carries the overflow count.
-  const shownPending =
-    pendingTasks.length > viewportSplit.queuedRows && viewportSplit.queuedRows > 1
-      ? viewportSplit.queuedRows - 1
-      : Math.min(viewportSplit.queuedRows, pendingTasks.length);
-  const hiddenPending = pendingTasks.length - shownPending;
-  const queuedRows = pendingTasks.slice(0, shownPending).map((task) =>
-    row({
-      key: `queued-${task.id}`,
-      text: formatTaskHeading(task),
-      tone: 'textDim',
-      kind: 'task-header',
-    }),
-  );
-  const transcriptViewportHeight = viewportSplit.transcriptViewportHeight;
-  const {
-    newEventCount,
-    rows,
-    scrollOffset,
-    totalDynamicHeight,
-    viewportHeight: scrollViewportHeight,
-    activeRowKey,
-    activeTaskHeaderKey,
-  } = computeConversationRowScroll({
+  const view = conversationViewportWindow({
+    height,
+    pendingTasks,
+    isRunning,
     sections,
     expandedDiffs,
     expandedActivityBatches,
-    cols,
-    viewportHeight: transcriptViewportHeight,
+    cols: conversationWidth,
     rawScrollOffset,
     renderableCountAtScroll,
     heightAtScroll,
     streaming,
-    ...(tail !== undefined && { tail }),
+    tail,
   });
-
-  const visibleActiveRowKey =
-    isRunning && activeRowKey !== null && rows.some((candidate) => candidate.key === activeRowKey)
-      ? activeRowKey
-      : null;
-  const windowState = getScrollWindowState({
-    totalHeight: totalDynamicHeight,
-    viewportHeight: scrollViewportHeight,
-    scrollOffset,
-  });
-  const { above, below } = computeScrollBannerLabel(windowState.linesAbove, windowState.linesBelow);
-  const { innerHeight } = windowState;
-  const newEventsLabel =
-    newEventCount > 0 && scrollOffset > 0
-      ? `↓ ${newEventCount} new ${pluralize(newEventCount, 'event')}`
-      : '';
-  const belowLabel = [below, newEventsLabel].filter((part) => part !== '').join(SOFT_SEP);
-
-  // The transcript pane sizes to its rows so a short run does not leave a hole above whatever
-  // follows it. The empty-state line is a row too, and a zero-height pane would clip it.
-  const showsEmptyState = rows.length === 0;
 
   // The keys and the pointer read the transcript from outside React, so the tail has to reach
   // them, or `home`, `end` and a click stop at the last event the run wrote.
@@ -176,14 +111,14 @@ export function ConversationFlow({
   }, [tail]);
 
   useEffect(() => {
-    onScrollAbove?.(above);
+    onScrollAbove?.(view.above);
     return () => onScrollAbove?.('');
-  }, [above, onScrollAbove]);
+  }, [view.above, onScrollAbove]);
 
   useEffect(() => {
-    onScrollBelow?.(belowLabel);
+    onScrollBelow?.(view.below);
     return () => onScrollBelow?.('');
-  }, [belowLabel, onScrollBelow]);
+  }, [view.below, onScrollBelow]);
 
   return (
     <Box
@@ -195,26 +130,26 @@ export function ConversationFlow({
     >
       <Box
         width={conversationWidth}
-        height={Math.min(innerHeight, showsEmptyState ? 1 : rows.length)}
+        height={view.transcriptHeight}
         flexDirection="column"
         overflow="hidden"
         flexShrink={0}
       >
         <Box width="100%" flexDirection="column" flexShrink={0}>
-          {showsEmptyState && (
+          {view.showsEmptyState && (
             <Box marginLeft={rowLeadingCells('message')}>
               <Text color={t.textDim}>no events yet</Text>
             </Box>
           )}
           <ConversationTranscriptRows
-            rows={rows}
-            visibleActiveRowKey={visibleActiveRowKey}
-            activeTaskHeaderKey={activeTaskHeaderKey}
+            rows={view.rows}
+            visibleActiveRowKey={view.visibleActiveRowKey}
+            activeTaskHeaderKey={view.activeTaskHeaderKey}
             restMark={restMark}
           />
         </Box>
       </Box>
-      {viewportSplit.queuedRows > 0 && (
+      {view.queued.rows > 0 && (
         <Box flexDirection="column" width={conversationWidth} flexShrink={0} overflow="hidden">
           {/* One pad row and the heading — the two rows the viewport split charges this block as
               its chrome. A bare run of circles under a stretch of blank rows announces nothing;
@@ -228,15 +163,15 @@ export function ConversationFlow({
             marginLeft={rowLeadingCells('message')}
           >
             <Text color={t.textDim}>
-              {`Pending${INLINE_LABEL_GAP}${pendingTasks.length}${viewportSplit.queuedRows === 1 && hiddenPending > 0 ? `${SOFT_SEP}+${hiddenPending} more` : ''}`}
+              {`Pending${INLINE_LABEL_GAP}${pendingTasks.length}${view.queued.rows === 1 && view.queued.hidden > 0 ? `${SOFT_SEP}+${view.queued.hidden} more` : ''}`}
             </Text>
           </Box>
-          {queuedRows.map((queuedRow) => (
+          {view.queued.shown.map((queuedRow) => (
             <Box key={queuedRow.key} height={1} width={conversationWidth} flexShrink={0}>
               <ConversationRowView row={queuedRow} lifecycle="queued" />
             </Box>
           ))}
-          {hiddenPending > 0 && viewportSplit.queuedRows > 1 && (
+          {view.queued.hidden > 0 && view.queued.rows > 1 && (
             <Box
               height={1}
               width={conversationWidth}
@@ -244,7 +179,7 @@ export function ConversationFlow({
               flexShrink={0}
               marginLeft={rowLeadingCells('message')}
             >
-              <Text color={t.textDim}>{`+${hiddenPending} more`}</Text>
+              <Text color={t.textDim}>{`+${view.queued.hidden} more`}</Text>
             </Box>
           )}
         </Box>

@@ -20,6 +20,7 @@ import { fullSuiteNameRows, fullSuiteSegments } from './full-suite.js';
 import { compositeBlock, rowsBlock, wrappedSegmentsBlock } from '../blocks/compose.js';
 import { wrappedTextBlock } from '../blocks/wrapped-text.js';
 import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { truncateTerminalDisplayText } from '../../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { wrapWidthFor } from '../row-format/markers.js';
@@ -101,6 +102,26 @@ export function implementerDoneRowBlock(
       tone: 'textDim',
     }),
   ]);
+}
+
+export function implementerFailedRowBlock(
+  keyPrefix: string,
+  event: Extract<EngineEvent, { type: 'implementer_generate_failed' }>,
+  width: number,
+  expanded: boolean,
+): ConversationRowBlock | null {
+  const { value } = implementerFailureCard(event, width, expanded);
+  return wrappedSegmentsBlock({
+    keyPrefix,
+    segments: [
+      { text: CREW_SEAT_LABELS.build, tone: CREW_SEAT_ROLES.build },
+      { text: ' ', tone: 'textDim' },
+      { text: 'failed', tone: stateTone('failed') },
+      ...(value ? [{ text: `  ${value}`, tone: 'textDim' as const }] : []),
+    ],
+    width,
+    kind: 'card',
+  });
 }
 
 /** A call that continued an interrupted attempt of its brief kept that attempt's files. */

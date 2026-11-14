@@ -33,7 +33,7 @@ The invariant is simple: `totalDynamicHeight === projection.totalRows`. The scro
 
 ## Rendering Path
 
-`ConversationFlow` reads scroll state and streaming output, then calls `computeConversationRowScroll()`. That helper builds a cached row projection, asks `getScrollWindowState()` for the visible row window, and materializes only that window.
+`ConversationFlow` reads scroll state and streaming output, then calls `conversationViewportWindow()`. That function splits the viewport and calls `computeConversationRowScroll()`, which builds a cached row projection, asks `getScrollWindowState()` for the visible row window, and materializes only that window.
 
 The current projection path is:
 
@@ -96,7 +96,7 @@ Saved brief-load errors reserve no rows in this pane.
 to both `ConversationFlow` and the keyboard and mouse snapshot. It excludes the running brief,
 even when recovery resets it to `pending`. It returns no queued tasks while the sidebar shows tasks
 or the summary of a closed run occupies the transcript tail. The snapshot reads the tail blocks with
-`readTranscriptTail()`. Both callers pass the resulting count to `splitConversationViewport`.
+`readTranscriptTail()`. The snapshot passes the resulting count to `splitConversationViewport`. `ConversationFlow` passes the list to `conversationViewportWindow()`, which passes the count to `splitConversationViewport`.
 
 ## Projection Performance
 

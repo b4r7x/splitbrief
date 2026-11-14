@@ -1,20 +1,15 @@
 import { INLINE_LABEL_GAP } from '../row-format/label-card.js';
-import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
-import { formatRecordedSeatChangeIdentities } from '../../display/recorded-seat-identity.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { setAsideLabel } from '../../../../core/review/verdict.js';
-import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { runnerActivityBatchRowBlock } from '../activity/rows.js';
 import { borderedCardRowsBlock } from '../blocks/bordered-card.js';
 import { calloutRowsBlock } from '../blocks/callout.js';
-import { wrapWidthFor } from '../row-format/markers.js';
 import { segmentedRow } from '../row-format/rows.js';
 import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } from '../types.js';
 import {
@@ -23,7 +18,6 @@ import {
   rowsBlock,
   sectionSpacerBlock,
   wrappedSegmentsBlock,
-  wholeSegmentsBlock,
 } from '../blocks/compose.js';
 import { promptTextBlock, wrappedTextBlock } from '../blocks/wrapped-text.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
@@ -39,7 +33,7 @@ import {
   escalateRowBlock,
   fullSuiteRowBlock,
   implementerDoneRowBlock,
-  implementerFailureCard,
+  implementerFailedRowBlock,
   reviewChecksRowBlock,
   reviewNoneRowBlock,
   runningImplementerRowBlock,
@@ -50,12 +44,12 @@ import { isTranscriptRowlessEvent } from './visibility.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-cancel.js';
 import { formatResetAt } from '../../../../core/recovery/reset-clock.js';
 import { stopPoint } from '../../display/step-words.js';
-import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import type { SettledTranscriptSection } from '../transcript-walk/types.js';
-import { phaseStage } from '../../../../core/phases/rail.js';
 import { queueCopy } from '../../queue-copy.js';
 import { formatRejectRunMessage } from '../../../../core/runtime/commands/messages.js';
-import { recoveryCardBlock, recoveryActionSegments } from './recovery.js';
+import { recoveryActionFailedRowBlock } from './recovery.js';
+import { queueRowBlock } from './queue.js';
+import { seatSwitchedRowBlock } from './seat-switched.js';
 import { consultAnsweredSegments } from './consult.js';
 
 const DISCOVERED_VALIDATION_REFUSED = 'discovered_validation_refused';
@@ -101,20 +95,7 @@ export function eventRowBlock(options: {
       ]);
     }
     case 'recovery_action_failed':
-      return recoveryCardBlock(
-        keyPrefix,
-        [
-          [
-            ...recoveryActionSegments(event),
-            { text: ' ', tone: 'textDim' },
-            { text: 'blocked', tone: stateTone('failed') },
-            { text: ': ', tone: 'textDim' },
-            { text: event.message, tone: 'textDim' },
-          ],
-        ],
-        ctx.width,
-        stateTone('failed'),
-      );
+      return recoveryActionFailedRowBlock(keyPrefix, event, ctx.width);
     // `walkTranscript` folds these into one Recovery row, painted by `recoveryRowBlock`.
     case 'recovery_prompted':
     case 'recovery_action_selected':
@@ -201,66 +182,8 @@ export function eventRowBlock(options: {
         width: ctx.width,
         tone: 'textDim',
       });
-    case 'seat_switched': {
-      const identities = formatRecordedSeatChangeIdentities(
-        event.from,
-        event.to,
-        CREW_SEAT_ROLES[event.seat],
-      );
-      // The prefix (the seat label, the arrow) never ends a row: an identity that does not fit
-      // beside it splits at its ` · ` parts, and the prefix stays with the first part. When the
-      // two seats do not share one row, the arrow and the new seat start their own row.
-      const budget = wrapWidthFor('message', ctx.width);
-      const cells = (segments: readonly ConversationRowSegment[]): number =>
-        getTerminalCellWidth(segments.map((segment) => segment.text).join(''));
-      const parts = (
-        identity: string,
-        prefix: ConversationRowSegment[],
-      ): ConversationRowSegment[][] => {
-        const pieces = identity
-          .split(SOFT_SEP)
-          .map((text, index): ConversationRowSegment[] => [
-            ...(index === 0
-              ? prefix
-              : [{ text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment]),
-            { text, tone: CREW_SEAT_ROLES[event.seat] },
-          ]);
-        return cells(pieces.flat()) <= budget ? [pieces.flat()] : pieces;
-      };
-      const from = parts(identities.from, [
-        { text: CREW_SEAT_LABELS[event.seat], tone: CREW_SEAT_ROLES[event.seat] },
-        { text: '  ', tone: 'textDim' },
-      ]);
-      const to = parts(identities.to, [{ text: arrowSep(), tone: 'textDim' }]);
-      const destination = [
-        ...to,
-        ...(event.auto
-          ? [
-              [
-                { text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment,
-                { text: 'automatic fallback', tone: 'textDim' } satisfies ConversationRowSegment,
-              ],
-            ]
-          : []),
-        ...(options.causeInRecovery
-          ? []
-          : [
-              [
-                { text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment,
-                {
-                  text: formatSeatSwitchCause(event),
-                  tone: 'textDim',
-                } satisfies ConversationRowSegment,
-              ],
-            ]),
-      ];
-      return cells([...from, ...to].flat()) <= budget
-        ? wholeSegmentsBlock(keyPrefix, [...from, ...destination], ctx.width, 'message')
-        : compositeBlock(keyPrefix, [
-            wholeSegmentsBlock(`${keyPrefix}-from`, from, ctx.width, 'message'),
-            wholeSegmentsBlock(`${keyPrefix}-to`, destination, ctx.width, 'message'),
-          ]);
-    }
+    case 'seat_switched':
+      return seatSwitchedRowBlock(keyPrefix, event, ctx.width, options.causeInRecovery);
     case 'review_completed': {
       const cards: ConversationRowBlock[] = [
         ...(event.blockingFindings ?? []).map((finding, index) =>
@@ -311,20 +234,8 @@ export function eventRowBlock(options: {
       return runningImplementerRowBlock(keyPrefix, event, ctx);
     case 'implementer_generate_done':
       return implementerDoneRowBlock(keyPrefix, event, ctx, expanded);
-    case 'implementer_generate_failed': {
-      const { value } = implementerFailureCard(event, ctx.width, expanded);
-      return wrappedSegmentsBlock({
-        keyPrefix,
-        segments: [
-          { text: CREW_SEAT_LABELS.build, tone: CREW_SEAT_ROLES.build },
-          { text: ' ', tone: 'textDim' },
-          { text: 'failed', tone: stateTone('failed') },
-          ...(value ? [{ text: `  ${value}`, tone: 'textDim' as const }] : []),
-        ],
-        width: ctx.width,
-        kind: 'card',
-      });
-    }
+    case 'implementer_generate_failed':
+      return implementerFailedRowBlock(keyPrefix, event, ctx.width, expanded);
     case 'validate':
       return validateRowBlock(keyPrefix, event, ctx.width);
     case 'review_checks':
@@ -362,71 +273,10 @@ export function eventRowBlock(options: {
         labelTone: 'success',
       });
     case 'message_queued':
-    case 'message_injected_native': {
-      const seat =
-        event.type === 'message_injected_native' ? 'plan' : (event.seat ?? phaseStage(event.phase));
-      const copy = queueCopy({
-        seat,
-        taskId: event.type === 'message_queued' ? event.taskId : undefined,
-        steerable: event.type === 'message_queued' && event.steerable,
-        checking: event.phase === 'validating-task',
-        starting: event.type === 'message_queued' ? event.starting : undefined,
-      });
-      const header =
-        event.type === 'message_injected_native'
-          ? { ...copy.delivered, tone: 'success' as const }
-          : event.origin === 'clarification'
-            ? {
-                label: 'Answered',
-                value: 'recorded — applied at the next planner call',
-                tone: 'success' as const,
-              }
-            : { ...copy.queued, tone: 'info' as const };
-      return compositeBlock(keyPrefix, [
-        cardRowsBlock({
-          keyPrefix: `${keyPrefix}-header-0`,
-          label: header.label,
-          labelGap: header.label === 'Answered' ? undefined : INLINE_LABEL_GAP,
-          value: header.value,
-          width: ctx.width,
-          labelTone: header.tone,
-          valueTone: 'textDim',
-          markerTone: header.tone,
-        }),
-        event.preview
-          ? wrappedTextBlock({
-              keyPrefix: `${keyPrefix}-preview-1`,
-              text: event.preview,
-              width: ctx.width,
-              tone: 'text',
-            })
-          : null,
-      ]);
-    }
-    case 'queue_drained': {
-      const seat = event.seat ?? phaseStage(event.phase);
-      const copy = queueCopy({ seat, taskId: event.taskId, count: event.count, via: event.via });
-      return cardRowsBlock({
-        keyPrefix,
-        label: copy.delivered.label,
-        labelGap: INLINE_LABEL_GAP,
-        value: copy.delivered.value,
-        width: ctx.width,
-        labelTone: 'success',
-        valueTone: 'textDim',
-        markerTone: 'success',
-      });
-    }
-    case 'queue_cleared': {
-      const copy = queueCopy({ seat: null, count: event.count });
-      return cardRowsBlock({
-        keyPrefix,
-        label: copy.cleared.label,
-        value: copy.cleared.value,
-        width: ctx.width,
-        labelTone: 'textDim',
-      });
-    }
+    case 'message_injected_native':
+    case 'queue_drained':
+    case 'queue_cleared':
+      return queueRowBlock(keyPrefix, event, ctx.width);
     case 'user_message': {
       const body =
         event.qa !== undefined && event.qa.length > 0

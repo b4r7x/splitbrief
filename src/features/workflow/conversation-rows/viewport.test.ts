@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Section } from '../../../core/sections/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
+import type { WorkflowTask } from '../../../core/run-view/briefs.js';
+import { rowText } from './row-format/rows.js';
 import { computeConversationRowScroll } from './scroll.js';
-import { splitConversationViewport } from './viewport.js';
+import { conversationViewportWindow, splitConversationViewport } from './viewport.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
@@ -117,5 +119,93 @@ describe('splitConversationViewport — bookend budget', () => {
     });
     expect(split.transcriptViewportHeight).toBe(scroll.viewportHeight);
     expect(scroll.scrollOffset).toBe(scroll.maxOffset);
+  });
+});
+
+describe('conversationViewportWindow', () => {
+  const liveSections: Section<EngineEvent>[] = [
+    {
+      type: 'events',
+      items: Array.from({ length: 30 }, (_, index) => plannerText(index)),
+      startIndex: 0,
+    },
+  ];
+
+  function pending(count: number): WorkflowTask[] {
+    return Array.from({ length: count }, (_, index) => ({
+      id: `T00${index + 1}`,
+      title: `brief ${index + 1}`,
+      status: 'pending' as const,
+    }));
+  }
+
+  function viewportWindow(input: {
+    height: number;
+    sections?: Section<EngineEvent>[];
+    pendingTasks?: WorkflowTask[];
+    rawScrollOffset?: number;
+    renderableCountAtScroll?: number;
+    heightAtScroll?: number;
+  }) {
+    return conversationViewportWindow({
+      height: input.height,
+      pendingTasks: input.pendingTasks ?? [],
+      isRunning: false,
+      sections: input.sections ?? liveSections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 80,
+      rawScrollOffset: input.rawScrollOffset ?? 0,
+      renderableCountAtScroll: input.renderableCountAtScroll ?? 0,
+      heightAtScroll: input.heightAtScroll ?? 0,
+      streaming,
+      tail: undefined,
+    });
+  }
+
+  it.each([
+    [20, 2, 2, ['T001 brief 1', 'T002 brief 2'], 0],
+    [6, 4, 1, ['T001 brief 1'], 3],
+    [20, 5, 3, ['T001 brief 1', 'T002 brief 2'], 3],
+  ] as const)(
+    'at %i rows with %i pending briefs gives the block %i rows',
+    (height, count, rows, shown, hidden) => {
+      const view = viewportWindow({ height, pendingTasks: pending(count) });
+
+      expect(view.queued.rows).toBe(rows);
+      expect(view.queued.shown.map(rowText)).toEqual(shown);
+      expect(view.queued.hidden).toBe(hidden);
+    },
+  );
+
+  it('ends the transcript window on the last row when the user did not scroll', () => {
+    const view = viewportWindow({ height: 10 });
+
+    expect(view.rows.map(rowText).at(-1)).toBe('event 29');
+    expect(view.rows).toHaveLength(10);
+    expect(view.transcriptHeight).toBe(10);
+    expect(view.above).toBe('49 lines above');
+    expect(view.below).toBe('');
+  });
+
+  it('names the rows below and the new events when the user scrolled up', () => {
+    const view = viewportWindow({
+      height: 10,
+      rawScrollOffset: 3,
+      renderableCountAtScroll: 28,
+      heightAtScroll: 59,
+    });
+
+    expect(view.rows.map(rowText).at(0)).toBe('event 23');
+    expect(view.above).toBe('46 lines above');
+    expect(view.below).toBe('3 lines below · ↓ 2 new events');
+  });
+
+  it('keeps one row for the empty state of a run with no events', () => {
+    const view = viewportWindow({ height: 10, sections: [] });
+
+    expect(view.rows).toEqual([]);
+    expect(view.showsEmptyState).toBe(true);
+    expect(view.transcriptHeight).toBe(1);
   });
 });

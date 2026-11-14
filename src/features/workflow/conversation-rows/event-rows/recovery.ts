@@ -86,8 +86,29 @@ export function recoveryRowBlock(
   );
 }
 
+export function recoveryActionFailedRowBlock(
+  keyPrefix: string,
+  event: EngineEventOf<'recovery_action_failed'>,
+  width: number,
+): ConversationRowBlock | null {
+  return recoveryCardBlock(
+    keyPrefix,
+    [
+      [
+        ...recoveryActionSegments(event),
+        { text: ' ', tone: 'textDim' },
+        { text: 'blocked', tone: stateTone('failed') },
+        { text: ': ', tone: 'textDim' },
+        { text: event.message, tone: 'textDim' },
+      ],
+    ],
+    width,
+    stateTone('failed'),
+  );
+}
+
 // Each chunk moves to the next row whole, so `→ skipped` never splits from its arrow.
-export function recoveryCardBlock(
+function recoveryCardBlock(
   keyPrefix: string,
   [first, ...rest]: readonly [
     readonly ConversationRowSegment[],
@@ -105,7 +126,7 @@ export function recoveryCardBlock(
   );
 }
 
-export function recoveryActionSegments(
+function recoveryActionSegments(
   event: Pick<
     EngineEventOf<'recovery_action_selected'>,
     'action' | 'reason' | 'seat' | 'reviewNone'
