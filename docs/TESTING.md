@@ -162,7 +162,7 @@ npm run test:integration -- src/engine/orchestrator/run/workflow.integration.tes
 npm test -- src/engine/orchestrator/session-lifecycle/finalize.test.ts
 npm run test:integration -- src/engine/orchestrator/session-lifecycle/shutdown.integration.test.ts
 npm run test:integration -- testing/integration/cli/headless-outcomes.test.ts
-npm test -- src/features/workflow/recovery-prompt.test.ts
+npm test -- src/features/workflow/recovery/prompt-text.test.ts
 npm run test:integration -- testing/integration/orchestrator/run-lifecycle-matrix.test.ts
 ```
 

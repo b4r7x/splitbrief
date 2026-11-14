@@ -1,0 +1,641 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeBriefBoundaryEvents } from '#testing/helpers/events/task.js';
+import { makeInputMode } from '#testing/helpers/review-input-mode.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
+import { createDraftDocument } from '../../../core/composer/document.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
+import { setActiveTerminalHandover } from '../../../lib/terminal/editor-handover.js';
+import { approvalPromptStore, openApprovalPrompt } from '../../../stores/prompts/approval.js';
+import { composerDraftStore } from '../../../stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../../stores/ui/composer-live.js';
+import { editorStore } from '../../../stores/ui/editor.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
+import { reviewKeysStore } from '../../../stores/ui/review-keys.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
+import { reviewStore } from '../../../stores/workflow/review.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
+import { clearAllHandlers, setQueueHandler } from '../run-requests/handlers.js';
+import { REVIEW_UNKNOWN_COMMAND_MESSAGE, reviewOpeningPromptMessage } from './commands.js';
+import { openReviewFileExternally } from './external-edit.js';
+import { createReviewInputHandler, type ReviewInputEffects } from './input-handler.js';
+
+const CONFIRM_WAITING_NOTE = 'Confirm or deny the prompt first. Tab back to the actions.';
+
+describe('review input ownership', () => {
+  beforeEach(() => {
+    feedbackStore.reset();
+    reviewStore.reset();
+    runViewStore.__testReset({ phase: 'reviewing-briefs' });
+    lifecycleStore.__testReset({ status: 'running' });
+  });
+
+  afterEach(() => {
+    feedbackStore.reset();
+    reviewStore.reset();
+    lifecycleStore.reset();
+    composerLiveStore.reset();
+  });
+
+  it('does not parse composer text as a review shortcut', async () => {
+    const inputMode = makeInputMode('normal');
+
+    await createReviewInputHandler(inputMode).handleInput(plainUserMessage('q'));
+
+    expect(inputMode.resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBe(reviewOpeningPromptMessage());
+  });
+
+  it('passes question/editor-owned text through without shortcut parsing', async () => {
+    const inputMode = makeInputMode('question');
+    const document = createDraftDocument('q');
+    composerLiveStore.setDraft(document);
+
+    await createReviewInputHandler(inputMode).handleInput(plainUserMessage('q'));
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({ message: plainUserMessage('q'), document });
+  });
+
+  it('uses the same typed refusal path for the review end-run key', async () => {
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode).handleInput(plainUserMessage('q'));
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false, action: 'end-run' });
+  });
+});
+
+describe('review input effects', () => {
+  let tempDir: string;
+  let stdinPause = vi.fn<() => void>();
+
+  function makeEffects(enqueue: ReviewInputEffects['enqueue'] = async () => null) {
+    return {
+      openExternalEditor: vi.fn<ReviewInputEffects['openExternalEditor']>(async () => {}),
+      enqueue: vi.fn<ReviewInputEffects['enqueue']>(enqueue),
+    };
+  }
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'review-effects-test-'));
+    feedbackStore.reset();
+    reviewStore.reset();
+    composerDraftStore.reset();
+    reviewKeysStore.reset();
+    approvalPromptStore.__testReset();
+    clearAllHandlers();
+    runViewStore.__testReset({ phase: 'reviewing-briefs' });
+    lifecycleStore.__testReset({ status: 'running' });
+    seedBriefs();
+    vi.stubEnv('VISUAL', 'mock-editor');
+    // The handover is the last thing that runs before the editor is spawned, so a paused
+    // stdin is the proof a real process was about to take the terminal.
+    stdinPause = vi.fn();
+    setActiveTerminalHandover({
+      fullscreen: false,
+      mouse: false,
+      sourceStdin: { isRaw: false, pause: stdinPause, resume: vi.fn() },
+    });
+  });
+
+  afterEach(() => {
+    setActiveTerminalHandover(undefined);
+    clearAllHandlers();
+    feedbackStore.reset();
+    reviewStore.reset();
+    lifecycleStore.reset();
+    composerLiveStore.reset();
+    approvalPromptStore.__testReset();
+    stopStore.__testReset();
+    vi.unstubAllEnvs();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it.each(['e', 'edit', 'edit-file'])(
+    'opens plan.json in the editor overlay for %s and never reaches the terminal handover',
+    async (command) => {
+      runViewStore.__testReset({ phase: 'reviewing-plan' });
+      lifecycleStore.__testReset({ status: 'running' });
+      const reviewFile = join(tempDir, 'plan.md');
+      writeFileSync(reviewFile, '# Plan\n');
+      writeFileSync(join(tempDir, 'plan.json'), '{}\n');
+      reviewStore.setReviewFile(reviewFile);
+      const inputMode = makeInputMode('review');
+      const effects = makeEffects();
+
+      await createReviewInputHandler(inputMode, effects).handleInput(plainUserMessage(command));
+
+      const editor = editorStore.get();
+      expect(editor.status === 'open' ? editor.filePath : null).toBe(join(tempDir, 'plan.json'));
+      expect(overlayStore.get().active).toBe('editor');
+      expect(effects.openExternalEditor).not.toHaveBeenCalled();
+      expect(stdinPause).not.toHaveBeenCalled();
+      expect(inputMode.resolve).not.toHaveBeenCalled();
+      editorStore.close();
+      overlayStore.close();
+    },
+  );
+
+  it.each([
+    { command: 'y', resolved: { approved: true } },
+    { command: 'q', resolved: { approved: false, action: 'end-run' } },
+    {
+      command: 'comment more evidence',
+      resolved: { approved: false, action: 'revise', message: plainUserMessage('more evidence') },
+    },
+  ])('resolves $command the same way with the effects supplied', async ({ command, resolved }) => {
+    const inputMode = makeInputMode('review');
+    const effects = makeEffects();
+
+    await createReviewInputHandler(inputMode, effects).handleInput(plainUserMessage(command));
+
+    expect(inputMode.resolve).toHaveBeenCalledWith(resolved);
+    expect(effects.openExternalEditor).not.toHaveBeenCalled();
+  });
+
+  it('sends free text typed at the plan card back to the planner as a correction', async () => {
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const reviewFile = join(tempDir, 'plan.md');
+    writeFileSync(reviewFile, 'Greet people by name\n');
+    reviewStore.setReviewFile(reviewFile);
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(
+      plainUserMessage('  Greet in Polish '),
+    );
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({
+      approved: false,
+      action: 'revise',
+      message: plainUserMessage('  Greet in Polish '),
+    });
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('sends an old hidden word as a correction at the plan card', async () => {
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const reviewFile = join(tempDir, 'plan.md');
+    writeFileSync(reviewFile, '# Plan\n');
+    writeFileSync(join(tempDir, 'plan.json'), '{}\n');
+    reviewStore.setReviewFile(reviewFile);
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(
+      plainUserMessage('status'),
+    );
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({
+      approved: false,
+      action: 'revise',
+      message: plainUserMessage('status'),
+    });
+  });
+
+  it('opens the comment draft for a bare c instead of sending the letter to the planner', async () => {
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const reviewFile = join(tempDir, 'plan.md');
+    writeFileSync(reviewFile, 'Greet people by name\n');
+    reviewStore.setReviewFile(reviewFile);
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(plainUserMessage('c'));
+
+    expect(inputMode.resolve).not.toHaveBeenCalled();
+    expect(reviewKeysStore.get().requested).toBe(true);
+    expect(composerDraftStore.get().request).toBeNull();
+  });
+
+  it('sends the whole draft as the correction after Request changes, a command word included', async () => {
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const reviewFile = join(tempDir, 'plan.md');
+    writeFileSync(reviewFile, 'Greet people by name\n');
+    reviewStore.setReviewFile(reviewFile);
+    reviewKeysStore.requestComment();
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(plainUserMessage('edit'));
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({
+      approved: false,
+      action: 'revise',
+      message: plainUserMessage('edit'),
+    });
+  });
+
+  it('answers a question through the same resolve with the effects supplied', async () => {
+    const inputMode = makeInputMode('question');
+    const effects = makeEffects();
+    const document = createDraftDocument('use the other adapter');
+    composerLiveStore.setDraft(document);
+
+    await createReviewInputHandler(inputMode, effects).handleInput(
+      plainUserMessage('use the other adapter'),
+    );
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({
+      message: plainUserMessage('use the other adapter'),
+      document,
+    });
+    expect(effects.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: 'accepted',
+      outcome: { status: 'accepted' as const, messageId: 'm-1' },
+      feedback: { message: 'Queued for PLAN · ctrl+⏎ sends now', isError: false },
+    },
+    {
+      label: 'rejected',
+      outcome: {
+        status: 'rejected' as const,
+        reason: 'queue-full' as const,
+        message: 'Queue full (50 messages). Wait for the current phase to complete.',
+      },
+      feedback: {
+        message: 'Queue full (50 messages). Wait for the current phase to complete.',
+        isError: false,
+      },
+    },
+    {
+      label: 'no workflow',
+      outcome: null,
+      feedback: { message: 'Cannot queue message: no active workflow.', isError: false },
+    },
+  ])(
+    'queues live planner input through the supplied enqueue — $label',
+    async ({ outcome, feedback }) => {
+      runViewStore.__testReset({ phase: 'researching' });
+      lifecycleStore.__testReset({ status: 'running' });
+      const registered = vi.fn(() => ({ status: 'accepted' as const, messageId: 'from-the-run' }));
+      setQueueHandler(registered);
+      const effects = makeEffects(async () => outcome);
+
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('  steer it  '),
+      );
+
+      expect(effects.enqueue).toHaveBeenCalledWith(plainUserMessage('  steer it  '), 'researching');
+      expect(registered).not.toHaveBeenCalled();
+      expect(feedbackStore.get()).toEqual(feedback);
+    },
+  );
+
+  it.each([
+    ['implementing', 'build', 'BUILD on T003'],
+    ['planning', 'plan', 'PLAN'],
+    ['final-review', 'review', 'REVIEW'],
+  ] as const)(
+    'confirms tool-boundary delivery to %s using the call attached at submit',
+    async (phase, seat, target) => {
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
+      seedBriefs({
+        currentTask: 1,
+        totalTasks: 1,
+        tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+      });
+      addEvent({ type: 'steerable_call', ts: 1, phase, seat, taskId: 'T003' });
+      const effects = makeEffects(async () => {
+        addEvent({ type: 'steerable_call', ts: 2, phase });
+        return { status: 'accepted', messageId: 'm-1' };
+      });
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('smaller diffs'),
+      );
+      expect(feedbackStore.get()).toEqual({
+        message: `Sent to ${target} · read after this tool · ctrl+⏎ interrupts`,
+        isError: false,
+      });
+    },
+  );
+
+  it('keeps queue feedback when the attached call belongs to another seat', async () => {
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
+    addEvent({ type: 'steerable_call', ts: 1, phase: 'final-review', seat: 'plan' });
+    const effects = makeEffects(async () => ({ status: 'accepted', messageId: 'm-1' }));
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('check the icons'),
+    );
+    expect(feedbackStore.get().message).toBe('Queued for REVIEW · ctrl+⏎ sends now');
+  });
+
+  it('queues a correction typed during a brief instead of refusing it', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    seedBriefs({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+    });
+    const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
+
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('  smaller diffs  '),
+    );
+
+    expect(effects.enqueue).toHaveBeenCalledWith(
+      plainUserMessage('  smaller diffs  '),
+      'implementing',
+    );
+    expect(feedbackStore.get()).toEqual({
+      message: 'Queued for BUILD on T003 · ctrl+⏎ sends now',
+      isError: false,
+    });
+  });
+
+  it('names no key in the queue notice while a stop is in progress', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    seedBriefs({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T001', title: 'Running brief', status: 'in_progress' }],
+    });
+    stopStore.request('stop-now');
+    const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
+
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('also fix the typo'),
+    );
+
+    expect(feedbackStore.get()).toEqual({ message: 'Queued for BUILD on T001', isError: false });
+  });
+
+  it.each([
+    ['run-start', 'Queued for BUILD on T001 · ctrl+⏎ sends now'],
+    ['between-briefs', 'Queued for BUILD on T002 · ctrl+⏎ sends now'],
+    ['after-last-brief', 'Queued for BUILD · ctrl+⏎ sends now'],
+  ] as const)(
+    'names the brief BUILD reads a correction on at the %s boundary, where no brief runs',
+    async (boundary, message) => {
+      runViewStore.__testReset({ phase: 'implementing' });
+      lifecycleStore.__testReset({ status: 'running' });
+      for (const event of makeBriefBoundaryEvents(boundary)) addEvent(event);
+      const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
+
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('smaller diffs'),
+      );
+
+      expect(feedbackStore.get()).toEqual({ message, isError: false });
+    },
+  );
+
+  it('confirms a message queued during the final review is for the reviewer', async () => {
+    runViewStore.__testReset({ phase: 'final-review' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
+
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('check the icons'),
+    );
+
+    expect(effects.enqueue).toHaveBeenCalledWith(
+      plainUserMessage('check the icons'),
+      'final-review',
+    );
+    expect(feedbackStore.get()).toEqual({
+      message: 'Queued for REVIEW · ctrl+⏎ sends now',
+      isError: false,
+    });
+  });
+
+  it('restores the draft when the queue refuses a correction typed during a brief', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const effects = makeEffects(async () => ({
+      status: 'rejected' as const,
+      reason: 'queue-full' as const,
+      message: 'Queue full (50 messages). Wait for the current phase to complete.',
+    }));
+
+    composerLiveStore.setDraft(createDraftDocument('keep me'));
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('keep me'),
+    );
+
+    expect(feedbackStore.get()).toEqual({
+      message: 'Queue full (50 messages). Wait for the current phase to complete.',
+      isError: false,
+    });
+    expect(composerDraftStore.get().request?.value).toBe('keep me');
+  });
+
+  it('keeps the failure voice when the queue itself fails', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const effects = makeEffects(async () => ({
+      status: 'rejected' as const,
+      reason: 'failed' as const,
+      message: 'Cannot queue message: workflow queue failed.',
+    }));
+
+    composerLiveStore.setDraft(createDraftDocument('keep me'));
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('keep me'),
+    );
+
+    expect(feedbackStore.get()).toEqual({
+      message: 'Cannot queue message: workflow queue failed.',
+      isError: true,
+    });
+    expect(composerDraftStore.get().request?.value).toBe('keep me');
+  });
+
+  it.each([
+    ['complete', { message: null, isError: false }],
+    ['reviewing-plan', { message: reviewOpeningPromptMessage(), isError: false }],
+  ] as const)(
+    'gives plain words back to the composer in %s, where no seat takes them',
+    async (phase, feedback) => {
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
+      const effects = makeEffects();
+
+      composerLiveStore.setDraft(createDraftDocument('keep the parser'));
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('keep the parser'),
+      );
+
+      expect(effects.enqueue).not.toHaveBeenCalled();
+      expect(composerDraftStore.get().request).toMatchObject({
+        kind: 'prepend',
+        value: 'keep the parser',
+      });
+      expect(feedbackStore.get()).toEqual(feedback);
+    },
+  );
+
+  it.each(['reviewing-spec', 'reviewing-plan', 'reviewing-briefs'] as const)(
+    'names the confirmation that waits when words are sent under it in %s',
+    async (phase) => {
+      runViewStore.__testReset({ phase });
+      lifecycleStore.__testReset({ status: 'running' });
+      void openApprovalPrompt({
+        tier: 'confirm',
+        actionClass: 'destructive',
+        actionDescription: '.splitbrief/state.json',
+        phase: 'reviewing-plan',
+      });
+      const effects = makeEffects();
+
+      composerLiveStore.setDraft(createDraftDocument('keep the parser'));
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('keep the parser'),
+      );
+
+      expect(effects.enqueue).not.toHaveBeenCalled();
+      expect(composerDraftStore.get().request).toMatchObject({
+        kind: 'prepend',
+        value: 'keep the parser',
+      });
+      expect(feedbackStore.get()).toEqual({ message: CONFIRM_WAITING_NOTE, isError: false });
+    },
+  );
+
+  it('refuses unknown review commands in the neutral voice', async () => {
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(
+      plainUserMessage('what now'),
+    );
+
+    expect(inputMode.resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toEqual({
+      message: REVIEW_UNKNOWN_COMMAND_MESSAGE,
+      isError: false,
+    });
+  });
+
+  it('keeps the registered queue handler when no effects are supplied', async () => {
+    runViewStore.__testReset({ phase: 'specifying' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const registered = vi.fn(() => ({ status: 'accepted' as const, messageId: 'from-the-run' }));
+    setQueueHandler(registered);
+
+    await createReviewInputHandler(makeInputMode('normal')).handleInput(
+      plainUserMessage('make it simpler'),
+    );
+
+    expect(registered).toHaveBeenCalledWith(plainUserMessage('make it simpler'), 'specifying');
+    expect(feedbackStore.get()).toEqual({
+      message: 'Queued for PLAN · ctrl+⏎ sends now',
+      isError: false,
+    });
+  });
+
+  it('opens the external editor on the gate edit file', async () => {
+    runViewStore.__testReset({ phase: 'reviewing-plan' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const reviewFile = join(tempDir, 'plan.json');
+    writeFileSync(reviewFile, '# spec\n');
+    reviewStore.setReviewFile(reviewFile);
+
+    const pending = openReviewFileExternally(makeInputMode('review'));
+    // Only openReviewFileExternally announces the editor, and it does so before its first
+    // await — so this message is the production function running, not a stand-in.
+    expect(feedbackStore.get()).toEqual({
+      message: 'Opening mock-editor — plan.json…',
+      isError: false,
+    });
+
+    // Superseding the review during the paint window is the guard that turns it back before
+    // the handover, which is how this test reaches the real function without a process.
+    reviewStore.setReviewFile(join(tempDir, 'newer.md'));
+    await pending;
+
+    expect(stdinPause).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+  });
+});
+
+describe('attachment transport', () => {
+  afterEach(() => {
+    feedbackStore.reset();
+    reviewStore.reset();
+    lifecycleStore.reset();
+    composerLiveStore.reset();
+    composerDraftStore.reset();
+  });
+
+  it.each(['comment', 'revise'])(
+    'removes the %s prefix without losing appended bodies or arrays',
+    async (command) => {
+      const inputMode = makeInputMode('review');
+      const original: UserMessageInput = {
+        text: `${command} check @/outside/context.txt\n\n--- @/outside/context.txt ---\ncomment stays in body`,
+        displayText: `${command} check @/outside/context.txt`,
+        images: [
+          {
+            id: 'att-1',
+            kind: 'image',
+            path: '/outside/a.png',
+            mimeType: 'image/png',
+            sizeBytes: 1,
+          },
+        ],
+        attachedInputs: [{ kind: 'text', path: '/outside/context.txt' }],
+      };
+      await createReviewInputHandler(inputMode).handleInput(original);
+      expect(inputMode.resolve).toHaveBeenCalledExactlyOnceWith({
+        approved: false,
+        action: 'revise',
+        message: {
+          ...original,
+          displayText: 'check @/outside/context.txt',
+          text: 'check @/outside/context.txt\n\n--- @/outside/context.txt ---\ncomment stays in body',
+        },
+      });
+    },
+  );
+
+  it('queues the full message and restores the submitted image atoms on rejection', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const image = {
+      id: 'att-1',
+      kind: 'image' as const,
+      path: '/outside/a.png',
+      mimeType: 'image/png' as const,
+      sizeBytes: 1,
+    };
+    const document = {
+      version: 1 as const,
+      parts: [
+        { kind: 'text' as const, text: 'check @/outside/context.txt ' },
+        { kind: 'image' as const, attachment: image },
+      ],
+    };
+    composerLiveStore.setDraft(document);
+    const original: UserMessageInput = {
+      text: 'check @/outside/context.txt [Image 1]\n\n--- @/outside/context.txt ---\ncontext',
+      displayText: 'check @/outside/context.txt [Image 1]',
+      images: [image],
+      attachedInputs: [{ kind: 'text', path: '/outside/context.txt' }],
+    };
+    const enqueue = vi.fn<ReviewInputEffects['enqueue']>(async () => ({
+      status: 'rejected',
+      reason: 'queue-full',
+      message: 'Queue full',
+    }));
+    await createReviewInputHandler(makeInputMode('normal'), {
+      enqueue,
+      openExternalEditor: async () => {},
+    }).handleInput(original);
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith(original, 'implementing');
+    expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', document });
+  });
+});

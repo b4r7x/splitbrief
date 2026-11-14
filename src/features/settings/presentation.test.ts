@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
+import { CLI_PLANNER, crewItems } from '#testing/helpers/settings-items.js';
+import { SETTINGS_DEFS, type SettingDef } from '../../core/settings/catalog.js';
 import { buildSettingsItems } from './items.js';
-import { matchesFilter, validateNumber, displayValue } from './presentation.js';
+import { matchesFilter, validateNumber, displayValue, hintFor } from './presentation.js';
 import { glyph } from '../../lib/glyphs.js';
 
 function getDef(id: string) {
@@ -126,5 +127,69 @@ describe('validateNumber', () => {
     const def = getDef('implementer.contextLength');
     expect(validateNumber('200000', def)).toBe(200000);
     expect(validateNumber('1000000', def)).toBe(1000000);
+  });
+});
+
+describe('hintFor', () => {
+  const enumDef: SettingDef = {
+    id: 'workflow.approve',
+    label: 'Plan approval',
+    section: 'Workflow',
+    description: '',
+    kind: 'enum',
+    options: ['plan', 'none'],
+  };
+
+  it('advertises space rather than Enter on a row Enter cannot act on', () => {
+    expect(hintFor({ kind: 'setting', def: enumDef, key: enumDef.id })).not.toContain('⏎');
+  });
+
+  it("cycles an enum and toggles a boolean, in each row's own word", () => {
+    const booleanDef: SettingDef = {
+      id: 'test.boolean',
+      label: 'Boolean',
+      section: 'Workflow',
+      description: '',
+      kind: 'boolean',
+    };
+    expect(hintFor({ kind: 'setting', def: enumDef, key: enumDef.id })).toBe('space cycle');
+    expect(hintFor({ kind: 'setting', def: booleanDef, key: booleanDef.id })).toBe('space toggle');
+  });
+
+  it("advertises '⏎ edit' on a string or number setting row", () => {
+    const stringDef: SettingDef = {
+      id: 'test.string',
+      label: 'String',
+      section: 'Workflow',
+      description: '',
+      kind: 'string',
+    };
+    const numberDef: SettingDef = {
+      id: 'test.number',
+      label: 'Number',
+      section: 'Workflow',
+      description: '',
+      kind: 'number',
+    };
+    expect(hintFor({ kind: 'setting', def: stringDef, key: stringDef.id })).toBe('⏎ edit');
+    expect(hintFor({ kind: 'setting', def: numberDef, key: numberDef.id })).toBe('⏎ edit');
+  });
+
+  it('cycles the isolation row with space', () => {
+    const isolation = SETTINGS_DEFS.find((def) => def.id === 'workflow.isolation');
+    expect(isolation && hintFor({ kind: 'setting', def: isolation, key: isolation.id })).toBe(
+      'space cycle',
+    );
+  });
+
+  it("returns '⏎ change seat' on a seat row", () => {
+    const config = makeConfig({ planner: CLI_PLANNER });
+    const seat = crewItems(config).find((item) => item.key === 'seat:plan');
+    expect(seat && hintFor(seat)).toBe('⏎ change seat');
+  });
+
+  it("returns '⏎ change fallback' on a fallback row", () => {
+    const fallback = crewItems(makeConfig()).find((item) => item.key === 'fallback:build');
+    expect(fallback && hintFor(fallback)).toBe('⏎ change fallback');
   });
 });
