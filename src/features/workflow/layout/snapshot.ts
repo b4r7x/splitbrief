@@ -3,7 +3,7 @@ import { seatLineText } from '../../../core/crew/seat-line/collapse.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows } from '../stop/options.js';
-import { stopMenuLayout } from '../inline-menu/layout.js';
+import { inlineMenuLayout } from '../inline-menu/layout.js';
 import { getProgressRows, selectRailFormAndLine } from './chrome-rows.js';
 import { readHeaderSeatLines } from '../hooks/use-header-seat-lines.js';
 import { readRailCells, readRailStages } from '../hooks/use-rail-cells.js';
@@ -64,7 +64,7 @@ interface ConversationLayoutSnapshot {
 
 function readWorkflowPromptRows(): number {
   if (overlayStore.get().active === 'stop-sheet')
-    return stopMenuLayout(readStopMenuRows(), terminalSizeStore.get().cols).height;
+    return inlineMenuLayout(readStopMenuRows(), terminalSizeStore.get().cols).height;
   const resultMenuRows = resultMenuStore.get();
   if (resultMenuRows !== null) return resultMenuRows;
   const controls = controlsStore.get();

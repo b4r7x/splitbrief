@@ -6,7 +6,7 @@ import { QUESTION_PROMPT_HORIZONTAL_CHROME } from '../prompt-rows/question.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { PlannerQuestion } from './planner-question.js';
-import { stopMenuChrome } from '../inline-menu/layout.js';
+import { inlineMenuChrome } from '../inline-menu/layout.js';
 import { RecoveryMenu } from './recovery-menu.js';
 
 export function QuestionPrompt({
@@ -60,7 +60,7 @@ export function QuestionPrompt({
   if (questions && questions.length > 0 && planner)
     return <PlannerQuestion width={width} height={clampedBoxRows} {...planner} />;
   const innerWidth = Math.max(1, width - QUESTION_PROMPT_HORIZONTAL_CHROME);
-  const { framed } = stopMenuChrome(clampedBoxRows, 1);
+  const { framed } = inlineMenuChrome(clampedBoxRows, 1);
   const innerHeight = clampedBoxRows - (framed ? 2 : 0);
   return (
     <Box

@@ -1,13 +1,12 @@
 import { segmentsForRowText } from '../../../utils/display-text/width.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
-import { Box, useInput } from 'ink';
-import { borderStyleFor } from '../../../lib/glyphs.js';
+import { Box } from 'ink';
 import { fitKeyLegend } from '../../../components/key-legend.js';
-import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { stopMenuChrome, stopMenuLayout } from '../inline-menu/layout.js';
+import { inlineMenuChrome, inlineMenuLayout } from '../inline-menu/layout.js';
+import { InlineMenuPanel } from '../inline-menu/panel.js';
+import { useInlineMenuKeys } from '../inline-menu/use-keys.js';
 import { MenuRows } from '../stop/menu-rows.js';
-import { slashHandoffPending } from '../slash-handoff.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import {
   RESULT_MENU_LEGEND,
@@ -60,16 +59,15 @@ function ResultMenuBody({
   const cols = terminalSizeStore.use((state) => state.cols);
   const input = { override, findings, redChecks, note, confirming, files };
   const rows = resultMenuRows(input);
-  const layout = stopMenuLayout(rows, cols);
+  const layout = inlineMenuLayout(rows, cols);
   const boxHeight = height ?? resultMenuHeight(input, cols);
-  const chrome = stopMenuChrome(boxHeight, layout.bodyRows);
+  const chrome = inlineMenuChrome(boxHeight, layout.bodyRows);
 
-  const { selectedIndex } = useStaticSelector<ResultRow>({
+  const selectedIndex = useInlineMenuKeys<ResultRow>({
     items: rows,
-    isActive: focused,
     keyOf: (row) => row.id,
-    shouldHandleInput: () => !slashHandoffPending(),
-    isIndexActionable: () => chrome.listRows > 0,
+    focused,
+    listRows: chrome.listRows,
     onSelect: (row) => {
       if (row.id === 'apply' && override) {
         onConfirmingChange(true);
@@ -87,19 +85,10 @@ function ResultMenuBody({
       if (command !== null) onCommand(command);
       if (row.id === 'confirm-apply') onConfirmingChange(false);
     },
+    onTab: () => onFocusChange(false),
   });
 
-  useInput(
-    (_input, key) => {
-      if (key.tab) onFocusChange(false);
-    },
-    { isActive: focused },
-  );
-
-  const legend = fitKeyLegend(
-    focused ? RESULT_MENU_LEGEND : RESULT_MENU_UNFOCUSED_LEGEND,
-    Math.max(1, layout.width - 4),
-  );
+  const legend = focused ? RESULT_MENU_LEGEND : RESULT_MENU_UNFOCUSED_LEGEND;
   // The red checks and the findings take up to half of the rows the chrome leaves, and the note the
   // other rows; a note taller than that ends on an ellipsis.
   const bodyRows = chrome.extraRows;
@@ -121,24 +110,16 @@ function ResultMenuBody({
     Math.max(1, layout.width - 4),
   );
   return (
-    <Box
+    <InlineMenuPanel
       width={layout.width}
       height={boxHeight}
-      {...(chrome.framed && {
-        borderStyle: borderStyleFor('single'),
-        borderColor: focused ? t.accent : t.border,
-        borderDimColor: !focused,
-      })}
-      paddingX={chrome.framed ? 1 : 2}
-      flexDirection="column"
-      overflow="hidden"
-      flexShrink={0}
+      framed={chrome.framed}
+      focused={focused}
+      title={
+        chrome.titled ? <TextSpans parts={segmentsForRowText(titleParts, title)} /> : undefined
+      }
+      legend={chrome.legend ? legend : undefined}
     >
-      {chrome.titled && (
-        <Text color={t.textDim} wrap="truncate-end">
-          <TextSpans parts={segmentsForRowText(titleParts, title)} />
-        </Text>
-      )}
       {bodyLines.map((line, index) => (
         <Text key={index} color={t.text} wrap="truncate-end">
           {line}
@@ -154,7 +135,6 @@ function ResultMenuBody({
           width={layout.width - 4}
         />
       </Box>
-      {chrome.legend && <Text color={t.textDim}>{legend}</Text>}
-    </Box>
+    </InlineMenuPanel>
   );
 }

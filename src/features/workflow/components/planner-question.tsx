@@ -19,7 +19,7 @@ import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { clamp } from '../../../utils/math.js';
-import { stopMenuChrome } from '../inline-menu/layout.js';
+import { inlineMenuChrome } from '../inline-menu/layout.js';
 
 export function PlannerQuestion({
   width,
@@ -49,7 +49,7 @@ export function PlannerQuestion({
   const showAnswer = writing || (choices.length === 0 && height > QUESTION_ANSWER_ROWS);
   const innerWidth = Math.max(1, width - 4);
   const rows = question ? questionRows(question, state.index, innerWidth) : [];
-  const chrome = stopMenuChrome(height, showAnswer ? QUESTION_ANSWER_ROWS + 1 : 1);
+  const chrome = inlineMenuChrome(height, showAnswer ? QUESTION_ANSWER_ROWS + 1 : 1);
   // The question keeps a row, so a short panel never shows an answer field alone.
   const answerRows = showAnswer ? clamp(chrome.listRows - 1, 1, QUESTION_ANSWER_ROWS) : 0;
   const bodyHeight = Math.max(chrome.extraRows, chrome.listRows - answerRows);

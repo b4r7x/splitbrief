@@ -33,11 +33,11 @@ import {
   stopSheetFooter,
   stopSheetRows,
 } from './options.js';
-import { stopMenuLayout } from '../inline-menu/layout.js';
+import { inlineMenuLayout } from '../inline-menu/layout.js';
 
 describe('stopSheetRows', () => {
   it('keeps action spans through the existing clause wrapping', () => {
-    const layout = stopMenuLayout(
+    const layout = inlineMenuLayout(
       [{ label: 'Run all', consequence: 'run commands; read output' }],
       34,
     );

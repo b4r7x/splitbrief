@@ -6,7 +6,7 @@ import { stateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { oneLineDisplayText } from '../../../utils/display-text/sanitize.js';
-import { stopMenuLayout } from '../inline-menu/layout.js';
+import { inlineMenuLayout } from '../inline-menu/layout.js';
 import { wrappedProseSegments } from '../conversation-rows/row-format/text.js';
 
 export type ResultRowId = 'apply' | 'show-diff' | 'discard' | 'confirm-apply' | 'back';
@@ -124,7 +124,7 @@ export function resultMenuNoteLines(note: string | undefined, cols: number): str
   if (note === undefined) return [];
   return wrappedProseSegments(
     [{ text: note, tone: 'text' }],
-    stopMenuLayout([], cols).width - 4,
+    inlineMenuLayout([], cols).width - 4,
   ).map((line) =>
     line
       .map((part) => part.text)
@@ -138,7 +138,7 @@ export function resultMenuNoteLines(note: string | undefined, cols: number): str
  * while it asks.
  */
 export function resultMenuHeight(input: ResultMenuInput, cols: number): number {
-  const sheet = stopMenuLayout(resultMenuRows(input), cols).height;
+  const sheet = inlineMenuLayout(resultMenuRows(input), cols).height;
   if (!input.confirming) return sheet;
   return sheet + resultMenuNoteLines(input.note, cols).length + resultMenuOpenCount(input);
 }

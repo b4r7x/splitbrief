@@ -1,10 +1,6 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
-import { ThemeText as Text, useTheme } from '../../../components/theme.js';
-import { Box, useInput } from 'ink';
-import { borderStyleFor } from '../../../lib/glyphs.js';
+import { Box } from 'ink';
 import { fitKeyLegend } from '../../../components/key-legend.js';
-import { useStaticSelector } from '../../../hooks/use-static-selector.js';
-import { slashHandoffPending } from '../slash-handoff.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -21,7 +17,9 @@ import {
   type StopRow,
   type StopRowId,
 } from './options.js';
-import { stopMenuChrome, stopMenuLayout } from '../inline-menu/layout.js';
+import { inlineMenuChrome, inlineMenuLayout } from '../inline-menu/layout.js';
+import { InlineMenuPanel } from '../inline-menu/panel.js';
+import { useInlineMenuKeys } from '../inline-menu/use-keys.js';
 
 function performStop(id: StopRowId): void {
   switch (id) {
@@ -60,55 +58,45 @@ export function StopSheet({
   height?: number | undefined;
   footer: string | null;
 }) {
-  const t = useTheme();
   const cols = terminalSizeStore.use((state) => state.cols);
-  const layout = stopMenuLayout(rows, cols);
+  const layout = inlineMenuLayout(rows, cols);
   const title = rows.some((row) => row.id === 'leave') ? 'Session options' : STOP_SHEET_TITLE;
-  const legend = fitKeyLegend(
-    rows.some((row) => row.id === 'leave') ? STOP_SHEET_PARKED_LEGEND : STOP_SHEET_LEGEND,
-    Math.max(1, layout.width - 4),
-  );
+  const legend = rows.some((row) => row.id === 'leave')
+    ? STOP_SHEET_PARKED_LEGEND
+    : STOP_SHEET_LEGEND;
   const boxHeight = height ?? layout.height;
-  const chrome = stopMenuChrome(boxHeight, layout.bodyRows);
+  const chrome = inlineMenuChrome(boxHeight, layout.bodyRows);
 
-  const { selectedIndex } = useStaticSelector<StopRow>({
+  const selectedIndex = useInlineMenuKeys<StopRow>({
     items: rows,
     // The run keeps going behind the sheet and the middle row comes and goes with the running
     // brief, so the cursor is pinned to its row id rather than to a slot End run can slide into.
     keyOf: (row) => row.id,
-    shouldHandleInput: () => !slashHandoffPending(),
-    isIndexActionable: () => chrome.listRows > 0,
+    focused: true,
+    listRows: chrome.listRows,
     onSelect: (row) => {
       overlayStore.close();
       performStop(row.id);
     },
-  });
-  // Escape belongs to the app's stop ladder; Tab only dismisses this menu.
-  useInput((_input, key) => {
-    if (key.tab) overlayStore.close();
+    onTab: () => overlayStore.close(),
   });
 
   return (
-    <Box
+    <InlineMenuPanel
       width={layout.width}
       height={boxHeight}
-      {...(chrome.framed && {
-        borderStyle: borderStyleFor('single'),
-        borderColor: t.accent,
-      })}
-      paddingX={chrome.framed ? 1 : 2}
-      flexDirection="column"
-      overflow="hidden"
-      flexShrink={0}
+      framed={chrome.framed}
+      focused
+      title={
+        chrome.titled
+          ? fitKeyLegend(
+              footer === null ? title : `${title} · ${footer}`,
+              Math.max(1, layout.width - 4),
+            )
+          : undefined
+      }
+      legend={chrome.legend ? legend : undefined}
     >
-      {chrome.titled && (
-        <Text color={t.textDim} wrap="truncate-end">
-          {fitKeyLegend(
-            footer === null ? title : `${title} · ${footer}`,
-            Math.max(1, layout.width - 4),
-          )}
-        </Text>
-      )}
       <Box height={chrome.listRows} flexDirection="column" flexShrink={0}>
         <MenuRows
           options={layout.options}
@@ -118,7 +106,6 @@ export function StopSheet({
           width={layout.width - 4}
         />
       </Box>
-      {chrome.legend && <Text color={t.textDim}>{legend}</Text>}
-    </Box>
+    </InlineMenuPanel>
   );
 }

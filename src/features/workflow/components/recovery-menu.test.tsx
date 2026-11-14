@@ -17,6 +17,7 @@ import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { clampWorkflowPromptRows } from '../layout/rect.js';
 import { RecoveryMenu } from './recovery-menu.js';
+import { settleSlashHandoff, startSlashHandoff } from '../slash-handoff.js';
 import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-failed.js';
 import { buildRetryExhaustedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/retry.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
@@ -28,6 +29,7 @@ import { getRecoveryPromptActions, recoveryActionKey } from '../recovery/actions
 afterEach(() => {
   composerLiveStore.reset();
   runViewStore.__testReset();
+  settleSlashHandoff();
 });
 
 function mount(onResolve: (answer: string) => void, width = 80, issue = makeRecoveryIssue()) {
@@ -134,6 +136,51 @@ it('a letter that names no offered row does nothing', async () => {
   await flushEffects();
   expect(onResolve).not.toHaveBeenCalled();
   expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
+  ui.unmount();
+});
+
+it('hands the keys to the composer on Tab and answers no row', async () => {
+  const onFocusChange = vi.fn<(menuFocused: boolean) => void>();
+  const onResolve = vi.fn();
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={makeRecoveryIssue()}
+      width={80}
+      clampedBoxRows={14}
+      focused
+      onFocusChange={onFocusChange}
+      onResolve={onResolve}
+    />,
+  );
+  await flushEffects();
+  ui.stdin.write('\t');
+  await flushEffects();
+  expect(onFocusChange).toHaveBeenCalledExactlyOnceWith(false);
+  expect(onResolve).not.toHaveBeenCalled();
+  ui.unmount();
+});
+
+it('reads no Tab or letter in the read whose slash handed the keys to the composer', async () => {
+  const onFocusChange = vi.fn<(menuFocused: boolean) => void>();
+  const onResolve = vi.fn();
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={makeRecoveryIssue()}
+      width={80}
+      clampedBoxRows={14}
+      focused
+      onFocusChange={onFocusChange}
+      onResolve={onResolve}
+    />,
+  );
+  await flushEffects();
+  startSlashHandoff();
+  ui.stdin.write('\t');
+  await flushEffects();
+  ui.stdin.write('s');
+  await flushEffects();
+  expect(onFocusChange).not.toHaveBeenCalled();
+  expect(onResolve).not.toHaveBeenCalled();
   ui.unmount();
 });
 

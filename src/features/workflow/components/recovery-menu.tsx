@@ -2,16 +2,15 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { borderStyleFor } from '../../../lib/glyphs.js';
-import { fitKeyLegend } from '../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { ListRow } from '../../../components/list-row/row.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { isItemIndexVisible } from '../../../components/pickers/scroll-window.js';
-import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { slashHandoffPending } from '../slash-handoff.js';
+import { InlineMenuPanel } from '../inline-menu/panel.js';
+import { useInlineMenuKeys } from '../inline-menu/use-keys.js';
 import { PROMPT_COMMAND_LEGEND } from '../prompt-rows/approval.js';
 import { formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { RESULT_MENU_UNFOCUSED_LEGEND } from '../result/options.js';
@@ -160,14 +159,16 @@ export function RecoveryMenu({
   const chooseAction = (item: ActionItem): void => {
     onResolve(recoveryActionKey(item.action));
   };
-  const actionSelection = useStaticSelector({
+  const selectedIndex = useInlineMenuKeys({
     items: actions,
-    initialIndex: initialAction,
-    isActive: focused,
     keyOf: (item) => item.action,
-    shouldHandleInput: () => !slashHandoffPending(),
-    isIndexActionable: () => listBudget > 0,
+    initialIndex: initialAction,
+    focused,
+    listRows: listBudget,
     onSelect: chooseAction,
+    onTab: () => {
+      if (!slashHandoffPending()) onFocusChange(false);
+    },
   });
 
   useInput(
@@ -181,16 +182,12 @@ export function RecoveryMenu({
           item !== undefined &&
           isItemIndexVisible({
             items: actions,
-            selectedIndex: actionSelection.selectedIndex,
+            selectedIndex,
             itemIndex: actions.indexOf(item),
             rowBudget: listBudget,
           })
         )
           chooseAction(item);
-        return;
-      }
-      if (key.tab || (key.shift && key.tab)) {
-        onFocusChange(false);
       }
     },
     { isActive: focused },
@@ -206,40 +203,31 @@ export function RecoveryMenu({
     : correctionAction === undefined
       ? 'typing goes to the composer'
       : `⏎ ${recoveryMenuActionLabel(correctionAction, issue, reviewNone)} with the typed correction`;
-  const legend = fitKeyLegend(
-    focused
-      ? formatKeyHints([
-          SELECT_HINT,
-          { key: '⏎', verb: 'confirm' },
-          ...(correctionAction !== undefined
-            ? [{ key: 'tab', verb: 'type a correction' }]
-            : composerEmpty
-              ? []
-              : [{ key: 'tab', verb: 'edit the words' }]),
-        ])
-      : `${composerLegend}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`,
-    innerWidth,
-  );
+  const legend = focused
+    ? formatKeyHints([
+        SELECT_HINT,
+        { key: '⏎', verb: 'confirm' },
+        ...(correctionAction !== undefined
+          ? [{ key: 'tab', verb: 'type a correction' }]
+          : composerEmpty
+            ? []
+            : [{ key: 'tab', verb: 'edit the words' }]),
+      ])
+    : `${composerLegend}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`;
   return (
-    <Box
-      flexDirection="column"
+    <InlineMenuPanel
       width={width}
       height={clampedBoxRows}
-      {...(framed && {
-        borderStyle: borderStyleFor('single'),
-        borderColor: focused ? t.accent : t.border,
-        borderDimColor: !focused,
-      })}
-      paddingX={framed ? 1 : 2}
-      overflow="hidden"
-      flexShrink={0}
+      framed={framed}
+      focused={focused}
+      legend={legendShown ? legend : undefined}
     >
       {summaryShown && <PromptBody prompt={summary} height={summaryHeight} width={innerWidth} />}
       {divided && <Text color={t.border}>{'─'.repeat(Math.max(1, innerWidth))}</Text>}
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
         <ActionList
           actions={actions}
-          selectedIndex={actionSelection.selectedIndex}
+          selectedIndex={selectedIndex}
           recommended={recommended}
           keyWidth={keyWidth}
           width={innerWidth}
@@ -247,12 +235,7 @@ export function RecoveryMenu({
           focused={focused}
         />
       </Box>
-      {legendShown && (
-        <Text color={t.textDim} wrap="truncate-end">
-          {legend}
-        </Text>
-      )}
-    </Box>
+    </InlineMenuPanel>
   );
 }
 

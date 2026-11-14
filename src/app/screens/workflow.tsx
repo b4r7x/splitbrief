@@ -6,7 +6,7 @@ import {
   readStopMenuRows,
   STOP_SHEET_COMPOSER_HINT,
 } from '../../features/workflow/stop/options.js';
-import { stopMenuLayout } from '../../features/workflow/inline-menu/layout.js';
+import { inlineMenuLayout } from '../../features/workflow/inline-menu/layout.js';
 import { ResultMenu } from '../../features/workflow/result/menu.js';
 import { acceptedNote } from '../../core/review/accepted.js';
 import {
@@ -308,7 +308,7 @@ export function WorkflowScreen({
   const changedFiles = ready === undefined ? null : changedFileCount(ready.summary);
   const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows });
   const requestedPromptRows = stopMenuOpen
-    ? stopMenuLayout(readStopMenuRows(), cols).height
+    ? inlineMenuLayout(readStopMenuRows(), cols).height
     : resultMenuOpen
       ? resultMenuHeight(
           { override, findings, redChecks, note: acceptNote, confirming, files: changedFiles },

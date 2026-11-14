@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RedCheck } from '../../../core/schemas/workflow/review-record.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import { stopMenuLayout } from '../inline-menu/layout.js';
+import { inlineMenuLayout } from '../inline-menu/layout.js';
 import * as options from './options.js';
 import {
   RESULT_MENU_LEGEND,
@@ -273,9 +273,9 @@ describe('resultMenuHeight', () => {
     };
     const asking = { ...input, confirming: true };
     expect(resultMenuHeight(asking, 120)).toBe(
-      stopMenuLayout(resultMenuRows(asking), 120).height + 2,
+      inlineMenuLayout(resultMenuRows(asking), 120).height + 2,
     );
-    expect(resultMenuHeight(input, 120)).toBe(stopMenuLayout(resultMenuRows(input), 120).height);
+    expect(resultMenuHeight(input, 120)).toBe(inlineMenuLayout(resultMenuRows(input), 120).height);
   });
 
   it.each([
@@ -293,9 +293,11 @@ describe('resultMenuHeight', () => {
       };
       const asking = { ...input, confirming: true };
       expect(resultMenuHeight(asking, 120)).toBe(
-        stopMenuLayout(resultMenuRows(asking), 120).height + rows,
+        inlineMenuLayout(resultMenuRows(asking), 120).height + rows,
       );
-      expect(resultMenuHeight(input, 120)).toBe(stopMenuLayout(resultMenuRows(input), 120).height);
+      expect(resultMenuHeight(input, 120)).toBe(
+        inlineMenuLayout(resultMenuRows(input), 120).height,
+      );
     },
   );
 
@@ -308,10 +310,10 @@ describe('resultMenuHeight', () => {
       files: 4,
     };
     expect(resultMenuHeight(asking, 120)).toBe(
-      stopMenuLayout(resultMenuRows(asking), 120).height + 2,
+      inlineMenuLayout(resultMenuRows(asking), 120).height + 2,
     );
     const menu = { ...asking, confirming: false };
-    expect(resultMenuHeight(menu, 120)).toBe(stopMenuLayout(resultMenuRows(menu), 120).height);
+    expect(resultMenuHeight(menu, 120)).toBe(inlineMenuLayout(resultMenuRows(menu), 120).height);
   });
 
   it('adds every wrapped row of a long note while it asks', () => {
@@ -320,7 +322,7 @@ describe('resultMenuHeight', () => {
     const noteRows = resultMenuNoteLines(note, 80).length;
     expect(noteRows).toBeGreaterThan(1);
     expect(resultMenuHeight(asking, 80)).toBe(
-      stopMenuLayout(resultMenuRows(asking), 80).height + noteRows + 2,
+      inlineMenuLayout(resultMenuRows(asking), 80).height + noteRows + 2,
     );
   });
 });
@@ -424,7 +426,7 @@ describe('resultRowCommand', () => {
 describe('result menu layout', () => {
   it('takes the composer width and is as tall as what it paints', () => {
     const rows = resultMenuRows({ override: false, findings: [], confirming: false, files: 4 });
-    const layout = stopMenuLayout(rows, 120);
+    const layout = inlineMenuLayout(rows, 120);
 
     expect(layout.width).toBe(getChromeContentWidth(120));
     expect(layout.height).toBe(layout.bodyRows + 4);

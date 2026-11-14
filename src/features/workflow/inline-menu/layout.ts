@@ -40,7 +40,7 @@ function wrapClauses(
   return [...lines, current];
 }
 
-export function stopMenuLayout<
+export function inlineMenuLayout<
   Row extends { readonly label: string; readonly consequence: string },
 >(rows: readonly Row[], cols: number) {
   // The sheet stacks on the composer inside the gutter, so it takes the composer's width and the
@@ -72,7 +72,7 @@ export function stopMenuLayout<
  * What a box of `boxHeight` rows paints around `bodyRows` action rows. The actions go first: a
  * shorter box drops the legend, then the border, then the title, and then the list scrolls.
  */
-export function stopMenuChrome(boxHeight: number, bodyRows: number) {
+export function inlineMenuChrome(boxHeight: number, bodyRows: number) {
   const spareRows = boxHeight - bodyRows;
   return {
     framed: spareRows >= 3,
