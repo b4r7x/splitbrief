@@ -1,8 +1,6 @@
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
-import { useState } from 'react';
 import { Box, useInput } from 'ink';
 import { ListViewport } from '../../../../components/pickers/list-viewport.js';
-import { isItemIndexVisible } from '../../../../components/pickers/scroll-window.js';
 import { RuleHeader } from '../../../../components/rule-header.js';
 import { OverlayPanel } from '../../../../components/overlays/overlay-panel.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
@@ -15,7 +13,6 @@ import {
   CONFIRM_QUESTION,
   CONFIRM_REASON_HINTS,
   CONFIRM_REASON_OPTIONAL,
-  CONFIRM_REASON_UNSTATED,
   IRREVERSIBLE_NOTE,
   CHOOSE_HINTS,
   approvalKeyColumnWidth,
@@ -29,9 +26,13 @@ import {
   unfocusedPromptLegend,
 } from '../../prompt-rows/approval.js';
 import { fitConfirmPanel, type ConfirmFrame } from '../../prompt-rows/confirm-panel.js';
-import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
+import {
+  INITIAL_CONFIRM_KEY_STATE,
+  confirmKeyStep,
+  confirmRowStep,
+  type ConfirmKeyResult,
+} from '../../prompt-rows/confirm-keys.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
-import { navigateIndex } from '../../../../utils/indexing.js';
 import { fitKeyLegend } from '../../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { isCommandDraft } from '../../../../core/composer/submission.js';
@@ -42,17 +43,6 @@ import { countNoun } from '../../../../utils/pluralize.js';
 import { useKeyState } from '../../../../hooks/use-key-state.js';
 
 export const PROMPT_ZONE_Z = 50;
-
-type ConfirmStep = 'choose' | 'reason';
-
-function confirmWith(reason: string): void {
-  closeApprovalPrompt({ decision: 'confirm', phrase: CONFIRM_PHRASE, reason });
-}
-
-// An answer, unlike a prompt closed by a stop: the engine reads `user_cancelled` as the stop.
-function deny(): void {
-  closeApprovalPrompt({ decision: 'deny', reason: 'user_denied' });
-}
 
 interface ConfirmApprovalPromptProps {
   request: TieredApprovalRequest;
@@ -77,10 +67,7 @@ export function ConfirmApprovalPrompt({
   queues,
   graceUntil,
 }: ConfirmApprovalPromptProps) {
-  const [reasonInput, setReasonInput, latestReason] = useKeyState('');
-  const [confirmStep, setConfirmStep, latestStep] = useKeyState<ConfirmStep>('choose');
-  const [selectedIndex, setSelectedIndex, latestIndex] = useKeyState(0);
-  const [nudged, setNudged] = useState(false);
+  const [keys, setKeys, latestKeys] = useKeyState(INITIAL_CONFIRM_KEY_STATE);
   const t = useTheme();
   const rows = terminalSizeStore.use((s) => s.rows);
   // A page that gives the panel no region gives it the terminal.
@@ -115,77 +102,20 @@ export function ConfirmApprovalPrompt({
     width: frame.width,
   });
 
-  const takeRow = (key: string): void => {
-    if (key === 'r') {
-      setConfirmStep('reason');
-      setNudged(false);
-      return;
-    }
-    if (key === 'x') {
-      deny();
-      return;
-    }
-    confirmWith(CONFIRM_REASON_UNSTATED);
+  const apply = (result: ConfirmKeyResult): void => {
+    if (result.kind === 'answer') closeApprovalPrompt(result.answer);
+    else setKeys(result.state);
   };
 
   useInput(
     (input, key) => {
       if (Date.now() < graceUntil) return;
-      if (key.escape) {
-        deny();
-        return;
-      }
-
-      if (latestStep() === 'reason') {
-        if (key.return) {
-          confirmWith(latestReason().trim() || CONFIRM_REASON_UNSTATED);
-          return;
-        }
-        if (key.backspace || key.delete) {
-          setReasonInput(latestReason().slice(0, -1));
-          return;
-        }
-        if (input && !key.ctrl && !key.meta) setReasonInput(latestReason() + input);
-        return;
-      }
-
-      if (key.upArrow || key.downArrow) {
-        setSelectedIndex(navigateIndex(key.upArrow ? 'up' : 'down', latestIndex(), options.length));
-        setNudged(false);
-        return;
-      }
-      if (key.return) {
-        const option = options[latestIndex()];
-        if (option !== undefined && fit.options > 0) takeRow(option.key);
-        return;
-      }
-
-      const letter = input.toLowerCase();
-      const letterRow = options.findIndex((option) => option.key === letter);
-      const inView = isItemIndexVisible({
-        items: [...options],
-        selectedIndex: latestIndex(),
-        itemIndex: letter === 'r' ? letterRow : 0,
-        rowBudget: fit.options,
-      });
-      if (letter === 'r' && letterRow >= 0) {
-        if (inView) takeRow('r');
-        else setSelectedIndex(letterRow);
-        return;
-      }
-      if (letter === 'x' || letter === 'n') {
-        deny();
-        return;
-      }
-      if (letter !== 'y') return;
-      // A control-plane write costs the highlighted row, so `y` moves the highlight back to
-      // Confirm and reports the miss instead of silently doing nothing.
-      if (irreversible || !inView) {
-        setSelectedIndex(0);
-        setNudged(true);
-      } else {
-        confirmWith(CONFIRM_REASON_UNSTATED);
-      }
+      apply(
+        confirmKeyStep(latestKeys(), input, key, {
+          actionClass: request.actionClass,
+          optionRows: fit.options,
+        }),
+      );
     },
     { isActive },
   );
@@ -229,12 +159,12 @@ export function ConfirmApprovalPrompt({
         <RuleHeader label={IRREVERSIBLE_NOTE} width={frame.width} labelColor={t.error} />
       ) : null}
       {fit.gaps.options && <Text> </Text>}
-      {confirmStep === 'choose' ? (
+      {keys.step === 'choose' ? (
         <>
           <Box flexDirection="column" flexShrink={0}>
             <ListViewport
               items={[...options]}
-              selectedIndex={selectedIndex}
+              selectedIndex={keys.selectedIndex}
               getKey={(option) => option.key}
               rowBudget={fit.options}
               width={frame.width}
@@ -244,7 +174,7 @@ export function ConfirmApprovalPrompt({
               {...(isActive && {
                 onRowActivate: (index: number) => {
                   const option = options[index];
-                  if (option !== undefined) takeRow(option.key);
+                  if (option !== undefined) apply(confirmRowStep(latestKeys(), option.key));
                 },
               })}
               renderItem={(option, ctx) => (
@@ -268,7 +198,7 @@ export function ConfirmApprovalPrompt({
           </Box>
           <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
           {fit.legend &&
-            (nudged ? (
+            (keys.nudged ? (
               <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, frame.width)}</Text>
             ) : (
               <Text color={t.textDim}>
@@ -281,7 +211,7 @@ export function ConfirmApprovalPrompt({
           {fit.options >= 2 && <Text>{CONFIRM_QUESTION}</Text>}
           <Box height={1} overflow="hidden">
             <Text color={t.text}>{`${glyph('prompt')} `}</Text>
-            <Text wrap="truncate-end">{reasonInput}</Text>
+            <Text wrap="truncate-end">{keys.reason}</Text>
             <Text color={t.text}>{glyph('liveBar')}</Text>
             {rowAction !== undefined && <Text color={t.textDim}>{`${SOFT_SEP}${rowAction}`}</Text>}
           </Box>
