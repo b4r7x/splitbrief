@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { once } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { MouseEvent } from './types.js';
 import { createFilteredStdin } from './create.js';
@@ -1027,6 +1028,110 @@ describe('createFilteredStdin bracketed paste handling', () => {
     expect(seen).not.toContain('\x1b');
     expect(filtered.isPasteActive()).toBe(false);
 
+    filtered.disable();
+  });
+});
+
+describe('createFilteredStdin step and dispose order', () => {
+  let originalWrite: typeof process.stdout.write;
+  let log: string[];
+
+  beforeEach(() => {
+    originalWrite = process.stdout.write.bind(process.stdout);
+    log = [];
+    process.stdout.write = ((chunk: string) => {
+      log.push(`mode ${JSON.stringify(chunk)}`);
+      return true;
+    }) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalWrite;
+    vi.useRealTimers();
+  });
+
+  function logReads(filtered: ReturnType<typeof createFilteredStdin>): void {
+    filtered.stdin.on('readable', () => {
+      let read: Buffer | null = filtered.stdin.read();
+      while (read !== null) {
+        log.push(`read ${JSON.stringify(read.toString('utf8'))} paste=${filtered.isPasteActive()}`);
+        read = filtered.stdin.read();
+      }
+    });
+  }
+
+  it('ends the paste before onPaste runs and before its text reaches the stream', () => {
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source, {
+      onPaste: () => log.push(`onPaste paste=${filtered.isPasteActive()}`),
+    });
+    logReads(filtered);
+    log.length = 0;
+
+    source.emit('data', Buffer.from('\u001b[200~abc\u001b[201~'));
+
+    expect(log).toEqual(['onPaste paste=false', 'read "abc" paste=false']);
+    filtered.disable();
+  });
+
+  it('turns the input modes off, then delivers the held Escape with the decoder tail, then ends', async () => {
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source);
+    logReads(filtered);
+    filtered.stdin.on('end', () => log.push('end'));
+    source.emit('data', Buffer.from([0xf0, 0x9f, 0x1b]));
+    log.length = 0;
+
+    filtered.disable();
+    await once(filtered.stdin, 'end');
+
+    expect(log).toEqual([
+      `mode ${JSON.stringify(terminalSequences.disableMouseTracking)}`,
+      `mode ${JSON.stringify(terminalSequences.disableButtonEventMouse)}`,
+      `mode ${JSON.stringify(terminalSequences.disableAnyMotionMouse)}`,
+      `mode ${JSON.stringify(terminalSequences.disableSgrMouse)}`,
+      `mode ${JSON.stringify(terminalSequences.disableBracketedPaste)}`,
+      `read ${JSON.stringify('�\u001b')} paste=false`,
+      'end',
+    ]);
+  });
+
+  it('leaves no held-prefix flush timer behind on disable', () => {
+    vi.useFakeTimers();
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source);
+    source.emit('data', Buffer.from('\u001b'));
+    expect(vi.getTimerCount()).toBe(1);
+
+    filtered.disable();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('turns no input mode on and reads no input when activated after disable', () => {
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source, { activate: false });
+    filtered.disable();
+
+    filtered.activate();
+
+    expect(log).toEqual([]);
+    expect(source.listenerCount('data')).toBe(0);
+  });
+
+  it('holds an escape prefix inside an open paste past every flush delay', () => {
+    vi.useFakeTimers();
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source);
+    const pasted: string[] = [];
+    filtered.stdin.on('paste', (text: string) => pasted.push(text));
+
+    source.emit('data', Buffer.from('\u001b[200~abc\u001b'));
+    vi.advanceTimersByTime(1000);
+    source.emit('data', Buffer.from('[201~'));
+
+    expect(pasted).toEqual(['abc']);
+    expect(filtered.isPasteActive()).toBe(false);
     filtered.disable();
   });
 });

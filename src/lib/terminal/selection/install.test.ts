@@ -22,6 +22,7 @@ function setup(copy = vi.fn<(text: string) => Promise<CopyOutcome>>().mockResolv
   });
   visible.loadAddon(new UnicodeGraphemes.UnicodeGraphemesAddon());
   stdout.on('data', (data: Buffer) => visible.write(data));
+  const tty = vi.spyOn(stdout, 'write');
   const originalWrite = stdout.write;
   const reportError = vi.fn();
   const onCopyKey = vi.fn();
@@ -57,6 +58,8 @@ function setup(copy = vi.fn<(text: string) => Promise<CopyOutcome>>().mockResolv
   return {
     stdout,
     visible,
+    tty,
+    sent: () => tty.mock.calls.map(([chunk]) => String(chunk)),
     originalWrite,
     selection,
     reportError,
@@ -441,5 +444,82 @@ describe('fullscreen terminal selection', () => {
     await h.settle();
     expect(copy).toHaveBeenCalledTimes(2);
     await expect(h.onCopyKey.mock.calls[0]?.[0]).resolves.toBe('unavailable');
+  });
+});
+
+describe('terminal selection step and dispose order', () => {
+  const repaint = (text: string) => `\u001b[2J\u001b[H${text}`;
+
+  // Resolves when the selection mirror has parsed every write issued so far.
+  function trackMirrorWrites(): () => Promise<unknown> {
+    const parsed: Promise<void>[] = [];
+    const write = XtermHeadless.Terminal.prototype.write;
+    const spy = vi.spyOn(XtermHeadless.Terminal.prototype, 'write').mockImplementation(function (
+      this: InstanceType<typeof XtermHeadless.Terminal>,
+      data: string | Uint8Array,
+      callback?: () => void,
+    ) {
+      parsed.push(
+        new Promise((resolve) => {
+          write.call(this, data, () => {
+            callback?.();
+            resolve();
+          });
+        }),
+      );
+    });
+    cleanup.push(() => spy.mockRestore());
+    return () => Promise.all(parsed);
+  }
+
+  function selectedWithHeldWrite() {
+    const h = setup();
+    h.render('selected');
+    h.mouse('press', 1);
+    h.mouse('move', 4);
+    h.mouse('release', 4);
+    h.stdout.write('held');
+    h.tty.mockClear();
+    return h;
+  }
+
+  it('sends the held writes to the terminal before the repaint when the selection clears', () => {
+    const h = selectedWithHeldWrite();
+
+    h.selection.clear();
+
+    expect(h.sent()).toEqual([`${repaint('selected')}held`, repaint('selected')]);
+  });
+
+  it('sends the held writes to the terminal before the repaint when the terminal resizes', () => {
+    const h = selectedWithHeldWrite();
+
+    h.stdout.emit('resize');
+
+    expect(h.sent()).toEqual([`${repaint('selected')}held`, repaint('selected')]);
+  });
+
+  it('sends the held writes to the terminal when it is disposed', () => {
+    const h = selectedWithHeldWrite();
+
+    h.selection.dispose();
+
+    expect(h.sent()).toEqual([`${repaint('selected')}held`]);
+  });
+
+  it('sends nothing for an alternate-buffer exit that the mirror parses after suspend', async () => {
+    const mirrorParsed = trackMirrorWrites();
+    const h = setup();
+    h.stdout.write('\u001b[?1049h');
+    h.render('alternate');
+    h.mouse('press', 1);
+    h.mouse('move', 4);
+    h.stdout.write('\u001b[?1049l');
+    h.tty.mockClear();
+
+    h.selection.suspend();
+    await mirrorParsed();
+
+    expect(h.sent()).toEqual([]);
   });
 });

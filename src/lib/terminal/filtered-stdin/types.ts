@@ -21,6 +21,17 @@ export type EscapeDecision =
   | { kind: 'paste-newline'; length: number }
   | { kind: 'text'; length: number };
 
+export interface PasteState {
+  active: boolean;
+  chunks: Buffer[];
+  pendingCr: boolean;
+}
+
+export interface HeldPrefix {
+  bytes: Buffer;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
 export interface FilteredStdin {
   stdin: NodeJS.ReadStream;
   activate: () => void;

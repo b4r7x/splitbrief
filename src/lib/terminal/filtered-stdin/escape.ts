@@ -1,4 +1,4 @@
-import type { EscapeDecision } from './types.js';
+import type { EscapeDecision, HeldPrefix } from './types.js';
 import { PASTE_END_BYTES, PASTE_START_BYTES, isPasteMarkerPrefix } from './paste.js';
 import { readSgrMouse, readX10Mouse } from './mouse.js';
 
@@ -7,9 +7,8 @@ const CSI = 0x5b;
 const SS3 = 0x4f;
 const CSI_U_FINAL = 0x75;
 
-export const NEWLINE_BYTES = Buffer.from([0x0a]);
-export const HELD_PREFIX_FLUSH_MS = 35;
-export const BARE_ESCAPE_PREFIX_FLUSH_MS = 50;
+const HELD_PREFIX_FLUSH_MS = 35;
+const BARE_ESCAPE_PREFIX_FLUSH_MS = 50;
 
 function startsWithBytes(source: Buffer, expected: Buffer): boolean {
   return source.length >= expected.length && source.subarray(0, expected.length).equals(expected);
@@ -19,8 +18,27 @@ function isDigitByte(byte: number): boolean {
   return byte >= 0x30 && byte <= 0x39;
 }
 
-export function isBareEscapePrefix(source: Buffer): boolean {
+function isBareEscapePrefix(source: Buffer): boolean {
   return source.length === 1 && source.readUInt8(0) === ESC_BYTE;
+}
+
+export function clearHeldPrefixTimer(held: HeldPrefix): void {
+  if (!held.timer) return;
+  clearTimeout(held.timer);
+  held.timer = null;
+}
+
+export function scheduleHeldPrefixFlush(held: HeldPrefix, flush: () => void): void {
+  clearHeldPrefixTimer(held);
+  if (held.bytes.length === 0) return;
+  const bytes = held.bytes;
+  held.timer = setTimeout(
+    () => {
+      held.timer = null;
+      if (held.bytes.equals(bytes)) flush();
+    },
+    isBareEscapePrefix(bytes) ? BARE_ESCAPE_PREFIX_FLUSH_MS : HELD_PREFIX_FLUSH_MS,
+  );
 }
 
 function readCsiSequenceLength(source: Buffer): number | 'incomplete' | undefined {

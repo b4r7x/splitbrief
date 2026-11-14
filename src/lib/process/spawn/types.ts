@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import type { BoundedOutputMetadata } from '../bounded-output.js';
+import type { BoundedOutput, BoundedOutputMetadata } from '../bounded-output.js';
 
 export const DEFAULT_PROCESS_OUTPUT_MAX_BYTES = 1024 * 1024;
 export const DEFAULT_PROCESS_STDERR_MAX_BYTES = 256 * 1024;
@@ -57,4 +57,29 @@ export interface SpawnPipeOptions<T> {
   onClose: (code: number | null, signal: string | null) => T | Promise<T>;
   onError?: ((err: NodeJS.ErrnoException) => Error | null) | undefined;
   onSpawned?: ((proc: ChildProcess) => void) | undefined;
+}
+
+export interface IdleTimers {
+  warned: boolean;
+  warn: NodeJS.Timeout | undefined;
+  kill: NodeJS.Timeout | undefined;
+}
+
+/** One spawned child from its spawn to its outcome; every step reads and writes it in place. */
+export interface SpawnRun<T> {
+  opts: SpawnPipeOptions<T>;
+  proc: ChildProcess;
+  phase: 'active' | 'draining' | 'terminating' | 'settled';
+  exit: SpawnPipeExit | undefined;
+  closed: PromiseWithResolvers<void>;
+  stdinWriteComplete: boolean;
+  stdinEndComplete: boolean;
+  outputBytesSeen: number;
+  outputBudgetBytes: number | undefined;
+  partialStdout: BoundedOutput;
+  partialStderr: BoundedOutput;
+  idleTimers: IdleTimers;
+  removeAbortListener: (() => void) | undefined;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
 }
