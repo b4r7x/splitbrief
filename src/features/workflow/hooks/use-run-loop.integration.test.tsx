@@ -658,7 +658,11 @@ describe('useRunLoop', () => {
       }),
     });
     const admit = reprepareSameSession();
+    let prepareCalls = 0;
     const prepare: PrepareExecutionFn = async (input) => {
+      prepareCalls += 1;
+      if (outcome !== 'admitted' && prepareCalls > 1)
+        throw new Error('the unadmitted switch was tried again');
       if (outcome === 'refused')
         return { kind: 'blocked', report: { ...prepared.report, status: 'blocked' } };
       if (outcome === 'conflict')

@@ -31,11 +31,8 @@ import {
 } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/prompts/approval.js';
 import type { UseInputModeResult } from './use-input-mode.js';
-import {
-  openStopSheetOverEmptyComposer,
-  runTuiWorkflow,
-  type ContinueAtRest,
-} from '../run-loop/start.js';
+import { openStopSheetOverEmptyComposer, runTuiWorkflow } from '../run-loop/start.js';
+import type { ContinueAtRest } from '../run-loop/types.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 
