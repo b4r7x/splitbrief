@@ -1,16 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   writeSpecFile,
   readSpecFile,
   buildSpecFrontmatter,
   type SpecMetadata,
-} from './sessions/spec-files.js';
-import { getSplitbriefVersion } from './version.js';
-import * as pathsIo from './sessions/spec-files.js';
+} from './spec-files.js';
+import * as pathsIo from './spec-files.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { extractFrontmatter } from '../utils/frontmatter.js';
+import { extractFrontmatter } from '../../utils/frontmatter.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
@@ -61,16 +58,6 @@ describe('buildSpecFrontmatter', () => {
     const value = fm.match(/created_at: (.+)/)?.[1] ?? '';
     expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     expect(new Date(value).toISOString()).toBe(value);
-  });
-});
-
-describe('getSplitbriefVersion', () => {
-  it('returns the version from the real package.json, not the 0.0.0 fallback', () => {
-    const pkg = JSON.parse(
-      readFileSync(join(import.meta.dirname, '../../package.json'), 'utf-8'),
-    ) as { version: string };
-    expect(getSplitbriefVersion()).toBe(pkg.version);
-    expect(getSplitbriefVersion()).not.toBe('0.0.0');
   });
 });
 

@@ -1,72 +1,23 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { REVIEW_NONE } from '../crew/identity.js';
-import { ensureSessionDir } from '../sessions/spec-files.js';
-import { SEATS_FILE, sessionDir } from '../paths.js';
-import { createInitialState, transition } from './machine.js';
-import { saveState } from './persistence.js';
+import { setupSeatSession } from '#testing/helpers/seat-session.js';
+import { REVIEW_NONE } from '../../crew/identity.js';
+import { SEATS_FILE, sessionDir } from '../../paths.js';
+import { createInitialState, transition } from '../machine.js';
+import { saveState } from '../persistence.js';
 import {
   readSeatIdentities,
   readSeatIdentityRecord,
   recordSeatIdentities,
   seatIdentitiesFromConfig,
   writeSeatIdentities,
-} from './seats/record.js';
-import {
-  formatSeatChangeNotice,
-  reconcileSeatIdentities,
-  seatIdentityChanges,
-} from './seats/changes.js';
-import type { SeatChange } from './seats/changes.js';
+} from './record.js';
+import { formatSeatChangeNotice, reconcileSeatIdentities, seatIdentityChanges } from './changes.js';
+import type { SeatChange } from './changes.js';
 
-let dirs: string[] = [];
-
-afterEach(() => {
-  for (const dir of dirs) cleanupTempDir(dir);
-  dirs = [];
-});
-
-function session(name: string): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir(name);
-  dirs.push(projectDir);
-  const sessionId = `sess-${name}`;
-  ensureSessionDir(projectDir, sessionId);
-  return { projectDir, sessionId };
-}
-
-describe('recordSeatIdentities', () => {
-  it('records the catalog identity that the crew displays', () => {
-    const ref = session('seats-catalog');
-    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' } });
-
-    recordSeatIdentities(ref, config, { build: 'GPT-6-Luna' });
-
-    expect(readSeatIdentities(ref)?.build).toBe('OpenAI Codex CLI · GPT-6-Luna');
-  });
-
-  it('writes seats.json beside state.json', () => {
-    const ref = session('seats-write');
-
-    recordSeatIdentities(ref, makeConfig());
-
-    expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), SEATS_FILE))).toBe(true);
-    expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(makeConfig()));
-    expect(readSeatIdentityRecord(ref)?.switchCount).toBe(0);
-  });
-
-  it('keeps the record a session already has', () => {
-    const ref = session('seats-keep');
-    recordSeatIdentities(ref, makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }));
-    const first = readSeatIdentities(ref);
-
-    recordSeatIdentities(ref, makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }));
-
-    expect(readSeatIdentities(ref)).toEqual(first);
-  });
-});
+const session = setupSeatSession();
 
 describe('seatIdentityChanges', () => {
   it('names the seat that moved', () => {
@@ -408,32 +359,5 @@ describe('reconcileSeatIdentities', () => {
       beforeIds: { tool: 'codex' },
       afterIds: { tool: 'claude-code', model: 'sonnet' },
     });
-  });
-});
-
-describe('seat identities ignore the declared fallback', () => {
-  it('reads a fallback-only edit as no seat change', () => {
-    const before = seatIdentitiesFromConfig(
-      makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
-      }),
-    );
-    const after = seatIdentitiesFromConfig(
-      makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'opencode' } },
-      }),
-    );
-
-    expect(after).toEqual(before);
-  });
-
-  it('keeps the fallback out of the recorded ids', () => {
-    const identities = seatIdentitiesFromConfig(
-      makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
-      }),
-    );
-
-    expect(identities.ids?.plan).not.toHaveProperty('fallback');
   });
 });

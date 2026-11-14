@@ -1,22 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultConfig } from './load/defaults.js';
-import { ConfigSchema } from '../schemas/config.js';
+import { createDefaultConfig } from '../load/defaults.js';
+import { ConfigSchema } from '../../schemas/config.js';
 import {
   CustomCommandDefinitionSchema,
   CustomCommandsConfigSchema,
   NormalizedCustomCommandSchema,
   matchesCustomCommandRunner,
   normalizeCustomCommand,
-} from './custom-commands/schema.js';
-import {
-  customCommandTuple,
-  customCommandTupleForRunner,
-  isCustomCommandRunner,
-} from './custom-commands/tuple.js';
-import {
-  findConfiguredCustomCommand,
-  readCustomCommandCatalog,
-} from './custom-commands/catalog.js';
+} from './schema.js';
+import { customCommandTuple, customCommandTupleForRunner, isCustomCommandRunner } from './tuple.js';
+import { findConfiguredCustomCommand, readCustomCommandCatalog } from './catalog.js';
 
 const safeDefinition = {
   label: 'Review changes',

@@ -3,7 +3,6 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import { taskId } from '../schemas/task.js';
 import { formatRecoveryHeadline, formatRecoveryHeadlineSpans } from './headline.js';
-import { retryExhaustedCause } from './causes.js';
 
 const usageLimitIssue = makeRecoveryIssue({
   reason: 'runner-usage-limit',
@@ -299,11 +298,5 @@ describe('formatRecoveryHeadline', () => {
         makeRecoveryIssue({ reason: 'retry-exhausted', facts: { plannerVerdict: 'answer' } }),
       ),
     ).toBe('T001 failed');
-  });
-});
-
-describe('retryExhaustedCause', () => {
-  it('falls back to exhausted retries when neither fact is present', () => {
-    expect(retryExhaustedCause({ task: 'T005' })).toBe('T005 failed');
   });
 });

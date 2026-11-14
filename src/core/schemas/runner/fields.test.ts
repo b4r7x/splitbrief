@@ -3,13 +3,15 @@ import {
   IMPLEMENTER_CLI_TOOL_IDS,
   isListedCliTool,
   PLANNER_CLI_TOOL_IDS,
-} from '../runners/cli-tool/catalog.js';
-import { ImplementerConfigSchema, ImplementerProfileConfigSchema } from './runner/implementer.js';
-import { PlannerConfigSchema } from './runner/planner.js';
-import { ReviewerConfigSchema } from './runner/reviewer.js';
-import { GenerationCommonFields, REMOVED_API_PROVIDER_IDS } from './runner/fields.js';
-import { createPlannerConfigSchema } from './runner/planner.js';
-import { createRunnerConfigSchema } from './runner/implementer.js';
+} from '../../runners/cli-tool/catalog.js';
+import { GenerationCommonFields, REMOVED_API_PROVIDER_IDS } from './fields.js';
+import {
+  createRunnerConfigSchema,
+  ImplementerConfigSchema,
+  ImplementerProfileConfigSchema,
+} from './implementer.js';
+import { createPlannerConfigSchema, PlannerConfigSchema } from './planner.js';
+import { ReviewerConfigSchema } from './reviewer.js';
 
 const PROMPT_NOT_SUPPORTED = '{prompt} is not supported; SPLITBRIEF sends the prompt on stdin';
 

@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { diffEventKey } from './events.js';
 import { isSettledSection } from './types.js';
 import { groupEventsIntoSections } from './group.js';
 import type { SectionableEvent } from './events.js';
@@ -2125,15 +2124,5 @@ describe('groupEventsIntoSections', () => {
         });
       },
     );
-  });
-});
-
-describe('diffEventKey', () => {
-  it('gives two same-timestamp diffs distinct keys from their global render index', () => {
-    const ts = 1234;
-    const first = makeImplementerGenerate({ status: 'done', diff: '+ a', ts });
-    const second = makeImplementerGenerate({ status: 'done', diff: '+ b', ts });
-
-    expect(diffEventKey(first, 0)).not.toBe(diffEventKey(second, 1));
   });
 });

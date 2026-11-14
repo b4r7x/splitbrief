@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { REVIEW_STATUSES } from './enums.js';
-import { WorkflowStateSchema } from './workflow/state.js';
-import { QueuedMessageSchema } from './workflow/queue.js';
-import { ChangedFilesSnapshotSchema } from './workflow/changed-files.js';
+import { REVIEW_STATUSES } from '../enums.js';
+import { WorkflowStateSchema } from './state.js';
+import { QueuedMessageSchema } from './queue.js';
+import { ChangedFilesSnapshotSchema } from './changed-files.js';
 import { makeMessage } from '#testing/helpers/queue.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
-import { PlanSchema } from './plan.js';
-import { plainUserMessage } from '../types/user-input.js';
+import { PlanSchema } from '../plan.js';
+import { plainUserMessage } from '../../types/user-input.js';
 
 const tokenUsage = makeUsage();
 

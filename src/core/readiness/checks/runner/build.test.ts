@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
-import { buildRunnerChecks } from './runner/build.js';
-import type { CliReadinessFacts } from '../../schemas/readiness.js';
-import { deriveCliReadiness } from '../cli-remediation.js';
-import type { RunnerAvailabilityFact } from './availability.js';
+import { buildRunnerChecks } from './build.js';
+import type { CliReadinessFacts } from '../../../schemas/readiness.js';
+import { deriveCliReadiness } from '../../cli-remediation.js';
+import type { RunnerAvailabilityFact } from '../availability.js';
 
 const NO_IMAGE_FACT = () => undefined;
 

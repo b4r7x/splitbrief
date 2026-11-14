@@ -4,8 +4,8 @@ import {
   CliReadinessResultSchema,
   type CliInstallationState,
   type CliReadinessFacts,
-} from './readiness.js';
-import { cliReadinessRemediation, deriveCliReadiness } from '../readiness/cli-remediation.js';
+} from '../schemas/readiness.js';
+import { cliReadinessRemediation, deriveCliReadiness } from './cli-remediation.js';
 
 const executable = {
   path: '/opt/splitbrief/bin/codex',
