@@ -8,7 +8,7 @@ import { isRecord } from '../../../utils/type-guards.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';
 import { createRunBaseReader, type RunBaseFile } from '../isolation/run-base/reader.js';
 import type { RunBase } from '../isolation/run-base/tree.js';
-import { type CheckDefinition, checkDefinition } from './reviewer-command-policy.js';
+import { type CheckDefinition, checkDefinition } from './reviewer-policy/definition.js';
 
 /** Composer's own `@` commands, which name no script. */
 const COMPOSER_COMMANDS = new Set(['php', 'composer', 'putenv']);

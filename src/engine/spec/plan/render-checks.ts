@@ -11,9 +11,9 @@ import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { pluralize } from '../../../utils/pluralize.js';
 import {
   readPackageScripts,
-  commandTextRefusal,
   missingNpmScript,
-} from '../../orchestrator/planning/sanitize-discovered-validation.js';
+} from '../../orchestrator/validation/plan-policy/npm-scripts.js';
+import { commandTextRefusal } from '../../orchestrator/validation/plan-policy/command.js';
 import { resolveSeatImageFact } from '../../providers/model/resolution.js';
 import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import type { PlanCheckError } from './types.js';

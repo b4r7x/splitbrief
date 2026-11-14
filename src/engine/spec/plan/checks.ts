@@ -3,7 +3,7 @@ import { REVIEW_CHECK_ID } from '../../../core/schemas/review/verdict.js';
 import { isPathConfined } from '../../../lib/fs/confinement.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { protectedWriteClass } from '../../orchestrator/approval/action-classifier.js';
-import { reviewerCommandRefusal } from '../../orchestrator/validation/reviewer-command-policy.js';
+import { reviewerCommandRefusal } from '../../orchestrator/validation/reviewer-policy/refusal.js';
 import {
   refusedCheckErrors,
   unconfiguredRenderCheckIds,

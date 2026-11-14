@@ -5,7 +5,7 @@ import type { Check } from '../../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { runCommand } from '../../../../lib/process/spawn/run-command.js';
 import { parseShellCommand } from '../../../../utils/parse-shell-command.js';
-import { readPackageScripts } from '../../planning/sanitize-discovered-validation.js';
+import { readPackageScripts } from '../plan-policy/npm-scripts.js';
 import { runRenderCheck } from './render.js';
 import { runCommandCheck } from './command.js';
 import { runTestCheck } from './test.js';

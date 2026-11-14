@@ -164,10 +164,8 @@ import { revertedDir } from '../../../../src/core/paths.js';
 import type { Config } from '../../../../src/core/schemas/config.js';
 import { error } from '../../../../src/utils/error.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
-import {
-  commandTextRefusal,
-  sanitizeDiscoveredValidation,
-} from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
+import { sanitizeDiscoveredValidation } from '../../../../src/engine/orchestrator/validation/plan-policy/sanitize.js';
+import { commandTextRefusal } from '../../../../src/engine/orchestrator/validation/plan-policy/command.js';
 import {
   BASE_IMPLEMENTER,
   BASE_PLANNER,

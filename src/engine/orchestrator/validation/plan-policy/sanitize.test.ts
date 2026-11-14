@@ -1,15 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/validation-fixtures.js';
-import {
-  commandTextRefusal,
-  missingNpmScript,
-  sanitizeDiscoveredValidation,
-  unsafeCommandReason,
-} from './sanitize-discovered-validation.js';
-import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
-import type { Config } from '../../../core/schemas/config.js';
-import type { DiscoveredValidation } from '../../../core/schemas/workflow/state.js';
+import { sanitizeDiscoveredValidation } from './sanitize.js';
+import { missingNpmScript } from './npm-scripts.js';
+import { commandTextRefusal, unsafeCommandReason } from './command.js';
+import type { PackageScriptsReadinessInput } from '../../../../core/readiness/checks/validation.js';
+import type { Config } from '../../../../core/schemas/config.js';
+import type { DiscoveredValidation } from '../../../../core/schemas/workflow/state.js';
 
 const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 

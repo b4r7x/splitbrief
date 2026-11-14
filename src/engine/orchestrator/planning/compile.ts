@@ -16,7 +16,7 @@ import { publishWarning } from '../publish/notice.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { estimatePlanContextFits } from './plan-context-fit.js';
-import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
+import { sanitizeDiscoveredValidation } from '../validation/plan-policy/sanitize.js';
 import type { PlanCheckContext } from './types.js';
 
 function discoveredValidation(plan: PlanProposal): DiscoveredValidation | undefined {

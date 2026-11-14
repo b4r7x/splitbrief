@@ -2,14 +2,12 @@ import type { PackageScriptsReadinessInput } from '../../../../core/readiness/ch
 import type { Check } from '../../../../core/schemas/task.js';
 import { captureText, processError, processOutputCapture } from '../../../../lib/process/errors.js';
 import { parseShellCommand } from '../../../../utils/parse-shell-command.js';
-import {
-  commandTextRefusal,
-  missingNpmScript,
-} from '../../planning/sanitize-discovered-validation.js';
+import { missingNpmScript } from '../plan-policy/npm-scripts.js';
+import { commandTextRefusal } from '../plan-policy/command.js';
 import { changedDefinitionRefusal } from '../changed-script.js';
 import { failureKeys } from '../extract-failure-keys.js';
 import { runCommandOnce } from '../result-store.js';
-import { reviewerCommandRefusal } from '../reviewer-command-policy.js';
+import { reviewerCommandRefusal } from '../reviewer-policy/refusal.js';
 import { boundedOutputTail, notRunnableReason } from '../stage.js';
 import type { ValidationCommandRunner } from '../types.js';
 import { runTestCheck } from './test.js';

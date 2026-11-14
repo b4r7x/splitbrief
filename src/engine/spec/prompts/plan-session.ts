@@ -2,7 +2,7 @@ import type { ImplementerWriteMode } from '../../../core/schemas/runner/implemen
 import type { PlanProposal } from '../../../core/schemas/plan.js';
 import { PROTECTED_PATHS_TEXT } from '../../../core/pipeline-spec/scope.js';
 import { PACKAGE_TEST_COMMAND } from '../../../core/validation/stacks/typescript.js';
-import { FILE_TESTS } from '../../orchestrator/planning/sanitize-discovered-validation.js';
+import { FILE_TESTS } from '../../orchestrator/validation/plan-policy/command.js';
 import type { PlanCheckError } from '../plan/types.js';
 import { buildPrompt, instructionsSection, skillsSection } from './builder.js';
 import { buildLanguageContextSections, type LanguageContext } from './language-context.js';
