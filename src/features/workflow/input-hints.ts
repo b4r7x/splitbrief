@@ -5,6 +5,10 @@ import { isLivePhase } from '../../core/phases/roles.js';
 import { AT_REST_PLACEHOLDER } from './closed/open-byline.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { queueCopy } from './queue-copy.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import { recoveryComposerHint } from './recovery/actions.js';
+import { RESULT_MENU_COMPOSER_HINT } from './result/options.js';
+import { STOP_SHEET_COMPOSER_HINT } from './stop/options.js';
 
 export interface InputHintInput {
   inputHint: string;
@@ -42,6 +46,30 @@ export function resolveInputHint(input: InputHintInput): string {
   const { inputHint, inputMode } = input;
   if (inputMode === 'review' || inputMode === 'question') return '';
   return inputHint;
+}
+
+// The placeholder of the composer names what it takes while a panel above it holds the keys or
+// waits: the stop sheet first, then the recovery choice, the result menu and the question panel.
+export function composerHintFor(input: {
+  stopMenuOpen: boolean;
+  recovery: { issue: RecoveryIssue; menuFocused: boolean; stepReadsNone: boolean } | null;
+  resultMenuFocused: boolean;
+  questionPanelFocused: boolean;
+  structuredQuestion: boolean;
+  /** The planner asked a round, so the input mode's hint names what the composer takes. */
+  plannerAsked: boolean;
+  inputModeHint: string;
+  inputHint: string;
+}): string {
+  if (input.stopMenuOpen) return STOP_SHEET_COMPOSER_HINT;
+  if (input.recovery !== null) {
+    const { issue, menuFocused, stepReadsNone } = input.recovery;
+    return recoveryComposerHint(issue, menuFocused, stepReadsNone);
+  }
+  if (input.resultMenuFocused) return RESULT_MENU_COMPOSER_HINT;
+  if (input.questionPanelFocused) return 'Answer the question above…';
+  if (input.structuredQuestion) return 'New instruction — replaces these questions…';
+  return input.plannerAsked ? input.inputModeHint : input.inputHint;
 }
 
 export interface ComposerBoxHintOverride {

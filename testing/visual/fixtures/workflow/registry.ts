@@ -1617,6 +1617,9 @@ const checkpointPredicates = [
   [
     checkpointId('plan-card-steer-row'),
     (context) => {
+      if (!context.output.includes('Add a greeting module and expose it from the CLI.')) {
+        return false;
+      }
       const row = context.output.split('\n').find((line) => line.includes('/steer'));
       if (row === undefined || !row.includes(STEER_ROW_START)) return false;
       if (context.viewport.cols >= 120) {
