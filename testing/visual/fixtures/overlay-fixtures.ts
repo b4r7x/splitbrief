@@ -1950,6 +1950,26 @@ const createContractChoiceFixture: FixtureFactory = () =>
       pickerViewStore.open({ kind: 'custom-command-contract' });
     },
   });
+// A local server the picker cannot list opens its connection form on the seat's own address,
+// before any check has run.
+const createLocalConnectionFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedConfig({
+        planner: {
+          kind: 'api',
+          provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5-coder:7b',
+        },
+      })();
+      pickerViewStore.open({ kind: 'local-connection', provider: 'ollama' });
+    },
+    focus: 'tool:ollama',
+  });
 const createCustomCommandFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -3115,6 +3135,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-custom-model-claude'), createCustomModelClaudeFixture],
   [scenarioId('overlay-picker-custom-model-kilo'), createCustomModelKiloFixture],
   [scenarioId('overlay-picker-save-refused'), createSaveRefusedFixture],
+  [scenarioId('overlay-picker-local-connection'), createLocalConnectionFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
   [scenarioId('overlay-implementer-picker-claude'), createImplementerPickerClaudeFixture],
   [scenarioId('overlay-implementer-picker-opencode'), createImplementerPickerOpencodeFixture],

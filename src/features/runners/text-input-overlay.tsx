@@ -6,6 +6,7 @@ import { MultilineInput } from '../../components/input/multiline-input.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import { BACK_HINT, formatKeyHints } from '../../components/key-legend.js';
 import { PICKER_ROLE_SEAT_IDS, type SeatPickerRole } from '../../core/runners/seat-roles.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -93,7 +94,7 @@ export function TextInputOverlay({
       title={sanitizeTerminalDisplayText(
         `${title}${SOFT_SEP}${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]}`,
       )}
-      hint={hint ?? `⏎ save${SOFT_SEP}esc back`}
+      hint={hint ?? formatKeyHints([{ key: '⏎', verb: 'save' }, BACK_HINT])}
     >
       {stepIndicator ? (
         <Box flexDirection="column">

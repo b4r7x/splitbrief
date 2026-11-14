@@ -2,6 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { BACK_HINT, formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { listRowLead } from '../../../components/list-row/lead.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
@@ -132,7 +133,7 @@ export function ContractChoiceOverlay({
     <OverlayPanel
       density="roomy"
       title={`Custom command${SOFT_SEP}${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]}`}
-      hint={`↑↓ select${SOFT_SEP}⏎ continue${SOFT_SEP}esc back`}
+      hint={formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'continue' }, BACK_HINT])}
     >
       <Box marginBottom={1}>
         <StepIndicator active="contract" />

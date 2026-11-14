@@ -12,8 +12,14 @@ import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
 import { stepWord, stopPoint } from '../display/step-words.js';
+import { formatKeyHints } from '../../../components/key-legend.js';
 
-const PARKED_HINT = `⏎ resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`;
+const PARKED_HINT = formatKeyHints([
+  { key: '⏎', verb: 'resume' },
+  { key: '/stop', verb: 'options' },
+  { key: 'esc', verb: 'back to sessions' },
+  { key: 'ctrl+c', verb: 'quit' },
+]);
 
 export interface StopBylineInput {
   readonly intent: StopIntent;
@@ -232,7 +238,10 @@ export function stopByline(input: StopBylineInput): StopByline | null {
   const clock = formatElapsedClock(input.elapsedMs);
   return byline(
     stopLeadParts(state, tone, cause, progress),
-    `esc back after stop${SOFT_SEP}ctrl+c quit after stop`,
+    formatKeyHints([
+      { key: 'esc', verb: 'back after stop' },
+      { key: 'ctrl+c', verb: 'quit after stop' },
+    ]),
     clock,
   );
 }

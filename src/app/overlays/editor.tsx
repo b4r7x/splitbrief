@@ -11,7 +11,7 @@ import { externalEditRequestStore } from '../../stores/ui/external-edit-request.
 import { writeSpecFile } from '../../core/sessions/spec-files.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { planSaveErrors } from '../../features/editor/plan-save.js';
-import { SOFT_SEP } from '../../core/separators.js';
+import { CANCEL_HINT, formatKeyHints } from '../../components/key-legend.js';
 import { useEditorKeys } from '../../features/editor/use-keys.js';
 import { EditorBufferView } from '../../features/editor/buffer-view.js';
 import { FramePanel, OVERLAY_FRAME_COLS } from '../../components/frame-panel.js';
@@ -107,7 +107,11 @@ export function EditorOverlay() {
       )}
       <Box height={1}>
         <Text color={t.textDim} wrap="truncate">
-          {`ctrl+s save${SOFT_SEP}ctrl+o external${SOFT_SEP}esc cancel`}
+          {formatKeyHints([
+            { key: 'ctrl+s', verb: 'save' },
+            { key: 'ctrl+o', verb: 'external' },
+            CANCEL_HINT,
+          ])}
         </Text>
       </Box>
     </FramePanel>

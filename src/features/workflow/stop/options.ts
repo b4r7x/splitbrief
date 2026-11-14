@@ -7,6 +7,12 @@ import { activeApply } from '../../../engine/orchestrator/session-lifecycle/shut
 import { changedFileCount } from '../closed/projections.js';
 import { stopKeptFiles } from './copy.js';
 import { routeClosedAtRest } from '../at-rest.js';
+import {
+  BACK_HINT,
+  CONFIRM_HINT,
+  formatKeyHints,
+  SELECT_HINT,
+} from '../../../components/key-legend.js';
 
 export type StopRowId =
   | 'stop-now'
@@ -25,8 +31,18 @@ export interface StopRow {
 }
 
 export const STOP_SHEET_TITLE = 'Stop options';
-export const STOP_SHEET_LEGEND = '↑↓ select · ⏎ confirm · esc stop · tab close';
-export const STOP_SHEET_PARKED_LEGEND = '↑↓ select · ⏎ confirm · esc back · tab close';
+export const STOP_SHEET_LEGEND = formatKeyHints([
+  SELECT_HINT,
+  CONFIRM_HINT,
+  { key: 'esc', verb: 'stop' },
+  { key: 'tab', verb: 'close' },
+]);
+export const STOP_SHEET_PARKED_LEGEND = formatKeyHints([
+  SELECT_HINT,
+  CONFIRM_HINT,
+  BACK_HINT,
+  { key: 'tab', verb: 'close' },
+]);
 export const STOP_SHEET_COMPOSER_HINT = 'Choose an action above…';
 
 export interface StopSheetInput {

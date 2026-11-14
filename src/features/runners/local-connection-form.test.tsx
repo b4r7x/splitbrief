@@ -242,6 +242,29 @@ describe('LocalConnectionForm', () => {
     ui.unmount();
   });
 
+  it('saves the address in the form the profile normalizes it to', async () => {
+    const saves: LocalConnectionSave[] = [];
+    const ui = openForm(async () => listing([]), {
+      model: SEAT_MODEL,
+      onSave: (input) => saves.push(input),
+    });
+    await flushEffects();
+
+    await retype(ui, 'http://localhost:11435');
+    // Address → Token → Check → the seat's own model row.
+    for (const key of [DOWN, DOWN, DOWN]) {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    ui.stdin.write(ENTER);
+    await flushEffects();
+
+    expect(saves).toEqual([
+      { provider: 'ollama', apiBase: SECOND_SERVER, apiKey: undefined, model: SEAT_MODEL },
+    ]);
+    ui.unmount();
+  });
+
   it('invokes no probe, and no network, while editing and cancelling', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const check = vi.fn<LocalConnectionProbe>(async () => listing([]));

@@ -1,6 +1,7 @@
 import { acceptedCounts, redCheckLine } from '../../../core/review/accepted.js';
 import type { RedCheck } from '../../../core/schemas/workflow/review-record.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { CONFIRM_HINT, formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
@@ -28,7 +29,11 @@ export interface ResultMenuInput {
   readonly note?: string | undefined;
 }
 
-export const RESULT_MENU_LEGEND = '↑↓ select · ⏎ confirm · tab type a command';
+export const RESULT_MENU_LEGEND = formatKeyHints([
+  SELECT_HINT,
+  CONFIRM_HINT,
+  { key: 'tab', verb: 'type a command' },
+]);
 export const RESULT_MENU_UNFOCUSED_LEGEND = 'tab back to the actions';
 export const RESULT_MENU_COMPOSER_HINT = 'Choose an action above, or tab to type a command…';
 

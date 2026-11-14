@@ -42,6 +42,13 @@ import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-
 import { stripTerminalControls } from '../../utils/display-text/sanitize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import {
+  CANCEL_HINT,
+  CLOSE_HINT,
+  CONFIRM_HINT,
+  formatKeyHints,
+  SELECT_HINT,
+} from '../../components/key-legend.js';
 
 const DESCRIPTION_MIN_TERMINAL_ROWS = 19;
 const BASE_CHROME_ROWS = 9;
@@ -155,10 +162,10 @@ export function SettingsOverlay() {
     (selectedItem.kind !== 'setting' || selectedItem.def.lockedBy?.(config) === undefined);
   const actionHint = actionable ? hintFor(selectedItem) : '';
   const hintText = editingId
-    ? `⏎ confirm${SOFT_SEP}esc cancel`
+    ? formatKeyHints([CONFIRM_HINT, CANCEL_HINT])
     : actionHint
       ? `↑↓ select${SOFT_SEP}${actionHint}${SOFT_SEP}esc close`
-      : `↑↓ select${SOFT_SEP}esc close`;
+      : formatKeyHints([SELECT_HINT, CLOSE_HINT]);
 
   const verdictLine =
     verdict === undefined ? null : <CrewVerdictLine verdict={verdict} width={rect.innerWidth} />;

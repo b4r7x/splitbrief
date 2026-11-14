@@ -2,7 +2,7 @@ import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
-import { SOFT_SEP } from '../../core/separators.js';
+import { CLOSE_HINT, formatKeyHints, SELECT_HINT } from '../../components/key-legend.js';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { ListRow } from '../../components/list-row/row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
@@ -173,8 +173,8 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     commandLabelWidth(commands),
   );
   const hint = canActOnIndex(cursor)
-    ? ['↑↓ select', '⏎ run or fill in', 'esc close'].join(SOFT_SEP)
-    : ['↑↓ select', 'esc close'].join(SOFT_SEP);
+    ? formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'run or fill in' }, CLOSE_HINT])
+    : formatKeyHints([SELECT_HINT, CLOSE_HINT]);
 
   return (
     <OverlayPanel hint={hint} density={PANEL_DENSITY}>

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { fitKeyLegend, KEY_LEGEND_LEADING } from './key-legend.js';
+import {
+  BACK_HINT,
+  CANCEL_HINT,
+  CLOSE_HINT,
+  CONFIRM_HINT,
+  fitKeyLegend,
+  formatKeyHints,
+  KEY_LEGEND_LEADING,
+  SCROLL_HINT,
+  SELECT_HINT,
+} from './key-legend.js';
 import { getTerminalCellWidth } from '../utils/display-text/width.js';
 
 describe('KEY_LEGEND_LEADING', () => {
@@ -24,5 +34,18 @@ describe('fitKeyLegend', () => {
 
   it('shows nothing rather than a fragment when not even one token fits', () => {
     expect(fitKeyLegend('y approve · c comment', 4)).toBe('');
+  });
+});
+
+describe('formatKeyHints', () => {
+  it('joins each key and its verb with the soft separator', () => {
+    expect(formatKeyHints([SELECT_HINT, CONFIRM_HINT, CLOSE_HINT])).toBe(
+      '↑↓ select · ⏎ confirm · esc close',
+    );
+  });
+
+  it('spells the shared escape and scroll keys in the legend grammar', () => {
+    expect(formatKeyHints([SCROLL_HINT, BACK_HINT])).toBe('↑↓ scroll · esc back');
+    expect(formatKeyHints([CANCEL_HINT])).toBe('esc cancel');
   });
 });

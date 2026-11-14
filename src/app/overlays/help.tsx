@@ -4,7 +4,7 @@ import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays
 import { ListGroupHeader, ListRow } from '../../components/list-row/row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
-import { SOFT_SEP } from '../../core/separators.js';
+import { CLOSE_HINT, formatKeyHints, SCROLL_HINT } from '../../components/key-legend.js';
 import { buildCommandItems } from '../../features/palette/sources.js';
 import { readLatestDiffKey } from '../../features/workflow/conversation-rows/row-actions/read.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
@@ -157,7 +157,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   return (
     <OverlayPanel
       title="Help · commands & shortcuts"
-      hint={`↑↓ scroll${SOFT_SEP}esc close`}
+      hint={formatKeyHints([SCROLL_HINT, CLOSE_HINT])}
       titleSpacing="tight"
       density={PANEL_DENSITY}
     >

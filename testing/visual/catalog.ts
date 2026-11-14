@@ -7480,6 +7480,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · planner picker · a save the config refused',
         marker: 'Failed to save config',
       },
+      {
+        id: 'overlay-picker-local-connection',
+        title: 'Overlay · planner picker · local server connection',
+        marker: 'Local server · PLAN',
+      },
     ],
   }),
   'implementer-picker': overlayGroup({

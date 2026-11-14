@@ -1,7 +1,7 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import type { Session } from '../../../core/schemas/session.js';
-import { SOFT_SEP } from '../../../core/separators.js';
+import { BACK_HINT, formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { SessionRow } from '../../../components/session-row.js';
 import { RecentSessionsShell } from './shell.js';
 import { FilterInput } from '../../../components/filter-input.js';
@@ -14,7 +14,12 @@ import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { copyToClipboard } from '../../../lib/clipboard/clipboard.js';
 import { isUnmodifiedYInput } from '../../../lib/terminal/text-entry.js';
 
-export const RECENT_SESSIONS_HINT = `↑↓ select${SOFT_SEP}⏎ open${SOFT_SEP}y copy${SOFT_SEP}esc back`;
+export const RECENT_SESSIONS_HINT = formatKeyHints([
+  SELECT_HINT,
+  { key: '⏎', verb: 'open' },
+  { key: 'y', verb: 'copy' },
+  BACK_HINT,
+]);
 
 interface RecentSessionsListProps {
   sessions: Session[];

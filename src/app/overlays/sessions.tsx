@@ -7,6 +7,7 @@ import { useStores } from '../../stores/use-stores.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { SessionRow } from '../../components/session-row.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import { CLOSE_HINT, formatKeyHints, SELECT_HINT } from '../../components/key-legend.js';
 import {
   handleSessionSelect,
   sessionSelectStore,
@@ -15,7 +16,12 @@ import {
 import { filterSession } from '../../core/sessions/search.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 
-const SESSION_PICKER_HINT = `\u2191\u2193 select${SOFT_SEP}type filter${SOFT_SEP}\u23ce open${SOFT_SEP}esc close`;
+const SESSION_PICKER_HINT = formatKeyHints([
+  SELECT_HINT,
+  { key: 'type', verb: 'filter' },
+  { key: '⏎', verb: 'open' },
+  CLOSE_HINT,
+]);
 
 export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSelectDeps } = {}) {
   const t = useTheme();

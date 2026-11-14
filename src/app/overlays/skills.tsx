@@ -5,6 +5,12 @@ import type { SkillMeta } from '../../core/skills/types.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
 import { ListRow } from '../../components/list-row/row.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import {
+  CLOSE_HINT,
+  CONFIRM_HINT,
+  formatKeyHints,
+  SELECT_HINT,
+} from '../../components/key-legend.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -142,9 +148,12 @@ export function SkillsPicker() {
     overlayStore.close();
   };
 
-  const hintText = navigating
-    ? `space toggle${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`
-    : `↑↓ select${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`;
+  const hintText = formatKeyHints([
+    navigating ? { key: 'space', verb: 'toggle' } : SELECT_HINT,
+    { key: 'ctrl+a', verb: 'all' },
+    CONFIRM_HINT,
+    CLOSE_HINT,
+  ]);
 
   return (
     <FilterableList

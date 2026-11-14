@@ -11,6 +11,7 @@ import type { ScrollableDocumentRow } from '../../../components/scrollable-docum
 import type { Theme } from '../../../core/theme/palette.js';
 import { overlayRect, type OverlayDensity } from '../../../core/navigation/overlay-rect.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { CLOSE_HINT, formatKeyHints, SCROLL_HINT } from '../../../components/key-legend.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import {
@@ -142,7 +143,7 @@ export function UsageDetails({ view, onClose }: UsageDetailsProps) {
   return (
     <OverlayPanel
       title="Usage details"
-      hint={overflows ? `↑↓ scroll${SOFT_SEP}esc close` : 'esc close'}
+      hint={formatKeyHints(overflows ? [SCROLL_HINT, CLOSE_HINT] : [CLOSE_HINT])}
       density={DENSITY}
     >
       <ScrollableDocument

@@ -2,6 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../theme.js';
 import { Box } from 'ink';
 import { listRowLead } from '../../../list-row/lead.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
+import { CLOSE_HINT, formatKeyHints, SELECT_HINT } from '../../../key-legend.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { CompletionPanel } from '../panel.js';
 
@@ -23,7 +24,7 @@ export function ReferenceCompletionMenu({
   const footer =
     cols < NARROW_FOOTER_COLS
       ? ['↑↓', '⏎', 'esc'].join(SOFT_SEP)
-      : ['↑↓ select', 'tab/⏎ fill', 'esc close'].join(SOFT_SEP);
+      : formatKeyHints([SELECT_HINT, { key: 'tab/⏎', verb: 'fill' }, CLOSE_HINT]);
   return (
     <CompletionPanel
       items={filtered}

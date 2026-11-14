@@ -45,3 +45,7 @@ export const CONFIRM_HINT: KeyHint = { key: '⏎', verb: 'confirm' };
 // carry none. Only one gate panel is ever on screen, so this legend is the single place either of
 // them teaches the keys.
 export const SELECT_HINT: KeyHint = { key: '↑↓', verb: 'select' };
+export const SCROLL_HINT: KeyHint = { key: '↑↓', verb: 'scroll' };
+export const CLOSE_HINT: KeyHint = { key: 'esc', verb: 'close' };
+export const BACK_HINT: KeyHint = { key: 'esc', verb: 'back' };
+export const CANCEL_HINT: KeyHint = { key: 'esc', verb: 'cancel' };

@@ -8,6 +8,7 @@ import {
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ThemeText as Text } from '../../components/theme.js';
 import { arrowSep, SOFT_SEP } from '../../core/separators.js';
+import { CLOSE_HINT, formatKeyHints } from '../../components/key-legend.js';
 import { BOOT_MANIFEST_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -79,7 +80,11 @@ export function ToolModelPicker({
 
   if (coldDiscovery) {
     return (
-      <OverlayPanel title={BOOT_MANIFEST_TITLE} density="compact" hint="esc close">
+      <OverlayPanel
+        title={BOOT_MANIFEST_TITLE}
+        density="compact"
+        hint={formatKeyHints([CLOSE_HINT])}
+      >
         <BootManifest />
       </OverlayPanel>
     );
@@ -113,7 +118,10 @@ export function ToolModelPicker({
             : `writes into the working tree${SOFT_SEP}no stdout extraction`
         }
         examples={[tier === 'output' ? 'my-planner --json' : 'opencode run --agent build']}
-        hint={`⏎ save${SOFT_SEP}esc back to contract`}
+        hint={formatKeyHints([
+          { key: '⏎', verb: 'save' },
+          { key: 'esc', verb: 'back to contract' },
+        ])}
         rows={1}
         maxRows={3}
         onChange={pickerViewStore.setDraft}
