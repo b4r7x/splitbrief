@@ -6,23 +6,14 @@ import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import {
-  computeListDisplayWindow,
-  isItemIndexVisible,
-} from '../../components/pickers/scroll-window.js';
 import { availableRows } from '../../components/pickers/scroll-offset.js';
-import { ListRow } from '../../components/list-row/row.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
-import { RuleHeader } from '../../components/rule-header.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
-import type { PageNavigationContext } from '../../hooks/use-filterable-list.js';
-import { displayValue } from '../../features/settings/presentation.js';
-import {
-  buildSettingsItems,
-  settingsItemSection,
-  type SettingsItem,
-} from '../../features/settings/items.js';
-import { helpTextRows, settingsHelpLines } from '../../features/settings/help.js';
+import { buildSettingsItems } from '../../features/settings/items.js';
+import { settingsHelpLines } from '../../features/settings/help.js';
+import { settingsListWindow } from '../../features/settings/list-window.js';
+import { SettingRow } from '../../features/settings/components/setting-row.js';
+import { DESCRIPTION_ROWS, HelpBlock } from '../../features/settings/components/help-block.js';
 import { parseSettingsFocus } from '../../features/settings/focus.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
@@ -39,8 +30,6 @@ import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-
 import { useStores } from '../../stores/use-stores.js';
 import { FilterInput } from '../../components/filter-input.js';
 import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
-import { stripTerminalControls } from '../../utils/display-text/sanitize.js';
-import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import {
   CANCEL_HINT,
@@ -52,17 +41,9 @@ import {
 
 const DESCRIPTION_MIN_TERMINAL_ROWS = 19;
 const BASE_CHROME_ROWS = 9;
-/** One blank row at the least, the labelled rule, and the three help rows `helpTextRows` caps at. */
-const DESCRIPTION_ROWS = 5;
 const FORM_DENSITY: OverlayDensity = 'roomy';
 /** The `Crew` header above the block and the scroll indicator under it. */
 const CREW_BLOCK_RESERVED_ROWS = 2;
-/** Below this the blank row between sections costs a setting, so the sections close up. */
-const SECTION_GAP_MIN_ROWS = 18;
-
-function isReviewSeat(item: SettingsItem): boolean {
-  return item.kind === 'crew' && item.row.id === 'review';
-}
 
 export function SettingsOverlay() {
   const t = useTheme();
@@ -105,30 +86,11 @@ export function SettingsOverlay() {
     innerWidth: rect.innerWidth,
     rowBudget: listBudget - CREW_BLOCK_RESERVED_ROWS,
   });
-  /** Keeps the crew block pinned at the head of the list. */
-  const pinnedHead = items.filter((item) => item.kind === 'crew').length;
-
-  const listSection = {
-    by: settingsItemSection,
-    gapBetweenSections: listBudget >= SECTION_GAP_MIN_ROWS,
-  };
-  const decorations = {
-    after: (item: SettingsItem) => layout.verdict && isReviewSeat(item),
-  };
-  const windowInput = (list: SettingsItem[], selectedIndex: number) => ({
-    items: list,
-    selectedIndex,
+  const listWindow = settingsListWindow({
+    items,
     rowBudget: listBudget,
-    section: listSection,
-    decorations,
-    pinnedHead,
+    verdict: layout.verdict,
   });
-  const getPageSize = ({ filtered, selectedIndex }: PageNavigationContext<SettingsItem>) =>
-    computeListDisplayWindow(windowInput(filtered, selectedIndex)).visibleSlots.filter(
-      (slot) => slot.kind === 'item',
-    ).length;
-  const canActOnIndex = (filtered: SettingsItem[], index: number) =>
-    isItemIndexVisible(windowInput(filtered, index));
 
   const {
     filter,
@@ -151,14 +113,14 @@ export function SettingsOverlay() {
     onActivateFallback: (item) => {
       fallbackActivate({ row: item.row, config });
     },
-    pageSize: getPageSize,
-    canActOnIndex,
+    pageSize: listWindow.pageSize,
+    canActOnIndex: listWindow.canActOnIndex,
     showDescription,
   });
 
   const actionable =
     selectedItem !== undefined &&
-    canActOnIndex(filtered, effectiveIndex) &&
+    listWindow.canActOnIndex(filtered, effectiveIndex) &&
     (selectedItem.kind !== 'setting' || selectedItem.def.lockedBy?.(config) === undefined);
   const actionHint = actionable ? hintFor(selectedItem) : '';
   const hintText = editingId
@@ -183,9 +145,6 @@ export function SettingsOverlay() {
           lines: settingsHelpLines(selectedItem, config),
         };
   const help = showDescription && detail !== undefined ? detail : null;
-  const helpRows = help === null ? [] : helpTextRows(help.lines, rect.innerWidth);
-  /** The help block is bottom-anchored: its rule never touches the last row of the list. */
-  const helpSpacerRows = Math.max(1, DESCRIPTION_ROWS - 1 - helpRows.length);
 
   const listBody = (
     <>
@@ -197,10 +156,10 @@ export function SettingsOverlay() {
         getKey={(item) => item.key}
         rowBudget={listBudget}
         onRowActivate={activate}
-        pinnedHead={pinnedHead}
-        section={listSection}
+        pinnedHead={listWindow.pinnedHead}
+        section={listWindow.section}
         decorations={{
-          hasAfter: decorations.after,
+          hasAfter: listWindow.decorations.after,
           renderAfter: () => verdictLine,
         }}
         renderItem={(item, { isCursor, contentWidth }) => {
@@ -219,36 +178,15 @@ export function SettingsOverlay() {
           }
 
           const def = item.def;
-          const value = getValue(def);
-          const label = def.readLabel?.(config) ?? def.label;
-
-          if (editingId === def.id) {
-            return (
-              <Box width={contentWidth} height={1} overflow="hidden">
-                <Text color={t.textDim}>{'  '}</Text>
-                <Box flexGrow={1} minWidth={0} overflow="hidden">
-                  <Text color={t.text} wrap="truncate-end">
-                    {label}
-                  </Text>
-                </Box>
-                <Box flexShrink={0}>
-                  <Text
-                    color={t.accent}
-                  >{`[${stripTerminalControls(editBuffer)}${glyph('editCursor')}]`}</Text>
-                </Box>
-              </Box>
-            );
-          }
-
-          const boolTrue = def.kind === 'boolean' && value === true;
           return (
-            <ListRow
-              label={label}
-              state={isCursor ? 'active' : 'default'}
-              metadata={boolTrue ? undefined : displayValue(def, value, { detectedContextLength })}
-              metadataTone="text"
-              selected={boolTrue ? true : undefined}
+            <SettingRow
+              def={def}
+              label={def.readLabel?.(config) ?? def.label}
+              value={getValue(def)}
+              editBuffer={editingId === def.id ? editBuffer : undefined}
+              isCursor={isCursor}
               width={contentWidth}
+              detectedContextLength={detectedContextLength}
             />
           );
         }}
@@ -266,22 +204,7 @@ export function SettingsOverlay() {
 
       {listBody}
 
-      {help && (
-        <Box
-          flexDirection="column"
-          height={DESCRIPTION_ROWS}
-          width={rect.innerWidth}
-          overflow="hidden"
-        >
-          <Box height={helpSpacerRows} flexShrink={0} />
-          <RuleHeader label={help.label} width={rect.innerWidth} />
-          {helpRows.map((row, index) => (
-            <Box key={`help-${index}`} height={1} flexShrink={0} overflow="hidden">
-              <Text color={t.textDim}>{row.text}</Text>
-            </Box>
-          ))}
-        </Box>
-      )}
+      {help && <HelpBlock label={help.label} lines={help.lines} width={rect.innerWidth} />}
 
       {notice !== null && <FeedbackNotice notice={notice} width={rect.innerWidth} />}
     </OverlayPanel>
