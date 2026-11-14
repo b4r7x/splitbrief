@@ -1,3 +1,6 @@
+import { clamp } from '../../utils/math.js';
+import { assertNever } from '../../utils/type-guards.js';
+
 export type ScrollKeyAction = 'line-up' | 'line-down' | 'page-up' | 'page-down' | 'top' | 'bottom';
 
 export type ScrollLineKeyMode = 'none' | 'shifted' | 'plain';
@@ -64,4 +67,34 @@ export function resolveScrollKey({
   if (fallback !== null) return fallback;
 
   return lineAction(key, lineKeys);
+}
+
+interface ScrollStepInput {
+  action: ScrollKeyAction;
+  position: number;
+  page: number;
+  last: number;
+}
+
+function scrollTarget({ action, position, page, last }: ScrollStepInput): number {
+  switch (action) {
+    case 'line-up':
+      return position - 1;
+    case 'line-down':
+      return position + 1;
+    case 'page-up':
+      return position - page;
+    case 'page-down':
+      return position + page;
+    case 'top':
+      return 0;
+    case 'bottom':
+      return last;
+    default:
+      return assertNever(action);
+  }
+}
+
+export function stepForScrollAction(input: ScrollStepInput): number {
+  return clamp(scrollTarget(input), 0, input.last);
 }

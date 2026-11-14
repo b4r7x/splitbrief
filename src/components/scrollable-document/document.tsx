@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
 import {
   type ScrollLineKeyMode,
-  type ScrollKeyAction,
   resolveScrollKey,
+  stepForScrollAction,
 } from '../../core/keybindings/scroll.js';
 import { glyph } from '../../lib/glyphs.js';
 import { ScrollIndicator } from '../scroll-indicator.js';
@@ -16,12 +16,7 @@ import {
   scrollbarCell,
 } from '../scrollbar.js';
 import { useTheme, ThemeText as Text } from '../theme.js';
-import {
-  type ScrollableDocumentRow,
-  getScrollableDocumentWindow,
-  clampScrollableDocumentOffset,
-  rowLineCount,
-} from './window.js';
+import { type ScrollableDocumentRow, getScrollableDocumentWindow, rowLineCount } from './window.js';
 
 interface ScrollableDocumentProps {
   rows: readonly ScrollableDocumentRow[];
@@ -36,29 +31,6 @@ interface ScrollableDocumentProps {
   showScrollbar?: boolean | undefined;
   width?: number | undefined;
   barColumn?: ScrollbarColumn | undefined;
-}
-
-function offsetForScrollAction(args: {
-  action: ScrollKeyAction;
-  offset: number;
-  lineCount: number;
-  visibleHeight: number;
-}): number {
-  const { offset, lineCount, visibleHeight } = args;
-  switch (args.action) {
-    case 'line-up':
-      return offset - 1;
-    case 'line-down':
-      return offset + 1;
-    case 'page-up':
-      return offset - visibleHeight;
-    case 'page-down':
-      return offset + visibleHeight;
-    case 'top':
-      return 0;
-    case 'bottom':
-      return lineCount;
-  }
 }
 
 export function ScrollableDocument({
@@ -88,13 +60,8 @@ export function ScrollableDocument({
   }, [controlledScrollOffset, internalScrollOffset, windowState.offset, onScrollOffsetChange]);
 
   function setRequestedOffset(offset: number) {
-    const nextOffset = clampScrollableDocumentOffset({
-      offset,
-      lineCount: windowState.lineCount,
-      height: windowState.visibleHeight,
-    });
-    if (controlledScrollOffset === undefined) setInternalScrollOffset(nextOffset);
-    onScrollOffsetChange?.(nextOffset);
+    if (controlledScrollOffset === undefined) setInternalScrollOffset(offset);
+    onScrollOffsetChange?.(offset);
   }
 
   useInput(
@@ -102,11 +69,11 @@ export function ScrollableDocument({
       const scrollKey = resolveScrollKey({ input, key, lineKeys });
       if (scrollKey === null) return;
       setRequestedOffset(
-        offsetForScrollAction({
+        stepForScrollAction({
           action: scrollKey,
-          offset: windowState.offset,
-          lineCount: windowState.lineCount,
-          visibleHeight: windowState.visibleHeight,
+          position: windowState.offset,
+          page: windowState.visibleHeight,
+          last: Math.max(0, windowState.lineCount - windowState.visibleHeight),
         }),
       );
     },

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { resolveScrollKey, type ScrollKeyLike, type ScrollLineKeyMode } from './scroll.js';
+import {
+  resolveScrollKey,
+  stepForScrollAction,
+  type ScrollKeyAction,
+  type ScrollKeyLike,
+  type ScrollLineKeyMode,
+} from './scroll.js';
 
 function action(input: {
   text?: string | undefined;
@@ -41,5 +47,29 @@ describe('resolveScrollKey', () => {
     expect(action({ key: { upArrow: true }, lineKeys: 'plain' })).toBe('line-up');
     expect(action({ key: { downArrow: true }, lineKeys: 'plain' })).toBe('line-down');
     expect(action({ key: { shift: true, downArrow: true }, lineKeys: 'plain' })).toBeNull();
+  });
+});
+
+describe('stepForScrollAction', () => {
+  const actions: ScrollKeyAction[] = [
+    'line-up',
+    'line-down',
+    'page-up',
+    'page-down',
+    'top',
+    'bottom',
+  ];
+
+  it.each([
+    ['in the middle', { position: 10, page: 5, last: 20 }, [9, 11, 5, 15, 0, 20]],
+    ['at the start', { position: 0, page: 5, last: 20 }, [0, 1, 0, 5, 0, 20]],
+    ['at the end', { position: 20, page: 5, last: 20 }, [19, 20, 15, 20, 0, 20]],
+    [
+      'with a page longer than the document',
+      { position: 1, page: 10, last: 3 },
+      [0, 2, 0, 3, 0, 3],
+    ],
+  ])('keeps each step %s between the first and the last position', (_, at, expected) => {
+    expect(actions.map((action) => stepForScrollAction({ action, ...at }))).toEqual(expected);
   });
 });

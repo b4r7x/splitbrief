@@ -465,6 +465,24 @@ describe('groupEventsIntoSections', () => {
       ]);
     });
 
+    it('starts each section where the one before it ends, a build row between two reviews in its own', () => {
+      const events = [
+        ...final(1_000, 'fail'),
+        cycle(1_002, 1),
+        at('planner_text', 1_003, { phase: 'implementing', text: 'Fix cycle 1 starts no brief' }),
+        ...final(2_000, 'pass'),
+        at('workflow_complete', 2_002, { phase: 'complete', review: 'passed' }),
+      ];
+      expect(
+        groupEventsIntoSections(events).map((section) => [section.type, section.startIndex]),
+      ).toEqual([
+        ['settled-stage', 0],
+        ['events', 3],
+        ['settled-stage', 4],
+        ['events', 6],
+      ]);
+    });
+
     // Apply found the checkout changed a file the run changed: it spent a fix cycle and sent the
     // merged result to review. A ready run continues after Apply; a halted Apply continues first.
     const notice = (ts: number) => at('planner_text', ts, { text: 'Your checkout changed 1 file' });

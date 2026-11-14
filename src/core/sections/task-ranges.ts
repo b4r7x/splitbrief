@@ -1,7 +1,13 @@
 import { phaseStage } from '../phases/rail.js';
-import type { SectionableEvent, TaskEndEvent } from './events.js';
+import {
+  type SectionableEvent,
+  type TaskEndEvent,
+  isTaskStartedEvent,
+  isTaskResetEvent,
+  isTaskEndEvent,
+} from './events.js';
 
-export interface TaskRange<TEvent extends SectionableEvent> {
+interface TaskRange<TEvent extends SectionableEvent> {
   taskId: string;
   startIdx: number;
   endIdx: number;
@@ -11,7 +17,7 @@ export interface TaskRange<TEvent extends SectionableEvent> {
 }
 
 // A recovery that ends or resets a brief resolves right after it; its outcome closes that range.
-export function outcomeEnd(events: readonly SectionableEvent[], index: number): number {
+function outcomeEnd(events: readonly SectionableEvent[], index: number): number {
   return events[index + 1]?.type === 'recovery_resolved' ? index + 1 : index;
 }
 
@@ -29,7 +35,7 @@ function isBuildRow(event: SectionableEvent | undefined, hasReviewStage: boolean
 // brief (the run start, a fix cycle's re-entry) join that brief. The tail after the last brief stays.
 // A consult on a brief before it starts opens its range, and so does the halt of a brief skipped
 // before it started, so that choice and its outcome stay in one section.
-export function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
+function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
   events: TEvent[],
   taskRanges: TaskRange<TEvent>[],
 ): void {
@@ -73,7 +79,7 @@ export function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
   }
 }
 
-export function abandonOpenTask<TEvent extends SectionableEvent>(
+function abandonOpenTask<TEvent extends SectionableEvent>(
   taskRanges: TaskRange<TEvent>[],
   openTasks: Map<string, number>,
   taskId: string,
@@ -87,4 +93,68 @@ export function abandonOpenTask<TEvent extends SectionableEvent>(
   range.endEvent = undefined;
   range.abandoned = true;
   openTasks.delete(taskId);
+}
+
+export function taskRangesOf<TEvent extends SectionableEvent>(
+  events: TEvent[],
+): TaskRange<TEvent>[] {
+  const taskRanges: TaskRange<TEvent>[] = [];
+  const openTasks = new Map<string, number>();
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev === undefined) continue;
+    if (isTaskStartedEvent(ev)) {
+      // Briefs run one at a time: a brief that starts ends every open range. Another brief's
+      // attempt keeps its rows up to its last own row, and the rows after it join the gap.
+      for (const openId of [...openTasks.keys()]) {
+        const end =
+          openId === ev.taskId
+            ? i - 1
+            : events.findLastIndex((event, idx) => idx < i && event.taskId === openId);
+        abandonOpenTask(taskRanges, openTasks, openId, end);
+      }
+      const latest = taskRanges.at(-1);
+      if (latest?.abandoned && latest.taskId === ev.taskId) {
+        latest.abandoned = false;
+        latest.endIdx = -1;
+        latest.startEvent = ev;
+        openTasks.set(ev.taskId, taskRanges.length - 1);
+        continue;
+      }
+      const idx = taskRanges.length;
+      taskRanges.push({
+        taskId: ev.taskId,
+        startIdx: i,
+        endIdx: -1,
+        startEvent: ev,
+        abandoned: false,
+      });
+      openTasks.set(ev.taskId, idx);
+    } else if (isTaskResetEvent(ev)) {
+      abandonOpenTask(taskRanges, openTasks, ev.taskId, outcomeEnd(events, i));
+    } else if (isTaskEndEvent(ev)) {
+      const rangeIdx = openTasks.get(ev.taskId);
+      if (rangeIdx != null) {
+        const range = taskRanges[rangeIdx];
+        if (!range) continue;
+        range.endIdx = outcomeEnd(events, i);
+        range.endEvent = ev;
+        range.abandoned = false;
+        openTasks.delete(ev.taskId);
+      } else if (ev.type === 'task_skipped') {
+        taskRanges.push({
+          taskId: ev.taskId,
+          startIdx: i,
+          endIdx: outcomeEnd(events, i),
+          startEvent: ev,
+          endEvent: ev,
+          abandoned: false,
+        });
+      }
+    }
+  }
+
+  joinBuildRowsToBriefs(events, taskRanges);
+  return taskRanges;
 }

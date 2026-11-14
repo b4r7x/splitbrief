@@ -3,7 +3,7 @@ import {
   findLatestConversationRowAction,
   type ConversationRowAction,
 } from './conversation-rows/row-actions/build.js';
-import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
+import { resolveScrollKey, stepForScrollAction } from '../../core/keybindings/scroll.js';
 import type { InputMode, OverlayType } from '../../core/navigation/types.js';
 import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
 import { resolveKeyOwner, type FocusedKeySurface } from '../../core/keybindings/resolver.js';
@@ -63,28 +63,6 @@ export interface ReviewScrollInput {
   visibleHeight: number;
 }
 
-function reviewScrollOffsetForAction(
-  action: ScrollKeyAction,
-  reviewScrollOffset: number,
-  maxOffset: number,
-  pageStep: number,
-): number {
-  switch (action) {
-    case 'line-up':
-      return Math.max(0, reviewScrollOffset - 1);
-    case 'line-down':
-      return Math.min(maxOffset, reviewScrollOffset + 1);
-    case 'page-up':
-      return Math.max(0, reviewScrollOffset - pageStep);
-    case 'page-down':
-      return Math.min(maxOffset, reviewScrollOffset + pageStep);
-    case 'top':
-      return 0;
-    case 'bottom':
-      return maxOffset;
-  }
-}
-
 export function handleReviewScroll(options: ReviewScrollInput): WorkflowKeyAction {
   const { input, key, reviewScrollOffset, reviewLineCount, visibleHeight } = options;
   const owner = resolveKeyOwner({
@@ -100,11 +78,14 @@ export function handleReviewScroll(options: ReviewScrollInput): WorkflowKeyActio
   const scrollKey = resolveScrollKey({ input, key, lineKeys: 'shifted' });
   if (scrollKey === null) return NONE;
 
-  const maxOffset = Math.max(0, reviewLineCount - visibleHeight);
-  const pageStep = Math.max(1, visibleHeight);
   return {
     type: 'review-scroll',
-    offset: reviewScrollOffsetForAction(scrollKey, reviewScrollOffset, maxOffset, pageStep),
+    offset: stepForScrollAction({
+      action: scrollKey,
+      position: reviewScrollOffset,
+      page: Math.max(1, visibleHeight),
+      last: Math.max(0, reviewLineCount - visibleHeight),
+    }),
   };
 }
 

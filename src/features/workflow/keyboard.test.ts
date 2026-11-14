@@ -236,6 +236,21 @@ describe('handleReviewScroll', () => {
     });
   });
 
+  it('keeps the review scroll between the first and the last line', () => {
+    expect(
+      handleReviewScroll({ ...base, key: { pageDown: true } as Key, reviewScrollOffset: 25 }),
+    ).toEqual({
+      type: 'review-scroll',
+      offset: 30,
+    });
+    expect(
+      handleReviewScroll({ ...base, key: { pageUp: true } as Key, reviewScrollOffset: 5 }),
+    ).toEqual({
+      type: 'review-scroll',
+      offset: 0,
+    });
+  });
+
   it('maps Ctrl+B and Ctrl+F to page review scroll actions when review owns focus', () => {
     expect(
       handleReviewScroll({
