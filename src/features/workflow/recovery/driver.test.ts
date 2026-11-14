@@ -43,6 +43,7 @@ import {
   type UseInputModeResult,
 } from '../hooks/use-input-mode.js';
 import { createRecoveryDriver } from './driver.js';
+import type { PendingRecoveryResult } from './types.js';
 import { clearAllHandlers, requestSteer, setStopHandler } from '../run-requests/handlers.js';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -2418,4 +2419,177 @@ describe('prepared recovery corrections', () => {
       else expect(result.state.messageQueue[0]).toMatchObject(original);
     },
   );
+});
+
+describe('the order of the steps of one halt', () => {
+  /**
+   * Logs the steps of one prompt in their order: each settle, each question with REVIEW None on
+   * the view as it is asked, each start and stop of the config follow, each change of the panel
+   * notice, each reset of the input mode, and each listener the run's signal loses.
+   */
+  function logSteps(
+    controller: AbortController,
+    inputMode: UseInputModeResult,
+    onSettle: (settled: number) => void = () => {},
+  ): { steps: string[]; inputMode: UseInputModeResult; setInlineResume: () => void } {
+    const steps: string[] = [];
+    const subscribe = configStore.subscribe;
+    const follow = vi.spyOn(configStore, 'subscribe').mockImplementation((listener) => {
+      steps.push('follow the config');
+      const stop = subscribe(listener);
+      return () => {
+        steps.push('stop following');
+        stop();
+      };
+    });
+    onTestFinished(() => follow.mockRestore());
+    const remove = controller.signal.removeEventListener.bind(controller.signal);
+    vi.spyOn(controller.signal, 'removeEventListener').mockImplementation((type, listener) => {
+      steps.push(`remove the ${type} listener`);
+      remove(type, listener);
+    });
+    onTestFinished(
+      recoveryNoticeStore.subscribe(() => {
+        const { open, asking } = recoveryNoticeStore.get();
+        steps.push(open ? (asking ? 'notice asks' : 'notice open') : 'notice closed');
+      }),
+    );
+    let settled = 0;
+    return {
+      steps,
+      inputMode: {
+        ...inputMode,
+        setQuestionMode: (question) => {
+          const first = question.split('\n')[0] ?? '';
+          steps.push(`ask: ${first} (REVIEW None ${runViewStore.get().reviewNone})`);
+          return inputMode.setQuestionMode(question);
+        },
+        resetMode: () => {
+          steps.push('reset the mode');
+          inputMode.resetMode();
+        },
+      },
+      setInlineResume: () => {
+        settled += 1;
+        steps.push('settle');
+        onSettle(settled);
+      },
+    };
+  }
+
+  function prompt(
+    prepared: PreparedExecution,
+    state: WorkflowState,
+    controller: AbortController,
+    log: ReturnType<typeof logSteps>,
+  ): Promise<PendingRecoveryResult> {
+    return createRecoveryDriver({
+      prepared,
+      configOfRun: prepared.sourceConfig,
+      inputMode: log.inputMode,
+      abortedRef: { current: false },
+      retentionNoticeHandled: { current: true },
+      sink: addTuiEvent,
+      setInlineResume: log.setInlineResume,
+    })({ state, controller, republishPrompt: false });
+  }
+
+  it('settles the decided step, asks, applies the correction, and asks again on the next pass', async () => {
+    const { prepared, state: halted } = setupSession({
+      taskId: taskId('T999'),
+      affectedTaskIds: [taskId('T999')],
+      facts: { question: 'Which endpoint?' },
+      availableActions: ['retry-same-worker', 'decide-for-me', 'skip-current-task', 'end-run'],
+    });
+    const state: WorkflowState = { ...halted, decideForMe: true };
+    saveState(prepared.session.ref, state);
+    hydrateFromState(state, false);
+    const controller = new AbortController();
+    const { inputMode } = makeInputMode(['use the REST endpoint', rowPick('a')]);
+    // REVIEW moves while the correction applies, when no question follows the config.
+    const log = logSteps(controller, inputMode, (settled) => {
+      if (settled !== 2) return;
+      configStore.__testReset({
+        projectDir: prepared.session.ref.projectDir,
+        config: { ...prepared.sourceConfig, reviewer: 'none' },
+      });
+    });
+
+    const result = await prompt(prepared, state, controller, log);
+
+    expect(log.steps).toEqual([
+      'settle',
+      'notice open',
+      'notice asks',
+      'follow the config',
+      'ask: Needs you · T999 needs your answer (REVIEW None false)',
+      'stop following',
+      'notice open',
+      'settle',
+      'notice asks',
+      'follow the config',
+      'ask: Needs you · T999 needs your answer (REVIEW None true)',
+      'stop following',
+      'notice open',
+      'settle',
+      'remove the abort listener',
+      'notice closed',
+    ]);
+    expect(result).toMatchObject({ shouldRun: false, state: { closed: { as: 'ended' } } });
+  });
+
+  it('stops following the config, then removes its abort listener and closes the notice', async () => {
+    const { prepared, state } = setupSession();
+    const controller = new AbortController();
+    const { inputMode } = makeInputMode([rowPick('s')]);
+    const log = logSteps(controller, inputMode);
+
+    const result = await prompt(prepared, state, controller, log);
+    controller.abort();
+
+    expect(log.steps).toEqual([
+      'notice open',
+      'notice asks',
+      'follow the config',
+      'ask: Needs you · T001 failed (REVIEW None false)',
+      'stop following',
+      'notice open',
+      'settle',
+      'remove the abort listener',
+      'notice closed',
+    ]);
+    expect(result.shouldRun).toBe(true);
+  });
+
+  it('stops following the config, then removes its abort listener and closes the notice on an abort', async () => {
+    const { prepared, state } = setupSession();
+    const controller = new AbortController();
+    const { inputMode } = makeInputMode([]);
+    let cancelQuestion = (): void => {};
+    const log = logSteps(controller, {
+      ...inputMode,
+      setQuestionMode: () =>
+        new Promise<QuestionAnswer>((_resolve, reject) => {
+          cancelQuestion = () => reject(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+        }),
+      resetMode: () => cancelQuestion(),
+    });
+
+    const pending = prompt(prepared, state, controller, log);
+    const settled = expect(pending).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+    await vi.waitFor(() => expect(recoveryNoticeStore.get()).toEqual({ open: true, asking: true }));
+    controller.abort();
+    await settled;
+
+    expect(log.steps).toEqual([
+      'notice open',
+      'notice asks',
+      'follow the config',
+      'ask: Needs you · T001 failed (REVIEW None false)',
+      'reset the mode',
+      'stop following',
+      'remove the abort listener',
+      'notice closed',
+    ]);
+  });
 });
