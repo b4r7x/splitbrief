@@ -2,96 +2,45 @@ import { useRef, useEffect, useEffectEvent } from 'react';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
-import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
-import { seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
-import { seatIdentityChanges } from '../../../core/state/seats/changes.js';
-import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
-import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows/build.js';
-import { resetConversationRowsProjectionCache } from '../conversation-rows/cache/projection.js';
-import { resetEventBlockCache } from '../conversation-rows/cache/block.js';
-import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
-import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
-import { hasStaleHalt } from '../../../engine/orchestrator/run/init/resume-repair.js';
-import {
-  applyOfferedSeatSwap,
-  type SeatSwapChoice,
-} from '../../../engine/orchestrator/run/seat-swap.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { publishRetainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
-import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
-import type { OrchestratorCallbacks, WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { addTuiEvent } from '../tui-sink.js';
-import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
-import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
-import { readinessBlockerMessage } from '../../../core/readiness/format.js';
 import {
-  createAbortHandlerScope,
   setCancelHandler,
   setStopHandler,
-  setClearQueueHandler,
-  setQueueHandler,
   setResumeHandler,
   clearAllHandlers,
-  consumeBoundaryInterrupt,
-  consumeBoundaryPause,
-  seatChangeWaits,
-  landBoundaryPause,
-  requestSeatChangeAtBoundary,
-  spendSeatChange,
 } from '../run-requests/handlers.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
-import { parkStoppedRun } from '../../../engine/orchestrator/state-ops/halts.js';
-import { endRunError } from '../../../engine/orchestrator/run/close.js';
-import { endRun } from '../../../engine/orchestrator/run/end.js';
-import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { composerLiveStore } from '../../../stores/ui/composer-live.js';
-import { deriveRunStatus } from '../../../core/sessions/run/status.js';
-import { stopInProgress, stopStore, takesSeatAtBoundary } from '../../../stores/workflow/stop.js';
+import { stopInProgress, stopStore } from '../../../stores/workflow/stop.js';
 import {
   createProcessScope,
-  killProcessScope,
   onProcessRegistryChange,
   processScopeCount,
   runInProcessScope,
   type ProcessScope,
 } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/prompts/approval.js';
-import { toErrorMessage } from '../../../utils/format/errors.js';
-import { error } from '../../../utils/error.js';
 import type { UseInputModeResult } from './use-input-mode.js';
-import { buildPromptCallbacks } from '../run-loop/prompt-callbacks.js';
-import { createRecoveryDriver } from '../recovery/driver.js';
-import { nextEntryConfig, swapBaseConfig } from '../run-loop/seat-config.js';
-import { recordRunTerms, runResumePolicy } from '../resume/policy.js';
-import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
-import { hydrateResume, resumeFailureMessage } from '../resume/hydration.js';
-import { clearSessionScopedStores } from '../session-stores.js';
+import {
+  openStopSheetOverEmptyComposer,
+  runTuiWorkflow,
+  type ContinueAtRest,
+} from '../run-loop/start.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
-import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
 export type PrepareExecutionFn = typeof prepareExecution;
-
-function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
-  return controller.signal.aborted || ref.current;
-}
-
-/** The run opens the stop sheet by itself only over an empty composer: a draft keeps the keys. */
-function openStopSheetOverEmptyComposer(): void {
-  if (composerLiveStore.get().empty) overlayStore.open('stop-sheet');
-}
 
 interface UseRunLoopOptions {
   prepared?: PreparedExecution | undefined;
@@ -111,19 +60,14 @@ interface UseRunLoopOptions {
    * to pick up a changed seat names that cause. A refusal comes back as its reason, and the caller
    * shows it.
    */
-  continueAtRest?:
-    | ((
-        record: RunRecord,
-        steer: UserMessageInput,
-        resumeCause?: 'seat-change',
-      ) => string | undefined)
-    | undefined;
+  continueAtRest?: ContinueAtRest | undefined;
 }
 
 /**
- * The run itself: one `runWorkflow` call per turn, the recovery panel between
- * turns, and the process-registry watcher that keeps the stop byline honest.
- * Everything about re-entering the run lives in `useRunContinue`.
+ * The run in the React life cycle: `runTuiWorkflow` for each re-entry in its own process scope, the
+ * abort when the screen leaves it, the hand-off of the run at rest, and the process-registry
+ * watcher that keeps the stop byline honest. Everything about re-entering the run lives in
+ * `useRunContinue`.
  */
 export function useRunLoop({
   prepared,
@@ -139,427 +83,26 @@ export function useRunLoop({
   const abortedRef = useRef(false);
   const processScopeRef = useRef<ProcessScope | undefined>(undefined);
   const retentionNoticeHandled = useRef(true);
-  const { runId, inlineResume, setInlineResume, handleResume } = continuation;
+  const { runId, handleResume } = continuation;
 
-  const inlineForPrepared =
-    inlineResume !== undefined && inlineResume.prepared === prepared ? inlineResume : undefined;
-  const inlineState = inlineForPrepared?.state;
-
-  const startWorkflow = useEffectEvent(async (controller: AbortController, scope: ProcessScope) => {
-    if (prepared === undefined) return;
-    recordRunTerms(prepared);
-    retentionNoticeHandled.current = true;
-    const { session } = prepared;
-    // A fresh abort-handler scope per run: a superseded run's late pops (its
-    // aborted body settles after the rewind cleanup) drain its own scope and
-    // cannot steal this run's live handler.
-    const sinks: WorkflowSinks = {
-      setAbortHandler: createAbortHandlerScope(),
-      setClearQueueHandler,
-      setQueueHandler,
-      consumeBoundaryInterrupt,
-      consumeBoundaryPause,
-      seatChangeWaits,
-      getContinuationResumedAt: () => lifecycleStore.get().resumedAt,
-    };
-    let stateForRun = inlineState;
-    // The steer belongs to the first call this re-entry makes; the recovery loop's
-    // later iterations are the run continuing, not the operator continuing it.
-    let steerForRun = inlineForPrepared?.steer ?? steer;
-    let resumeCauseForRun = resumeCause;
-    if (stateForRun === undefined && prepared.runtime.resumeState !== undefined) {
-      const hydrated = hydrateResume(session.ref);
-      if (hydrated.kind === 'invalid') {
-        inputMode.resetMode();
-        clearSessionScopedStores();
-        addTuiEvent({
-          type: 'error',
-          ts: Date.now(),
-          phase: runViewStore.get().phase,
-          message: resumeFailureMessage(hydrated),
-        });
-        return;
-      }
-      if (hydrated.kind === 'missing') {
-        inputMode.resetMode();
-        clearSessionScopedStores();
-        return;
-      }
-      stateForRun = hydrated.state;
-    }
-    let recoveryPromptAlreadyPublished = false;
-
-    // A fresh run starts from an empty screen; a run this screen is continuing already has its
-    // history on it, replayed at the navigation event or appended by its earlier passes, and the
-    // live bus appends from here. Either way the saved state is laid over the stores, so the brief
-    // list and the spend are the run's. A stop that parked the run before belongs to the pass it
-    // ended; the pass starting here is live and stops afresh.
-    if (stateForRun === undefined) resetWorkflow();
-    if (stateForRun !== undefined) {
-      stopStore.reset();
-      hydrateFromState(stateForRun, configStore.reviewNone());
-    }
-    resetMarkdownConversationRowsCache();
-    resetConversationRowsProjectionCache();
-    resetEventBlockCache();
-    conversationScrollStore.reset();
-    setStopHandler(() => {
-      controller.abort();
-      inputMode.resetMode();
-      closeApprovalPrompt();
-      stopStore.get().parked?.resolve?.(plainUserMessage(''));
+  const startWorkflow = useEffectEvent((controller: AbortController, scope: ProcessScope) => {
+    if (prepared === undefined) return undefined;
+    return runTuiWorkflow({
+      prepared,
+      steer,
+      resumeCause,
+      selectedSkills,
+      inputMode,
+      continuation,
+      runWorkflow: runWorkflowFn,
+      prepareExecution: prepareExecutionFn,
+      continueAtRest,
+      abortedRef,
+      retentionNoticeHandled,
+      controller,
+      scope,
+      settleRun,
     });
-    setCancelHandler(() => {
-      controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-      inputMode.resetMode();
-      closeApprovalPrompt();
-      stopStore.get().parked?.resolve?.(plainUserMessage(''));
-    });
-
-    // A re-entry re-prepares this session, and every later iteration belongs to the preparation
-    // it made: the seats were built from it, and its receipt is the one on disk — otherwise the
-    // next halt rebuilds the tool that hit its limit, and a stop releases a receipt already gone.
-    let preparedForRun = prepared;
-
-    const finishStoppedRun = async (): Promise<void> => {
-      await killProcessScope(scope);
-      const hydrated = hydrateResume(session.ref);
-      if (hydrated.kind !== 'loaded')
-        throw error(
-          'stop-state-unavailable',
-          'Cannot save stopped run: workflow state is unavailable',
-        );
-      const current = hydrated.state;
-      const intent = stopStore.get().intent;
-      const bus = createRecoveryBus({ ...session.ref, sink: addTuiEvent });
-      const closure =
-        intent === 'end-run' ? await endRun({ ...session.ref, bus }, current) : undefined;
-      const reviewNone = resolveReviewCadence(preparedForRun.config) === 'none';
-      const status = deriveRunStatus({ state: current, liveness: 'not-alive', reviewNone });
-      const next =
-        closure !== undefined
-          ? closure.state
-          : status.kind === 'closed'
-            ? current
-            : current.pendingRecovery !== undefined
-              ? // A halt is not a cut step: the panel owns what happens next.
-                current
-              : await parkStoppedRun(
-                  { ...session.ref, bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }) },
-                  current,
-                  reviewNone,
-                );
-      finalizeEndedRun({
-        ref: session.ref,
-        active: preparedForRun.session.active,
-        state: next,
-        modelCache: modelCacheStore,
-      });
-      await settleRun(session.ref, true);
-    };
-
-    // A seat saved under the running run is picked up at the next brief or review boundary: the run
-    // stops itself there instead of parking, and continues the way a run at rest does, re-prepared
-    // from the saved config. A seat saved while the run waits parked is picked up when it continues.
-    // A halt runs no brief, so a seat saved while it waits is read when the run re-enters. Both
-    // read a hand edit of the file first, so a seat written there counts as saved. The saved
-    // seats are compared with the config the preparation read, not with the prepared one:
-    // preparation names the model a seat leaves to its tool. A seat saved while the preparation ran
-    // is then a change too. A seat saved back to the seat of the run takes the change back.
-    let configOfRun = prepared.sourceConfig;
-    const requestSeatChanges = (): void => {
-      const config = configStore.get().config;
-      if (config === null) return;
-      const changed = seatIdentityChanges(
-        seatIdentitiesFromConfig(configOfRun),
-        seatIdentitiesFromConfig(config),
-      );
-      if (changed.length > 0) requestSeatChangeAtBoundary();
-      else spendSeatChange();
-    };
-    const offConfig = configStore.subscribe(() => {
-      if (takesSeatAtBoundary()) requestSeatChanges();
-    });
-    let seatChangedAtBoundary: 'continue' | 'stop' | undefined;
-    let steerAtBoundary = plainUserMessage('');
-    const promptCallbacks = buildPromptCallbacks({ inputMode, abortedRef, controller });
-    const callbacks: OrchestratorCallbacks = {
-      ...promptCallbacks,
-      // Continuing a park settles the stop store and a waiting seat change with it, so the saved
-      // seats are compared again: a cut brief takes them at the next boundary, a boundary park now.
-      onContinuationNeeded: async (partial, at, kept) => {
-        let landed = at === 'boundary' ? landBoundaryPause() : 'park';
-        let steer = plainUserMessage('');
-        if (landed === 'park') {
-          steer =
-            (await promptCallbacks.onContinuationNeeded?.(partial, at, kept)) ??
-            plainUserMessage('');
-          if (controller.signal.aborted) return steer;
-          configStore.reloadIfChanged();
-          requestSeatChanges();
-          if (at !== 'boundary') return steer;
-          landed = landBoundaryPause();
-          if (landed === 'park') return steer;
-        }
-        seatChangedAtBoundary = landed;
-        steerAtBoundary = steer;
-        controller.abort();
-        return plainUserMessage('');
-      },
-    };
-
-    try {
-      let switchSeat: SeatSwapChoice | undefined;
-      // A retired file halt is not a question any more: on this re-entry it travels into the
-      // engine, which resolves it and says so in the transcript. Asked once — a halt this run
-      // raises later is fresh by construction.
-      let staleHalt = stateForRun !== undefined && hasStaleHalt(stateForRun);
-      while (!isWorkflowAborted(controller, abortedRef)) {
-        if (stateForRun?.pendingRecovery !== undefined && !staleHalt) {
-          const promptPendingRecovery = createRecoveryDriver({
-            prepared: preparedForRun,
-            configOfRun,
-            inputMode,
-            abortedRef,
-            retentionNoticeHandled,
-            sink: addTuiEvent,
-            setInlineResume: (state) => setInlineResume({ prepared, state }),
-          });
-          const recovery = await promptPendingRecovery({
-            state: stateForRun,
-            controller,
-            republishPrompt: !recoveryPromptAlreadyPublished,
-            correction: steerForRun,
-          }).catch((err: unknown) => {
-            if (controller.signal.aborted && err === WORKFLOW_USER_CANCELLED_ABORT_REASON)
-              return { shouldRun: false as const, state: stateForRun };
-            throw err;
-          });
-          if (controller.signal.aborted) {
-            if (!abortedRef.current) await finishStoppedRun();
-            return;
-          }
-          recoveryPromptAlreadyPublished = false;
-          if (!recovery.shouldRun) {
-            // Ending a run from the recovery panel never re-enters the engine, so
-            // the session record is written here through the normal finalize.
-            const closedState = recovery.state;
-            if (
-              closedState !== undefined &&
-              deriveRunStatus({ state: closedState, liveness: 'not-alive', reviewNone: false })
-                .kind === 'closed'
-            ) {
-              finalizeEndedRun({
-                ref: preparedForRun.session.ref,
-                active: preparedForRun.session.active,
-                state: closedState,
-                modelCache: modelCacheStore,
-              });
-            }
-            await settleRun(session.ref, true);
-            return;
-          }
-          if (recovery.prepared !== undefined) preparedForRun = recovery.prepared;
-          stateForRun = recovery.state;
-          switchSeat = recovery.switchSeat;
-          steerForRun =
-            recovery.correctionTaken === true ? undefined : (recovery.steer ?? steerForRun);
-        }
-
-        staleHalt = false;
-
-        // A taken seat swap resolves the halt onto the new tool and prepares this session on it.
-        // That is this re-entry's preparation: the seat that halted is not admitted again, so a
-        // tool that can no longer run cannot block the move away from it.
-        if (switchSeat !== undefined && stateForRun !== undefined) {
-          configStore.reloadIfChanged();
-          const swappedSeat = stateForRun.pendingRecovery?.switchSeat?.seat;
-          const savedConfig = configStore.get().config;
-          const swapped = await applyOfferedSeatSwap({
-            choice: switchSeat,
-            projectDir: session.ref.projectDir,
-            sessionId: session.ref.sessionId,
-            bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }),
-            config:
-              savedConfig === null || swappedSeat === undefined
-                ? preparedForRun.config
-                : swapBaseConfig(savedConfig, preparedForRun.config, swappedSeat),
-            prepared: preparedForRun,
-            savedState: stateForRun,
-            signal: controller.signal,
-            prepare: prepareExecutionFn,
-            onSeatSwapped: (swappedPrepared) => {
-              preparedForRun = swappedPrepared;
-              configOfRun = swappedPrepared.sourceConfig;
-              configStore.refreshFromExecution(session.ref.projectDir, swappedPrepared.config);
-              // The swap prepared from the saved config, so it took every seat saved before it.
-              if (swappedSeat !== undefined) spendSeatChange();
-            },
-          });
-          switchSeat = undefined;
-          if (controller.signal.aborted) {
-            if (!abortedRef.current) await finishStoppedRun();
-            return;
-          }
-          if (swapped !== undefined) stateForRun = swapped.state;
-          // An automatic intent whose swap did not resolve the halt is spent: the halt
-          // stays pending, with no intent to take the same fallback again, so the next
-          // entry shows the panel and the operator picks the seat by hand.
-          const pending = stateForRun.pendingRecovery;
-          const spent = pending?.switchSeat;
-          if (pending !== undefined && spent?.auto !== undefined) {
-            const { auto: _auto, ...unattended } = spent;
-            stateForRun = {
-              ...stateForRun,
-              pendingRecovery: { ...pending, switchSeat: unattended },
-            };
-            continue;
-          }
-        }
-
-        // A run started here was prepared to allocate its session, and that preparation starts a
-        // session only once. Every later entry continues the session, so it is admitted again as a
-        // resume before it re-enters the engine. A seat saved since the run was prepared is
-        // admitted here on any re-entry, from the saved config, so the run continues on it.
-        const entry = nextEntryConfig({
-          configOfRun,
-          prepared: preparedForRun.config,
-          state: stateForRun,
-        });
-        if (
-          stateForRun !== undefined &&
-          (preparedForRun.purpose === 'new-workflow' || entry.seatsSaved)
-        ) {
-          const reprepared = await prepareExecutionFn({
-            existingSession: session.ref,
-            feature: stateForRun.feature,
-            effectiveConfig: entry.config,
-            configWarnings: [],
-            policy: runResumePolicy(preparedForRun.runtime),
-            signal: controller.signal,
-            resumeState: stateForRun,
-          });
-          if (reprepared.kind === 'aborted') {
-            if (!abortedRef.current) await finishStoppedRun();
-            return;
-          }
-          if (reprepared.kind !== 'prepared') {
-            addTuiEvent({
-              type: 'error',
-              ts: Date.now(),
-              phase: runViewStore.get().phase,
-              message:
-                reprepared.kind === 'blocked'
-                  ? `Cannot resume: ${readinessBlockerMessage(reprepared.report)}`
-                  : `Cannot resume: ${toErrorMessage(reprepared.error)}`,
-            });
-            await settleRun(session.ref, true);
-            return;
-          }
-          preparedForRun = reprepared.execution;
-          // The saved seats are taken now, so the compare before the engine entry spends the change.
-          if (entry.seatsSaved) configOfRun = reprepared.execution.sourceConfig;
-        }
-
-        const storeStreamingSink: StreamingSink = {
-          start: (tid) => streamingOutputStore.startStreaming(tid),
-          replaceLines: (lines) => streamingOutputStore.replaceLines(lines),
-          stop: () => streamingOutputStore.stopStreaming(),
-        };
-
-        requestSeatChanges();
-        const detectedContextLength = configStore.getDetectedContextLength();
-        retentionNoticeHandled.current = false;
-        await runWorkflowFn({
-          prepared: preparedForRun,
-          sinks,
-          tuiSink: addTuiEvent,
-          modelCache: modelCacheStore,
-          drainPendingAttachments: () => attachmentsStore.drain(),
-          streamingSink: storeStreamingSink,
-          signal: controller.signal,
-          callbacks,
-          savedState: stateForRun,
-          selectedSkills,
-          ...(steerForRun !== undefined && { steer: steerForRun }),
-          ...(resumeCauseForRun !== undefined && { resumeCause: resumeCauseForRun }),
-          ...(detectedContextLength !== undefined && { detectedContextLength }),
-        });
-        steerForRun = undefined;
-        resumeCauseForRun = undefined;
-
-        if (abortedRef.current) return;
-        if (controller.signal.aborted) {
-          if (stopStore.get().intent === 'end-run') await finishStoppedRun();
-          else if (seatChangedAtBoundary === 'continue') {
-            stopStore.reset();
-            const refusal = continueAtRest?.(
-              await settleRun(session.ref, false),
-              steerAtBoundary,
-              'seat-change',
-            );
-            if (refusal !== undefined) feedbackStore.setMessage(refusal);
-          } else await settleRun(session.ref, true);
-          return;
-        }
-
-        const hydrated = hydrateResume(session.ref);
-        if (hydrated.kind === 'invalid') {
-          inputMode.resetMode();
-          clearSessionScopedStores();
-          addTuiEvent({
-            type: 'error',
-            ts: Date.now(),
-            phase: runViewStore.get().phase,
-            message: resumeFailureMessage(hydrated),
-          });
-          await settleRun(session.ref, true);
-          return;
-        }
-        const saved = hydrated.kind === 'loaded' ? hydrated.state : null;
-
-        // A halt is the only thing that keeps this loop turning: the recovery panel runs in this
-        // process, answers, and re-enters the engine. Every other return is the run at rest, and
-        // the screen it is already on paints it from its re-read record.
-        if (!saved?.pendingRecovery) {
-          await settleRun(session.ref, true);
-          return;
-        }
-
-        stateForRun = saved;
-        setInlineResume({ prepared, state: saved });
-        recoveryPromptAlreadyPublished = true;
-        // The event bound swaps an oversized prompt event for a warning: the view has no halt yet.
-        if (runViewStore.get().halt === null) hydrateFromState(saved, configStore.reviewNone());
-      }
-    } catch (err) {
-      if (abortedRef.current) return;
-      const message = toErrorMessage(err);
-      if (endRunError.isApplying(err)) {
-        await settleRun(session.ref, true);
-        feedbackStore.setError(message);
-        return;
-      }
-      addTuiEvent({ type: 'error', ts: Date.now(), phase: runViewStore.get().phase, message });
-      if (stopStore.get().intent !== 'none') {
-        stopStore.fail(message);
-        // Retry only cleanup and persistence, never the interrupted model call.
-        setStopHandler(() => {
-          void (async () => {
-            try {
-              await finishStoppedRun();
-            } catch (retryError) {
-              stopStore.fail(toErrorMessage(retryError));
-            }
-          })();
-        });
-        openStopSheetOverEmptyComposer();
-      } else {
-        await settleRun(session.ref, true);
-      }
-    } finally {
-      offConfig();
-    }
   });
 
   useEffect(() => {

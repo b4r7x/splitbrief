@@ -156,6 +156,21 @@ describe('useStaticSelector', () => {
     ui.unmount();
   });
 
+  it.each([
+    { name: 'a plain list', keyed: false },
+    { name: 'a keyed list', keyed: true },
+  ])('takes the row ↓ moved to when ↓⏎ arrive in one read on $name', async ({ keyed }) => {
+    const ui = renderFeature(<Harness items={['alpha', 'beta', 'gamma']} keyed={keyed} />);
+    await flushEffects();
+
+    ui.stdin.write(`${DOWN}${ENTER}`);
+
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('current:beta|chosen:beta@1');
+    });
+    ui.unmount();
+  });
+
   it('ignores keys while shouldHandleInput is false and handles them once it opens', async () => {
     let open = false;
 

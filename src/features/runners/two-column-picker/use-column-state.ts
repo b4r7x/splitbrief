@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { clampIndex, rotateIndex } from '../../../utils/indexing.js';
+import { useKeyState } from '../../../hooks/use-key-state.js';
 
 export interface ColumnStateHook<T> {
   filter: string;
@@ -38,14 +39,11 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
     compare,
     onCurrentItemChange,
   } = input;
-  const [filter, setFilterState] = useState('');
-  const [storedIndex, setIndexState] = useState(initialIndex);
+  const [filter, setFilterState, latestFilter] = useKeyState('');
+  const [storedIndex, setIndexState, latestIndex] = useKeyState(initialIndex);
 
-  const filterRef = useRef(filter);
-  const indexRef = useRef(storedIndex);
   const sourceRef = useRef(source);
   const notifiedKey = useRef<string | null>(null);
-  filterRef.current = filter;
   sourceRef.current = source;
 
   const getItems = (filterValue: string, src: T[] = sourceRef.current) => {
@@ -72,14 +70,14 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
   const index = realIndex >= 0 ? realIndex + virtualCount : storedIndex;
   const effectiveIndex = clampIndex(index, items.length + virtualCount);
   const currentItem = itemAt(effectiveIndex, items);
-  indexRef.current = index;
 
   const notifyCurrentItem = (item: T | undefined) => {
     if (item !== undefined) notifiedKey.current = getKey(item);
     onCurrentItemChange?.(item);
   };
 
-  // Clamp and notify only when the selected key is gone.
+  // Clamp and notify only when the selected key is gone. A key queued in this commit reads the index
+  // set here: `useNavState` declares its input queue, and so its layout effect, after this hook.
   useLayoutEffect(() => {
     if (index !== storedIndex) setIndexState(index);
     if (currentItem === undefined) return;
@@ -88,9 +86,8 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
   });
 
   const setIndex = (next: number) => {
-    const nextItems = getItems(filterRef.current);
+    const nextItems = getItems(latestFilter());
     const clamped = clampIndex(next, nextItems.length + virtualCount);
-    indexRef.current = clamped;
     setIndexState(clamped);
     const landed = itemAt(clamped, nextItems);
     notifyCurrentItem(landed);
@@ -98,20 +95,19 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
   };
 
   const moveBy = (direction: 1 | -1) => {
-    const nextItems = getItems(filterRef.current);
+    const nextItems = getItems(latestFilter());
     const length = nextItems.length + virtualCount;
     if (length === 0) return undefined;
-    const next = rotateIndex(clampIndex(indexRef.current, length), length, direction);
+    const next = rotateIndex(clampIndex(latestIndex(), length), length, direction);
     return setIndex(next);
   };
 
   const setFilter = (update: (prev: string) => string) => {
-    const nextFilter = update(filterRef.current);
-    if (nextFilter === filterRef.current) return;
-    filterRef.current = nextFilter;
+    const nextFilter = update(latestFilter());
+    if (nextFilter === latestFilter()) return;
     const nextItems = getItems(nextFilter);
     setFilterState(nextFilter);
-    notifyCurrentItem(itemAt(indexRef.current, nextItems));
+    notifyCurrentItem(itemAt(latestIndex(), nextItems));
   };
 
   return {
@@ -124,8 +120,6 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
     setIndex,
     moveBy,
     reset: (next) => {
-      filterRef.current = '';
-      indexRef.current = next;
       setIndexState(next);
       setFilterState('');
       notifiedKey.current = null;

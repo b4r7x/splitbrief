@@ -43,6 +43,7 @@ Cross-feature primitives only. Flat directory — no subfolders, no barrels.
 |---|---|
 | `use-filterable-list.ts` | Filterable, searchable picker state (arrow-nav, filter, selection). Used by every feature-level picker. |
 | `use-static-selector.ts` | Fixed-list keyboard selector (no filter). Peer of `use-filterable-list` for simpler cases. |
+| `use-key-state.ts` | `useKeyState(initial)` — `[value, set, latest]`: state that every key of one stdin read sees. Ink delivers the keys of one read before React re-renders, so a key handler reads `latest()`, which `set` writes first. Used by the static selector, the confirm approval prompt, the two-column picker columns and the plan card selection. |
 | `use-spinner-frame.ts` | `useSpinnerFrame(active)` — the spinner glyph frame, slowed under reduced motion. Used by home, setup, the runner picker and the workflow screen. |
 | `use-crew-display-names.ts` | `useCrewDisplayNames(config)` — each seat's display name, re-read when the model cache refreshes. Used by home, Settings, crew, the runner picker and the workflow screen. |
 | `use-shared-clock.ts` | `useSharedClock({ active })` — one shared ticking `now` for the workflow build progress block, the at-rest byline's seat wait and Apply clock, the running tool checks, and every session row's age on home and `/sessions`, so no two surfaces sample a different second. `active` is a rule of the clock's own sample, `(now) => boolean`: the frame that takes a surface off the clock reads the same sample as the rule, and that sample stays. |
@@ -56,7 +57,7 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 
 | Hook | Purpose |
 |---|---|
-| `use-run-loop.ts` | Engine lifecycle: `runWorkflow`, the recovery loop between turns, rewind, and the process-registry stop watcher. |
+| `use-run-loop.ts` | Engine lifecycle: starts and aborts the run loop (`runTuiWorkflow` in `run-loop/start.ts`: `runWorkflow` and the recovery loop between turns), hands the run at rest to the screen, and keeps the process-registry stop watcher. |
 | `use-run-continue.ts` | How the run is re-entered: the state and steer its next turn starts from, and the `continueRun` call behind `/resume` and a typed correction. |
 | `use-input-mode.ts` | Promise-based modal input (normal/review/question). |
 | `use-review-content.ts` | Async file read via `AbortController`-cancelled `fs.readFile` + line-count sync to `reviewStore`. |

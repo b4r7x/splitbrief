@@ -3213,7 +3213,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
       }),
   ],
   // A stop that fails over typed words leaves the sheet closed: the run opens it by itself only
-  // over an empty composer (`openStopSheetOverEmptyComposer` in `use-run-loop.ts`).
+  // over an empty composer (`openStopSheetOverEmptyComposer` in `run-loop/start.ts`).
   [
     scenarioId('workflow-stop-failed-over-draft'),
     () => ({

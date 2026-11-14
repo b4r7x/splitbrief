@@ -1,5 +1,5 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { Box } from 'ink';
 import { StopMenu } from '../../features/workflow/stop/menu.js';
 import {
@@ -40,6 +40,7 @@ import { recordedCrewHeader } from '../../features/workflow/closed/header.js';
 import { bylineParts, legendText, runClosedLabel } from '../../features/workflow/closed/byline.js';
 import { applyByline, openRunBylineParts } from '../../features/workflow/closed/open-byline.js';
 import { useSharedClock } from '../../hooks/use-shared-clock.js';
+import { useKeyState } from '../../hooks/use-key-state.js';
 import { seatWaitParts } from '../../core/sessions/seat-wait-line.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { departureStore } from '../../stores/workflow/departure.js';
@@ -132,11 +133,7 @@ export function WorkflowScreen({
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
   const [scrollBelowLabel, setScrollBelowLabel] = useState('');
-  const [reviewSelected, setReviewSelected] = useState(0);
-  // Ink delivers every key of one stdin read before React re-renders, so ⏎ right after ↓ runs the
-  // composer's handler from the render before ↓. The ref carries the row ↓ moved to across it.
-  const reviewSelectedRef = useRef(reviewSelected);
-  reviewSelectedRef.current = reviewSelected;
+  const [reviewSelected, setReviewSelected, latestReviewSelected] = useKeyState(0);
   const reviewKeysCommenting = reviewKeysStore.use((state) => state.commenting);
   const reviewKeysRequested = reviewKeysStore.use((state) => state.requested);
   const composerDraftText = composerLiveStore.use((state) => state.text);
@@ -163,7 +160,6 @@ export function WorkflowScreen({
   const planCardOpen = planCardArtifact !== null;
   const reviewArtifact = model.hasOverlay ? null : planCardArtifact;
   useLayoutEffect(() => {
-    reviewSelectedRef.current = 0;
     setReviewSelected(0);
   }, [planCardArtifact, reviewOwnerToken]);
   const { focused: planCardFocused, setMenu: setPlanCardFocused } = usePanelFocus(
@@ -188,9 +184,7 @@ export function WorkflowScreen({
   const handleReviewBoundaryNavigate = (direction: 'up' | 'down'): boolean => {
     if (reviewArtifact === null) return false;
     const optionCount = reviewDocumentOptions(reviewArtifact).length;
-    const next = navigateIndex(direction, reviewSelectedRef.current, optionCount);
-    reviewSelectedRef.current = next;
-    setReviewSelected(next);
+    setReviewSelected(navigateIndex(direction, latestReviewSelected(), optionCount));
     return true;
   };
 
@@ -262,7 +256,7 @@ export function WorkflowScreen({
       // An open change request takes ⏎ as `send`, and an empty one has nothing to send.
       // With no row in view there is no row for ⏎ to take.
       if (reviewDraft !== null || promptBoxRows === 0) return;
-      const row = reviewDocumentOptions(reviewArtifact)[reviewSelectedRef.current];
+      const row = reviewDocumentOptions(reviewArtifact)[latestReviewSelected()];
       // The comment row hands the keyboard to the composer the same way a typed `c` does: one
       // empty change request, so there is one way into a review comment and not two.
       if (row === undefined || row.command === 'comment') {

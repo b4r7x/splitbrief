@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Box, useInput } from 'ink';
 import { ListViewport } from '../../../../components/pickers/list-viewport.js';
 import { isItemIndexVisible } from '../../../../components/pickers/scroll-window.js';
@@ -39,6 +39,7 @@ import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.j
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { ELLIPSIS } from '../../../../utils/display-text/truncate.js';
 import { countNoun } from '../../../../utils/pluralize.js';
+import { useKeyState } from '../../../../hooks/use-key-state.js';
 
 export const PROMPT_ZONE_Z = 50;
 
@@ -76,13 +77,10 @@ export function ConfirmApprovalPrompt({
   queues,
   graceUntil,
 }: ConfirmApprovalPromptProps) {
-  const [reasonInput, setReasonInput] = useState('');
-  const [confirmStep, setConfirmStep] = useState<ConfirmStep>('choose');
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [reasonInput, setReasonInput, latestReason] = useKeyState('');
+  const [confirmStep, setConfirmStep, latestStep] = useKeyState<ConfirmStep>('choose');
+  const [selectedIndex, setSelectedIndex, latestIndex] = useKeyState(0);
   const [nudged, setNudged] = useState(false);
-  const reasonInputRef = useRef('');
-  const confirmStepRef = useRef<ConfirmStep>('choose');
-  const selectedIndexRef = useRef(0);
   const t = useTheme();
   const rows = terminalSizeStore.use((s) => s.rows);
   // A page that gives the panel no region gives it the terminal.
@@ -117,14 +115,8 @@ export function ConfirmApprovalPrompt({
     width: frame.width,
   });
 
-  const moveTo = (index: number): void => {
-    selectedIndexRef.current = index;
-    setSelectedIndex(index);
-  };
-
   const takeRow = (key: string): void => {
     if (key === 'r') {
-      confirmStepRef.current = 'reason';
       setConfirmStep('reason');
       setNudged(false);
       return;
@@ -144,35 +136,26 @@ export function ConfirmApprovalPrompt({
         return;
       }
 
-      if (confirmStepRef.current === 'reason') {
+      if (latestStep() === 'reason') {
         if (key.return) {
-          confirmWith(reasonInputRef.current.trim() || CONFIRM_REASON_UNSTATED);
+          confirmWith(latestReason().trim() || CONFIRM_REASON_UNSTATED);
           return;
         }
         if (key.backspace || key.delete) {
-          reasonInputRef.current = reasonInputRef.current.slice(0, -1);
-          setReasonInput(reasonInputRef.current);
+          setReasonInput(latestReason().slice(0, -1));
           return;
         }
-        if (input && !key.ctrl && !key.meta) {
-          reasonInputRef.current += input;
-          setReasonInput(reasonInputRef.current);
-        }
+        if (input && !key.ctrl && !key.meta) setReasonInput(latestReason() + input);
         return;
       }
 
       if (key.upArrow || key.downArrow) {
-        selectedIndexRef.current = navigateIndex(
-          key.upArrow ? 'up' : 'down',
-          selectedIndexRef.current,
-          options.length,
-        );
-        setSelectedIndex(selectedIndexRef.current);
+        setSelectedIndex(navigateIndex(key.upArrow ? 'up' : 'down', latestIndex(), options.length));
         setNudged(false);
         return;
       }
       if (key.return) {
-        const option = options[selectedIndexRef.current];
+        const option = options[latestIndex()];
         if (option !== undefined && fit.options > 0) takeRow(option.key);
         return;
       }
@@ -181,13 +164,13 @@ export function ConfirmApprovalPrompt({
       const letterRow = options.findIndex((option) => option.key === letter);
       const inView = isItemIndexVisible({
         items: [...options],
-        selectedIndex: selectedIndexRef.current,
+        selectedIndex: latestIndex(),
         itemIndex: letter === 'r' ? letterRow : 0,
         rowBudget: fit.options,
       });
       if (letter === 'r' && letterRow >= 0) {
         if (inView) takeRow('r');
-        else moveTo(letterRow);
+        else setSelectedIndex(letterRow);
         return;
       }
       if (letter === 'x' || letter === 'n') {
@@ -198,7 +181,7 @@ export function ConfirmApprovalPrompt({
       // A control-plane write costs the highlighted row, so `y` moves the highlight back to
       // Confirm and reports the miss instead of silently doing nothing.
       if (irreversible || !inView) {
-        moveTo(0);
+        setSelectedIndex(0);
         setNudged(true);
       } else {
         confirmWith(CONFIRM_REASON_UNSTATED);
