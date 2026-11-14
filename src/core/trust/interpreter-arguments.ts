@@ -1,4 +1,4 @@
-import { executableName, isPosixShell } from './interpreter-command-string.js';
+import { executableName, isPosixShell, SHELL_FAMILIES } from './interpreter-command-string.js';
 
 /**
  * What an interpreter invocation runs, read from its argv alone. `loads` holds every file or
@@ -28,7 +28,12 @@ const VERSION_OR_HELP = new Set(['-h', '-v', '-V', '--help', '--version']);
 const PYTHON = /^(python|pypy)\d*(\.\d+)?$/;
 const NODE = new Set(['node', 'nodejs']);
 const SCRIPT_ONLY = new Set(['perl', 'php', 'ruby']);
-const OPAQUE_SHELLS = new Set(['cmd', 'csh', 'fish', 'powershell', 'pwsh', 'tcsh']);
+const OPAQUE_SHELLS = new Set([
+  ...SHELL_FAMILIES.csh,
+  ...SHELL_FAMILIES.fish,
+  ...SHELL_FAMILIES.powershell,
+  ...SHELL_FAMILIES['windows-command'],
+]);
 
 const NODE_PROGRAM_OPTIONS = new Set(['-e', '--eval', '-p', '--print', '-pe']);
 const NODE_LOAD_OPTIONS = new Set([

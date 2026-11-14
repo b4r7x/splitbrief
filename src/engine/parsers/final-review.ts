@@ -1,17 +1,20 @@
 import { z } from 'zod';
-import { ReviewFindingSeveritySchema, ReviewVerdictSchema } from '../../core/schemas/summary.js';
+import {
+  FinalReviewFindingSeveritySchema,
+  FinalReviewVerdictSchema,
+  type FinalReviewVerdict,
+} from '../../core/schemas/summary.js';
 import { VERDICT_RULES } from '../../core/pipeline-spec/review.js';
 
 export const ParsedFinalReviewSchema = z.object({
-  verdict: ReviewVerdictSchema.nullable(),
+  verdict: FinalReviewVerdictSchema.nullable(),
   criteria: z.array(z.object({ passed: z.boolean(), text: z.string() })),
-  findings: z.array(z.object({ severity: ReviewFindingSeveritySchema, text: z.string() })),
+  findings: z.array(z.object({ severity: FinalReviewFindingSeveritySchema, text: z.string() })),
 });
 
 export type ParsedFinalReview = z.infer<typeof ParsedFinalReviewSchema>;
 
-type ReviewVerdict = z.infer<typeof ReviewVerdictSchema>;
-type ReviewFindingSeverity = z.infer<typeof ReviewFindingSeveritySchema>;
+type FinalReviewFindingSeverity = z.infer<typeof FinalReviewFindingSeveritySchema>;
 
 const HEADING_RE = /^#{1,6}\s+\S/;
 const BULLET = String.raw`(?:[-*]|\d+[.)])\s+`;
@@ -96,12 +99,12 @@ function extractSection(lines: string[], headingTail: (line: string) => string |
  * A section whose first line leads with a verdict is that verdict, whatever its reason names;
  * otherwise the section must carry exactly one verdict word.
  */
-function parseVerdict(section: string[]): ReviewVerdict | null {
+function parseVerdict(section: string[]): FinalReviewVerdict | null {
   const lead = section.find((line) => line.trim() !== '')?.match(LEADING_VERDICT_RE)?.[1];
   const words = section.join('\n').match(VERDICT_WORD_RE);
   const word = lead ?? (words?.length === 1 ? words[0] : undefined);
   if (word === undefined) return null;
-  const result = ReviewVerdictSchema.safeParse(word.toLowerCase().replace(/[\s_-]+/g, '_'));
+  const result = FinalReviewVerdictSchema.safeParse(word.toLowerCase().replace(/[\s_-]+/g, '_'));
   return result.success ? result.data : null;
 }
 
@@ -122,8 +125,8 @@ function matchLabel(line: string): RegExpMatchArray | null {
   return null;
 }
 
-function severityOf(label: string | undefined): ReviewFindingSeverity {
-  return ReviewFindingSeveritySchema.parse(label?.toLowerCase());
+function severityOf(label: string | undefined): FinalReviewFindingSeverity {
+  return FinalReviewFindingSeveritySchema.parse(label?.toLowerCase());
 }
 
 /**
@@ -132,7 +135,7 @@ function severityOf(label: string | undefined): ReviewFindingSeverity {
  * The first bullet sets the depth of the category's findings; a deeper one is its detail.
  */
 type OpenCategory = {
-  severity: ReviewFindingSeverity;
+  severity: FinalReviewFindingSeverity;
   labelIndent: number;
   itemIndent: number | null;
 };
@@ -143,7 +146,7 @@ export function parseFinalReview(markdown: string): ParsedFinalReview {
   const criteria: ParsedFinalReview['criteria'] = [];
   const findings: ParsedFinalReview['findings'] = [];
   // Emphasis, inline code and parentheses around the words change nothing: `_None._`, `(none)`.
-  const addFinding = (severity: ReviewFindingSeverity, text: string): void => {
+  const addFinding = (severity: FinalReviewFindingSeverity, text: string): void => {
     if (!NO_FINDING_RE.test(text.replace(/[*_`()]/g, '').trim())) {
       findings.push({ severity, text });
     }

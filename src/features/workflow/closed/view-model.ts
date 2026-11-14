@@ -1,6 +1,10 @@
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { SetAside } from '../../../core/schemas/review/verdict.js';
-import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/schemas/summary.js';
+import type {
+  BriefQualitySummary,
+  FinalReviewVerdict,
+  Summary,
+} from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { RunCheckpoint, RunRecord } from '../../../core/sessions/run/record.js';
@@ -63,7 +67,7 @@ export type ReviewView =
   | Readonly<{ kind: 'failed' | 'missing' | 'skipped' }>
   | Readonly<{
       kind: 'written';
-      verdict: ReviewVerdict | null;
+      verdict: FinalReviewVerdict | null;
       counts: Readonly<{ critical: number; warning: number; note: number }>;
       markdownPath: string;
       evidence: Readonly<{ validated: number; total: number }>;

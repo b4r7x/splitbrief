@@ -20,8 +20,8 @@ import { SeatSwitchCauseSchema, SeatSwitchRecordSchema } from '../workflow/seat.
 import { EvidenceFinalReviewStatusSchema, EvidenceReviewSchema } from '../evidence.js';
 import {
   ReviewFinalReviewStatusSchema,
-  ReviewFindingCountsSchema,
-  ReviewVerdictSchema,
+  FinalReviewFindingCountsSchema,
+  FinalReviewVerdictSchema,
 } from '../summary.js';
 import { CostAmountBasisSchema } from '../cost.js';
 import { CostBreakdownSchema } from '../cost.js';
@@ -381,10 +381,10 @@ const ReviewPacketFinalReviewSchema = z.object({
   evidenceStatus: EvidenceFinalReviewStatusSchema.nullable(),
   statusText: z.string(),
   excerpt: z.string().nullable(),
-  verdict: ReviewVerdictSchema.nullable().default(null),
+  verdict: FinalReviewVerdictSchema.nullable().default(null),
   criteriaPassed: z.number().int().nonnegative().default(0),
   criteriaFailed: z.number().int().nonnegative().default(0),
-  findingCounts: ReviewFindingCountsSchema.default({ critical: 0, warning: 0, note: 0 }),
+  findingCounts: FinalReviewFindingCountsSchema.default({ critical: 0, warning: 0, note: 0 }),
 });
 
 export const ReviewPacketSchema = z.object({

@@ -2,24 +2,25 @@ import { assertNever } from '../../utils/type-guards.js';
 
 type CommandStringInterpreterFamily = 'posix-shell' | 'powershell' | 'windows-command';
 
+type ShellFamily = CommandStringInterpreterFamily | 'csh' | 'fish';
+
+export const SHELL_FAMILIES: Readonly<Record<ShellFamily, readonly string[]>> = {
+  'posix-shell': ['ash', 'bash', 'dash', 'ksh', 'mksh', 'sh', 'zsh'],
+  csh: ['csh', 'tcsh'],
+  fish: ['fish'],
+  powershell: ['powershell', 'pwsh'],
+  'windows-command': ['cmd'],
+};
+
 type CommandStringInterpreterProfile = Readonly<{
   family: CommandStringInterpreterFamily;
   names: readonly string[];
 }>;
 
 const COMMAND_STRING_INTERPRETER_PROFILES: readonly CommandStringInterpreterProfile[] = [
-  {
-    family: 'posix-shell',
-    names: ['ash', 'bash', 'dash', 'ksh', 'mksh', 'sh', 'zsh'],
-  },
-  {
-    family: 'powershell',
-    names: ['powershell', 'pwsh'],
-  },
-  {
-    family: 'windows-command',
-    names: ['cmd'],
-  },
+  { family: 'posix-shell', names: SHELL_FAMILIES['posix-shell'] },
+  { family: 'powershell', names: SHELL_FAMILIES.powershell },
+  { family: 'windows-command', names: SHELL_FAMILIES['windows-command'] },
 ];
 
 // The launcher suffixes a name may carry: `node.exe`, `npm.cmd`, and `.bat`/`.ps1` scripts all

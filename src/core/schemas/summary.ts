@@ -30,23 +30,27 @@ export const CheckpointSummaryRollupSchema = z.object({
 
 export const ReviewFinalReviewStatusSchema = z.enum(['written', 'failed', 'missing', 'skipped']);
 
-export const ReviewVerdictSchema = z.enum(REVIEW_VERDICTS);
+export const FinalReviewVerdictSchema = z.enum(REVIEW_VERDICTS);
 
-export const ReviewFindingCountsSchema = z.object({
+export const FinalReviewFindingCountsSchema = z.object({
   critical: z.number().int().nonnegative(),
   warning: z.number().int().nonnegative(),
   note: z.number().int().nonnegative(),
 });
 
-export const ReviewFindingSeveritySchema = ReviewFindingCountsSchema.keyof();
+export const FinalReviewFindingSeveritySchema = FinalReviewFindingCountsSchema.keyof();
 
 export const ReviewPacketSummarySchema = z.object({
   jsonPath: z.string(),
   markdownPath: z.string(),
   generatedAt: z.string(),
   finalReviewStatus: ReviewFinalReviewStatusSchema,
-  finalReviewVerdict: ReviewVerdictSchema.nullable().default(null),
-  finalReviewFindingCounts: ReviewFindingCountsSchema.default({ critical: 0, warning: 0, note: 0 }),
+  finalReviewVerdict: FinalReviewVerdictSchema.nullable().default(null),
+  finalReviewFindingCounts: FinalReviewFindingCountsSchema.default({
+    critical: 0,
+    warning: 0,
+    note: 0,
+  }),
   driftPassed: z.boolean().nullable(),
   evidenceValidatedTasks: z.number().int().nonnegative(),
   evidenceTotalTasks: z.number().int().nonnegative(),
@@ -99,7 +103,7 @@ export const SummarySchema = z.object({
   reviewPacket: ReviewPacketSummarySchema.optional(),
   review: z
     .object({
-      verdict: ReviewVerdictSchema.nullable(),
+      verdict: FinalReviewVerdictSchema.nullable(),
       critical: z.number(),
       warnings: z.number(),
       notes: z.number(),
@@ -116,6 +120,6 @@ export const SummarySchema = z.object({
 });
 
 export type BriefQualitySummary = z.infer<typeof BriefQualitySummarySchema>;
-export type ReviewVerdict = z.infer<typeof ReviewVerdictSchema>;
+export type FinalReviewVerdict = z.infer<typeof FinalReviewVerdictSchema>;
 export type Summary = z.infer<typeof SummarySchema>;
 export type ReviewPacketSummary = z.infer<typeof ReviewPacketSummarySchema>;

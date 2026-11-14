@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   executableName,
   isPosixShellCommandStringOption,
+  SHELL_FAMILIES,
 } from '../trust/interpreter-command-string.js';
 import { isCallOption, isOwnCallOption } from '../trust/npm-call-option.js';
 
@@ -52,22 +53,7 @@ export const HookOutcomeSchema = z.discriminatedUnion('kind', [
 ]);
 export type HookOutcome = z.infer<typeof HookOutcomeSchema>;
 
-const FORBIDDEN_SHELL_NAMES = new Set([
-  'ash',
-  'bash',
-  'cmd',
-  'csh',
-  'dash',
-  'env',
-  'fish',
-  'ksh',
-  'mksh',
-  'powershell',
-  'pwsh',
-  'sh',
-  'tcsh',
-  'zsh',
-]);
+const FORBIDDEN_SHELL_NAMES = new Set([...Object.values(SHELL_FAMILIES).flat(), 'env']);
 
 function isShellLauncher(value: string): boolean {
   return FORBIDDEN_SHELL_NAMES.has(executableName(value));

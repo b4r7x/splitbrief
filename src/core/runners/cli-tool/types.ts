@@ -135,8 +135,6 @@ export type CustomOnlyCliToolExclusion = Readonly<{
   }>;
 }>;
 
-export type CliToolAdmissionDeclaration = ActiveCliToolDeclaration | CustomOnlyCliToolExclusion;
-
 export type CliToolDescriptor<Id extends string = CliToolId> = Readonly<
   ActiveCliToolDeclaration<Id> & {
     directWrite: RolePolicy<boolean>;

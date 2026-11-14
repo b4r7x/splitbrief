@@ -1,5 +1,4 @@
-import type { z } from 'zod';
-import type { ReviewVerdictSchema, Summary } from '../src/core/schemas/summary.js';
+import type { FinalReviewVerdict, Summary } from '../src/core/schemas/summary.js';
 import { costKnownFlags } from '../src/core/schemas/cost.js';
 import type { CostBreakdown } from '../src/core/schemas/cost.js';
 import { totalInputTokens, totalOutputTokens } from '../src/core/schemas/tokens.js';
@@ -23,7 +22,7 @@ export type OutcomeMetrics = {
 };
 
 export type ReviewMetrics = {
-  verdict: z.infer<typeof ReviewVerdictSchema> | null;
+  verdict: FinalReviewVerdict | null;
   criticalFindings: number;
   warningFindings: number;
   noteFindings: number;

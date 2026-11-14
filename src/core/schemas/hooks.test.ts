@@ -47,6 +47,31 @@ describe('HookEntrySchema', () => {
     expect(HookEntrySchema.safeParse(entry).success).toBe(false);
   });
 
+  it.each([
+    'ash',
+    'bash',
+    'cmd',
+    'csh',
+    'dash',
+    'env',
+    'fish',
+    'ksh',
+    'mksh',
+    'powershell',
+    'pwsh',
+    'sh',
+    'tcsh',
+    'zsh',
+  ])('rejects the shell launcher %s as the hook command', (command) => {
+    const result = HookEntrySchema.safeParse({ command });
+    expect(result.error?.issues).toContainEqual(
+      expect.objectContaining({
+        path: ['command'],
+        message: expect.stringContaining(`inline shell '${command}'`),
+      }),
+    );
+  });
+
   it.each(['-ec', '-xc', '-lc', '-cx', '--command=true'])(
     'rejects the shell-evaluation flag %s in hook args',
     (flag) => {

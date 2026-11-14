@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ReviewFindingCountsSchema, ReviewVerdictSchema } from '../../core/schemas/summary.js';
+import {
+  FinalReviewFindingCountsSchema,
+  FinalReviewVerdictSchema,
+} from '../../core/schemas/summary.js';
 import { parseFinalReview } from './final-review.js';
 
 const EXACT_FORMAT_REVIEW = `# Final Implementation Review
@@ -192,11 +195,11 @@ pass with minor notes -- not a fail, but close
   });
 
   it('produces every verdict the persisted review packet accepts, and no other', () => {
-    const produced = ReviewVerdictSchema.options.map(
+    const produced = FinalReviewVerdictSchema.options.map(
       (verdict) => parseFinalReview(`### Verdict\n${verdict}`).verdict,
     );
 
-    expect(produced).toEqual([...ReviewVerdictSchema.options]);
+    expect(produced).toEqual([...FinalReviewVerdictSchema.options]);
     expect(parseFinalReview('### Verdict\ndefer').verdict).toBeNull();
   });
 
@@ -506,7 +509,7 @@ pass with minor notes -- not a fail, but close
   });
 
   it('produces every finding severity the packet finding counter tallies', () => {
-    const severities = Object.keys(ReviewFindingCountsSchema.shape);
+    const severities = Object.keys(FinalReviewFindingCountsSchema.shape);
     const review = severities.map((severity) => `- **${severity}**: ${severity} body`).join('\n');
 
     const parsed = parseFinalReview(`### Findings\n${review}`);

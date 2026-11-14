@@ -7,7 +7,7 @@ import {
   compareScenario,
   type ReviewMetrics,
 } from './metrics.js';
-import { ReviewVerdictSchema, type Summary } from '../src/core/schemas/summary.js';
+import { FinalReviewVerdictSchema, type Summary } from '../src/core/schemas/summary.js';
 import { taskId } from '../src/core/schemas/task.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 
@@ -241,7 +241,7 @@ describe('review metrics', () => {
   });
 
   it('carries every verdict the review schema admits', () => {
-    const carried = ReviewVerdictSchema.options.map(
+    const carried = FinalReviewVerdictSchema.options.map(
       (verdict) =>
         collectRunMetrics({
           scenarioId: 'fake',
@@ -254,7 +254,7 @@ describe('review metrics', () => {
         }).review.verdict,
     );
 
-    expect(carried).toEqual([...ReviewVerdictSchema.options]);
+    expect(carried).toEqual([...FinalReviewVerdictSchema.options]);
   });
 
   it('yields an unknown verdict and zero counts when there is no review packet', () => {
