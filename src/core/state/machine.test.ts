@@ -72,6 +72,76 @@ describe('transition', () => {
     },
   );
 
+  const now = new Date('2026-05-01T10:00:00Z');
+  const message = makeQueuedMessage();
+  const recovery = makeRecoveryIssue();
+  const familyRows: {
+    family: string;
+    phase: WorkflowState['phase'];
+    action: StateAction;
+    field: keyof WorkflowState;
+    value: unknown;
+  }[] = [
+    { family: 'plan', phase: 'idle', action: { type: 'START' }, field: 'phase', value: 'planning' },
+    {
+      family: 'task',
+      phase: 'implementing',
+      action: { type: 'ALL_DONE' },
+      field: 'phase',
+      value: 'final-review',
+    },
+    {
+      family: 'review',
+      phase: 'implementing',
+      action: { type: 'START_SCHEDULED_REVIEW', afterTaskId: taskId('T001') },
+      field: 'pendingScheduledReview',
+      value: { afterTaskId: 'T001' },
+    },
+    {
+      family: 'apply',
+      phase: 'implementing',
+      action: { type: 'CLOSE_RUN' },
+      field: 'closed',
+      value: { at: now.toISOString(), as: 'ended' },
+    },
+    {
+      family: 'interrupt',
+      phase: 'implementing',
+      action: { type: 'INTERRUPT_STEP', step: { kind: 'apply' }, source: 'user', cut: 'boundary' },
+      field: 'awaitingContinue',
+      value: true,
+    },
+    {
+      family: 'brief edit',
+      phase: 'implementing',
+      action: { type: 'INSERT_TASKS', parentId: null, tasks: [makeTask()] },
+      field: 'tasks',
+      value: [makeTask()],
+    },
+    {
+      family: 'queue',
+      phase: 'implementing',
+      action: { type: 'ENQUEUE_USER_MSG', message },
+      field: 'messageQueue',
+      value: [message],
+    },
+    {
+      family: 'seat',
+      phase: 'implementing',
+      action: { type: 'SET_PENDING_RECOVERY', issue: recovery },
+      field: 'pendingRecovery',
+      value: recovery,
+    },
+  ];
+  it.each(familyRows)(
+    'applies an action of the $family family',
+    ({ phase, action, field, value }) => {
+      const state: WorkflowState = { ...createInitialState('feat', now), phase };
+
+      expect(transition(state, action, { now })[field]).toEqual(value);
+    },
+  );
+
   it('keeps fix identity and verbatim findings through a rewrite and split', () => {
     const fix = {
       cycle: 1,

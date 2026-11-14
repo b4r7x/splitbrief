@@ -1,52 +1,16 @@
-import { fixBriefDescription } from '../review/fix/task.js';
-import { awaitsApply, deriveRunStatus } from '../sessions/run/status.js';
-import type { MachineAction, StateAction } from './types.js';
-import {
-  WORKFLOW_STATE_VERSION,
-  fixCyclesOf,
-  type WorkflowState,
-} from '../schemas/workflow/state.js';
-import type { FixCycles, ReviewRecord } from '../schemas/workflow/review-record.js';
-import type { ConsultRecord } from '../schemas/workflow/consult-record.js';
-import { isTaskCompleted, isTaskSettled, type Task, type TaskId } from '../schemas/task.js';
-import type { TriageInput } from '../schemas/review/verdict.js';
-import type { TaskStatus } from '../schemas/enums.js';
+import type { MachineAction } from './types.js';
+import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../schemas/workflow/state.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
-import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue/state.js';
-import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { includes } from '../../utils/type-guards.js';
-import { BOUNDS } from '../pipeline-spec/bounds.js';
-import { insertTasksAfter, lineageIdOf } from './task-insert.js';
 import { transitionError } from './errors.js';
-import { truncateByChars } from '../../utils/display-text/truncate.js';
 import { canApplyAction } from './phase-actions.js';
-import {
-  decisionLedgerText,
-  dropClosedLineageStart,
-  keepReplacedStart,
-  lineageKeyFor,
-  withLineage,
-} from './lineage.js';
-
-/**
- * The review that judges a fix cycle: the next final review for a final review's cycle, the task
- * review after its last inserted fix task for a task review's cycle.
- */
-function judgesCycle(
-  triage: WorkflowState['triage'],
-  open: NonNullable<FixCycles['open']>,
-  review: ReviewRecord,
-): boolean {
-  const started = triage?.findLast((record) => record.cycle === open.cycle);
-  if (started?.scope === 'final') return review.scope !== 'task';
-  return (
-    started?.scope === 'task' &&
-    open.lastFixTaskId !== undefined &&
-    review.scope === 'task' &&
-    review.afterTaskId === open.lastFixTaskId
-  );
-}
+import { transitionTask } from './transitions/task.js';
+import { transitionReview } from './transitions/review.js';
+import { transitionApply } from './transitions/apply.js';
+import { transitionInterrupt } from './transitions/interrupt.js';
+import { transitionBriefEdits } from './transitions/brief-edits.js';
+import { transitionQueue } from './transitions/queue.js';
+import { transitionSeat } from './transitions/seat.js';
 
 export function createInitialState(feature: string, now: Date = new Date()): WorkflowState {
   return {
@@ -63,78 +27,6 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
     awaitingContinue: false,
     messageQueue: [],
   };
-}
-
-/** A brief's recovery pin ends when the brief settles: until then every route of it reads the pin. */
-function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus): WorkflowState {
-  return {
-    ...state,
-    tasks: state.tasks.map((t) => (t.id === taskId ? { ...t, status } : t)),
-    ...(state.retryProfile?.taskId === taskId &&
-      isTaskSettled(status) && { retryProfile: undefined }),
-  };
-}
-
-function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
-  return {
-    ...state,
-    tasks: state.tasks.map((t) => {
-      if (t.id !== taskId) return t;
-      const {
-        currentCode: _currentCode,
-        currentCodeByFile: _currentCodeByFile,
-        contextCodeByFile: _contextCodeByFile,
-        ...rest
-      } = t;
-      return rest;
-    }),
-  };
-}
-
-/** The next brief the task loop runs: a settled brief after `from` is passed over, never current. */
-function nextOpenTaskIndex(state: WorkflowState, from: number): number {
-  const index = state.tasks.findIndex((t, i) => i >= from && !isTaskSettled(t.status));
-  return index >= 0 ? index : state.tasks.length;
-}
-
-function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
-  const currentId = state.tasks[state.currentTaskIndex]?.id;
-  const withStatus = currentId ? setTaskStatus(state, currentId, status) : state;
-  const stripped = currentId ? stripCurrentCode(withStatus, currentId) : withStatus;
-  return {
-    ...stripped,
-    phase: 'implementing',
-    currentTaskIndex: nextOpenTaskIndex(stripped, state.currentTaskIndex + 1),
-    attempt: 0,
-  };
-}
-
-function markRecoveryApplying(
-  state: WorkflowState,
-  action: Extract<StateAction, { type: 'MARK_RECOVERY_APPLYING' }>,
-): WorkflowState {
-  if (!state.pendingRecovery) return state;
-  return {
-    ...state,
-    pendingRecovery: {
-      ...state.pendingRecovery,
-      status: 'applying',
-      selectedAction: action.action,
-    },
-  };
-}
-
-/**
- * A recovery action that names a BUILD profile pins the brief to it until the
- * brief settles; one that names none leaves an earlier pin in place, so a
- * reopen that restarts the interrupted brief keeps the profile.
- */
-function retryProfilePin(
-  action: Extract<StateAction, { type: 'RESET_TASK' | 'RESTART_ATTEMPT_ON_SEAT' }>,
-): Pick<WorkflowState, 'retryProfile'> {
-  return action.profile === undefined
-    ? {}
-    : { retryProfile: { taskId: action.taskId, profile: action.profile } };
 }
 
 export function transition(
@@ -177,446 +69,6 @@ export function transition(
         attempt: 0,
       };
 
-    case 'START_TASK': {
-      const index = state.tasks.findIndex((t) => t.id === action.taskId);
-      return {
-        ...setTaskStatus(state, action.taskId, 'in_progress'),
-        ...(index >= 0 && { currentTaskIndex: index }),
-      };
-    }
-
-    case 'TASK_SENT': {
-      const sentId = state.tasks[state.currentTaskIndex]?.id;
-      const cleaned = sentId ? stripCurrentCode(state, sentId) : state;
-      return { ...cleaned, phase: 'validating-task' };
-    }
-
-    case 'RESUME_TASK':
-      return { ...state, phase: 'implementing' };
-
-    case 'VALIDATION_PASS': {
-      const passed = advanceTask(state, taskStatusForCompletionMethod('local'));
-      const passedId = state.tasks[state.currentTaskIndex]?.id;
-      return passedId === undefined ? passed : dropClosedLineageStart(passed, passedId);
-    }
-
-    case 'VALIDATION_FAIL':
-      return { ...state, phase: 'escalating' };
-
-    case 'ESCALATE':
-      return { ...state, phase: 'escalating' };
-
-    case 'SKIP_TASK': {
-      const withStatus = setTaskStatus(state, action.taskId, 'skipped');
-      const skipped: WorkflowState = {
-        ...withStatus,
-        phase: 'implementing',
-        currentTaskIndex: nextOpenTaskIndex(withStatus, state.currentTaskIndex + 1),
-        attempt: 0,
-      };
-      const closed = dropClosedLineageStart(skipped, action.taskId);
-      if (withStatus.changedFilesBaseline === undefined) return closed;
-      // The skipped brief's task-start snapshot is no later brief's start.
-      const { activeTaskSnapshot: _skippedTaskStart, ...baseline } =
-        withStatus.changedFilesBaseline;
-      return { ...closed, changedFilesBaseline: baseline };
-    }
-
-    case 'UPDATE_TASK_CODE': {
-      const stripped = stripCurrentCode(state, action.taskId);
-      return {
-        ...stripped,
-        tasks: stripped.tasks.map((t) =>
-          t.id === action.taskId
-            ? {
-                ...t,
-                action: action.action,
-                ...(action.code !== undefined && { currentCode: action.code }),
-                ...(action.codeByFile !== undefined && { currentCodeByFile: action.codeByFile }),
-                ...(action.contextCodeByFile !== undefined && {
-                  contextCodeByFile: action.contextCodeByFile,
-                }),
-              }
-            : t,
-        ),
-      };
-    }
-
-    case 'ALL_DONE':
-      return { ...state, phase: 'final-review' };
-
-    case 'REVIEW_DONE':
-      return {
-        ...state,
-        phase: 'complete',
-        completedAt: now.toISOString(),
-        reviewStatus: action.reviewStatus,
-        acceptedAsIs: undefined,
-        ...(action.candidate !== undefined && { reviewedCandidate: action.candidate }),
-        ...(action.reviewStatus !== 'failed' && {
-          applyReview: undefined,
-          pendingTriage: undefined,
-        }),
-      };
-
-    case 'RECORD_REVIEW': {
-      const record =
-        action.review.scope === 'task' && state.pendingScheduledReview !== undefined
-          ? { ...action.review, afterTaskId: state.pendingScheduledReview.afterTaskId }
-          : action.review;
-      const { open, ...fixCycles } = fixCyclesOf(state);
-      if (open === undefined || !judgesCycle(state.triage, open, record)) {
-        return { ...state, review: record };
-      }
-      return { ...state, review: { ...record, judges: open.cycle }, fixCycles };
-    }
-
-    case 'RECORD_TRIAGE':
-      return { ...state, triage: [...(state.triage ?? []), action.record] };
-
-    case 'START_FIX_CYCLE': {
-      if (state.phase === 'complete' && state.reviewStatus !== 'failed') {
-        throw transitionError.invalidActionForPhase(state.phase, action.type);
-      }
-      const fixCycles = fixCyclesOf(state);
-      return {
-        ...state,
-        phase: 'implementing',
-        currentTaskIndex: nextOpenTaskIndex(state, 0),
-        fixCycles: {
-          ...fixCycles,
-          used: fixCycles.used + 1,
-          ...(action.lastFixTaskId !== undefined && { briefed: fixCycles.briefed + 1 }),
-          open: {
-            cycle: fixCycles.used + 1,
-            ...(action.lastFixTaskId !== undefined && { lastFixTaskId: action.lastFixTaskId }),
-          },
-        },
-        reviewStatus: undefined,
-        completedAt: undefined,
-        pendingTriage: undefined,
-        pendingScheduledReview: undefined,
-      };
-    }
-
-    case 'REVIEW_CORRECTION': {
-      const scheduled = state.phase === 'implementing' && state.review?.scope === 'task';
-      const failedFinalReview =
-        (state.phase === 'complete' && state.reviewStatus === 'failed') ||
-        (state.phase === 'final-review' && state.pendingRecovery?.reason === 'review-failed');
-      if (!scheduled && !failedFinalReview) {
-        throw transitionError.invalidActionForPhase(state.phase, action.type);
-      }
-      const fixCycles = fixCyclesOf(state);
-      const inputs: TriageInput[] =
-        action.text.trim() === ''
-          ? []
-          : [
-              {
-                id: `U${(state.triage?.length ?? 0) + 1}`,
-                kind: 'defect',
-                source: 'user',
-                text: action.text,
-                file: null,
-              },
-            ];
-      return {
-        ...state,
-        phase: scheduled ? 'implementing' : 'final-review',
-        reviewStatus: undefined,
-        completedAt: undefined,
-        pendingTriage: {
-          inputs: [...(state.pendingTriage?.inputs ?? []), ...inputs],
-          ...(state.pendingTriage?.question !== undefined && {
-            question: state.pendingTriage.question,
-          }),
-          ...(state.pendingTriage?.reviewAfterTaskId !== undefined && {
-            reviewAfterTaskId: state.pendingTriage.reviewAfterTaskId,
-          }),
-        },
-        ...(inputs.length > 0 && {
-          fixCycles: { ...fixCycles, notes: [...fixCycles.notes, action.text] },
-        }),
-      };
-    }
-
-    case 'QUEUE_TRIAGE': {
-      const reviewAfterTaskId =
-        action.reviewAfterTaskId ??
-        state.pendingTriage?.reviewAfterTaskId ??
-        state.pendingScheduledReview?.afterTaskId;
-      return {
-        ...state,
-        pendingTriage: {
-          inputs: action.inputs,
-          ...(action.question !== undefined && { question: action.question }),
-          ...(reviewAfterTaskId !== undefined && { reviewAfterTaskId }),
-          ...(action.plannerConsult === true && { plannerConsult: true }),
-        },
-        userAnswers: [
-          ...(state.userAnswers ?? []),
-          ...action.inputs
-            .filter(
-              (input) =>
-                input.kind === 'answer' &&
-                !state.pendingTriage?.inputs.some((previous) => previous.id === input.id),
-            )
-            .map((input) => ({
-              reply: state.pendingTriage?.question?.question ?? input.id,
-              answer: input.text,
-            })),
-        ],
-      };
-    }
-
-    case 'RECORD_WORKSPACE':
-      return { ...state, workspace: action.workspace };
-
-    case 'ACCEPT_AS_IS':
-      return {
-        ...state,
-        acceptedAsIs: {
-          at: now.toISOString(),
-          findings: action.findings,
-          ...(action.redChecks !== undefined &&
-            action.redChecks.length > 0 && { redChecks: action.redChecks }),
-          ...(action.note !== undefined && { note: action.note }),
-          ...(action.by !== undefined && { by: action.by }),
-        },
-        applyReview: undefined,
-        pendingTriage: undefined,
-      };
-
-    case 'APPLY_REVIEW_START':
-    case 'APPLY_RECHECK_START': {
-      if (
-        deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind !==
-        'ready-to-apply'
-      ) {
-        throw transitionError.invalidActionForPhase(state.phase, action.type);
-      }
-      const fixCycles = fixCyclesOf(state);
-      return {
-        ...state,
-        phase: 'final-review',
-        reviewStatus: undefined,
-        completedAt: undefined,
-        acceptedAsIs: undefined,
-        applyReview: { merged: action.merged, failures: [] },
-        ...(action.type === 'APPLY_REVIEW_START' &&
-          (action.triage !== undefined
-            ? { pendingTriage: { inputs: action.triage } }
-            : { fixCycles: { ...fixCycles, used: fixCycles.used + 1 } })),
-      };
-    }
-
-    case 'RECORD_APPLY_INTEGRATED': {
-      const paths = new Set(action.integrated.map((record) => record.path));
-      return {
-        ...state,
-        applyIntegrated: [
-          ...(state.applyIntegrated ?? []).filter((record) => !paths.has(record.path)),
-          ...action.integrated,
-        ],
-      };
-    }
-
-    // A resolution at the run base or on the checkout's side ends its record: Apply merges that
-    // file again from then on.
-    case 'BIND_APPLY_INTEGRATED':
-      return {
-        ...state,
-        applyIntegrated: (state.applyIntegrated ?? []).flatMap((record) => {
-          if (record.workspace !== null) return [record];
-          const workspace = action.candidate[record.path];
-          return workspace === undefined || workspace === record.checkout
-            ? []
-            : [{ ...record, workspace }];
-        }),
-      };
-
-    case 'RECORD_APPLY_RECHECK':
-      if (state.applyReview === undefined) {
-        throw transitionError.invalidActionForPhase(state.phase, action.type);
-      }
-      return {
-        ...state,
-        applyReview: { ...state.applyReview, failures: action.failures, notRun: action.notRun },
-      };
-
-    case 'APPLY_START':
-      if (!awaitsApply(state)) {
-        throw transitionError.invalidActionForPhase(state.phase, action.type);
-      }
-      return { ...state, applying: { at: now.toISOString(), backupId: action.backupId } };
-
-    case 'APPLY_DONE': {
-      if (state.applying === undefined) {
-        throw transitionError.invalidActionForPhase(state.phase, action.type);
-      }
-      const at = now.toISOString();
-      return {
-        ...state,
-        applying: undefined,
-        applied: { at, backupId: state.applying.backupId, files: action.files },
-        closed: { at, as: 'applied' },
-      };
-    }
-
-    case 'APPLY_RESTORED':
-      if (state.applying === undefined) {
-        throw transitionError.invalidActionForPhase(state.phase, action.type);
-      }
-      return { ...state, applying: undefined };
-
-    case 'APPLY_UNDONE':
-      if (state.applied === undefined || state.applied.undone !== undefined) {
-        throw transitionError.invalidActionForPhase(state.phase, action.type);
-      }
-      return {
-        ...state,
-        applied: {
-          ...state.applied,
-          undone: { at: now.toISOString(), conflicts: action.conflicts },
-        },
-      };
-
-    case 'CLOSE_RUN':
-      if (deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind === 'closed') {
-        return state;
-      }
-      return {
-        ...state,
-        closed: {
-          at: action.at ?? now.toISOString(),
-          as: action.as ?? 'ended',
-          ...(action.patch !== undefined && { patch: action.patch }),
-        },
-        interruptedStep: undefined,
-        pendingRecovery: undefined,
-        pendingPlannerConversation: undefined,
-      };
-
-    case 'INTERRUPT_STEP':
-      return {
-        ...state,
-        interruptedStep: {
-          step: action.step,
-          source: action.source,
-          cut: action.cut,
-          ...(action.partialRef ? { partialRef: action.partialRef } : {}),
-          ...(action.kept !== undefined && action.kept.length > 0 && { kept: [...action.kept] }),
-          ...(action.consult !== undefined && {
-            consult: {
-              ...action.consult,
-              failingOutput: truncateByChars(
-                action.consult.failingOutput,
-                BOUNDS.consultFailingOutputChars,
-              ),
-            },
-          }),
-          at: now.toISOString(),
-        },
-        awaitingContinue: true,
-      };
-
-    case 'RECORD_REJECT': {
-      // A brief that passed and had files put back is open again, so Continue builds it again. It
-      // starts over: no earlier dispatch of it runs it on its own files.
-      const reopened = state.tasks
-        .filter((task) => action.booked.includes(task.id) && isTaskCompleted(task.status))
-        .map((task) => task.id);
-      const step = state.interruptedStep;
-      if (reopened.length === 0 && step?.kept === undefined) return state;
-      const reopenedState: WorkflowState = {
-        ...state,
-        tasks: state.tasks.map((task) =>
-          reopened.includes(task.id) ? { ...task, status: 'pending' } : task,
-        ),
-        ...(state.lineages !== undefined && {
-          lineages: Object.fromEntries(
-            Object.entries(state.lineages).map(([key, lineage]) => [
-              key,
-              {
-                ...lineage,
-                dispatchedRevision: Object.fromEntries(
-                  Object.entries(lineage.dispatchedRevision).filter(
-                    ([id]) => !includes(reopened, id),
-                  ),
-                ),
-              },
-            ]),
-          ),
-        }),
-      };
-      const first = state.tasks.findIndex((task) => reopened.includes(task.id));
-      const firstId = reopened[0];
-      // The run moves back before the step it stopped or halted on, so a halt there is over, and the
-      // next review judges a rebuilt candidate.
-      if (firstId !== undefined && first < state.currentTaskIndex) {
-        return {
-          ...reopenedState,
-          phase: 'implementing',
-          currentTaskIndex: first,
-          attempt: 0,
-          pendingRecovery: undefined,
-          pendingTriage: undefined,
-          pendingScheduledReview: undefined,
-          interruptedStep: {
-            step: { kind: 'brief', taskId: firstId, attempt: 0 },
-            source: step?.source ?? 'user',
-            cut: 'boundary',
-            at: step?.at ?? now.toISOString(),
-          },
-        };
-      }
-      if (step?.kept === undefined) return reopenedState;
-      const removed = new Set(action.removed);
-      const { kept: before, ...rest } = step;
-      const kept = before.filter((file) => !removed.has(file));
-      return { ...reopenedState, interruptedStep: kept.length > 0 ? { ...rest, kept } : rest };
-    }
-
-    case 'RESUME_STEP':
-      return {
-        ...state,
-        ...(state.interruptedStep?.cut === 'mid-step' &&
-          state.interruptedStep.step.kind === 'brief' &&
-          state.rewindPending === undefined &&
-          (state.phase === 'implementing' ||
-            state.phase === 'validating-task' ||
-            state.phase === 'escalating') && { phase: 'implementing' as const }),
-        interruptedStep: undefined,
-        awaitingContinue: false,
-        lastFailure: undefined,
-      };
-
-    case 'CONTINUE_STEP':
-      return {
-        ...state,
-        interruptedStep: undefined,
-        awaitingContinue: false,
-        lastFailure: undefined,
-      };
-
-    case 'RESTORE_BRIEF_PARK': {
-      const idx = state.tasks.findIndex((t) => t.id === action.step.taskId);
-      if (idx < 0) return state;
-      return {
-        ...setTaskStatus(state, action.step.taskId, 'in_progress'),
-        currentTaskIndex: idx,
-        attempt: action.step.attempt,
-        phase: 'implementing',
-        interruptedStep: {
-          step: action.step,
-          source: action.source,
-          cut: 'mid-step',
-          at: action.at,
-        },
-        awaitingContinue: true,
-      };
-    }
-
     case 'SET_PLANNER_CONVERSATION':
       return {
         ...state,
@@ -648,320 +100,77 @@ export function transition(
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };
 
-    case 'RESET_TASK': {
-      const idx = state.tasks.findIndex((t) => t.id === action.taskId);
-      if (idx < 0) return state;
-      return {
-        ...state,
-        tasks: state.tasks.map((t, i) => (i === idx ? { ...t, status: 'pending' } : t)),
-        currentTaskIndex: idx,
-        attempt: 0,
-        phase: 'implementing',
-        ...(state.pendingRecovery?.taskId === action.taskId ? { pendingRecovery: undefined } : {}),
-        ...retryProfilePin(action),
-      };
-    }
-
-    case 'REPLACE_TASK': {
-      const index = state.tasks.findIndex((t) => t.id === action.taskId);
-      const previous = index < 0 ? undefined : state.tasks[index];
-      if (previous === undefined) return state;
-      const replacement: Task = {
-        ...action.task,
-        id: previous.id,
-        ...(previous.fix !== undefined && {
-          fix: previous.fix,
-          description: fixBriefDescription(action.task.description, previous.fix.findings),
-        }),
-        ...(previous.parentId !== undefined && { parentId: previous.parentId }),
-        criteria: previous.criteria,
-        status: 'pending',
-        revision: (previous.revision ?? 1) + 1,
-      };
-      return {
-        ...keepReplacedStart(state, lineageIdOf(previous)),
-        tasks: state.tasks.map((task, i) => (i === index ? replacement : task)),
-        attempt: 0,
-      };
-    }
-
-    case 'INSERT_TASKS': {
-      if (action.parentId === null) {
-        if (action.afterTaskId === undefined) {
-          return { ...state, tasks: [...state.tasks, ...action.tasks] };
-        }
-        const anchorIndex = state.tasks.findIndex((task) => task.id === action.afterTaskId);
-        const insertAt = anchorIndex < 0 ? state.tasks.length : anchorIndex + 1;
-        return {
-          ...state,
-          tasks: insertTasksAfter(state.tasks, action.tasks, action.afterTaskId),
-          currentTaskIndex: Math.min(state.currentTaskIndex, insertAt),
-        };
-      }
-      const parentIndex = state.tasks.findIndex((t) => t.id === action.parentId);
-      const parent = parentIndex < 0 ? undefined : state.tasks[parentIndex];
-      if (parent === undefined) return state;
-      const lineageKey = lineageIdOf(parent);
-      const children = action.tasks.map((task) => ({
-        ...task,
-        parentId: lineageKey,
-        ...(parent.fix !== undefined && {
-          fix: parent.fix,
-          description: fixBriefDescription(task.description, parent.fix.findings),
-        }),
-      }));
-      const childIds = children.map((task) => task.id);
-      const remaining = state.tasks
-        .filter((task) => task.id !== parent.id)
-        .map((task) => {
-          if (isTaskCompleted(task.status) || !task.dependsOn.includes(parent.id)) return task;
-          return {
-            ...task,
-            dependsOn: [
-              ...new Set(task.dependsOn.flatMap((dep) => (dep === parent.id ? childIds : [dep]))),
-            ],
-          };
-        });
-      const tasks = [
-        ...remaining.slice(0, parentIndex),
-        ...children,
-        ...remaining.slice(parentIndex),
-      ];
-      const shift = parentIndex < state.currentTaskIndex ? children.length - 1 : 0;
-      // A split last fix task hands its open fix cycle to its last child, the brief reviewed last.
-      const open = state.fixCycles?.open;
-      const lastChildId = childIds.at(-1);
-      return {
-        ...withLineage(keepReplacedStart(state, lineageKey), lineageKey, (lineage) => ({
-          ...lineage,
-          replacedParents: [...lineage.replacedParents, parent],
-        })),
-        tasks,
-        currentTaskIndex: state.currentTaskIndex + shift,
-        ...(state.fixCycles !== undefined &&
-          open?.lastFixTaskId === parent.id &&
-          lastChildId !== undefined && {
-            fixCycles: { ...state.fixCycles, open: { ...open, lastFixTaskId: lastChildId } },
-          }),
-      };
-    }
-
-    case 'RECORD_CONSULT': {
-      const record: ConsultRecord = {
-        reason: action.reason,
-        action: action.answer.answer.action,
-        diagnosis: action.answer.answer.diagnosis,
-        at: now.toISOString(),
-        taskId: action.taskId,
-        revision: action.revision,
-        answer: action.answer,
-      };
-      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
-        ...lineage,
-        consultRecords: [...lineage.consultRecords, { ...record, afterAttempt: lineage.attempts }],
-      }));
-    }
-
-    case 'RECORD_DECISIONS': {
-      if (state.plan === undefined) return state;
-      const recorded = state.plan.decisions;
-      const added = [...new Set(action.decisions.map(decisionLedgerText))]
-        .filter(
-          (text) =>
-            !recorded.some((entry) => entry.taskId === action.taskId && entry.text === text),
-        )
-        .map((text) => ({ text, taskId: action.taskId }));
-      if (added.length === 0) return state;
-      return { ...state, plan: { ...state.plan, decisions: [...recorded, ...added] } };
-    }
-
-    case 'RECORD_CORRECTION':
-      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
-        ...lineage,
-        corrections: [...(lineage.corrections ?? []), action.text],
-      }));
-
+    case 'START_TASK':
+    case 'TASK_SENT':
+    case 'RESUME_TASK':
+    case 'VALIDATION_PASS':
+    case 'VALIDATION_FAIL':
+    case 'ESCALATE':
+    case 'SKIP_TASK':
+    case 'UPDATE_TASK_CODE':
+    case 'ALL_DONE':
     case 'COUNT_ATTEMPT':
-      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
-        ...lineage,
-        attempts: lineage.attempts + 1,
-        ...(action.failure !== undefined && {
-          attemptFailures: [
-            ...(lineage.attemptFailures ?? []),
-            {
-              attempt: lineage.attempts + 1,
-              taskId: action.taskId,
-              revision: state.tasks.find((task) => task.id === action.taskId)?.revision ?? 1,
-              line: truncateByChars(
-                action.failure
-                  .split('\n')
-                  .map((line) => line.trim())
-                  .find((line) => line !== '') ?? '',
-                BOUNDS.consultAttemptLineChars,
-              ),
-            },
-          ],
-        }),
-      }));
-
-    case 'START_SCHEDULED_REVIEW':
-      return { ...state, pendingScheduledReview: { afterTaskId: action.afterTaskId } };
-
-    case 'CLEAR_SCHEDULED_REVIEW':
-      return { ...state, pendingScheduledReview: undefined, pendingTriage: undefined };
-
     case 'RECORD_DISPATCH':
-      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
-        ...lineage,
-        dispatchedRevision: {
-          ...lineage.dispatchedRevision,
-          [action.taskId]: state.tasks.find((task) => task.id === action.taskId)?.revision ?? 1,
-        },
-        ...(lineage.startSnapshot === undefined &&
-          state.changedFilesBaseline?.activeTaskSnapshot !== undefined && {
-            startSnapshot: state.changedFilesBaseline.activeTaskSnapshot,
-          }),
-      }));
-
     case 'RECORD_CHECK_RESULTS':
-      return {
-        ...state,
-        tasks: state.tasks.map((task) => {
-          if (task.id !== action.taskId) return task;
-          const results = new Map((task.checkResults ?? []).map((result) => [result.id, result]));
-          for (const result of action.results) results.set(result.id, result);
-          return { ...task, checkResults: [...results.values()] };
-        }),
-      };
+      return transitionTask(state, action);
 
-    case 'SET_SEAT_WAIT':
-      return { ...state, seatWait: action.wait };
+    case 'REVIEW_DONE':
+    case 'RECORD_REVIEW':
+    case 'RECORD_TRIAGE':
+    case 'START_FIX_CYCLE':
+    case 'REVIEW_CORRECTION':
+    case 'QUEUE_TRIAGE':
+    case 'START_SCHEDULED_REVIEW':
+    case 'CLEAR_SCHEDULED_REVIEW':
+      return transitionReview(state, action, now);
 
-    case 'CLEAR_SEAT_WAIT':
-      return { ...state, seatWait: undefined };
+    case 'RECORD_WORKSPACE':
+    case 'ACCEPT_AS_IS':
+    case 'APPLY_REVIEW_START':
+    case 'APPLY_RECHECK_START':
+    case 'RECORD_APPLY_INTEGRATED':
+    case 'BIND_APPLY_INTEGRATED':
+    case 'RECORD_APPLY_RECHECK':
+    case 'APPLY_START':
+    case 'APPLY_DONE':
+    case 'APPLY_RESTORED':
+    case 'APPLY_UNDONE':
+    case 'CLOSE_RUN':
+      return transitionApply(state, action, now);
+
+    case 'INTERRUPT_STEP':
+    case 'RECORD_REJECT':
+    case 'RESUME_STEP':
+    case 'CONTINUE_STEP':
+    case 'RESTORE_BRIEF_PARK':
+      return transitionInterrupt(state, action, now);
+
+    case 'RESET_TASK':
+    case 'REPLACE_TASK':
+    case 'INSERT_TASKS':
+    case 'RECORD_CONSULT':
+    case 'RECORD_DECISIONS':
+    case 'RECORD_CORRECTION':
+      return transitionBriefEdits(state, action, now);
 
     case 'DECIDE_FOR_ME':
-      return { ...state, decideForMe: true };
-
     case 'ENQUEUE_USER_MSG':
-      return { ...state, messageQueue: [...state.messageQueue, action.message] };
-
     case 'MARK_INJECTING_NATIVE':
-      return {
-        ...state,
-        ...(action.attempt === undefined ? {} : { attempt: action.attempt }),
-        messageQueue: state.messageQueue.map((m) =>
-          m.id === action.id ? { ...m, nativeDeliveryState: 'injecting' } : m,
-        ),
-      };
-
     case 'MARK_DELIVERED_NATIVE':
-      return {
-        ...state,
-        messageQueue: state.messageQueue.map((m) =>
-          m.id === action.id
-            ? {
-                ...m,
-                deliveredViaNative: true,
-                nativeDeliveryState: 'delivered',
-                ...(action.via === 'mid-call' && { deliveredMidCall: true }),
-              }
-            : m,
-        ),
-      };
-
     case 'MARK_NATIVE_DELIVERY_FAILED':
-      return {
-        ...state,
-        messageQueue: state.messageQueue.map((m) =>
-          m.id === action.id && m.nativeDeliveryState === 'injecting'
-            ? { ...m, nativeDeliveryState: 'pending' }
-            : m,
-        ),
-      };
-
     case 'MARK_POSSIBLE_DUPLICATE':
-      return {
-        ...state,
-        messageQueue: state.messageQueue.map((m) =>
-          m.id === action.id ? { ...m, possibleDuplicate: true } : m,
-        ),
-      };
-
-    case 'DRAIN_QUEUE': {
-      const ts = now.toISOString();
-      const ids = action.ids === undefined ? undefined : new Set(action.ids);
-      const destination = action.destination ?? 'implementer';
-      return {
-        ...state,
-        messageQueue: state.messageQueue.map((m) => {
-          if (ids !== undefined && !ids.has(m.id)) return m;
-          if (destination === 'reviewer') {
-            if (m.deliveredTo?.reviewer !== undefined) return m;
-            return {
-              ...m,
-              deliveredTo: { ...m.deliveredTo, reviewer: ts },
-              ...(action.via === 'mid-call' && { deliveredMidCall: true }),
-            };
-          }
-          if (!isQueuedMessagePendingDelivery(m)) return m;
-          return {
-            ...m,
-            drainedAt: ts,
-            deliveredTo: { ...m.deliveredTo, implementer: ts },
-            ...(action.via === 'mid-call' && { deliveredMidCall: true }),
-          };
-        }),
-      };
-    }
-
+    case 'DRAIN_QUEUE':
     case 'CLEAR_QUEUE':
-      return {
-        ...state,
-        messageQueue: state.messageQueue.filter((message) => !isQueuedMessageClearable(message)),
-      };
+      return transitionQueue(state, action, now);
 
+    case 'SET_SEAT_WAIT':
+    case 'CLEAR_SEAT_WAIT':
     case 'SET_PENDING_RECOVERY':
-      return { ...state, pendingRecovery: action.issue };
-
     case 'MARK_RECOVERY_APPLYING':
-      return markRecoveryApplying(state, action);
-
     case 'RESOLVE_PENDING_RECOVERY':
-      return { ...state, pendingRecovery: undefined };
-
-    case 'RESTART_ATTEMPT_ON_SEAT': {
-      const idx = state.tasks.findIndex((t) => t.id === action.taskId);
-      if (idx < 0) return state;
-      return {
-        ...state,
-        currentTaskIndex: idx,
-        pendingRecovery: undefined,
-        ...retryProfilePin(action),
-      };
-    }
-
+    case 'RESTART_ATTEMPT_ON_SEAT':
     case 'RECORD_SEAT_SWITCH':
-      return {
-        ...state,
-        seatSwitches: [
-          ...(state.seatSwitches ?? []),
-          {
-            ...(action.switchId !== undefined && { switchId: action.switchId }),
-            seat: action.seat,
-            from: action.from,
-            to: action.to,
-            ...(action.fromSeat !== undefined && { fromSeat: action.fromSeat }),
-            ...(action.toSeat !== undefined && { toSeat: action.toSeat }),
-            cause: action.cause,
-            ...(action.accountCause !== undefined && { accountCause: action.accountCause }),
-            ...(action.headline !== undefined && { headline: action.headline }),
-            auto: action.auto,
-            configRevision: action.configRevision,
-            ts: now.toISOString(),
-          },
-        ],
-      };
+      return transitionSeat(state, action, now);
 
     default:
       return assertNever(action);
