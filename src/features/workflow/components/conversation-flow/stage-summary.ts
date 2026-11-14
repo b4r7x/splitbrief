@@ -8,7 +8,7 @@ import { countNoun } from '../../../../utils/pluralize.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { formatStageLabel } from '../../../../core/phase-display.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
-import { oneLineDisplayText } from '../../../../utils/display-text.js';
+import { oneLineDisplayText } from '../../../../utils/display-text/sanitize.js';
 import { finalReviewAnchor, unverifiedCriteriaCount } from '../../../../core/recovery/headline.js';
 import { findingFacts } from '../../../../core/review/verdict.js';
 

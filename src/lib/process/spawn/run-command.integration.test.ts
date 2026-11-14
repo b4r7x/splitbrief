@@ -1,7 +1,8 @@
 import type { ChildProcess } from 'node:child_process';
 import { describe, it, expect, vi } from 'vitest';
 import { runCommand } from './run-command.js';
-import { spawnPipe, type SpawnPipeFatalOutcome } from './lifecycle.js';
+import { spawnPipe } from './lifecycle.js';
+import type { SpawnPipeFatalOutcome } from './types.js';
 import { killProcess, setProcessLedger } from '../registry.js';
 import { processError, processOutputCapture } from '../errors.js';
 

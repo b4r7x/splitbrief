@@ -8,9 +8,9 @@ import { GLOBAL_SKILL_SCAN_PATHS, PROJECT_SKILL_SCAN_PATHS } from '../core/skill
 import { extractFrontmatter } from '../utils/frontmatter.js';
 import { countNoun } from '../utils/pluralize.js';
 
-import { isENOENT } from '../lib/process/errors.js';
+import { isENOENT } from '../utils/errno.js';
 import { warnError, warnStderr } from '../lib/warn.js';
-import { readProjectFileConfined } from '../lib/fs.js';
+import { readProjectFileConfined } from '../lib/fs/read.js';
 
 const MAX_SKILL_CHARS = 16_000;
 const MAX_SCAN_DEPTH = 4;

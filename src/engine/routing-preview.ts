@@ -14,7 +14,7 @@ import { buildRouteTaskOptions } from './orchestrator/context-routing/route-inpu
 import type { ModelCacheAccessor } from './providers/model/resolution.js';
 import { buildProjectLanguageContext } from './spec/prompts/language-context.js';
 import type { PlanContext } from './spec/prompt-formatter.js';
-import { isENOENT } from '../lib/process/errors.js';
+import { isENOENT } from '../utils/errno.js';
 import { assertWritablePathConfined } from '../lib/fs/confinement.js';
 
 function previewProjectContext(projectDir: string, skillsContext: string | undefined) {

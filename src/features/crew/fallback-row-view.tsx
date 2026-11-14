@@ -10,7 +10,7 @@ import {
 } from '../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { CREW_COLUMN_GAP, CREW_IDENTITY_COLUMN, CREW_MARKER_GUTTER } from './format.js';
 
 export type FallbackRowViewProps = Readonly<{

@@ -8,8 +8,8 @@ import {
   PACKAGE_TEST_COMMAND,
 } from '../../../core/validation/stacks/typescript.js';
 import type { ResolvedCommand } from '../../../core/validation/stage-command.js';
-import { redactSecrets } from '../../../utils/redact.js';
-import { truncateByChars } from '../../../utils/truncate.js';
+import { redactSecrets } from '../../../utils/redact/secrets.js';
+import { truncateByChars } from '../../../utils/display-text/truncate.js';
 
 const MAX_VALIDATION_COMMAND_CHARS = 240;
 

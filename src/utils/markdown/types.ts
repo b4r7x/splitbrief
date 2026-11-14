@@ -171,3 +171,10 @@ export interface MarkdownLayoutTail {
   kind: MarkdownBlock['kind'];
   endsWithBlankLine: boolean;
 }
+
+export interface ParseState {
+  lines: readonly string[];
+  index: number;
+  allowFrontmatter: boolean;
+  blockquoteDepth: number;
+}

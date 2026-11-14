@@ -14,7 +14,7 @@ import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harn
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { getTerminalCellWidth } from '../../display-text.js';
+import { getTerminalCellWidth } from '../../display-text/width.js';
 import { glyph, markdownLayoutGlyphs } from '../../../lib/glyphs.js';
 import { parseMarkdownBlocks } from '../block-parser.js';
 import { layoutMarkdown } from './document.js';

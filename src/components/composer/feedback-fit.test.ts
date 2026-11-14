@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { elidePathMiddle, getTerminalCellWidth } from '../../utils/display-text.js';
+import { elidePathMiddle } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { wrapHard } from '../../utils/display-text/wrap.js';
 import { fitFeedbackMessage } from './feedback-fit.js';
 

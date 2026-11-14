@@ -18,7 +18,7 @@ import { usageLimitAdvice } from '../../runners/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diagnostic.js';
 import { labelError } from '../../../utils/format/errors.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { inputTooLargeFigures, type PromptSize } from '../../runners/input-limit.js';

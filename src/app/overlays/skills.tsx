@@ -10,7 +10,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { useStores } from '../../stores/use-stores.js';
-import { truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import {
   GLOBAL_SKILL_SCAN_PATHS,

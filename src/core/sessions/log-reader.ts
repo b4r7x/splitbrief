@@ -1,7 +1,7 @@
 import { existsSync, createReadStream, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import * as readline from 'node:readline';
-import { forEachLineSync, parseJsonlLine } from '../../lib/fs.js';
+import { forEachLineSync, parseJsonlLine } from '../../lib/fs/read.js';
 import type {
   SessionLogEntry,
   SessionLogEventEntry,

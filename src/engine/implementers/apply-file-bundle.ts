@@ -1,5 +1,5 @@
 import { confinedCreateFile, confinedReplaceFile } from '../../lib/fs/confined.js';
-import { SECURE_FILE_MODE } from '../../lib/fs.js';
+import { SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import { assertModelWritablePathConfined } from '../../lib/fs/confinement.js';
 import { computeDiff } from '../../utils/diff.js';
 import { sha256Hex } from '../../utils/sha256.js';

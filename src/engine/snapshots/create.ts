@@ -11,7 +11,7 @@ import {
   snapshotFilesDir,
   SNAPSHOT_BASELINE_ID,
 } from '../../core/paths.js';
-import { SECURE_FILE_MODE } from '../../lib/fs.js';
+import { SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,

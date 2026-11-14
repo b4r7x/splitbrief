@@ -5,9 +5,9 @@ import { z } from 'zod';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { type DraftDocument, DraftDocumentSchema } from '../../core/schemas/draft-document.js';
-import { writeSecureFile } from '../../lib/fs.js';
-import { isENOENT } from '../../lib/process/errors.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { writeSecureFile } from '../../lib/fs/secure.js';
+import { isENOENT } from '../../utils/errno.js';
+import { redactSecrets } from '../../utils/redact/secrets.js';
 import { warnError } from '../../lib/warn.js';
 import { inputHistoryStore, normalizeInputHistoryEntries } from './input-history.js';
 

@@ -6,7 +6,7 @@ import {
   GLOBAL_SKILL_SCAN_PATHS,
   PROJECT_SKILL_SCAN_PATHS,
 } from '../../../core/skills/scan-paths.js';
-import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diagnostic.js';
 import { escapeRegExp } from '../../../utils/regexp.js';
 import type { ToolUseGuard } from '../../runners/cli-tools/process-invoke.js';
 import { cliToolHome, hasCliToolHome } from '../../runners/host-model-selection.js';

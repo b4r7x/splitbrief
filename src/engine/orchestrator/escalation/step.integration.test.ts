@@ -58,8 +58,9 @@ import type { RetryInvokeResult } from './types.js';
 const retryAttemptWrite = vi.hoisted(() => ({
   fails: undefined as 'unconfirmed' | 'conflict' | undefined,
 }));
-vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../lib/confined-fs-atomic.js')>();
+vi.mock('../../../lib/fs/atomic-write/write-sync.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../lib/fs/atomic-write/write-sync.js')>();
   return {
     ...actual,
     confinedAtomicWriteFileSync: (

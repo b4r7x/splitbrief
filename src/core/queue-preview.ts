@@ -1,4 +1,5 @@
-import { oneLineDisplayText, truncateTerminalDisplayText } from '../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../utils/display-text/truncate.js';
+import { oneLineDisplayText } from '../utils/display-text/sanitize.js';
 import type { QueuedMessage } from './schemas/workflow.js';
 
 const QUEUE_PREVIEW_MAX_CELLS = 80;

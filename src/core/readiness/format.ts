@@ -1,4 +1,4 @@
-import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { countNoun, pluralize } from '../../utils/pluralize.js';
 import {
   READINESS_MODEL_SELECTIONS,

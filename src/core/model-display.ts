@@ -1,4 +1,4 @@
-import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../utils/display-text/sanitize.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from './providers/automatic-model.js';
 import { findKnownModel } from './providers/known-models.js';
 import { prettyModelName } from './providers/pretty-model-name.js';

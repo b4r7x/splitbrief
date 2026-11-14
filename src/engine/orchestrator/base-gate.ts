@@ -4,7 +4,7 @@ import type { Check, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { redactSecrets } from '../../utils/redact/secrets.js';
 import type { EventBus } from '../events/types.js';
 import { publishReviewCheck, publishWarning } from './events.js';
 import {

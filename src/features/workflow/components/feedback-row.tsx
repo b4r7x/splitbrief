@@ -6,7 +6,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';

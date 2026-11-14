@@ -1,5 +1,5 @@
 import { toErrorMessage } from '../utils/format/errors.js';
-import { sanitizeTerminalDiagnosticText } from '../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../utils/display-text/diagnostic.js';
 import { createLogger } from './logger.js';
 
 // A diagnostic names a presentation only when the user must act on it. `feedback` shows on the

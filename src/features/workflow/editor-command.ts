@@ -1,7 +1,7 @@
 import { accessSync, constants } from 'node:fs';
 import { basename, delimiter, isAbsolute, join } from 'node:path';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
-import { oneLineDisplayText } from '../../utils/display-text.js';
+import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 
 interface EditorArgv {
   command: string;

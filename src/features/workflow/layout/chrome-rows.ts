@@ -2,7 +2,7 @@ import { formatStageLabel } from '../../../core/phase-display.js';
 import { isImplementerPhase } from '../../../core/phases.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { ROW_LEADING } from '../../../components/row-leading.js';
 import type { RailStage, RailStageState } from '../../../core/rail-stages.js';
 

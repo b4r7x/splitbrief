@@ -72,7 +72,7 @@ import {
 } from '../../features/workflow/layout/chrome-rows.js';
 import { useHeaderSeatLines } from '../../features/workflow/hooks/use-header-seat-lines.js';
 import { seatLineText } from '../../core/crew/identity.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { BuildProgressBlock } from '../../features/workflow/components/build-progress.js';
 import { useRailCells } from '../../features/workflow/hooks/use-rail-cells.js';
 import { usePanelFocus } from '../../features/workflow/hooks/use-panel-focus.js';

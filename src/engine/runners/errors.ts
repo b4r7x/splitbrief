@@ -1,5 +1,5 @@
 import { error } from '../../utils/error.js';
-import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 
 export const RUNNER_OUTCOME_STATES = [

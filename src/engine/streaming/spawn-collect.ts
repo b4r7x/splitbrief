@@ -21,10 +21,11 @@ import {
 } from '../runners/redaction.js';
 import { processError } from '../../lib/process/errors.js';
 import { spawnWithStdin } from '../../lib/process/spawn/line-stream.js';
-import type { SpawnPipeFatalSignal } from '../../lib/process/spawn/lifecycle.js';
+import type { SpawnPipeFatalSignal } from '../../lib/process/spawn/types.js';
 import { error, matches } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
-import { isCredentialEnvironmentName, redactSecrets } from '../../utils/redact.js';
+import { isCredentialEnvironmentName } from '../../utils/redact/assignment.js';
+import { redactSecrets } from '../../utils/redact/secrets.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { getLineParser } from './output-parsers.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';

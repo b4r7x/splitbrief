@@ -13,7 +13,7 @@ import {
 import { crewRowKey, deriveCrewRows, type CrewRowKey } from '../../core/crew/rows.js';
 import type { Config } from '../../core/schemas/config.js';
 import { glyph, type GlyphName } from '../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { CREW_IDENTITY_COLUMN, CREW_MARKER_GUTTER, planSeatBlock } from './format.js';
 import { CrewRowView, CrewVerdictLine } from './row-view.js';
 

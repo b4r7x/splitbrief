@@ -37,7 +37,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare-execution.js';

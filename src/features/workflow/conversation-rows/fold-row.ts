@@ -1,7 +1,8 @@
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { getShortcutKey } from '../../../core/keybindings/registry.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { segmentedRow } from './row-format/rows.js';
 import { rowLeadingCells } from './row-markers.js';
 import type { ConversationRow } from './types.js';

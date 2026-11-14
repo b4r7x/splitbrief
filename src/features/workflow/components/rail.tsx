@@ -15,7 +15,7 @@ import type { RunBriefs } from '../../../core/run-view/briefs.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import {
   applyStopRailStages,
   getRailStages,

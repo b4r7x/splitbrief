@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, relative } from 'node:path';
-import { fsError } from '../lib/fs.js';
+import { fsError } from '../lib/fs/secure.js';
 import { sha256Hex } from '../utils/sha256.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { SPLITBRIEF_IDENTITY } from './identity.js';

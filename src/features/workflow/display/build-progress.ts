@@ -4,12 +4,10 @@ import { stateTone } from '../../../core/theme/state-tone.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import {
-  getTerminalCellWidth,
-  stripTerminalControls,
-  truncateTerminalDisplayText,
-  segmentsForRowText,
-} from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { segmentsForRowText } from '../../../utils/display-text/width.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
 import { formatElapsedClock, formatTime } from '../../../utils/format/time.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';

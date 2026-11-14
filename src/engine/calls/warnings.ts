@@ -1,6 +1,6 @@
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH, RunnerCallWarningSchema } from './schema.js';
-import { stripTerminalControls } from '../../utils/display-text.js';
-import { redactSecretsWithMetadata } from '../../utils/redact.js';
+import { stripTerminalControls } from '../../utils/display-text/sanitize.js';
+import { redactSecretsWithMetadata } from '../../utils/redact/secrets.js';
 import type { RunnerCallWarning, RunnerCallWarningInput } from './types.js';
 
 export function normalizeRunnerCallWarning(input: RunnerCallWarningInput): RunnerCallWarning {

@@ -2,7 +2,7 @@ import {
   getTerminalCellWidth,
   splitTerminalGraphemes,
   wrapTerminalGraphemes,
-} from '../../display-text.js';
+} from '../../display-text/width.js';
 import { assertNever } from '../../type-guards.js';
 import type { MarkdownInlineToken, MarkdownLayoutLine, MarkdownLayoutSegment } from '../types.js';
 

@@ -13,10 +13,10 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
 import {
-  getTerminalCellWidth,
   padTerminalDisplayTextEnd,
   truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+} from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { wrapHard } from '../../utils/display-text/wrap.js';
 import {
   usageDetailRows,

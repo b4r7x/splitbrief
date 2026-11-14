@@ -1,6 +1,6 @@
 import type { ReviewVerdict, SetAside } from '../schemas/review.js';
 import type { RedCheck, ReviewRecord } from '../schemas/workflow.js';
-import { oneLineDisplayText } from '../../utils/display-text.js';
+import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 import { namedFailures } from './base-split.js';
 import {
   acceptedCounts,

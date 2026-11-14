@@ -5,11 +5,9 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { availableRows } from '../../../components/pickers/scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import {
-  ELLIPSIS,
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-} from '../../../utils/display-text.js';
+import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { wrapOnWords } from '../picker-format.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { useStores } from '../../../stores/use-stores.js';

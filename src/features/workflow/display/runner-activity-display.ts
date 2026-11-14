@@ -6,10 +6,8 @@ import type { EngineEventOf } from '../../../engine/events/types.js';
 import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
-import {
-  sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
-} from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { shellCommandFromText } from '../../../utils/shell-quote.js';
 import { assertNever } from '../../../utils/type-guards.js';

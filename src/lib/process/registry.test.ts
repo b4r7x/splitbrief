@@ -17,9 +17,9 @@ import {
   registerProcess,
   runInProcessScope,
   setProcessLedger,
-  SIGKILL_DELAY_MS,
   unregisterProcess,
 } from './registry.js';
+import { SIGKILL_DELAY_MS } from './termination.js';
 
 describe('killProcessScope', () => {
   afterEach(() => killAllProcesses());

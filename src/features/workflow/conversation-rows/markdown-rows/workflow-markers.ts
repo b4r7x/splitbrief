@@ -1,5 +1,5 @@
 import { TaskIdSchema } from '../../../../core/schemas/task.js';
-import { stripTerminalControls } from '../../../../utils/display-text.js';
+import { stripTerminalControls } from '../../../../utils/display-text/sanitize.js';
 import type { MarkdownLayoutSegment } from '../../../../utils/markdown/types.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 

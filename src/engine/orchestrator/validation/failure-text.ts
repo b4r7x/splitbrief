@@ -8,8 +8,8 @@ import {
   pairFailureKeys,
   type FixCheckKeys,
 } from '../../../core/review/fix-task.js';
-import { redactSecrets } from '../../../utils/redact.js';
-import { truncateByChars } from '../../../utils/truncate.js';
+import { redactSecrets } from '../../../utils/redact/secrets.js';
+import { truncateByChars } from '../../../utils/display-text/truncate.js';
 import type { FailureKeys } from './extract-failure-keys.js';
 import type { CheckRunResult } from './run-checks.js';
 import { boundedOutputTail } from './stage.js';

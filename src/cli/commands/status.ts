@@ -30,7 +30,7 @@ import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import type { RunnerKind } from '../../core/schemas/enums.js';
 import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';
 import { resolveCallUsageEvidence } from '../../engine/orchestrator/summary/call-evidence.js';
-import { oneLineDisplayText, stripTerminalControls } from '../../utils/display-text.js';
+import { oneLineDisplayText, stripTerminalControls } from '../../utils/display-text/sanitize.js';
 import { recordedSeatIdentityInput } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../bootstrap/discovery.js';

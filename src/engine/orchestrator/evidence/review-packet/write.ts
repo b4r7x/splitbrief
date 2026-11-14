@@ -1,5 +1,5 @@
 import { reviewPacketJsonPath, reviewPacketMarkdownPath } from '../../../../core/paths.js';
-import { writeSecureFile } from '../../../../lib/fs.js';
+import { writeSecureFile } from '../../../../lib/fs/secure.js';
 import { buildReviewPacket } from './build.js';
 import { stringifyReviewPacket, renderReviewPacketMarkdown } from './render.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';

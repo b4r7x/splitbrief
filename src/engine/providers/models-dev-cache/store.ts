@@ -5,7 +5,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import { writeSecureFileAsync } from '../../../lib/fs.js';
+import { writeSecureFileAsync } from '../../../lib/fs/secure.js';
 import { deepFreeze } from '../../../utils/deep-freeze.js';
 import { error } from '../../../utils/error.js';
 import type {

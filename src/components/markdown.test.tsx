@@ -5,7 +5,7 @@ import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { glyph } from '../lib/glyphs.js';
-import { getTerminalCellWidth } from '../utils/display-text.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
 import { renderMarkdownRows, type RenderMarkdownRowsOptions } from './markdown.js';
 import { defaultTheme, ThemeText as Text } from './theme.js';
 

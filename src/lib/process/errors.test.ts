@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS } from '../../utils/display-text.js';
-import { captureText, isENOENT, processError, processOutputCapture, spawnError } from './errors.js';
+import { DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS } from '../../utils/display-text/diagnostic.js';
+import { captureText, processError, processOutputCapture, spawnError } from './errors.js';
+import { isENOENT } from '../../utils/errno.js';
 
 const JWT_FIXTURE =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';

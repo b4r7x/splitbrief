@@ -20,7 +20,7 @@ import type {
 } from '../../calls/types.js';
 import type { UsageLimitWindow } from '../../../core/recovery/usage-limit-step.js';
 
-import type { SpawnStdinWriter } from '../../../lib/process/spawn/lifecycle.js';
+import type { SpawnStdinWriter } from '../../../lib/process/spawn/types.js';
 import type { RunningCall } from '../../calls/steering.js';
 import type { PromptLimit } from '../input-limit.js';
 

@@ -9,7 +9,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { PICKER_ROLE_SEAT_IDS, type SeatPickerRole } from '../../core/runners/seat-roles.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';

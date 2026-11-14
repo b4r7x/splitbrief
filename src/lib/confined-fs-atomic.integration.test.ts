@@ -26,14 +26,18 @@ import { link, open } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
-  confinedAtomicWriteFile,
-  confinedAtomicWriteFileForTest,
   confinedAtomicWriteFileSync,
   confinedAtomicWriteFileSyncForTest,
-  type ConfigRevision,
-  type ConfinedAtomicWriteTestOperations,
-  type ConfinedAtomicWriteSyncTestOperations,
-} from './confined-fs-atomic.js';
+} from './fs/atomic-write/write-sync.js';
+import {
+  confinedAtomicWriteFile,
+  confinedAtomicWriteFileForTest,
+} from './fs/atomic-write/write.js';
+import type {
+  ConfinedAtomicWriteTestOperations,
+  ConfinedAtomicWriteSyncTestOperations,
+} from './fs/atomic-write/operations.js';
+import type { ConfigRevision } from './fs/atomic-write/types.js';
 import { readProcessStartTimeMs } from './process/start-time.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -322,7 +326,12 @@ function startCasChild(options: {
         SPLITBRIEF_CAS_READY: options.readyPath,
         SPLITBRIEF_CAS_RELEASE: options.releasePath,
         SPLITBRIEF_CAS_CONTENT: options.content,
-        SPLITBRIEF_CAS_SOURCE: join(process.cwd(), 'src/lib/confined-fs-atomic.ts'),
+        SPLITBRIEF_CAS_SOURCE: join(
+          process.cwd(),
+          options.mode === 'async'
+            ? 'src/lib/fs/atomic-write/write.ts'
+            : 'src/lib/fs/atomic-write/write-sync.ts',
+        ),
         SPLITBRIEF_CAS_CRASH_PUBLISH: options.crashPublish === true ? '1' : '0',
       },
       stdio: ['ignore', 'ignore', 'pipe'],

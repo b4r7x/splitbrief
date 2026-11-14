@@ -1,9 +1,9 @@
-import { redactSecretsWithMetadata } from '../utils/redact.js';
+import { redactSecretsWithMetadata } from '../utils/redact/secrets.js';
 import {
   SESSION_LOG_MAX_ENTRY_BYTES,
   SESSION_LOG_MAX_STRING_BYTES,
 } from './schemas/session-log.js';
-import { stripTerminalControls } from '../utils/display-text.js';
+import { stripTerminalControls } from '../utils/display-text/sanitize.js';
 
 export const CALL_TUI_MAX_PUBLIC_PAYLOAD_BYTES = 512 * 1024;
 export const CALL_STDOUT_JSON_MAX_PUBLIC_PAYLOAD_BYTES = 256 * 1024;

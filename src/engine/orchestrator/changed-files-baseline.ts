@@ -6,7 +6,7 @@ import { getCurrentChangedFiles } from '../../lib/git/files.js';
 import { resolveRunStartBase } from '../../lib/git/refs.js';
 import { readHeadSha } from '../../lib/git/repository.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT } from '../../utils/errno.js';
 import { isProcessOutputSink } from '../../lib/process/stdio-sinks.js';
 import { assertExistingPathConfined, assertPathConfined } from '../../lib/fs/confinement.js';
 import { sha256Hex } from '../../utils/sha256.js';

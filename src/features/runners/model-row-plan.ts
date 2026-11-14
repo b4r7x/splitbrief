@@ -4,11 +4,11 @@ import { formatModelName } from '../../core/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import {
-  ELLIPSIS,
-  getTerminalCellWidth,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextStart,
-} from '../../utils/display-text.js';
+} from '../../utils/display-text/truncate.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { isOptionFamily, routePrefixesOf } from './model-catalog/option-axis.js';
 import { modelIdUnderProvider } from './model-catalog/provider-axis.js';
 import { AUTO_ROW_METADATA, sectionOf, type RightRow } from './model-catalog/rows.js';

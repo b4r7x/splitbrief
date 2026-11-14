@@ -4,7 +4,7 @@ import { render } from 'ink-testing-library';
 import { afterAll, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../lib/glyphs.js';
-import { ELLIPSIS } from '../utils/display-text.js';
+import { ELLIPSIS } from '../utils/display-text/truncate.js';
 import { ListGroupHeader, ListRow, listRowLead } from './list-row.js';
 import { defaultTheme, ThemeProvider } from './theme.js';
 import { resolveTheme } from '../core/theme/resolve.js';

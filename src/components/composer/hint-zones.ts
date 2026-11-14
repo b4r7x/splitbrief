@@ -1,4 +1,4 @@
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 
 const COMPOSER_PROMPT_WIDTH = 2;
 const COMPOSER_HINT_MARGIN_LEFT = 2;

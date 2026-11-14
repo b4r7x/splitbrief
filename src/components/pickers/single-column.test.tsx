@@ -4,7 +4,7 @@ import { Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { glyph } from '../../lib/glyphs.js';
 import { _resetMouseZones, hitTopmostZone } from '../../lib/terminal/mouse-zones.js';
 import { ListRow } from '../list-row.js';

@@ -16,7 +16,7 @@ import {
   crewSeatWord,
   deriveCrewSeats,
 } from '../../../core/crew/seats.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { homeConfigBlockRows } from '../layout.js';
 import { deriveHomeToolCheck } from '../tool-check.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';

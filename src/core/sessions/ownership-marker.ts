@@ -15,7 +15,7 @@ import {
   assertExistingPathConfined,
   assertWritablePathConfined,
 } from '../../lib/fs/confinement.js';
-import { isNodeError } from '../../lib/process/errors.js';
+import { isNodeError } from '../../utils/errno.js';
 import { error, type AppError } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../paths.js';

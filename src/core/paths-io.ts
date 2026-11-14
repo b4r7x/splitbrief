@@ -10,7 +10,7 @@ import {
   REVIEW_FILE,
   validateSessionId,
 } from './paths.js';
-import { fsError } from '../lib/fs.js';
+import { fsError } from '../lib/fs/secure.js';
 import {
   confinedEnsureDir,
   confinedExists,

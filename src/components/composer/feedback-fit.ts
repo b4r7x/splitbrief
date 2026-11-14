@@ -1,11 +1,11 @@
 import { SOFT_SEP } from '../../core/separators.js';
 import {
-  ELLIPSIS,
   elidePathMiddle,
-  getTerminalCellWidth,
-  graphemes,
   truncateTerminalDisplayTextMiddleAtWords,
-} from '../../utils/display-text.js';
+} from '../../utils/display-text/truncate.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
+import { graphemes } from '../../utils/display-text/width.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { widestPathAwareUnit, wrapPathAware } from '../../utils/display-text/wrap.js';
 
 export interface FeedbackMessageParts {

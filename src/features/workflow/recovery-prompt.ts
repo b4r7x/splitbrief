@@ -18,13 +18,10 @@ import {
 } from '../../core/recovery/action-label.js';
 import { leavesWordsUnread } from '../../core/recovery/typed-words.js';
 import { formatTruncatedList } from '../../core/formatting.js';
-import {
-  ELLIPSIS,
-  elidePathMiddle,
-  getTerminalCellWidth,
-  oneLineDisplayText,
-  truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+import { elidePathMiddle, truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
+import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 import { wrapHard } from '../../utils/display-text/wrap.js';
 import {
   readRecoveryContext,

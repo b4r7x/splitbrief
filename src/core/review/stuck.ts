@@ -3,7 +3,7 @@ import type { TriageResult } from '../schemas/review.js';
 import type { Task, TaskId } from '../schemas/task.js';
 import type { ConsultRecord, WorkflowState } from '../schemas/workflow.js';
 import { lineageIdOf } from '../state/task-insert.js';
-import { oneLineDisplayText } from '../../utils/display-text.js';
+import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 
 /** The task a stuck review asks the planner on: the judged fix cycle's last brief, else the last brief that ran. */
 export function stuckTarget(state: WorkflowState, cycle: number | undefined): Task | undefined {

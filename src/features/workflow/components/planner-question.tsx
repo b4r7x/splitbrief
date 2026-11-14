@@ -16,7 +16,8 @@ import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { clamp } from '../../../utils/math.js';
 import { stopMenuChrome } from '../stop/options.js';
 

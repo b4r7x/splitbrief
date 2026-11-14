@@ -1,6 +1,6 @@
 import { appendFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { SECURE_FILE_MODE, rejectSymlinkTargetAsync } from '../../lib/fs.js';
+import { SECURE_FILE_MODE, rejectSymlinkTargetAsync } from '../../lib/fs/secure.js';
 import { SESSION_LOG_FILE } from '../paths.js';
 import type { ResolvedCompactionFormat, StructuredSummary } from '../schemas/compaction.js';
 import type {

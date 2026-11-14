@@ -14,7 +14,8 @@ import type {
 import { formatDuration } from '../../../utils/format/time.js';
 import { formatContextLength } from '../../../core/formatting.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { formatUsageTokens } from '../usage-details-model.js';
 import { suiteStageParts } from '../display/phase-verb.js';
 import { formatRecordedSeatIdentity } from '../display/recorded-seat-identity.js';

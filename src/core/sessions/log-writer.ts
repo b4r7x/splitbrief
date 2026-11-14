@@ -9,7 +9,7 @@ import { PhaseSchema } from '../schemas/enums.js';
 import { TaskIdSchema } from '../schemas/task.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_LOG_FILE } from '../paths.js';
-import { fsError, rejectSymlinkTarget } from '../../lib/fs.js';
+import { fsError, rejectSymlinkTarget } from '../../lib/fs/secure.js';
 import { confinedAppendFileSync, confinedEnsureDir } from '../../lib/fs/confined.js';
 import { warnStderr } from '../../lib/warn.js';
 import { nowIso } from '../../utils/format/time.js';

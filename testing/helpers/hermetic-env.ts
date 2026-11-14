@@ -1,4 +1,4 @@
-import { isCredentialEnvironmentName } from '../../src/utils/redact.js';
+import { isCredentialEnvironmentName } from '../../src/utils/redact/assignment.js';
 
 export function isTestCredentialEnvironmentName(name: string): boolean {
   return (

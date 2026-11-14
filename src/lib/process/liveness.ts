@@ -1,4 +1,4 @@
-import { isNodeError } from './errors.js';
+import { isNodeError } from '../../utils/errno.js';
 
 // EPERM means the process exists but belongs to another user, which is still alive for the
 // purposes of every caller here.

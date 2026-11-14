@@ -18,11 +18,9 @@ import { buildPlannerCallFailedRecoveryIssue } from '../../engine/orchestrator/r
 import { buildApplyPartialRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { formatTruncatedList } from '../../core/formatting.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import {
-  elidePathMiddle,
-  getTerminalCellWidth,
-  oneLineDisplayText,
-} from '../../utils/display-text.js';
+import { elidePathMiddle } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
+import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';

@@ -19,7 +19,7 @@ import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { prepareCustomRunnerAdmission } from '../../../src/engine/runners/custom-admission.js';
 import { inlineRunnerSecurityPosture } from '../../../src/engine/runners/custom-trust.js';
-import { stripTerminalControls } from '../../../src/utils/display-text.js';
+import { stripTerminalControls } from '../../../src/utils/display-text/sanitize.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';

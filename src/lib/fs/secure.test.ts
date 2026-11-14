@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { fsError } from './fs.js';
+import { fsError } from './secure.js';
 
 describe('fsError factories', () => {
   test.each([

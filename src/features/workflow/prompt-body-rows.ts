@@ -1,9 +1,7 @@
 import { REPLACED_FILES_SAVED_LEAD } from '../../core/runtime/commands/messages.js';
-import {
-  ELLIPSIS,
-  sanitizeTerminalDisplayText,
-  segmentsForRowText,
-} from '../../utils/display-text.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
+import { segmentsForRowText } from '../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { wrapHard } from '../../utils/display-text/wrap.js';

@@ -1,12 +1,10 @@
 import type { BoundedOutputMetadata } from '../bounded-output.js';
 import { createBoundedOutput } from '../bounded-output.js';
-import { isENOENT, processError } from '../errors.js';
-import {
-  DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
-  DEFAULT_PROCESS_STDERR_MAX_BYTES,
-  type SpawnIdleOptions,
-  spawnPipe,
-} from './lifecycle.js';
+import { processError } from '../errors.js';
+import { isENOENT } from '../../../utils/errno.js';
+import { spawnPipe } from './lifecycle.js';
+import type { SpawnIdleOptions } from './types.js';
+import { DEFAULT_PROCESS_OUTPUT_MAX_BYTES, DEFAULT_PROCESS_STDERR_MAX_BYTES } from './types.js';
 
 export interface SpawnResult {
   output: string;

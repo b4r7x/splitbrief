@@ -12,7 +12,7 @@ import {
   resolveTrustStorePath,
   trustedProjectIdentity,
 } from '../../core/trust/receipt-store.js';
-import { writeSecureFileAsync } from '../../lib/fs.js';
+import { writeSecureFileAsync } from '../../lib/fs/secure.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { throwIfAborted } from '../../utils/abort.js';

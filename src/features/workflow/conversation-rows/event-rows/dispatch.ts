@@ -10,10 +10,8 @@ import { setAsideLabel } from '../../../../core/review/verdict.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
-import {
-  getTerminalCellWidth,
-  truncateTerminalDisplayText,
-} from '../../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { runnerActivityBatchRowBlock } from '../activity-rows.js';

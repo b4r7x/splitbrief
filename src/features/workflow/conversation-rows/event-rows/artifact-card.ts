@@ -2,10 +2,10 @@ import { configStore } from '../../../../stores/project/config.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
 import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path/links.js';
 import {
-  getTerminalCellWidth,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
-} from '../../../../utils/display-text.js';
+} from '../../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { wrapWidthFor } from '../row-markers.js';
 import { segmentedRow } from '../row-format/rows.js';
 import { sourceFooterSegments } from '../row-format/preformatted-block.js';

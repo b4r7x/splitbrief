@@ -3,7 +3,7 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';
 import { rmdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
+import { isENOENT, isNodeError } from '../../../utils/errno.js';
 import { type ChangeEntry, writeConfinedEntryOrLink } from '../approval/file-snapshots/entry.js';
 import {
   type ApplyBackup,

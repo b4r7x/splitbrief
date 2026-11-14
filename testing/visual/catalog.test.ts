@@ -7,7 +7,7 @@ import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
 import { composerLiveStore } from '../../src/stores/ui/composer-live.js';
 import { feedbackStore } from '../../src/stores/ui/feedback.js';
-import { stripTerminalControls } from '../../src/utils/display-text.js';
+import { stripTerminalControls } from '../../src/utils/display-text/sanitize.js';
 import { selectRailFormAndLine } from '../../src/features/workflow/layout/chrome-rows.js';
 import {
   listVisualScenarios,

@@ -1,4 +1,4 @@
-import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import { BOUNDS } from '../../core/pipeline-spec/bounds.js';

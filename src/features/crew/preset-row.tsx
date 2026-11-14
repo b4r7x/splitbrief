@@ -5,10 +5,10 @@ import type { CrewPreset } from '../../core/crew/presets.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import {
-  getTerminalCellWidth,
   padTerminalDisplayTextEnd,
   truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+} from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { CREW_COLUMN_GAP, CREW_MARKER_GUTTER } from './format.js';
 
 /** Preset labels sit on the seat label edge: the marker gutter. */

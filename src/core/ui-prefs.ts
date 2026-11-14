@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { getSplitbriefPath, UI_PREFS_FILE } from './paths.js';
-import { readValidatedJsonResult, writeSecureFile } from '../lib/fs.js';
+import { readValidatedJsonResult } from '../lib/fs/read.js';
+import { writeSecureFile } from '../lib/fs/secure.js';
 import { warnError } from '../lib/warn.js';
 import { projectRelativePathLabel } from '../utils/path/links.js';
 

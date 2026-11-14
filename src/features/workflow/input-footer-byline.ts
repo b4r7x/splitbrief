@@ -1,11 +1,9 @@
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
-import {
-  ELLIPSIS,
-  getTerminalCellWidth,
-  truncateTerminalDisplayText,
-  segmentsForRowText,
-} from '../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
+import { segmentsForRowText } from '../../utils/display-text/width.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { separatedSpans } from './conversation-rows/row-format/text.js';

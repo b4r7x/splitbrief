@@ -26,7 +26,7 @@ import { tokensStore } from '../../src/stores/workflow/tokens.js';
 import { selectRunningBrief, selectTaskListView } from '../../src/core/run-view/briefs.js';
 import { SOFT_SEP } from '../../src/core/separators.js';
 import { glyph } from '../../src/lib/glyphs.js';
-import { stripTerminalControls } from '../../src/utils/display-text.js';
+import { stripTerminalControls } from '../../src/utils/display-text/sanitize.js';
 import { EngineEventSchema } from '../../src/engine/events/schema.js';
 import { deriveRunStatus } from '../../src/core/sessions/run-status.js';
 import {

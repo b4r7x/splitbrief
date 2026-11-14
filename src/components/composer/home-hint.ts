@@ -1,5 +1,6 @@
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
-import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { formatAttachmentFailure } from '../../core/attachments/failure.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';

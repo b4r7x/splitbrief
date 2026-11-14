@@ -14,7 +14,7 @@ import {
 } from '../../core/providers/endpoint-policy.js';
 import { providerError } from './errors.js';
 import { error } from '../../utils/error.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { redactSecrets } from '../../utils/redact/secrets.js';
 
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 

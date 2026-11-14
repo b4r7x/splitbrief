@@ -13,7 +13,7 @@ import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { apiKeyEnvReference } from '../providers/client/api-key.js';
-import { SECURE_DIR_MODE } from '../../lib/fs.js';
+import { SECURE_DIR_MODE } from '../../lib/fs/secure.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
 import { error } from '../../utils/error.js';
 import { CLI_TOOL_HOME_ENV, hasCliToolHome } from './host-model-selection.js';

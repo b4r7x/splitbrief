@@ -7,7 +7,7 @@ import {
   readClipboardImageData,
   type ClipboardImageReadFailureReason,
 } from '../../lib/clipboard/image.js';
-import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../lib/fs.js';
+import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import { assertWritablePathConfined } from '../../lib/fs/confinement.js';
 import { SPLITBRIEF_DIR } from '../paths.js';
 import { MAX_ATTACHMENT_BYTES } from '../schemas/attachment.js';

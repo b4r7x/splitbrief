@@ -21,10 +21,10 @@ import {
   assertSessionConfinement,
   assertSessionDirConfined,
 } from '../../../core/sessions/confinement.js';
-import { writeConfinedSecureFileAsync, writeSecureFile } from '../../../lib/fs.js';
+import { writeConfinedSecureFileAsync, writeSecureFile } from '../../../lib/fs/secure.js';
 import { createLogger } from '../../../lib/logger.js';
 import { assertPathConfined } from '../../../lib/fs/confinement.js';
-import { isENOENT } from '../../../lib/process/errors.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { error, matches } from '../../../utils/error.js';

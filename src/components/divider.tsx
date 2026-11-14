@@ -1,11 +1,9 @@
 import { ThemeText as Text, useTheme } from './theme.js';
 import { Box } from 'ink';
 import { glyph } from '../lib/glyphs.js';
-import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  truncateTerminalDisplayTextMiddle,
-} from '../utils/display-text.js';
+import { truncateTerminalDisplayTextMiddle } from '../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../utils/display-text/sanitize.js';
 
 export interface DividerProps {
   width: number;

@@ -1,15 +1,16 @@
 import { createBoundedOutput, type BoundedOutputMetadata } from '../bounded-output.js';
-import { isENOENT, processError } from '../errors.js';
+import { processError } from '../errors.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { createLineBuffer } from '../line-buffer.js';
+import { spawnPipe } from './lifecycle.js';
+import { isFatalSignal } from './fatal.js';
+import { spawnPipeError } from './fatal.js';
+import type { SpawnIdleOptions } from './types.js';
 import {
   DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
   DEFAULT_PROCESS_STDERR_MAX_BYTES,
-  isFatalSignal,
-  type SpawnIdleOptions,
   type SpawnPipeFatalSignal,
-  spawnPipe,
-  spawnPipeError,
-} from './lifecycle.js';
+} from './types.js';
 
 type LineStreamCallback<T> =
   | ((value: T) => void)

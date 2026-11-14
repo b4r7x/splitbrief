@@ -1,10 +1,8 @@
 import { SOFT_SEP } from '../separators.js';
 import { countNoun } from '../../utils/pluralize.js';
-import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import type { WorkflowTask } from './briefs.js';
 import type { TaskStartedEvent } from './events.js';
 

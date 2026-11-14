@@ -1,7 +1,7 @@
 import { ThemeText as Text } from './theme.js';
 import { Box } from 'ink';
 import type { ReactNode } from 'react';
-import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../utils/display-text/sanitize.js';
 import { markdownLayoutGlyphs } from '../lib/glyphs.js';
 import { osc8Hyperlink, terminalSupportsHyperlinks } from '../lib/terminal/hyperlinks.js';
 import { parseMarkdownBlocks } from '../utils/markdown/block-parser.js';

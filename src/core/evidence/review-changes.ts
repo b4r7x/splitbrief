@@ -12,9 +12,9 @@ import {
   assertExistingPathConfined,
   assertWritablePathConfined,
 } from '../../lib/fs/confinement.js';
-import { writeSecureFile } from '../../lib/fs.js';
+import { writeSecureFile } from '../../lib/fs/secure.js';
 import { withFileLock } from '../../lib/fs/lock.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT } from '../../utils/errno.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { error } from '../../utils/error.js';
 

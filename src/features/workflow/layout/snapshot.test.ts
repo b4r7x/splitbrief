@@ -20,7 +20,7 @@ import {
   WORKFLOW_GUTTER_X,
 } from './chrome-rows.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';

@@ -7,8 +7,11 @@ import type {
 } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
-import { oneLineDisplayText, sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
-import { truncateByChars } from '../../../../utils/truncate.js';
+import {
+  oneLineDisplayText,
+  sanitizeTerminalDisplayText,
+} from '../../../../utils/display-text/sanitize.js';
+import { truncateByChars } from '../../../../utils/display-text/truncate.js';
 import { isAskedDetail } from '../../../../core/recovery/headline.js';
 
 export const MAX_SUMMARY_LENGTH = 320;

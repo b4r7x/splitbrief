@@ -1,10 +1,10 @@
 import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddleAtWords,
   truncateTerminalDisplayTextStart,
-} from '../../../utils/display-text.js';
+} from '../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 

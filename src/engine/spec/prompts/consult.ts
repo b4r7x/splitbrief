@@ -10,7 +10,7 @@ import type { AttemptFailure, ConsultRecord } from '../../../core/schemas/workfl
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { decisionLedgerText } from '../../../core/state/machine.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { truncateByChars } from '../../../utils/truncate.js';
+import { truncateByChars } from '../../../utils/display-text/truncate.js';
 import {
   buildPrompt,
   fenced,

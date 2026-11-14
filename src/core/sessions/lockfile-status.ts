@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { z } from 'zod';
-import { isNodeError } from '../../lib/process/errors.js';
+import { isNodeError } from '../../utils/errno.js';
 import { readProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { LOCKFILE } from '../paths.js';
 import { WorkflowModeSchema } from '../schemas/enums.js';

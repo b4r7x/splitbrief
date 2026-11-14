@@ -1,6 +1,6 @@
 import type { AnsweredQuestion, ClarificationQuestion } from '../../../../core/schemas/question.js';
 import { questionLine } from '../../../../core/state/planning-conversation.js';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { rowsBlock } from '../row-block-compose.js';
 import { wrapWidthFor } from '../row-markers.js';

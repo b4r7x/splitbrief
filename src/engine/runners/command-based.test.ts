@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
+import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/types.js';
 import { invokeCommandRunner } from './command-based.js';
 
 function run(

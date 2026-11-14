@@ -6,7 +6,7 @@ import {
   type TieredApprovalResponse,
 } from '../core/approval/types.js';
 import type { ArtifactApprovalReview } from '../engine/runners/types.js';
-import { stripTerminalControls } from '../utils/display-text.js';
+import { stripTerminalControls } from '../utils/display-text/sanitize.js';
 import { holdSlowProbeLines } from './slow-probe-line.js';
 
 type PromptForLine = (question: string) => Promise<string>;

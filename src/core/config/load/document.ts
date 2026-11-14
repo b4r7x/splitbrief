@@ -11,11 +11,11 @@ import {
 import { join } from 'node:path';
 import YAML, { isMap, isScalar, parseDocument, type Document } from 'yaml';
 import { SPLITBRIEF_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
-import { ensureGitignore } from '../../../lib/fs.js';
+import { ensureGitignore } from '../../../lib/fs/gitignore.js';
 import { checkIgnoredPaths } from '../../../lib/git/files.js';
-import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/confined-fs-atomic.js';
+import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/fs/atomic-write/types.js';
 import { assertWritablePathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
-import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
+import { isENOENT, isNodeError } from '../../../utils/errno.js';
 import { configError } from '../errors.js';
 import { loadedKey } from './transform.js';
 

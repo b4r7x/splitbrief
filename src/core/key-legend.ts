@@ -1,4 +1,4 @@
-import { getTerminalCellWidth } from '../utils/display-text.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
 import { SOFT_SEP } from './separators.js';
 
 // The two-cell slot a key legend opens with: the mark, its trailing space, and nothing else, so

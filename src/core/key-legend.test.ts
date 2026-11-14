@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fitKeyLegend, KEY_LEGEND_LEADING } from './key-legend.js';
-import { getTerminalCellWidth } from '../utils/display-text.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
 
 describe('KEY_LEGEND_LEADING', () => {
   it('measures exactly the two-cell mark slot, whatever mark it carries', () => {

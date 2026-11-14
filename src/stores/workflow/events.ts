@@ -1,9 +1,7 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
-import {
-  sanitizeTerminalDiagnosticText,
-  sanitizeTerminalDisplayText,
-} from '../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { endsBaseCommand, suiteCommandKey } from './operations/state.js';
 
 export interface EventsState {

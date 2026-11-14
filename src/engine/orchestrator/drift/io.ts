@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { DRIFT_REPORT_FILE, sessionDir } from '../../../core/paths.js';
-import { readJsonSafe, writeSecureFile } from '../../../lib/fs.js';
+import { readJsonSafe } from '../../../lib/fs/read.js';
+import { writeSecureFile } from '../../../lib/fs/secure.js';
 import { DriftReportSchema, type DriftReport } from '../../../core/schemas/drift.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 

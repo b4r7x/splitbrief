@@ -4,7 +4,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker-format.js';
 import { configStore } from '../../stores/project/config.js';
 import { formatConfigSaveSuccess } from '../../stores/project/save-feedback.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import {
   deriveHomeHintLines,
   formatSubmissionFailure,

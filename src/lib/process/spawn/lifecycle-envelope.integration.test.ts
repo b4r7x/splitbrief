@@ -1,16 +1,16 @@
-import type { SpawnStdinWriter } from './lifecycle.js';
+import type { SpawnStdinWriter } from './types.js';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { isNodeError, processError } from '../errors.js';
-import { killAllProcesses, SIGKILL_DELAY_MS } from '../registry.js';
-import {
-  isFatalSignal,
-  spawnPipe,
-  spawnPipeError,
-  type SpawnPipeFatalSignal,
-} from './lifecycle.js';
+import { processError } from '../errors.js';
+import { isNodeError } from '../../../utils/errno.js';
+import { killAllProcesses } from '../registry.js';
+import { SIGKILL_DELAY_MS } from '../termination.js';
+import { spawnPipe } from './lifecycle.js';
+import { isFatalSignal } from './fatal.js';
+import { spawnPipeError } from './fatal.js';
+import type { SpawnPipeFatalSignal } from './types.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 

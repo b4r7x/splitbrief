@@ -3,11 +3,9 @@ import type { ReviewView, ScopeView, SummaryView } from './view-model.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { isRailCurrent, railStageSeat } from '../../../core/rail-stages.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
-import {
-  getTerminalCellWidth,
-  segmentsForRowText,
-  truncateTerminalDisplayText,
-} from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { segmentsForRowText } from '../../../utils/display-text/width.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { formatTime } from '../../../utils/format/time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';

@@ -1,4 +1,4 @@
-import { sanitizeTerminalDiagnosticText } from '../../../../src/utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../../../src/utils/display-text/diagnostic.js';
 import { isDirectExecution } from './contract.js';
 import { runPtySmoke, type PtySmokeResult, type RunPtySmokeOptions } from './run.js';
 

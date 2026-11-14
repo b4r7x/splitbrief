@@ -7,7 +7,7 @@ import { StagedWorkspaceLeafSchema } from '../../../core/schemas/retained-worksp
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { createGitClient, type GitClient } from '../../../lib/git/client.js';
 import { getGitCommonDir } from '../../../lib/git/repository.js';
-import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
+import { isENOENT, isNodeError } from '../../../utils/errno.js';
 import { clearWorkspaceRecord, stagedWorkspaceRoot, retentionError } from './retention.js';
 import { isInsideRoot } from '../../../lib/fs/confinement.js';
 import {

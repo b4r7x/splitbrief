@@ -24,7 +24,7 @@ import {
   sessionDir,
 } from '../../../../core/paths.js';
 import { readEvents } from '../../../../core/sessions/log-reader.js';
-import { readJsonSafe } from '../../../../lib/fs.js';
+import { readJsonSafe } from '../../../../lib/fs/read.js';
 import { includes, narrowRecord, optionalString } from '../../../../utils/type-guards.js';
 import {
   CHECKPOINT_RESTORE_SAFETY,

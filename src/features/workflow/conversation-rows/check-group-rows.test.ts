@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { checkGroupKey, checkGroupRowBlock } from './check-group-rows.js';
 import { fullSuiteRowBlock } from './event-rows/execution.js';
 import { rowText } from './row-format/rows.js';

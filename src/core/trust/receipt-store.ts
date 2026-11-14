@@ -1,7 +1,7 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT } from '../../utils/errno.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { SPLITBRIEF_DIR } from '../paths.js';
 

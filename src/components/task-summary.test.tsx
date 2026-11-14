@@ -12,7 +12,7 @@ import {
   type TaskSummaryState,
 } from './task-summary.js';
 import { glyph } from '../lib/glyphs.js';
-import { getTerminalCellWidth } from '../utils/display-text.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
 import { methodWord } from '../core/sessions/display.js';
 import { taskTargetParts } from '../core/run-view/brief-labels.js';
 import { stageSummaryRow } from '../features/workflow/components/conversation-flow/stage-summary.js';

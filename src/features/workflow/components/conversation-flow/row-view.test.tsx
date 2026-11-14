@@ -4,7 +4,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { ConversationRow } from '../../conversation-rows/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { defaultTheme, ThemeProvider, ThemeText as Text } from '../../../../components/theme.js';
 import { resolveTheme } from '../../../../core/theme/resolve.js';
 import { ConversationRowView } from './row-view.js';

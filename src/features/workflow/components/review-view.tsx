@@ -2,7 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import { useEffect } from 'react';
 import { renderReviewRows } from './review-rows-cache.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { ScrollIndicator } from '../../../components/scroll-indicator.js';

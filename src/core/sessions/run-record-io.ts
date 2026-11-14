@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { readJsonSafe } from '../../lib/fs.js';
+import { readJsonSafe } from '../../lib/fs/read.js';
 import { matches } from '../../utils/error.js';
 import { readEvidenceLedger } from '../evidence/ledger-storage.js';
 import { RUN_LEDGER_FILE, SUMMARY_FILE, sessionDir, snapshotsDir } from '../paths.js';

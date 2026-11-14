@@ -9,7 +9,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { configStore } from '../../../stores/project/config.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { detectionStore } from '../../../stores/project/detection.js';

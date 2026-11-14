@@ -1,7 +1,7 @@
 import {
   sanitizeTerminalDiagnosticText,
   type TerminalDiagnosticTextOptions,
-} from '../display-text.js';
+} from '../display-text/diagnostic.js';
 import { projectRelativePathLabel } from '../path/links.js';
 
 let projectRoot: string | undefined;

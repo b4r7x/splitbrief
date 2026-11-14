@@ -2,11 +2,8 @@ import { join } from 'node:path';
 import type { Phase } from '../../core/schemas/enums.js';
 import { sessionDir } from '../../core/paths.js';
 import type { Task } from '../../core/schemas/task.js';
-import {
-  getTerminalCellWidth,
-  iterateTerminalGraphemes,
-  truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth, iterateTerminalGraphemes } from '../../utils/display-text/width.js';
 import type { EventBus } from '../events/types.js';
 
 const EXCERPT_MAX_ROWS = 10;

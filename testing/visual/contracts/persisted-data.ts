@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { redactSecretsWithMetadata } from '../../../src/utils/redact.js';
+import { redactSecretsWithMetadata } from '../../../src/utils/redact/secrets.js';
 import { containsUnsafeNetworkReference, isPublicHostname } from './network-policy.js';
 import { containsHostPath } from './path-policy.js';
 

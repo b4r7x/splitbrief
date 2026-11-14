@@ -3,11 +3,9 @@ import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { borderStyleFor, glyph, type GlyphName } from '../../../lib/glyphs.js';
 import type { Theme } from '../../../core/theme/palette.js';
-import {
-  getTerminalCellWidth,
-  truncateTerminalDisplayText,
-  segmentsForRowText,
-} from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { segmentsForRowText } from '../../../utils/display-text/width.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { type WorkflowTask, selectTaskListView } from '../../../core/run-view/briefs.js';
 import { taskRowLabel } from '../../../core/run-view/brief-labels.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';

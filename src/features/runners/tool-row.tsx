@@ -1,7 +1,8 @@
 import { ListRow, wholeWordLabelForms } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { RightRow, TreeLead } from './model-catalog/rows.js';

@@ -6,12 +6,10 @@ import { PICKER_ROLE_SEAT_IDS, runnerRoleForActiveRole } from '../../runners/sea
 import { getRunnerTrustMeta } from '../../runners/trust.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
-import { stripTerminalControls } from '../../../utils/display-text.js';
-import {
-  DEFAULT_REDACTION_MARKER,
-  isCredentialEnvironmentName,
-  redactSecrets,
-} from '../../../utils/redact.js';
+import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
+import { isCredentialEnvironmentName } from '../../../utils/redact/assignment.js';
+import { redactSecrets } from '../../../utils/redact/secrets.js';
+import { DEFAULT_REDACTION_MARKER } from '../../../utils/redact/secrets.js';
 
 type Seat = Readonly<{
   slot: RunnerConfigSlot;

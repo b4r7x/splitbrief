@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { projectRunnerCallActivity } from '../../../engine/calls/activity.js';
 import { normalizeRunnerCallWarning } from '../../../engine/calls/warnings.js';
 import { runnerActivityLedgerItem } from './runner-activity-display.js';
-import {
-  getTerminalCellWidth,
-  truncateTerminalDisplayTextMiddleAtWords,
-} from '../../../utils/display-text.js';
+import { truncateTerminalDisplayTextMiddleAtWords } from '../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { rowLeadingCells } from '../conversation-rows/row-markers.js';
 import { getWorkflowContentWidth } from '../layout/rect.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from './activity-label-display.js';

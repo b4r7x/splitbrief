@@ -15,7 +15,8 @@ import {
   parseOpenCodeNativeModelCatalog,
   type NativeCliModelCatalog,
 } from '../../engine/providers/cli-model-catalog.js';
-import { ELLIPSIS, getTerminalCellWidth } from '../../utils/display-text.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { buildRightModels } from './model-catalog/catalog.js';
 import { assemblePickerDescriptors, buildPickerOptions } from './model-catalog/options.js';

@@ -5,8 +5,8 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { replacedFilesSavedIn } from '../../core/runtime/commands/messages.js';
 import { stateTone } from '../../core/theme/state-tone.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
-import { DEFAULT_REDACTION_MARKER } from '../../utils/redact.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
+import { DEFAULT_REDACTION_MARKER } from '../../utils/redact/secrets.js';
 import { PromptBody } from './components/prompt-body.js';
 import { QuestionPrompt } from './components/question-prompt.js';
 import {

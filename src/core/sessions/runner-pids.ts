@@ -1,8 +1,8 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { rejectSymlinkTarget, writeSecureFile } from '../../lib/fs.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { rejectSymlinkTarget, writeSecureFile } from '../../lib/fs/secure.js';
+import { isENOENT } from '../../utils/errno.js';
 import { warnStderr } from '../../lib/warn.js';
 import { sessionDir } from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';

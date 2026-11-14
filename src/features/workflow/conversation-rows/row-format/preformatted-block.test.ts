@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { preformattedOutputBlock } from './preformatted-block.js';
 import { rowText } from './rows.js';

@@ -3,7 +3,7 @@ import * as React from 'react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { App, type AppProps } from '../../../src/app/root.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
-import { truncateTerminalDisplayText } from '../../../src/utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../src/utils/display-text/truncate.js';
 import { formatViewport, type Viewport } from '../contracts/geometry.js';
 import type { FixtureWrite } from '../fixtures/common.js';
 import type { PreviewController, PreviewSession, PreviewState } from './controller.js';

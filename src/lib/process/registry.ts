@@ -1,13 +1,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { warnError } from '../warn.js';
-import { isNodeError, processError, type ProcessTerminationTarget } from './errors.js';
+import { processError } from './errors.js';
 import { readProcessStartTimeMs } from './start-time.js';
+import { REAP_POLL_MS, groupExists, terminateProcess, usesProcessGroup } from './termination.js';
+import { unwatchGroup, watchGroup } from './parent-watchdog.js';
 
-export const SIGKILL_DELAY_MS = 2000;
-const REAP_POLL_MS = 10;
-const SIGNAL_DISAPPEARANCE_TIMEOUT_MS = 1000;
-const SIGKILL_REAP_TIMEOUT_MS = 1000;
 type ProcessLedger = {
   record(pid: number, startTimeMs: number | null): void;
   release(pid: number): void;
@@ -33,8 +31,6 @@ const runningScope = new AsyncLocalStorage<ProcessScope | undefined>();
 const activeProcesses = new Map<ChildProcess, RegisteredProcess>();
 const processTerminations = new WeakMap<ChildProcess, Promise<void>>();
 let processLedger: ProcessLedger | null = null;
-const watchedGroups = new Set<number>();
-let parentWatchdog: ChildProcess | null = null;
 let allProcessesCleanup: Promise<void> | null = null;
 const registryListeners = new Set<(count: number) => void>();
 
@@ -99,75 +95,6 @@ export function setProcessLedger(ledger: ProcessLedger | null): void {
 
 export function clearProcessLedger(ledger: ProcessLedger): void {
   if (processLedger === ledger) processLedger = null;
-}
-
-// A tool group runs in a session of its own, so nothing ends it when SPLITBRIEF dies. This detached
-// node process holds an IPC channel to SPLITBRIEF that the kernel closes on any death, SIGKILL
-// included; it then ends every group still registered, the way terminateProcess does.
-const PARENT_WATCHDOG_SCRIPT = `const groups = new Set();
-process.on('message', ({ pid, watch }) => {
-  if (watch) groups.add(pid);
-  else groups.delete(pid);
-});
-process.on('disconnect', () => {
-  const signalGroups = (signal) => {
-    for (const pid of groups) {
-      try {
-        process.kill(-pid, signal);
-      } catch {}
-    }
-  };
-  signalGroups('SIGTERM');
-  if (groups.size > 0) setTimeout(() => signalGroups('SIGKILL'), ${SIGKILL_DELAY_MS});
-});
-`;
-
-function startParentWatchdog(): ChildProcess {
-  const watchdog = spawn(process.execPath, ['-e', PARENT_WATCHDOG_SCRIPT], {
-    detached: true,
-    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
-  });
-  const forget = () => {
-    if (parentWatchdog === watchdog) parentWatchdog = null;
-  };
-  watchdog.on('disconnect', forget);
-  watchdog.on('error', (err) => {
-    forget();
-    warnError(
-      'Could not start the helper that stops tool processes if SPLITBRIEF exits early, so they may keep running',
-      err,
-    );
-  });
-  watchdog.unref();
-  watchdog.channel?.unref();
-  for (const pid of watchedGroups) watchdog.send({ pid, watch: true });
-  return watchdog;
-}
-
-function watchGroup(pid: number): void {
-  watchedGroups.add(pid);
-  if (parentWatchdog === null) parentWatchdog = startParentWatchdog();
-  else parentWatchdog.send({ pid, watch: true });
-}
-
-function unwatchGroup(pid: number): void {
-  watchedGroups.delete(pid);
-  parentWatchdog?.send({ pid, watch: false });
-}
-
-function groupExists(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch (err) {
-    if (isNodeError(err) && err.code === 'ESRCH') return false;
-    if (isNodeError(err) && err.code === 'EPERM') return true;
-    throw err;
-  }
-}
-
-function usesProcessGroup(group: boolean, pid: number | undefined): pid is number {
-  return group && pid !== undefined && pid > 1;
 }
 
 function registeredTargetIsAbsent(entry: RegisteredProcess): boolean {
@@ -247,114 +174,6 @@ export function unregisterProcess(proc: ChildProcess): void {
     warnError('Could not check whether a tool process ended', err);
   }
   monitorGroupRelease(entry);
-}
-
-function waitForCondition(condition: () => boolean, timeoutMs: number): Promise<boolean> {
-  if (condition()) return Promise.resolve(true);
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (value: boolean) => {
-      if (settled) return;
-      settled = true;
-      clearInterval(interval);
-      clearTimeout(timeout);
-      resolve(value);
-    };
-    const check = () => {
-      try {
-        if (condition()) finish(true);
-      } catch (err) {
-        if (settled) return;
-        settled = true;
-        clearInterval(interval);
-        clearTimeout(timeout);
-        reject(err);
-      }
-    };
-    const interval = setInterval(check, REAP_POLL_MS);
-    const timeout = setTimeout(() => {
-      try {
-        finish(condition());
-      } catch (err) {
-        settled = true;
-        clearInterval(interval);
-        reject(err);
-      }
-    }, timeoutMs);
-  });
-}
-
-async function sendSignal(
-  proc: ChildProcess,
-  pid: number | undefined,
-  group: boolean,
-  signal: NodeJS.Signals,
-  isAbsent: () => boolean,
-): Promise<void> {
-  const target = usesProcessGroup(group, pid) ? 'process-group' : 'process';
-  let signalError: unknown;
-  try {
-    const sent = usesProcessGroup(group, pid) ? process.kill(-pid, signal) : proc.kill(signal);
-    if (sent) return;
-  } catch (err) {
-    signalError = err;
-  }
-  if (verifiedAbsent(isAbsent, target, signal)) return;
-  if (await waitUntilAbsent(isAbsent, SIGNAL_DISAPPEARANCE_TIMEOUT_MS, target, signal)) return;
-  throw processError.platformLimitation({ operation: 'signal', target, signal }, signalError);
-}
-
-function verifiedAbsent(
-  isAbsent: () => boolean,
-  target: ProcessTerminationTarget,
-  signal: NodeJS.Signals | null,
-): boolean {
-  try {
-    return isAbsent();
-  } catch (err) {
-    throw processError.platformLimitation({ operation: 'verify-absence', target, signal }, err);
-  }
-}
-
-async function waitUntilAbsent(
-  isAbsent: () => boolean,
-  timeoutMs: number,
-  target: ProcessTerminationTarget,
-  signal: NodeJS.Signals,
-): Promise<boolean> {
-  try {
-    return await waitForCondition(isAbsent, timeoutMs);
-  } catch (err) {
-    throw processError.platformLimitation({ operation: 'verify-absence', target, signal }, err);
-  }
-}
-
-async function terminateProcess(
-  proc: ChildProcess,
-  options: { group: boolean; pid: number | undefined },
-): Promise<void> {
-  const groupPid = usesProcessGroup(options.group, options.pid) ? options.pid : null;
-  const useGroup = groupPid !== null;
-  const target = useGroup ? 'process-group' : 'process';
-  const isAbsent =
-    groupPid !== null
-      ? () => !groupExists(groupPid)
-      : () => proc.exitCode !== null || proc.signalCode !== null;
-
-  if (verifiedAbsent(isAbsent, target, null)) return;
-  await sendSignal(proc, options.pid, useGroup, 'SIGTERM', isAbsent);
-
-  if (await waitUntilAbsent(isAbsent, SIGKILL_DELAY_MS, target, 'SIGTERM')) return;
-
-  await sendSignal(proc, options.pid, useGroup, 'SIGKILL', isAbsent);
-
-  if (!(await waitUntilAbsent(isAbsent, SIGKILL_REAP_TIMEOUT_MS, target, 'SIGKILL'))) {
-    throw processError.platformLimitation({
-      operation: 'verify-absence',
-      target,
-      signal: 'SIGKILL',
-    });
-  }
 }
 
 export function killProcess(proc: ChildProcess, options?: { group?: boolean }): Promise<void> {

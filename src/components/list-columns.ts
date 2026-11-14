@@ -1,9 +1,9 @@
 import type { RuntimeCommandDef } from '../core/runtime/commands/types.js';
 import {
-  getTerminalCellWidth,
   padTerminalDisplayTextEnd,
   truncateTerminalDisplayText,
-} from '../utils/display-text.js';
+} from '../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
 
 // ListRow's own chrome around the description column: the lead it prepends, the single space
 // before the description, and the single space before the shortcut.

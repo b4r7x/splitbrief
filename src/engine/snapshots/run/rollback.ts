@@ -10,7 +10,7 @@ import {
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 import { runRejectFacts } from '../../../core/runtime/commands/messages.js';
 import { resolveValidatedBlobPath } from '../blob-resolver.js';
-import { isENOENT } from '../../../lib/process/errors.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { error } from '../../../utils/error.js';
 import { readManifest } from '../manifest.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';

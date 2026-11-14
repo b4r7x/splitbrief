@@ -136,8 +136,8 @@ const stateWrite = vi.hoisted(() => ({
 // The run file whose write is refused, the way a folder that takes no new file refuses its
 // temporary copy; the writer names the file it meant.
 const secureWrite = vi.hoisted(() => ({ refuses: undefined as string | undefined }));
-vi.mock('../../../lib/fs.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../lib/fs.js')>();
+vi.mock('../../../lib/fs/secure.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/fs/secure.js')>();
   const { basename, dirname, join } = await import('node:path');
   return {
     ...actual,
@@ -155,8 +155,9 @@ vi.mock('../../../lib/fs.js', async (importOriginal) => {
     },
   };
 });
-vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../lib/confined-fs-atomic.js')>();
+vi.mock('../../../lib/fs/atomic-write/write-sync.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../lib/fs/atomic-write/write-sync.js')>();
   return {
     ...actual,
     confinedAtomicWriteFileSync: (

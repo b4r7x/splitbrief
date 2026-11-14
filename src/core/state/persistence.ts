@@ -17,9 +17,9 @@ import {
   statePath,
 } from './state-file.js';
 import { narrowRecord } from '../../utils/type-guards.js';
-import { rejectSymlinkTarget, SECURE_FILE_MODE } from '../../lib/fs.js';
+import { rejectSymlinkTarget, SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import { confinedEnsureDir } from '../../lib/fs/confined.js';
-import { confinedAtomicWriteFileSync } from '../../lib/confined-fs-atomic.js';
+import { confinedAtomicWriteFileSync } from '../../lib/fs/atomic-write/write-sync.js';
 import { assertExistingPathConfined } from '../../lib/fs/confinement.js';
 import { warnStderr } from '../../lib/warn.js';
 import { assertSessionDirConfined } from '../sessions/confinement.js';

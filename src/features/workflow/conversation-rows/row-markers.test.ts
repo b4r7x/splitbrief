@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { glyph } from '../../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { rowLeading, rowLeadingCells, wrapWidthFor } from './row-markers.js';
 import type { ConversationRowKind } from './types.js';
 

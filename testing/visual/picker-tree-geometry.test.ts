@@ -1,7 +1,8 @@
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { glyph } from '../../src/lib/glyphs.js';
-import { ELLIPSIS, getTerminalCellWidth } from '../../src/utils/display-text.js';
+import { ELLIPSIS } from '../../src/utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../src/utils/display-text/width.js';
 import { findVisualScenario } from './catalog.js';
 import type { Cell } from './contracts/cells.js';
 import { viewport, type Viewport } from './contracts/geometry.js';

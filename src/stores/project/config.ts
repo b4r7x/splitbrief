@@ -5,7 +5,7 @@ import {
   configPath,
   readConfigDocument,
 } from '../../core/config/load/document.js';
-import type { ConfigRevision, ExpectedConfigRevision } from '../../lib/confined-fs-atomic.js';
+import type { ConfigRevision, ExpectedConfigRevision } from '../../lib/fs/atomic-write/types.js';
 import { toYaml } from '../../core/config/load/transform.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import {

@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { App } from '../../../app/root.js';
 import { initStores } from '../../bootstrap/init.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
-import { oneLineDisplayText } from '../../../utils/display-text.js';
+import { oneLineDisplayText } from '../../../utils/display-text/sanitize.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { hydrateRun } from '../../../features/workflow/run-history.js';

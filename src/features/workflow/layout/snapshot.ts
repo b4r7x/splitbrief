@@ -1,6 +1,6 @@
 import { getRailActiveIndex } from '../../../core/rail-stages.js';
 import { seatLineText } from '../../../core/crew/identity.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';
 import { getProgressRows, selectRailFormAndLine } from './chrome-rows.js';

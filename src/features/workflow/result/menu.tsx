@@ -1,4 +1,4 @@
-import { segmentsForRowText } from '../../../utils/display-text.js';
+import { segmentsForRowText } from '../../../utils/display-text/width.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';

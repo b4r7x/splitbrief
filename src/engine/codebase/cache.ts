@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import type { Database } from 'better-sqlite3';
 import type { FileNode } from './types.js';
 import { error, matches } from '../../utils/error.js';
-import { isNodeError } from '../../lib/process/errors.js';
+import { isNodeError } from '../../utils/errno.js';
 import { createLogger } from '../../lib/logger.js';
 import { warnStderr } from '../../lib/warn.js';
 import { toErrorMessage } from '../../utils/format/errors.js';

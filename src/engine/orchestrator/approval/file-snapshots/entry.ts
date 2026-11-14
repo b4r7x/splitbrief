@@ -14,7 +14,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, type Stats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import { fsError, nameWriteTarget } from '../../../../lib/fs.js';
+import { fsError, nameWriteTarget } from '../../../../lib/fs/secure.js';
 import {
   assertExistingPathConfined,
   assertPathConfined,
@@ -22,7 +22,7 @@ import {
   CONTROL_PLANE_SEGMENTS,
   pathConfinementError,
 } from '../../../../lib/fs/confinement.js';
-import { isENOENT, isNodeError } from '../../../../lib/process/errors.js';
+import { isENOENT, isNodeError } from '../../../../utils/errno.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { collectTrackedFiles } from '../../../snapshots/files.js';
 import { warnError } from '../../../../lib/warn.js';

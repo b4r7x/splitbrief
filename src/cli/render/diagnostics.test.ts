@@ -48,8 +48,8 @@ const ink = vi.hoisted(() => {
 
 // A state.json write renamed into place that SPLITBRIEF could not confirm on disk.
 const stateWrite = vi.hoisted(() => ({ unconfirmed: false }));
-vi.mock('../../lib/confined-fs-atomic.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/confined-fs-atomic.js')>();
+vi.mock('../../lib/fs/atomic-write/write-sync.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/fs/atomic-write/write-sync.js')>();
   return {
     ...actual,
     confinedAtomicWriteFileSync: (

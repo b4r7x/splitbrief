@@ -1,4 +1,4 @@
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 
 export function durationBetween(startedAt: number, endedAt: number): number {
   return Math.max(0, endedAt - startedAt);

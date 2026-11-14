@@ -10,12 +10,12 @@ import { SOFT_SEP } from '../core/separators.js';
 import { formatDuration } from '../utils/format/time.js';
 import {
   elidePathMiddle,
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  segmentsForRowText,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
-} from '../utils/display-text.js';
+} from '../utils/display-text/truncate.js';
+import { segmentsForRowText } from '../utils/display-text/width.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../utils/display-text/sanitize.js';
 import { countNoun } from '../utils/pluralize.js';
 import { glyph, type GlyphName } from '../lib/glyphs.js';
 import { ROW_LEADING } from './row-leading.js';

@@ -15,7 +15,7 @@ import {
   pathConfinementError,
   reachesControlPlane,
 } from '../../../lib/fs/confinement.js';
-import { isENOENT } from '../../../lib/process/errors.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { error } from '../../../utils/error.js';
 import { createRunnerSandboxEnv, createSandboxEnv } from '../../runners/sandbox-env.js';

@@ -1,6 +1,6 @@
 import { Box } from 'ink';
 import { ThemeText as Text, useTheme } from './theme.js';
-import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../utils/display-text/sanitize.js';
 import { wrapPathAware } from '../utils/display-text/wrap.js';
 import { fitFeedbackMessage } from './composer/feedback-fit.js';
 

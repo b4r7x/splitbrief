@@ -6,10 +6,10 @@ import type { CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { glyph } from '../../lib/glyphs.js';
 import {
-  getTerminalCellWidth,
   padTerminalDisplayTextEnd,
   truncateTerminalDisplayText,
-} from '../../utils/display-text.js';
+} from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import {
   CREW_COLUMN_GAP,
   CREW_IDENTITY_COLUMN,

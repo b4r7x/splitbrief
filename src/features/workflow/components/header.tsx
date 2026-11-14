@@ -3,7 +3,7 @@ import { TextSpans } from '../../../components/text-spans.js';
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { SeatLineSpan } from '../../../core/crew/identity.js';

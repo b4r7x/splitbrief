@@ -38,7 +38,7 @@ import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-
 import { useStores } from '../../stores/use-stores.js';
 import { FilterInput } from '../../components/filter-input.js';
 import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
-import { stripTerminalControls } from '../../utils/display-text.js';
+import { stripTerminalControls } from '../../utils/display-text/sanitize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
 

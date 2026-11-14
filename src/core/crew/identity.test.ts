@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { ELLIPSIS, getTerminalCellWidth } from '../../utils/display-text.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';

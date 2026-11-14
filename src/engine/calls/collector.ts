@@ -16,7 +16,7 @@ import {
   RUNNER_CALL_WARNING_MAX_ITEMS,
   type RunnerCallOutputLimit,
 } from './output-limit.js';
-import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
 import type {
   RunnerCallContext,
   RunnerCallError,

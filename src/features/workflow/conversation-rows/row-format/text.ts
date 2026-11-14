@@ -1,9 +1,9 @@
+import { segmentsForRowText } from '../../../../utils/display-text/width.js';
 import {
   getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
   splitTerminalGraphemes,
-  segmentsForRowText,
-} from '../../../../utils/display-text.js';
+} from '../../../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../../../utils/display-text/sanitize.js';
 import { wrapHard } from '../../../../utils/display-text/wrap.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { SOFT_SEP } from '../../../../core/separators.js';

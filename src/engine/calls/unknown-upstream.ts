@@ -1,5 +1,5 @@
 import type { ZodIssue } from 'zod';
-import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
 import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
 
 const MAX_PREVIEW_DEPTH = 4;

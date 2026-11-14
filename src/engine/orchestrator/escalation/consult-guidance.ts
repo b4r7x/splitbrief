@@ -2,7 +2,7 @@ import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
-import { truncateByChars } from '../../../utils/truncate.js';
+import { truncateByChars } from '../../../utils/display-text/truncate.js';
 import { PLANNER_GUIDANCE_HEADING } from '../../spec/prompts/continuation.js';
 
 /** The planner's guidance as the next attempt's instructions, its context attached. */

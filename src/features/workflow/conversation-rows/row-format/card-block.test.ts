@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { rowLeadingCells, wrapWidthFor } from '../row-markers.js';
 import { prepareCardRows } from './card-block.js';
 

@@ -42,7 +42,7 @@ import type {
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { glyph } from '../../lib/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import {

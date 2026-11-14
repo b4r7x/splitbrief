@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { glyph } from '../lib/glyphs.js';
-import { getTerminalCellWidth } from '../utils/display-text.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
 import { Divider } from './divider.js';
 
 function withAsciiTier(run: () => void): void {

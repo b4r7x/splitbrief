@@ -7,9 +7,9 @@ import {
   type WorkflowState,
 } from '../schemas/workflow.js';
 import { SOFT_SEP } from '../separators.js';
-import { oneLineDisplayText } from '../../utils/display-text.js';
+import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 import { countNoun } from '../../utils/pluralize.js';
-import { truncateByChars } from '../../utils/truncate.js';
+import { truncateByChars } from '../../utils/display-text/truncate.js';
 
 export type Finding = ReviewVerdict['findings'][number];
 

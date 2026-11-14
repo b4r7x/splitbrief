@@ -23,7 +23,7 @@ import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { insertTasksAfter, lineageIdOf } from './task-insert.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../scope/declared-set.js';
 import { transitionError } from './errors.js';
-import { truncateByChars } from '../../utils/truncate.js';
+import { truncateByChars } from '../../utils/display-text/truncate.js';
 
 /** The text a reported implementer decision contributes to the plan ledger. */
 export function decisionLedgerText(decision: ReportedDecision): string {

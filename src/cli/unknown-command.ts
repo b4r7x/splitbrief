@@ -1,5 +1,5 @@
 import { cliError } from './errors.js';
-import { stripTerminalControls } from '../utils/display-text.js';
+import { stripTerminalControls } from '../utils/display-text/sanitize.js';
 import { SPLITBRIEF_IDENTITY } from '../core/identity.js';
 
 /**

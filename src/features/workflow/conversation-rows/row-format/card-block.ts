@@ -1,8 +1,8 @@
 import {
-  getTerminalCellWidth,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
-} from '../../../../utils/display-text.js';
+} from '../../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { wrapPathAware } from '../../../../utils/display-text/wrap.js';
 import { wrapWidthFor } from '../row-markers.js';
 import type {

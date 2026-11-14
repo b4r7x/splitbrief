@@ -1,5 +1,5 @@
 import { delimiter, isAbsolute } from 'node:path';
-import { isCredentialEnvironmentName } from '../../../utils/redact.js';
+import { isCredentialEnvironmentName } from '../../../utils/redact/assignment.js';
 
 const CHILD_RUNTIME_ENV_KEYS = [
   'LANG',

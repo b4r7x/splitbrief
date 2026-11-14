@@ -34,12 +34,10 @@ import {
 import { useStopByline } from '../stop/use-stop-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../../hooks/use-slow-probe-text.js';
-import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  segmentsForRowText,
-  truncateTerminalDisplayText,
-} from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { segmentsForRowText } from '../../../utils/display-text/width.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../engine/events/workflow-cancel.js';

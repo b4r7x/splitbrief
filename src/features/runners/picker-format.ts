@@ -31,7 +31,8 @@ import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import type { ResolvedModelMembership } from '../../engine/providers/model/catalog.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { formatContextLength } from '../../core/formatting.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { UNSET_EFFORT_WORD } from '../../core/runners/effort-channel.js';
 import type { PickerSlot, SeatPickerRole } from '../../core/runners/seat-roles.js';
 import {

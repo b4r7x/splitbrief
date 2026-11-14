@@ -33,9 +33,10 @@ import { spawnProbe, type ProbeOutputBudget } from '../runners/cli-tools/cli-pro
 import { providerOracleCommand } from '../runners/cli-tools/provider-oracle.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
 import { throwIfAborted } from '../../utils/abort.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT } from '../../utils/errno.js';
 import { trackProbe } from '../probe-activity.js';
-import { sanitizeTerminalDiagnosticText, stripTerminalControls } from '../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
+import { stripTerminalControls } from '../../utils/display-text/sanitize.js';
 import type {
   CliCatalogProbe,
   CliCatalogProbeLegacy,

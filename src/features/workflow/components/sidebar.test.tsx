@@ -9,7 +9,7 @@ import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { CREW_LABEL_WIDTH, PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';

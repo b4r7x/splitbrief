@@ -1,5 +1,5 @@
 import { CREW_SEAT_IDS, seatLineText, type SeatLineSpan } from '../../../core/crew/identity.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { getHeaderLayout } from '../components/header.js';
 import { recordedCrewSeatLines } from '../display/header-seat-lines.js';
 import { selectRailFormAndLine, type RailForm } from '../layout/chrome-rows.js';

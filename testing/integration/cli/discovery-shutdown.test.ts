@@ -12,7 +12,7 @@ import { createTuiCleanup } from '../../../src/cli/render/process-lifecycle.js';
 import { getDefaultDetectionService } from '../../../src/engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../../src/engine/detection/store-publication.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
-import { isNodeError } from '../../../src/lib/process/errors.js';
+import { isNodeError } from '../../../src/utils/errno.js';
 import { killAllProcesses, registeredProcessCount } from '../../../src/lib/process/registry.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';

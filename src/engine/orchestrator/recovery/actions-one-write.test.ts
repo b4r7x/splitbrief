@@ -31,8 +31,9 @@ const stateWrites = vi.hoisted(() => ({
   kind: 'stop' as 'stop' | 'conflict',
   beforeConflict: undefined as (() => void) | undefined,
 }));
-vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../lib/confined-fs-atomic.js')>();
+vi.mock('../../../lib/fs/atomic-write/write-sync.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../lib/fs/atomic-write/write-sync.js')>();
   return {
     ...actual,
     confinedAtomicWriteFileSync: (

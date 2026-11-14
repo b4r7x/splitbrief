@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { replacedFilesSavedIn } from '../../../../src/core/runtime/commands/messages.js';
-import { redactSecrets } from '../../../../src/utils/redact.js';
+import { redactSecrets } from '../../../../src/utils/redact/secrets.js';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { retentionError } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';

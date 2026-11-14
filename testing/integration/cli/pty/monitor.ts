@@ -1,5 +1,5 @@
 import { terminalSequences } from '../../../../src/lib/terminal/control.js';
-import { stripTerminalControls } from '../../../../src/utils/display-text.js';
+import { stripTerminalControls } from '../../../../src/utils/display-text/sanitize.js';
 import { escapeRegExp } from '../../../../src/utils/regexp.js';
 import {
   resolvePtyDisposable,

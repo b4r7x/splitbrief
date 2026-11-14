@@ -12,11 +12,9 @@ import {
   type BoundedOutputPolicy,
 } from '../../../lib/process/bounded-output.js';
 import { killProcess } from '../../../lib/process/registry.js';
-import {
-  isFatalSignal,
-  spawnPipe,
-  type SpawnPipeFatalSignal,
-} from '../../../lib/process/spawn/lifecycle.js';
+import { spawnPipe } from '../../../lib/process/spawn/lifecycle.js';
+import { isFatalSignal } from '../../../lib/process/spawn/fatal.js';
+import type { SpawnPipeFatalSignal } from '../../../lib/process/spawn/types.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../../constants.js';
 import {

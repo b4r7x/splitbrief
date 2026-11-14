@@ -4,7 +4,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
-import { oneLineDisplayText } from '../../../utils/display-text.js';
+import { oneLineDisplayText } from '../../../utils/display-text/sanitize.js';
 import { stopMenuLayout } from '../stop/options.js';
 import { wrappedProseSegments } from '../conversation-rows/row-format/text.js';
 

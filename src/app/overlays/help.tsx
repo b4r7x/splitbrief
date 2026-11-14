@@ -29,7 +29,7 @@ import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { clamp } from '../../utils/math.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';

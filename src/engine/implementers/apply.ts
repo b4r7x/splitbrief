@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import type { Task } from '../../core/schemas/task.js';
 import { validateTaskPath } from '../../core/paths-io.js';
-import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs/secure.js';
+import { isENOENT } from '../../utils/errno.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 
 const searchReplaceRegex = /<<<<<<< SEARCH\r?\n([\s\S]*?)=======\r?\n([\s\S]*?)>>>>>>> REPLACE/g;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { writeSecureFile } from '../../lib/fs.js';
+import { writeSecureFile } from '../../lib/fs/secure.js';
 import {
   TRUST_STORE_MAX_RECEIPTS,
   readTrustStore,

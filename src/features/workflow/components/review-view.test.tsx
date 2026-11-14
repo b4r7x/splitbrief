@@ -9,7 +9,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { formatTasks } from '../../../engine/spec/formatter.js';
 import { TASKS_FILE } from '../../../core/paths.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { getReviewColumnWidth } from '../layout/rect.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';

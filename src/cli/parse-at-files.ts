@@ -5,7 +5,7 @@ import {
   type InputFileFailureReason,
 } from '../core/attachments/resolve.js';
 import type { AttachedInput, Attachment } from '../core/schemas/attachment.js';
-import { stripTerminalControls } from '../utils/display-text.js';
+import { stripTerminalControls } from '../utils/display-text/sanitize.js';
 
 export interface AtFileResult {
   feature: string;

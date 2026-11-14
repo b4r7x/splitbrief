@@ -16,8 +16,9 @@ import { awaitActiveWorkflowShutdown, shutdownWorkflow, withShutdownHandlers } f
 // What the state file write reports back: the real result, a rename it could not confirm on disk,
 // or a second writer that changed the file first.
 const stateWrite = vi.hoisted(() => ({ result: 'real' as 'real' | 'unconfirmed' | 'conflict' }));
-vi.mock('../../../lib/confined-fs-atomic.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../lib/confined-fs-atomic.js')>();
+vi.mock('../../../lib/fs/atomic-write/write-sync.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../../lib/fs/atomic-write/write-sync.js')>();
   return {
     ...actual,
     confinedAtomicWriteFileSync: (

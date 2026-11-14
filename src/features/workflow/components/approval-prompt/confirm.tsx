@@ -38,7 +38,7 @@ import { SOFT_SEP } from '../../../../core/separators.js';
 import { isCommandDraft } from '../../../../core/composer/submission.js';
 import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
-import { ELLIPSIS } from '../../../../utils/display-text.js';
+import { ELLIPSIS } from '../../../../utils/display-text/truncate.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 
 export const PROMPT_ZONE_Z = 50;

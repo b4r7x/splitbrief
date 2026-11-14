@@ -28,7 +28,7 @@ import { formatRecoveryHeadlineSpans } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { BASE_SPLIT_NAMED } from '../../core/review/base-split.js';
 import { labelError } from '../../utils/format/errors.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { redactSecrets } from '../../utils/redact/secrets.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { RejectRunSnapshotResult } from '../../core/runtime/commands/types.js';

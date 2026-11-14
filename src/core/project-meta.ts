@@ -1,6 +1,6 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { isENOENT } from '../lib/process/errors.js';
+import { isENOENT } from '../utils/errno.js';
 import { error } from '../utils/error.js';
 import { isRecord } from '../utils/type-guards.js';
 

@@ -5,7 +5,7 @@ import {
   PROVIDER_ORACLE_TOOL_IDS,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
-import { stripTerminalControls } from '../../../utils/display-text.js';
+import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
 import type { CliAuthProbeLegacy, CliProbeCommand, CliProbeOutput } from './contract.js';
 
 type ProviderOracleToolId = (typeof PROVIDER_ORACLE_TOOL_IDS)[number];

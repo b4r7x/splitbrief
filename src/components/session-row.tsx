@@ -5,7 +5,7 @@ import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
-import { oneLineDisplayText } from '../utils/display-text.js';
+import { oneLineDisplayText } from '../utils/display-text/sanitize.js';
 import { useSharedClock } from '../hooks/use-shared-clock.js';
 
 export type SessionRowCursor =

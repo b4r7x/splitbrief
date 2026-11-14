@@ -5,7 +5,7 @@ import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { FALLBACK_NONE_WORDS, type FallbackRow } from '../../core/crew/fallback.js';
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { CREW_IDENTITY_COLUMN, CREW_MARKER_GUTTER } from './format.js';
 import { FallbackRowView } from './fallback-row-view.js';
 

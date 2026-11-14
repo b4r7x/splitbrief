@@ -1,21 +1,11 @@
 import { error, matches } from '../../utils/error.js';
-import {
-  sanitizeTerminalDiagnosticText,
-  sanitizeTerminalDisplayText,
-} from '../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { formatElapsedClock } from '../../utils/format/time.js';
 
 export const spawnError = {
   streamsUnavailable: () => error('process-streams-unavailable', 'Process streams not available'),
 } as const;
-
-export function isNodeError(err: unknown): err is NodeJS.ErrnoException {
-  return err instanceof Error && 'code' in err;
-}
-
-export function isENOENT(err: unknown): boolean {
-  return isNodeError(err) && err.code === 'ENOENT';
-}
 
 export interface TimeoutErrorOptions {
   command: string;

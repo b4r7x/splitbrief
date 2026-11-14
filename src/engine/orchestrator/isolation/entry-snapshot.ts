@@ -8,7 +8,7 @@ import { evidenceLedgerPath, mutateEvidenceLedger } from '../../../core/evidence
 import { evidenceError } from '../../../core/evidence/errors.js';
 import { getGitForDir } from '../../../lib/git/client.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
-import { isENOENT } from '../../../lib/process/errors.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { listWorkspaceEntries } from '../../snapshots/files.js';
 import {
   getChangedFilesSinceSnapshot,

@@ -19,11 +19,8 @@ import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
-import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  splitTerminalGraphemes,
-} from '../../utils/display-text.js';
+import { getTerminalCellWidth, splitTerminalGraphemes } from '../../utils/display-text/width.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import type { StartPreparationState } from './use-start-preparation.js';
 
 const DENSITY: OverlayDensity = 'roomy';

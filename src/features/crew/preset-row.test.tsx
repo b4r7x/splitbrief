@@ -6,7 +6,7 @@ import { listRowLead } from '../../components/list-row.js';
 import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { PresetRowView } from './preset-row.js';
 
 const DESCRIPTION = 'Claude Code plans and builds; Codex reviews the diff from another lab.';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { wrapHard } from '../../../../utils/display-text/wrap.js';
 import {
   sanitizeRowDisplayText,

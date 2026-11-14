@@ -1,4 +1,4 @@
-import { segmentsForRowText } from '../../../utils/display-text.js';
+import { segmentsForRowText } from '../../../utils/display-text/width.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { formatTaskHeading, taskTargetLabel } from '../../../core/run-view/brief-labels.js';

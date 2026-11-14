@@ -1,7 +1,7 @@
 import { openSync, closeSync, unlinkSync, statSync, writeFileSync, readFileSync } from 'node:fs';
 import { snapshotLockPath, snapshotsDir } from '../../core/paths.js';
-import { ensureSecureDir } from '../../lib/fs.js';
-import { isNodeError } from '../../lib/process/errors.js';
+import { ensureSecureDir } from '../../lib/fs/secure.js';
+import { isNodeError } from '../../utils/errno.js';
 import { canSignalProcess } from '../../lib/process/liveness.js';
 import { readProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { error } from '../../utils/error.js';

@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { confinedReadFileAsync, confinedUnlinkSync } from '../../lib/fs/confined.js';
-import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs/secure.js';
 import { warnError } from '../../lib/warn.js';
 import { MAX_CLI_CATALOG_READ_MODELS } from '../../core/discovery/catalog-read-merge.js';
 import {

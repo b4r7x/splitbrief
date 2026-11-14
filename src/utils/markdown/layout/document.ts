@@ -11,10 +11,10 @@ import type {
   MarkdownLayoutTail,
   MarkdownListItem,
 } from '../types.js';
-import { getTerminalCellWidth } from '../../display-text.js';
+import { getTerminalCellWidth } from '../../display-text/width.js';
 import { layoutCodeBlockLines } from './code.js';
 import { inlineTokenToSegment, measureSegments, wrapSegments } from './segments.js';
-import { layoutMarkdownTable } from '../layout-table.js';
+import { layoutMarkdownTable } from './table.js';
 import { assertNever } from '../../type-guards.js';
 
 interface LayoutOptions {

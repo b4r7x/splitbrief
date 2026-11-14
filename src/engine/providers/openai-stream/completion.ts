@@ -34,7 +34,7 @@ import {
   type ApiInvocationEvidence,
 } from '../../runners/invocation-identity.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { redactSecrets } from '../../../utils/redact.js';
+import { redactSecrets } from '../../../utils/redact/secrets.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { StreamChunkSchema, type StreamChoiceDelta, recordInvalidOpenAiChunk } from './chunk.js';
 import {

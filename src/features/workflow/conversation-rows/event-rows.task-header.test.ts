@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { eventRows } from '#testing/helpers/event-rows.js';

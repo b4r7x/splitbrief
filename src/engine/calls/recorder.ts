@@ -18,7 +18,7 @@ import {
   runnerCallErrorEvent,
 } from './status.js';
 import { error } from '../../utils/error.js';
-import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { formatZodIssues, runnerCallUnknownUpstreamPreview } from './unknown-upstream.js';
 import {

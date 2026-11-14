@@ -2,11 +2,8 @@ import type { BoundedOutputMetadata } from '../bounded-output.js';
 import { createBoundedOutput } from '../bounded-output.js';
 import { processError } from '../errors.js';
 import { createCommandEnv } from './child-env.js';
-import {
-  DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
-  DEFAULT_PROCESS_STDERR_MAX_BYTES,
-  spawnPipe,
-} from './lifecycle.js';
+import { spawnPipe } from './lifecycle.js';
+import { DEFAULT_PROCESS_OUTPUT_MAX_BYTES, DEFAULT_PROCESS_STDERR_MAX_BYTES } from './types.js';
 
 export async function runCommand(
   command: string,

@@ -4,7 +4,7 @@ import { Box } from 'ink';
 import { buildSegments, type SegmentType } from './segments.js';
 import { computeViewportScroll } from './viewport-scroll.js';
 import { wrapWordVisualLines } from '../../core/editor/grapheme-motions.js';
-import { segmentsForRowText } from '../../utils/display-text.js';
+import { segmentsForRowText } from '../../utils/display-text/width.js';
 
 export interface TextStyle {
   bold?: boolean;

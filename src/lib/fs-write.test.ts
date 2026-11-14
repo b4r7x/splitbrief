@@ -10,16 +10,16 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { ensureGitignore } from './fs/gitignore.js';
+import { checkConfigPermissions } from './fs/secure.js';
 import {
-  checkConfigPermissions,
   writeSecureFile,
   writeSecureFileAsync,
   writeConfinedSecureFileAsync,
   ensureSecureDir,
-  ensureGitignore,
   rejectSymlinkTarget,
   rejectSymlinkTargetAsync,
-} from './fs.js';
+} from './fs/secure.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;

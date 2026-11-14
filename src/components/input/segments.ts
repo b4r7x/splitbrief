@@ -1,4 +1,4 @@
-import { stripTerminalControls } from '../../utils/display-text.js';
+import { stripTerminalControls } from '../../utils/display-text/sanitize.js';
 
 export type SegmentType = 'placeholder' | 'highlight' | 'cursor' | undefined;
 

@@ -1,7 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
-import { error, matches, type AppError } from '../../../utils/error.js';
-import { createBoundedOutput, type BoundedOutputMetadata } from '../bounded-output.js';
+import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diagnostic.js';
+import { createBoundedOutput } from '../bounded-output.js';
 import { withUserNodeEnv } from './child-env.js';
 import { spawnError, processError } from '../errors.js';
 import {
@@ -10,118 +9,22 @@ import {
   killProcess,
   abortProcess,
   processTreeReapingLimitation,
-  SIGKILL_DELAY_MS,
 } from '../registry.js';
-
-export const DEFAULT_PROCESS_OUTPUT_MAX_BYTES = 1024 * 1024;
-export const DEFAULT_PROCESS_STDERR_MAX_BYTES = 256 * 1024;
-
-export type SpawnPipeFatalState = 'output-budget-breach' | 'protocol-failure' | 'callback-failure';
-
-export interface SpawnPipeFatalSignal {
-  state: SpawnPipeFatalState;
-  remediation: string;
-}
-
-export interface SpawnPipeFatalOutcome extends SpawnPipeFatalSignal {
-  stdout: string;
-  stderr: string;
-  stdoutMetadata: BoundedOutputMetadata;
-  stderrMetadata: BoundedOutputMetadata;
-}
-
-type SpawnPipeCallbackResult = SpawnPipeFatalSignal | undefined;
-
-/** How a child that broke its prompt closed; absent when it did not close within the grace. */
-export type SpawnPipeExit = Readonly<{ code: number | null }>;
-
-const isStdinIncompleteKind = matches('process-stdin-incomplete');
-
-export const spawnPipeError = {
-  stdinIncomplete: (cause?: unknown, exit?: SpawnPipeExit) =>
-    error(
-      'process-stdin-incomplete',
-      'Process stdin closed before all input was delivered',
-      exit,
-      cause,
-    ),
-  stdinClosed: () => error('process-stdin-closed', 'Process stdin is closed'),
-  isStdinClosed: matches('process-stdin-closed'),
-  isStdinIncomplete: (
-    err: unknown,
-  ): err is AppError<'process-stdin-incomplete', SpawnPipeExit | undefined> =>
-    isStdinIncompleteKind(err),
-} as const;
-
-export interface SpawnIdleOptions {
-  warnMs: number;
-  /** Opt-in cut on byte silence; unset, the watchdog only warns. */
-  killMs?: number | undefined;
-  /** Names the subject in the idle diagnostic so it need not carry the resolved binary path. */
-  label?: string | undefined;
-  onWarn?: ((silentMs: number) => void) | undefined;
-  onClear?: (() => void) | undefined;
-}
-
-export type SpawnStdinWriter = Readonly<{
-  write: (text: string) => Promise<void>;
-  end: () => void;
-}>;
-
-interface SpawnPipeOptions<T> {
-  command: string;
-  args: string[];
-  cwd?: string | undefined;
-  env?: NodeJS.ProcessEnv | undefined;
-  detached?: boolean | undefined;
-  stdin?: string | undefined;
-  stdinOptional?: boolean | undefined;
-  onStdinReady?: ((writer: SpawnStdinWriter) => void) | undefined;
-  signal?: AbortSignal | undefined;
-  idle?: SpawnIdleOptions | undefined;
-  outputBudgetBytes?: number | undefined;
-  partialStdoutMaxBytes?: number | undefined;
-  partialStderrMaxBytes?: number | undefined;
-  onStdout: (chunk: string) => SpawnPipeCallbackResult;
-  onStderr: (chunk: string) => SpawnPipeCallbackResult;
-  onClose: (code: number | null, signal: string | null) => T | Promise<T>;
-  onError?: ((err: NodeJS.ErrnoException) => Error | null) | undefined;
-  onSpawned?: ((proc: ChildProcess) => void) | undefined;
-}
-
-function abortError(): DOMException {
-  return new DOMException('The operation was aborted.', 'AbortError');
-}
+import { SIGKILL_DELAY_MS } from '../termination.js';
+import {
+  type SpawnPipeExit,
+  type SpawnPipeCallbackResult,
+  type SpawnPipeFatalSignal,
+  DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+  DEFAULT_PROCESS_STDERR_MAX_BYTES,
+  type SpawnPipeFatalOutcome,
+  type SpawnPipeOptions,
+  type SpawnStdinWriter,
+} from './types.js';
+import { abortError, defaultFatalRemediation, isFatalSignal, spawnPipeError } from './fatal.js';
 
 function isStdinReaderGone(err: Error): boolean {
   return 'code' in err && (err.code === 'EPIPE' || err.code === 'ENOTCONN');
-}
-
-function defaultFatalRemediation(state: SpawnPipeFatalState): string {
-  switch (state) {
-    case 'output-budget-breach':
-      return 'The tool wrote more output than its limit allows and was stopped. Narrow what it was asked to print, then retry.';
-    case 'protocol-failure':
-      return 'Check the CLI version and output protocol, then retry.';
-    case 'callback-failure':
-      return 'Resolve the callback error, then retry.';
-    default: {
-      const _exhaustive: never = state;
-      return _exhaustive;
-    }
-  }
-}
-
-export function isFatalSignal(value: unknown): value is SpawnPipeFatalSignal {
-  if (typeof value !== 'object' || value === null) return false;
-  if (!('state' in value) || !('remediation' in value)) return false;
-  const state = value.state;
-  return (
-    (state === 'output-budget-breach' ||
-      state === 'protocol-failure' ||
-      state === 'callback-failure') &&
-    typeof value.remediation === 'string'
-  );
 }
 
 function acceptsChunk(callback: () => SpawnPipeCallbackResult): boolean {

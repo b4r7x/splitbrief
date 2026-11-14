@@ -2,7 +2,7 @@ import { PROVIDER_CATALOG, isSameOrigin } from '../providers/catalog.js';
 import { isApiProviderId } from '../providers/api-provider-catalog.js';
 import type { ImplementerConfig } from '../schemas/implementer-config.js';
 import type { PlannerConfig } from '../schemas/planner-config.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { redactSecrets } from '../../utils/redact/secrets.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 
 export const API_KEY_ENV_PREFIX = 'env:';

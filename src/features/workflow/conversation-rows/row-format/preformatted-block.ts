@@ -1,8 +1,8 @@
 import {
-  getTerminalCellWidth,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
-} from '../../../../utils/display-text.js';
+} from '../../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { wrapWidthFor } from '../row-markers.js';

@@ -7,7 +7,7 @@ import { renderApp } from '../../render/app.js';
 import { formatAtFileRefusal, parseAtFiles } from '../../parse-at-files.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { cliError } from '../../errors.js';
-import { stripTerminalControls } from '../../../utils/display-text.js';
+import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import { runHeadlessStart } from './streaming.js';

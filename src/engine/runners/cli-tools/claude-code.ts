@@ -18,7 +18,8 @@ import { parseStreamLine, type StreamParseResult } from '../../streaming/parse-s
 import { error } from '../../../utils/error.js';
 import { createClaudeReplyParser } from './claude-reply-parser.js';
 import { readImagesAsBase64 } from '../../streaming/attachments.js';
-import { spawnPipeError, type SpawnStdinWriter } from '../../../lib/process/spawn/lifecycle.js';
+import { spawnPipeError } from '../../../lib/process/spawn/fatal.js';
+import type { SpawnStdinWriter } from '../../../lib/process/spawn/types.js';
 import type { SteerOutcome } from '../../calls/steering.js';
 
 const CLAUDE_COMMAND = 'claude' as const;

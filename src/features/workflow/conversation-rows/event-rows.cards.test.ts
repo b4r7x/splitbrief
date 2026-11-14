@@ -3,7 +3,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { calloutRowsBlock } from './callout-block.js';
 import { eventRowBlock } from './event-rows/dispatch.js';

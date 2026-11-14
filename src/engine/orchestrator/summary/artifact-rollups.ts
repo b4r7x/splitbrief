@@ -13,7 +13,7 @@ import {
   sessionDir,
 } from '../../../core/paths.js';
 import { isBriefQualityReport, type BriefQualityReport } from '../../spec/brief-quality.js';
-import { readJsonSafe } from '../../../lib/fs.js';
+import { readJsonSafe } from '../../../lib/fs/read.js';
 import { countBySeverity } from '../../../utils/collections.js';
 
 export type SessionArtifactRollups = {

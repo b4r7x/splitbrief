@@ -4,7 +4,7 @@ import { sessionDir, STATE_FILE, SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.j
 import { isTerminalPhase } from '../phases.js';
 import { PhaseSchema, type Phase } from '../schemas/enums.js';
 import { assertNever, narrowRecord } from '../../utils/type-guards.js';
-import { rejectSymlinkTarget } from '../../lib/fs.js';
+import { rejectSymlinkTarget } from '../../lib/fs/secure.js';
 import { assertExistingPathConfined } from '../../lib/fs/confinement.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { type ActiveSessionRecord, readActiveRecord } from './active-pointer.js';

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { pathToFileURL } from 'node:url';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { configStore } from '../../../../stores/project/config.js';
 import type { ConversationRow } from '../types.js';
 import { rowText } from '../row-format/rows.js';

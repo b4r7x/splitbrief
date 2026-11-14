@@ -2,12 +2,10 @@ import { taskSummarySpans } from '../../../components/task-summary.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { GlyphName } from '../../../lib/glyphs.js';
 import { configStore } from '../../../stores/project/config.js';
-import {
-  ELLIPSIS,
-  getTerminalCellWidth,
-  stripTerminalControls,
-  truncateTerminalDisplayText,
-} from '../../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
 import { filePathUrl } from '../../../utils/path/links.js';
 import { wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { foldRow, foldRowKey } from '../conversation-rows/fold-row.js';

@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { glyph } from '../../lib/glyphs.js';
 import { taskId } from '../../core/schemas/task.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 import {
   buildInputFooterByline,

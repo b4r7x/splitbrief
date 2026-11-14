@@ -59,7 +59,7 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { wrapPathAware } from '../../utils/display-text/wrap.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { isAbortError } from '../../utils/abort.js';

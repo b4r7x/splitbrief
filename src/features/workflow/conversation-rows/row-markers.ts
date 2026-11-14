@@ -1,5 +1,5 @@
 import { glyph } from '../../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { ROW_LEADING, TEXT_LEADING } from '../../../components/row-leading.js';
 import type { ConversationRowKind } from './types.js';
 

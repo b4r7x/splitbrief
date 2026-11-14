@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SPLITBRIEF_DIR, STATE_FILE, SESSIONS_DIR } from '../../../core/paths.js';
-import { readJsonSafeAsync } from '../../../lib/fs.js';
+import { readJsonSafeAsync } from '../../../lib/fs/read.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { PhaseSchema, type Phase } from '../../../core/schemas/enums.js';
 import { isTerminalPhase } from '../../../core/phases.js';

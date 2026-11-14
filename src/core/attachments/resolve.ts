@@ -4,9 +4,9 @@ import { accessSync, constants, readFileSync, realpathSync, statSync } from 'nod
 import { homedir } from 'node:os';
 import { extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { EXT_TO_MIME, MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_EXTS } from '../schemas/attachment.js';
-import { truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import { includes } from '../../utils/type-guards.js';
-import { isNodeError } from '../../lib/process/errors.js';
+import { isNodeError } from '../../utils/errno.js';
 import type { Attachment } from '../schemas/attachment.js';
 
 export type InputFileFailureReason =

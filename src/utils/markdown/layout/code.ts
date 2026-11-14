@@ -1,4 +1,4 @@
-import { getTerminalCellWidth } from '../../display-text.js';
+import { getTerminalCellWidth } from '../../display-text/width.js';
 import { highlightMarkdownCode, type MarkdownHighlightSpan } from '../highlight.js';
 import { measureSegments, wrapSegments } from './segments.js';
 import type {

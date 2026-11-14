@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureGitignore } from '../lib/fs.js';
+import { ensureGitignore } from '../lib/fs/gitignore.js';
 import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from './gitignore-bookkeeping.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from './paths.js';
 

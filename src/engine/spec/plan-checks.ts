@@ -5,7 +5,7 @@ import type { PlanProposal, TaskSpec } from '../../core/schemas/plan.js';
 import { REVIEW_CHECK_ID } from '../../core/schemas/review.js';
 import { topoSort } from '../../core/state/topo-sort.js';
 import { isPathConfined } from '../../lib/fs/confinement.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT } from '../../utils/errno.js';
 import { matches } from '../../utils/error.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { countNoun, pluralize } from '../../utils/pluralize.js';

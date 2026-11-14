@@ -28,7 +28,7 @@ import type { Planner } from '../../engine/planners/types.js';
 import { isAuthFailureDiagnostic } from '../../engine/runners/auth-failure.js';
 import { isUsageLimitDiagnostic } from '../../engine/runners/usage-limit.js';
 import { formatRetryPrompt } from '../../engine/spec/prompt-formatter.js';
-import { SIGKILL_DELAY_MS } from '../../lib/process/registry.js';
+import { SIGKILL_DELAY_MS } from '../../lib/process/termination.js';
 import { GenerationCommonFields } from '../schemas/runner-fields.js';
 import { ReviewVerdictSchema } from '../schemas/summary.js';
 import { transition } from '../state/machine.js';

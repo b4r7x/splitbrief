@@ -24,12 +24,14 @@ import type {
   RunnerCallFailureStatus,
   RunnerCallResult,
 } from '../../calls/types.js';
-import { spawnPipe, spawnPipeError } from '../../../lib/process/spawn/lifecycle.js';
+import { spawnPipe } from '../../../lib/process/spawn/lifecycle.js';
+import { spawnPipeError } from '../../../lib/process/spawn/fatal.js';
 import { createLineBuffer } from '../../../lib/process/line-buffer.js';
-import { isENOENT, processError, timedOutMessage } from '../../../lib/process/errors.js';
+import { processError, timedOutMessage } from '../../../lib/process/errors.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { assertNever, isRecord } from '../../../utils/type-guards.js';
 import { error, matches } from '../../../utils/error.js';
-import { isCredentialEnvironmentName } from '../../../utils/redact.js';
+import { isCredentialEnvironmentName } from '../../../utils/redact/assignment.js';
 import { sandboxCredentialValues } from '../sandbox-credential-values.js';
 import { classifySeatFailure } from '../seat-failure.js';
 import {

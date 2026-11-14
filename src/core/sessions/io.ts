@@ -18,10 +18,10 @@ import {
   SUMMARY_FILE,
 } from '../paths.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT } from '../../utils/errno.js';
 import { sessionError } from './errors.js';
 import { sessionRelativePath } from './ownership-marker.js';
-import { writeSecureFile } from '../../lib/fs.js';
+import { writeSecureFile } from '../../lib/fs/secure.js';
 
 type SessionRowBase = Readonly<{
   id: string;

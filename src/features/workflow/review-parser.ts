@@ -27,7 +27,7 @@ import {
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
 import { cursorUpSequence, terminalSequences } from '../../lib/terminal/control.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { withUserNodeEnv } from '../../lib/process/spawn/child-env.js';
 import { answerWaitingQuestion, type UseInputModeResult } from './hooks/use-input-mode.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';

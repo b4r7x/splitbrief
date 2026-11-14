@@ -3,14 +3,11 @@ import { TextSpans } from './text-spans.js';
 import { Box } from 'ink';
 import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
-import {
-  ELLIPSIS,
-  elidePathLabel,
-  getTerminalCellWidth,
-  segmentsForRowText,
-  stripTerminalControls,
-  truncateTerminalDisplayText,
-} from '../utils/display-text.js';
+import { elidePathLabel, truncateTerminalDisplayText } from '../utils/display-text/truncate.js';
+import { ELLIPSIS } from '../utils/display-text/truncate.js';
+import { segmentsForRowText } from '../utils/display-text/width.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
+import { stripTerminalControls } from '../utils/display-text/sanitize.js';
 
 export type ListRowState = 'default' | 'active' | 'context';
 

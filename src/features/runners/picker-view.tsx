@@ -19,7 +19,7 @@ import {
 } from '../../core/runners/seat-roles.js';
 import { billingWord } from '../../core/runners/runner-billing.js';
 import { includes } from '../../utils/type-guards.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { localProviderStartup } from '../../core/readiness/checks/availability.js';
 import { sortPickerOptions, type PickerOption } from './model-catalog/options.js';
 import { isCustomModel, type ModelVariant } from './model-catalog/recency.js';

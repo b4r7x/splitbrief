@@ -12,7 +12,7 @@ import type { SnapshotFileEntry, SnapshotManifest } from '../../../core/schemas/
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { gitBinary } from '../../../lib/git/client.js';
 import { assertPathConfined, assertWritablePathConfined } from '../../../lib/fs/confinement.js';
-import { isENOENT } from '../../../lib/process/errors.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { error } from '../../../utils/error.js';
 import { resolveValidatedBlobPath } from '../../snapshots/blob-resolver.js';
 import { collectTrackedFiles, hashFile, listWorkspaceEntries } from '../../snapshots/files.js';

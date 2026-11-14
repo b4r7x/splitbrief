@@ -10,10 +10,10 @@ import {
   SNAPSHOT_BASELINE_ID,
   SNAPSHOT_MANIFEST_FILE,
 } from '../../core/paths.js';
-import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
+import { writeConfinedSecureFileAsync } from '../../lib/fs/secure.js';
 import { assertExistingPathConfined } from '../../lib/fs/confinement.js';
 import { error } from '../../utils/error.js';
-import { isENOENT } from '../../lib/process/errors.js';
+import { isENOENT } from '../../utils/errno.js';
 import { validateSafeIdentifier } from '../../utils/validate-identifier.js';
 
 const SNAPSHOT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

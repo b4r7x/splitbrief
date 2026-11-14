@@ -11,7 +11,7 @@ import {
   persistSnapshot,
 } from '../../../src/engine/providers/models-dev-cache/store.js';
 import { terminalSequences } from '../../../src/lib/terminal/control.js';
-import { stripTerminalControls } from '../../../src/utils/display-text.js';
+import { stripTerminalControls } from '../../../src/utils/display-text/sanitize.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

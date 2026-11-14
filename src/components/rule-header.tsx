@@ -1,7 +1,7 @@
 import { ThemeText as Text, useTheme } from './theme.js';
 import { Box } from 'ink';
 import { glyph } from '../lib/glyphs.js';
-import { getTerminalCellWidth } from '../utils/display-text.js';
+import { getTerminalCellWidth } from '../utils/display-text/width.js';
 
 /** A labelled rule: the label, then the divider running to the right edge of `width`. `labelColor` overrides only the label. */
 export function RuleHeader({

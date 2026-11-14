@@ -10,7 +10,7 @@ import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { warnError } from '../../../lib/warn.js';
 import { lockSibling, withFileLock } from '../../../lib/fs/lock.js';
 import { assertExistingPathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
-import { isENOENT } from '../../../lib/process/errors.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';
 import { error, type AppError } from '../../../utils/error.js';
 import { createWorktree } from './create-worktree.js';

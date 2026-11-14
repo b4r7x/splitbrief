@@ -17,7 +17,7 @@ import { createDefaultConfig } from './defaults.js';
 import { toYaml } from './transform.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
-import { confinedAtomicWriteFileForTest } from '../../../lib/confined-fs-atomic.js';
+import { confinedAtomicWriteFileForTest } from '../../../lib/fs/atomic-write/write.js';
 
 vi.mock('../../../lib/git/files.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../lib/git/files.js')>()),

@@ -18,14 +18,11 @@ import {
   type ConfigDocumentSnapshot,
 } from './document.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../paths.js';
-import { checkConfigPermissions } from '../../../lib/fs.js';
+import { checkConfigPermissions } from '../../../lib/fs/secure.js';
 import { confinedWriteFile, confinedEnsureDir } from '../../../lib/fs/confined.js';
-import {
-  confinedAtomicWriteFile,
-  type ConfigRevision,
-  type ExpectedConfigRevision,
-} from '../../../lib/confined-fs-atomic.js';
-import { SECURE_FILE_MODE } from '../../../lib/fs.js';
+import { confinedAtomicWriteFile } from '../../../lib/fs/atomic-write/write.js';
+import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/fs/atomic-write/types.js';
+import { SECURE_FILE_MODE } from '../../../lib/fs/secure.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
 

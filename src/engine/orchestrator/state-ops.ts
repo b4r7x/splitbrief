@@ -14,8 +14,9 @@ import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../../core/schemas/
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { haltOf } from '../../core/recovery/halt.js';
-import { confinedAtomicWriteFileSync, type ConfigRevision } from '../../lib/confined-fs-atomic.js';
-import { SECURE_FILE_MODE } from '../../lib/fs.js';
+import { confinedAtomicWriteFileSync } from '../../lib/fs/atomic-write/write-sync.js';
+import type { ConfigRevision } from '../../lib/fs/atomic-write/types.js';
+import { SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import { assertSessionDirConfined } from '../../core/sessions/confinement.js';
 import { sessionRelativePath } from '../../core/sessions/ownership-marker.js';

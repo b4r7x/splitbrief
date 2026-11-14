@@ -23,13 +23,13 @@ import {
   ensureSecureDir,
   nameWriteTarget,
   rejectSymlinkTarget,
-} from '../../lib/fs.js';
+} from '../../lib/fs/secure.js';
 import { withFileLock } from '../../lib/fs/lock.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,
 } from '../../lib/fs/confinement.js';
-import { isNodeError } from '../../lib/process/errors.js';
+import { isNodeError } from '../../utils/errno.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { sessionError } from './errors.js';
 import type { SessionLivenessResult } from './liveness.js';

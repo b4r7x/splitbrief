@@ -21,8 +21,8 @@ import {
   nameWriteTarget,
   rejectSymlinkTargetAsync,
   SECURE_FILE_MODE,
-} from '../fs.js';
-import { isENOENT } from '../process/errors.js';
+} from './secure.js';
+import { isENOENT } from '../../utils/errno.js';
 
 function isPathConfinementReadError(err: unknown): boolean {
   return (

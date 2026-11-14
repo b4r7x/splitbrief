@@ -6,7 +6,7 @@ import type { ClarificationQuestion } from '../../../../core/schemas/question.js
 import { parseEngineEvent } from '../../../../engine/events/schema.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../../stores/workflow/streaming-output.js';
-import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import {

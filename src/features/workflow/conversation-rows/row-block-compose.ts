@@ -13,7 +13,7 @@ import {
   wrappedUserTexts,
 } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 
 export function rowsBlock(

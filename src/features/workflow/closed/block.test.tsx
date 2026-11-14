@@ -18,7 +18,7 @@ import type { RunnerCallCounterCoverage } from '../../../core/runner-call-contra
 import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { configStore } from '../../../stores/project/config.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { ConversationRowView } from '../components/conversation-flow/row-view.js';
 import { rowText } from '../conversation-rows/row-format/rows.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';

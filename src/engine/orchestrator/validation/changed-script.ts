@@ -1,8 +1,8 @@
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import { join, posix, relative } from 'node:path';
-import { namesListedIn } from '../../../lib/fs.js';
+import { namesListedIn } from '../../../lib/fs/read.js';
 import { isPathConfined } from '../../../lib/fs/confinement.js';
-import { isNodeError } from '../../../lib/process/errors.js';
+import { isNodeError } from '../../../utils/errno.js';
 import { isTestScript } from '../../../core/validation/stacks/registry.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';

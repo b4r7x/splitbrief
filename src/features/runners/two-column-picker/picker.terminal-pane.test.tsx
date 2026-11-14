@@ -4,7 +4,7 @@ import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { _resetMouseZones } from '../../../lib/terminal/mouse-zones.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { TwoColumnPicker } from './picker.js';
 import type { TerminalPane } from './types.js';

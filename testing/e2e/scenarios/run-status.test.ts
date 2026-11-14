@@ -7,7 +7,7 @@ import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { updateHeartbeat, writeLockfile } from '../../../src/core/sessions/lockfile.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
-import { stripTerminalControls } from '../../../src/utils/display-text.js';
+import { stripTerminalControls } from '../../../src/utils/display-text/sanitize.js';
 import { startHeartbeat } from '../../../src/engine/orchestrator/run/heartbeat.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

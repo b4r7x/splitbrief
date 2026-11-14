@@ -28,7 +28,7 @@ import { cliPermissions, deriveModelCatalogCapability } from './model-catalog/po
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 import { overlayWidth } from '../../core/navigation/overlay-rect.js';
 import { mergeOptionFamilies } from './model-catalog/option-merge.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { RightRow } from './model-catalog/rows.js';
 import type { PickerOptionStatus } from './model-catalog/status.js';

@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
+import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diagnostic.js';
 import { warnError } from '../../../lib/warn.js';
-import { redactSecrets } from '../../../utils/redact.js';
+import { redactSecrets } from '../../../utils/redact/secrets.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { endpointPolicyError } from '../../../core/providers/endpoint-policy.js';
 import {

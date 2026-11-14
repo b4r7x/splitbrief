@@ -4,7 +4,8 @@ import { Box } from 'ink';
 import type { Theme } from '../../../../core/theme/palette.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { osc8Hyperlink, terminalSupportsHyperlinks } from '../../../../lib/terminal/hyperlinks.js';
-import { getTerminalCellWidth, stripTerminalControls } from '../../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
+import { stripTerminalControls } from '../../../../utils/display-text/sanitize.js';
 import type { ConversationRow, ConversationRowSegment } from '../../conversation-rows/types.js';
 import {
   rowLeading,

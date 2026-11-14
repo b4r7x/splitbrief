@@ -1,4 +1,4 @@
-import { splitTerminalGraphemes } from '../../../src/utils/display-text.js';
+import { splitTerminalGraphemes } from '../../../src/utils/display-text/width.js';
 import {
   CellGridSchema,
   isCellRectOnGraphemeBoundaries,

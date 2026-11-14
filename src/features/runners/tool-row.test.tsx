@@ -14,7 +14,7 @@ import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import { resolveTheme } from '../../core/theme/resolve.js';
 import { formatPickerStatusLabel } from './picker-format.js';
-import { ELLIPSIS } from '../../utils/display-text.js';
+import { ELLIPSIS } from '../../utils/display-text/truncate.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';
 import {
   AUTO_ROW_METADATA,

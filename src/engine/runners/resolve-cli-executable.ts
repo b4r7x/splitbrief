@@ -15,7 +15,7 @@ import type {
 import type * as Detection from '../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG, cliToolIdForExecutable } from '../../core/runners/cli-tool-catalog.js';
 import { cliExecutableTrustRemediation } from '../../core/schemas/readiness.js';
-import { isENOENT, isNodeError } from '../../lib/process/errors.js';
+import { isENOENT, isNodeError } from '../../utils/errno.js';
 import { error, matches } from '../../utils/error.js';
 
 export type CliExecutableTrust = Detection.CliExecutableTrust | null | undefined;

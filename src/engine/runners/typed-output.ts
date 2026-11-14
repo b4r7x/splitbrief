@@ -6,7 +6,7 @@ import type {
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { type AppError, error, matches } from '../../utils/error.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { redactSecrets } from '../../utils/redact/secrets.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { toTokenDelta } from '../calls/projection.js';
 import { accumulateTokenUsage } from '../calls/usage.js';

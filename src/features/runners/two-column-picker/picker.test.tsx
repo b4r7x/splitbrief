@@ -10,7 +10,7 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { ListRow } from '../../../components/list-row.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { bylineDiagnostic } from '../picker-format.js';
 import { TwoColumnPicker, buildRightDisplay } from './picker.js';

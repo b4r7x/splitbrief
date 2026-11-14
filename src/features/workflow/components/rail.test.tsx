@@ -17,7 +17,7 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';

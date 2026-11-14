@@ -1,7 +1,7 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import { selectTaskListView, type RunBriefs } from '../../../core/run-view/briefs.js';
 import { resolveGlyphTier } from '../../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import {
   getActiveRailStage,
   getRailStages,

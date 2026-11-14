@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { isInternalGitStatusPath } from '../core/paths.js';
 import { getCurrentChangedFiles } from '../lib/git/files.js';
 import { readFileModeAtHead, showFileAtHead } from '../lib/git/refs.js';
-import { isENOENT } from '../lib/process/errors.js';
+import { isENOENT } from '../utils/errno.js';
 import { computeDiff } from '../utils/diff.js';
 import { readChangeEntry, type ChangeEntry } from './orchestrator/approval/file-snapshots/entry.js';
 import { hashFile, listWorkspaceEntries } from './snapshots/files.js';

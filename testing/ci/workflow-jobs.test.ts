@@ -118,7 +118,7 @@ describe('CI workflow topology', () => {
       'CHANGELOG.md',
       'testing/helpers/scrub-credentials.ts',
       'testing/helpers/hermetic-env.ts',
-      'src/utils/redact.ts',
+      'src/utils/redact/assignment.ts',
       '.github/workflows/website.yml',
     ];
     expect(triggers).toEqual([paths, paths]);

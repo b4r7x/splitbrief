@@ -13,7 +13,7 @@ import {
   PlannerArtifactSemanticIdSchema,
   type PlannerArtifactAttemptId,
 } from '../../../core/schemas/planner-artifact.js';
-import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs.js';
+import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs/secure.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import type {
   DeclaredArtifactProvenance,

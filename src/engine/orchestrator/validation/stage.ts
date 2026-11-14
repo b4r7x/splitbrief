@@ -1,12 +1,12 @@
 import {
   captureText,
-  isENOENT,
   processError,
   processOutputCapture,
   type ProcessOutputCapture,
 } from '../../../lib/process/errors.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
-import { truncateByTailLines } from '../../../utils/truncate.js';
+import { isENOENT } from '../../../utils/errno.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
+import { truncateByTailLines } from '../../../utils/display-text/truncate.js';
 import { CAPTURE_LIMITS } from '../../../core/pipeline-spec/gates.js';
 import { relativeToDir } from './extract-failure-keys.js';
 import { failingTestLabel, parseFailingTests } from './test-failures.js';
