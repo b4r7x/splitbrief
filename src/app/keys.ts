@@ -21,7 +21,11 @@ import {
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
 import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
-import { requestQuit, requestStopNow, requestLeaveSession } from '../features/workflow/handlers.js';
+import {
+  requestQuit,
+  requestStopNow,
+  requestLeaveSession,
+} from '../features/workflow/run-requests/handlers.js';
 import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
 import type { CopyOutcome } from '../lib/clipboard/clipboard.js';

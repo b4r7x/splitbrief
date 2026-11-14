@@ -4,7 +4,7 @@ import { flushEffects, renderFeature, type RenderFeatureResult } from '#testing/
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { externalEditRequestStore } from '../../../../stores/ui/external-edit-request.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
-import type { ReviewInputEffects } from '../../review-parser.js';
+import type { ReviewInputEffects } from '../../review-gate/input-handler.js';
 import { plainAnswer, type UseInputModeResult } from '../use-input-mode.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
 

@@ -16,7 +16,7 @@ import {
 } from '#testing/helpers/headless-project.js';
 import { registerStartCommand } from '../../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../../src/cli/commands/start/types.js';
-import { runHeadless } from '../../../src/cli/headless.js';
+import { runHeadless } from '../../../src/cli/headless/run.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';

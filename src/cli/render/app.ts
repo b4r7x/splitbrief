@@ -1,4 +1,4 @@
-import { type Instance, render } from 'ink';
+import { render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
 import { installDiagnosticSink, warnError } from '../../lib/warn.js';
@@ -20,7 +20,6 @@ import {
   installTerminalOutputErrorGuard,
   isBrokenOutputError,
 } from '../../lib/terminal/control.js';
-import type { TerminationSignal } from '../../engine/orchestrator/signals.js';
 import {
   resumeTerminalAfterEditor,
   setActiveTerminalHandover,
@@ -32,12 +31,15 @@ import { resolveRenderInputConfig } from './input-config.js';
 import { createEditorOutput } from './editor-output.js';
 import {
   createCrashHandler,
+  createCrashListener,
   createResumeHandler,
   createSuspendHandler,
   createSuspendListenerToggle,
   createTerminationHandler,
+  createTerminationSignalListener,
   createTuiCleanup,
   restoreTerminal,
+  unmountWhenSignalled,
 } from './process-lifecycle.js';
 import {
   prepareInlineFallbackAfterFullscreenFailure,
@@ -58,62 +60,6 @@ interface RenderOptions {
 }
 
 const BACKGROUND_QUERY_TIMEOUT_MS = 300;
-
-function createSettledProcessListener<T>(deps: {
-  handle: (value: T) => Promise<void>;
-  reportFailure: (value: T, error: unknown) => void;
-}): (value: T) => void {
-  return (value) => {
-    void deps.handle(value).catch((error: unknown) => {
-      try {
-        deps.reportFailure(value, error);
-      } catch {
-        // A process event listener cannot leak a second rejection when stderr is unavailable.
-      }
-    });
-  };
-}
-
-export function createTerminationSignalListener(deps: {
-  handle: (signal: TerminationSignal) => Promise<void>;
-  reportCleanupFailure: (error: unknown) => void;
-}): (signal: TerminationSignal) => void {
-  return createSettledProcessListener({
-    handle: deps.handle,
-    reportFailure: (_signal, error) => deps.reportCleanupFailure(error),
-  });
-}
-
-export function createCrashListener(deps: {
-  handle: (reason: unknown) => Promise<void>;
-  reportCrash: (reason: unknown) => void;
-  reportCleanupFailure: (error: unknown) => void;
-}): (reason: unknown) => void {
-  return createSettledProcessListener({
-    handle: deps.handle,
-    reportFailure: (reason, error) => {
-      deps.reportCrash(reason);
-      deps.reportCleanupFailure(error);
-    },
-  });
-}
-
-function unmountWhenSignalled(
-  instance: Instance,
-  signal: AbortSignal | undefined,
-  beforeUnmount?: () => void,
-): void {
-  if (!signal) return;
-  const unmount = () => {
-    beforeUnmount?.();
-    instance.unmount();
-  };
-  if (signal.aborted) {
-    unmount();
-    return;
-  }
-  signal.addEventListener('abort', unmount, { once: true });
-}
 
 export async function renderApp(
   appElement: ReturnType<typeof createElement>,

@@ -10,7 +10,7 @@ import {
   UI_IDLE_WARN_MS,
   deriveBuildProgress,
   runnerSilenceMs,
-} from '../../../src/features/workflow/display/build-progress.js';
+} from '../../../src/features/workflow/display/build-progress/derive.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
 import { operationsStore } from '../../../src/stores/workflow/operations/state.js';

@@ -2,19 +2,19 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { cliTool, makeActions } from '#testing/helpers/runner-picker.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
-import type { RightRow } from './model-catalog/rows.js';
+import type { RightRow } from './model-catalog/types.js';
 import { buildRightRows } from './model-catalog/rows.js';
 import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import {
   confirmRow,
-  cycleRightRow,
   rowEnterHint,
   isExpandableRow,
   modelRowSave,
   rightRowActivation,
   rightRowMatches,
   type RouteAuthContext,
-} from './right-column-policy.js';
+} from './right-column/policy.js';
+import { cycleRightRow } from './right-column/drafts.js';
 
 function optionAxisRow(input: {
   model: ModelOption;

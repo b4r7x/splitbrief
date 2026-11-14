@@ -12,25 +12,25 @@ import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { isItemIndexVisible } from '../../../components/pickers/scroll-window.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { slashHandoffPending } from '../slash-handoff.js';
-import { formatKeyHints, PROMPT_COMMAND_LEGEND, SELECT_HINT } from '../prompt-rows/approval.js';
+import { PROMPT_COMMAND_LEGEND } from '../prompt-rows/approval.js';
+import { formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { RESULT_MENU_UNFOCUSED_LEGEND } from '../result/options.js';
 import { PromptBody } from './prompt-body.js';
+import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
+import { recoveryMenuActionLabel, recoveryMenuParts } from '../recovery/menu-label.js';
+import { recommendedRecoveryAction } from '../recovery/actions.js';
 import {
   correctionActionFor,
-  recoveryPromptSummaryRows,
   getRecoveryPromptActions,
   recoveryActionKey,
-  recoveryMenuActionLabel,
-  recoveryMenuParts,
-  recommendedRecoveryAction,
-} from '../recovery-prompt.js';
+} from '../recovery/actions.js';
 import { isAskedDetail } from '../../../core/recovery/causes.js';
 import {
   clipPromptBodyRows,
   countPromptBodyRows,
   promptBodyRows,
   type PromptBodyLine,
-} from '../prompt-body-rows.js';
+} from '../prompt-rows/body.js';
 import { isCommandDraft } from '../../../core/composer/submission.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';

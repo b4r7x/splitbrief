@@ -19,7 +19,7 @@ import type { SessionSelectDeps } from '../stores/navigation/session-select.js';
 import type { HomeScreenDeps } from './screens/home.js';
 import type { SetupScreenDeps } from './screens/setup.js';
 import type { AppKeyDeps } from './keys.js';
-import type { PickerEffectDeps } from '../features/runners/use-picker-actions.js';
+import type { PickerEffectDeps } from '../features/runners/picker/use-actions.js';
 import { glyph } from '../lib/glyphs.js';
 import { saveSummary } from '../core/sessions/io.js';
 import { getKnownProviderBaseURL } from '../core/providers/catalog.js';
@@ -75,8 +75,8 @@ vi.mock('../engine/skill-discovery.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../engine/skill-discovery.js')>()),
   discoverSkills: production.discoverSkills,
 }));
-vi.mock('../features/workflow/handlers.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../features/workflow/handlers.js')>()),
+vi.mock('../features/workflow/run-requests/handlers.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../features/workflow/run-requests/handlers.js')>()),
   requestQuit: production.requestQuit,
   requestStopNow: production.requestStopNow,
 }));

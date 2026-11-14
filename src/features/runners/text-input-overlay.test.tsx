@@ -6,7 +6,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';
-import { ContractRecap, StepIndicator } from './contract-chip.js';
+import { ContractRecap, StepIndicator } from './contract/chip.js';
 import { TextInputOverlay } from './text-input-overlay.js';
 
 function panelHeight(frame: string): number {

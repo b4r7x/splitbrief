@@ -7,7 +7,7 @@ import type { CLIOverrides } from '../core/config/runtime/overrides/schema.js';
 import type { EffectiveConfigResult } from '../core/config/runtime/effective-config.js';
 import { detectAll, detectAvailableCliTools } from '../engine/detection/detect.js';
 import { checkCrewAvailability } from '../engine/detection/crew.js';
-import { readConfiguredCliRoutes } from './commands/start/readiness.js';
+import { readConfiguredCliRoutes } from './configured-readiness.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
 import { removeClosedRunWorkspaces } from '../engine/orchestrator/run/close.js';

@@ -3,74 +3,13 @@ import type { ProvenanceWord } from '../../../core/providers/provenance.js';
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
-import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
-import { routeAuthState, type RouteAuthState } from '../../../core/runners/route-auth.js';
+import { routeAuthState } from '../../../core/runners/route-auth.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import {
-  formatAxisValue,
-  isOptionFamily,
-  optionAxesOf,
-  parseOptionSelection,
-  routeDraftOf,
-  routePrefixesOf,
-  stepOptionAxis,
-  type OptionAxisName,
-} from './option-axis.js';
-import type { ModelOption, ModelVariant } from './recency.js';
-
-/**
- * A steppable dimension of an expanded model: spelled by the model id, or by the
- * ladder the tool publishes for it. One vocabulary answers both, so the row model
- * borrows the id parser's names rather than adding one of its own.
- */
-export type RightAxisName = OptionAxisName;
-
-export interface TreeLead {
-  /** Level 1 = a route, or the axes of a flat option family. Level 2 = the axes under a route. */
-  readonly depth: 1 | 2;
-  /** Depth 2 only: the level-1 parent above is not last, so its spine continues. */
-  readonly parentContinues: boolean;
-}
-
-export type RightRow =
-  | {
-      kind: 'model';
-      model: ModelOption;
-      provenance: ProvenanceWord;
-      section: string;
-      expanded: boolean;
-    }
-  | {
-      kind: 'route';
-      model: ModelOption;
-      variant: ModelVariant;
-      auth: RouteAuthState;
-      /** Picks the tree glyph that closes the model's route block. */
-      last: boolean;
-      tree: TreeLead;
-    }
-  | {
-      kind: 'axis';
-      model: ModelOption;
-      axis: RightAxisName;
-      /** The provider route the axis steps inside; empty on an option family. */
-      providerPrefix: string;
-      value: string;
-      /** The ladder this axis steps through; empty when the axis is spelled by the model id. */
-      choices: readonly string[];
-      /** Whether the ladder has anywhere to step, so no surface promises a key that cannot move. */
-      steps: boolean;
-      /** Picks the tree glyph that closes the parent's child block. */
-      last: boolean;
-      tree: TreeLead;
-    }
-  | { kind: 'action'; action: 'browse-catalog'; text: string };
-
-type AxisRow = Omit<Extract<RightRow, { kind: 'axis' }>, 'tree'>;
-
-/** Whether the catalog fetch that feeds suggestion rows has landed. */
-export type CatalogLane = 'ready' | 'pending' | 'failed';
+import { isOptionFamily, routePrefixesOf } from './option-axis.js';
+import type { ModelOption } from './recency.js';
+import type { AxisRow, CatalogLane, RightRow } from './types.js';
+import { axisRowsFor } from './axis-rows.js';
 
 /** Below this many rows the list reads fine flat, so no section carries its weight. */
 const SECTION_THRESHOLD = 12;
@@ -86,79 +25,6 @@ export const AUTO_ROW_METADATA = 'tool decides';
 
 /** One wording for the escape row that opens the unfiltered catalog. */
 export const BROWSE_CATALOG_TEXT = 'Browse the full catalog…';
-
-/** True when any route of the row, or the row itself, carries the tool's own preset ladder. */
-export function offersEffortLadder(model: ModelOption): boolean {
-  return (
-    (model.variants ?? []).some((variant) => (variant.variantChoices ?? []).length > 0) ||
-    (model.effortChoices ?? []).length > 0
-  );
-}
-
-/**
- * The preset ladder one route spells: the route's own, else the row's, else none. The
- * offer and the commit both read it here, so a level the row lists is a level the save
- * can spend. `catalog.ts` has already dropped the ladders the seat's channel cannot.
- */
-export function effortLadderFor(
-  model: Pick<ModelOption, 'variants' | 'effortChoices'>,
-  fullId: string,
-): readonly string[] {
-  const route = model.variants?.find((variant) => variant.fullId === fullId);
-  const routeChoices = route?.variantChoices ?? [];
-  return routeChoices.length > 0 ? routeChoices : (model.effortChoices ?? []);
-}
-
-/**
- * The steppable dimensions of one route: the ladder its model publishes in the
- * `effort` slot, then the axes the id spells. A single draft serves every route, so
- * it reads as set only under the route whose vocabulary contains it.
- */
-function axisRowsFor(input: {
-  model: ModelOption;
-  providerPrefix: string;
-  optionDraftId: string | null | undefined;
-  effortDraft: string | null | undefined;
-}): AxisRow[] {
-  const { model, providerPrefix } = input;
-  const variants = model.variants ?? [];
-  const drafted = routeDraftOf(model, providerPrefix, input.optionDraftId);
-  const selection = parseOptionSelection(drafted);
-  const choices = effortLadderFor(model, drafted);
-  const rows: AxisRow[] = [];
-  // The ladder replaces the route's id-spelled effort rather than trailing its other
-  // axes, so `effort · fast · thinking` reads the same whichever channel spelled it.
-  if (choices.length > 0) {
-    const draft = input.effortDraft ?? '';
-    rows.push({
-      kind: 'axis',
-      model,
-      axis: 'effort',
-      providerPrefix,
-      value: choices.includes(draft) ? draft : UNSET_EFFORT_WORD,
-      choices,
-      // The ladder the picker walks is `[null, ...choices]`, so even a lone preset
-      // steps — between unset and itself.
-      steps: true,
-      last: false,
-    });
-  }
-  for (const axis of optionAxesOf(variants, providerPrefix)) {
-    // The ladder is the authoritative effort for this route; the id's tokens are not a second one.
-    if (axis.axis === 'effort' && choices.length > 0) continue;
-    rows.push({
-      kind: 'axis',
-      model,
-      axis: axis.axis,
-      providerPrefix,
-      value: formatAxisValue(axis.axis, selection),
-      choices: [],
-      steps: stepOptionAxis(model, axis.axis, drafted, providerPrefix) !== undefined,
-      last: false,
-    });
-  }
-  return rows.map((row, index) => ({ ...row, last: index === rows.length - 1 }));
-}
 
 function provenanceFor(model: ModelOption, customModels: readonly string[]): ProvenanceWord {
   if (model.isCustom === true || customModels.includes(model.id)) return 'Custom';

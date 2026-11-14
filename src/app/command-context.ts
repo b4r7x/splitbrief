@@ -3,21 +3,21 @@ import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
 import {
   requestClearQueue,
-  requestEndRun,
   requestLeaveSession,
   requestQuit,
   requestResume,
   requestSteer,
-} from '../features/workflow/handlers.js';
+} from '../features/workflow/run-requests/handlers.js';
+import { requestEndRun } from '../features/workflow/run-requests/end-run.js';
 import {
   findLatestConversationRowAction,
   type ConversationRowAction,
-} from '../features/workflow/conversation-rows/row-actions.js';
-import { readConversationRowActions } from '../features/workflow/conversation-rows/read-row-actions.js';
+} from '../features/workflow/conversation-rows/row-actions/build.js';
+import { readConversationRowActions } from '../features/workflow/conversation-rows/row-actions/read.js';
 import { toggleFoldedRows } from '../features/workflow/conversation-rows/toggle-folded-rows.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
-import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
+import { resolveCopyValue } from '../features/workflow/copy-target.js';
 import type { Phase } from '../core/schemas/enums.js';
 import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import type { RunRecord } from '../core/sessions/run/record.js';

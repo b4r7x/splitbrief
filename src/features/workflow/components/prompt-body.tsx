@@ -2,9 +2,9 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { assertNever } from '../../../utils/type-guards.js';
-import { clipPromptBodyRows, promptBodyRows, type PromptBodyLine } from '../prompt-body-rows.js';
+import { clipPromptBodyRows, promptBodyRows, type PromptBodyLine } from '../prompt-rows/body.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
-import { FACT_INDENT, passHeadlinePrefix, type PromptRow } from '../recovery-prompt.js';
+import { FACT_INDENT, passHeadlinePrefix, type PromptRow } from '../recovery/prompt-text.js';
 import { TextSpans } from '../../../components/text-spans.js';
 
 type Theme = ReturnType<typeof useTheme>;

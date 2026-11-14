@@ -6,7 +6,7 @@ import { QUESTION_PROMPT_HORIZONTAL_CHROME } from '../prompt-rows/question.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { PlannerQuestion } from './planner-question.js';
-import { stopMenuChrome } from '../stop/options.js';
+import { stopMenuChrome } from '../inline-menu/layout.js';
 import { RecoveryMenu } from './recovery-menu.js';
 
 export function QuestionPrompt({

@@ -4,7 +4,7 @@ import type { AppInteractionDeps, AppProps } from '../../../src/app/root.js';
 import type { AppKeyDeps } from '../../../src/app/keys.js';
 import type { HomeScreenDeps } from '../../../src/app/screens/home.js';
 import type { SetupScreenDeps } from '../../../src/app/screens/setup.js';
-import type { PickerEffectDeps } from '../../../src/features/runners/use-picker-actions.js';
+import type { PickerEffectDeps } from '../../../src/features/runners/picker/use-actions.js';
 import type { SessionSelectDeps } from '../../../src/stores/navigation/session-select.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';

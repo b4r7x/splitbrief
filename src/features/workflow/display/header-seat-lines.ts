@@ -12,7 +12,7 @@ import { idsOf, isSeatIdentity, type SeatIds } from '../../../core/crew/seat-ids
 import type { RunHalt } from '../../../core/run-view/halt.js';
 import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RunningSeats } from './running-seats.js';
-import { crewLine } from '../closed/copy.js';
+import { crewLine } from '../closed/copy/crew-line.js';
 import { recordedCrew, type RecordedCrew } from '../closed/view-model.js';
 
 export interface HeaderSeats {

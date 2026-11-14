@@ -10,7 +10,7 @@ import { CURSOR_MODEL_REFUSAL } from '#testing/helpers/cursor-refusal.js';
 import { inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { streamError } from '../../streaming/stream-errors.js';
 import { buildPlannerCallFailedRecoveryIssue } from './builders/planner.js';
-import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
+import { formatRecoveryPrompt } from '../../../features/workflow/recovery/prompt-text.js';
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,

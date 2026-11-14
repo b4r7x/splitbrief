@@ -35,7 +35,7 @@ import {
 import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { continueRun } from '../../../engine/orchestrator/run/continue.js';
-import { hydrateResume } from '../resume-hydration.js';
+import { hydrateResume } from '../resume/hydration.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import {
@@ -55,14 +55,14 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import {
   clearAllHandlers,
-  requestEndRun,
   requestLeaveSession,
   requestQuit,
   requestSeatChangeAtBoundary,
   requestStopNow,
   resumeParkedRun,
-} from '../handlers.js';
-import { useStopByline } from '../stop/use-stop-byline.js';
+} from '../run-requests/handlers.js';
+import { requestEndRun } from '../run-requests/end-run.js';
+import { useStopByline } from '../stop/use-byline.js';
 import { plainAnswer, useInputMode } from './use-input-mode.js';
 import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from './use-run-loop.js';

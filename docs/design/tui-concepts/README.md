@@ -31,15 +31,15 @@ See the complete set in [`overview.png`](overview.png).
   `src/features/workflow/components/rail.tsx`, and
   `src/features/workflow/components/chrome.tsx`.
 - Workflow split and task facts: `src/features/workflow/components/body.tsx` and
-  `src/features/workflow/components/sidebar.tsx`.
-- Review layout: `src/features/workflow/components/review-view.tsx` and the approval prompt
+  `src/features/workflow/components/sidebar/panel.tsx`.
+- Review layout: `src/features/workflow/components/review/view.tsx` and the approval prompt
   components under `src/features/workflow/components/approval-prompt/`.
 - Home: `src/app/screens/home.tsx` and `src/features/home/`.
 - Summary: the summary screen is removed;
   the closed-run block replaced it. A closed run now states its outcome at the tail of its own
   transcript: `src/features/workflow/closed/block.ts` (`closedTranscriptBlock`),
   `src/features/workflow/closed/view-model.ts` (`deriveSummaryView`), and
-  `src/features/workflow/closed/copy.ts`.
+  `src/features/workflow/closed/copy/`.
 - Command palette: `src/app/overlays/palette.tsx` and `src/features/palette/`.
 
 The catalog's `frame.txt` and `frame.cells.json` remain canonical for copy, terminal-cell geometry,

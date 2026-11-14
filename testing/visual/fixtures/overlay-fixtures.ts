@@ -43,8 +43,8 @@ import {
   reportDraftNotSaved,
 } from '../../../src/stores/ui/session-drafts.js';
 import { stateOpsError } from '../../../src/engine/orchestrator/state-ops.js';
-import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
-import { commitPlannerTierSelection } from '../../../src/features/runners/config-transforms.js';
+import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker/labels.js';
+import { commitPlannerTierSelection } from '../../../src/features/runners/config-transforms/seat-selection.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection/tool.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';

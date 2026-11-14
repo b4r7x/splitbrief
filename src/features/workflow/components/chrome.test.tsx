@@ -17,7 +17,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
-import { clearAllHandlers, setResumeHandler } from '../handlers.js';
+import { clearAllHandlers, setResumeHandler } from '../run-requests/handlers.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { tokensStore } from '../../../stores/workflow/tokens/state.js';

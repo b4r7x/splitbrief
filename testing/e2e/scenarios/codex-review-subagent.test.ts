@@ -7,7 +7,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEventOf } from '../../../src/engine/events/types.js';
-import { buildActivityBatchViewModel } from '../../../src/features/workflow/conversation-rows/activity-batch-model.js';
+import { buildActivityBatchViewModel } from '../../../src/features/workflow/conversation-rows/activity/batch-model.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';

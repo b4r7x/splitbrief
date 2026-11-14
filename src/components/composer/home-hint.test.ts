@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker-format.js';
+import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker/labels.js';
 import { configStore } from '../../stores/project/config.js';
 import { formatConfigSaveSuccess } from '../../stores/project/save-feedback.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';

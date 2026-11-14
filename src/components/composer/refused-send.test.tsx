@@ -8,7 +8,7 @@ import { createDraftDocument } from '../../core/composer/document.js';
 import { readSessionDraft } from '../../core/sessions/draft.js';
 import type { QueueSubmissionResult } from '../../engine/orchestrator/types.js';
 import type { UseInputModeResult } from '../../features/workflow/hooks/use-input-mode.js';
-import { createReviewInputHandler } from '../../features/workflow/review-parser.js';
+import { createReviewInputHandler } from '../../features/workflow/review-gate/input-handler.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';

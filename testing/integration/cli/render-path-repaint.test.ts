@@ -16,8 +16,8 @@ import { mergeOptionFamilies } from '../../../src/features/runners/model-catalog
 import type { ModelOption } from '../../../src/features/runners/model-catalog/recency.js';
 import type { PickerOption } from '../../../src/features/runners/model-catalog/options.js';
 import { buildRightRows } from '../../../src/features/runners/model-catalog/rows.js';
-import { PickerView } from '../../../src/features/runners/picker-view.js';
-import type { PickerActions } from '../../../src/features/runners/use-picker-actions.js';
+import { PickerView } from '../../../src/features/runners/picker/view.js';
+import type { PickerActions } from '../../../src/features/runners/picker/use-actions.js';
 import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 

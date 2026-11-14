@@ -13,7 +13,7 @@ import { awaitsApply, type StopReason } from '../../core/sessions/run/status.js'
 import type { RunHalt } from '../../core/run-view/halt.js';
 import type { RouteData } from '../../stores/navigation/router.js';
 import type { DepartureKind } from '../../stores/workflow/departure.js';
-import { AT_REST_PLACEHOLDER } from './closed/byline.js';
+import { AT_REST_PLACEHOLDER } from './closed/open-byline.js';
 import { statusLeavesWordsUnread } from '../../core/recovery/typed-words.js';
 
 /**

@@ -28,7 +28,7 @@ import {
   useInputMode,
   type UseInputModeResult,
 } from './hooks/use-input-mode.js';
-import { createRecoveryDriver } from './recovery-driver.js';
+import { createRecoveryDriver } from './recovery/driver.js';
 
 function RecoveryComposerHarness({ capture }: { capture: { current: UseInputModeResult | null } }) {
   const inputMode = useInputMode();

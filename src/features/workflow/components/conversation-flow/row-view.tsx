@@ -11,7 +11,7 @@ import {
   rowLeading,
   rowLeadingCells,
   type RowMarkerStatus,
-} from '../../conversation-rows/row-markers.js';
+} from '../../conversation-rows/row-format/markers.js';
 import { colorForTone } from '../../../../core/theme/tone-color.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { prefersReducedMotion } from '../../../../lib/terminal/reduce-motion.js';

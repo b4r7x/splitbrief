@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildProgressRows,
   deriveBuildProgress,
   UI_IDLE_WARN_MS,
-  passedCountSpans,
   type DeriveBuildProgressInput,
-} from './build-progress.js';
+} from './build-progress/derive.js';
+import { buildProgressRows } from './build-progress/rows.js';
+import { passedCountSpans } from './build-progress/counts.js';
 import { getChromeContentWidth, buildProgressRowCount } from '../layout/chrome-rows.js';
 import { EMPTY_RUN_VIEW, type RunView } from '../../../core/run-view/reduce.js';
 import type { Phase } from '../../../core/schemas/enums.js';

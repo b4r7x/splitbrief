@@ -18,17 +18,17 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { deriveBuildProgress } from '../display/build-progress.js';
+import { deriveBuildProgress } from '../display/build-progress/derive.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
 import { deriveRunningSeats } from '../display/running-seats.js';
 import {
   formatRecordedSeatChangeIdentities,
   formatRecordedSeatIdentity,
 } from '../display/recorded-seat-identity.js';
-import { buildActivityBatchViewModel } from '../conversation-rows/activity-batch-model.js';
-import { formatTaskStartedParts } from '../conversation-rows/event-format.js';
-import { deriveUsageDetails } from '../usage-details-model.js';
-import { Sidebar } from './sidebar.js';
+import { buildActivityBatchViewModel } from '../conversation-rows/activity/batch-model.js';
+import { formatTaskStartedParts } from '../conversation-rows/event-rows/format.js';
+import { deriveUsageDetails } from '../usage/derive.js';
+import { Sidebar } from './sidebar/panel.js';
 
 const SEATS = [
   {

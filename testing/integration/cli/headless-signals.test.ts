@@ -14,7 +14,7 @@ import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { listSessions } from '../../../src/core/sessions/io.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
-import { runHeadless } from '../../../src/cli/headless.js';
+import { runHeadless } from '../../../src/cli/headless/run.js';
 
 let stderrSpy: ReturnType<typeof vi.spyOn>;
 let dirs: string[] = [];

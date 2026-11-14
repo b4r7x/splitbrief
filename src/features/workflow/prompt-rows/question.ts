@@ -1,4 +1,4 @@
-import { countPromptBodyRows } from '../prompt-body-rows.js';
+import { countPromptBodyRows } from './body.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { questionDefault, questionOptions } from '../../../stores/prompts/question.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';

@@ -1,3 +1,4 @@
+import type { Instance } from 'ink';
 import { awaitActiveWorkflowShutdown } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
@@ -163,4 +164,60 @@ export function createSuspendListenerToggle(deps: { install: () => void; uninsta
       deps.uninstall();
     },
   };
+}
+
+function createSettledProcessListener<T>(deps: {
+  handle: (value: T) => Promise<void>;
+  reportFailure: (value: T, error: unknown) => void;
+}): (value: T) => void {
+  return (value) => {
+    void deps.handle(value).catch((error: unknown) => {
+      try {
+        deps.reportFailure(value, error);
+      } catch {
+        // A process event listener cannot leak a second rejection when stderr is unavailable.
+      }
+    });
+  };
+}
+
+export function createTerminationSignalListener(deps: {
+  handle: (signal: TerminationSignal) => Promise<void>;
+  reportCleanupFailure: (error: unknown) => void;
+}): (signal: TerminationSignal) => void {
+  return createSettledProcessListener({
+    handle: deps.handle,
+    reportFailure: (_signal, error) => deps.reportCleanupFailure(error),
+  });
+}
+
+export function createCrashListener(deps: {
+  handle: (reason: unknown) => Promise<void>;
+  reportCrash: (reason: unknown) => void;
+  reportCleanupFailure: (error: unknown) => void;
+}): (reason: unknown) => void {
+  return createSettledProcessListener({
+    handle: deps.handle,
+    reportFailure: (reason, error) => {
+      deps.reportCrash(reason);
+      deps.reportCleanupFailure(error);
+    },
+  });
+}
+
+export function unmountWhenSignalled(
+  instance: Instance,
+  signal: AbortSignal | undefined,
+  beforeUnmount?: () => void,
+): void {
+  if (!signal) return;
+  const unmount = () => {
+    beforeUnmount?.();
+    instance.unmount();
+  };
+  if (signal.aborted) {
+    unmount();
+    return;
+  }
+  signal.addEventListener('abort', unmount, { once: true });
 }

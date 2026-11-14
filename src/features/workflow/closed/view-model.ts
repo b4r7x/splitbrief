@@ -12,19 +12,10 @@ import {
 import type { RailStageState } from '../../../core/phases/rail.js';
 import { acceptedCounts, acceptedNote } from '../../../core/review/accepted.js';
 import { atRestRailStages } from '../at-rest.js';
-import {
-  briefRows,
-  buildSeatView,
-  failedReviewViews,
-  filesView,
-  phaseTimings,
-  plannerSeatView,
-  reviewSeatView,
-  reviewView,
-  runDigest,
-  scopeView,
-  stoppedAtForCurrentPlan,
-} from './projections.js';
+import { filesView, phaseTimings, runDigest, scopeView } from './projections.js';
+import { failedReviewViews, reviewView } from './review-views.js';
+import { briefRows, stoppedAtForCurrentPlan } from './brief-rows.js';
+import { buildSeatView, plannerSeatView, reviewSeatView } from './seat-views.js';
 
 /** How a closed run reads: every check agreed, something needs a look, or it was ended. */
 export type SummaryOutcomeKind = 'complete' | 'needs-attention' | 'ended' | 'applied' | 'discarded';

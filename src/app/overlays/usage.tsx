@@ -1,6 +1,6 @@
-import { usageDetailsForRun } from '../../features/workflow/spend-text.js';
-import { deriveUsageDetails } from '../../features/workflow/usage-details-model.js';
-import { UsageDetails } from '../../features/workflow/usage-details.js';
+import { usageDetailsForRun } from '../../features/workflow/usage/spend-text.js';
+import { deriveUsageDetails } from '../../features/workflow/usage/derive.js';
+import { UsageDetails } from '../../features/workflow/usage/details.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';

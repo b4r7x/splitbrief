@@ -64,7 +64,9 @@ const frozenSourceRoot = join(testDirectory, 'fixtures', 'v3-pre-change-writer')
 const writerRootFilePaths = [
   'src/core/config/load/io.ts',
   'src/lib/fs/confined.ts',
-  'src/features/runners/config-transforms.ts',
+  'src/features/runners/config-transforms/level-notices.ts',
+  'src/features/runners/config-transforms/seat-selection.ts',
+  'src/features/runners/config-transforms/custom-model.ts',
   'src/stores/project/config-persistence.ts',
 ] as const;
 

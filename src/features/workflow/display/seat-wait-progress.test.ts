@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildProgressRows,
-  deriveBuildProgress,
-  type DeriveBuildProgressInput,
-} from './build-progress.js';
+import { deriveBuildProgress, type DeriveBuildProgressInput } from './build-progress/derive.js';
+import { buildProgressRows } from './build-progress/rows.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import { EMPTY_RUN_VIEW, type RunView } from '../../../core/run-view/reduce.js';

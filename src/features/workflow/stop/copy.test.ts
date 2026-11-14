@@ -11,7 +11,8 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { buildInputFooterByline } from '../input-footer-byline.js';
-import { stepWord, stopByline, stopPoint, type StopBylineInput } from './copy.js';
+import { stopByline, type StopBylineInput } from './copy.js';
+import { stepWord, stopPoint } from '../display/step-words.js';
 
 function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
   return {

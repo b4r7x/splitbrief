@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RedCheck } from '../../../core/schemas/workflow/review-record.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import { stopMenuLayout } from '../stop/options.js';
+import { stopMenuLayout } from '../inline-menu/layout.js';
 import * as options from './options.js';
 import {
   RESULT_MENU_LEGEND,

@@ -17,7 +17,7 @@ import {
 } from '../../../src/features/workflow/prompt-rows/approval.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
-import type { ReviewInputEffects } from '../../../src/features/workflow/review-parser.js';
+import type { ReviewInputEffects } from '../../../src/features/workflow/review-gate/input-handler.js';
 import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RuntimeCommandDef } from '../../../src/core/runtime/commands/types.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
@@ -30,7 +30,7 @@ import { taskId } from '../../../src/core/schemas/task.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { listRowLead } from '../../../src/components/list-row/lead.js';
-import { setStopHandler } from '../../../src/features/workflow/handlers.js';
+import { setStopHandler } from '../../../src/features/workflow/run-requests/handlers.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { wireAppMouse } from '../../../src/app/mouse.js';

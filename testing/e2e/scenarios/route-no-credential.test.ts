@@ -9,7 +9,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import { routeAuthState } from '../../../src/core/runners/route-auth.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { formatRouteAuth } from '../../../src/features/runners/picker-format.js';
+import { formatRouteAuth } from '../../../src/features/runners/picker/route-auth.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';

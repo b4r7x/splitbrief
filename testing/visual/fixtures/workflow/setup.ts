@@ -5,7 +5,7 @@ import { cliDetectionFor } from '../../../helpers/factories/detection.js';
 import { makeSummary } from '../../../helpers/factories/summary.js';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
-import type { ReviewInputEffects } from '../../../../src/features/workflow/review-parser.js';
+import type { ReviewInputEffects } from '../../../../src/features/workflow/review-gate/input-handler.js';
 import type { SessionSelectDeps } from '../../../../src/stores/navigation/session-select.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import {

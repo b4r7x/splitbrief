@@ -4,7 +4,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { listRowLead } from '../../../../components/list-row/lead.js';
 import { glyph } from '../../../../lib/glyphs.js';
-import { ApprovalPrompt } from '../approval-prompt.js';
+import { ApprovalPrompt } from './prompt.js';
 import { openApprovalPrompt, approvalPromptStore } from '../../../../stores/prompts/approval.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../lib/terminal/typeahead-grace.js';
@@ -17,8 +17,8 @@ import {
   CHOOSE_HINTS,
   PROMPT_COMMAND_LEGEND,
   approvalTitle,
-  getApprovalPromptRows,
 } from '../../prompt-rows/approval.js';
+import { getApprovalPromptRows } from '../../prompt-rows/confirm-panel.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../../core/composer/document.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';

@@ -5,17 +5,17 @@ import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-cat
 import { IMPLEMENTER_CLI_TOOL_IDS, isListedCliTool } from '../core/runners/cli-tool/catalog.js';
 import { EFFORT_LEVELS, META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
+import { parseSkillIdsOption } from './options/skills.js';
+import { parseContinueActionOption } from './options/continue-action.js';
+import { parseSeatSpecOption } from './options/seat-spec.js';
+import { parseGitRefOption } from './options/parsers.js';
+import { parseSeatDownPolicyOption } from './options/parsers.js';
 import {
-  addWorkflowOptions,
-  parseGitRefOption,
   parseNumberOption,
   parseOutputFormatOption,
   parsePositiveIntegerOption,
-  parseContinueActionOption,
-  parseSeatDownPolicyOption,
-  parseSeatSpecOption,
-  parseSkillIdsOption,
-} from './options.js';
+} from './options/parsers.js';
+import { addWorkflowOptions } from './options/workflow.js';
 import { runCommand } from '#testing/helpers/commander.js';
 
 function parseWorkflowOptions(args: string[]): WorkflowOpts {

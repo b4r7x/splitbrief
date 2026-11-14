@@ -2,40 +2,30 @@ import { INLINE_LABEL_GAP } from '../row-format/label-card.js';
 import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { formatRecordedSeatChangeIdentities } from '../../display/recorded-seat-identity.js';
-import { COLLAPSE_HINT } from '../implementer-diff-card-block.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
-import { stuckAnswerWords } from '../../../../core/review/stuck.js';
 import { setAsideLabel } from '../../../../core/review/verdict.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
-import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
+import type { EngineEvent } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
-import { truncateTerminalDisplayText } from '../../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { countNoun } from '../../../../utils/pluralize.js';
-import { runnerActivityBatchRowBlock } from '../activity-rows.js';
-import { borderedCardRowsBlock } from '../bordered-card-block.js';
-import { calloutRowsBlock } from '../callout-block.js';
-import { wrapWidthFor } from '../row-markers.js';
-import { sanitizeRowDisplayText } from '../row-format/text.js';
+import { runnerActivityBatchRowBlock } from '../activity/rows.js';
+import { borderedCardRowsBlock } from '../blocks/bordered-card.js';
+import { calloutRowsBlock } from '../blocks/callout.js';
+import { wrapWidthFor } from '../row-format/markers.js';
 import { segmentedRow } from '../row-format/rows.js';
-import type {
-  ConversationRowBlock,
-  ConversationRowSegment,
-  ConversationRowTone,
-  RowBuildContext,
-} from '../types.js';
+import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } from '../types.js';
 import {
   cardRowsBlock,
   compositeBlock,
-  promptTextBlock,
   rowsBlock,
   sectionSpacerBlock,
   wrappedSegmentsBlock,
   wholeSegmentsBlock,
-  wrappedTextBlock,
-} from '../row-block-compose.js';
+} from '../blocks/compose.js';
+import { promptTextBlock, wrappedTextBlock } from '../blocks/wrapped-text.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
 import { answeredQuestionsRowBlock, repliedQuestionsRowBlock } from './answered-questions.js';
 import { attachedInputsRowBlock } from './attached-inputs.js';
@@ -43,12 +33,13 @@ import {
   taskStartedMetadata,
   taskStartedCrewRowBlock,
   taskStartedRowBlock,
-} from '../task-started-row-block.js';
+} from '../blocks/task-started.js';
 import { isRunnerCallTranscriptRowSuppressed } from '../runner-call-classification.js';
 import {
   escalateRowBlock,
   fullSuiteRowBlock,
   implementerDoneRowBlock,
+  implementerFailureCard,
   reviewChecksRowBlock,
   reviewNoneRowBlock,
   runningImplementerRowBlock,
@@ -57,14 +48,15 @@ import {
 import { plannerTextRowBlock } from './planner-text.js';
 import { isTranscriptRowlessEvent } from './visibility.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-cancel.js';
-import { formatResetAt, stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
-import { stopPoint } from '../../stop/copy.js';
-import { recoveryActionParts } from '../../../../core/recovery/action-label.js';
+import { formatResetAt } from '../../../../core/recovery/reset-clock.js';
+import { stopPoint } from '../../display/step-words.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
-import type { RecoveryFold, SettledTranscriptSection } from '../transcript-walk.js';
+import type { SettledTranscriptSection } from '../transcript-walk/types.js';
 import { phaseStage } from '../../../../core/phases/rail.js';
 import { queueCopy } from '../../queue-copy.js';
 import { formatRejectRunMessage } from '../../../../core/runtime/commands/messages.js';
+import { recoveryCardBlock, recoveryActionSegments } from './recovery.js';
+import { consultAnsweredSegments } from './consult.js';
 
 const DISCOVERED_VALIDATION_REFUSED = 'discovered_validation_refused';
 
@@ -532,290 +524,5 @@ export function eventRowBlock(options: {
       });
     default:
       return assertNever(event);
-  }
-}
-
-function implementerFailureCause(
-  event: Extract<EngineEvent, { type: 'implementer_generate_failed' }>,
-): string | undefined {
-  const cause = event.error
-    ?.split('\n')
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-  return cause === undefined ? undefined : sanitizeRowDisplayText(cause);
-}
-
-export function implementerFailureCard(
-  event: Extract<EngineEvent, { type: 'implementer_generate_failed' }>,
-  width: number,
-  expanded: boolean,
-): { value: string | undefined; expandable: boolean } {
-  const cause = implementerFailureCause(event);
-  const valueWidth =
-    wrapWidthFor('card', width) - getTerminalCellWidth(`${CREW_SEAT_LABELS.build} failed  `);
-  if (cause === undefined || valueWidth <= 0) return { value: undefined, expandable: false };
-  const cut = getTerminalCellWidth(cause) > valueWidth;
-  return {
-    value: cut && expanded ? cause : truncateTerminalDisplayText(cause, valueWidth),
-    expandable: cut,
-  };
-}
-
-function consultAnsweredSegments(
-  event: EngineEventOf<'consult_answered'>,
-): ConversationRowSegment[] {
-  const seat =
-    event.reason === 'deviation' && (event.action === 'confirm' || event.action === 'ask-user')
-      ? 'plan'
-      : (event.seat ?? 'plan');
-  const label = { text: CREW_SEAT_LABELS[seat], tone: CREW_SEAT_ROLES[seat] };
-  if (event.reason === 'deviation') {
-    if (event.action === 'confirm') {
-      const confirmed = event.decisionCount ?? 0;
-      const rejected = event.rejectedCount ?? 0;
-      const decided =
-        rejected === 0
-          ? `confirmed ${countNoun(confirmed, 'decision')}`
-          : confirmed === 0
-            ? `rejected ${countNoun(rejected, 'decision')}`
-            : `confirmed ${countNoun(confirmed, 'decision')}, rejected ${rejected}`;
-      return [
-        label,
-        { text: ` ${decided} for ${event.taskId}`, tone: 'textDim' },
-        { text: SOFT_SEP, tone: 'textDim' },
-        { text: event.diagnosis, tone: 'textDim' },
-      ];
-    }
-    if (event.action === 'ask-user') {
-      return [
-        label,
-        { text: ` asks you about the decisions ${event.taskId} reported`, tone: 'textDim' },
-      ];
-    }
-  }
-  if (event.reason === 'no-progress') {
-    return [
-      label,
-      { text: `${arrowSep()}review stuck after ${event.taskId}${SOFT_SEP}`, tone: 'textDim' },
-      { text: stuckAnswerWords(event), tone: 'textDim' },
-      { text: SOFT_SEP, tone: 'textDim' },
-      { text: event.diagnosis, tone: 'textDim' },
-    ];
-  }
-  return [
-    label,
-    { text: `${arrowSep()}${event.taskId}: `, tone: 'textDim' },
-    ...consultAnsweredAction(event),
-  ];
-}
-
-function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): ConversationRowSegment[] {
-  const detail = (text: string): ConversationRowSegment[] => [
-    { text, tone: 'textDim' },
-    { text: SOFT_SEP, tone: 'textDim' },
-    { text: event.diagnosis, tone: 'textDim' },
-  ];
-  switch (event.action) {
-    case 'guidance':
-      return detail('guidance');
-    case 'rewrite-task':
-      return [
-        {
-          text:
-            event.revision === undefined
-              ? `rewrote ${event.taskId}`
-              : `rewrote ${event.taskId} (rev ${event.revision})`,
-          tone: 'textDim',
-        },
-      ];
-    case 'split-task': {
-      const ids = event.newTaskIds;
-      const summary = ids === null || ids.length === 0 ? 'split' : `split into ${ids.join(', ')}`;
-      return detail(summary);
-    }
-    case 'verify':
-      return [
-        {
-          text:
-            event.checkIds === undefined || event.checkIds.length === 0
-              ? 'verify'
-              : `verify ${event.checkIds.join(', ')}`,
-          tone: 'textDim',
-        },
-      ];
-    case 'ask-user':
-      return [{ text: 'asks you', tone: 'textDim' }];
-    case 'cannot':
-      return detail('cannot be done');
-    case 'accept':
-      return detail('accepts the blockers');
-    case 'confirm':
-      return detail('confirmed the deviation');
-    default:
-      return assertNever(event.action);
-  }
-}
-
-export function recoveryRowBlock(
-  keyPrefix: string,
-  recovery: RecoveryFold,
-  width: number,
-  expanded = false,
-): ConversationRowBlock | null {
-  if (recovery.automaticSwitch !== undefined) {
-    const { diagnostics } = recovery;
-    return compositeBlock(keyPrefix, [
-      recoveryCardBlock(
-        keyPrefix,
-        [
-          recoveryHeadlineSegments(recovery.prompted),
-          [
-            { text: `${arrowSep()}continued on fallback`, tone: 'textDim' },
-            ...(diagnostics.length === 0
-              ? []
-              : [
-                  {
-                    text: expanded ? '' : '  ctrl+d',
-                    tone: 'textDim',
-                  } satisfies ConversationRowSegment,
-                ]),
-          ],
-        ],
-        width,
-        stateTone('passed'),
-      ),
-      expanded
-        ? wrappedTextBlock({
-            keyPrefix: `${keyPrefix}-details`,
-            text: [...diagnostics, COLLAPSE_HINT].join('\n'),
-            width,
-            tone: 'textDim',
-            kind: 'card',
-            indent: 2,
-          })
-        : null,
-    ]);
-  }
-  const { prompted, reset, resolved } = recovery;
-  const chosen = recovery.selected ?? resolved;
-  const outcome = [
-    reset === undefined ? null : `${reset.taskId} back to pending`,
-    resolved === undefined ? null : recoveryOutcomeWords(resolved.outcome, recovery),
-  ].filter((part): part is string => part !== null);
-  const done = chosen === undefined ? [] : recoveryActionSegments(chosen, recovery.seatSwitch);
-  const result: ConversationRowSegment[] =
-    done.length > 0 && outcome.length > 0
-      ? [{ text: `${arrowSep()}${outcome.join(', ')}`, tone: 'textDim' }]
-      : [];
-  // The prompt panel carries the clock; the row names what happened, once.
-  const halt =
-    prompted === undefined || recovery.haltAlreadyShown ? [] : recoveryHeadlineSegments(prompted);
-  return recoveryCardBlock(
-    keyPrefix,
-    [
-      [
-        ...halt,
-        ...(halt.length > 0 && done.length > 0
-          ? [{ text: SOFT_SEP, tone: 'textDim' as const }]
-          : []),
-        ...done,
-      ],
-      result,
-    ],
-    width,
-    resolved === undefined ? stateTone('attention') : recoveryResolvedTone(resolved.outcome),
-  );
-}
-
-// Each chunk moves to the next row whole, so `→ skipped` never splits from its arrow.
-function recoveryCardBlock(
-  keyPrefix: string,
-  [first, ...rest]: readonly [
-    readonly ConversationRowSegment[],
-    ...(readonly ConversationRowSegment[])[],
-  ],
-  width: number,
-  tone: ConversationRowTone,
-): ConversationRowBlock | null {
-  const empty = first.length === 0 && rest.every((chunk) => chunk.length === 0);
-  return wholeSegmentsBlock(
-    keyPrefix,
-    [[{ text: empty ? 'Recovery' : 'Recovery  ', tone }, ...first], ...rest],
-    width,
-    'card',
-  );
-}
-
-function recoveryActionSegments(
-  event: Pick<
-    EngineEventOf<'recovery_action_selected'>,
-    'action' | 'reason' | 'seat' | 'reviewNone'
-  >,
-  switched?: EngineEventOf<'seat_switched'>,
-): ConversationRowSegment[] {
-  const modelChanged =
-    event.action === 'switch-seat' &&
-    switched !== undefined &&
-    typeof switched.from !== 'string' &&
-    typeof switched.to !== 'string' &&
-    switched.from.tool === switched.to.tool &&
-    switched.from.model !== switched.to.model;
-  return recoveryActionParts(event.action, {
-    reason: event.reason,
-    seat: event.seat,
-    reviewNone: event.reviewNone,
-  }).map((part) => ({
-    text: modelChanged ? part.text.replace('tool', 'model') : part.text,
-    tone: part.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[part.seat],
-  }));
-}
-
-function recoveryHeadlineSegments(
-  event: EngineEventOf<'recovery_prompted'>,
-): ConversationRowSegment[] {
-  return (event.headlineSpans ?? [{ text: event.headline }]).map((part) => ({
-    text: stripRecoveryResetClause(part.text),
-    tone: part.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[part.seat],
-  }));
-}
-
-function recoveryOutcomeWords(
-  outcome: EngineEventOf<'recovery_resolved'>['outcome'],
-  recovery: RecoveryFold,
-): string {
-  if (
-    recovery.seatSwitch !== undefined &&
-    recovery.resolved?.action === 'switch-seat' &&
-    (outcome === 'continued' || outcome === 'retry-current-task')
-  ) {
-    const taskId = recovery.prompted?.taskId ?? recovery.reset?.taskId;
-    return taskId === undefined ? 'continued on new seat' : `${taskId} resumed on new seat`;
-  }
-  switch (outcome) {
-    case 'continued':
-      return 'continued';
-    case 'retry-current-task':
-      return 'retried';
-    case 'skipped-current-task':
-      return 'skipped';
-    case 'aborted':
-      return 'run ended';
-    default:
-      return assertNever(outcome);
-  }
-}
-
-function recoveryResolvedTone(
-  outcome: EngineEventOf<'recovery_resolved'>['outcome'],
-): ConversationRowTone {
-  switch (outcome) {
-    case 'continued':
-    case 'retry-current-task':
-      return stateTone('passed');
-    case 'skipped-current-task':
-    case 'aborted':
-      return stateTone('attention');
-    default:
-      return assertNever(outcome);
   }
 }

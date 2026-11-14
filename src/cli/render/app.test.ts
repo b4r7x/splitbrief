@@ -11,7 +11,8 @@ import {
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
 import { createCrashHandler, createTerminationHandler } from './process-lifecycle.js';
-import { createCrashListener, createTerminationSignalListener, renderApp } from './app.js';
+import { renderApp } from './app.js';
+import { createCrashListener, createTerminationSignalListener } from './process-lifecycle.js';
 import { __testResetProbeActivity, trackProbe } from '../../engine/probe-activity.js';
 import { watchSlowProbeLines } from '../slow-probe-line.js';
 

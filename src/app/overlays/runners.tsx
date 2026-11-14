@@ -12,23 +12,21 @@ import { BOOT_MANIFEST_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { usePickerCatalog } from '../../features/runners/use-picker-catalog.js';
+import { usePickerCatalog } from '../../features/runners/picker/use-catalog.js';
 import {
   defaultPickerEffectDeps,
-  useLocalConnectionActions,
   usePickerActions,
   type PickerEffectDeps,
-} from '../../features/runners/use-picker-actions.js';
-import { PickerView } from '../../features/runners/picker-view.js';
-import {
-  customModelEntryCopy,
-  fallbackInheritanceNotice,
-} from '../../features/runners/picker-format.js';
-import { inheritsPlannerSeat } from '../../features/runners/config-transforms.js';
-import { LocalConnectionForm } from '../../features/runners/local-connection-form.js';
+} from '../../features/runners/picker/use-actions.js';
+import { useLocalConnectionActions } from '../../features/runners/picker/use-local-connection-actions.js';
+import { PickerView } from '../../features/runners/picker/view.js';
+import { customModelEntryCopy } from '../../features/runners/picker/listing-source.js';
+import { fallbackInheritanceNotice } from '../../features/runners/picker/labels.js';
+import { inheritsPlannerSeat } from '../../features/runners/config-transforms/seat-selection.js';
+import { LocalConnectionForm } from '../../features/runners/local-connection/form.js';
 import { TextInputOverlay } from '../../features/runners/text-input-overlay.js';
-import { ContractChoiceOverlay } from '../../features/runners/contract-choice-overlay.js';
-import { ContractRecap, StepIndicator } from '../../features/runners/contract-chip.js';
+import { ContractChoiceOverlay } from '../../features/runners/contract/choice-overlay.js';
+import { ContractRecap, StepIndicator } from '../../features/runners/contract/chip.js';
 import { contractForRunnerKind } from '../../core/config/custom-commands/tuple.js';
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 import { configStore } from '../../stores/project/config.js';

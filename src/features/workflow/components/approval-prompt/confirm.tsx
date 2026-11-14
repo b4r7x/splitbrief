@@ -22,14 +22,13 @@ import {
   approvalOptionKeyCell,
   approvalOptionLabelText,
   approvalTitle,
-  fitConfirmPanel,
   formatApprovalActionDescription,
   getApprovalConfirmLabel,
   getConfirmOptions,
   isIrreversibleActionClass,
   unfocusedPromptLegend,
-  type ConfirmFrame,
 } from '../../prompt-rows/approval.js';
+import { fitConfirmPanel, type ConfirmFrame } from '../../prompt-rows/confirm-panel.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 import { navigateIndex } from '../../../../utils/indexing.js';

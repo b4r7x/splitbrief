@@ -7,33 +7,35 @@ import type {
   ConversationRowBlock,
   RowBuildContext,
 } from './types.js';
-import { wrapWidthFor } from './row-markers.js';
-import { activityBatchKey } from './activity-batch-key.js';
-import { buildActivityBatchViewModel } from './activity-batch-model.js';
+import { wrapWidthFor } from './row-format/markers.js';
+import { activityBatchKey } from './activity/batch-key.js';
+import { buildActivityBatchViewModel } from './activity/batch-model.js';
 import {
   getCachedActivityBatchBlock,
   getCachedEventRowBlock,
   rememberActivityBatchBlock,
   rememberEventRowBlock,
   type EventBlockCacheKey,
-} from './block-cache.js';
-import { eventRowBlock, recoveryRowBlock } from './event-rows/dispatch.js';
-import { checkGroupKey, checkGroupRowBlock } from './check-group-rows.js';
-import { diffToggleKey } from './row-actions.js';
+} from './cache/block.js';
+import { eventRowBlock } from './event-rows/dispatch.js';
+import { recoveryRowBlock } from './event-rows/recovery.js';
+import { checkGroupKey, checkGroupRowBlock } from './blocks/check-group.js';
+import { diffToggleKey } from './row-actions/build.js';
 import { joinsCheckList } from './check-list-spacing.js';
 import { isPlannerTextRenderedAsMarkdown } from './event-rows/planner-text.js';
-import { runnerActivityBatchRowBlock } from './activity-rows.js';
+import { runnerActivityBatchRowBlock } from './activity/rows.js';
 import {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRowsCacheKey,
-} from './markdown-rows.js';
-import { settledRowBlock } from './settled-row-block.js';
+} from './markdown-rows/cache.js';
+import { settledRowBlock } from './blocks/settled-row.js';
 import { stageHeadingParts } from '../components/conversation-flow/stage-summary.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 import { isRunnerCallTranscriptRowSuppressed } from './runner-call-classification.js';
-import { rowsBlock, sectionSpacerBlock } from './row-block-compose.js';
+import { rowsBlock, sectionSpacerBlock } from './blocks/compose.js';
 import { segmentedRow } from './row-format/rows.js';
-import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
+import { walkTranscript } from './transcript-walk/walk.js';
+import type { RunnerActivityBatch } from './transcript-walk/types.js';
 
 const MIN_ROW_WIDTH = 1;
 

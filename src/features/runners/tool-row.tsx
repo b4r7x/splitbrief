@@ -6,10 +6,11 @@ import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
-import type { RightRow, TreeLead } from './model-catalog/rows.js';
-import { planModelRows, type ModelRowPlan } from './model-row-plan.js';
-import { formatPickerStatusLabel, formatRouteAuth } from './picker-format.js';
-import { isExpandableRow, type RouteAuthContext } from './right-column-policy.js';
+import type { RightRow, TreeLead } from './model-catalog/types.js';
+import { planModelRows, type ModelRowPlan } from './model-catalog/row-plan.js';
+import { formatRouteAuth } from './picker/route-auth.js';
+import { formatPickerStatusLabel } from './picker/labels.js';
+import { isExpandableRow, type RouteAuthContext } from './right-column/policy.js';
 
 interface ToolRowParams {
   item: PickerOption;

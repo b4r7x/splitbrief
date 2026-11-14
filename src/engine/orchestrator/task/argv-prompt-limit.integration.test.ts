@@ -19,7 +19,7 @@ import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { CliImplementerConfig } from '../../../core/schemas/runner/implementer.js';
 import { createCliImplementer } from '../../implementers/cli.js';
-import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
+import { formatRecoveryPrompt } from '../../../features/workflow/recovery/prompt-text.js';
 import { runTaskLoop } from './loop.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 

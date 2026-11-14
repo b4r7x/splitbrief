@@ -4,7 +4,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { segmentedRow } from './row-format/rows.js';
-import { rowLeadingCells } from './row-markers.js';
+import { rowLeadingCells } from './row-format/markers.js';
 import type { ConversationRow } from './types.js';
 
 /** The key of the row that folds the group stored under `foldKey`. */

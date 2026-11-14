@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { loadRunRecord } from '../../core/sessions/run/record.js';
 import { defaultRunRecordDeps } from '../../core/sessions/run/record-io.js';
-import { addWorkflowOptions } from '../options.js';
+import { addWorkflowOptions } from '../options/workflow.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { sessionError } from '../../core/sessions/errors.js';
@@ -9,7 +9,7 @@ import { readActive } from '../../core/sessions/active-pointer.js';
 import { checkSessionLiveness } from '../../core/sessions/lock/file.js';
 import { sessionDir } from '../../core/paths.js';
 import { resolveRunConfig } from '../build-overrides.js';
-import { emitRecoveryAndFailIfPending, recordWriterFor } from '../headless.js';
+import { emitRecoveryAndFailIfPending, recordWriterFor } from '../headless/outcome.js';
 import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import { resumeSavedSession } from './continue/resume.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';

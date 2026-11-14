@@ -67,9 +67,9 @@ import {
   requestBoundaryPause,
   requestStopNow,
   requestCancel,
-  requestEndRun,
   clearAllHandlers,
-} from '../handlers.js';
+} from '../run-requests/handlers.js';
+import { requestEndRun } from '../run-requests/end-run.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
   reactivateExistingSession,

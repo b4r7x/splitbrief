@@ -35,7 +35,8 @@ import {
   reviewOutcomeOf,
   reviewOutcomeWord,
 } from '../../src/core/review/verdict.js';
-import { factSpans, runRows } from '../../src/features/workflow/closed/copy.js';
+import { runRows } from '../../src/features/workflow/closed/copy/rows.js';
+import { factSpans } from '../../src/features/workflow/closed/copy/rows.js';
 import { deriveSummaryView } from '../../src/features/workflow/closed/view-model.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS, WIDE_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';

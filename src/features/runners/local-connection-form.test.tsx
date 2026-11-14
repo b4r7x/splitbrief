@@ -16,14 +16,14 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { LocalConnectionForm } from './local-connection/form.js';
 import {
-  LocalConnectionForm,
   localConnectionModelRows,
   localConnectionProvider,
   type LocalConnectionProbe,
   type LocalConnectionProbeInput,
   type LocalConnectionSave,
-} from './local-connection-form.js';
+} from './local-connection/model.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
 
 const CTRL_U = '\x15';

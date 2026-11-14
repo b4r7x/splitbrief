@@ -61,13 +61,13 @@ vi.mock('../../../src/lib/clipboard/clipboard.js', async (original) => ({
   ...(await original<typeof import('../../../src/lib/clipboard/clipboard.js')>()),
   copyToClipboard: production.copyToClipboard,
 }));
-vi.mock('../../../src/features/workflow/handlers.js', async (original) => ({
-  ...(await original<typeof import('../../../src/features/workflow/handlers.js')>()),
+vi.mock('../../../src/features/workflow/run-requests/handlers.js', async (original) => ({
+  ...(await original<typeof import('../../../src/features/workflow/run-requests/handlers.js')>()),
   requestQuit: production.requestQuit,
   requestStopNow: production.requestStopNow,
 }));
-vi.mock('../../../src/features/workflow/editor-command.js', async (original) => ({
-  ...(await original<typeof import('../../../src/features/workflow/editor-command.js')>()),
+vi.mock('../../../src/features/workflow/external-editor/command.js', async (original) => ({
+  ...(await original<typeof import('../../../src/features/workflow/external-editor/command.js')>()),
   resolveEditorArgv: production.resolveEditorArgv,
   resolveViewerArgv: production.resolveViewerArgv,
 }));

@@ -26,22 +26,22 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { PromptBody } from './components/prompt-body.js';
-import { countPromptBodyRows, promptBodyRows } from './prompt-body-rows.js';
+import { countPromptBodyRows, promptBodyRows } from './prompt-rows/body.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import {
-  correctionActionFor,
   formatMiddotList,
   formatRecoveryPrompt,
-  getRecoveryPromptActions,
-  parseRecoveryActionAnswer,
   passHeadlinePrefix,
-  recommendedRecoveryAction,
+  recoveryPromptSummaryRows,
+} from './recovery/prompt-text.js';
+import { recoveryMenuActionLabel, recoveryMenuParts } from './recovery/menu-label.js';
+import { parseRecoveryActionAnswer, recommendedRecoveryAction } from './recovery/actions.js';
+import {
+  correctionActionFor,
+  getRecoveryPromptActions,
   recoveryComposerHint,
   RECOVERY_EMPTY_ENTER_NOTICE,
-  recoveryMenuActionLabel,
-  recoveryMenuParts,
-  recoveryPromptSummaryRows,
-} from './recovery-prompt.js';
+} from './recovery/actions.js';
 
 async function renderPromptBody(prompt: string): Promise<string> {
   const ui = renderFeature(createElement(PromptBody, { prompt, height: 40, width: 120 }));

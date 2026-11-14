@@ -6,7 +6,7 @@ import { commandLabelWidth, descriptionColumn } from '../../components/list-colu
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { buildCommandItems } from '../../features/palette/sources.js';
-import { readLatestDiffKey } from '../../features/workflow/conversation-rows/read-row-actions.js';
+import { readLatestDiffKey } from '../../features/workflow/conversation-rows/row-actions/read.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
 import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
 import {

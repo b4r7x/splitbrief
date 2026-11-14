@@ -12,11 +12,8 @@ import {
 import { layoutMarkdown, markdownLayoutTail } from '../../../../utils/markdown/layout/document.js';
 import { repairMarkdownTailChunk } from '../../../../utils/markdown/repair.js';
 import type { MarkdownLayoutTail } from '../../../../utils/markdown/types.js';
-import {
-  delimitedMetadataCandidateAt,
-  markdownSourceChunks,
-  markdownSourceLines,
-} from './source-chunks.js';
+import { markdownSourceChunks, markdownSourceLines } from './source-chunks.js';
+import { delimitedMetadataCandidateAt } from './metadata-chunk.js';
 import type {
   MarkdownLayoutChunk,
   MarkdownRowsProjectionEntry,

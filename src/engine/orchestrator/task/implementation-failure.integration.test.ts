@@ -32,7 +32,7 @@ import { createCliImplementer } from '../../implementers/cli.js';
 import { createCommandImplementer } from '../../implementers/command-invoke.js';
 import { createApiImplementer } from '../../implementers/api.js';
 import { runTaskLoop } from './loop.js';
-import { formatRecoveryPrompt } from '../../../features/workflow/recovery-prompt.js';
+import { formatRecoveryPrompt } from '../../../features/workflow/recovery/prompt-text.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';

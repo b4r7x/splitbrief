@@ -1,7 +1,7 @@
 import type {
   MarkdownRenderSegment,
   MarkdownSegmentDecorator,
-} from '../../../../components/markdown.js';
+} from '../../components/markdown-style.js';
 import type { Theme } from '../../../../core/theme/palette.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path/links.js';

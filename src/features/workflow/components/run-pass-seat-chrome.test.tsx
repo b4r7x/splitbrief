@@ -20,10 +20,10 @@ import type { RunnerConfig } from '../../../core/config/accessors/runner-config.
 import type { Config } from '../../../core/schemas/config.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
-import { buildPromptCallbacks } from '../prompt-callbacks.js';
-import { requestSteer, resumeParkedRun } from '../handlers.js';
+import { buildPromptCallbacks } from '../run-loop/prompt-callbacks.js';
+import { requestSteer, resumeParkedRun } from '../run-requests/handlers.js';
 import { Header } from './header.js';
-import { Sidebar } from './sidebar.js';
+import { Sidebar } from './sidebar/panel.js';
 
 type Overrides = NonNullable<Parameters<typeof makeConfig>[0]>;
 /** A crew; `reviewer: null` is a crew whose planner holds the review seat. */

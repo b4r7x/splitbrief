@@ -12,10 +12,12 @@ import { configStore } from '../../../src/stores/project/config.js';
 import {
   commitCustomCommand,
   commitCustomModel,
+  removeCustomModel,
+} from '../../../src/features/runners/config-transforms/custom-model.js';
+import {
   commitImplementerSelection,
   commitPlannerTierSelection,
-  removeCustomModel,
-} from '../../../src/features/runners/config-transforms.js';
+} from '../../../src/features/runners/config-transforms/seat-selection.js';
 import { optionalSectionsYaml, writeConfigYaml } from '#testing/helpers/config-io.js';
 import { realPickerOption, realPickerOptions } from '#testing/helpers/runner-picker.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

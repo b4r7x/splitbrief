@@ -31,13 +31,13 @@ import {
   type RunnerPermissionPosture,
 } from './posture.js';
 import {
-  deriveApiStatus,
   deriveCliStatus,
   isSelectable,
   resolveCliVersion,
   type PickerDetectionSnapshot,
   type PickerOptionStatus,
 } from './status.js';
+import { deriveApiStatus } from './api-status.js';
 
 export type RunnerPickerDescriptor =
   | Readonly<{ kind: 'cli'; descriptor: CliToolDescriptor }>

@@ -11,7 +11,7 @@ import type { Config } from '../core/schemas/config.js';
 import { saveSummary } from '../core/sessions/io.js';
 import { createInitialState } from '../core/state/machine.js';
 import { saveState } from '../core/state/persistence.js';
-import { recordRunTerms } from '../features/workflow/resume-policy.js';
+import { recordRunTerms } from '../features/workflow/resume/policy.js';
 import { configStore } from '../stores/project/config.js';
 import { prepareSessionResume } from './prepare-resume.js';
 

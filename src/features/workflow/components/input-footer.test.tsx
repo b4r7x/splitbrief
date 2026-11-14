@@ -4,7 +4,7 @@ import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
-import { openRunBylineParts } from '../closed/byline.js';
+import { openRunBylineParts } from '../closed/open-byline.js';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
@@ -30,7 +30,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { BRAILLE_SPINNER_FRAMES, glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
-import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';
+import { clearAllHandlers, requestSeatChangeAtBoundary } from '../run-requests/handlers.js';
 import { trackProbe } from '../../../engine/probe-activity.js';
 import { InputFooter } from './input-footer.js';
 

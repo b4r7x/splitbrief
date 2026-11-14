@@ -23,12 +23,9 @@ import {
 } from '../../../engine/orchestrator/recovery/builders/task.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import {
-  getRecoveryPromptActions,
-  recoveryActionKey,
-  recoveryMenuParts,
-  recoveryPromptSummaryRows,
-} from '../recovery-prompt.js';
+import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
+import { recoveryMenuParts } from '../recovery/menu-label.js';
+import { getRecoveryPromptActions, recoveryActionKey } from '../recovery/actions.js';
 
 afterEach(() => {
   composerLiveStore.reset();

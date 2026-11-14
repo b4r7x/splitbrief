@@ -6,7 +6,7 @@ import { sessionsRoot } from '../../../src/core/paths.js';
 import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
 import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { briefRowParts } from '../../../src/features/workflow/closed/copy.js';
+import { briefRowParts } from '../../../src/features/workflow/closed/copy/stage-facts.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';

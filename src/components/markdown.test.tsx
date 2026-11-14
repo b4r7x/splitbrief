@@ -6,7 +6,10 @@ import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text/width.js';
-import { renderMarkdownRows, type RenderMarkdownRowsOptions } from './markdown.js';
+import {
+  renderMarkdownRows,
+  type RenderMarkdownRowsOptions,
+} from '../features/workflow/components/markdown.js';
 import { defaultTheme, ThemeText as Text } from './theme.js';
 
 // ink-testing-library's stdout mock resolves chalk color level 0 unless FORCE_COLOR is set before

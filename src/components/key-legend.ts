@@ -21,3 +21,27 @@ export function fitKeyLegend(legend: string, width: number): string {
   }
   return fitted;
 }
+
+export interface KeyHint {
+  key: string;
+  verb: string;
+}
+
+// One legend grammar everywhere: `<key> <lowercase verb>` tokens joined by the soft separator.
+// A legend carries every live key the panel does not already spell out as an option row, and
+// nothing else — so a key never appears twice and none is ever left undisclosed.
+export function formatKeyHints(hints: ReadonlyArray<KeyHint>): string {
+  return hints.map((hint) => `${hint.key} ${hint.verb}`).join(SOFT_SEP);
+}
+
+// Escape does not dismiss a gate, it answers it: every panel resolves an escape as a denial. The
+// legend says `deny` so it matches both the `Deny` option beside it and what the engine records.
+export const DENY_HINT: KeyHint = { key: 'esc', verb: 'deny' };
+export const CONFIRM_HINT: KeyHint = { key: '⏎', verb: 'confirm' };
+
+// One selection grammar for both gate panels: the rows move under `↑↓` and settle on `⏎`. A panel
+// that holds the keyboard keeps its letters live as accelerators; the plan card, and a gate that
+// opens over a draft, leave the keyboard to the composer, where a letter is text, so their rows
+// carry none. Only one gate panel is ever on screen, so this legend is the single place either of
+// them teaches the keys.
+export const SELECT_HINT: KeyHint = { key: '↑↓', verb: 'select' };

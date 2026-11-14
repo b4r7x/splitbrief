@@ -15,7 +15,7 @@ import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { fitFeedbackMessage } from '../../../components/composer/feedback-fit.js';
 import { hintStateSeverity, resolveInputHint } from '../input-hints.js';
 import { questionPromptStore } from '../../../stores/prompts/question.js';
-import { useStopByline } from '../stop/use-stop-byline.js';
+import { useStopByline } from '../stop/use-byline.js';
 
 // The keys a run answers to while it is working. `esc` opens the stop sheet rather than stopping,
 // so the word on the row is the sheet, not the stop.

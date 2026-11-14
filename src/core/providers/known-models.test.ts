@@ -22,7 +22,7 @@ import {
 import type { RunnerRole } from '../runners/seat-roles.js';
 import { ImplementerConfigSchema } from '../schemas/runner/implementer.js';
 import { PlannerConfigSchema } from '../schemas/runner/planner.js';
-import { resolveAndSort } from '../../features/runners/model-catalog/catalog.js';
+import { resolveAndSort } from '../../features/runners/model-catalog/runtime-dedupe.js';
 
 const RUNNER_ROLES = ['planner', 'implementer'] as const satisfies readonly RunnerRole[];
 

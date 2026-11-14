@@ -20,7 +20,7 @@ import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { cancelEscapeAction } from '../../../src/lib/terminal/escape-debounce.js';
-import * as handlers from '../../../src/features/workflow/handlers.js';
+import * as handlers from '../../../src/features/workflow/run-requests/handlers.js';
 import { installDiagnosticSink } from '../../../src/lib/warn.js';
 
 // End-to-end regression guards. ESC and Ctrl+C bytes travel through the production

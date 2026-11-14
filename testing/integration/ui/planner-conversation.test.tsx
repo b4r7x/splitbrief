@@ -15,7 +15,7 @@ import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
-import { clearAllHandlers } from '../../../src/features/workflow/handlers.js';
+import { clearAllHandlers } from '../../../src/features/workflow/run-requests/handlers.js';
 import { cancelEscapeAction } from '../../../src/lib/terminal/escape-debounce.js';
 import type { ClarificationQuestion } from '../../../src/core/schemas/question.js';
 import type { PlannerConversation } from '../../../src/core/schemas/workflow/state.js';

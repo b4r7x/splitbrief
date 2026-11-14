@@ -18,7 +18,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
+import { activityBatchKey } from '../conversation-rows/activity/batch-key.js';
 import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
 import { useWorkflowKeys } from './use-keys.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -28,7 +28,7 @@ import {
   REVIEW_FRAME_ROWS,
 } from '../layout/rect.js';
 import { handleWorkflowMouseWheel } from './use-mouse-scroll.js';
-import { ReviewView } from '../components/review-view.js';
+import { ReviewView } from '../components/review/view.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';

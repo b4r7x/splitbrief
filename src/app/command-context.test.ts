@@ -36,13 +36,13 @@ import {
   clearAllHandlers,
   requestClearQueue,
   setResumeHandler,
-} from '../features/workflow/handlers.js';
+} from '../features/workflow/run-requests/handlers.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
 import { workflowCommands } from '../core/runtime/commands/defs/workflow.js';
-import { activityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
-import { readConversationRowActions } from '../features/workflow/conversation-rows/read-row-actions.js';
+import { activityBatchKey } from '../features/workflow/conversation-rows/activity/batch-key.js';
+import { readConversationRowActions } from '../features/workflow/conversation-rows/row-actions/read.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
-import { buildPromptCallbacks } from '../features/workflow/prompt-callbacks.js';
+import { buildPromptCallbacks } from '../features/workflow/run-loop/prompt-callbacks.js';
 import { plainAnswer, type QuestionAnswer } from '../features/workflow/hooks/use-input-mode.js';
 import { configStore } from '../stores/project/config.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';

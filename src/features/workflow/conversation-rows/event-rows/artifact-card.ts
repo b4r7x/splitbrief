@@ -6,9 +6,9 @@ import {
   truncateTerminalDisplayTextMiddle,
 } from '../../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
-import { wrapWidthFor } from '../row-markers.js';
+import { wrapWidthFor } from '../row-format/markers.js';
 import { segmentedRow } from '../row-format/rows.js';
-import { sourceFooterSegments } from '../row-format/preformatted-block.js';
+import { sourceFooterSegments } from '../row-format/source-footer.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from '../types.js';
 
 const BODY_PREFIX = '  ';

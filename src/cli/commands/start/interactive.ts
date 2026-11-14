@@ -10,11 +10,9 @@ import {
   releasePreparedExecutionOwnership,
   type PreparationOutcome,
 } from '../../../engine/runners/prepared-execution.js';
-import {
-  assertNoLiveSessionForCli,
-  preparedExecutionOrThrow,
-  prepareStartOutcome,
-} from './readiness.js';
+import { assertNoLiveSessionForCli } from '../../sessions/resolve.js';
+import { prepareStartOutcome } from './prepare.js';
+import { preparedExecutionOrThrow } from '../../preparation.js';
 import type { InteractiveDispatchArgs } from './types.js';
 import { configStore } from '../../../stores/project/config.js';
 

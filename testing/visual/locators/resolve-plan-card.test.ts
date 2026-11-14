@@ -4,7 +4,7 @@ import { listRowLead } from '../../../src/components/list-row/lead.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
-} from '../../../src/features/workflow/prompt-rows/approval.js';
+} from '../../../src/features/workflow/prompt-rows/review-document.js';
 import { createCropCellGrid } from '../artifacts/crop.js';
 import { findVisualScenario } from '../catalog.js';
 import { viewport } from '../contracts/geometry.js';

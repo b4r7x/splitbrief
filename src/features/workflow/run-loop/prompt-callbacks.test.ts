@@ -1,0 +1,455 @@
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { renderInputMode } from '#testing/helpers/input-mode.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
+import { questionPromptStore } from '../../../stores/prompts/question.js';
+import { buildPromptCallbacks } from './prompt-callbacks.js';
+import { clearAllHandlers, requestSteer } from '../run-requests/handlers.js';
+import type { PlannerConversation } from '../../../core/schemas/workflow/state.js';
+import {
+  plainAnswer,
+  type QuestionAnswer,
+  type UseInputModeResult,
+} from '../hooks/use-input-mode.js';
+import { createDraftDocument } from '../../../core/composer/document.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
+import { seedBriefs } from '#testing/helpers/stores.js';
+import { reviewStore } from '../../../stores/workflow/review.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
+
+function makeInputMode(answers: string | string[]): UseInputModeResult {
+  const queue = Array.isArray(answers) ? [...answers] : [answers];
+  return {
+    mode: 'normal',
+    hint: '',
+    questionEpoch: 0,
+    setReviewMode: async () => ({ approved: false }),
+    setQuestionMode: async () => plainAnswer(queue.shift() ?? ''),
+    resolve: () => {},
+    resetMode: () => {},
+  };
+}
+
+function makeCallbacks(answers: string | string[]) {
+  return makeCallbacksWithInputMode(makeInputMode(answers));
+}
+
+function makeCallbacksWithInputMode(inputMode: UseInputModeResult) {
+  return buildPromptCallbacks({
+    inputMode,
+    abortedRef: { current: false },
+    controller: new AbortController(),
+  });
+}
+
+describe('buildPromptCallbacks onApprovalNeeded', () => {
+  afterEach(() => {
+    reviewStore.reset();
+  });
+
+  it.each(['plan', 'artifact'] as const)(
+    'uses the generic review hint for %s approvals',
+    async (type) => {
+      const setReviewMode = vi
+        .fn<UseInputModeResult['setReviewMode']>()
+        .mockResolvedValue({ approved: false });
+      const callbacks = makeCallbacksWithInputMode({
+        ...makeInputMode(''),
+        setReviewMode,
+      });
+
+      await callbacks.onApprovalNeeded(type, '/tmp/review.md', []);
+
+      expect(setReviewMode).toHaveBeenCalledWith('');
+    },
+  );
+
+  it('lists what the engine says approving the plan card confirms, not what a file says', async () => {
+    const setReviewMode = vi
+      .fn<UseInputModeResult['setReviewMode']>()
+      .mockImplementation(async () => {
+        expect(reviewStore.get().confirms).toEqual(['write package.json']);
+        return { approved: true };
+      });
+    const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setReviewMode });
+
+    await callbacks.onApprovalNeeded('plan', '/nonexistent/plan.md', ['write package.json']);
+
+    expect(setReviewMode).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the confirms on a revised plan card and clears them for an artifact review', async () => {
+    const seen: (readonly string[])[] = [];
+    const setReviewMode = vi
+      .fn<UseInputModeResult['setReviewMode']>()
+      .mockImplementation(async () => {
+        seen.push(reviewStore.get().confirms);
+        return { approved: false, action: 'revise', message: plainUserMessage('split T002') };
+      });
+    const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setReviewMode });
+
+    await callbacks.onApprovalNeeded('plan', '/nonexistent/plan.md', ['write package.json']);
+    await callbacks.onApprovalNeeded('plan', '/nonexistent/plan.md', [
+      'write package.json',
+      'write package-lock.json',
+    ]);
+    await callbacks.onApprovalNeeded('artifact', { label: 'Artifact', text: 'text' }, []);
+
+    expect(seen).toEqual([
+      ['write package.json'],
+      ['write package.json', 'write package-lock.json'],
+      [],
+    ]);
+    expect(reviewStore.get().confirms).toEqual([]);
+  });
+
+  it('uses the frozen artifact text without retaining its display label as a path', async () => {
+    const review = Object.freeze({
+      label: 'Custom planner artifact',
+      text: 'finalized artifact text',
+    });
+    const setReviewMode = vi
+      .fn<UseInputModeResult['setReviewMode']>()
+      .mockImplementation(async (hint) => {
+        expect(hint).toBe('');
+        expect(reviewStore.get()).toMatchObject({
+          source: { kind: 'artifact', text: review.text },
+          filePath: null,
+        });
+        return { approved: true };
+      });
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode(''),
+      setReviewMode,
+    });
+
+    await expect(callbacks.onApprovalNeeded('artifact', review, [])).resolves.toEqual({
+      approved: true,
+    });
+
+    expect(setReviewMode).toHaveBeenCalledWith('');
+    expect(reviewStore.get().source).toBeNull();
+  });
+});
+
+describe('buildPromptCallbacks onContinuationNeeded', () => {
+  beforeEach(() => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    stopStore.__testReset();
+    seedBriefs({
+      tasks: [{ id: 'T002', title: 'slice', status: 'in_progress' }],
+      currentTask: 1,
+      totalTasks: 1,
+    });
+  });
+
+  afterEach(() => {
+    stopStore.__testReset();
+    seedBriefs();
+  });
+
+  it('returns an empty answer without asking when the workflow is already unwinding', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>();
+    const callbacks = buildPromptCallbacks({
+      inputMode: { ...makeInputMode(''), setQuestionMode },
+      abortedRef: { current: false },
+      controller,
+    });
+
+    const result = await callbacks.onContinuationNeeded?.('partial output', 'mid-step', []);
+
+    expect(result).toEqual(plainUserMessage(''));
+    expect(setQuestionMode).not.toHaveBeenCalled();
+    expect(stopStore.get().phase).toBe('idle');
+  });
+
+  it('parks the brief instead of asking a question', async () => {
+    const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>();
+    const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setQuestionMode });
+
+    const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step', ['src/kept.ts']);
+    await Promise.resolve();
+
+    expect(setQuestionMode).not.toHaveBeenCalled();
+    expect(lifecycleStore.get().status).toBe('paused');
+    expect(stopStore.get()).toMatchObject({
+      phase: 'parked',
+      parked: { kind: 'mid-brief', taskId: 'T002', kept: ['src/kept.ts'] },
+    });
+
+    stopStore.resume(plainUserMessage('focus on retries'));
+
+    await expect(pending).resolves.toEqual(plainUserMessage('focus on retries'));
+  });
+
+  it('resumes with an empty steer when /resume settles the park', async () => {
+    const callbacks = makeCallbacksWithInputMode(makeInputMode(''));
+
+    const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step', []);
+    await Promise.resolve();
+    stopStore.resume(plainUserMessage(''));
+
+    await expect(pending).resolves.toEqual(plainUserMessage(''));
+  });
+
+  it('parks a boundary pause on the brief it stopped after', async () => {
+    seedBriefs({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'done' },
+        { id: 'T002', title: 'second', status: 'pending' },
+      ],
+      totalTasks: 2,
+    });
+    const callbacks = makeCallbacksWithInputMode(makeInputMode(''));
+
+    const pending = callbacks.onContinuationNeeded?.('', 'boundary', []);
+    await Promise.resolve();
+
+    expect(stopStore.get()).toMatchObject({
+      phase: 'parked',
+      parked: { kind: 'boundary', taskId: 'T001', kept: [] },
+    });
+
+    stopStore.resume(plainUserMessage(''));
+    await expect(pending).resolves.toEqual(plainUserMessage(''));
+  });
+});
+
+describe('buildPromptCallbacks onPlannerReply', () => {
+  const reply = {
+    call: 'research' as const,
+    text: 'Which module?',
+    questions: [],
+    answers: [],
+    answered: false,
+  };
+
+  it('asks for a reply to the planner when the round has no questions', async () => {
+    const hints: string[] = [];
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode('the cache'),
+      setQuestionMode: async (hint) => {
+        hints.push(hint);
+        return plainAnswer('the cache');
+      },
+    });
+    await callbacks.onPlannerReply?.(reply);
+    expect(hints).toEqual(['Reply to the planner…']);
+  });
+
+  it('hands an empty submit on as an empty reply, not as no reply', async () => {
+    await expect(makeCallbacks('   ').onPlannerReply?.(reply)).resolves.toEqual(
+      plainUserMessage('   '),
+    );
+  });
+
+  it('opens a free-text question with a default on its rows with an empty field, live or asked again on a continued run', async () => {
+    let settle: (answer: QuestionAnswer) => void = () => {};
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode(''),
+      setQuestionMode: () =>
+        new Promise<QuestionAnswer>((resolve) => {
+          settle = resolve;
+        }),
+    });
+    const pending = callbacks.onPlannerReply?.({
+      ...reply,
+      call: 'plan',
+      questions: [{ id: 'case', type: 'input', text: 'Which words?', default: 'a, an' }],
+    });
+    expect(questionPromptStore.get().focus).toBe('menu');
+    expect(questionPromptStore.get().drafts).toEqual([{ text: '', selected: 0 }]);
+    settle(plainAnswer(''));
+    await pending;
+  });
+
+  it('hands the composer reply on as the answer once Esc closed a question asked again on a continued run', async () => {
+    let settle: (answer: QuestionAnswer) => void = () => {};
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode(''),
+      setQuestionMode: () =>
+        new Promise<QuestionAnswer>((resolve) => {
+          settle = resolve;
+        }),
+    });
+    const pending = callbacks.onPlannerReply?.({
+      ...reply,
+      call: 'plan',
+      questions: [
+        { id: 'seat', type: 'choice', text: 'Which seat?', options: ['Planner', 'Builder'] },
+        { id: 'case', type: 'input', text: 'Which words?', default: 'a, an' },
+      ],
+    });
+    questionPromptStore.answer(plainUserMessage('Planner'));
+    questionPromptStore.close();
+    expect(questionPromptStore.get().questions).toEqual([]);
+    settle(plainAnswer('Use the planner seat and no small words'));
+    await expect(pending).resolves.toEqual(
+      plainUserMessage('Use the planner seat and no small words'),
+    );
+  });
+
+  it('returns no reply when the workflow is already unwinding', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const callbacks = buildPromptCallbacks({
+      inputMode: makeInputMode(''),
+      abortedRef: { current: false },
+      controller,
+    });
+
+    await expect(callbacks.onPlannerReply?.(reply)).resolves.toBeUndefined();
+  });
+});
+
+describe('buildPromptCallbacks onPlannerReply, a steer over the question', () => {
+  const STEER = plainUserMessage('also fix the typo');
+
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    lifecycleStore.__testReset({ status: 'running' });
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+    lifecycleStore.__testReset();
+    questionPromptStore.reset();
+    controlsStore.reset();
+  });
+
+  // The question that the planner asks, through the input mode that the screen renders.
+  async function ask(questions: PlannerConversation['questions']) {
+    const { inputMode, mode, unmount } = await renderInputMode();
+    onTestFinished(unmount);
+    const pending = makeCallbacksWithInputMode(inputMode).onPlannerReply?.({
+      call: 'plan',
+      text: '',
+      questions,
+      answers: [],
+      answered: false,
+    });
+    await vi.waitFor(() => expect(mode()).toBe('question'));
+    return { inputMode, pending };
+  }
+
+  it('takes a steer as the answer while the question waits, and no steer once it is answered', async () => {
+    const { pending } = await ask([{ id: 'numbers', type: 'input', text: 'Which numbers?' }]);
+
+    expect(requestSteer(STEER)).toBeUndefined();
+
+    await expect(pending).resolves.toEqual(STEER);
+    expect(requestSteer(STEER)).toBe('Nothing to steer.');
+  });
+
+  it('takes a steer as the reply to a planner that asked in plain text', async () => {
+    const { pending } = await ask([]);
+
+    expect(requestSteer(STEER)).toBeUndefined();
+
+    await expect(pending).resolves.toEqual(STEER);
+  });
+
+  it('takes no steer once the wait ended with no answer', async () => {
+    const { inputMode, pending } = await ask([
+      { id: 'numbers', type: 'input', text: 'Which numbers?' },
+    ]);
+
+    inputMode.resetMode();
+    await expect(pending).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+
+    expect(requestSteer(STEER)).toBe('Nothing to steer.');
+  });
+
+  it('clears an interrupt before the steer answers, as an answer from the composer does', async () => {
+    const { pending } = await ask([{ id: 'numbers', type: 'input', text: 'Which numbers?' }]);
+    const statusAtAnswer: string[] = [];
+    const stopWatching = controlsStore.subscribe(() => {
+      if (controlsStore.get().inputMode === 'normal') {
+        statusAtAnswer.push(lifecycleStore.get().status);
+      }
+    });
+    onTestFinished(stopWatching);
+    lifecycleStore.__testReset({ status: 'interrupted' });
+
+    requestSteer(STEER);
+
+    expect(statusAtAnswer).toEqual(['running']);
+    await expect(pending).resolves.toEqual(STEER);
+  });
+});
+
+it('forwards message-valued planner replies with attached bodies and metadata', async () => {
+  const original: UserMessageInput = {
+    text: '@/outside/a.txt\n\n--- @/outside/a.txt ---\nbody',
+    displayText: '@/outside/a.txt',
+    images: [],
+    attachedInputs: [{ kind: 'text', path: '/outside/a.txt' }],
+  };
+  const callbacks = makeCallbacksWithInputMode({
+    ...makeInputMode(''),
+    setQuestionMode: async () => ({
+      message: original,
+      document: createDraftDocument(original.displayText),
+    }),
+  });
+  await expect(
+    callbacks.onPlannerReply?.({
+      call: 'research',
+      text: '',
+      questions: [],
+      answers: [],
+      answered: false,
+    }),
+  ).resolves.toBe(original);
+});
+
+it('consumes the completed structured batch once without flattening attachment text', async () => {
+  const original: UserMessageInput = {
+    text: '@/outside/a.txt\n\n--- @/outside/a.txt ---\nbody',
+    displayText: '@/outside/a.txt',
+    images: [],
+    attachedInputs: [{ kind: 'text', path: '/outside/a.txt' }],
+  };
+  const answer = Promise.withResolvers<QuestionAnswer>();
+  const callbacks = makeCallbacksWithInputMode({
+    ...makeInputMode(''),
+    setQuestionMode: () => answer.promise,
+  });
+  const pending = callbacks.onPlannerReply?.({
+    call: 'research',
+    text: '',
+    questions: [{ id: 'q1', type: 'input', text: 'Which files?' }],
+    answers: [],
+    answered: false,
+  });
+  const batch = questionPromptStore.answer(original);
+  if (batch === undefined) throw new Error('expected completed batch');
+  questionPromptStore.clearHint();
+  answer.resolve({
+    message: batch.message,
+    document: createDraftDocument(batch.message.displayText),
+  });
+  await expect(pending).resolves.toEqual(batch);
+  expect(questionPromptStore.takeAnswerBatch()).toBeUndefined();
+});
+
+it('keeps the full parked continuation payload', async () => {
+  stopStore.reset();
+  const original: UserMessageInput = {
+    text: '@/outside/a.txt\n\n--- @/outside/a.txt ---\nbody',
+    displayText: '@/outside/a.txt',
+    images: [],
+    attachedInputs: [{ kind: 'text', path: '/outside/a.txt' }],
+  };
+  const pending = makeCallbacks('').onContinuationNeeded?.('', 'mid-step', []);
+  stopStore.resume(original);
+  await expect(pending).resolves.toBe(original);
+  stopStore.reset();
+});

@@ -17,7 +17,7 @@ import {
 } from '../../../src/core/runtime/commands/messages.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { stopByline } from '../../../src/features/workflow/stop/copy.js';
-import { openRunBylineParts } from '../../../src/features/workflow/closed/byline.js';
+import { openRunBylineParts } from '../../../src/features/workflow/closed/open-byline.js';
 import { outcomeLineSpans } from '../../../src/features/workflow/closed/outcome.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { getSections } from '../../../src/stores/workflow/actions/sections.js';

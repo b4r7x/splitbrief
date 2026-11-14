@@ -5,7 +5,7 @@ import type { EngineEventOf } from '../../../../engine/events/types.js';
 import { ELLIPSIS } from '../../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { rowText } from '../row-format/rows.js';
-import { wrapWidthFor } from '../row-markers.js';
+import { wrapWidthFor } from '../row-format/markers.js';
 import { fullSuiteRowBlock, implementerDoneRowBlock } from './execution.js';
 
 const LONG_CHECK_COMMAND =

@@ -5,7 +5,7 @@ import { getHeaderLayout } from '../components/header.js';
 import { recordedCrewSeatLines } from '../display/header-seat-lines.js';
 import { selectRailFormAndLine, type RailForm } from '../layout/chrome-rows.js';
 import type { RunRecord } from '../../../core/sessions/run/record.js';
-import { crewLine } from './copy.js';
+import { crewLine } from './copy/crew-line.js';
 import { recordedCrew, type RecordedCrew } from './view-model.js';
 
 export interface RecordedCrewHeader {

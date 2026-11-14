@@ -7,7 +7,7 @@ import { createRunnerCallRecorder } from '../../../src/engine/calls/recorder.js'
 import { claudeCodeImplementerAdapter } from '../../../src/engine/runners/cli-tools/claude-code.js';
 import { recordCliProtocolEvent } from '../../../src/engine/runners/cli-tools/process-invoke.js';
 import { createCliTextForwarder } from '../../../src/engine/runners/invoke-cli-adapter.js';
-import { deriveBuildProgress } from '../../../src/features/workflow/display/build-progress.js';
+import { deriveBuildProgress } from '../../../src/features/workflow/display/build-progress/derive.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
 import { operationsStore } from '../../../src/stores/workflow/operations/state.js';

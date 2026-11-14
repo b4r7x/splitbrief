@@ -5,12 +5,15 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
-import { parseReviewCommand, reviewDraftTarget } from '../../features/workflow/review-commands.js';
-import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
+import {
+  parseReviewCommand,
+  reviewDraftTarget,
+} from '../../features/workflow/review-gate/commands.js';
+import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt/prompt.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
-} from '../../features/workflow/prompt-rows/approval.js';
+} from '../../features/workflow/prompt-rows/review-document.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { Composer } from './view.js';

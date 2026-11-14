@@ -1,10 +1,10 @@
 import type { Command } from 'commander';
-import { addWorkflowOptions } from '../../options.js';
+import { addWorkflowOptions } from '../../options/workflow.js';
 import { canonicalizeProjectDir } from '../../setup.js';
 import { initStores } from '../../bootstrap/init.js';
-import { runHeadless } from '../../headless.js';
+import { runHeadless } from '../../headless/run.js';
 import { renderApp } from '../../render/app.js';
-import { formatAtFileRefusal, parseAtFiles } from '../../parse-at-files.js';
+import { formatAtFileRefusal, parseAtFiles } from './at-files.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { cliError } from '../../errors.js';
 import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';

@@ -20,7 +20,7 @@ import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrat
 import { processError } from '../../../src/lib/process/errors.js';
 import type { Implementer } from '../../../src/engine/implementers/types.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
-import { runHeadless } from '../../../src/cli/headless.js';
+import { runHeadless } from '../../../src/cli/headless/run.js';
 import { typedCallAnswering } from '#testing/helpers/typed-planner.js';
 
 let stderrSpy: ReturnType<typeof vi.spyOn>;

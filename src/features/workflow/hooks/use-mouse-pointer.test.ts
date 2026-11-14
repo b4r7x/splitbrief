@@ -22,7 +22,7 @@ import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { _resetMouseZones, registerMouseZone } from '../../../lib/terminal/mouse-zones.js';
 import { readConversationScrollSnapshot, readRailSnapshot } from '../layout/snapshot.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
-import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
+import { activityBatchKey } from '../conversation-rows/activity/batch-key.js';
 import { rowText, segmentedRow } from '../conversation-rows/row-format/rows.js';
 import { publishTranscriptTail, readTranscriptTail } from '../conversation-rows/transcript-tail.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';

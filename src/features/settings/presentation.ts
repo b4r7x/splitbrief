@@ -52,3 +52,13 @@ export function settingSaveSubject(def: SettingDef, value: unknown, config: Conf
 export function settingChangeWords(subject: string): string {
   return `${subject} applies at the next run or Resume`;
 }
+
+/** Each row advertises the one key it answers to, in the word for what that key does to it. */
+export function hintFor(item: SettingsItem): string {
+  if (item.kind === 'crew') return '⏎ change seat';
+  if (item.kind === 'fallback') return '⏎ change fallback';
+  const kind = item.def.kind;
+  if (kind === 'enum') return 'space cycle';
+  if (kind === 'boolean') return 'space toggle';
+  return '⏎ edit';
+}

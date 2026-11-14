@@ -1,24 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
   bylineDiagnostic,
-  customModelEntryCopy,
+  formatModelsByline,
+  formatToolsByline,
+  modelBylineAxes,
+  wrapOnWords,
+} from './picker/byline.js';
+import { customModelEntryCopy, pickerListingSource } from './picker/listing-source.js';
+import { formatRouteAuth, formatRouteRemedy } from './picker/route-auth.js';
+import {
+  formatCatalogDiagnostic,
+  formatModelCatalogGuidance,
+  type ModelCatalogDiagnostic,
+} from './picker/catalog-guidance.js';
+import {
   CUSTOM_COMMAND_PANE_CELLS,
   CUSTOM_COMMAND_PANE_LINES,
   fallbackInheritanceNotice,
-  formatCatalogDiagnostic,
-  formatModelCatalogGuidance,
-  formatModelsByline,
   formatPermissionLabels,
   formatPickerStatusLabel,
-  formatRouteAuth,
-  formatRouteRemedy,
-  formatToolsByline,
-  modelBylineAxes,
   notReadyPane,
-  pickerListingSource,
-  wrapOnWords,
-  type ModelCatalogDiagnostic,
-} from './picker-format.js';
+} from './picker/labels.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { cliReadinessRemediation } from '../../core/readiness/cli-remediation.js';
@@ -30,7 +32,7 @@ import { overlayWidth } from '../../core/navigation/overlay-rect.js';
 import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import type { ModelOption } from './model-catalog/recency.js';
-import type { RightRow } from './model-catalog/rows.js';
+import type { RightRow } from './model-catalog/types.js';
 import type { PickerOptionStatus } from './model-catalog/status.js';
 
 const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };

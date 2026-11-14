@@ -26,7 +26,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { Header } from './components/header.js';
 import { plainAnswer, type UseInputModeResult } from './hooks/use-input-mode.js';
-import { createRecoveryDriver } from './recovery-driver.js';
+import { createRecoveryDriver } from './recovery/driver.js';
 import { addTuiEvent } from './tui-sink.js';
 
 const CLAUDE = { kind: 'cli', tool: 'claude-code', model: 'claude-3-5-sonnet' } as const;

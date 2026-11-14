@@ -21,7 +21,7 @@ import {
 import { departureStore } from '../../stores/workflow/departure.js';
 import { eventsStore } from '../../stores/workflow/events/state.js';
 import { diffEventKey } from '../../core/sections/events.js';
-import { readLatestDiffKey } from '../../features/workflow/conversation-rows/read-row-actions.js';
+import { readLatestDiffKey } from '../../features/workflow/conversation-rows/row-actions/read.js';
 import { makeDiffReadCounter } from '#testing/helpers/events/implementer.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
@@ -62,8 +62,8 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
-import { hydrateResume } from '../../features/workflow/resume-hydration.js';
-import { requestStopNow } from '../../features/workflow/handlers.js';
+import { hydrateResume } from '../../features/workflow/resume/hydration.js';
+import { requestStopNow } from '../../features/workflow/run-requests/handlers.js';
 import { listRowLead } from '../../components/list-row/lead.js';
 import { glyph } from '../../lib/glyphs.js';
 import { arrowSep } from '../../core/separators.js';
@@ -72,9 +72,9 @@ import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
   REVIEW_TYPED_ROW_HINTS,
-} from '../../features/workflow/prompt-rows/approval.js';
+} from '../../features/workflow/prompt-rows/review-document.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
-import { NO_CORRECTION_MESSAGE } from '../../features/workflow/recovery-prompt.js';
+import { NO_CORRECTION_MESSAGE } from '../../features/workflow/recovery/actions.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };

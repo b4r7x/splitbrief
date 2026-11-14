@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
-import { rowLeadingCells, wrapWidthFor } from '../row-markers.js';
+import { rowLeadingCells, wrapWidthFor } from './markers.js';
 import { prepareCardRows } from './card-block.js';
 
 function rowsOf(input: Parameters<typeof prepareCardRows>[0]) {

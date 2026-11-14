@@ -50,7 +50,7 @@ import { CONFIRM_PHRASE, type TieredApprovalResponse } from '../../core/approval
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { wireAppMouse } from '../mouse.js';
 import { getLogo } from '../../features/home/logo.js';
-import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker-format.js';
+import { formatNeedsSignInSaveFeedback } from '../../features/runners/picker/labels.js';
 import { formatConfigSaveSuccess } from '../../stores/project/save-feedback.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';

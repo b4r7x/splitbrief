@@ -5,7 +5,8 @@ import {
   KNOWN_MODELS,
   PENDING_EVALUATION_CANDIDATE_IDS,
 } from '../../../core/providers/known-models.js';
-import { buildRightModels, countModelOptions, resolveAndSort } from './catalog.js';
+import { buildRightModels, countModelOptions } from './catalog.js';
+import { resolveAndSort } from './runtime-dedupe.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import {

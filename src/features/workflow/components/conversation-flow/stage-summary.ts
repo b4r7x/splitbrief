@@ -1,7 +1,4 @@
-import type {
-  TaskSummaryHeadingPart,
-  TaskSummaryState,
-} from '../../../../components/task-summary.js';
+import type { TaskSummaryHeadingPart, TaskSummaryState } from '../task-summary/spans.js';
 import type { ReviewStage, StageSummary } from '../../../../core/sections/types.js';
 import { formatDuration } from '../../../../utils/format/time.js';
 import { countNoun } from '../../../../utils/pluralize.js';

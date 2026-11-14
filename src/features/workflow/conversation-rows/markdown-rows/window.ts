@@ -1,4 +1,4 @@
-import { firstContentSegmentIndex } from '../../../../components/markdown.js';
+import { firstContentSegmentIndex } from '../../components/markdown-style.js';
 import type { MarkdownLayoutLine, MarkdownLayoutRow } from '../../../../utils/markdown/types.js';
 import type { ConversationRow } from '../types.js';
 import type {

@@ -39,8 +39,8 @@ import {
   type QuestionAnswer,
   type UseInputModeResult,
 } from './hooks/use-input-mode.js';
-import { createRecoveryDriver } from './recovery-driver.js';
-import { clearAllHandlers, requestSteer, setStopHandler } from './handlers.js';
+import { createRecoveryDriver } from './recovery/driver.js';
+import { clearAllHandlers, requestSteer, setStopHandler } from './run-requests/handlers.js';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { join } from 'node:path';

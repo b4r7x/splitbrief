@@ -16,7 +16,7 @@ import {
   activeApply,
   trackActiveApply,
 } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
-import * as handlers from './handlers.js';
+import * as handlers from './run-requests/handlers.js';
 import {
   abortTurn,
   cancelBoundaryPause,
@@ -26,7 +26,6 @@ import {
   createAbortHandlerScope,
   landBoundaryPause,
   requestBoundaryPause,
-  requestEndRun,
   requestQuit,
   requestLeaveSession,
   setStopHandler,
@@ -40,7 +39,8 @@ import {
   setClearQueueHandler,
   setResumeHandler,
   spendSeatChange,
-} from './handlers.js';
+} from './run-requests/handlers.js';
+import { requestEndRun } from './run-requests/end-run.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
@@ -60,7 +60,7 @@ import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { writeSessionDraft } from '../../core/sessions/draft.js';
 import { installDiagnosticSink } from '../../lib/warn.js';
-import { buildPromptCallbacks } from './prompt-callbacks.js';
+import { buildPromptCallbacks } from './run-loop/prompt-callbacks.js';
 import { plainAnswer } from './hooks/use-input-mode.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { reviewStore } from '../../stores/workflow/review.js';

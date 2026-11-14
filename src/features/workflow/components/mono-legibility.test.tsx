@@ -10,7 +10,7 @@ import { rowText } from '../conversation-rows/row-format/rows.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { ApprovalPrompt } from './approval-prompt.js';
+import { ApprovalPrompt } from './approval-prompt/prompt.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../../stores/prompts/approval.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 

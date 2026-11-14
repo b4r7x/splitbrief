@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
-import { addWorkflowOptions } from '../../options.js';
+import { addWorkflowOptions } from '../../options/workflow.js';
 import { configPath } from '../../../core/config/load/document.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { resolveEffectiveConfig } from '../../../core/config/runtime/effective-config.js';

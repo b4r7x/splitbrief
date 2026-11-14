@@ -23,7 +23,7 @@ import {
   requestQuit,
   setCancelHandler,
   setQueueHandler,
-} from '../../../src/features/workflow/handlers.js';
+} from '../../../src/features/workflow/run-requests/handlers.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { plainUserMessage, type UserMessageInput } from '../../../src/core/types/user-input.js';

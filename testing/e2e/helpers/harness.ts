@@ -14,7 +14,7 @@ import { releasePreparedSession } from '../../../src/core/sessions/prepared-roll
 import { loadState } from '../../../src/core/state/persistence.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { continueCommand } from '../../../src/cli/commands/continue/command.js';
-import { parseContinueActionOption } from '../../../src/cli/options.js';
+import { parseContinueActionOption } from '../../../src/cli/options/continue-action.js';
 import { createTestGitRepo } from '../../helpers/git.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '../../helpers/temp-dir.js';

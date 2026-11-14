@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { defaultTheme } from '../../../components/theme.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
-import { runnerActivityBatchWindowRows } from './activity-rows.js';
-import { ACTIVITY_LABEL_PAD } from '../display/activity-label-display.js';
+import { runnerActivityBatchWindowRows } from './activity/rows.js';
+import { ACTIVITY_LABEL_PAD } from './activity/rows.js';
 import {
   activityBatchTone,
   buildActivityBatchViewModel,
   COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT,
-  toneToConversationTone,
-} from './activity-batch-model.js';
+} from './activity/batch-model.js';
+import { toneToConversationTone } from './activity/tone.js';
 
 function activity(
   overrides: Partial<EngineEventOf<'runner_call_activity'>>,

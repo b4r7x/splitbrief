@@ -22,13 +22,12 @@ import { prepareExecution } from '../../../engine/runners/prepare-execution/prep
 import { buildConfigChecks } from '../../../core/readiness/checks/config.js';
 import { buildRepoChecks } from '../../../core/readiness/checks/repo.js';
 import { buildRunnerChecks } from '../../../core/readiness/checks/runner/build.js';
+import { prepareStartExecution } from './prepare.js';
+import { cliPreparationPolicy, preparedExecutionOrThrow } from '../../preparation.js';
 import {
-  cliPreparationPolicy,
   detectConfiguredCliReadiness,
-  preparedExecutionOrThrow,
-  prepareStartExecution,
   readConfiguredCliRoutes,
-} from './readiness.js';
+} from '../../configured-readiness.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 

@@ -21,17 +21,17 @@ import { readConversationScrollSnapshot } from '../../../../src/features/workflo
 import {
   getConversationRowsProjection,
   getConversationRowsWindowProjection,
-} from '../../../../src/features/workflow/conversation-rows/projection-cache.js';
+} from '../../../../src/features/workflow/conversation-rows/cache/projection.js';
 import { rowText } from '../../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import type { ConversationRow } from '../../../../src/features/workflow/conversation-rows/types.js';
-import { displayActivityLabel } from '../../../../src/features/workflow/display/activity-label-display.js';
+import { displayActivityLabel } from '../../../../src/features/workflow/conversation-rows/activity/rows.js';
 import { getSections } from '../../../../src/stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../../../../src/stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import type { CheckpointId, ScenarioId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
-import { NO_CORRECTION_MESSAGE } from '../../../../src/features/workflow/recovery-prompt.js';
-import { requestSteer } from '../../../../src/features/workflow/handlers.js';
+import { NO_CORRECTION_MESSAGE } from '../../../../src/features/workflow/recovery/actions.js';
+import { requestSteer } from '../../../../src/features/workflow/run-requests/handlers.js';
 import { noWordsRefusal } from '../../../../src/core/recovery/typed-words.js';
 import { plainUserMessage } from '../../../../src/core/types/user-input.js';
 import {
@@ -56,7 +56,7 @@ import { routerStore } from '../../../../src/stores/navigation/router.js';
 import { createDraftDocument } from '../../../../src/core/composer/document.js';
 import { listRowLead } from '../../../../src/components/list-row/lead.js';
 import { reviewKeysStore } from '../../../../src/stores/ui/review-keys.js';
-import { REVIEW_COMMENT_HINTS } from '../../../../src/features/workflow/prompt-rows/approval.js';
+import { REVIEW_COMMENT_HINTS } from '../../../../src/features/workflow/prompt-rows/review-document.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
 import { stopStore } from '../../../../src/stores/workflow/stop.js';
 import { departureStore } from '../../../../src/stores/workflow/departure.js';

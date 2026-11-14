@@ -8,7 +8,7 @@ import { eventRows } from '#testing/helpers/event-rows.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { rowText } from './row-format/rows.js';
 import type { ConversationRow } from './types.js';
-import type { SettledTranscriptSection } from './transcript-walk.js';
+import type { SettledTranscriptSection } from './transcript-walk/types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 

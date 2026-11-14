@@ -11,7 +11,7 @@ import {
 import { registerStartCommand } from '../../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../../src/cli/commands/start/types.js';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
-import { runHeadless } from '../../../src/cli/headless.js';
+import { runHeadless } from '../../../src/cli/headless/run.js';
 import { readLockfile, checkSessionLiveness } from '../../../src/core/sessions/lock/file.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { planFromTasks, typedCallAnswering } from '#testing/helpers/typed-planner.js';

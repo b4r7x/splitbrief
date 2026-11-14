@@ -55,19 +55,16 @@ import {
   promptCustomRunnerDisclosure,
 } from '../custom-runner-prompts.js';
 import { cliError, withCliErrors } from '../errors.js';
-import {
-  ALLOW_REPO_RUNNERS_HELP,
-  parseGitRefOption,
-  parseSeatSpecOption,
-  type SeatSpec,
-} from '../options.js';
+import { parseSeatSpecOption, type SeatSpec } from '../options/seat-spec.js';
+import { parseGitRefOption } from '../options/parsers.js';
+import { ALLOW_REPO_RUNNERS_HELP } from '../options/workflow.js';
 import {
   assertGitRepo,
   canonicalizeProjectDir,
   ensureHeadlessConfig,
   loadConfigOrExit,
 } from '../setup.js';
-import { cliPreparationPolicy, preparedExecutionOrThrow } from './start/readiness.js';
+import { cliPreparationPolicy, preparedExecutionOrThrow } from '../preparation.js';
 
 const NO_SPECIFICATION =
   'none — review for correctness, scope creep, and test coverage of the diff';

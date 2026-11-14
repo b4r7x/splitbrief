@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { promptTextBlock, wrappedTextBlock, wrappedSegmentsBlock } from './row-block-compose.js';
+import { wrappedSegmentsBlock } from './blocks/compose.js';
+import { promptTextBlock, wrappedTextBlock } from './blocks/wrapped-text.js';
 import { rowText } from './row-format/rows.js';
-import { rowLeadingCells } from './row-markers.js';
+import { rowLeadingCells } from './row-format/markers.js';
 
 function textBlock(input: Parameters<typeof wrappedTextBlock>[0]) {
   const block = wrappedTextBlock(input);

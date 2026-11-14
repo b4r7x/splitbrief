@@ -2,8 +2,8 @@ import type { AnsweredQuestion, ClarificationQuestion } from '../../../../core/s
 import { questionLine } from '../../../../core/state/planning-conversation.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { countNoun } from '../../../../utils/pluralize.js';
-import { rowsBlock } from '../row-block-compose.js';
-import { wrapWidthFor } from '../row-markers.js';
+import { rowsBlock } from '../blocks/compose.js';
+import { wrapWidthFor } from '../row-format/markers.js';
 import { row, segmentedRow } from '../row-format/rows.js';
 import { wrappedPrefixedRowTexts, wrappedRowTexts } from '../row-format/text.js';
 import type {

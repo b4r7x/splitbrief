@@ -17,10 +17,11 @@ import {
   type RunnerPermissionPosture,
 } from '../../src/features/runners/model-catalog/posture.js';
 import { isAutomaticModel } from '../../src/core/providers/automatic-model.js';
-import { buildRightRows, type RightRow } from '../../src/features/runners/model-catalog/rows.js';
+import { buildRightRows } from '../../src/features/runners/model-catalog/rows.js';
+import type { RightRow } from '../../src/features/runners/model-catalog/types.js';
 import type { ModelOption } from '../../src/features/runners/model-catalog/recency.js';
-import type { PickerActions } from '../../src/features/runners/use-picker-actions.js';
-import type { PickerCatalog } from '../../src/features/runners/use-picker-catalog.js';
+import type { PickerActions } from '../../src/features/runners/picker/use-actions.js';
+import type { PickerCatalog } from '../../src/features/runners/picker/use-catalog.js';
 
 /** A tool with nothing to warn about: the baseline a permission test varies from. */
 export const readyPermissions: RunnerPermissionPosture = {

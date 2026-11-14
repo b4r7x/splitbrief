@@ -11,9 +11,9 @@ import { configStore } from '../../../stores/project/config.js';
 import {
   commitCustomCommand,
   commitCustomModel,
-  commitImplementerSelection,
   removeCustomModel,
-} from '../../../features/runners/config-transforms.js';
+} from '../../../features/runners/config-transforms/custom-model.js';
+import { commitImplementerSelection } from '../../../features/runners/config-transforms/seat-selection.js';
 import {
   optionalSectionsYaml,
   writeConfigYaml,

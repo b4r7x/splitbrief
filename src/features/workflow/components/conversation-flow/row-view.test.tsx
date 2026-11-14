@@ -10,7 +10,7 @@ import { resolveTheme } from '../../../../core/theme/resolve.js';
 import { ConversationRowView } from './row-view.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { taskId } from '../../../../core/schemas/task.js';
-import { rowLeading } from '../../conversation-rows/row-markers.js';
+import { rowLeading } from '../../conversation-rows/row-format/markers.js';
 
 // Ink resolves chalk color level 0 against the capture stdout unless FORCE_COLOR is set before
 // ink (and its chalk dependency) first load, so the background assertion below would silently

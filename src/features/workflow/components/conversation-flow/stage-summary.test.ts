@@ -1,6 +1,6 @@
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { createElement } from 'react';
-import { TaskSummary } from '../../../../components/task-summary.js';
+import { TaskSummary } from '../task-summary/view.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { StageSummary } from '../../../../core/sections/types.js';

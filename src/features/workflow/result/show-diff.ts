@@ -2,8 +2,8 @@ import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { writeRunPatch } from '../../../engine/orchestrator/apply/patch.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { labelError } from '../../../utils/format/errors.js';
-import { editorDisplayLabel, resolveViewerArgv } from '../editor-command.js';
-import { runEditor, spawnEditorProcess, type SpawnEditor } from '../review-parser.js';
+import { editorDisplayLabel, resolveViewerArgv } from '../external-editor/command.js';
+import { runEditor, spawnEditorProcess, type SpawnEditor } from '../external-editor/spawn.js';
 
 export async function showRunDiff(
   record: RunRecord,

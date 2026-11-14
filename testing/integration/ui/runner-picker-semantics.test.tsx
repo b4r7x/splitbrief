@@ -46,10 +46,10 @@ import {
 } from '../../../src/features/runners/model-catalog/options.js';
 import { deriveModelCatalogCapability } from '../../../src/features/runners/model-catalog/posture.js';
 import type { ModelOption } from '../../../src/features/runners/model-catalog/recency.js';
-import { formatPickerStatusLabel } from '../../../src/features/runners/picker-format.js';
-import { PickerView } from '../../../src/features/runners/picker-view.js';
-import type { PickerActions } from '../../../src/features/runners/use-picker-actions.js';
-import type { PickerCatalog } from '../../../src/features/runners/use-picker-catalog.js';
+import { formatPickerStatusLabel } from '../../../src/features/runners/picker/labels.js';
+import { PickerView } from '../../../src/features/runners/picker/view.js';
+import type { PickerActions } from '../../../src/features/runners/picker/use-actions.js';
+import type { PickerCatalog } from '../../../src/features/runners/picker/use-catalog.js';
 import { ToolModelPicker } from '../../../src/app/overlays/runners.js';
 import { SettingsOverlay } from '../../../src/app/overlays/settings.js';
 

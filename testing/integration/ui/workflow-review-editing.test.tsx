@@ -10,7 +10,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ApprovalReviewResult } from '../../../src/core/approval/types.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
-import { REVIEW_DOCUMENT_HINTS } from '../../../src/features/workflow/prompt-rows/approval.js';
+import { REVIEW_DOCUMENT_HINTS } from '../../../src/features/workflow/prompt-rows/review-document.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { App } from '../../../src/app/root.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';

@@ -12,14 +12,14 @@ import {
 import { MultilineInput } from '../../../components/input/multiline-input.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { listRowLead } from '../../../components/list-row/lead.js';
-import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
+import { formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { fitKeyLegend } from '../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { clamp } from '../../../utils/math.js';
-import { stopMenuChrome } from '../stop/options.js';
+import { stopMenuChrome } from '../inline-menu/layout.js';
 
 export function PlannerQuestion({
   width,

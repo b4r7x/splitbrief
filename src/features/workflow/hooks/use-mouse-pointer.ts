@@ -6,7 +6,7 @@ import { completionStore } from '../../../stores/ui/completion.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
-import { PROMPT_ZONE_Z } from '../components/approval-prompt.js';
+import { PROMPT_ZONE_Z } from '../components/approval-prompt/confirm.js';
 import { RAIL_STAGES } from '../../../core/phases/rail.js';
 import { hitRailStage, hitTranscriptRow } from '../layout/hit-test.js';
 import {
@@ -15,7 +15,7 @@ import {
   readRailSnapshot,
   type ConversationHoverSnapshot,
 } from '../layout/snapshot.js';
-import { readConversationRowActions } from '../conversation-rows/read-row-actions.js';
+import { readConversationRowActions } from '../conversation-rows/row-actions/read.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { toggleFoldedRows } from '../conversation-rows/toggle-folded-rows.js';
 import { readTranscriptTail } from '../conversation-rows/transcript-tail.js';

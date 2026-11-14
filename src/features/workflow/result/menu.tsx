@@ -5,7 +5,7 @@ import { borderStyleFor } from '../../../lib/glyphs.js';
 import { fitKeyLegend } from '../../../components/key-legend.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { stopMenuChrome, stopMenuLayout } from '../stop/options.js';
+import { stopMenuChrome, stopMenuLayout } from '../inline-menu/layout.js';
 import { MenuRows } from '../stop/menu-rows.js';
 import { slashHandoffPending } from '../slash-handoff.js';
 import { TextSpans } from '../../../components/text-spans.js';

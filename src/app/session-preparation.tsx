@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useInput } from 'ink';
-import { ApprovalPrompt } from '../features/workflow/components/approval-prompt.js';
+import { ApprovalPrompt } from '../features/workflow/components/approval-prompt/prompt.js';
 import { observePreparationCleanup } from '../features/start-preparation/observe-cleanup.js';
 import { StartPreparationPanel } from '../features/start-preparation/panel.js';
 import {

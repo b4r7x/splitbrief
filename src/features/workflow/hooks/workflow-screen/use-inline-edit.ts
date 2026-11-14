@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { openReviewFileExternally, type ReviewInputEffects } from '../../review-parser.js';
+import type { ReviewInputEffects } from '../../review-gate/input-handler.js';
+import { openReviewFileExternally } from '../../review-gate/external-edit.js';
 import type { UseInputModeResult } from '../use-input-mode.js';
 import { externalEditRequestStore } from '../../../../stores/ui/external-edit-request.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';

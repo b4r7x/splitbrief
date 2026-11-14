@@ -29,7 +29,7 @@ import { sessionError, sessionFileFailure } from '../../../src/core/sessions/err
 import { sessionRelativePath } from '../../../src/core/sessions/ownership-marker.js';
 import { formatAttachmentFailure } from '../../../src/core/attachments/failure.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
-import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker-format.js';
+import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker/labels.js';
 import { formatConfigSaveSuccess } from '../../../src/stores/project/save-feedback.js';
 import type { InputFileFailureReason } from '../../../src/core/attachments/resolve.js';
 import {

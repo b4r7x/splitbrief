@@ -6,15 +6,17 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { wrapHard } from '../../../utils/display-text/wrap.js';
 import {
   formatTaskStartedParts,
-  fullSuiteNameRows,
-  fullSuiteOutcomeWord,
-  fullSuiteSegments,
-  fullSuiteTone,
   reviewChecksSegments,
   reviewNoneSegments,
   validationStageNotes,
   validationSummarySegments,
-} from './event-format.js';
+} from './event-rows/format.js';
+import {
+  fullSuiteNameRows,
+  fullSuiteOutcomeWord,
+  fullSuiteSegments,
+  fullSuiteTone,
+} from './event-rows/full-suite.js';
 import type { ConversationRowSegment } from './types.js';
 import { reusedNote } from '../../../core/validation/reused-note.js';
 

@@ -6,13 +6,12 @@ import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycl
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { cliError } from '../../errors.js';
+import { withHeadlessStop, writeRunStopped } from '../../headless/stop.js';
 import {
   emitReadyToApply,
   emitRecoveryAndFailIfPending,
   recordWriterFor,
-  withHeadlessStop,
-  writeRunStopped,
-} from '../../headless.js';
+} from '../../headless/outcome.js';
 
 export async function settleReadyRun(
   input: {

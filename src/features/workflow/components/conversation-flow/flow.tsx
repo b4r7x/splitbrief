@@ -21,11 +21,11 @@ import { publishTranscriptTail } from '../../conversation-rows/transcript-tail.j
 import { splitConversationViewport } from '../../conversation-rows/viewport.js';
 import { queuedBriefs } from '../../conversation-rows/queued-briefs.js';
 import { row } from '../../conversation-rows/row-format/rows.js';
-import { rowLeadingCells } from '../../conversation-rows/row-markers.js';
+import { rowLeadingCells } from '../../conversation-rows/row-format/markers.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
-import { ConversationTranscriptRows } from './conversation-hover-rows.js';
+import { ConversationTranscriptRows } from './hover-rows.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import { routeBriefMark, routeClosedAtRest } from '../../at-rest.js';
 

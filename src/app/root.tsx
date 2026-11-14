@@ -24,7 +24,7 @@ import {
 import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 import type { HomeScreenDeps } from './screens/home.js';
 import type { SetupScreenDeps } from './screens/setup.js';
-import type { PickerEffectDeps } from '../features/runners/use-picker-actions.js';
+import type { PickerEffectDeps } from '../features/runners/picker/use-actions.js';
 import type { AppKeyDeps } from './keys.js';
 import type { RuntimeCommandContext } from '../core/runtime/commands/types.js';
 import type { readClipboardImage } from '../core/attachments/clipboard-image.js';

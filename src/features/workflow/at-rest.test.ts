@@ -29,7 +29,7 @@ import {
   displayedRailStages,
   recordPhase,
 } from './at-rest.js';
-import { openRunBylineParts } from './closed/byline.js';
+import { openRunBylineParts } from './closed/open-byline.js';
 
 const PACKET: ReviewPacketSummary = {
   jsonPath: 'review-packet.json',

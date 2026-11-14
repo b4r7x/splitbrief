@@ -4,6 +4,8 @@ import { deriveRunStatus } from '../../core/sessions/run/status.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { continueRunCommand } from '../../core/recovery/resume-command.js';
 import { cliError } from '../errors.js';
+import { sessionError } from '../../core/sessions/errors.js';
+import { clearStaleSession, assertNoLiveSession } from '../../core/sessions/guards.js';
 
 export function assertSessionExists(projectDir: string, sessionId: string): void {
   if (!existsSync(sessionDir(projectDir, sessionId))) {
@@ -34,5 +36,28 @@ export function assertResumableState(state: WorkflowState, sessionId: string): v
   }
   if (status.kind === 'ready-to-apply') {
     throw cliError(readyToApplyMessage(sessionId, state), 1);
+  }
+}
+
+// A live session is left in place: preparation readiness reports it as the
+// `repo.active-session-live` blocker with its remediation.
+export function clearStaleSessionForCli(projectDir: string): void {
+  try {
+    clearStaleSession(projectDir);
+  } catch (err) {
+    if (sessionError.isStillActive(err)) return;
+    throw err;
+  }
+}
+
+// For surfaces that only open the TUI (home, setup): refuse to run alongside a
+// live session, but never touch the active pointer — deleting it would break
+// `splitbrief resume` for the stale-but-resumable case.
+export function assertNoLiveSessionForCli(projectDir: string): void {
+  try {
+    assertNoLiveSession(projectDir);
+  } catch (err) {
+    if (sessionError.isStillActive(err)) throw cliError(err.message, 1);
+    throw err;
   }
 }

@@ -12,9 +12,9 @@ import { writeSpecFile } from '../../core/sessions/spec-files.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { planSaveErrors } from '../../features/editor/plan-save.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { useEditorKeys } from '../../features/editor/use-editor-keys.js';
-import { EditorBufferView } from '../../features/editor/editor-buffer-view.js';
-import { FramePanel, OVERLAY_FRAME_COLS } from '../../features/workflow/components/frame-panel.js';
+import { useEditorKeys } from '../../features/editor/use-keys.js';
+import { EditorBufferView } from '../../features/editor/buffer-view.js';
+import { FramePanel, OVERLAY_FRAME_COLS } from '../../components/frame-panel.js';
 
 const FRAME_ROWS = 5; // border 2 + title 1 + divider 1 + footer 1
 

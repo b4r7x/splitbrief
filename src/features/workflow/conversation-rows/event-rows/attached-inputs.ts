@@ -4,10 +4,11 @@ import { configStore } from '../../../../stores/project/config.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { stripTerminalControls } from '../../../../utils/display-text/sanitize.js';
 import { projectRelativePathLabel } from '../../../../utils/path/links.js';
-import { compositeBlock, rowsBlock, wrappedTextBlock } from '../row-block-compose.js';
+import { compositeBlock, rowsBlock } from '../blocks/compose.js';
+import { wrappedTextBlock } from '../blocks/wrapped-text.js';
 import { row } from '../row-format/rows.js';
 import { wrappedPrefixedRowTexts } from '../row-format/text.js';
-import { wrapWidthFor } from '../row-markers.js';
+import { wrapWidthFor } from '../row-format/markers.js';
 import type { ConversationRowBlock } from '../types.js';
 
 export function attachedInputsRowBlock(input: {

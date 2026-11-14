@@ -8,14 +8,9 @@ import { RECOVERY_ACTIONS, type RecoveryAction } from '../../../core/schemas/enu
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import type { ViewSeatWait } from '../../../core/run-view/reduce.js';
-import {
-  AT_REST_PLACEHOLDER,
-  bylineParts,
-  legendText,
-  openRunBylineParts,
-  runClosedLabel,
-} from './byline.js';
-import { stopPoint } from '../stop/copy.js';
+import { bylineParts, legendText, runClosedLabel } from './byline.js';
+import { AT_REST_PLACEHOLDER, openRunBylineParts } from './open-byline.js';
+import { stopPoint } from '../display/step-words.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 
 function joinedByline(parts: readonly ConversationRowSegment[]): string {

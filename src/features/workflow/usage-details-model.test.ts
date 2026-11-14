@@ -3,13 +3,10 @@ import type { RunnerCallCounterCoverage } from '../../core/schemas/runner-call.j
 import type { RecoveryFact, RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { CostBreakdown } from '../../core/schemas/cost.js';
 import { ZERO_TOKEN_USAGE, type TokenUsage } from '../../core/schemas/tokens.js';
-import {
-  deriveUsageDetails,
-  readRecoveryContext,
-  usageDetailRows,
-  type UsageDetailRow,
-  type UsageDetailsInput,
-} from './usage-details-model.js';
+import { deriveUsageDetails, type UsageDetailsInput } from './usage/derive.js';
+import { usageDetailRows } from './usage/rows.js';
+import type { UsageDetailRow } from './usage/format.js';
+import { readRecoveryContext } from './usage/recovery-context.js';
 
 function usage(fields: Partial<TokenUsage>): TokenUsage {
   return { ...ZERO_TOKEN_USAGE, ...fields };

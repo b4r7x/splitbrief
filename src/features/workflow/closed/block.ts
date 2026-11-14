@@ -1,4 +1,4 @@
-import { taskSummarySpans } from '../../../components/task-summary.js';
+import { taskSummarySpans } from '../components/task-summary/spans.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { GlyphName } from '../../../lib/glyphs.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -10,24 +10,19 @@ import { filePathUrl } from '../../../utils/path/links.js';
 import { wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { foldRow, foldRowKey } from '../conversation-rows/fold-row.js';
 import { segmentedRow } from '../conversation-rows/row-format/rows.js';
-import { rowLeadingCells } from '../conversation-rows/row-markers.js';
+import { rowLeadingCells } from '../conversation-rows/row-format/markers.js';
 import type {
   ConversationRow,
   ConversationRowBlock,
   ConversationRowSegment,
 } from '../conversation-rows/types.js';
-import {
-  crewLine,
-  factSpans,
-  recordFold,
-  recordRows,
-  runRows,
-  type CopyFact,
-  type CopySegment,
-  type RecordRow,
-  type RunRow,
-  type SummaryForm,
-} from './copy.js';
+import { crewLine } from './copy/crew-line.js';
+import { recordRows } from './copy/rows.js';
+import { recordFold, runRows } from './copy/rows.js';
+import { factSpans } from './copy/rows.js';
+import type { SummaryForm } from './copy/types.js';
+import type { RecordRow, RunRow } from './copy/types.js';
+import type { CopyFact, CopySegment } from './copy/types.js';
 import { cutFactMiddle, fitFacts } from './fit-facts.js';
 import { outcomeLineSpans, outcomeMarker } from './outcome.js';
 import type { SummaryView } from './view-model.js';

@@ -24,7 +24,7 @@ import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { readSession } from '../../../src/core/sessions/io.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { requestEndRun } from '../../../src/features/workflow/handlers.js';
+import { requestEndRun } from '../../../src/features/workflow/run-requests/end-run.js';
 import { buildApplyPartialRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/apply.js';
 
 let projectDir = '';

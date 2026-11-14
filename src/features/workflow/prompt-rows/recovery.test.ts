@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { getRecoveryPromptRows } from './recovery.js';
-import { countPromptBodyRows } from '../prompt-body-rows.js';
-import { recoveryPromptSummaryRows } from '../recovery-prompt.js';
+import { countPromptBodyRows } from './body.js';
+import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
 
 describe('getRecoveryPromptRows', () => {
   it.each([36, 126])('ignores empty detail lines at %s columns', (cols) => {

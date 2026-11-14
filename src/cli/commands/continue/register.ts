@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import { canonicalizeProjectDir } from '../../setup.js';
-import { addWorkflowOptions } from '../../options.js';
+import { addWorkflowOptions } from '../../options/workflow.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import { continueCommand, defaultContinueDeps, type ContinueDeps } from './command.js';
 

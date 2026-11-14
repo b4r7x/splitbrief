@@ -18,7 +18,7 @@ import type { WorkflowTask } from '../../../core/run-view/briefs.js';
 import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
-import { Sidebar } from './sidebar.js';
+import { Sidebar } from './sidebar/panel.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -31,7 +31,7 @@ import {
 import { taskId } from '../../../core/schemas/task.js';
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
-import { TaskSummary } from '../../../components/task-summary.js';
+import { TaskSummary } from './task-summary/view.js';
 import { paint } from '../../../core/theme/paint.js';
 
 const originalColorLevel = chalk.level;

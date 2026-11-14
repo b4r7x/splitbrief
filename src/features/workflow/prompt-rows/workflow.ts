@@ -1,9 +1,6 @@
 import type { ApprovalPromptState } from '../../../stores/prompts/approval.js';
-import {
-  getApprovalPromptRows,
-  getReviewDocumentPromptRows,
-  type ReviewArtifact,
-} from './approval.js';
+import { getApprovalPromptRows } from './confirm-panel.js';
+import { getReviewDocumentPromptRows, type ReviewArtifact } from './review-document.js';
 import { getQuestionPromptRows } from './question.js';
 import { getRecoveryPromptRows } from './recovery.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';

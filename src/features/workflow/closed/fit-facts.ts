@@ -7,7 +7,7 @@ import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
 import { segmentsForRowText } from '../../../utils/display-text/width.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
-import type { CopyTone } from './copy.js';
+import type { CopyTone } from './copy/types.js';
 
 type FactSpan = Readonly<{ text: string; tone: CopyTone }>;
 

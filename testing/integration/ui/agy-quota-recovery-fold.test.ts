@@ -6,7 +6,7 @@ import { publishRunnerCallEvent } from '../../../src/engine/orchestrator/events.
 import { createCliPlanner } from '../../../src/engine/planners/cli.js';
 import { buildConversationRowsProjection } from '../../../src/features/workflow/conversation-rows/build.js';
 import { materializeConversationRowsWindow } from '../../../src/features/workflow/conversation-rows/materialize-window.js';
-import { buildConversationRowActions } from '../../../src/features/workflow/conversation-rows/row-actions.js';
+import { buildConversationRowActions } from '../../../src/features/workflow/conversation-rows/row-actions/build.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { shellQuoteArg } from '../../../src/utils/shell-quote.js';
 import { trustedShimGate, writeFakeCli } from '#testing/helpers/command-shim.js';

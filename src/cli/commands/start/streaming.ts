@@ -3,9 +3,9 @@ import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrid
 import { serializeReadinessReportJson } from '../../../core/readiness/json.js';
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
 import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
-import { resolveSelectedSkills } from '../../headless.js';
+import { resolveSelectedSkills } from '../../options/skills.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
-import { prepareStartExecution } from './readiness.js';
+import { prepareStartExecution } from './prepare.js';
 import type { RequiredFeatureDispatchArgs } from './types.js';
 
 /**

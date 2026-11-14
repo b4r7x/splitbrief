@@ -35,7 +35,7 @@ import { readActive, reactivateExistingSession } from '../../../core/sessions/ac
 import { readRunEvents } from '../../../engine/events/replay.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { parseContinueActionOption } from '../../options.js';
+import { parseContinueActionOption } from '../../options/continue-action.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { saveDetectionCache } from '../../../engine/detection/cache.js';
 import * as entry from '../../../engine/orchestrator/approval/file-snapshots/entry.js';

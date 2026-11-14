@@ -4,7 +4,7 @@ import { wireAppMouse } from '../../../src/app/mouse.js';
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones, registerMouseZone } from '../../../src/lib/terminal/mouse-zones.js';
 import { ROW_ZONE_Z_OVERLAY, ROW_ZONE_Z_SCREEN } from '../../../src/components/pickers/row-zone.js';
-import { PROMPT_ZONE_Z } from '../../../src/features/workflow/components/approval-prompt.js';
+import { PROMPT_ZONE_Z } from '../../../src/features/workflow/components/approval-prompt/confirm.js';
 import { readConversationScrollSnapshot } from '../../../src/features/workflow/layout/snapshot.js';
 import { _resetHoverThrottle } from '../../../src/features/workflow/hooks/use-mouse-pointer.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';

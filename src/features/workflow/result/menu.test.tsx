@@ -9,7 +9,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { RedCheck } from '../../../core/schemas/workflow/review-record.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { stopMenuLayout } from '../stop/options.js';
+import { stopMenuLayout } from '../inline-menu/layout.js';
 import { ResultMenu } from './menu.js';
 import { resultMenuRows } from './options.js';
 

@@ -50,7 +50,8 @@ import {
   trackProbe,
   trackToolCheck,
 } from '../../engine/probe-activity.js';
-import { PRESET_SECTION, SetupScreen } from './setup.js';
+import { SetupScreen } from './setup.js';
+import { PRESET_SECTION } from '../../features/crew/setup/list-plan.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 vi.mock('../../lib/git/files.js', async (importOriginal) => ({

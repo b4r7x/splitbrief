@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatRecoveryPrompt } from './recovery-prompt.js';
+import { formatRecoveryPrompt } from './recovery/prompt-text.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { RECOVERY_REASONS } from '../../core/schemas/enums.js';
 import { taskId } from '../../core/schemas/task.js';

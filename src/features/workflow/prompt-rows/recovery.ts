@@ -1,6 +1,7 @@
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { countPromptBodyRows } from '../prompt-body-rows.js';
-import { recoveryPromptSummaryRows, getRecoveryPromptActions } from '../recovery-prompt.js';
+import { countPromptBodyRows } from './body.js';
+import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
+import { getRecoveryPromptActions } from '../recovery/actions.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { MIN_TEXT_WIDTH } from './measure.js';
 

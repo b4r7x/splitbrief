@@ -7,11 +7,11 @@ import type { RunRecord } from '../../../core/sessions/run/record.js';
 import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
 import { formatElapsedClock } from '../../../utils/format/time.js';
-import { assertNever } from '../../../utils/type-guards.js';
 import { suiteStatusParts } from '../display/phase-verb.js';
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
+import { stepWord, stopPoint } from '../display/step-words.js';
 
 const PARKED_HINT = `⏎ resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`;
 
@@ -63,38 +63,6 @@ export interface StopByline {
   /** The lead's clock, kept whole when the byline cuts the lead to its width. */
   readonly clock?: string | undefined;
   readonly hint: string;
-}
-
-/**
- * A step in the words the rest of the screen uses for it: a brief by id, every planner call or
- * gate as the plan, the one stage the rail shows for them, and Apply by the stage it names.
- */
-export function stepWord(step: StepRef): string {
-  switch (step.kind) {
-    case 'planner':
-    case 'gate':
-      return 'the plan';
-    case 'brief':
-      return step.taskId;
-    case 'review':
-      return 'the review';
-    case 'apply':
-      return 'Apply';
-    default:
-      return assertNever(step);
-  }
-}
-
-/**
- * Where a stop left the run, in the words the transcript row and every byline share: before the
- * brief a stop between briefs holds back, else at the step it stopped on.
- */
-export function stopPoint(step: StepRef, at: StepCut | undefined): string {
-  if (at === 'boundary') {
-    if (step.kind === 'brief') return `before ${step.taskId}`;
-    if (step.kind === 'review') return 'before the review';
-  }
-  return `at ${stepWord(step)}`;
 }
 
 /**

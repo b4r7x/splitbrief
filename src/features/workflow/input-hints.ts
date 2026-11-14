@@ -2,7 +2,7 @@ import type { InputMode } from '../../core/navigation/types.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import { messageSeat } from '../../core/queue/state.js';
 import { isLivePhase } from '../../core/phases/roles.js';
-import { AT_REST_PLACEHOLDER } from './closed/byline.js';
+import { AT_REST_PLACEHOLDER } from './closed/open-byline.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { queueCopy } from './queue-copy.js';
 

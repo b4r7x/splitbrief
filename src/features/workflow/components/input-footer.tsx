@@ -11,13 +11,13 @@ import {
   railStageSeat,
   type RailStageState,
 } from '../../../core/phases/rail.js';
-import { stepWord } from '../stop/copy.js';
+import { stepWord } from '../display/step-words.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
 import { seatRetrySentence, seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { CREW_SEAT_ROLES, collapsedReviewSeat } from '../../../core/crew/seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
-import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress.js';
+import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress/derive.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { formatElapsedClock } from '../../../utils/format/time.js';
@@ -31,7 +31,7 @@ import {
   selectRunningSuite,
   selectScheduledReview,
 } from '../../../stores/workflow/operations/state.js';
-import { useStopByline } from '../stop/use-stop-byline.js';
+import { useStopByline } from '../stop/use-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../../hooks/use-slow-probe-text.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';

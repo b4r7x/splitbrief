@@ -13,16 +13,11 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import { resolveTheme } from '../../core/theme/resolve.js';
-import { formatPickerStatusLabel } from './picker-format.js';
+import { formatPickerStatusLabel } from './picker/labels.js';
 import { ELLIPSIS } from '../../utils/display-text/truncate.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';
-import {
-  AUTO_ROW_METADATA,
-  BROWSE_CATALOG_TEXT,
-  type RightAxisName,
-  type RightRow,
-  type TreeLead,
-} from './model-catalog/rows.js';
+import { AUTO_ROW_METADATA, BROWSE_CATALOG_TEXT } from './model-catalog/rows.js';
+import type { RightAxisName, RightRow, TreeLead } from './model-catalog/types.js';
 import type { RouteAuthState } from '../../core/runners/route-auth.js';
 import { renderModelRow, renderToolRow, toolStatusesFit } from './tool-row.js';
 

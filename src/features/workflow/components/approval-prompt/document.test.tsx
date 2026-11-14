@@ -11,10 +11,10 @@ import {
   REVIEW_DOCUMENT_HINTS,
   REVIEW_TYPED_ROW_HINTS,
   getReviewDocumentPromptRows,
-} from '../../prompt-rows/approval.js';
+} from '../../prompt-rows/review-document.js';
 import { getReviewPanelBudget } from '../../layout/rect.js';
 import { DocumentReviewPrompt } from './document.js';
-import type { ReviewDraftTarget } from '../../review-commands.js';
+import type { ReviewDraftTarget } from '../../review-gate/commands.js';
 
 afterEach(() => {
   terminalSizeStore.reset();

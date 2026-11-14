@@ -15,7 +15,7 @@ import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
 import { WorkflowStateSchema } from '../../../src/core/schemas/workflow/state.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { recordRows } from '../../../src/features/workflow/closed/copy.js';
+import { recordRows } from '../../../src/features/workflow/closed/copy/rows.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { readStopMenuRows } from '../../../src/features/workflow/stop/options.js';

@@ -8,15 +8,17 @@ import type { Config } from '../../core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import {
-  clearSeatFallback,
   commitCustomCommand,
   commitCustomModel,
+  removeCustomModel,
+} from './config-transforms/custom-model.js';
+import {
+  clearSeatFallback,
   commitFallbackSelection,
   commitImplementerSelection,
   commitPlannerTierSelection,
   inheritsPlannerSeat,
-  removeCustomModel,
-} from './config-transforms.js';
+} from './config-transforms/seat-selection.js';
 
 function makeBaseConfig(): Config {
   return makeConfig({

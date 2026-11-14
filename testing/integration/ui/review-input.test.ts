@@ -12,17 +12,18 @@ import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { terminalSequences } from '../../../src/lib/terminal/control.js';
 import { setActiveTerminalHandover } from '../../../src/lib/terminal/editor-handover.js';
-import { setQueueHandler, clearAllHandlers } from '../../../src/features/workflow/handlers.js';
+import {
+  setQueueHandler,
+  clearAllHandlers,
+} from '../../../src/features/workflow/run-requests/handlers.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
-import {
-  createReviewInputHandler,
-  openReviewFileExternally,
-} from '../../../src/features/workflow/review-parser.js';
+import { createReviewInputHandler } from '../../../src/features/workflow/review-gate/input-handler.js';
+import { openReviewFileExternally } from '../../../src/features/workflow/review-gate/external-edit.js';
 import { editorStore } from '../../../src/stores/ui/editor.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
-import { REVIEW_HINT } from '../../../src/features/workflow/review-commands.js';
+import { REVIEW_HINT } from '../../../src/features/workflow/review-gate/commands.js';
 import type { UseInputModeResult } from '../../../src/features/workflow/hooks/use-input-mode.js';
 import type { Phase } from '../../../src/core/schemas/enums.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';

@@ -5,8 +5,8 @@ import { StopMenu } from '../../features/workflow/stop/menu.js';
 import {
   readStopMenuRows,
   STOP_SHEET_COMPOSER_HINT,
-  stopMenuLayout,
 } from '../../features/workflow/stop/options.js';
+import { stopMenuLayout } from '../../features/workflow/inline-menu/layout.js';
 import { ResultMenu } from '../../features/workflow/result/menu.js';
 import { acceptedNote } from '../../core/review/accepted.js';
 import {
@@ -20,7 +20,7 @@ import { changedFileCount } from '../../features/workflow/closed/projections.js'
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
+import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt/prompt.js';
 import { QuestionPrompt } from '../../features/workflow/components/question-prompt.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { Divider } from '../../components/divider.js';
@@ -32,18 +32,13 @@ import {
   type WorkflowScreenDeps,
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { closedBlockKey, closedTranscriptBlock } from '../../features/workflow/closed/block.js';
-import { calloutRowsBlock } from '../../features/workflow/conversation-rows/callout-block.js';
-import { sectionSpacerBlock } from '../../features/workflow/conversation-rows/row-block-compose.js';
+import { calloutRowsBlock } from '../../features/workflow/conversation-rows/blocks/callout.js';
+import { sectionSpacerBlock } from '../../features/workflow/conversation-rows/blocks/compose.js';
 import { applyRunning, openRoundQuestions } from '../../features/workflow/at-rest.js';
 import { unansweredQuestionsRowBlock } from '../../features/workflow/conversation-rows/event-rows/answered-questions.js';
 import { recordedCrewHeader } from '../../features/workflow/closed/header.js';
-import {
-  applyByline,
-  bylineParts,
-  legendText,
-  openRunBylineParts,
-  runClosedLabel,
-} from '../../features/workflow/closed/byline.js';
+import { bylineParts, legendText, runClosedLabel } from '../../features/workflow/closed/byline.js';
+import { applyByline, openRunBylineParts } from '../../features/workflow/closed/open-byline.js';
 import { useSharedClock } from '../../hooks/use-shared-clock.js';
 import { seatWaitParts } from '../../core/sessions/seat-wait-line.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -81,8 +76,11 @@ import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workf
 import {
   reviewArtifactForPhase,
   reviewDocumentOptions,
-} from '../../features/workflow/prompt-rows/approval.js';
-import { draftApprovesPlan, reviewDraftTarget } from '../../features/workflow/review-commands.js';
+} from '../../features/workflow/prompt-rows/review-document.js';
+import {
+  draftApprovesPlan,
+  reviewDraftTarget,
+} from '../../features/workflow/review-gate/commands.js';
 import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
@@ -91,7 +89,7 @@ import { questionOptions, questionPromptStore } from '../../stores/prompts/quest
 import {
   recoveryComposerHint,
   RECOVERY_EMPTY_ENTER_NOTICE,
-} from '../../features/workflow/recovery-prompt.js';
+} from '../../features/workflow/recovery/actions.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';

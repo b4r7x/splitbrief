@@ -34,7 +34,7 @@ async function startSplitbrief(userNodeEnv: string | undefined) {
   await import('./node-env.js');
   const { runCommand } = await import('./lib/process/spawn/run-command.js');
   const { runHook } = await import('./engine/hooks/dispatch.js');
-  const { spawnEditorProcess } = await import('./features/workflow/review-parser.js');
+  const { spawnEditorProcess } = await import('./features/workflow/external-editor/spawn.js');
   return { runCommand, runHook, spawnEditorProcess };
 }
 

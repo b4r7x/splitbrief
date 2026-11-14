@@ -17,7 +17,7 @@ import {
   type RailForm,
 } from './chrome-rows.js';
 import type { WorkflowContentRect } from './rect.js';
-import { passedFractionSpans } from '../display/build-progress.js';
+import { passedFractionSpans } from '../display/build-progress/counts.js';
 
 function withinRectX(rect: WorkflowContentRect, sgrX: number): boolean {
   return sgrX >= rect.left && sgrX <= rect.right;

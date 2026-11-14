@@ -11,7 +11,7 @@ import { streamingOutputStore } from '../../../src/stores/workflow/streaming-out
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { hoverStore } from '../../../src/stores/ui/hover.js';
 import { glyph } from '../../../src/lib/glyphs.js';
-import { resetConversationRowsProjectionCache } from '../../../src/features/workflow/conversation-rows/projection-cache.js';
+import { resetConversationRowsProjectionCache } from '../../../src/features/workflow/conversation-rows/cache/projection.js';
 
 const FOCUS_MARK = glyph('liveBar');
 

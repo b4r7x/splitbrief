@@ -1,6 +1,6 @@
 import { eventRowBlock } from '../../src/features/workflow/conversation-rows/event-rows/dispatch.js';
 import { buildConversationRowsProjection } from '../../src/features/workflow/conversation-rows/build.js';
-import { markdownConversationRowsProjection } from '../../src/features/workflow/conversation-rows/markdown-rows.js';
+import { markdownConversationRowsProjection } from '../../src/features/workflow/conversation-rows/markdown-rows/build.js';
 import type { MarkdownConversationRowsInput } from '../../src/features/workflow/conversation-rows/markdown-rows/types.js';
 import { materializeConversationRowsWindow } from '../../src/features/workflow/conversation-rows/materialize-window.js';
 import type {

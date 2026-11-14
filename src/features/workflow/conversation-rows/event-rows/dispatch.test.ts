@@ -14,11 +14,12 @@ import {
   makeRunnerCallError,
   makeRunnerCallStarted,
 } from '#testing/helpers/events/runner-call.js';
-import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../../display/activity-label-display.js';
+import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../activity/rows.js';
 import { configStore } from '../../../../stores/project/config.js';
-import { eventRowBlock, recoveryRowBlock } from './dispatch.js';
+import { eventRowBlock } from './dispatch.js';
+import { recoveryRowBlock } from './recovery.js';
 import { rowText } from '../row-format/rows.js';
-import { rowLeadingCells } from '../row-markers.js';
+import { rowLeadingCells } from '../row-format/markers.js';
 import type { ConversationRow } from '../types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };

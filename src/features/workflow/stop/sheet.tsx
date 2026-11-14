@@ -13,20 +13,19 @@ import { MenuRows } from './menu-rows.js';
 import {
   cancelBoundaryPause,
   requestBoundaryPause,
-  requestEndRun,
   requestStopNow,
   requestResume,
   requestLeaveSession,
-} from '../handlers.js';
+} from '../run-requests/handlers.js';
+import { requestEndRun } from '../run-requests/end-run.js';
 import {
   STOP_SHEET_LEGEND,
   STOP_SHEET_PARKED_LEGEND,
   STOP_SHEET_TITLE,
-  stopMenuChrome,
-  stopMenuLayout,
   type StopRow,
   type StopRowId,
 } from './options.js';
+import { stopMenuChrome, stopMenuLayout } from '../inline-menu/layout.js';
 
 function performStop(id: StopRowId): void {
   switch (id) {

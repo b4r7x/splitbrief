@@ -2,7 +2,7 @@ import type { Key } from 'ink';
 import {
   findLatestConversationRowAction,
   type ConversationRowAction,
-} from './conversation-rows/row-actions.js';
+} from './conversation-rows/row-actions/build.js';
 import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
 import type { InputMode, OverlayType } from '../../core/navigation/types.js';
 import { normalizeKeySignature } from '../../core/keybindings/normalize.js';

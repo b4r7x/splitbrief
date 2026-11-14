@@ -28,7 +28,7 @@ import {
   consumeBoundaryPause,
   requestBoundaryPause,
   requestSteer,
-} from './handlers.js';
+} from './run-requests/handlers.js';
 import { useInputMode } from './hooks/use-input-mode.js';
 import { useRunContinue } from './hooks/use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from './hooks/use-run-loop.js';

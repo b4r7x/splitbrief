@@ -52,17 +52,14 @@ import {
   promptCustomRunnerDisclosure,
   promptForLine,
 } from '../custom-runner-prompts.js';
-import { ALLOW_REPO_RUNNERS_HELP } from '../options.js';
+import { ALLOW_REPO_RUNNERS_HELP } from '../options/workflow.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import {
   releasePreparedExecutionOwnership,
   rollbackPreparedExecutionOwnership,
 } from '../../engine/runners/prepared-execution.js';
-import {
-  cliPreparationPolicy,
-  clearStaleSessionForCli,
-  preparedExecutionOrThrow,
-} from './start/readiness.js';
+import { clearStaleSessionForCli } from '../sessions/resolve.js';
+import { cliPreparationPolicy, preparedExecutionOrThrow } from '../preparation.js';
 
 type SpecOpts = {
   project?: string;

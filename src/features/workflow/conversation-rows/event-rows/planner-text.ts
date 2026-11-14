@@ -9,10 +9,11 @@ import {
 } from '../../../../utils/markdown/grammar.js';
 import { parseMarkdownBlocks } from '../../../../utils/markdown/block-parser.js';
 import { assertNever } from '../../../../utils/type-guards.js';
-import { markdownPlannerTextRowBlock } from '../planner-markdown-row-block.js';
+import { markdownPlannerTextRowBlock } from '../blocks/planner-markdown.js';
 import type { ConversationRowBlock, ConversationRowTone } from '../types.js';
-import { wrapWidthFor } from '../row-markers.js';
-import { compositeBlock, wrappedTextBlock } from '../row-block-compose.js';
+import { wrapWidthFor } from '../row-format/markers.js';
+import { compositeBlock } from '../blocks/compose.js';
+import { wrappedTextBlock } from '../blocks/wrapped-text.js';
 
 export function plannerTextRowBlock(options: {
   event: EngineEventOf<'planner_text'>;

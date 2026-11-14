@@ -3,7 +3,7 @@ import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { preformattedOutputBlock } from './preformatted-block.js';
 import { rowText } from './rows.js';
-import { wrapWidthFor } from '../row-markers.js';
+import { wrapWidthFor } from './markers.js';
 import type { ConversationRow } from '../types.js';
 
 const FOOTER = glyph('treeLast');

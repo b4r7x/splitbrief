@@ -23,12 +23,9 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
 import { buildSettingsItems, type SettingsItem } from '../items.js';
-import {
-  hintFor,
-  useSettingsEditor,
-  type CrewSettingsItem,
-  type FallbackSettingsItem,
-} from './editor.js';
+import { hintFor } from '../presentation.js';
+import { useSettingsEditor } from './use-settings-editor.js';
+import type { CrewSettingsItem, FallbackSettingsItem } from './use-settings-editor.js';
 
 const CLI_PLANNER = {
   kind: 'cli',

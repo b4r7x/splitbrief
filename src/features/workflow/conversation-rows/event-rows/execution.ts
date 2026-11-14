@@ -5,25 +5,24 @@ import { ValidationStageSchema, type ValidationStage } from '../../../../core/sc
 import {
   implementerDoneFilesBlock,
   implementerExpandedDiffCardBlock,
-} from '../implementer-diff-card-block.js';
+} from '../blocks/implementer-diff-card.js';
 import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } from '../types.js';
 import { preformattedOutputBlock } from '../row-format/preformatted-block.js';
 import { segmentedRow } from '../row-format/rows.js';
 import { sanitizeRowDisplayText } from '../row-format/text.js';
 import {
-  fullSuiteNameRows,
-  fullSuiteSegments,
   reviewChecksSegments,
   reviewNoneSegments,
   validationStageNotes,
   validationSummarySegments,
-} from '../event-format.js';
-import {
-  compositeBlock,
-  rowsBlock,
-  wrappedSegmentsBlock,
-  wrappedTextBlock,
-} from '../row-block-compose.js';
+} from './format.js';
+import { fullSuiteNameRows, fullSuiteSegments } from './full-suite.js';
+import { compositeBlock, rowsBlock, wrappedSegmentsBlock } from '../blocks/compose.js';
+import { wrappedTextBlock } from '../blocks/wrapped-text.js';
+import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
+import { truncateTerminalDisplayText } from '../../../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
+import { wrapWidthFor } from '../row-format/markers.js';
 
 export function runningImplementerRowBlock(
   keyPrefix: string,
@@ -226,4 +225,30 @@ export function escalateRowBlock(
         })
       : null,
   ]);
+}
+
+function implementerFailureCause(
+  event: Extract<EngineEvent, { type: 'implementer_generate_failed' }>,
+): string | undefined {
+  const cause = event.error
+    ?.split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return cause === undefined ? undefined : sanitizeRowDisplayText(cause);
+}
+
+export function implementerFailureCard(
+  event: Extract<EngineEvent, { type: 'implementer_generate_failed' }>,
+  width: number,
+  expanded: boolean,
+): { value: string | undefined; expandable: boolean } {
+  const cause = implementerFailureCause(event);
+  const valueWidth =
+    wrapWidthFor('card', width) - getTerminalCellWidth(`${CREW_SEAT_LABELS.build} failed  `);
+  if (cause === undefined || valueWidth <= 0) return { value: undefined, expandable: false };
+  const cut = getTerminalCellWidth(cause) > valueWidth;
+  return {
+    value: cut && expanded ? cause : truncateTerminalDisplayText(cause, valueWidth),
+    expandable: cut,
+  };
 }

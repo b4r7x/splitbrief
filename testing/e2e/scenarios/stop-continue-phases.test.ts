@@ -1,7 +1,8 @@
 import { afterEach, expect, it } from 'vitest';
 import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { factSpans, recordRows } from '../../../src/features/workflow/closed/copy.js';
+import { recordRows } from '../../../src/features/workflow/closed/copy/rows.js';
+import { factSpans } from '../../../src/features/workflow/closed/copy/rows.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {

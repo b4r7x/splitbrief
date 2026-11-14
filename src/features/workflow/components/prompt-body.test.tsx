@@ -1,5 +1,5 @@
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { recoveryPromptSummaryRows } from '../recovery-prompt.js';
+import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import chalk from 'chalk';
 import { defaultTheme, ThemeProvider } from '../../../components/theme.js';
@@ -9,7 +9,7 @@ import { stateTone } from '../../../core/theme/state-tone.js';
 import { render } from 'ink-testing-library';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { PromptBody } from './prompt-body.js';
-import { countPromptBodyRows } from '../prompt-body-rows.js';
+import { countPromptBodyRows } from '../prompt-rows/body.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 const RECOVERY_PROMPT = [

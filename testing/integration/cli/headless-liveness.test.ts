@@ -22,7 +22,7 @@ import {
 import type { LockfileData } from '../../../src/core/sessions/lock/status.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
-import { runHeadless } from '../../../src/cli/headless.js';
+import { runHeadless } from '../../../src/cli/headless/run.js';
 import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { readSession } from '../../../src/core/sessions/io.js';
 import { sessionStatusWord } from '../../../src/core/sessions/display.js';

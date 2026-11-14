@@ -4,7 +4,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { setActiveTerminalHandover } from '../../../lib/terminal/editor-handover.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import type { SpawnEditor } from '../review-parser.js';
+import type { SpawnEditor } from '../external-editor/spawn.js';
 import { showRunDiff } from './show-diff.js';
 
 const patch = vi.hoisted(() => ({ path: '/tmp/result-run.patch' }));

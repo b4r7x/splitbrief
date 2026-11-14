@@ -1,18 +1,12 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
-import { TextSpans } from '../../components/text-spans.js';
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
 import {
   BOOT_MANIFEST_TITLE,
-  FIRST_RUN_NOTE,
   REFRESHING_TOOLS_TITLE,
   TOOL_CHECK_FAILED_TITLE,
   TOOLS_NOT_CHECKED_TITLE,
 } from '../../core/discovery/copy.js';
-import { formatCollapsedSeatSpans, seatLineText } from '../../core/crew/seat-line/collapse.js';
-import { CREW_SEAT_ROLES, collapsedReviewSeat } from '../../core/crew/seats.js';
-import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
-import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
@@ -20,9 +14,8 @@ import { Composer, type HomeNotice } from '../../components/composer/view.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { HomeSeatBlock, shedToFit } from '../../features/home/components/seat-block.js';
-import { getTerminalCellWidth } from '../../utils/display-text/width.js';
-import { RecentSessions } from '../../features/home/components/recent-sessions.js';
+import { HomeSeatBlock } from '../../features/home/components/seat-block.js';
+import { RecentSessions } from '../../features/home/recent-sessions/panel.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -43,13 +36,12 @@ import {
   type SessionSelectDeps,
   sessionSelectStore,
 } from '../../stores/navigation/session-select.js';
-import { borderStyleFor } from '../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { getHomeLayout, NO_CONFIG_NOTICE } from '../../features/home/layout.js';
 import { getLogo } from '../../features/home/logo.js';
 import { deriveHomeToolCheck } from '../../features/home/tool-check.js';
-import { RECENT_SESSIONS_HINT } from '../../features/home/components/recent-sessions-list.js';
-import { useRecentSessionsFocus } from '../../features/home/use-recent-sessions-focus.js';
+import { RECENT_SESSIONS_HINT } from '../../features/home/recent-sessions/list.js';
+import { useRecentSessionsFocus } from '../../features/home/recent-sessions/use-focus.js';
 import {
   appPreparationError,
   interactivePreparationPolicy,
@@ -58,11 +50,12 @@ import {
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
-import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
+import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt/prompt.js';
 import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/fs/listing.js';
+import { DiscoveryPanel } from '../../features/home/components/tool-check-box.js';
 
 const DEFAULT_HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+k commands`;
 const HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+r recent${SOFT_SEP}ctrl+k commands`;
@@ -90,88 +83,6 @@ const defaultHomeScreenDeps: HomeScreenDeps = {
 const DISCOVERY_PANEL_MIN_ROWS = 24;
 /** Panel height plus one breathing row — the slack the box needs to render whole. */
 const DISCOVERY_PANEL_SLACK_ROWS = 5;
-/** `paddingX={2}` on both sides plus the round border on both — the cells the text cannot use. */
-const DISCOVERY_PANEL_CHROME_COLS = 6;
-
-/**
- * Cold-discovery box floating in the slack space between the content block and
- * the bottom-anchored composer. It exists only while the first check runs (or
- * has stalled), then vanishes without leaving a residue — the slack absorbs
- * both states, so nothing above or below ever moves.
- */
-function DiscoveryPanel({ width }: { width: number }) {
-  const theme = useTheme();
-  const config = configStore.useConfig();
-  const displayNames = useCrewDisplayNames(config);
-  const toolCheck = detectionStore.use((s) => deriveHomeToolCheck(s.refresh));
-  const { frame } = useSpinnerFrame(toolCheck === 'cold');
-
-  if (toolCheck === null || toolCheck === 'warm') return null;
-
-  // A settled cold check without a result: failed outright, or not-run
-  // (offline/cancelled). Both need an actionable box, never a frozen spinner.
-  const stalled = toolCheck !== 'cold';
-  const failedOutcome = toolCheck === 'failed';
-  const seatInput = {
-    planner: config.planner,
-    build: resolveImplementerProfiles(config).defaultProfile.config,
-    reviewer: collapsedReviewSeat(config),
-    displayNames,
-  };
-  const budget = width - DISCOVERY_PANEL_CHROME_COLS;
-  const fullSeatLine = seatLineText(formatCollapsedSeatSpans(seatInput));
-  const notes = shedToFit({
-    lead: [fullSeatLine],
-    optional: [FIRST_RUN_NOTE],
-    width: budget,
-  });
-  const seatLine = formatCollapsedSeatSpans({
-    ...seatInput,
-    budget: budget - (notes.length > 0 ? getTerminalCellWidth(`${SOFT_SEP}${FIRST_RUN_NOTE}`) : 0),
-  });
-
-  return (
-    <Box
-      width={width}
-      borderStyle={borderStyleFor('round')}
-      borderColor={stalled ? (failedOutcome ? theme.error : theme.warning) : theme.accent}
-      paddingX={2}
-      flexDirection="column"
-    >
-      {stalled ? (
-        <Fragment>
-          <Text color={failedOutcome ? theme.error : theme.warning} bold>
-            {failedOutcome ? TOOL_CHECK_FAILED_TITLE : TOOLS_NOT_CHECKED_TITLE}
-          </Text>
-          <Text color={theme.textDim}>Open /settings to retry.</Text>
-        </Fragment>
-      ) : (
-        <Fragment>
-          <Text>
-            <Text color={theme.accent} bold>
-              {frame} {BOOT_MANIFEST_TITLE}
-            </Text>
-          </Text>
-          <Text color={theme.textDim}>
-            <TextSpans
-              parts={seatLine.map((span) => ({
-                text: span.text,
-                tone: span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
-              }))}
-            />
-            {notes.length > 0 && (
-              <Text color={theme.textDim}>
-                {SOFT_SEP}
-                {FIRST_RUN_NOTE}
-              </Text>
-            )}
-          </Text>
-        </Fragment>
-      )}
-    </Box>
-  );
-}
-
 export function HomeScreen({
   commands,
   onRuntimeCommand,

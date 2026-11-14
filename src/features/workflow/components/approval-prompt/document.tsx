@@ -2,9 +2,9 @@ import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { Box } from 'ink';
 import { borderStyleFor } from '../../../../lib/glyphs.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
+import { unfocusedPromptLegend } from '../../prompt-rows/approval.js';
+import { CONFIRM_HINT, formatKeyHints } from '../../../../components/key-legend.js';
 import {
-  CONFIRM_HINT,
-  formatKeyHints,
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
   REVIEW_CONFIRMS_INDENT,
@@ -14,10 +14,9 @@ import {
   reviewDocumentForm,
   reviewDocumentOptions,
   reviewDocumentRowLines,
-  unfocusedPromptLegend,
   type ReviewArtifact,
-} from '../../prompt-rows/approval.js';
-import type { ReviewDraftTarget } from '../../review-commands.js';
+} from '../../prompt-rows/review-document.js';
+import type { ReviewDraftTarget } from '../../review-gate/commands.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { fitKeyLegend } from '../../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';

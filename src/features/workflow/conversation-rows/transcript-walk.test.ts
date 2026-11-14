@@ -13,7 +13,7 @@ import {
 import { retainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
 import { projectRunnerCallEvents } from '../../../engine/calls/event-projection.js';
 import type { RunnerCallEvent } from '../../../engine/calls/types.js';
-import { walkTranscript } from './transcript-walk.js';
+import { walkTranscript } from './transcript-walk/walk.js';
 
 describe('walkTranscript', () => {
   const prompted: EngineEventOf<'recovery_prompted'> = {

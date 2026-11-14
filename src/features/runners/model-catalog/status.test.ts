@@ -12,12 +12,8 @@ import {
 } from '../../../core/providers/api-provider-catalog.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
-import {
-  deriveApiStatus,
-  deriveCliStatus,
-  isSelectable,
-  type PickerDetectionSnapshot,
-} from './status.js';
+import { deriveCliStatus, isSelectable, type PickerDetectionSnapshot } from './status.js';
+import { deriveApiStatus } from './api-status.js';
 
 const KILO_FACTS: readonly CliProviderAuthFact[] = [
   { provider: 'GitHub Copilot', source: 'oauth' },

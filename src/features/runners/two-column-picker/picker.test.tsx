@@ -12,8 +12,9 @@ import { glyph } from '../../../lib/glyphs.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { bylineDiagnostic } from '../picker-format.js';
-import { TwoColumnPicker, buildRightDisplay } from './picker.js';
+import { bylineDiagnostic } from '../picker/byline.js';
+import { TwoColumnPicker } from './picker.js';
+import { buildRightDisplay } from './right-display.js';
 
 interface Tool {
   id: string;

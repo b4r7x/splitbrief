@@ -26,7 +26,7 @@ import type {
 } from '../../../core/approval/types.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { runInteractiveStart } from './interactive.js';
-import * as readinessModule from './readiness.js';
+import * as readinessModule from '../../sessions/resolve.js';
 import type { InteractiveDispatchArgs, StartDeps } from './types.js';
 
 setupFetchMock();

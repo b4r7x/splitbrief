@@ -1,5 +1,5 @@
 import type { EngineEvent } from '../../../../engine/events/types.js';
-import { isProtocolActivity } from '../../display/runner-activity-display.js';
+import { isProtocolActivity } from '../../display/runner-activity/ledger-item.js';
 
 const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'workflow_started',

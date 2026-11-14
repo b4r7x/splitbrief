@@ -9,12 +9,14 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { formatTime } from '../../../utils/format/time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
-import { scopeCleanSegment, unwrittenReviewText, type CopyTone } from './copy.js';
+import { scopeCleanSegment } from './copy/change-facts.js';
+import { unwrittenReviewText } from './copy/review-facts.js';
+import type { CopyTone } from './copy/types.js';
 import { findingFacts } from '../../../core/review/verdict.js';
-import { stopPoint } from '../stop/copy.js';
+import { stopPoint } from '../display/step-words.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
-import { passedFractionSpans } from '../display/build-progress.js';
-import { rowLeadingCells } from '../conversation-rows/row-markers.js';
+import { passedFractionSpans } from '../display/build-progress/counts.js';
+import { rowLeadingCells } from '../conversation-rows/row-format/markers.js';
 import { fitFacts } from './fit-facts.js';
 
 /** Null is a run that closed without a record: it wears the mark of a run somebody ended. */

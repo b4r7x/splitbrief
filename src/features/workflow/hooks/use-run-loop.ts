@@ -2,7 +2,6 @@ import { useRef, useEffect, useEffectEvent } from 'react';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
-import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
 import { seatIdentityChanges } from '../../../core/state/seats/changes.js';
@@ -12,9 +11,9 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows.js';
-import { resetConversationRowsProjectionCache } from '../conversation-rows/projection-cache.js';
-import { resetEventBlockCache } from '../conversation-rows/block-cache.js';
+import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows/build.js';
+import { resetConversationRowsProjectionCache } from '../conversation-rows/cache/projection.js';
+import { resetEventBlockCache } from '../conversation-rows/cache/block.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -50,7 +49,7 @@ import {
   landBoundaryPause,
   requestSeatChangeAtBoundary,
   spendSeatChange,
-} from '../handlers.js';
+} from '../run-requests/handlers.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
@@ -71,46 +70,18 @@ import { closeApprovalPrompt } from '../../../stores/prompts/approval.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import { error } from '../../../utils/error.js';
 import type { UseInputModeResult } from './use-input-mode.js';
-import { buildPromptCallbacks } from '../prompt-callbacks.js';
-import { createRecoveryDriver } from '../recovery-driver.js';
-import { nextEntryConfig } from '../entry-config.js';
-import { recordRunTerms, runResumePolicy } from '../resume-policy.js';
+import { buildPromptCallbacks } from '../run-loop/prompt-callbacks.js';
+import { createRecoveryDriver } from '../recovery/driver.js';
+import { nextEntryConfig, swapBaseConfig } from '../run-loop/seat-config.js';
+import { recordRunTerms, runResumePolicy } from '../resume/policy.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
-import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
+import { hydrateResume, resumeFailureMessage } from '../resume/hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
-import type { Config } from '../../../core/schemas/config.js';
-import type { CrewSeatId } from '../../../core/crew/identity.js';
-import { assertNever } from '../../../utils/type-guards.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
 export type PrepareExecutionFn = typeof prepareExecution;
-
-/**
- * The config a seat swap builds on: the saved seats, so a seat saved on another role while the
- * halt waits is kept, with the halted seat as the run has it, the tool the swap leaves.
- */
-function swapBaseConfig(saved: Config, run: Config, seat: CrewSeatId): Config {
-  switch (seat) {
-    case 'plan':
-      return { ...saved, planner: run.planner };
-    case 'review':
-      return { ...saved, reviewer: readActiveRunner({ config: run, role: 'reviewer' }) };
-    case 'build': {
-      const { implementerProfiles: _savedProfiles, ...seats } = saved;
-      return {
-        ...seats,
-        implementer: run.implementer,
-        ...(run.implementerProfiles !== undefined && {
-          implementerProfiles: run.implementerProfiles,
-        }),
-      };
-    }
-    default:
-      return assertNever(seat);
-  }
-}
 
 function isWorkflowAborted(controller: AbortController, ref: { current: boolean }): boolean {
   return controller.signal.aborted || ref.current;

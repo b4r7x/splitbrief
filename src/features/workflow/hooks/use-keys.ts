@@ -9,7 +9,7 @@ import { useStores } from '../../../stores/use-stores.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { clamp } from '../../../utils/math.js';
 import { resolveScrollKey } from '../../../core/keybindings/scroll.js';
-import { readConversationRowActions } from '../conversation-rows/read-row-actions.js';
+import { readConversationRowActions } from '../conversation-rows/row-actions/read.js';
 import { toggleFoldedRows } from '../conversation-rows/toggle-folded-rows.js';
 import {
   handleWorkflowCtrlChords,

@@ -3,11 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
-import { listRowLead } from '../../components/list-row/lead.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import type { CrewLabVerdict } from '../../core/crew/labs.js';
-import type { CrewPreset } from '../../core/crew/presets.js';
-import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
+import { crewRowKey } from '../../core/crew/rows.js';
 import { selectDefaultCrew } from '../../core/crew/default.js';
 import { checkCrewAvailability, unavailableCrewSeats } from '../../engine/detection/crew.js';
 import type { CrewSeat } from '../../core/crew/seats.js';
@@ -16,19 +13,9 @@ import type { Config } from '../../core/schemas/config.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import { cliSignInStep } from '../../core/readiness/cli-remediation.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
-import {
-  BOOT_MANIFEST_TITLE,
-  REFRESHING_TOOLS_TITLE,
-  TOOL_CHECK_FAILED_TITLE,
-} from '../../core/discovery/copy.js';
-import { BootManifest } from '../../features/runners/boot-manifest.js';
-import { ToolRollCall } from '../../features/runners/tool-roll-call.js';
+import { REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
-import {
-  CREW_IDENTITY_COLUMN,
-  planSeatBlock,
-  type SeatBlockLayout,
-} from '../../features/crew/format.js';
+import { CREW_IDENTITY_COLUMN } from '../../features/crew/format.js';
 import { crewActivate } from '../../features/crew/rows.js';
 import { PresetRowView } from '../../features/crew/preset-row.js';
 import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
@@ -37,7 +24,7 @@ import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
-import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
+import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt/prompt.js';
 import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
@@ -66,6 +53,15 @@ import { isAbortError } from '../../utils/abort.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
 import { appPreparationError, interactivePreparationPolicy } from '../prepare-resume.js';
+import {
+  CONTINUE_SECTION,
+  continueText,
+  crewKeysHint,
+  planSetupList,
+  sectionOf,
+  type SetupItem,
+} from '../../features/crew/setup/list-plan.js';
+import { DiscoveryPanel } from '../../features/runners/cold-discovery-panel.js';
 
 type Step = 'discovery' | 'crew';
 
@@ -74,10 +70,6 @@ const CREW_PANEL_DENSITY: OverlayDensity = 'wide';
 const PANEL_CHROME_ROWS = 4;
 /** The note line and the blank line under it. */
 const NOTE_BLOCK_ROWS = 2;
-export const PRESET_SECTION = 'Ready-made crews';
-const CREW_SECTION = 'Crew';
-const CONTINUE_SECTION = '';
-
 /** Setup reads each tool's own model list the way the picker does. */
 function withCliCatalogs(detection: PickerDetectionSnapshot): PickerDetectionSnapshot {
   return { ...detection, cliCatalog: (tool) => modelCacheStore.getCliCatalogRuntime({ tool }) };
@@ -97,106 +89,6 @@ async function unavailableSetupSeats(
     checkCrewAvailability({ config: saved, detection: crewDetection, signal }),
   ]);
   return [...invocationSeats, ...persistedSeats];
-}
-
-type SetupItem =
-  | Readonly<{ kind: 'preset'; preset: CrewPreset; key: string }>
-  | Readonly<{ kind: 'crew'; row: CrewRow; key: string }>
-  | Readonly<{ kind: 'continue'; key: string }>;
-
-/**
- * The panel yields in one order until it fits: the cross-lab verdict first (inside
- * `planSeatBlock`), then the section headers, then the blank rows between blocks and under the
- * sign-in step, then the ready-made crews.
- */
-const LADDER = [
-  { headers: true, gaps: true, presets: true },
-  { headers: false, gaps: true, presets: true },
-  { headers: false, gaps: false, presets: true },
-  { headers: false, gaps: false, presets: false },
-] as const;
-
-type SetupListPlan = Readonly<{
-  layout: SeatBlockLayout;
-  showPresets: boolean;
-  showHeaders: boolean;
-  showGaps: boolean;
-}>;
-
-type SetupListInput = Readonly<{
-  crewRows: readonly CrewRow[];
-  verdict: CrewLabVerdict | undefined;
-  presets: readonly CrewPreset[];
-  signIn: boolean;
-  innerWidth: number;
-  budget: number;
-}>;
-
-function planStage(
-  input: SetupListInput,
-  stage: (typeof LADDER)[number],
-): Readonly<{ plan: SetupListPlan; rows: number }> {
-  const presetRows = stage.presets ? input.presets.length : 0;
-  const blocks = presetRows > 0 ? 2 : 1;
-  const gaps = blocks + (input.signIn ? 1 : 0);
-  const around = presetRows + (stage.headers ? blocks : 0) + (stage.gaps ? gaps : 0) + 1;
-  const layout = planSeatBlock({
-    rows: input.crewRows,
-    verdict: input.verdict,
-    innerWidth: input.innerWidth,
-    rowBudget: input.budget - around,
-  });
-  return {
-    plan: {
-      layout,
-      showPresets: presetRows > 0,
-      showHeaders: stage.headers,
-      showGaps: stage.gaps,
-    },
-    rows: layout.rows + around,
-  };
-}
-
-function planSetupList(input: SetupListInput): SetupListPlan {
-  let staged = planStage(input, LADDER[0]);
-  for (const stage of LADDER.slice(1)) {
-    if (staged.rows <= input.budget) return staged.plan;
-    staged = planStage(input, stage);
-  }
-  return staged.plan;
-}
-
-function sectionOf(item: SetupItem): string {
-  switch (item.kind) {
-    case 'preset':
-      return PRESET_SECTION;
-    case 'crew':
-      return CREW_SECTION;
-    case 'continue':
-      return CONTINUE_SECTION;
-    default:
-      return assertNever(item);
-  }
-}
-
-function crewKeysHint(item: SetupItem | undefined): string {
-  if (item === undefined) return '⏎ change seat';
-  switch (item.kind) {
-    case 'preset':
-      return item.preset.notReady.length > 0 ? 'this crew needs ready tools' : '⏎ use this crew';
-    case 'crew':
-      return '⏎ change seat';
-    case 'continue':
-      return '⏎ continue';
-    default:
-      return assertNever(item);
-  }
-}
-
-/** Continue sits on the same left column as the preset and seat labels. */
-function continueText(isCursor: boolean): string {
-  const gutter = listRowLead(isCursor ? 'active' : 'default');
-  return `${gutter}Continue`;
 }
 
 /** The three effects this screen spends: the check it submits, the record it reads back, and
@@ -219,67 +111,6 @@ type SetupPreparationInput = Readonly<{
   attachedInputs?: readonly AttachedInput[] | undefined;
   allowRepoRunners: boolean;
 }>;
-
-type DiscoveryPanelProps = Readonly<{
-  state: 'initializing' | 'failed';
-  noConfig: boolean;
-  onBack: () => void;
-  onRetry: () => void;
-  onOpenSettings: () => void;
-}>;
-
-function DiscoveryPanel({ state, noConfig, onBack, onRetry, onOpenSettings }: DiscoveryPanelProps) {
-  const t = useTheme();
-  const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
-  const feedback = feedbackStore.use((snapshot) => snapshot);
-  const { cols, rows } = terminalSizeStore.use((size) => size);
-  const { innerWidth } = overlayRect({ cols, rows, density: 'compact' });
-  const notice = layoutFeedbackNotice(feedback, innerWidth);
-  const feedbackNotice =
-    notice === null ? undefined : <FeedbackNotice notice={notice} width={innerWidth} />;
-
-  useInput(
-    (input, key) => {
-      if (key.escape) {
-        onBack();
-        return;
-      }
-      if (state !== 'failed') return;
-      if (input === 'r' || input === 'R') {
-        onRetry();
-        return;
-      }
-      if (input === 's' || input === 'S') onOpenSettings();
-    },
-    { isActive: !hasOverlay },
-  );
-
-  if (state === 'initializing') {
-    return (
-      <OverlayPanel title={BOOT_MANIFEST_TITLE} density="compact" hint="esc quit">
-        {noConfig ? (
-          <ToolRollCall footer={feedbackNotice} />
-        ) : (
-          <BootManifest footer={feedbackNotice} />
-        )}
-      </OverlayPanel>
-    );
-  }
-
-  return (
-    <OverlayPanel
-      title={TOOL_CHECK_FAILED_TITLE}
-      density="compact"
-      hint={`r retry${SOFT_SEP}esc quit${SOFT_SEP}s settings`}
-    >
-      <Text color={t.error}>Your tools could not be checked.</Text>
-      <Box marginTop={1}>
-        <Text color={t.textDim}>Retry the check or review runner settings.</Text>
-      </Box>
-      {feedbackNotice}
-    </OverlayPanel>
-  );
-}
 
 interface CrewStepProps {
   noConfig: boolean;

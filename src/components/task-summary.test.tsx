@@ -5,12 +5,12 @@ import { defaultTheme } from './theme.js';
 import { paint } from '../core/theme/paint.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { fitDetailRun as fitDetailSpans } from '../features/workflow/components/task-summary/detail-run.js';
 import {
-  TaskSummary,
-  fitDetailRun as fitDetailSpans,
   taskSummarySpans,
   type TaskSummaryState,
-} from './task-summary.js';
+} from '../features/workflow/components/task-summary/spans.js';
+import { TaskSummary } from '../features/workflow/components/task-summary/view.js';
 import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text/width.js';
 import { methodWord } from '../core/sessions/display.js';

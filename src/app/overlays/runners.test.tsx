@@ -19,7 +19,7 @@ import { crewActivate, fallbackActivate } from '../../features/crew/rows.js';
 import {
   defaultPickerEffectDeps,
   type PickerEffectDeps,
-} from '../../features/runners/use-picker-actions.js';
+} from '../../features/runners/picker/use-actions.js';
 import type { ScopedCliCatalogAttempt } from '../../engine/detection/cli-catalog-outcomes.js';
 import type { DetectionService, DetectionServiceResult } from '../../engine/detection/service.js';
 import {

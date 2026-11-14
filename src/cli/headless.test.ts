@@ -4,11 +4,8 @@ import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import type { RecoveryIssue } from '../core/schemas/recovery/schemas.js';
 import { buildReviewFailedRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import {
-  configDeclaresFallback,
-  emitRecoveryAndFailIfPending,
-  failIfSessionFailed,
-} from './headless.js';
+import { configDeclaresFallback } from './headless/run.js';
+import { emitRecoveryAndFailIfPending, failIfSessionFailed } from './headless/outcome.js';
 
 const POINTER = 'Workflow failed — see the error output above.';
 const CAUSE = 'The run baseline snapshot could not be initialized; workspace acquisition stopped.';

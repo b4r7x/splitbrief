@@ -8,7 +8,7 @@ import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/c
 import type { ModelOption, ModelVariant } from './recency.js';
 import { routeDraftOf, stepOptionAxis } from './option-axis.js';
 import { mergeOptionFamilies } from './option-merge.js';
-import type { RightRow } from './rows.js';
+import type { RightRow } from './types.js';
 import {
   AUTO_ROW_METADATA,
   BROWSE_CATALOG_TEXT,

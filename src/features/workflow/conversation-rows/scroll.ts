@@ -3,7 +3,7 @@ import { computeScrollMaxOffset, getScrollWindowState } from '../layout/scroll-w
 import {
   getConversationRowsProjection,
   getConversationRowsWindowProjection,
-} from './projection-cache.js';
+} from './cache/projection.js';
 import type {
   ConversationRowBlock,
   ConversationRowsProjection,

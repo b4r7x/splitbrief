@@ -13,13 +13,16 @@ import { LOCKFILE_PING_INTERVAL_MS } from '../../../../engine/orchestrator/run/h
 import {
   requestLeaveSession,
   requestResume,
-  rereadRunAtRest,
   setResumeHandler,
-} from '../../handlers.js';
+} from '../../run-requests/handlers.js';
+import { rereadRunAtRest } from '../../run-requests/end-run.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from '../use-run-loop.js';
-import { createReviewInputHandler, type ReviewInputEffects } from '../../review-parser.js';
+import {
+  createReviewInputHandler,
+  type ReviewInputEffects,
+} from '../../review-gate/input-handler.js';
 import { useWorkflowKeys } from '../use-keys.js';
 import { resolveInputHint } from '../../input-hints.js';
 import { continueRun } from '../../../../engine/orchestrator/run/continue.js';
@@ -53,7 +56,7 @@ import {
   routeClosedAtRest,
 } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
-import { hydrateResume } from '../../resume-hydration.js';
+import { hydrateResume } from '../../resume/hydration.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
 import { plainUserMessage, type UserMessageInput } from '../../../../core/types/user-input.js';
 

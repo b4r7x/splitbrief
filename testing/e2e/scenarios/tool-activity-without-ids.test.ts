@@ -6,7 +6,7 @@ import { sessionsRoot } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { buildActivityBatchViewModel } from '../../../src/features/workflow/conversation-rows/activity-batch-model.js';
+import { buildActivityBatchViewModel } from '../../../src/features/workflow/conversation-rows/activity/batch-model.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { flushEffects } from '#testing/helpers/ink.js';

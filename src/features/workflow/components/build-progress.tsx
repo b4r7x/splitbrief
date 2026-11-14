@@ -6,7 +6,8 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { buildProgressRows, deriveBuildProgress } from '../display/build-progress.js';
+import { deriveBuildProgress } from '../display/build-progress/derive.js';
+import { buildProgressRows } from '../display/build-progress/rows.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 export function BuildProgressBlock({ cols }: { cols: number }) {

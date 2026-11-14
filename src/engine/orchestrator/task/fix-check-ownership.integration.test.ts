@@ -11,7 +11,7 @@ import { transition } from '../../../core/state/machine.js';
 import { taskId, type Check, type Task } from '../../../core/schemas/task.js';
 import type { TriageInput } from '../../../core/schemas/review/verdict.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { fullSuiteSegments } from '../../../features/workflow/conversation-rows/event-format.js';
+import { fullSuiteSegments } from '../../../features/workflow/conversation-rows/event-rows/full-suite.js';
 import { processError } from '../../../lib/process/errors.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import type { EngineEventOf } from '../../events/types.js';

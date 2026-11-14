@@ -18,7 +18,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { Header } from './header.js';
-import { Sidebar } from './sidebar.js';
+import { Sidebar } from './sidebar/panel.js';
 
 const originalColorLevel = chalk.level;
 

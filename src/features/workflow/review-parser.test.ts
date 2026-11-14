@@ -22,15 +22,14 @@ import { approvalPromptStore, openApprovalPrompt } from '../../stores/prompts/ap
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
 import { plainAnswer, type UseInputModeResult } from './hooks/use-input-mode.js';
-import { clearAllHandlers, setQueueHandler } from './handlers.js';
+import { clearAllHandlers, setQueueHandler } from './run-requests/handlers.js';
+import { createReviewInputHandler, type ReviewInputEffects } from './review-gate/input-handler.js';
+import { openReviewFileExternally } from './review-gate/external-edit.js';
+import { runEditor, type SpawnEditor } from './external-editor/spawn.js';
 import {
-  createReviewInputHandler,
-  openReviewFileExternally,
-  runEditor,
-  type ReviewInputEffects,
-  type SpawnEditor,
-} from './review-parser.js';
-import { REVIEW_UNKNOWN_COMMAND_MESSAGE, reviewOpeningPromptMessage } from './review-commands.js';
+  REVIEW_UNKNOWN_COMMAND_MESSAGE,
+  reviewOpeningPromptMessage,
+} from './review-gate/commands.js';
 
 type EditorOutcome =
   | { kind: 'close'; code: number | null; signal: NodeJS.Signals | null }

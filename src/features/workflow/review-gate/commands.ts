@@ -1,0 +1,96 @@
+import type { ApprovalReviewResult } from '../../../core/approval/types.js';
+import type { DraftDocument } from '../../../core/schemas/draft-document.js';
+import { SOFT_SEP } from '../../../core/separators.js';
+import { trimDraftDocument } from '../../../components/composer/use-paste-drafts.js';
+import { assertNever } from '../../../utils/type-guards.js';
+import type { ReviewDocumentCommand } from '../prompt-rows/review-document.js';
+
+// Both review phases take the same four typed commands; the composer holds the keys, so no letter acts.
+export const REVIEW_HINT = `approve${SOFT_SEP}comment <text>${SOFT_SEP}end-run${SOFT_SEP}edit`;
+// Named with the same words the legend just taught. Every one of them parses, so the recovery
+// message cannot send a user who read `q end run` off to type a word the legend never showed.
+export const REVIEW_UNKNOWN_COMMAND_MESSAGE =
+  'Unknown command. Use: approve, comment <text>, end-run, or edit';
+
+const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
+// The gate no longer rejects, it ends the run; the words it used to take still parse.
+const END_RUN_ALIASES = new Set(['end-run', 'end run', 'end', 'quit', 'q', 'reject', 'no', 'n']);
+
+type LocalBriefReviewAction = 'approve' | 'end-run';
+
+export type LegacyReviewCommand = { readonly action: 'revise'; readonly comment: string };
+
+export type ReviewCommand = { readonly action: LocalBriefReviewAction } | LegacyReviewCommand;
+
+export type ReviewAction =
+  | { kind: 'brief-review-command'; command: ReviewCommand }
+  | { kind: 'open-editor' }
+  | { kind: 'comment-draft' }
+  | null;
+
+export type ReviewDraftTarget = ReviewDocumentCommand | 'send';
+
+export function reviewOpeningPromptMessage(): string {
+  return `Review prompt is opening. Once active, use: ${REVIEW_HINT}`;
+}
+
+export function parseReviewCommand(text: string): ReviewAction {
+  const raw = text.trim();
+  const cmd = raw.toLowerCase();
+  if (APPROVE_ALIASES.has(cmd)) return briefReviewAction('approve');
+  if (END_RUN_ALIASES.has(cmd)) return briefReviewAction('end-run');
+  if (cmd === 'edit-file' || cmd === 'edit' || cmd === 'e') {
+    return { kind: 'open-editor' };
+  }
+  if (cmd === 'comment' || cmd === 'c') return { kind: 'comment-draft' };
+  if (cmd.startsWith('comment ') || cmd.startsWith('revise ')) {
+    const firstWhitespace = raw.search(/\s/);
+    const comment = firstWhitespace === -1 ? '' : raw.slice(firstWhitespace + 1).trim();
+    return comment
+      ? { kind: 'brief-review-command', command: { action: 'revise', comment } }
+      : null;
+  }
+  return null;
+}
+
+// Over a plan card that waits under the composer, ⏎ sends the draft as the change request, whatever
+// word it opens with. A draft of only the word approve is the one exception: it takes the Approve row.
+export function draftApprovesPlan(document: DraftDocument): boolean {
+  const [only, ...rest] = trimDraftDocument(document).parts;
+  return rest.length === 0 && only?.kind === 'text' && only.text.toLowerCase() === 'approve';
+}
+
+export function reviewDraftTarget(text: string, requested: boolean): ReviewDraftTarget {
+  if (requested) return 'send';
+  const parsed = parseReviewCommand(text);
+  if (parsed === null) return 'send';
+  if (parsed.kind === 'comment-draft') return 'comment';
+  if (parsed.kind === 'open-editor') return 'edit-file';
+  switch (parsed.command.action) {
+    case 'approve':
+      return 'approve';
+    case 'end-run':
+      return 'end-run';
+    case 'revise':
+      return 'send';
+    default:
+      return assertNever(parsed.command);
+  }
+}
+
+export function reviewCommandToApprovalReviewResult(
+  command: Exclude<ReviewCommand, { action: 'revise' }>,
+): ApprovalReviewResult {
+  switch (command.action) {
+    case 'approve':
+      return { approved: true };
+    case 'end-run':
+      return { approved: false, action: 'end-run' };
+    default:
+      return assertNever(command.action);
+  }
+}
+
+function briefReviewAction(action: LocalBriefReviewAction): ReviewAction {
+  return { kind: 'brief-review-command', command: { action } };
+}

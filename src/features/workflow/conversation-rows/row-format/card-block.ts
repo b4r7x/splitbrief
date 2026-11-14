@@ -4,7 +4,7 @@ import {
 } from '../../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { wrapPathAware } from '../../../../utils/display-text/wrap.js';
-import { wrapWidthFor } from '../row-markers.js';
+import { wrapWidthFor } from './markers.js';
 import type {
   ConversationRow,
   ConversationRowKind,

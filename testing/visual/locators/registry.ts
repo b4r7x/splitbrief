@@ -2,7 +2,7 @@ import {
   getReviewPanelBudget,
   getWorkflowSidebarWidth,
 } from '../../../src/features/workflow/layout/rect.js';
-import { getReviewDocumentPromptRows } from '../../../src/features/workflow/prompt-rows/approval.js';
+import { getReviewDocumentPromptRows } from '../../../src/features/workflow/prompt-rows/review-document.js';
 import { getRecoveryPromptRows } from '../../../src/features/workflow/prompt-rows/recovery.js';
 import {
   getContentTopRowIndex,

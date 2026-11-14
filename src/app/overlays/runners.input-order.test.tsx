@@ -14,7 +14,7 @@ import { crewActivate } from '../../features/crew/rows.js';
 import {
   defaultPickerEffectDeps,
   type PickerEffectDeps,
-} from '../../features/runners/use-picker-actions.js';
+} from '../../features/runners/picker/use-actions.js';
 import { glyph } from '../../lib/glyphs.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';

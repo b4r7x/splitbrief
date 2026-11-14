@@ -1,33 +1,23 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import { ListRow } from '../../../components/list-row/row.js';
-import { SOFT_SEP } from '../../../core/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { availableRows } from '../../../components/pickers/scroll-offset.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
-import { wrapOnWords } from '../picker-format.js';
+import { wrapOnWords } from '../picker/byline.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { SingleColumnPicker } from '../../../components/pickers/single-column.js';
+import { SingleColumnPicker } from './single-column.js';
 import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
-import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
-import type {
-  EscapeAction,
-  LeftColumnProps,
-  RightColumnProps,
-  RightSectionProps,
-  TerminalPane,
-} from './types.js';
+import { glyph } from '../../../lib/glyphs.js';
+import type { LeftColumnProps, RightColumnProps } from './types.js';
 import { useTwoColumnState } from './use-nav-state.js';
-import {
-  CUSTOM_ROW_ID,
-  isRealRightItem,
-  isVirtualCustomItem,
-  type RightItemOrVirtual,
-} from './virtual-items.js';
+import { isRealRightItem, isVirtualCustomItem } from './virtual-items.js';
+import { bylineLines, BYLINE_ROWS, getHint, type PickerHintKind } from './hint.js';
+import { TerminalPaneCard } from './terminal-pane-card.js';
+import { buildRightDisplay, type RightDisplaySlot } from './right-display.js';
 
 export interface PreviewContext<L, R> {
   activeColumn: 'left' | 'right';
@@ -58,31 +48,6 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
 }
 
 const PREVIEW_MIN_COLS = 50;
-/** The byline's rows: the preview's, and a notice's when one stands. */
-const BYLINE_ROWS = 2;
-
-/**
- * A byline broken on words into its rows. Each line of the message starts a row, and a line with no
- * row left is dropped; words left over of a line end its last row in an ellipsis.
- */
-function bylineLines(message: string, cells: number): string[] {
-  const lines: string[] = [];
-  let cut = false;
-  for (const paragraph of message.split('\n')) {
-    if (lines.length === BYLINE_ROWS) break;
-    const wrapped = wrapOnWords(paragraph, cells, BYLINE_ROWS - lines.length);
-    lines.push(...wrapped.lines);
-    cut = wrapped.cut;
-    if (cut) break;
-  }
-  if (!cut) return lines;
-  const words = (lines.at(-1) ?? '').split(' ');
-  while (words.length > 1 && getTerminalCellWidth(`${words.join(' ')}${ELLIPSIS}`) > cells) {
-    words.pop();
-  }
-  return [...lines.slice(0, -1), `${words.join(' ')}${ELLIPSIS}`];
-}
-
 const INNER_PADDING = 4;
 const COLUMN_GAP = 3;
 const OUTER_CHROME_ROWS = 6;
@@ -90,197 +55,6 @@ const INNER_CHROME_ROWS = 4;
 /** The least room between the title and a step label that shares its row. */
 const HEAD_GAP = 2;
 const VISIBLE_ROWS_CAP = 18;
-
-type PickerHintKind = 'terminal' | 'expanded' | 'default';
-
-const ESCAPE_HINTS: Record<EscapeAction, string> = {
-  collapse: 'esc collapse',
-  'clear-left': 'esc clear',
-  'clear-right': 'esc clear',
-  cancel: 'esc cancel',
-};
-
-function getHint(input: {
-  kind: PickerHintKind;
-  terminalVerb: string | undefined;
-  nav: {
-    activeColumn: 'left' | 'right';
-    isDisabled: boolean;
-    isOnCustomItem: boolean;
-    currentRightIsCustom: boolean;
-    escape: EscapeAction;
-  };
-  hasRefresh: boolean;
-  maxVisible: number;
-  width: number;
-  enterHint?: string | undefined;
-}): string {
-  const { kind, nav, hasRefresh, maxVisible } = input;
-  const escapeHint = ESCAPE_HINTS[nav.escape];
-  if (maxVisible <= 0) {
-    return `Terminal too short${SOFT_SEP}${escapeHint}`;
-  }
-  const fitHint = (action: string, columns: boolean): string => {
-    const navigation = [...(columns ? ['←→ column'] : []), '↑↓ select'];
-    const selectOnly = navigation.filter((hint) => hint !== '↑↓ select');
-    const extras = [
-      ...(nav.currentRightIsCustom ? ['ctrl+d delete'] : []),
-      ...(hasRefresh ? ['ctrl+r refresh'] : []),
-    ];
-    const compose = (navigationHints: string[], extraHints: string[]) =>
-      [...navigationHints, action, escapeHint, ...extraHints].filter(Boolean).join(SOFT_SEP);
-    const candidates = [
-      compose(navigation, extras),
-      compose(navigation, []),
-      compose(selectOnly, []),
-      compose([], []),
-    ];
-    return candidates.find((hint) => getTerminalCellWidth(hint) <= input.width) ?? compose([], []);
-  };
-  if (kind === 'terminal') {
-    if (input.terminalVerb === undefined) return fitHint('', false);
-    return fitHint(`⏎ ${input.terminalVerb}`, false);
-  }
-  if (kind === 'expanded') {
-    // The launcher is pinned above the expansion and answers for itself, so the
-    // expansion's verb never speaks for it.
-    const lead = nav.isOnCustomItem ? '⏎ add custom' : (input.enterHint ?? '⏎ choose route');
-    // An empty lead is a row with no verb of its own; it drops its slot rather
-    // than opening the line with a separator that reads as a missing key.
-    return fitHint(lead, true);
-  }
-  if (nav.isOnCustomItem) {
-    return fitHint('⏎ add custom', true);
-  }
-  // A disabled tool row takes neither → nor ⏎, so the hint offers only the keys that act on it.
-  if (nav.activeColumn === 'left' && nav.isDisabled) {
-    return fitHint('', false);
-  }
-  return fitHint(input.enterHint ?? '⏎ confirm', true);
-}
-
-/**
- * A value line breaks at its own separators — never inside a segment, and never leaving the
- * separator hanging at a line end — so `Claude Code CLI · claude-sonnet-4` reads as two whole lines
- * on a card too narrow for one.
- */
-function wrapValueLine(text: string, width: number): string[] {
-  if (getTerminalCellWidth(text) <= width) return [text];
-  const lines: string[] = [];
-  let current = '';
-  for (const segment of text.split(SOFT_SEP)) {
-    const candidate = current === '' ? segment : `${current}${SOFT_SEP}${segment}`;
-    if (current !== '' && getTerminalCellWidth(candidate) > width) {
-      lines.push(current);
-      current = segment;
-      continue;
-    }
-    current = candidate;
-  }
-  return current === '' ? lines : [...lines, current];
-}
-
-function paneRowsThatFit(rows: readonly string[], slots: number): string[] {
-  if (slots <= 0) return [];
-  if (rows.length <= slots) return [...rows];
-  const dense = rows.filter((line) => line !== '');
-  if (dense.length <= slots) return dense;
-  return markCut(dense.slice(0, slots), dense.length);
-}
-
-function markCut(lines: string[], sourceLength: number): string[] {
-  if (lines.length >= sourceLength || lines.length === 0) return lines;
-  const last = lines.at(-1);
-  if (last === undefined || last.endsWith(ELLIPSIS)) return lines;
-  return [...lines.slice(0, -1), `${last}${ELLIPSIS}`];
-}
-
-/**
- * The read-only pane a terminal left row opens: fixed height matching
- * columnHeight so the right box never collapses.
- */
-function TerminalPaneCard({
-  pane,
-  contentWidth,
-  height,
-}: {
-  pane: TerminalPane;
-  contentWidth: number;
-  height: number;
-}) {
-  const t = useTheme();
-  const rows = paneRowsThatFit(
-    pane.lines.flatMap((line) =>
-      typeof line !== 'string'
-        ? wrapValueLine(line.whole, contentWidth)
-        : line === ''
-          ? ['']
-          : wrapOnWords(line, contentWidth, Number.POSITIVE_INFINITY).lines,
-    ),
-    height - 3,
-  );
-  return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      flexBasis={0}
-      height={height}
-      borderStyle={borderStyleFor('round')}
-      borderColor={t.border}
-      borderDimColor
-      paddingX={1}
-    >
-      <Text color={t.text}>{sanitizeTerminalDisplayText(pane.label)}</Text>
-      <Box height={1} />
-      {rows.map((line, i) =>
-        line === '' ? (
-          <Box key={`blank-${i}`} height={1} />
-        ) : (
-          <Text key={`line-${i}`} color={t.textDim} wrap="truncate-end">
-            {sanitizeTerminalDisplayText(line)}
-          </Text>
-        ),
-      )}
-    </Box>
-  );
-}
-
-type RightDisplaySlot<R> =
-  | { kind: 'spacer'; key: string }
-  | { kind: 'header'; key: string; section: string }
-  | { kind: 'guidance'; key: string }
-  | { kind: 'row'; key: string; item: RightItemOrVirtual<R>; navIndex: number };
-
-export function buildRightDisplay<R extends { id: string }>(
-  items: RightItemOrVirtual<R>[],
-  getKey: (item: R) => string,
-  section: RightSectionProps<R> | undefined,
-): RightDisplaySlot<R>[] {
-  const slots: RightDisplaySlot<R>[] = [];
-  let previous: string | null = null;
-  items.forEach((item, navIndex) => {
-    const key = isVirtualCustomItem(item) ? CUSTOM_ROW_ID : getKey(item);
-    if (section && isRealRightItem(item)) {
-      const current = section.by(item);
-      // A row that opens no section of its own — the children of an expansion —
-      // leaves the open section standing, or the next row of it repeats its header.
-      if (current !== '') {
-        if (current !== previous && (section.headerFor?.(current) ?? true)) {
-          if (slots.length > 0) {
-            slots.push({ kind: 'spacer', key: `spacer:${current}` });
-          }
-          slots.push({ kind: 'header', key: `section:${current}`, section: current });
-        }
-        previous = current;
-      }
-    }
-    slots.push({ kind: 'row', key, item, navIndex });
-  });
-  // The custom-model row is an affordance, not catalog content: with no real
-  // row behind it the column still owes the reader why the catalog is empty.
-  if (!items.some(isRealRightItem)) slots.push({ kind: 'guidance', key: 'guidance' });
-  return slots;
-}
 
 export function TwoColumnPicker<L extends FilterableItem, R extends { id: string }>({
   title,

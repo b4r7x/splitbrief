@@ -9,7 +9,7 @@ import { phaseStage } from '../../../core/phases/rail.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { capitalize } from '../../../utils/capitalize.js';
 import { planCheckName } from '../../../core/validation/plan-check-name.js';
-import { runnerActivityRoleLabel } from './runner-activity-display.js';
+import { runnerActivityRoleLabel } from './runner-activity/role.js';
 import { isStatusFallback } from '../../../stores/workflow/operations/planner-status.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';

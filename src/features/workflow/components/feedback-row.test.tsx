@@ -13,11 +13,11 @@ import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { openApprovalPrompt } from '../../../stores/prompts/approval.js';
 import { questionPromptStore } from '../../../stores/prompts/question.js';
-import { REVIEW_HINT } from '../review-commands.js';
+import { REVIEW_HINT } from '../review-gate/commands.js';
 import { KEY_LEGEND_LEADING } from '../../../components/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { formatCopyResult } from '../../../core/runtime/commands/types.js';
-import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';
+import { clearAllHandlers, requestSeatChangeAtBoundary } from '../run-requests/handlers.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 

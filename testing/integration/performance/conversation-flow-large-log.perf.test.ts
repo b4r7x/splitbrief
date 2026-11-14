@@ -10,11 +10,11 @@ import {
   getConversationRowsProjection,
   getConversationRowsWindowProjection,
   resetConversationRowsProjectionCache,
-} from '../../../src/features/workflow/conversation-rows/projection-cache.js';
+} from '../../../src/features/workflow/conversation-rows/cache/projection.js';
 import {
   markdownConversationRowsProjection,
   resetMarkdownConversationRowsCache,
-} from '../../../src/features/workflow/conversation-rows/markdown-rows.js';
+} from '../../../src/features/workflow/conversation-rows/markdown-rows/build.js';
 import { markdownLayoutGlyphs } from '../../../src/lib/glyphs.js';
 import { parseMarkdownBlocks } from '../../../src/utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../../../src/utils/markdown/layout/document.js';

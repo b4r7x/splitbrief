@@ -29,7 +29,7 @@ const { runViewStore } = await import('../../../src/stores/workflow/run-view.js'
 const { createInitialState, transition } = await import('../../../src/core/state/machine.js');
 const { saveState } = await import('../../../src/core/state/persistence.js');
 const { requestBoundaryPause, requestCancel, requestResume } = await import(
-  '../../../src/features/workflow/handlers.js'
+  '../../../src/features/workflow/run-requests/handlers.js'
 );
 
 const ENTER = '\r';

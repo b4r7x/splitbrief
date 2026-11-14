@@ -5,10 +5,10 @@ import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
-import { calloutRowsBlock } from './callout-block.js';
+import { calloutRowsBlock } from './blocks/callout.js';
 import { eventRowBlock } from './event-rows/dispatch.js';
-import { cardRowsBlock } from './row-block-compose.js';
-import { wrapWidthFor } from './row-markers.js';
+import { cardRowsBlock } from './blocks/compose.js';
+import { wrapWidthFor } from './row-format/markers.js';
 import { rowText } from './row-format/rows.js';
 import type { ConversationRow } from './types.js';
 
