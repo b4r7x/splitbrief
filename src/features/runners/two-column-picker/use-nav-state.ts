@@ -6,13 +6,9 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { clampIndex } from '../../../utils/indexing.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { escapeAction, handleKeyboardInput } from './keyboard.js';
-import type {
-  CycleOutcome,
-  LeftColumnProps,
-  RightColumnProps,
-  TwoColumnNavState,
-} from './types.js';
+import type { LeftColumnProps, RightColumnProps, TwoColumnNavState } from './types.js';
 import { useColumnState } from './use-column-state.js';
+import { useRightActions } from './use-right-actions.js';
 import {
   CUSTOM_ROW_ID,
   isRealRightItem,
@@ -71,14 +67,9 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const resolveInitialRightIndex = rightProps.resolveInitialIndex;
   const onLeftChange = rightProps.onLeftChange ?? noop;
   const activationOf = rightProps.activationOf;
-  const onExpand = rightProps.onExpand;
-  const onCollapse = rightProps.onCollapse;
-  const onCycle = rightProps.onCycle;
 
   const [activeColumn, setActiveColumn] = useState<'left' | 'right'>(initialColumn);
   const [selectedLeftKey, setSelectedLeftKey] = useState<string | null>(null);
-  const [pendingExpand, setPendingExpand] = useState<string | null>(null);
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const leftCol = useColumnState<L>({
     source: leftItems,
@@ -143,21 +134,16 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
       return activation === 'confirm' || activation === 'expand';
     });
 
-  const rightIndexOfKey = (key: string) =>
-    filteredRight.findIndex((row) => isRealRightItem(row) && rightProps.getKey(row) === key);
-
-  // The expansion reaches this hook as props on a later render, so the cursor
-  // move waits for it: an index computed when the key was pressed is measured
-  // against the pre-expansion list and clamps back when the parent was last.
-  useLayoutEffect(() => {
-    if (pendingExpand === null) return;
-    if (!(rightProps.isExpanded ?? false)) {
-      setPendingExpand(null);
-      return;
-    }
-    const at = rightIndexOfKey(pendingExpand);
-    setPendingExpand(null);
-    if (at >= 0 && at + 1 < filteredRight.length) rightCol.setIndex(at + 1);
+  const { moveRight, cycleRight, collapseRight, activateRight } = useRightActions({
+    rightProps,
+    leftCol,
+    rightCol,
+    filteredRight,
+    setActiveColumn,
+    onCustomRightOverlay,
+    onConfirm,
+    onRefresh: params.onRefresh,
+    maxVisible: params.maxVisible,
   });
 
   const activateLeft = (index: number) => {
@@ -180,70 +166,6 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     setActiveColumn('left');
     setSelectedLeftKey(null);
     resetRight(leftCol.moveBy(direction));
-  };
-
-  const moveRight = (direction: 1 | -1) => {
-    if (params.maxVisible <= 0 || filteredRight.length === 0) return;
-    setActiveColumn('right');
-    rightCol.moveBy(direction);
-  };
-
-  const cycleRight = (index: number): CycleOutcome => {
-    if (params.maxVisible <= 0) return 'none';
-    const item = filteredRight[index];
-    if (item === undefined || !isRealRightItem(item)) return 'none';
-    const outcome = onCycle?.(item) ?? 'none';
-    if (outcome === 'none') return 'none';
-    rightCol.setIndex(index);
-    setActiveColumn('right');
-    return outcome;
-  };
-
-  // Collapsing takes the rows under the cursor out of the list, so the highlight
-  // goes back to the row that opened them instead of to whatever slid up into it.
-  const collapseRight = () => {
-    const at = expandedKey === null ? -1 : rightIndexOfKey(expandedKey);
-    if (at >= 0) rightCol.setIndex(at);
-    setExpandedKey(null);
-    onCollapse?.();
-  };
-
-  const activateRight = (index: number) => {
-    if (params.maxVisible <= 0) return;
-    const item = filteredRight[index];
-    if (!item) return;
-    rightCol.setIndex(index);
-    setActiveColumn('right');
-    if (isVirtualCustomItem(item)) {
-      if (onCustomRightOverlay && leftCol.currentItem) onCustomRightOverlay(leftCol.currentItem);
-      return;
-    }
-    if (!isRealRightItem(item)) return;
-    const activation = activationOf?.(item) ?? 'confirm';
-    switch (activation) {
-      case 'expand': {
-        const key = rightProps.getKey(item);
-        onExpand?.(item);
-        setPendingExpand(key);
-        setExpandedKey(key);
-        return;
-      }
-      case 'collapse':
-        collapseRight();
-        return;
-      case 'refresh':
-        params.onRefresh?.();
-        return;
-      case 'none':
-        return;
-      case 'confirm': {
-        const leftItem = leftCol.items[leftCol.effectiveIndex];
-        if (leftItem) onConfirm(leftItem, item);
-        return;
-      }
-      default:
-        return assertNever(activation);
-    }
   };
 
   const isActive = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));

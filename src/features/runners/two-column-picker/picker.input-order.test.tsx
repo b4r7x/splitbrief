@@ -113,7 +113,7 @@ function Harness({ log, column }: { log: string[]; column: 'left' | 'right' }) {
           },
         },
       }}
-      onConfirm={(t, row) => log.push(`confirm ${t.id}:${row?.id ?? 'none'}`)}
+      onConfirm={(t, row) => log.push(`confirm ${t.id}:${row?.displayName ?? 'none'}`)}
       onCancel={() => log.push('cancel')}
       onRefresh={() => log.push('refresh')}
     />
@@ -614,5 +614,63 @@ describe('TwoColumnPicker input order', () => {
     const steps = Array.from({ length: count }, () => DOWN);
     const { end } = await run({ id: '', name: '', column: R, start: '>auto', steps }, 'burst');
     expect(end.frame).toContain(`>${landsOn}`);
+  });
+
+  // Each right column action meets the state that the action before it left: a cycle steps the
+  // effort draft once, and the confirm after the collapse carries the last draft.
+  const DRAFT_LOG = [
+    'cycle effort',
+    'cycle effort',
+    'expand family',
+    'collapse',
+    'confirm alpha:effort high',
+  ];
+
+  it.for(['steady', 'burst'] as const)(
+    'D01 runs a wheel step into the model column, two cycles, an open and an Esc close and ⏎ in order (%s)',
+    async (delivery) => {
+      const steps = [{ wheel: 'runner-right:auto' }, SPACE, SPACE, DOWN, ENTER, ESC, UP, ENTER];
+      const { end } = await run(
+        { id: 'D01', name: '', column: L, start: '>Alpha', steps },
+        delivery,
+      );
+      expect(end.log).toEqual(DRAFT_LOG);
+      expect(end.frame).toContain('>effort high');
+    },
+  );
+
+  // A click on a right row takes the keys to the model column and puts the cursor on that row,
+  // also when the row only steps its value.
+  it.for(['steady', 'burst'] as const)(
+    'D03 runs a click on a model row from the tool column, ⏎, two clicks on the stepping row and ⏎ in order (%s)',
+    async (delivery) => {
+      const steps = [rowClick('a-2'), ENTER, rowClick('effort'), rowClick('effort'), ENTER];
+      const { end } = await run(
+        { id: 'D03', name: '', column: L, start: '>Alpha', steps },
+        delivery,
+      );
+      expect(end.log).toEqual([
+        'confirm alpha:a-2',
+        'confirm alpha:a-2',
+        'cycle effort',
+        'cycle effort',
+        'confirm alpha:effort high',
+      ]);
+      expect(end.frame).toContain('>effort high');
+    },
+  );
+
+  it('D02 runs → ↓ space → space ↓ ⏎ ↑ ⏎ ↑ ⏎ of one stdin read in order', async () => {
+    const log: string[] = [];
+    const ui = renderFeature(<Harness log={log} column={L} />, VIEWPORT);
+    mounted.push(ui.unmount);
+    await flushEffects();
+    // Ink gives the plain text of one read as one input, so a key stands between the two spaces.
+    const keys = [RIGHT, DOWN, SPACE, RIGHT, SPACE, DOWN, ENTER, UP, ENTER, UP, ENTER];
+    ui.stdin.write(keys.join(''));
+    // The picker takes one entry per render, so each key needs its own render.
+    for (const _ of keys) await flushEffects();
+    expect(log).toEqual(DRAFT_LOG);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('>effort high');
   });
 });
