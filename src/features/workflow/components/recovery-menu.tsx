@@ -15,7 +15,6 @@ import { PROMPT_COMMAND_LEGEND } from '../prompt-rows/approval.js';
 import { formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { RESULT_MENU_UNFOCUSED_LEGEND } from '../result/options.js';
 import { PromptBody } from './prompt-body.js';
-import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
 import { recoveryMenuActionLabel, recoveryMenuParts } from '../recovery/menu-label.js';
 import { recommendedRecoveryAction } from '../recovery/actions.js';
 import {
@@ -23,13 +22,7 @@ import {
   getRecoveryPromptActions,
   recoveryActionKey,
 } from '../recovery/actions.js';
-import { isAskedDetail } from '../../../core/recovery/causes.js';
-import {
-  clipPromptBodyRows,
-  countPromptBodyRows,
-  promptBodyRows,
-  type PromptBodyLine,
-} from '../prompt-rows/body.js';
+import { fitRecoveryMenu } from '../prompt-rows/recovery.js';
 import { isCommandDraft } from '../../../core/composer/submission.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
@@ -116,42 +109,7 @@ export function RecoveryMenu({
     0,
     actions.findIndex((item) => item.action === recommended),
   );
-  const innerWidth = Math.max(1, width - 4);
-  const fullSummary = recoveryPromptSummaryRows(issue, innerWidth);
-  const fullRows = promptBodyRows(fullSummary, innerWidth);
-  const minimumListRows = Math.min(4, Math.max(actions.length, 1));
-  // A short panel keeps its content before its chrome: the selected action, the headline (it
-  // carries the cut mark when it is the only summary row), one mark row that names every side
-  // hiding actions, and the legend. Then the border, a second summary row for the mark, the other
-  // actions, and the divider, in that order. A cut that would hide the row the halt asks the user
-  // to read puts that row first, whole while it fits, and the rows after it give way. The summary
-  // then takes the divider's row, or a list row on a panel with no divider. The list scrolls, so
-  // every action stays reachable.
-  const listFloor = Math.min(2, minimumListRows);
-  const framed = clampedBoxRows >= 1 + listFloor + 1 + 2;
-  const innerHeight = clampedBoxRows - (framed ? 2 : 0);
-  const summaryShown = innerHeight >= 2;
-  const legendShown = innerHeight >= 4;
-  const besideList = innerHeight - listFloor - 1;
-  const fittedHeight = Math.min(
-    Math.max(1, fullRows.length),
-    Math.max(1, Math.min(2, besideList), innerHeight - minimumListRows - 2),
-  );
-  const fittedDivided = innerHeight - fittedHeight - minimumListRows - 1 > 0;
-  const askedRow = (row: PromptBodyLine): boolean =>
-    row.kind === 'facts-line' && isAskedDetail(row.text.trimStart());
-  const askedFirst =
-    besideList > fittedHeight &&
-    fullRows.some(askedRow) &&
-    !clipPromptBodyRows(fullRows, fittedHeight).some(askedRow);
-  const summary = askedFirst
-    ? recoveryPromptSummaryRows(issue, innerWidth, fittedHeight - 1)
-    : fullSummary;
-  const takesSummaryRow = askedFirst && countPromptBodyRows(summary, innerWidth) > fittedHeight;
-  const summaryHeight = takesSummaryRow ? fittedHeight + 1 : fittedHeight;
-  const divided = fittedDivided && !takesSummaryRow;
-  const listBudget =
-    innerHeight - (summaryShown ? summaryHeight : 0) - (legendShown ? 1 : 0) - (divided ? 1 : 0);
+  const fit = fitRecoveryMenu({ issue, width, boxRows: clampedBoxRows });
 
   // Every action resolves the prompt, `switch-seat` included: the driver answers it by opening
   // the seat's own picker on the offered tool, which is the one place a seat's tool and model are
@@ -164,7 +122,7 @@ export function RecoveryMenu({
     keyOf: (item) => item.action,
     initialIndex: initialAction,
     focused,
-    listRows: listBudget,
+    listRows: fit.listRows,
     onSelect: chooseAction,
     onTab: () => {
       if (!slashHandoffPending()) onFocusChange(false);
@@ -184,7 +142,7 @@ export function RecoveryMenu({
             items: actions,
             selectedIndex,
             itemIndex: actions.indexOf(item),
-            rowBudget: listBudget,
+            rowBudget: fit.listRows,
           })
         )
           chooseAction(item);
@@ -218,20 +176,22 @@ export function RecoveryMenu({
     <InlineMenuPanel
       width={width}
       height={clampedBoxRows}
-      framed={framed}
+      framed={fit.framed}
       focused={focused}
-      legend={legendShown ? legend : undefined}
+      legend={fit.legend ? legend : undefined}
     >
-      {summaryShown && <PromptBody prompt={summary} height={summaryHeight} width={innerWidth} />}
-      {divided && <Text color={t.border}>{'─'.repeat(Math.max(1, innerWidth))}</Text>}
+      {fit.summaryRows > 0 && (
+        <PromptBody prompt={fit.summary} height={fit.summaryRows} width={fit.innerWidth} />
+      )}
+      {fit.divided && <Text color={t.border}>{'─'.repeat(fit.innerWidth)}</Text>}
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
         <ActionList
           actions={actions}
           selectedIndex={selectedIndex}
           recommended={recommended}
           keyWidth={keyWidth}
-          width={innerWidth}
-          rowBudget={listBudget}
+          width={fit.innerWidth}
+          rowBudget={fit.listRows}
           focused={focused}
         />
       </Box>
