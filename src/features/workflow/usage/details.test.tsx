@@ -6,7 +6,8 @@ import { overlayRect } from '../../../core/navigation/overlay-rect.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { ZERO_TOKEN_USAGE } from '../../../core/schemas/tokens.js';
-import { deriveUsageDetails, type UsageDetailsView } from './derive.js';
+import { deriveUsageDetails } from './derive.js';
+import type { UsageDetailsView } from './types.js';
 import { UsageDetails } from './details.js';
 
 const ESCAPE = '\u001b';

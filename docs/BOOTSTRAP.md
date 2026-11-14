@@ -136,7 +136,7 @@ src/stores/ui/
 └── persistence.ts         # installHistoryPersistence() — fs I/O, debounced write
 ```
 
-`initStores()` calls `installHistoryPersistence()` from `stores/ui/persistence.js`. The CLI layer knows about the step, but the I/O logic is a store concern.
+`initStores()` calls `installHistoryPersistence()` from `stores/ui/input-history-persistence.js`. The CLI layer knows about the step, but the I/O logic is a store concern.
 
 The placement follows colocation: UI-ephemeral state lives under `stores/ui/`, and its disk I/O sits beside the store it serializes.
 

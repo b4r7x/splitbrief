@@ -76,7 +76,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 
 **What lives here:**
 - `lib/git/` — `simple-git` boundary in `client.ts` (diff, file, ref, repository and entry-merge helpers in sibling modules)
-- `lib/fs.ts` — security-aware filesystem helpers (`ensureSecureDir`, `writeSecureFile`)
+- `lib/fs/secure.ts` — security-aware filesystem helpers (`ensureSecureDir`, `writeSecureFile`)
 - the diagnostic writer: each diagnostic to the debug log, one the user must act on also to the installed sink or `stderr`
 - `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`, `command-path`)
 - `lib/terminal/` — terminal I/O (`filtered-stdin/`, `mouse-zones`, `kitty-keyboard` protocol, `hyperlinks`, `background`)
@@ -93,7 +93,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 **Single-source rules for wrapped subsystems:**
 - **No `simple-git` imports outside `src/lib/git/client.ts`** (and colocated test files). Every git operation routes through named exports under `lib/git/`. Engine, core, and features import named helpers only.
 - `lib/git/client.ts` contains no orchestrator convention knowledge. It exposes `createGitClient(dir)`, `runGit(intent, fn)` — which runs one git call and rethrows a failure as a `gitError.commandFailed` naming the intent — and the `gitError` factories. Convenience coupling belongs in the caller, not the wrapper.
-- **`ensureGitignore` lives in `lib/fs.ts`, not `lib/git/`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter.
+- **`ensureGitignore` lives in `lib/fs/gitignore.ts`, not `lib/git/`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter.
 
 **Good / bad examples:**
 
@@ -158,7 +158,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 - `engine/orchestrator/` — the main loop and its decomposed modules
 - `engine/planners/` — four planner backends (cli, api, shell, agent)
 - `engine/implementers/` — mirror for implementers
-- `engine/reviewers/` — the reviewer port
+- `engine/planners/reviewer.ts` — the reviewer port
 - `engine/runners/` — the runner factory, CLI tool adapters, execution preparation and the runner sandbox environment
 - `engine/calls/` — normalized runner-call events and results
 - `engine/providers/` — HTTP clients, pricing, streaming

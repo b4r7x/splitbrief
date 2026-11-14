@@ -2,10 +2,37 @@ import { describe, expect, it } from 'vitest';
 import { configuredReviewerRunner } from '../../../../core/config/accessors/reviewer-runner.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { formatRecoveryHeadline } from '../../../../core/recovery/headline.js';
 import { haltOf } from '../../../../core/recovery/halt.js';
 import { createdAt, expectValidRecoveryIssue } from '#testing/helpers/recovery-issue.js';
 import { buildSeatDownIssue } from './seat-down.js';
+
+it.each(['plan', 'build', 'review'] as const)(
+  'names the %s fallback with its catalog label in halt details and facts',
+  (seat) => {
+    const fallback = { tool: 'codex', model: 'gpt-6-luna' };
+    const issue = buildSeatDownIssue({
+      seat,
+      runner: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+      classification: { class: 'account', cause: 'balance' },
+      words: 'Insufficient Balance',
+      phase: 'implementing',
+      createdAt,
+      seatSwap: {
+        seat,
+        currentTool: 'claude-code',
+        fallback,
+        detectedTools: [{ ...fallback, ready: true }],
+        modelCache: makeModelCacheAccessor({
+          providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+        }),
+      },
+    });
+    expect(issue.details).toContain('fallback: OpenAI Codex CLI · GPT-6-Luna');
+    expect(issue.facts?.fallback).toBe('OpenAI Codex CLI · GPT-6-Luna');
+  },
+);
 
 describe('buildSeatDownIssue', () => {
   // Captured live from `codex exec --json` on 2026-08-06.

@@ -15,7 +15,7 @@ export interface ListingSource {
 
 /**
  * Where each tool's rows really come from, in the tool's own words. Checked against
- * `declaredCatalogProbe` (`engine/runners/cli-tools/registry.ts`) and the tools themselves on
+ * `declaredCatalogProbe` (`engine/runners/cli-tools/probe/catalog.ts`) and the tools themselves on
  * 2026-09-09: claude-code 2.1.265 prints no alias table, copilot 1.0.77 prints its 25-id enum,
  * cursor-agent 2026.09.08-6caf4ff prints 223 model rows.
  */

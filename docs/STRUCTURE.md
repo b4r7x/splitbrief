@@ -57,7 +57,7 @@ The page `app/screens/workflow.tsx` holds the composition (layout math + `Screen
 
 **Overlay-style feature** (e.g. `features/settings/`; entry page `app/overlays/settings.tsx`).
 
-The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes `items.ts`, `presentation.ts`, `hooks/editor.ts` and the `crew` feature's renderers.
+The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes `items.ts`, `presentation.ts`, `hooks/use-settings-editor.ts` and the `crew` feature's renderers.
 
 `features/palette/` follows the same shape: its entry is the page `app/overlays/palette.tsx`, which composes the feature-local `sources.ts` and `results.ts` (`sources.ts` assembles commands/skills/live tasks/sessions/custom actions; `results.ts` ranks/filter-matches them for rendering).
 
@@ -169,7 +169,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 - **Primitives** — `theme.tsx`, `divider.tsx`, `rule-header.tsx`, `scroll-indicator.tsx`, `scrollbar.ts`, `scrollable-document.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `list-row.tsx`, `list-columns.ts`, `row-leading.ts`, `session-row.tsx`, `task-summary.tsx`. The spinner is a shared hook, `useSpinnerFrame`, not a component.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
 - **Shared overlays** — `overlays/overlay-panel.tsx`. The runner picker's text input overlay has one consumer, so it lives in the runners feature. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/items.ts`) stay in the feature folder.
-- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/filtering.ts`, `pickers/single-column.tsx`, `pickers/aligned-option-row.tsx`, `pickers/row-zone.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `useStaticSelector` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
+- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/filtering.ts`, `pickers/row-zone.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `useStaticSelector` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
 
 `src/hooks/` holds the shared hooks: `use-spinner-frame.ts` (`useSpinnerFrame`), `use-static-selector.ts` (`useStaticSelector`), `use-key-state.ts` (`useKeyState`), `use-filterable-list.ts` (`useFilterableList`), `use-crew-display-names.ts` (`useCrewDisplayNames`), `use-shared-clock.ts` (`useSharedClock`) and `use-slow-probe-text.ts` (`useProbeActivity`, `useSlowProbeText`). See [`HOOKS.md`](./HOOKS.md).
 
@@ -319,7 +319,7 @@ The codebase follows John Ousterhout's *deep module* principle: a module's publi
 
 The canonical patterns in this codebase are `src/engine/orchestrator/planning/` and `src/engine/orchestrator/task/`.
 
-Callers import from `./planning/run.js` or `./task/loop.js`. Files other than the entry are **considered internal to the folder** — the folder boundary is the privacy boundary. A few narrow helpers are also imported from outside the folder (for example `task/refresh-code.ts`, `task/attempt-gate.ts` and `planning/call-loop.ts`). There is no `_prefix.ts` convention, no linter-enforced "private" — the convention is structural: if it's not the entry file, it's an internal helper of that folder.
+Callers import from `./planning/run.js` or `./task/loop.js`. Files other than the entry are **considered internal to the folder** — the folder boundary is the privacy boundary. A few narrow helpers are also imported from outside the folder (for example `task/refresh-code.ts`, `task/gates/attempt.ts` and `planning/call-loop.ts`). There is no `_prefix.ts` convention, no linter-enforced "private" — the convention is structural: if it's not the entry file, it's an internal helper of that folder.
 
 **No underscore prefix** (`_run-init.ts`, `_escalation-step.ts`). Google TypeScript Style Guide, Microsoft, and AWS all advise against it in 2025+. Use folder colocation instead.
 

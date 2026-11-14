@@ -7,7 +7,7 @@ import { isCliError } from './errors.js';
 const COMMANDS = ['start', 'doctor', 'spec', 'init', 'status', 'resume', 'review', 'continue'];
 
 // A sample of the value-taking flags `valueTakingFlags(program)` reads off the
-// live registrations in src/cli/options.ts; the boolean flags are absent on
+// live registrations in src/cli/options/workflow.ts; the boolean flags are absent on
 // purpose, because that is the distinction the operand scan turns on.
 const VALUE_FLAGS: ReadonlySet<string> = new Set([
   '--model',

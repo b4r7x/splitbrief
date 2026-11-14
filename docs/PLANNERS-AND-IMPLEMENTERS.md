@@ -675,14 +675,14 @@ The role vector is pinned and effect-verified per backend. A role that is missin
 
 | Backend | Output flag | Parser | Text deltas | Tool calls | Usage | Session id |
 |---|---|---|---|---|---|---|
-| `opencode` | `--format json` | `streaming/parse-opencode.ts` | per text part | started + done | yes | yes |
-| `kilo-code` | `--format json` (both roles) | `streaming/parse-opencode.ts` | per text part | started + done | yes | yes |
-| `claude-code` | `--output-format stream-json --verbose --include-partial-messages` | `streaming/parse-stream-json.ts` | token deltas | started + done | yes | yes |
-| `codex` | `--json` | `codexProtocolEvents` (`cli-tools/codex.ts`) | per completed item | started + done | yes | yes |
-| `cursor` | `--output-format stream-json` | `parseCursorRecord` (`cli-tools/cursor.ts`) | per assistant message | started + done | yes | yes |
-| `copilot` | `--output-format json` (both roles) | `streaming/parse-copilot.ts` | per assistant message | done only (unverified live) | yes | yes |
-| `command-code` | `--output-format json` | `commandCodeProtocolEvents` (`cli-tools/command-code.ts`) | no — final text only | done only | final only | yes |
-| `antigravity` | `--output-format stream-json` (both roles) | `streaming/parse-antigravity.ts` | token deltas (`text_delta`) | started + done | yes | yes |
+| `opencode` | `--format json` | `streaming/parse/opencode.ts` | per text part | started + done | yes | yes |
+| `kilo-code` | `--format json` (both roles) | `streaming/parse/opencode.ts` | per text part | started + done | yes | yes |
+| `claude-code` | `--output-format stream-json --verbose --include-partial-messages` | `streaming/parse/stream-json/parser.ts` | token deltas | started + done | yes | yes |
+| `codex` | `--json` | `codexProtocolEvents` (`cli-tools/codex/protocol.ts`) | per completed item | started + done | yes | yes |
+| `cursor` | `--output-format stream-json` | `parseCursorRecord` (`cli-tools/cursor/protocol.ts`) | per assistant message | started + done | yes | yes |
+| `copilot` | `--output-format json` (both roles) | `cli-tools/copilot/protocol.ts` | per assistant message | done only (unverified live) | yes | yes |
+| `command-code` | `--output-format json` | `commandCodeProtocolEvents` (`cli-tools/command-code/protocol.ts`) | no — final text only | done only | final only | yes |
+| `antigravity` | `--output-format stream-json` (both roles) | `cli-tools/antigravity/protocol.ts` | token deltas (`text_delta`) | started + done | yes | yes |
 
 Antigravity's `stream-json` evidence exists for agy 1.2.7, 1.2.9 and 1.4.7. `minimumAdmittedVersion` is 1.3.2: before it, `--dangerously-skip-permissions`, which the planner seat passes, also approved a plan-mode plan.
 

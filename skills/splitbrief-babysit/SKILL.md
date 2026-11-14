@@ -48,7 +48,7 @@ Inspect the rendered terminal after each action. A working key does not excuse a
 Start a new run after a tool fix. Answer live prompts through the TUI.
 Never hand-edit `state.json` or configuration to bypass a defect. Do not replace a broken interaction with a shortcut and call it verified.
 
-Worked example — a usage limit opens a recovery panel with `switch-seat` recommended. The babysitter answers *that panel* and picks the fallback tool and model *in the seat picker it opens* (`pickSwappedSeat`, `src/features/workflow/recovery-driver.ts`). That is what a user does, and it is also what writes the config of record, so the switch survives the next resume.
+Worked example — a usage limit opens a recovery panel with `switch-seat` recommended. The babysitter answers *that panel* and picks the fallback tool and model *in the seat picker it opens* (`pickSwappedSeat`, `src/features/workflow/recovery/seat-swap-pick.ts`). That is what a user does, and it is also what writes the config of record, so the switch survives the next resume.
 
 ## Preflight
 
@@ -224,7 +224,7 @@ A provider limit is the run's business, not a tool defect. **SPLITBRIEF itself m
 - Without an available fallback, park the run and report the provider's reset time when known. Do not repeatedly retry a known limit.
 - If the supervisor shares that provider, ensure the run is parked before supervision becomes unavailable.
 
-If the halt or the offer does not come, that is a tool defect that blocks the run, not an operator chore. End the run, fix the whole detect → offer path (`HALT_SIGNATURES.usage` in `src/core/pipeline-spec/halts.ts`, the `switch-seat` offer in `src/engine/orchestrator/recovery/actions.ts`), start a new run, then **verify the switch still holds after a resume** of that run. Do not paper over it by hand-editing the config.
+If the halt or the offer does not come, that is a tool defect that blocks the run, not an operator chore. End the run, fix the whole detect → offer path (`HALT_SIGNATURES.usage` in `src/core/pipeline-spec/halts.ts`, the `switch-seat` offer in `src/engine/orchestrator/recovery/actions/switch-seat.ts` and `src/engine/orchestrator/recovery/seat/switch/plan.ts`), start a new run, then **verify the switch still holds after a resume** of that run. Do not paper over it by hand-editing the config.
 
 ## Resume semantics
 
@@ -240,7 +240,7 @@ If the halt or the offer does not come, that is a tool defect that blocks the ru
 To carry such a run on, use `node dist/cli.js continue "$ID"`. Answer any remaining recovery through the panel.
 Use `--action retry` only when CLI recovery is itself under test. Never skip a brief to pass a defect.
 
-`switch-seat:<tool>:<model>` accepts any non-empty model string with no catalog check (`parseSeatSpecOption`, `src/cli/options.ts:66`), so a typo surfaces late as a `missing-model` halt.
+`switch-seat:<tool>:<model>` accepts any non-empty model string with no catalog check (`parseSeatSpecOption`, `src/cli/options/seat-spec.ts:19`), so a typo surfaces late as a `missing-model` halt.
 
 A seat taken through the panel **is** the config of record: the picker saves through `transactConfigDocument`, so the switch survives the next continue with no YAML mirroring.
 

@@ -2,7 +2,7 @@
 // A marked row puts its mark on column 1 and its content on column 3; an unmarked row starts its
 // content on column 3 too, with the mark slot empty — column 1 carries centred glyphs (marks,
 // connectors, every box stroke) and text never enters it. `rowLeading()` in
-// `features/workflow/conversation-rows/row-markers.ts` owns the transcript's own grammar; the
+// `features/workflow/conversation-rows/row-format/markers.ts` owns the transcript's own grammar; the
 // blocks that paint their own leading — a brief's pinned summary and the closed run's ledger — may
 // not import that feature slice, so this is the one shared copy they read, and the workflow
 // chrome's gutter is measured off it so box borders land on the same column.

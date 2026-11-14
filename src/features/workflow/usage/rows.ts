@@ -1,11 +1,7 @@
 import { formatCost } from '../../../core/formatting.js';
 import { billingWord } from '../../../core/runners/runner-billing.js';
-import {
-  type UsageRateRow,
-  type UsageBillingRow,
-  type UsageDetailsView,
-  runnerKeyLabel,
-} from './derive.js';
+import { runnerKeyLabel } from './derive.js';
+import type { UsageRateRow, UsageBillingRow, UsageDetailsView } from './types.js';
 import {
   RATE_SOURCE_WORDS,
   formatUsageTokens,

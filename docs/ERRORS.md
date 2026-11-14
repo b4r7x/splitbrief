@@ -84,7 +84,7 @@ A domain bag is a single `as const` object colocated with the module that produc
 // processError (simplified: the real bag also sanitizes terminal text and carries
 // idleTimeout, platformLimitation and isIdleTimeout)
 import { error, matches } from '../../utils/error.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { redactSecrets } from '../../utils/redact/secrets.js';
 
 export const processError = {
   notFound: (command: string, message?: string) =>

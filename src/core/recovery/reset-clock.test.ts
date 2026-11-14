@@ -34,7 +34,7 @@ describe('formatStoredReset', () => {
 });
 
 describe('stripRecoveryResetClause', () => {
-  // Each tool's captured limit wording, as `src/engine/runners/usage-limit.ts` records it.
+  // Each tool's captured limit wording, as `src/engine/runners/seat-failure/usage-limit.ts` records it.
   it.each([
     ["You've hit your session limit · resets 3:45pm", "You've hit your session limit"],
     [

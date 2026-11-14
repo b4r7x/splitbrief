@@ -4,7 +4,8 @@ import { stripTerminalControls } from '../../../../utils/display-text/sanitize.j
 import { truncateTerminalDisplayText } from '../../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth, segmentsForRowText } from '../../../../utils/display-text/width.js';
 import { buildProgressRowCount } from '../../layout/chrome-rows.js';
-import { type BuildProgress, type BuildProgressSpan, spansText } from './derive.js';
+import { spansText } from './derive.js';
+import type { BuildProgress, BuildProgressSpan } from './types.js';
 import { countsSpans } from './counts.js';
 
 /**

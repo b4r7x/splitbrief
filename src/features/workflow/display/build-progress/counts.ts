@@ -1,6 +1,6 @@
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
-import type { BuildProgressSpan, BuildProgress } from './derive.js';
+import type { BuildProgressSpan, BuildProgress } from './types.js';
 
 export function passedCountSpans(count: string) {
   return [

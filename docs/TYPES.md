@@ -96,7 +96,7 @@ A type stays in `src/core/types/` only if it meets **either** the cross-cutting 
 
 The current residents (TS-only, no Zod schema):
 
-- `core/types/config-options.ts` — `WorkflowOpts`, the CLI/run option bag (many consumers under `cli/`; carve-out — no single folder owns the option contract). The detection types `DetectedModel` / `CliToolDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`, not here.
+- `core/types/config-options.ts` — `WorkflowOpts`, the CLI/run option bag (many consumers under `cli/`; carve-out — no single folder owns the option contract). The detection types `DetectedModel` / `CliToolDetection` / `ProviderDetection` live in the domain modules `core/discovery/detection/model.ts` and `core/discovery/detection/tool.ts`, not here.
 - `core/types/session-ref.ts` — `SessionRef`, the `{ projectDir, sessionId }` handle threaded across `cli/` + `engine/` (carve-out — a cross-folder reference with no producer folder).
 - `core/types/user-input.ts` — `UserMessageInput` (text, display text, images and attached inputs) plus its `plainUserMessage()` constructor, the user-message shape that the CLI, the composer, the stores and the engine all pass along (cross-cutting bar).
 
@@ -118,7 +118,7 @@ Types should live where their domain meaning is created — not in a central `ty
 | `WorkflowCancelReason`, `WORKFLOW_CANCEL_REASONS` | `engine/events/workflow-cancel.ts` | Workflow cancellation is an engine event contract used by both schema validation and orchestrator abort handling; keeping it with events avoids schema → orchestrator ownership imports |
 | `RunnerCallEventSchema`, `RunnerCallResultSchema` | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, hooks, and explicit `InvokeResult` projections |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
-| `SkillMeta` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
+| `SkillMeta` | `core/skills/types.ts` | Produced by `engine/skills/discover.ts`, consumed by stores/features without importing `engine/` |
 | `Screen`, `InputMode`, `OverlayType` | `core/navigation/types.ts` | Cross-cutting: many consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime values `ALL_SCREENS` and `ACTIVE_OVERLAYS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
 | `RuntimeCommandDef`, `RuntimeCommandContext` | `core/runtime/commands/types.ts` | Multiple files in one folder |
 | `PaletteCommandItem` (formerly `CommandPaletteItem`) | `features/palette/results.ts` | Produced and ranked by the palette feature |
@@ -221,14 +221,14 @@ If it turns out a type or value from `features/workflow/` is needed in `engine/`
 
 ## Worked examples
 
-**Q: I'm adding a `ReviewAction` type used only by `features/workflow/review-parser.ts`.**
+**Q: I'm adding a `ReviewAction` type used only by `features/workflow/review-gate/input-handler.ts`.**
 A: Inline into `review-parser.ts` (Case A).
 
-**Q: I'm adding a `CliToolDetection` type produced in `core/discovery/detection.ts` and consumed across `engine/detection/`, `stores/project/`, and `features/runners/`.**
-A: Keep it with its producer in `core/discovery/detection.ts`; cross-folder consumers `import type` from there. (Case C — placing the contract in `core/` keeps `engine/`/`stores/`/`features/` from importing each other.)
+**Q: I'm adding a `CliToolDetection` type produced in `core/discovery/detection/tool.ts` and consumed across `engine/detection/`, `stores/project/`, and `features/runners/`.**
+A: Keep it with its producer in `core/discovery/detection/tool.ts`; cross-folder consumers `import type` from there. (Case C — placing the contract in `core/` keeps `engine/`/`stores/`/`features/` from importing each other.)
 
-**Q: I'm adding a `ProviderMetadata` type created by `engine/providers/metadata.ts` and consumed by `engine/providers/registry.ts` + `stores/discovery/model-cache/state.ts`.**
-A: Inline in `engine/providers/metadata.ts` (the producer). Consumers `import type`. (Case C)
+**Q: I'm adding a `ProviderMetadata` type created by `engine/providers/models-dev/detected-model.ts` and consumed by `engine/providers/registry.ts` + `stores/discovery/model-cache/state.ts`.**
+A: Inline in `engine/providers/models-dev/detected-model.ts` (the producer). Consumers `import type`. (Case C)
 
 **Q: I'm adding a Zod schema for a new config section.**
 A: `src/core/schemas/config.ts` (or a new file in `core/schemas/` if the shape is large). Export both `SectionSchema` and `type Section = z.infer<typeof SectionSchema>`.

@@ -15,7 +15,7 @@ import { buildProviderRunMetadataRecord } from './run-record.js';
 import {
   calculateTaskAwareImplementerCost,
   calculateAggregateImplementerCost,
-} from './implementer-cost.js';
+} from './implementer.js';
 import type { CostBreakdownOptions } from './types.js';
 
 function calculateRecordedCostBreakdown(

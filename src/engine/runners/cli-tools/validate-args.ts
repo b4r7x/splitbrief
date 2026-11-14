@@ -34,7 +34,7 @@ export type CliParsedSemanticArg = Readonly<{
 
 /**
  * The authority stems by category. The stem union mirrors the REQ-018 map in
- * `src/engine/runners/arg-vector-preflight.ts` (T-040): readiness rejects the
+ * `src/engine/runners/arg-vector/authority.ts` (T-040): readiness rejects the
  * same authority flags over all configured args, dispatch rejects them in the
  * configured tail. A name equals a stem or carries it as a dash-delimited
  * segment.

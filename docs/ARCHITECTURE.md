@@ -107,7 +107,7 @@ Two modules are load-bearing for the seat surfaces:
 | `src/utils/` | pure / generic / no domain (canonical-json is the model) | holds |
 | `src/lib/` | third-party adapters (Node fs, simple-git, terminal escapes) | holds |
 | `src/core/` | SPLITBRIEF domain — schemas, paths, phase taxonomy, sessions; **no React, no engine** | holds |
-| `src/engine/` | orchestrator, planners, implementers, reviewers, runners, hooks, snapshots, providers, codebase, parsers, streaming, spec, detection; **no React, no Ink, no `src/features/` / `src/components/` / `src/hooks/`** | holds |
+| `src/engine/` | orchestrator, planners, implementers, runners, hooks, snapshots, providers, codebase, parsers, streaming, spec, detection; **no React, no Ink, no `src/features/` / `src/components/` / `src/hooks/`** | holds |
 | `src/features/<name>/` | feature-local screen/picker/overlay + components/hooks/helpers; **never imports another feature** | holds |
 | `src/components/` | shared UI primitives (cross-feature only) | holds |
 | `src/stores/` | `useSyncExternalStore` module-state; **no React, no Ink, no engine value imports**; `import type` from engine is allowed for shared event/detection types | holds |

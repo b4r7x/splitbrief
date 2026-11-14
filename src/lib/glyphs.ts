@@ -129,7 +129,7 @@ export const BRAILLE_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴',
 //
 // What the ascii tier guarantees is exactly this table: no box-drawing and no non-ASCII marker from
 // `glyph()`. It is not a whole-product ASCII floor, and must not be read as one — the truncation
-// ellipsis (`ELLIPSIS` in `utils/display-text.ts`) and the `·` run separator (`SOFT_SEP` in
+// ellipsis (`ELLIPSIS` in `utils/display-text/truncate.ts`) and the `·` run separator (`SOFT_SEP` in
 // `core/separators.ts`) are untiered constants that render the same at both tiers, so a host
 // that mojibakes `─` mojibakes those too. Tiering them means routing every call site through
 // `glyph()`, including the measured hot path in `display-text.ts`; that is a real change with no

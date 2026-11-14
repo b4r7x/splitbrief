@@ -6,7 +6,7 @@ import type {
   RateSnapshot,
 } from '../../../core/schemas/cost.js';
 import { uniqueInOrder } from '../../../utils/collections.js';
-import type { UsageAmount, UsageMoney } from './derive.js';
+import type { UsageAmount, UsageMoney } from './types.js';
 import type { UsageCounter, UsageSeat } from './recovery-context.js';
 
 export type UsageTone = 'text' | 'textDim' | 'warning';

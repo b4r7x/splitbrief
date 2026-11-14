@@ -27,7 +27,7 @@ import { prepareCustomRunnerAdmission } from '../../runners/custom/admission.js'
 import { createStagedProject } from '../approval/staged-project/create.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
-import { configForProfile, createTaskImplementer } from '../context-routing/profile.js';
+import { configForProfile, createTaskImplementer } from './profile.js';
 import type { EscalationContext } from '../escalation/types.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 

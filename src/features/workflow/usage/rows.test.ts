@@ -3,7 +3,8 @@ import type { RunnerCallCounterCoverage } from '../../../core/schemas/runner-cal
 import type { RecoveryFact, RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { CostBreakdown } from '../../../core/schemas/cost.js';
 import { ZERO_TOKEN_USAGE, type TokenUsage } from '../../../core/schemas/tokens.js';
-import { deriveUsageDetails, type UsageDetailsInput } from './derive.js';
+import { deriveUsageDetails } from './derive.js';
+import type { UsageDetailsInput } from './types.js';
 import { usageDetailRows } from './rows.js';
 import type { UsageDetailRow } from './format.js';
 import { readRecoveryContext } from './recovery-context.js';

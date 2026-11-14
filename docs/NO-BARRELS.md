@@ -2,7 +2,7 @@
 
 ## Principle
 
-**Do not create barrel files (re-export-only `index.ts` / `index.tsx`) in application code.** Import the actual module: `import { eventsStore } from '../stores/workflow/events.js'`, not `from '../stores/index.js'`.
+**Do not create barrel files (re-export-only `index.ts` / `index.tsx`) in application code.** Import the actual module: `import { eventsStore } from '../stores/workflow/events/state.js'`, not `from '../stores/index.js'`.
 
 `find src -name 'index.ts' -o -name 'index.tsx'` must print nothing. When a refactor deletes or moves a module, update all consumers in the same change. Do not add a re-export shim or a disguised barrel to smooth the migration.
 

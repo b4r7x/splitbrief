@@ -87,7 +87,7 @@ export const REVIEW_JSON_FILE = 'review.json';
 /** The change a CLI reviewer of `splitbrief review` reads, beside its review.json. */
 export const REVIEW_CHANGE_FILE = 'change.diff';
 export const STATE_FILE = 'state.json';
-/** Seat identities the session started on; sits beside state.json (`core/state/seats.ts`). */
+/** Seat identities the session started on; sits beside state.json (`core/state/seats/record.ts`). */
 export const SEATS_FILE = 'seats.json';
 export const SUMMARY_FILE = 'summary.json';
 export const SESSION_LOG_FILE = 'session.jsonl';

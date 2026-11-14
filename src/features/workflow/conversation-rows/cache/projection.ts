@@ -99,7 +99,7 @@ export function getConversationRowsWindowProjection(
 
 // A hit requires the inputs to be reference/primitive-equal. This is sound because upstream
 // state never mutates in place: mergeEvent re-allocates the changed event and the events array
-// (src/stores/workflow/events.ts), computeSections is identity-cached on that array
+// (src/stores/workflow/events/merge.ts), computeSections is identity-cached on that array
 // (src/stores/workflow/actions/sections.ts), and the streaming/scroll stores replace their state objects
 // on every change.
 //

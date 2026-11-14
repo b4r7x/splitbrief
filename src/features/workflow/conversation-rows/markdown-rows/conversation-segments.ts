@@ -76,7 +76,7 @@ function filePathConversationSegment(
   };
 }
 
-// Mirrors headingStyle in src/components/markdown.tsx: the review overlay and the transcript
+// Mirrors headingStyle in src/features/workflow/components/markdown-style.ts: the review overlay and the transcript
 // have to place a rank the same way, or the same document reads as two different outlines.
 function headingSegment(text: string, depth: MarkdownHeadingDepth): ConversationRowSegment {
   switch (depth) {

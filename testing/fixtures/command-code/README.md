@@ -72,7 +72,7 @@ a `static-secret` and takes the sealed read-only snapshot.
 Still none. `cmd --help` names no credential environment variable, and the shipped bundle
 reads only `CMD_LOCAL_ONLY` (BYOK routing), `CMD_ZDR`, `COMMANDCODE_SKIP_UPDATES` and
 telemetry/debug switches — no API key, no token. The `session` channel keeps `env: []`
-and `src/engine/runners/sandbox-state-paths.ts` keeps no allowlist entry. This is now verified
+and `src/engine/runners/sandbox/state/paths.ts` keeps no allowlist entry. This is now verified
 against the binary rather than inferred from documentation.
 
 ## The production conformance leg still OMITs

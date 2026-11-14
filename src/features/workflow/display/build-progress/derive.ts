@@ -17,7 +17,6 @@ import {
 import { formatElapsedClock, formatTime } from '../../../../utils/format/time.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { separatedSpans } from '../../conversation-rows/row-format/text.js';
-import type { ConversationRowSegment } from '../../conversation-rows/types.js';
 import { stallRunnerHint } from '../live-activity.js';
 import {
   reviewActivityParts,
@@ -28,6 +27,7 @@ import {
 import { formatRecordedSeatIdentity } from '../recorded-seat-identity.js';
 import { runnerActivityLedgerItem } from '../runner-activity/ledger-item.js';
 import { runnerActivityModelRole } from '../runner-activity/role.js';
+import type { BuildProgress, BuildProgressSpan } from './types.js';
 
 /**
  * The floor under the silence warning: the block never paints it for a seat quieter than this,
@@ -35,37 +35,6 @@ import { runnerActivityModelRole } from '../runner-activity/role.js';
  * stands.
  */
 export const UI_IDLE_WARN_MS = 60_000;
-
-export type BuildProgressSpan = Readonly<Pick<ConversationRowSegment, 'text' | 'tone'>>;
-
-export interface BuildProgress {
-  passed: number;
-  total: number;
-  escalated: number;
-  failed: number;
-  /**
-   * The project gate command running at the run base beside the build, with its clock, when the
-   * activity line does not already name it.
-   */
-  base: readonly BuildProgressSpan[] | null;
-  /** What the run is doing: the seat and its operation, or the command it is inside. */
-  activity: string;
-  activitySpans: readonly BuildProgressSpan[];
-  activityIdentity: {
-    prefix: readonly BuildProgressSpan[];
-    identity: BuildProgressSpan;
-    suffix: readonly BuildProgressSpan[];
-  } | null;
-  /**
-   * The proof of life: how long the command in `activity` has run, else the silence warning —
-   * `No output for <clock>`, then the open tool or the stream hint — else how long ago a seat
-   * last said something.
-   */
-  freshness: string;
-  freshnessSpans: readonly BuildProgressSpan[];
-  /** True when the watchdog's stall makes freshness the silence warning, not the ordinary age. */
-  silent: boolean;
-}
 
 export interface DeriveBuildProgressInput {
   lifecycle: LifecycleState;

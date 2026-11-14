@@ -12,7 +12,7 @@ import type { ModelCacheAccessor } from '../../../engine/providers/model/runtime
 import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { ZERO_TOKEN_USAGE } from '../../../core/schemas/tokens.js';
-import type { UsageDetailsInput } from './derive.js';
+import type { UsageDetailsInput } from './types.js';
 import { deriveUsageDetails } from './derive.js';
 import { formatUsageMoney, statesAmount } from './format.js';
 

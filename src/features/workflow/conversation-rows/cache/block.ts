@@ -23,7 +23,7 @@ interface CacheEntry<Key> {
   block: ConversationRowBlock | null;
 }
 
-// Object identity is the change signal: mergeEvent (src/stores/workflow/events.ts) re-allocates
+// Object identity is the change signal: mergeEvent (src/stores/workflow/events/merge.ts) re-allocates
 // every changed event and the events array, so a changed event misses here by identity and an
 // evicted event's entry is GC'd with it.
 let eventBlocks = new WeakMap<EngineEvent, CacheEntry<EventBlockCacheKey>>();

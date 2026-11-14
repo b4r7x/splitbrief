@@ -20,7 +20,7 @@ import {
 } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { wrapHard } from '../../../utils/display-text/wrap.js';
-import type { UsageDetailsView } from './derive.js';
+import type { UsageDetailsView } from './types.js';
 import { usageDetailRows } from './rows.js';
 import type { UsageDetailRow } from './format.js';
 

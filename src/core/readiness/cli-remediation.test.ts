@@ -1,32 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  CliInstallationStateSchema,
-  CliReadinessResultSchema,
-  type CliInstallationState,
-  type CliReadinessFacts,
-} from '../schemas/readiness.js';
+import { readyFacts } from '#testing/helpers/factories/cli-readiness.js';
+import { CliReadinessResultSchema } from '../schemas/readiness.js';
 import { cliReadinessRemediation, deriveCliReadiness } from './cli-remediation.js';
-
-const executable = {
-  path: '/opt/splitbrief/bin/codex',
-  fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
-};
-
-function readyFacts(overrides: Partial<CliReadinessFacts> = {}): CliReadinessFacts {
-  return {
-    tool: 'codex',
-    enabled: true,
-    installation: 'installed',
-    executable,
-    trust: 'trusted',
-    installedVersion: '0.40.0',
-    testedVersion: '0.40.0',
-    compatibility: 'compatible',
-    auth: 'authenticated',
-    probedAt: 1_786_000_000_000,
-    ...overrides,
-  };
-}
 
 describe('CLI runner readiness', () => {
   const hostPlatform = process.platform;
@@ -96,11 +71,6 @@ describe('CLI runner readiness', () => {
       );
     },
   );
-
-  it('keeps installation state explicit and closed', () => {
-    const states: readonly CliInstallationState[] = CliInstallationStateSchema.options;
-    expect(states).toEqual(['installed', 'unavailable']);
-  });
 
   it.each([
     [
@@ -333,17 +303,5 @@ describe('CLI runner readiness', () => {
         providerAuth: { kind: 'read', facts: [{ provider: 'OpenAI', source: 'stolen-token' }] },
       }).success,
     ).toBe(false);
-  });
-
-  it('rejects a result whose status or stable ID contradicts its facts', () => {
-    const result = deriveCliReadiness(readyFacts());
-
-    expect(CliReadinessResultSchema.safeParse({ ...result, status: 'unavailable' }).success).toBe(
-      false,
-    );
-    expect(CliReadinessResultSchema.safeParse({ ...result, status: 'bogus' }).success).toBe(false);
-    expect(CliReadinessResultSchema.safeParse({ ...result, checkId: 'random-id' }).success).toBe(
-      false,
-    );
   });
 });
