@@ -141,7 +141,7 @@ Am I about to create an `index.ts` that only re-exports?
 | `src/engine/` | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `app/`, `features/workflow/`, `features/runners/` |
 | `src/stores/` | `utils/`, `core/`, `lib/`, `engine/` (type-only) | anyone |
 | `src/features/{f}/` | everything below + shared `components/`, `hooks/` | only the `app/` shell (pages in `app/screens\|overlays` + `app/router.tsx`) |
-| `src/app/screens\|overlays/` (pages) | features + shared `components/`, `hooks/`, stores; `app/keys.ts`, `app/command-context.ts`, `app/prepare-resume.ts`, `app/refresh-skills.ts` | only `app/router.tsx` |
+| `src/app/screens\|overlays/` (pages) | features + shared `components/`, `hooks/`, stores; `app/keys.ts`, `app/command-context.ts`, `app/prepare-resume.ts`, `app/prepare-start.ts`, `app/preparation-gate.tsx`, `app/refresh-skills.ts` | only `app/router.tsx` |
 
 Violations are blockers: `utils/ → core/`, `lib/ → engine/`, `core/ → features/`, `features/A → features/B`, page → page, and page → app shell (`app/{root,router,provider,layout}`).
 
@@ -184,7 +184,7 @@ The `src/app/` shell is the composition layer. It has two parts:
 - **Shell modules** — `app/root.tsx` (composition root), `app/router.tsx` (dispatch), `app/provider.tsx` (`AppProvider`, today only `<ThemeProvider>`), `app/layout.tsx` (header + body + footer), `app/keys.ts` (`useAppKeys`), `app/command-context.ts` (`useRuntimeCommands`).
 - **FLAT pages** — one file per surface under `app/screens/` (full screens) and `app/overlays/` (overlays). Each page is the surface's entry point and *composes* its feature's internals.
 
-`app/mouse.ts` (`useAppMouse`) sits beside `app/keys.ts`. `app/prepare-resume.ts` (the readiness check before a run continues, imported by the home, setup, workflow, sessions and palette pages) and `app/session-preparation.tsx` (the continuation's readiness page, rendered by `app/router.tsx`) are app-level helpers too. Gate 9's shell guard covers only `root`, `router`, `provider` and `layout`.
+`app/mouse.ts` (`useAppMouse`) sits beside `app/keys.ts`. `app/prepare-resume.ts` (the readiness check before a run continues, imported by the home, workflow, sessions and palette pages), `app/prepare-start.ts` (the tool check of a new workflow and its status row, imported by the home and setup pages), `app/preparation-gate.tsx` (the preparation panel with its approval prompt, retry and settings, rendered by the home and setup pages and by `app/session-preparation.tsx`) and `app/session-preparation.tsx` (the continuation's readiness page, rendered by `app/router.tsx`) are app-level helpers too. Gate 9's shell guard covers only `root`, `router`, `provider` and `layout`.
 
 `app/refresh-skills.ts` is a plain helper, not a shell module: it re-runs `discoverSkills(projectDir)` into `skillsStore` and is called from the two sites that open the skills overlay (`app/keys.ts` for `Ctrl+S`, `app/command-context.ts` for the `/skills` command's `refreshSkills` port). The page→shell guard does not cover it, so a page may import it.
 

@@ -1,6 +1,6 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect, useState } from 'react';
-import { Box, useInput } from 'ink';
+import { Box } from 'ink';
 import {
   BOOT_MANIFEST_TITLE,
   REFRESHING_TOOLS_TITLE,
@@ -42,16 +42,13 @@ import { getLogo } from '../../features/home/logo.js';
 import { deriveHomeToolCheck } from '../../features/home/tool-check.js';
 import { RECENT_SESSIONS_HINT } from '../../features/home/recent-sessions/list.js';
 import { useRecentSessionsFocus } from '../../features/home/recent-sessions/use-focus.js';
-import {
-  appPreparationError,
-  interactivePreparationPolicy,
-  sessionSelectDeps,
-} from '../prepare-resume.js';
+import { sessionSelectDeps } from '../prepare-resume.js';
+import { checkingStatusText, prepareStart } from '../prepare-start.js';
+import { PreparationGate } from '../preparation-gate.js';
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
-import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
+import { useCancelKey } from '../../features/start-preparation/use-cancel-key.js';
+import { useClosePromptOnLeave } from '../../features/start-preparation/use-close-prompt-on-leave.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
-import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt/prompt.js';
-import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/fs/listing.js';
@@ -103,28 +100,20 @@ export function HomeScreen({
   const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
   const toolCheck = detectionStore.use((s) => deriveHomeToolCheck(s.refresh));
   const startPreparation = useStartPreparation<Extract<DraftSubmission, { ok: true }>>({
-    prepare: async (submission, signal) => {
+    prepare: (submission, signal) => {
       configStore.reloadIfChanged();
-      const current = configStore.get();
-      if (!current.config || !current.projectDir) {
-        return { kind: 'failed', error: appPreparationError.configNotLoaded() };
-      }
-      return deps.prepareExecution({
-        projectDir: current.projectDir,
-        feature: submission.message.displayText,
-        plannerContext: submission.plannerContext || undefined,
-        ...(submission.message.attachedInputs.length > 0 && {
-          attachedInputs: submission.message.attachedInputs,
-        }),
-        effectiveConfig: current.config,
-        configWarnings: current.configWarnings,
-        policy: {
-          ...interactivePreparationPolicy,
-          purpose: 'new-workflow',
+      return prepareStart(
+        deps.prepareExecution,
+        {
+          feature: submission.message.displayText,
+          plannerContext: submission.plannerContext || undefined,
+          ...(submission.message.attachedInputs.length > 0 && {
+            attachedInputs: submission.message.attachedInputs,
+          }),
           allowRepoRunners: false,
         },
         signal,
-      });
+      );
     },
     onPrepared: (execution) => {
       // The composer keeps a sent request for a start that is refused; a run that starts takes it.
@@ -203,12 +192,7 @@ export function HomeScreen({
     return () => clearTimeout(timer);
   }, [sessionsActive, selectionError]);
 
-  useEffect(
-    () => () => {
-      if (sessionSelectStore.get().preparation.kind === 'idle') closeApprovalPrompt();
-    },
-    [],
-  );
+  useClosePromptOnLeave();
 
   const closeRecentSessions = () => {
     setSessionsFocused(false);
@@ -225,12 +209,11 @@ export function HomeScreen({
     observePreparationCleanup(startPreparation.submit(submission));
   };
 
-  useInput(
-    (_input, key) => {
-      if (key.escape) startPreparation.cancel(closeApprovalPrompt);
-    },
-    { isActive: isPreparing && !hasOverlay && !showPreparationPanel },
-  );
+  useCancelKey({
+    preparing: isPreparing,
+    takesPage: showPreparationPanel,
+    onCancel: () => startPreparation.cancel(closeApprovalPrompt),
+  });
 
   let homeHint: string | undefined;
   let homeNotice: HomeNotice | undefined;
@@ -263,26 +246,23 @@ export function HomeScreen({
   // The check the user is waiting on borrows the same reserved row, so the status appears and goes
   // without moving anything above or below it. Only an attempt this screen owns can be given up,
   // so only that one advertises the key.
-  const preparationStatus =
-    checkingStage === null || interactionBlocked
-      ? undefined
-      : `${preparationFrame} ${fitCheckingRow({
-          frame: preparationFrame,
-          stage: checkingStage,
-          slowProbe,
-          cancellable: isPreparing,
-          width: layout.width,
-        })}`;
+  const preparationStatus = interactionBlocked
+    ? undefined
+    : checkingStatusText({
+        frame: preparationFrame,
+        stage: checkingStage,
+        slowProbe,
+        cancellable: isPreparing,
+        width: layout.width,
+      });
 
   return (
     <>
       {showPreparationPanel && (
-        <StartPreparationPanel
+        <PreparationGate
           state={startPreparation.state}
-          onRetry={() => observePreparationCleanup(startPreparation.retry())}
+          retry={startPreparation.retry}
           onBack={() => startPreparation.cancel(closeApprovalPrompt)}
-          onOpenSettings={() => overlayStore.open('settings')}
-          approvalPrompt={approvalPending ? (card) => <ApprovalPrompt card={card} /> : undefined}
         />
       )}
       {/* The panel covers the screen rather than replacing it, so what is typed here outlives a

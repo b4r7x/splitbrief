@@ -1,8 +1,5 @@
 import { useEffect } from 'react';
-import { useInput } from 'ink';
-import { ApprovalPrompt } from '../features/workflow/components/approval-prompt/prompt.js';
-import { observePreparationCleanup } from '../features/start-preparation/observe-cleanup.js';
-import { StartPreparationPanel } from '../features/start-preparation/panel.js';
+import { useCancelKey } from '../features/start-preparation/use-cancel-key.js';
 import {
   cancelSessionPreparation,
   retrySessionPreparation,
@@ -10,6 +7,7 @@ import {
 } from '../stores/navigation/session-select.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../stores/prompts/approval.js';
 import { overlayStore, selectHasOverlay } from '../stores/ui/overlay.js';
+import { PreparationGate } from './preparation-gate.js';
 
 /**
  * The page belongs to a continuation only while there is something to do on it: an approval to
@@ -24,7 +22,6 @@ export function useSessionPreparationTakesPage(): boolean {
 
 export function SessionPreparation() {
   const state = sessionSelectStore.use((snapshot) => snapshot.preparation);
-  const approvalPending = approvalPromptStore.use((snapshot) => snapshot.status === 'pending');
   const hasOverlay = overlayStore.use(selectHasOverlay);
   const takesPage = useSessionPreparationTakesPage();
 
@@ -38,25 +35,22 @@ export function SessionPreparation() {
 
   // Escape spends this attempt and nothing else: the run stays on its screen and the draft beside
   // it is left exactly as it was.
-  useInput(
-    (_input, key) => {
-      if (key.escape) cancelSessionPreparation();
-    },
-    { isActive: state.kind === 'preparing' && !takesPage && !hasOverlay },
-  );
+  useCancelKey({
+    preparing: state.kind === 'preparing',
+    takesPage,
+    onCancel: () => cancelSessionPreparation(),
+  });
 
   if (!takesPage || hasOverlay) return null;
 
   return (
-    <StartPreparationPanel
+    <PreparationGate
       state={state}
-      onRetry={() => observePreparationCleanup(retrySessionPreparation())}
+      retry={retrySessionPreparation}
       onBack={() => {
         closeApprovalPrompt();
         cancelSessionPreparation();
       }}
-      onOpenSettings={() => overlayStore.open('settings')}
-      approvalPrompt={approvalPending ? (card) => <ApprovalPrompt card={card} /> : undefined}
     />
   );
 }

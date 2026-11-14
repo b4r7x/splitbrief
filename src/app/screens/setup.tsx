@@ -1,6 +1,6 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect, useRef, useState } from 'react';
-import { Box, useApp, useInput } from 'ink';
+import { Box, useApp } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -10,7 +10,6 @@ import { checkCrewAvailability, unavailableCrewSeats } from '../../engine/detect
 import type { CrewSeat } from '../../core/crew/seats.js';
 import type { PickerDetectionSnapshot } from '../../features/runners/model-catalog/status.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { AttachedInput } from '../../core/schemas/attachment.js';
 import { cliSignInStep } from '../../core/readiness/cli-remediation.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
@@ -24,16 +23,14 @@ import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
-import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt/prompt.js';
-import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
-import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
+import { useCancelKey } from '../../features/start-preparation/use-cancel-key.js';
+import { useClosePromptOnLeave } from '../../features/start-preparation/use-close-prompt-on-leave.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { preparationStore, selectCheckingStage } from '../../stores/navigation/preparation.js';
 import { readRunRecord } from '../../core/sessions/run/record-io.js';
-import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { persistedConfigForSave } from '../../stores/project/config-persistence.js';
 import { configError } from '../../core/config/errors.js';
@@ -52,7 +49,8 @@ import { assertNever } from '../../utils/type-guards.js';
 import { isAbortError } from '../../utils/abort.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
-import { appPreparationError, interactivePreparationPolicy } from '../prepare-resume.js';
+import { checkingStatusText, prepareStart, type StartRequest } from '../prepare-start.js';
+import { PreparationGate } from '../preparation-gate.js';
 import {
   CONTINUE_SECTION,
   continueText,
@@ -103,14 +101,6 @@ interface SetupScreenProps {
   prepare?: typeof prepareExecution | undefined;
   deps?: SetupScreenDeps | undefined;
 }
-
-type SetupPreparationInput = Readonly<{
-  projectDir: string;
-  feature: string;
-  plannerContext?: string | undefined;
-  attachedInputs?: readonly AttachedInput[] | undefined;
-  allowRepoRunners: boolean;
-}>;
 
 interface CrewStepProps {
   noConfig: boolean;
@@ -352,7 +342,6 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     state.screen === 'setup' ? state.allowRepoRunners : undefined,
   );
   const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
-  const hasOverlay = overlayStore.use(selectHasOverlay);
   // Moving into work is the same wait as anywhere else: the crew panel stays where it is and its
   // fixed hint row states the check, rather than a second fullscreen loader taking the screen.
   const checkingStage = preparationStore.use(selectCheckingStage);
@@ -361,27 +350,8 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   const [step, setStep] = useState<Step>('discovery');
   const saveCheck = useRef<AbortController | null>(null);
 
-  const preparation = useStartPreparation<SetupPreparationInput>({
-    prepare: async (input, signal) => {
-      const { config: currentConfig, configWarnings } = configStore.get();
-      if (currentConfig === null) {
-        return { kind: 'failed', error: appPreparationError.configNotLoaded() };
-      }
-      return effects.prepareExecution({
-        projectDir: input.projectDir,
-        feature: input.feature,
-        effectiveConfig: currentConfig,
-        configWarnings,
-        signal,
-        policy: {
-          ...interactivePreparationPolicy,
-          purpose: 'new-workflow',
-          allowRepoRunners: input.allowRepoRunners,
-        },
-        ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
-        ...(input.attachedInputs !== undefined && { attachedInputs: input.attachedInputs }),
-      });
-    },
+  const preparation = useStartPreparation<StartRequest>({
+    prepare: (request, signal) => prepareStart(effects.prepareExecution, request, signal),
     onPrepared: (execution) => {
       routerStore.navigate({
         to: 'workflow',
@@ -427,10 +397,10 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   useEffect(
     () => () => {
       saveCheck.current?.abort();
-      if (sessionSelectStore.get().preparation.kind === 'idle') closeApprovalPrompt();
     },
     [],
   );
+  useClosePromptOnLeave();
 
   const retryDiscovery = () => {
     if (!projectDir) return;
@@ -451,12 +421,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     (preparing && approvalPending);
 
   // Escape gives up this attempt and leaves the crew exactly as it was chosen.
-  useInput(
-    (_input, key) => {
-      if (key.escape) cancelPreparation();
-    },
-    { isActive: preparing && !preparationTakesPage && !hasOverlay },
-  );
+  useCancelKey({ preparing, takesPage: preparationTakesPage, onCancel: cancelPreparation });
 
   const finalize = async (finalConfig: Config) => {
     if (!projectDir) return;
@@ -484,7 +449,6 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
       feedbackStore.setMessage(formatConfigSaveSuccess('your crew', result));
       observePreparationCleanup(
         preparation.submit({
-          projectDir,
           feature: pendingFeature,
           ...(pendingPlannerContext !== undefined && { plannerContext: pendingPlannerContext }),
           ...(pendingAttachedInputs !== undefined && { attachedInputs: pendingAttachedInputs }),
@@ -500,12 +464,10 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
 
   if (preparationTakesPage) {
     return (
-      <StartPreparationPanel
+      <PreparationGate
         state={preparation.state}
-        onRetry={() => observePreparationCleanup(preparation.retry())}
+        retry={preparation.retry}
         onBack={cancelPreparation}
-        onOpenSettings={() => overlayStore.open('settings')}
-        approvalPrompt={approvalPending ? (card) => <ApprovalPrompt card={card} /> : undefined}
       />
     );
   }
@@ -533,16 +495,13 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     rememberedStepLabel = `Refresh failed${SOFT_SEP}remembered results`;
   }
 
-  const preparationStatus =
-    checkingStage === null
-      ? undefined
-      : `${preparationFrame} ${fitCheckingRow({
-          frame: preparationFrame,
-          stage: checkingStage,
-          slowProbe,
-          cancellable: preparing,
-          width: overlayRect({ cols, rows, density: CREW_PANEL_DENSITY }).innerWidth,
-        })}`;
+  const preparationStatus = checkingStatusText({
+    frame: preparationFrame,
+    stage: checkingStage,
+    slowProbe,
+    cancellable: preparing,
+    width: overlayRect({ cols, rows, density: CREW_PANEL_DENSITY }).innerWidth,
+  });
 
   return (
     <CrewStep

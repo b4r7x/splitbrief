@@ -162,6 +162,37 @@ describe('SessionPreparation', () => {
     ui.unmount();
   });
 
+  it('leaves the check running when Escape lands under an open overlay', async () => {
+    const record = showAtRest(projectDir, 'resume-overlay-escape', 'resume under an overlay');
+    const state = { ...createInitialState(record.feature), phase: 'implementing' as const };
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    let signal: AbortSignal | undefined;
+    const deps: SessionSelectDeps = {
+      applying: () => false,
+      hydrateRun: async () => {},
+      loadResumeState: () => ({ kind: 'loaded', state }),
+      prepareResume: (_input, attemptSignal) => {
+        signal = attemptSignal;
+        return pending.promise;
+      },
+    };
+    const ui = renderFeature(<SessionPreparation />);
+    const selection = continueRunInPlace({ record, state, deps });
+    await flushEffects();
+    overlayStore.open('help');
+    await flushEffects();
+
+    ui.stdin.write(ESC);
+    await flushEffects();
+    expect(signal?.aborted).toBe(false);
+    expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
+
+    overlayStore.close();
+    pending.resolve({ kind: 'aborted' });
+    await selection;
+    ui.unmount();
+  });
+
   it('closes the originating overlay before a tiered approval owns input', async () => {
     const record = showAtRest(projectDir, 'resume-approval', 'resume with approval');
     const state = { ...createInitialState(record.feature), phase: 'implementing' as const };

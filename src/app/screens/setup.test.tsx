@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
@@ -20,6 +21,7 @@ import { configPath } from '../../core/config/load/document.js';
 import { CONFIG_FILE, sessionDir, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { computeCrewPresets } from '../../core/crew/presets.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
+import { createInitialState } from '../../core/state/machine.js';
 import { prepareNewSession } from '../../core/sessions/prepare.js';
 import type {
   DetectionRefreshOutcomes,
@@ -31,8 +33,17 @@ import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepare-execution/prepared.js';
-import { approvalPromptStore, openApprovalPrompt } from '../../stores/prompts/approval.js';
+import {
+  approvalPromptStore,
+  closeApprovalPrompt,
+  openApprovalPrompt,
+} from '../../stores/prompts/approval.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import {
+  continueRunInPlace,
+  sessionSelectStore,
+  type SessionSelectDeps,
+} from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
 import type {
@@ -1671,6 +1682,86 @@ describe('SetupScreen', () => {
       });
     },
   );
+
+  it('closes the approval prompt of its own start when setup goes away', async () => {
+    await withTempDir('setup-leave-approval', async (projectDir) => {
+      configStore.load(projectDir);
+      const request = beginDiscovery();
+      freshDiscovery(request, 1);
+      routerStore.init({
+        screen: 'setup',
+        onComplete: 'workflow',
+        feature: 'Leave during approval',
+      });
+      const pending = Promise.withResolvers<PreparationOutcome>();
+      const prepare = vi.fn(async (input: PrepareExecutionInput) => {
+        const onTieredApproval = input.policy.onTieredApproval;
+        if (!onTieredApproval) throw new Error('Expected the interactive approval callback.');
+        await onTieredApproval({
+          tier: 'confirm',
+          actionClass: 'runner_trust',
+          actionDescription: 'Run the configured custom tool',
+          phase: 'planning',
+        });
+        return pending.promise;
+      });
+      const ui = renderFeature(<SetupScreen prepare={prepare} />);
+      await flushEffects();
+      await continueSetup(ui);
+      await vi.waitFor(() =>
+        expect(ui.lastFrame() ?? '').toContain('Run the configured custom tool'),
+      );
+
+      ui.unmount();
+      expect(approvalPromptStore.get().status).toBe('idle');
+      pending.resolve({ kind: 'aborted' });
+      await flushEffects();
+    });
+  });
+
+  it('leaves the approval prompt of a continuation open when setup goes away', async () => {
+    await withTempDir('setup-leave-continue', async (projectDir) => {
+      configStore.load(projectDir);
+      const request = beginDiscovery();
+      freshDiscovery(request, 1);
+      const state = {
+        ...createInitialState('continue under setup'),
+        phase: 'implementing' as const,
+      };
+      const record = makeRunRecord({
+        ref: { projectDir, sessionId: 'continue-under-setup' },
+        feature: state.feature,
+      });
+      const pending = Promise.withResolvers<PreparationOutcome>();
+      const deps: SessionSelectDeps = {
+        applying: () => false,
+        hydrateRun: async () => {},
+        loadResumeState: () => ({ kind: 'loaded', state }),
+        prepareResume: async () => {
+          await openApprovalPrompt({
+            tier: 'confirm',
+            actionClass: 'runner_trust',
+            actionDescription: 'Approve the configured runner for this continue',
+            phase: 'implementing',
+          });
+          return pending.promise;
+        },
+        cancelPendingApproval: closeApprovalPrompt,
+      };
+      const ui = renderFeature(<SetupScreen />);
+      await flushEffects();
+      const selection = continueRunInPlace({ record, state, deps });
+      await vi.waitFor(() => expect(approvalPromptStore.get().status).toBe('pending'));
+      expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
+
+      ui.unmount();
+      expect(approvalPromptStore.get().status).toBe('pending');
+      closeApprovalPrompt();
+      pending.resolve({ kind: 'aborted' });
+      await selection;
+      sessionSelectStore.reset();
+    });
+  });
 
   it('failed preparation stays in Setup with generic retry back settings and prioritized blockers', async () => {
     await withTempDir('setup-failed', async (projectDir) => {

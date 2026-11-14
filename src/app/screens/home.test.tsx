@@ -15,6 +15,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -34,6 +35,11 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import {
+  continueRunInPlace,
+  sessionSelectStore,
+  type SessionSelectDeps,
+} from '../../stores/navigation/session-select.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
@@ -45,7 +51,11 @@ import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepare-execution/prepared.js';
-import { closeApprovalPrompt } from '../../stores/prompts/approval.js';
+import {
+  approvalPromptStore,
+  closeApprovalPrompt,
+  openApprovalPrompt,
+} from '../../stores/prompts/approval.js';
 import { CONFIRM_PHRASE, type TieredApprovalResponse } from '../../core/approval/types.js';
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { wireAppMouse } from '../mouse.js';
@@ -1442,6 +1452,72 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
+  it('leaves its check running when Escape lands under an open overlay', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    let signal: AbortSignal | undefined;
+    prepareExecutionMock.mockImplementation((input) => {
+      signal = input.signal;
+      return pending.promise;
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('escape under an overlay');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+      SESSION_FILTER_WAIT_MS,
+    );
+    overlayStore.open('help');
+    await flushEffects();
+
+    ui.stdin.write(ESC);
+    await flushEffects();
+    expect(signal?.aborted).toBe(false);
+
+    overlayStore.close();
+    pending.resolve({ kind: 'aborted' });
+    await flushEffects();
+    ui.unmount();
+  });
+
+  it('leaves its check running when Escape lands on the approval prompt of that check', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    let signal: AbortSignal | undefined;
+    prepareExecutionMock.mockImplementation(async (input) => {
+      signal = input.signal;
+      const onTieredApproval = input.policy.onTieredApproval;
+      if (!onTieredApproval) throw new Error('Expected the interactive approval callback.');
+      await onTieredApproval({
+        tier: 'confirm',
+        actionClass: 'runner_trust',
+        actionDescription: 'Run the configured custom tool',
+        phase: 'planning',
+      });
+      return pending.promise;
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('escape on the approval');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(ui.lastFrame() ?? '').toContain('Run the configured custom tool'),
+      SESSION_FILTER_WAIT_MS,
+    );
+
+    ui.stdin.write(ESC);
+    await flushEffects();
+    expect(signal?.aborted).toBe(false);
+
+    closeApprovalPrompt();
+    pending.resolve({ kind: 'aborted' });
+    await flushEffects();
+    ui.unmount();
+  });
+
   it('aborts an in-flight preparation on unmount', async () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     let signal: AbortSignal | undefined;
@@ -1548,6 +1624,75 @@ describe('HomeScreen', () => {
     pending.resolve({ kind: 'aborted' });
     await flushEffects();
     ui.unmount();
+  });
+
+  it('closes the approval prompt of its own start when home goes away', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockImplementation(async (input) => {
+      const onTieredApproval = input.policy.onTieredApproval;
+      if (!onTieredApproval) throw new Error('Expected the interactive approval callback.');
+      await onTieredApproval({
+        tier: 'confirm',
+        actionClass: 'runner_trust',
+        actionDescription: 'Run the configured custom tool',
+        phase: 'planning',
+      });
+      return pending.promise;
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('leave during approval');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(ui.lastFrame() ?? '').toContain('Run the configured custom tool'),
+      SESSION_FILTER_WAIT_MS,
+    );
+
+    ui.unmount();
+    expect(approvalPromptStore.get().status).toBe('idle');
+    pending.resolve({ kind: 'aborted' });
+    await flushEffects();
+  });
+
+  it('leaves the approval prompt of a continuation open when home goes away', async () => {
+    const state = { ...createInitialState('continue under home'), phase: 'implementing' as const };
+    const record = makeRunRecord({
+      ref: { projectDir, sessionId: 'continue-under-home' },
+      feature: state.feature,
+    });
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    const deps: SessionSelectDeps = {
+      applying: () => false,
+      hydrateRun: async () => {},
+      loadResumeState: () => ({ kind: 'loaded', state }),
+      prepareResume: async () => {
+        await openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: 'runner_trust',
+          actionDescription: 'Approve the configured runner for this continue',
+          phase: 'implementing',
+        });
+        return pending.promise;
+      },
+      cancelPendingApproval: closeApprovalPrompt,
+    };
+
+    const ui = renderHome();
+    await flushEffects();
+    const selection = continueRunInPlace({ record, state, deps });
+    await vi.waitFor(
+      () => expect(approvalPromptStore.get().status).toBe('pending'),
+      SESSION_FILTER_WAIT_MS,
+    );
+    expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
+
+    ui.unmount();
+    expect(approvalPromptStore.get().status).toBe('pending');
+    closeApprovalPrompt();
+    pending.resolve({ kind: 'aborted' });
+    await selection;
   });
 
   it('asks the runner trust question in the centred tool preparation card', async () => {
