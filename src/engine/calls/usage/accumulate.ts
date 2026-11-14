@@ -102,7 +102,7 @@ function addCoverage(
   };
 }
 
-function combineCoverage(
+export function combineCoverage(
   left: RunnerCallCounterCoverageState,
   right: RunnerCallCounterCoverageState,
 ): RunnerCallCounterCoverageState {

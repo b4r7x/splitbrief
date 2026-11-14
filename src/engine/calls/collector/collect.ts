@@ -9,6 +9,7 @@ import {
   RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
 } from '../output-limit.js';
 import { isRunnerCallTerminalEvent } from '../status.js';
+import { contributesToResultText } from '../result-text.js';
 import type { RunnerCallEvent, RunnerCallResult } from '../types.js';
 import { unknownUpstreamWarningInput } from '../unknown-upstream.js';
 import { applyRunnerCallUsageSample } from '../usage/accumulate.js';
@@ -241,10 +242,4 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
     default:
       assertNever(event);
   }
-}
-
-function contributesToResultText(
-  channel: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'],
-): boolean {
-  return channel === 'assistant' || channel === 'result' || channel === 'stdout';
 }

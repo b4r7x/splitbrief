@@ -22,8 +22,13 @@ import type {
 } from '../../runners/cli-tools/probe/contract.js';
 import { parseCompleteCommandCodeNativeModelCatalog } from '../../runners/cli-tools/probe/native-catalog/command-code.js';
 import { nativeCliCatalogToDetectedModels } from '../../runners/cli-tools/probe/native-catalog/entries.js';
-import { type ProbeOutputBudget, spawnProbe } from '../../runners/cli-tools/probe/process.js';
+import {
+  type ProbeOutputBudget,
+  probeRuntimePath,
+  spawnProbe,
+} from '../../runners/cli-tools/probe/process.js';
 import { providerOracleCommand } from '../../runners/cli-tools/probe/provider-oracle.js';
+import { probeCommandsMatch } from '../../runners/cli-tools/probe/safety.js';
 import type { AuthProbeRun } from '../../runners/cli-tools/probe/declared-readiness.js';
 import { cliChannelStaging } from '../../runners/sandbox/auth-env.js';
 import { createSandboxEnv, prependCliExecutableDirectory } from '../../runners/sandbox/env.js';
@@ -32,12 +37,10 @@ import { removeSandboxTempDirs } from '../../runners/sandbox/state/paths.js';
 import type { CliRunnerDiscoveryContext } from '../cli-context.js';
 import {
   type AdmittedCatalogOperation,
-  catalogRuntimePath,
   admitCatalogOperation,
   catalogOperationIsFresh,
   selectedCatalogProbe,
   catalogProbeForVersion,
-  probeCommandsMatch,
 } from './admission.js';
 
 const CATALOG_PROBE_OUTPUT: ProbeOutputBudget = {
@@ -87,7 +90,7 @@ async function catalogProbeEnvironment(
       ...CATALOG_PROBE_ENV[operation.context.id],
       PATH: prependCliExecutableDirectory({
         executablePath: operation.executable.path,
-        safeRuntimePath: catalogRuntimePath(),
+        safeRuntimePath: probeRuntimePath(),
       }),
     },
     credentialMayBePresent,
@@ -271,7 +274,8 @@ export async function probeContextCatalog(
       return { kind: 'missing-credential' };
     }
     const outcome =
-      input.authProbeRun !== undefined && probeCommandsMatch(probe, input.authProbeRun.command)
+      input.authProbeRun !== undefined &&
+      probeCommandsMatch({ left: probe, right: input.authProbeRun.command })
         ? catalogOutcomeFromProbe(operation.context.id, probe, input.authProbeRun.output, undefined)
         : await trackProbe({ tool: operation.context.id, check: 'model list' }, () =>
             runAdmittedCatalogProbe(

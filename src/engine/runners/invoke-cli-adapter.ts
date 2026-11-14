@@ -14,6 +14,7 @@ import {
 } from '../streaming/final-text.js';
 import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke/invoke.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox/credential-values.js';
+import { contributesToResultText } from '../calls/result-text.js';
 import { boundedRunnerCallMessage } from '../calls/status.js';
 
 type InvokeCliOptions = {
@@ -97,7 +98,7 @@ function createCliTextReconciler(
     emit(text, event);
   };
   const forwardText = (event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>): void => {
-    if (!contributesToStreamedText(event.channel)) {
+    if (!contributesToResultText(event.channel)) {
       onOutput?.(event.text, undefined, event);
       return;
     }
@@ -216,10 +217,4 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
   return result.status === 'completed'
     ? { ...result, warnings }
     : { ...result, error: failure(result.error), warnings };
-}
-
-function contributesToStreamedText(
-  channel: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'],
-): boolean {
-  return channel === 'assistant' || channel === 'result' || channel === 'stdout';
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
-import { optionalString, isRecord } from '../../../../utils/type-guards.js';
+import { isRecord } from '../../../../utils/type-guards.js';
 import { toTokenDelta } from '../../../calls/usage/normalize.js';
+import { firstString } from '../fields.js';
 import type { StreamParseResult } from './result.js';
 
 export const TextBlock = z.object({ type: z.literal('text'), text: z.string() });
@@ -60,14 +61,6 @@ export const ApiRetryEvent = z.object({
   error_status: z.number().nullable(),
   error: z.string(),
 });
-
-export function firstString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    const candidate = optionalString(value, { trim: true, nonEmpty: true });
-    if (candidate) return candidate;
-  }
-  return undefined;
-}
 
 export function parseStreamEvent(event: Record<string, unknown>): StreamParseResult | null {
   if (event.type !== 'stream_event' || !isRecord(event.event)) return null;

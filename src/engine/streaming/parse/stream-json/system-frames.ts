@@ -6,7 +6,8 @@ import {
 import { formatDuration } from '../../../../utils/format/time.js';
 import { isRecord } from '../../../../utils/type-guards.js';
 import type { ParsedWarningInfo } from '../../../runners/types.js';
-import { ApiRetryEvent, firstString } from './events.js';
+import { firstString } from '../fields.js';
+import { ApiRetryEvent } from './events.js';
 import type { StreamParseResult } from './result.js';
 
 /** `overloaded (HTTP 529): retry 2 of 10 in 4.0s`, from the fields Claude Code documents. */

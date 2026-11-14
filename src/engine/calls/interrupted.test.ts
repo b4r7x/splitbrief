@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { taskId } from '../../core/schemas/task.js';
 import { EngineEventSchema } from '../events/schema.js';
 import type { EngineEvent, EngineEventOf } from '../events/types.js';
-import { interruptedCallEvents } from './interrupted.js';
+import { interruptedCallEvents, isRunnerCallEvent } from './interrupted.js';
 
 const T002 = taskId('T002');
 
@@ -124,5 +124,12 @@ describe('interruptedCallEvents', () => {
 
     expect(closed).toHaveLength(2);
     expect(closed[0]).toMatchObject({ callId: 'implementer-1', startedAt: 600 });
+  });
+});
+
+describe('isRunnerCallEvent', () => {
+  it('tells a runner call event from any other event', () => {
+    expect(isRunnerCallEvent(started('implementer-1', 10))).toBe(true);
+    expect(isRunnerCallEvent(resumed)).toBe(false);
   });
 });

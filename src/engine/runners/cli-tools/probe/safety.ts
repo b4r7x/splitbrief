@@ -14,7 +14,9 @@ const FORBIDDEN_PROBE_ARGUMENTS = new Set([
   'upgrade',
 ]);
 
-export function hasForbiddenProbeArgument(command: CliProbeCommand): boolean {
+export function hasForbiddenProbeArgument(
+  command: Readonly<{ command: readonly string[] }>,
+): boolean {
   return command.command.slice(1).some((argument) => {
     const normalized = argument.toLowerCase();
     return (
@@ -45,7 +47,7 @@ function isExactCodexLoginStatusProbe({
   );
 }
 
-function probeCommandsMatch({
+export function probeCommandsMatch({
   left,
   right,
 }: Readonly<{

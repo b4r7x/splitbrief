@@ -6,7 +6,7 @@ import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
 import { projectRunnerCallEvents } from './event-projection.js';
 import { runnerCallErrorEvent } from './status.js';
 
-type RunnerCallEngineEvent = Extract<EngineEvent, { type: `runner_call_${string}` }>;
+export type RunnerCallEngineEvent = Extract<EngineEvent, { type: `runner_call_${string}` }>;
 
 type OpenCall = {
   started: EngineEventOf<'runner_call_started'>;
@@ -16,7 +16,7 @@ type OpenCall = {
 
 const PROCESS_EXIT_MESSAGE = 'SPLITBRIEF exited';
 
-function isRunnerCallEvent(event: EngineEvent): event is RunnerCallEngineEvent {
+export function isRunnerCallEvent(event: EngineEvent): event is RunnerCallEngineEvent {
   return event.type.startsWith('runner_call_');
 }
 

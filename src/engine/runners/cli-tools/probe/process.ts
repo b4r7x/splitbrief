@@ -46,7 +46,7 @@ interface ProbeEnvironment {
  * only an interpreter runtime aid, never a second executable-selection
  * channel, so ambient PATH entries (including external shadows) stay out.
  */
-function probeRuntimePath(): string {
+export function probeRuntimePath(): string {
   const directories =
     process.platform === 'win32'
       ? [dirname(process.execPath)]

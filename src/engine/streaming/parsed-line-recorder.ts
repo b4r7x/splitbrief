@@ -7,6 +7,7 @@ import {
   type RunnerCallDeltaLimitResult,
 } from '../calls/output-limit.js';
 import { reconcileFinalText } from './final-text.js';
+import { contributesToResultText } from '../calls/result-text.js';
 import { accumulateTokenUsage } from '../calls/usage/accumulate.js';
 
 export interface ParsedLineRecorder {
@@ -70,7 +71,7 @@ export function createParsedLineRecorder(opts: {
     marks: Pick<TextChunkMarks, 'continues'> | undefined,
   ): void {
     const accepted = acceptTextDelta(textDelta);
-    if (accepted.text.length > 0 && contributesToRunnerResult(channel)) {
+    if (accepted.text.length > 0 && contributesToResultText(channel)) {
       opts.onText?.(accepted.text, subagentId === undefined ? marks : { ...marks, subagentId });
     }
     opts.recorder.text({
@@ -199,10 +200,6 @@ export function createParsedLineRecorder(opts: {
 
 function inferredTextChannel(parsed: ParsedLine): ParsedTextChannel {
   return parsed.isResult ? 'result' : 'stdout';
-}
-
-function contributesToRunnerResult(channel: ParsedTextChannel): boolean {
-  return channel === 'assistant' || channel === 'result' || channel === 'stdout';
 }
 
 function createLiveLimiter(): ReturnType<typeof createRunnerCallDeltaLimiter> {

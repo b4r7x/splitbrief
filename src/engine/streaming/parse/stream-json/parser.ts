@@ -3,7 +3,7 @@ import { isRecord } from '../../../../utils/type-guards.js';
 import { accumulateTokenUsage } from '../../../calls/usage/accumulate.js';
 import { BackendTokenUsageSchema, toTokenDelta } from '../../../calls/usage/normalize.js';
 import { parseLine } from './line.js';
-import { firstString } from './events.js';
+import { firstString } from '../fields.js';
 import type { StreamParseResult, MessageUsage, OpenTools, CollectMessageUsage } from './result.js';
 
 /** A delta with no message_start behind it still reports real usage. */

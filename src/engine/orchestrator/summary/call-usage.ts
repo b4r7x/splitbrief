@@ -1,18 +1,13 @@
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
+import { isRunnerCallEvent, type RunnerCallEngineEvent } from '../../calls/interrupted.js';
 import { applyRunnerCallUsageSample } from '../../calls/usage/accumulate.js';
 import type { EngineEvent } from '../../events/types.js';
-
-type RunnerCallEngineEvent = Extract<EngineEvent, { type: `runner_call_${string}` }>;
 
 type CallFold = {
   evidence: CallUsageEvidence;
   started: boolean;
   terminal: boolean;
 };
-
-function isRunnerCallEvent(event: EngineEvent): event is RunnerCallEngineEvent {
-  return event.type.startsWith('runner_call_');
-}
 
 /**
  * One row per recorded call, attributed only from what the call itself recorded:

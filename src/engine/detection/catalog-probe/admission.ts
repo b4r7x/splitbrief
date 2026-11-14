@@ -1,4 +1,3 @@
-import { delimiter, dirname } from 'node:path';
 import type {
   CliExecutableIdentity,
   CliExecutableReceipt,
@@ -14,6 +13,11 @@ import type {
   CliDeclaredProbeContract,
   CliProbeCommand,
 } from '../../runners/cli-tools/probe/contract.js';
+import {
+  hasForbiddenProbeArgument,
+  ownedProbeCommand,
+  probeCommandsMatch,
+} from '../../runners/cli-tools/probe/safety.js';
 import { isCanonicalCliDeclaredProbe } from '../../runners/cli-tools/registry.js';
 import {
   detectionRuntimeNamespace,
@@ -25,18 +29,6 @@ import {
 } from '../cli-context.js';
 
 const CATALOG_ADMISSION_MAX_AGE_MS = 30_000;
-const FORBIDDEN_CATALOG_PROBE_ARGUMENTS = new Set([
-  'download',
-  'exec',
-  'install',
-  'login',
-  'pull',
-  'refresh',
-  'run',
-  'sync',
-  'update',
-  'upgrade',
-]);
 
 export type AdmittedCatalogOperation = Readonly<{
   context: CliRunnerDiscoveryContext;
@@ -55,23 +47,6 @@ export type AdmittedCatalogOperation = Readonly<{
   issuedAt: number;
 }>;
 
-function hasForbiddenCatalogArgument(command: Readonly<{ command: readonly string[] }>): boolean {
-  return command.command.slice(1).some((argument) => {
-    const normalized = argument.toLowerCase();
-    return (
-      FORBIDDEN_CATALOG_PROBE_ARGUMENTS.has(normalized) ||
-      FORBIDDEN_CATALOG_PROBE_ARGUMENTS.has(normalized.replace(/^--/, ''))
-    );
-  });
-}
-
-export function probeCommandsMatch(left: CliProbeCommand, right: CliProbeCommand): boolean {
-  return (
-    left.command.length === right.command.length &&
-    left.command.every((argument, index) => argument === right.command[index])
-  );
-}
-
 function declaredCatalogProbeIsSafe(
   tool: CliToolId,
   catalog: CliCatalogProbe,
@@ -79,8 +54,8 @@ function declaredCatalogProbeIsSafe(
 ): catalog is Exclude<CliCatalogProbe, { kind: 'not-run' }> {
   if (
     catalog.kind !== 'catalog' ||
-    hasForbiddenCatalogArgument(catalog) ||
-    probeCommandsMatch(catalog, version)
+    hasForbiddenProbeArgument(catalog) ||
+    probeCommandsMatch({ left: catalog, right: version })
   ) {
     return false;
   }
@@ -105,17 +80,10 @@ function refreshOnlyManualCommand(
 
 /** The legacy argv is fixed declaration too, so it answers to the same two rules. */
 function legacyCatalogProbeIsSafe(tool: CliToolId, legacy: CliCatalogProbeLegacy): boolean {
-  if (hasForbiddenCatalogArgument({ command: legacy.command })) return false;
+  if (hasForbiddenProbeArgument({ command: legacy.command })) return false;
   if (legacy.manualCommand === undefined) return true;
   if (tool !== 'opencode' && tool !== 'kilo-code') return false;
   return refreshOnlyManualCommand(legacy.command, legacy.manualCommand);
-}
-
-function immutableProbeCommand(
-  command: readonly [string, ...string[]],
-): readonly [string, ...string[]] {
-  const [first, ...rest] = command;
-  return Object.freeze([first, ...rest]);
 }
 
 function immutableAuthChannel(channel: CliAuthChannel): CliAuthChannel {
@@ -127,11 +95,11 @@ function immutableCatalogProbe(
 ): Exclude<CliCatalogProbe, { kind: 'not-run' }> {
   return Object.freeze({
     ...probe,
-    command: immutableProbeCommand(probe.command),
+    command: ownedProbeCommand(probe.command),
     parse: Object.freeze(probe.parse),
     ...(probe.manualCommand === undefined
       ? {}
-      : { manualCommand: immutableProbeCommand(probe.manualCommand) }),
+      : { manualCommand: ownedProbeCommand(probe.manualCommand) }),
   });
 }
 
@@ -154,12 +122,12 @@ export function catalogProbeForVersion(
   // header the newer server needs is dropped rather than carried down.
   return Object.freeze({
     kind: 'catalog',
-    command: immutableProbeCommand(legacy.command),
+    command: ownedProbeCommand(legacy.command),
     cwd: probe.cwd,
     maxOutputBytes: probe.maxOutputBytes,
     ...(legacy.manualCommand === undefined
       ? {}
-      : { manualCommand: immutableProbeCommand(legacy.manualCommand) }),
+      : { manualCommand: ownedProbeCommand(legacy.manualCommand) }),
     parse: legacy.parse,
   });
 }
@@ -169,7 +137,7 @@ export function selectedCatalogProbe(
   refresh: 'automatic' | 'manual',
 ): Exclude<CliCatalogProbe, { kind: 'not-run' }> {
   if (refresh !== 'manual' || probe.manualCommand === undefined) return probe;
-  return Object.freeze({ ...probe, command: immutableProbeCommand(probe.manualCommand) });
+  return Object.freeze({ ...probe, command: ownedProbeCommand(probe.manualCommand) });
 }
 
 export function admitCatalogOperation(
@@ -220,12 +188,4 @@ export function admitCatalogOperation(
 export function catalogOperationIsFresh(operation: AdmittedCatalogOperation, now: number): boolean {
   const age = now - operation.issuedAt;
   return Number.isFinite(age) && age >= 0 && age <= CATALOG_ADMISSION_MAX_AGE_MS;
-}
-
-export function catalogRuntimePath(): string {
-  const directories =
-    process.platform === 'win32'
-      ? [dirname(process.execPath)]
-      : [dirname(process.execPath), '/usr/bin', '/bin'];
-  return [...new Set(directories)].join(delimiter);
 }

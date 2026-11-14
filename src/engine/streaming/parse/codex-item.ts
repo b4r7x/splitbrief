@@ -1,19 +1,12 @@
 import { z } from 'zod';
-import { optionalString, isRecord } from '../../../utils/type-guards.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import type { ParsedLine } from '../../runners/types.js';
+import { firstString } from './fields.js';
 
 const CodexItemEvent = z.object({
   type: z.enum(['item.started', 'item.completed']),
   item: z.record(z.string(), z.unknown()),
 });
-
-function firstString(...values: unknown[]): string | undefined {
-  for (const value of values) {
-    const candidate = optionalString(value, { trim: true, nonEmpty: true });
-    if (candidate) return candidate;
-  }
-  return undefined;
-}
 
 function codexToolName(item: Record<string, unknown>): string | null {
   const itemType = firstString(item.type);

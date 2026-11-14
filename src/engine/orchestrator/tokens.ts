@@ -1,12 +1,9 @@
 import { assertNever } from '../../utils/type-guards.js';
-import type {
-  RunnerCallCounterCoverage,
-  RunnerCallCounterCoverageState,
-} from '../../core/schemas/runner-call.js';
+import type { RunnerCallCounterCoverage } from '../../core/schemas/runner-call.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { TokenUsage, TokenDelta } from '../../core/schemas/tokens.js';
-import type { RunnerCallContext } from '../calls/types.js';
-import type { RunnerCallUsage } from '../calls/types.js';
+import type { RunnerCallContext, RunnerCallUsage } from '../calls/types.js';
+import { combineCoverage } from '../calls/usage/accumulate.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation' | 'reviewer';
 
@@ -124,13 +121,6 @@ function mergeSeatCoverage(
     cacheCreate: combineCoverage(current.cacheCreate, next.cacheCreate),
     reasoning: combineCoverage(current.reasoning, next.reasoning),
   };
-}
-
-function combineCoverage(
-  left: RunnerCallCounterCoverageState,
-  right: RunnerCallCounterCoverageState,
-): RunnerCallCounterCoverageState {
-  return left === right ? left : 'partial';
 }
 
 // An unreported counter leaves the bucket absent; a reported zero creates it at 0.
