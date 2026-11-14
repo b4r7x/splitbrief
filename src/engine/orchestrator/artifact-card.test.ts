@@ -75,6 +75,17 @@ describe('buildArtifactExcerpt — the document itself', () => {
 
     expect(result.excerpt).toEqual(['---', 'title: user notes', '---', 'Plan']);
   });
+
+  it('keeps SPLITBRIEF frontmatter whose closing rule ends the file without a line break', () => {
+    const result = buildArtifactExcerpt('---\ngenerated_by: splitbrief v0.1.0\n---', PLAN_FILE);
+
+    expect(result).toEqual({
+      lineCount: 3,
+      excerpt: ['---', 'generated_by: splitbrief v0.1.0', '---'],
+      omittedCount: 0,
+      omittedUnit: 'line',
+    });
+  });
 });
 
 describe('buildArtifactExcerpt — section outline', () => {

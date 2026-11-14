@@ -1,12 +1,12 @@
 import { join } from 'node:path';
 import { sessionDir } from '../../../core/paths.js';
+import { fileFrontmatter } from '../../../core/sessions/spec-files.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import type { Brief, ArtifactExcerpt } from './types.js';
 import { EXCERPT_MAX_ROWS, slice } from './excerpt-lines.js';
 import { outlineOf, documentHeadings } from './outline.js';
 
-const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 const FENCE_LINE = /^ {0,3}(?:`{3,}|~{3,})/;
 const NARRATION_OPENER = /^(?:I['’](?:ll|m|ve|d)\b|I \b|I(?:'|’)|Let(?:'|’)?s? me\b|Let me\b)/;
 
@@ -91,16 +91,10 @@ export function publishArtifactWritten(input: {
 }
 
 function documentLines(text: string): string[] {
-  const lines = stripFrontmatter(text).split('\n');
+  const lines = text.slice(fileFrontmatter(text).length).split('\n');
   while (lines.at(-1)?.trim() === '') lines.pop();
   while (lines[0]?.trim() === '') lines.shift();
   return lines;
-}
-
-function stripFrontmatter(text: string): string {
-  const match = FRONTMATTER_BLOCK.exec(text);
-  if (match === null || !(match[1] ?? '').includes('generated_by:')) return text;
-  return text.slice(match[0].length);
 }
 
 /**
