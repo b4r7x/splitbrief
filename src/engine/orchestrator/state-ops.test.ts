@@ -20,23 +20,18 @@ import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js'
 import { createHash } from 'node:crypto';
 import { deriveRunStatus } from '../../core/sessions/run/status.js';
 import { clearPendingQueue } from './queue/clear.js';
-import { enqueueUserMessage } from './queue/submit.js';
+import { enqueueUserMessage } from './queue/enqueue.js';
 import { dispatchNativeInjection } from './queue/native-injection.js';
 import { readQueueForPrompt, releaseQueuedMessage } from './queue/drain.js';
 import { isQueuedMessagePendingDelivery } from '../../core/queue/state.js';
 import { sessionDir } from '../../core/paths.js';
 import { resumeStep } from '../../core/sessions/run/status.js';
-import {
-  stateOpsError,
-  transitionAndSave,
-  transitionsAndSave,
-  parkStoppedRun,
-  raisePendingRecovery,
-  rebaseOnPersistedWorkflowState,
-  addUsageAndSave,
-  recordResumeUserMessage,
-  readWorkflowStateHead,
-} from './state-ops.js';
+import { addUsageAndSave } from './state-ops/usage.js';
+import { parkStoppedRun, raisePendingRecovery } from './state-ops/halts.js';
+import { recordResumeUserMessage } from './state-ops/corrections.js';
+import { transitionAndSave, transitionsAndSave } from './state-ops/transition.js';
+import { rebaseOnPersistedWorkflowState, readWorkflowStateHead } from './state-ops/head.js';
+import { stateOpsError } from './state-ops/errors.js';
 
 function setupProject(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('state-ops-test');

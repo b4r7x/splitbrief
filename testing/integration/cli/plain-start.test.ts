@@ -23,9 +23,9 @@ import type { Summary } from '../../../src/core/schemas/summary.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
-import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/retry.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init/options.js';
 import {
   planFromTasks,
   typedCallAnswering,

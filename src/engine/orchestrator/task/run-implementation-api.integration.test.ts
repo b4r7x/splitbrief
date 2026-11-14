@@ -17,11 +17,11 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { localCatalogResponse, withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 import { createApiImplementer } from '../../implementers/api.js';
-import { createContinuationHolder } from '../continuation.js';
+import { createContinuationHolder } from '../continuation/holder.js';
 import { runImplementation } from './run-implementation.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { enqueueUserMessage } from '../queue/submit.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 
 vi.mock('../../../lib/git/files.js', async (importOriginal) => ({

@@ -22,7 +22,7 @@ import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { createSnapshot } from '../../snapshots/create.js';
-import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
+import { reconcileWorkspaceToBase } from '../isolation/run-base/reader.js';
 
 afterEach(cleanupTaskProjects);
 

@@ -19,15 +19,17 @@ import { createEventBus } from '../../events/bus.js';
 import { createSteeringPort, type SteerOutcome } from '../../calls/steering.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { ImplementerOptions, RetryOptions } from '../../implementers/types.js';
-import { createQueueHandler, enqueueUserMessage } from '../queue/submit.js';
-import { createWriteSequencer } from '../serial-executor.js';
+import { createQueueHandler } from '../queue/submit.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
+import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import {
   recordApiApplyEvidence,
   recordApiRevertEvidence,
   recordedApiCreatedPaths,
 } from '../evidence/task.js';
-import { withContinuationLoop } from '../continuation.js';
-import { addUsageAndSave, recordBriefCorrection } from '../state-ops.js';
+import { withContinuationLoop } from '../continuation/loop.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
+import { recordBriefCorrection } from '../state-ops/corrections.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 

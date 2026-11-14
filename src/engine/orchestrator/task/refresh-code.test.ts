@@ -12,7 +12,7 @@ import { captureBundleBaseline } from '../../implementers/bundle-baseline.js';
 import { formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { createContinuationHolder } from '../continuation.js';
+import { createContinuationHolder } from '../continuation/holder.js';
 import { CONTEXT_CODE_BUDGET_CHARS, refreshAndPersistCode } from './refresh-code.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;

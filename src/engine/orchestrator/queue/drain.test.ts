@@ -20,14 +20,14 @@ import {
   releaseQueuedMessage,
   readQueueForPrompt,
 } from './drain.js';
-import { transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { clearPendingQueue } from './clear.js';
 import { trackMidCallDelivery } from './mid-call.js';
 
 const stateHead = vi.hoisted(() => ({ afterRead: undefined as (() => void) | undefined }));
 
-vi.mock('../state-ops.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../state-ops.js')>();
+vi.mock('../state-ops/head.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../state-ops/head.js')>();
   return {
     ...actual,
     readWorkflowStateHead: (ref: Parameters<typeof actual.readWorkflowStateHead>[0]) => {

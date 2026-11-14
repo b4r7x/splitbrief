@@ -34,16 +34,14 @@ import { ReviewPacketSchema } from '../../core/schemas/review/packet.js';
 import type { Check } from '../../core/schemas/task.js';
 import { saveState } from '../../core/state/persistence.js';
 import { applyConsultAnswer } from './consult/apply.js';
-import {
-  getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-} from './approval/file-snapshots/capture.js';
+import { getChangedFilesSnapshot } from './approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/changed-since.js';
 import { captureTaskReviewChanges } from './evidence/review-capture.js';
 import { getOrCreateLedger } from './evidence/persistence.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { resolveRunReviewScope } from './evidence/review-packet/run-scope.js';
 import { createSnapshot } from '../snapshots/create.js';
-import { runFinalReviewPhase } from './final-review.js';
+import { runFinalReviewPhase } from './review/phase.js';
 
 const cleanups: Array<() => void> = [];
 const file = 'src/mixed.ts';

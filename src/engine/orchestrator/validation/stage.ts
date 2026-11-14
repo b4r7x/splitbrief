@@ -10,7 +10,7 @@ import { truncateByTailLines } from '../../../utils/display-text/truncate.js';
 import { CAPTURE_LIMITS } from '../../../core/pipeline-spec/gates.js';
 import { relativeToDir } from './extract-failure-keys.js';
 import { failingTestLabel, parseFailingTests } from './test-failures.js';
-import type { ValidationResult } from './result.js';
+import type { ValidationResult } from './types.js';
 import type { ValidationCommandRunner } from './types.js';
 
 export type ValidationStepResult = ValidationResult & {

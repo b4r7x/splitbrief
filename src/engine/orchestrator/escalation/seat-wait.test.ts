@@ -18,15 +18,11 @@ import { seatWaitToolWord } from '../../../core/sessions/seat-wait-line.js';
 import { isTransientSeatFailure, type SeatAttempt } from '../../runners/transient.js';
 import { throwMappedError } from '../../streaming/stream-errors.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
-import { configWithSwitchedSeat } from '../recovery/switch-seat.js';
-import { transitionAndSave } from '../state-ops.js';
-import {
-  resumeSeatWait,
-  runSeatCall,
-  seatFailureFromError,
-  seatResetWaitDeadline,
-  waitForSeatReset,
-} from './seat-wait.js';
+import { configWithSwitchedSeat } from '../recovery/seat/switch/config.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { resumeSeatWait, seatResetWaitDeadline, waitForSeatReset } from './seat/wait.js';
+import { runSeatCall } from './seat/call.js';
+import { seatFailureFromError } from './seat/call.js';
 
 const CODEX: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
 const CODEX_WITH_FALLBACK: RunnerConfig = { ...CODEX, fallback: { tool: 'claude-code' } };

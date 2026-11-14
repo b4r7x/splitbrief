@@ -53,8 +53,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-const { createStagedProject, promoteStagedChanges } = await import('./staged-project.js');
-const { captureAcquisitionBaseline } = await import('./file-snapshots/entry.js');
+const { createStagedProject } = await import('./staged-project/create.js');
+const { promoteStagedChanges } = await import('./staged-project/promote.js');
+const { captureAcquisitionBaseline } = await import('./file-snapshots/entry/baseline.js');
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 

@@ -17,10 +17,8 @@ import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { clampWorkflowPromptRows } from '../layout/rect.js';
 import { RecoveryMenu } from './recovery-menu.js';
-import {
-  buildRetryExhaustedRecoveryIssue,
-  buildReviewFailedRecoveryIssue,
-} from '../../../engine/orchestrator/recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-failed.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/retry.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';

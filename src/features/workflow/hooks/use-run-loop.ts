@@ -20,7 +20,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
-import { hasStaleHalt } from '../../../engine/orchestrator/run/init.js';
+import { hasStaleHalt } from '../../../engine/orchestrator/run/init/resume-repair.js';
 import {
   applyOfferedSeatSwap,
   type SeatSwapChoice,
@@ -52,8 +52,9 @@ import {
 } from '../run-requests/handlers.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
-import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
-import { endRun, endRunError } from '../../../engine/orchestrator/run/close.js';
+import { parkStoppedRun } from '../../../engine/orchestrator/state-ops/halts.js';
+import { endRunError } from '../../../engine/orchestrator/run/close.js';
+import { endRun } from '../../../engine/orchestrator/run/end.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { deriveRunStatus } from '../../../core/sessions/run/status.js';

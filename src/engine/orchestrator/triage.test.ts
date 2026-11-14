@@ -16,14 +16,12 @@ import { createInitialState, transition } from '../../core/state/machine.js';
 import type { Plan } from '../../core/schemas/plan.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { ReviewRecord } from '../../core/schemas/workflow/review-record.js';
-import {
-  applyTriage,
-  claimVerification,
-  fixTaskTargetErrors,
-  triageContractErrors,
-  verifyClaimChecks,
-} from './triage.js';
-import { enabledReviewChecks, type CheckRunResult } from './validation/run-checks.js';
+import { fixTaskTargetErrors, triageContractErrors } from './review/contract-errors.js';
+import { applyTriage } from './review/triage.js';
+import { verifyClaimChecks } from './review/verify-claims.js';
+import { claimVerification } from './review/verify-claims.js';
+import { enabledReviewChecks } from './validation/checks/runner.js';
+import type { CheckRunResult } from './validation/checks/types.js';
 import { processError } from '../../lib/process/errors.js';
 
 const dirs: string[] = [];

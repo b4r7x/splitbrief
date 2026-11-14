@@ -39,18 +39,17 @@ import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { awaitsApply } from '../../core/sessions/run/status.js';
 import type { Planner } from '../planners/types.js';
-import {
-  getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-} from './approval/file-snapshots/capture.js';
+import { getChangedFilesSnapshot } from './approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/changed-since.js';
 import { captureTaskReviewChanges } from './evidence/review-capture.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
 import { getOrCreateLedger } from './evidence/persistence.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
-import { runFinalReviewPhase, type FinalReviewResult } from './final-review.js';
-import { applyRecoveryAction } from './recovery/actions.js';
-import { haltVerdictlessReview } from './run/review.js';
+import { runFinalReviewPhase } from './review/phase.js';
+import type { FinalReviewResult } from './review/types.js';
+import { applyRecoveryAction } from './recovery/actions/apply.js';
+import { haltVerdictlessReview } from './review/loop/halts.js';
 import { buildSummary } from './summary/build.js';
 import { createCliPlanner } from '../planners/cli.js';
 import type { CliPlannerConfig } from '../../core/schemas/runner/planner.js';

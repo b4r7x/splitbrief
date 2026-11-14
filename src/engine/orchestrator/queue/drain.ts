@@ -1,10 +1,7 @@
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
-import {
-  readWorkflowStateHead,
-  rebaseOnPersistedWorkflowState,
-  transitionAndSave,
-} from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { readWorkflowStateHead, rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import {
   isQueuedMessagePendingDelivery,
   isQueuedMessagePendingReviewer,

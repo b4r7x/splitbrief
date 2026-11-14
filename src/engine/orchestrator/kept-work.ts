@@ -4,7 +4,7 @@ import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../core/schemas/workflow/changed-files.js';
 import { orderChangedFiles } from '../change-detection.js';
-import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/changed-since.js';
 import { restorableFiles } from './isolation/entry-snapshot.js';
 import type { ImplementerOptions } from '../implementers/types.js';
 

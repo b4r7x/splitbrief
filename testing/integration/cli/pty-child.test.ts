@@ -9,7 +9,7 @@ import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { PLAN_FILE, PLAN_JSON_FILE, sessionDir } from '../../../src/core/paths.js';
 import { PlanProposalSchema, PlanSchema } from '../../../src/core/schemas/plan.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init/options.js';
 import type {
   OrchestratorCallbacks,
   WorkflowSinks,

@@ -41,11 +41,9 @@ import {
   resolveProviderRunMetadata,
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
-import {
-  buildLeftIsolationRecoveryIssue,
-  buildRunnerInputTooLargeRecoveryIssue,
-  buildSeatDownIssue,
-} from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import { buildLeftIsolationRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/isolation.js';
+import { buildRunnerInputTooLargeRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/runner-defect.js';
+import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/seat-down.js';
 import { CODEX_INPUT_TOO_LARGE, LEFT_ISOLATION_WRITE } from './halt-text-projections.js';
 import {
   buildApplyConflictRecoveryIssue,

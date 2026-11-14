@@ -96,21 +96,23 @@ vi.mock('simple-git', () => ({
     },
   }),
 }));
-vi.mock('../isolation/worktree.js', () => ({
+vi.mock('../isolation/worktree/ensure.js', () => ({
   ensureIsolationWorktree: async () => ({
     kind: 'ready',
     worktreePath: control.workspace,
     reused: true,
   }),
+}));
+vi.mock('../isolation/worktree/node-modules.js', () => ({
   removeNodeModulesExclude: async () => {},
 }));
 
-const { captureAcquisitionBaseline, readConfinedEntry } = await import('./file-snapshots/entry.js');
-const { promoteStagedChanges } = await import('./staged-project.js');
+const { captureAcquisitionBaseline } = await import('./file-snapshots/entry/baseline.js');
+const { readConfinedEntry } = await import('./file-snapshots/entry/read.js');
+const { promoteStagedChanges } = await import('./staged-project/promote.js');
 const { restoreDirtyFilesFromSnapshot } = await import('./file-snapshots/restore.js');
-const { getChangedFilesSinceSnapshot, getChangedFilesSnapshot } = await import(
-  './file-snapshots/capture.js'
-);
+const { getChangedFilesSinceSnapshot } = await import('./file-snapshots/changed-since.js');
+const { getChangedFilesSnapshot } = await import('./file-snapshots/capture.js');
 const { createRunIsolation } = await import('../isolation/create.js');
 
 const roots: string[] = [];

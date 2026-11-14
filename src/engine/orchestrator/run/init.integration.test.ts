@@ -55,24 +55,24 @@ import {
   writeSeatIdentities,
 } from '../../../core/state/seats/record.js';
 import type { SummaryBase } from '../summary/build.js';
-import { initializeWorkflow } from './init.js';
-import { createPlannerSeat } from './init-seats.js';
+import { initializeWorkflow } from './init/initialize.js';
+import { createPlannerSeat } from './init/seats.js';
 import { runTaskLoop } from '../task/loop.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
-import { configWithSwitchedSeat } from '../recovery/switch-seat.js';
-import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
+import { configWithSwitchedSeat } from '../recovery/seat/switch/config.js';
+import { switchSeatAndPrepareResume } from '../recovery/seat/switch/resume.js';
 import { createRecoveryBus } from '../recovery/bus.js';
 import { buildConfigChecks } from '../../../core/readiness/checks/config.js';
 import { buildRepoChecks } from '../../../core/readiness/checks/repo.js';
 import { buildRunnerChecks } from '../../../core/readiness/checks/runner/build.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 
-vi.mock('./init-seats.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./init-seats.js')>();
+vi.mock('./init/seats.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./init/seats.js')>();
   return { ...actual, createPlannerSeat: vi.fn(actual.createPlannerSeat) };
 });
 

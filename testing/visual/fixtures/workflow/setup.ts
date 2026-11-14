@@ -17,8 +17,8 @@ import { questionOptions, questionPromptStore } from '../../../../src/stores/pro
 import { controlsStore } from '../../../../src/stores/ui/controls.js';
 import { addEvent } from '../../../../src/stores/workflow/actions/event.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
-import { publishUserMessage } from '../../../../src/engine/orchestrator/events.js';
-import { consultReplyAnswer } from '../../../../src/engine/orchestrator/consult/apply.js';
+import { publishUserMessage } from '../../../../src/engine/orchestrator/publish/notice.js';
+import { consultReplyAnswer } from '../../../../src/engine/orchestrator/consult/ask-user.js';
 import { reviewStore } from '../../../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import { PLAN_JSON_FILE, SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';

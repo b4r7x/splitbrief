@@ -1,0 +1,260 @@
+import {
+  fileFromFailureKey,
+  fixCheckKeys,
+  fixReviewChecks,
+  isTestNodeKey,
+  type FixCheckKeys,
+} from '../../../core/review/fix/task.js';
+import { fixCheckCounts, judgeFixCheck } from '../../../core/review/fix/checks.js';
+import { resolveEndChecks } from '../../../core/config/runtime/resolve.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
+import type { WorkflowContext } from '../types.js';
+import { publishChecksRun, publishTaskValidating } from '../publish/task.js';
+import { planCheckRow, publishReviewCheck, unranCheckRow } from '../publish/review.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
+import { runBaseOf } from '../isolation/run-base/tree.js';
+import { runReviewCheck } from '../review/checks/run-one.js';
+import { splitCommandAtBase } from '../validation/base-gate.js';
+import { newFailureKeys } from '../validation/failure-text.js';
+import { runChecks } from '../validation/checks/runner.js';
+import { checkRegistry, planApprovesNpmScripts } from '../validation/checks/runner.js';
+import type { CheckRunResult, RunChecksOptions } from '../validation/checks/types.js';
+import type { ValidationCommandRunner } from '../validation/types.js';
+import { recordCheckRuns } from '../evidence/record-checks.js';
+import { withAttemptRestoreScope } from './restore-scope.js';
+
+export type TaskChecksResult = Readonly<{
+  state: WorkflowState;
+  runs: CheckRunResult[];
+  /** The red checks whose own failures are gone, or left to an unfinished sibling fix task. */
+  settled: ReadonlySet<string>;
+}>;
+
+type TaskChecksContext = Pick<
+  WorkflowContext,
+  'projectDir' | 'workspaceDir' | 'sessionId' | 'config' | 'bus' | 'signal' | 'baseGate'
+>;
+
+/** Per carried check whose own failures are all test failures, the test files they name. */
+function ownTestFiles(carried: ReadonlyMap<string, FixCheckKeys>): Map<string, string[]> {
+  const files = new Map<string, string[]>();
+  for (const [id, { failureKeys }] of carried) {
+    if (failureKeys.length === 0 || !failureKeys.every(isTestNodeKey)) continue;
+    files.set(id, [...new Set(failureKeys.flatMap((key) => fileFromFailureKey(key) ?? []))]);
+  }
+  return files;
+}
+
+/**
+ * The options a brief's checks run under. Reviewer commands come from the fix task's findings,
+ * under the same command policy, with the run base for changed-script refusal. A check whose own
+ * failures are all test failures runs only their test files.
+ */
+function taskCheckOptions(opts: {
+  wctx: TaskChecksContext;
+  state: WorkflowState;
+  task: Task;
+  carried: ReadonlyMap<string, FixCheckKeys>;
+  runCommand?: ValidationCommandRunner | undefined;
+  rerunRedBefore?: string | undefined;
+}): RunChecksOptions {
+  const { wctx, state, task } = opts;
+  return {
+    task,
+    plan: state.plan,
+    tasks: state.tasks,
+    reviewChecks: fixReviewChecks(task, resolveEndChecks(wctx.config)),
+    base: runBaseOf(wctx, state),
+    runCommand: opts.runCommand,
+    projectDir: wctx.workspaceDir,
+    sessionId: wctx.sessionId,
+    checkoutDir: wctx.projectDir,
+    config: wctx.config,
+    bus: wctx.bus,
+    phase: state.phase,
+    npmScriptsApproved: planApprovesNpmScripts({ config: wctx.config, state }),
+    testFiles: ownTestFiles(opts.carried),
+    results: {
+      ref: { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
+      state,
+      tree: 'workspace',
+      rerunRedBefore: opts.rerunRedBefore,
+    },
+    ...(state.discoveredValidation !== undefined && {
+      discoveredValidation: state.discoveredValidation,
+    }),
+    ...(wctx.signal !== undefined && { signal: wctx.signal }),
+  };
+}
+
+/**
+ * Runs the brief's checks and records them. Each judged fix check gets a verdict row, and each
+ * check that did not run gets a refused or not-run row with its reason.
+ * Reviewer checks also get a running row and clock, with commands from the fix task's findings.
+ * A fix check runs once. `settled` names each red whose own failures are gone, or left to an
+ * unfinished sibling fix task, or whose every failure the same command of the project gate also
+ * shows red at the run base; failures the brief does not own never gate it. A red of a command no
+ * gate command runs there gates the brief whole.
+ */
+export async function runTaskChecks(opts: {
+  wctx: TaskChecksContext;
+  state: WorkflowState;
+  task: Task;
+  checkIds: readonly string[];
+  taskStartSnapshot?: ChangedFilesSnapshot | null | undefined;
+  attemptSnapshot?: ChangedFilesSnapshot | undefined;
+  runCommand?: ValidationCommandRunner | undefined;
+  /** A consult `verify`: a red stored before this time runs again. */
+  rerunRedBefore?: string | undefined;
+  setTrackedState?: ((state: WorkflowState) => void) | undefined;
+}): Promise<TaskChecksResult> {
+  if (opts.checkIds.length === 0) return { state: opts.state, runs: [], settled: new Set() };
+  const checked = await withAttemptRestoreScope({
+    ref: opts.wctx,
+    dir: opts.wctx.workspaceDir,
+    taskStartSnapshot: opts.taskStartSnapshot ?? null,
+    attemptSnapshot: opts.attemptSnapshot,
+    run: () => runTaskCheckCommands(opts),
+  });
+  const state = await recordTaskCheckRuns({
+    ...opts,
+    ...checked,
+    state: rebaseOnPersistedWorkflowState(opts.wctx, checked.state, { keepUnsaved: true }),
+  });
+  return { ...checked, state };
+}
+
+async function runTaskCheckCommands(
+  opts: Parameters<typeof runTaskChecks>[0],
+): Promise<TaskChecksResult> {
+  const { task, state } = opts;
+  const settled = new Set<string>();
+  const carried = fixCheckKeys(task, state.tasks);
+  const checkOptions = taskCheckOptions({ ...opts, carried });
+  const reviewCommands = new Map(
+    (checkOptions.reviewChecks ?? []).map((check) => [check.id, check.value]),
+  );
+  const runs = await runChecks(
+    opts.checkIds.filter((id) => !reviewCommands.has(id)),
+    checkOptions,
+    (check, command) =>
+      publishTaskValidating(
+        { bus: checkOptions.bus, phase: checkOptions.phase },
+        task.id,
+        planCheckRow(check.id, command, check),
+      ),
+  );
+  const registry = checkRegistry(checkOptions);
+  for (const [index, run] of runs.entries()) {
+    const row = {
+      ...planCheckRow(run.checkId, run.command ?? '', registry.get(run.checkId)),
+      taskId: task.id,
+    };
+    if (run.status !== 'fail' && run.status !== 'pass') {
+      publishReviewCheck(
+        { bus: checkOptions.bus, phase: checkOptions.phase },
+        { ...row, ...unranCheckRow(run) },
+      );
+      continue;
+    }
+    const judged = judgeFixCheck(
+      carried.get(run.checkId),
+      run.status === 'fail' ? run.failure : null,
+    );
+    if (judged === null) {
+      if (run.status !== 'fail') continue;
+      const split =
+        run.command === undefined
+          ? undefined
+          : await splitCommandAtBase({
+              gate: opts.wctx.baseGate,
+              command: run.command,
+              failure: run.failure,
+              base: checkOptions.base,
+              wait: {
+                notices: { bus: checkOptions.bus, phase: checkOptions.phase },
+                row,
+              },
+            });
+      publishReviewCheck(
+        { bus: checkOptions.bus, phase: checkOptions.phase },
+        {
+          ...row,
+          status: 'done',
+          passed: false,
+          ...(run.timedOut !== undefined && { timedOut: run.timedOut }),
+          ...(run.reusedAt !== undefined && { reusedAt: run.reusedAt }),
+          ...(run.command === undefined && { detail: run.output }),
+          ...split?.counts,
+        },
+      );
+      if (split === undefined || split.preExisting.length === 0) continue;
+      const splitRun: CheckRunResult = { ...run, preExisting: split.preExisting };
+      runs[index] = splitRun;
+      if (newFailureKeys(splitRun).length === 0) settled.add(run.checkId);
+      continue;
+    }
+    publishReviewCheck(
+      { bus: checkOptions.bus, phase: checkOptions.phase },
+      {
+        status: 'done',
+        id: run.checkId,
+        command: run.command ?? run.checkId,
+        moment: 'brief',
+        passed: judged.left.length === 0,
+        ...(run.timedOut !== undefined && { timedOut: run.timedOut }),
+        ...(run.reusedAt !== undefined && { reusedAt: run.reusedAt }),
+        ...fixCheckCounts(judged),
+      },
+    );
+    if (run.status === 'fail' && judged.left.length === 0) settled.add(run.checkId);
+  }
+  for (const id of new Set(opts.checkIds)) {
+    const command = reviewCommands.get(id);
+    if (command === undefined) continue;
+    const { run, fresh } = await runReviewCheck({
+      check: { id, command },
+      moment: 'brief',
+      carried: carried.get(id),
+      checkOptions,
+    });
+    if (run.status === 'fail' && fresh.length === 0) settled.add(id);
+    runs.push(run);
+  }
+  return { state, runs, settled };
+}
+
+/** Each run lands on the task's state, on the bus and in the evidence ledger. */
+export async function recordTaskCheckRuns(opts: {
+  wctx: Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus'>;
+  state: WorkflowState;
+  task: Task;
+  runs: readonly CheckRunResult[];
+  settled?: ReadonlySet<string> | undefined;
+  setTrackedState?: ((state: WorkflowState) => void) | undefined;
+}): Promise<WorkflowState> {
+  const { wctx, task, runs } = opts;
+  const checkResults = runs.map((run) => ({
+    id: run.checkId,
+    status: opts.settled?.has(run.checkId) === true ? ('pass' as const) : run.status,
+  }));
+  const state = transitionAndSave(
+    { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
+    opts.state,
+    { type: 'RECORD_CHECK_RESULTS', taskId: task.id, results: checkResults },
+  );
+  opts.setTrackedState?.(state);
+  publishChecksRun({ bus: wctx.bus, phase: state.phase }, task.id, checkResults);
+  await recordCheckRuns({
+    projectDir: wctx.projectDir,
+    sessionId: wctx.sessionId,
+    workspaceDir: wctx.workspaceDir,
+    state,
+    task,
+    runs,
+  });
+  return state;
+}

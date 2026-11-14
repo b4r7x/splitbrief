@@ -30,14 +30,14 @@ import {
 } from '../../runners/sandbox-env.js';
 import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
 import { removeSandboxTempDirs } from '../../runners/sandbox-state-paths.js';
-import { removeWorktree } from './remove-worktree.js';
+import { removeWorktree } from './worktree/remove.js';
 import { attemptCleanupError } from './errors.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import {
   captureAcquisitionBaseline,
   type AcquisitionBaseline,
-} from '../approval/file-snapshots/entry.js';
-import { createStagedProject } from '../approval/staged-project.js';
+} from '../approval/file-snapshots/entry/baseline.js';
+import { createStagedProject } from '../approval/staged-project/create.js';
 import { briefKeptFiles } from '../kept-work.js';
 import type {
   AttemptBrief,
@@ -47,7 +47,8 @@ import type {
   RunIsolation,
   RunWorkspace,
 } from './types.js';
-import { ensureIsolationWorktree, removeNodeModulesExclude } from './worktree.js';
+import { removeNodeModulesExclude } from './worktree/node-modules.js';
+import { ensureIsolationWorktree } from './worktree/ensure.js';
 import { resolveConfinedIsolationWorktreePath } from './path.js';
 import { prepareWorktreeAcquisition } from './acquisition.js';
 import { captureWorkspaceSnapshot, restoreWorkspaceFiles } from './entry-snapshot.js';

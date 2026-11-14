@@ -1,10 +1,11 @@
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { listIgnoredPaths } from '../../../lib/git/files.js';
-import { commitWorkflowState, stateOpsError } from '../state-ops.js';
+import { commitWorkflowState } from '../state-ops/commit.js';
+import { stateOpsError } from '../state-ops/errors.js';
 
 export async function withAttemptRestoreScope<T>(opts: {
   ref: SessionRef;

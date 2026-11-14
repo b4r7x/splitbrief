@@ -4,72 +4,34 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/change
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 
 import type { WorkflowContext } from '../types.js';
-import { recordTaskUsage } from '../tokens.js';
+import { recordTaskUsage } from './record-usage.js';
 import { toErrorMessage, labelError } from '../../../utils/format/errors.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { publishError, publishTaskValidating } from '../events.js';
-import {
-  addUsageAndSave,
-  parkStoppedRun,
-  raisePendingRecovery,
-  rebaseOnPersistedWorkflowState,
-  transitionAndSave,
-} from '../state-ops.js';
+import { publishTaskValidating } from '../publish/task.js';
+import { publishError } from '../publish/notice.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
+import { parkStoppedRun, raisePendingRecovery } from '../state-ops/halts.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import type { GateDecision } from '../approval/types.js';
-import {
-  persistTaskEvidence,
-  persistRejectionEvidence,
-  persistApprovalEvidence,
-} from '../evidence/persistence.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { denialMessage } from './attempt-gate.js';
-import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
+import { persistTaskEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
+import { denialMessage, recordApprovalDenial } from './gates/attempt.js';
+import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/approval.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { retryAndRecord, consultHandedBackToLoop, continueLadder } from './retry.js';
 import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { runImplementation } from './run-implementation.js';
-import { gateAttemptChanges } from './attempt-gate.js';
+import { gateAttemptChanges } from './gates/attempt.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { handleFailedImplementation } from './implementation-failure.js';
-import { runBriefGate } from './brief-gate.js';
+import { runBriefGate } from './gates/brief.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
-
-function recordApprovalDenial(opts: {
-  wctx: WorkflowContext;
-  state: WorkflowState;
-  task: Task;
-  denials: GateDecision[];
-  message: string;
-  briefKept?: number | undefined;
-}): void {
-  const { wctx, state, task, denials, message, briefKept } = opts;
-  publishError({ bus: wctx.bus, phase: state.phase, message, briefKept });
-  for (const decision of denials) {
-    const rejectedTier = decision.tier;
-    if (
-      rejectedTier &&
-      rejectedTier !== 'auto' &&
-      decision.actionClass &&
-      decision.actionDescription
-    ) {
-      persistRejectionEvidence({
-        wctx,
-        state,
-        reason: decision.reason ?? 'denied',
-        actionClass: decision.actionClass,
-        tier: rejectedTier,
-        actionDescription: decision.actionDescription,
-        taskId: task.id,
-      });
-    }
-  }
-}
 
 type RunSingleTaskOptions = {
   wctx: WorkflowContext;

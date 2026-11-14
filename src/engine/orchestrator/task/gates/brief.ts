@@ -1,0 +1,165 @@
+import type { Task } from '../../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
+import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow/changed-files.js';
+import { dueCriterionIds } from '../../../../core/review/scope.js';
+import { resolveEndChecks, resolveReviewCadence } from '../../../../core/config/runtime/resolve.js';
+import { fixCheckKeys, splitFixCheckIds } from '../../../../core/review/fix/task.js';
+import { isQueuedMessagePendingDelivery } from '../../../../core/queue/state.js';
+import { rebaseOnPersistedWorkflowState } from '../../state-ops/head.js';
+import type { WorkflowContext } from '../../types.js';
+import type { ValidationAcceptance } from '../../validation/types.js';
+import { checkFailureText } from '../../validation/failure-text.js';
+import { publishReviewCheck } from '../../publish/review.js';
+import type { CheckRunResult } from '../../validation/checks/types.js';
+import type { ValidationCommandRunner } from '../../validation/types.js';
+import { runPreValidationGate } from './pre-validation.js';
+import { runTaskChecks } from '../checks.js';
+import { nowIso } from '../../../../utils/format/time.js';
+import { withAttemptRestoreScope } from '../restore-scope.js';
+
+type BriefGateContext = Pick<
+  WorkflowContext,
+  | 'projectDir'
+  | 'workspaceDir'
+  | 'sessionId'
+  | 'config'
+  | 'bus'
+  | 'signal'
+  | 'validator'
+  | 'baseGate'
+>;
+
+export const CORRECTION_AFTER_CHECKS =
+  'The operator sent a correction while the checks ran. It is in your steer: apply it, then hand back.';
+
+export async function runBriefGate(opts: {
+  wctx: BriefGateContext;
+  state: WorkflowState;
+  task: Task;
+  changedFiles: readonly string[];
+  /** A pre_validation denial restores the task's recorded writes to this baseline. */
+  taskStartSnapshot: ChangedFilesSnapshot | null;
+  attemptSnapshot?: ChangedFilesSnapshot | undefined;
+  /** Checks the caller selected: each must pass, whatever its status. */
+  checkIds?: readonly string[] | undefined;
+  runCommand?: ValidationCommandRunner | undefined;
+  setTrackedState?: ((state: WorkflowState) => void) | undefined;
+}) {
+  const { wctx, task, changedFiles } = opts;
+  const runScoped = <T>(run: () => Promise<T>): Promise<T> =>
+    withAttemptRestoreScope({
+      ref: wctx,
+      dir: wctx.workspaceDir,
+      taskStartSnapshot: opts.taskStartSnapshot,
+      attemptSnapshot: opts.attemptSnapshot,
+      run,
+    });
+  let state = opts.state;
+  const track = opts.setTrackedState ?? (() => {});
+  // A fix task runs the checks of the red it answers again on top of what its cadence runs, but
+  // no reviewer check while End-of-run checks are off.
+  const fixChecks = splitFixCheckIds(task, resolveEndChecks(wctx.config));
+  const fixCheckIds = new Set(fixChecks.run);
+  const cadence = resolveReviewCadence(wctx.config);
+  const due = new Set(dueCriterionIds(state, task.id));
+  // At `end` a brief runs its own checks but no render: renders run before the review. A consult
+  // `verify` runs only the checks it names, for a red that may predate the brief. A fix brief
+  // always runs the failed checks it answers.
+  const checkIds = [
+    ...new Set([
+      ...(cadence === 'task'
+        ? [
+            ...(task.checks ?? []).map((check) => check.id),
+            ...(state.plan?.criteria ?? [])
+              .filter(
+                (criterion) =>
+                  due.has(criterion.id) && (task.criteria ?? []).includes(criterion.id),
+              )
+              .flatMap((criterion) => criterion.checkIds),
+          ]
+        : opts.checkIds === undefined
+          ? (task.checks ?? []).filter((check) => check.kind !== 'render').map((check) => check.id)
+          : []),
+      ...fixCheckIds,
+      ...(opts.checkIds ?? []),
+    ]),
+  ];
+  await runScoped(() =>
+    wctx.validator.formatChangedFiles({
+      task,
+      projectDir: wctx.workspaceDir,
+      config: wctx.config,
+      bus: wctx.bus,
+      phase: state.phase,
+      signal: wctx.signal,
+      changedFiles,
+    }),
+  );
+  state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
+  for (const id of fixChecks.off) {
+    publishReviewCheck(
+      { bus: wctx.bus, phase: state.phase },
+      { status: 'off', id, command: '', moment: 'brief' },
+    );
+  }
+  let runs: CheckRunResult[] = [];
+  let settled: ReadonlySet<string> = new Set();
+  if (checkIds.length > 0) {
+    const pre = await runPreValidationGate({
+      wctx,
+      state,
+      task,
+      taskStartSnapshot: opts.taskStartSnapshot,
+      attemptSnapshot: opts.attemptSnapshot,
+      setTrackedState: track,
+    });
+    state = pre.state;
+    if (!pre.proceed)
+      return {
+        state,
+        stop: 'skipped' as const,
+        correction: false,
+        acceptance: { accepted: false } satisfies ValidationAcceptance,
+        error: '',
+      };
+    const checked = await runTaskChecks({
+      wctx,
+      state,
+      task,
+      checkIds,
+      taskStartSnapshot: opts.taskStartSnapshot,
+      attemptSnapshot: opts.attemptSnapshot,
+      runCommand: opts.runCommand,
+      // Only a consult `verify` selects checks; it confirms reds, so every stored red this gate
+      // runs, named or not, runs again.
+      ...(opts.checkIds !== undefined && { rerunRedBefore: nowIso() }),
+      setTrackedState: track,
+    });
+    state = checked.state;
+    runs = checked.runs;
+    settled = checked.settled;
+  }
+  const selected = new Set(opts.checkIds ?? []);
+  const failedChecks = runs.filter((run) =>
+    selected.has(run.checkId) || fixCheckIds.has(run.checkId)
+      ? run.status !== 'pass' && !settled.has(run.checkId)
+      : run.status === 'fail' && !settled.has(run.checkId),
+  );
+  const checksAccepted = failedChecks.length === 0 && !wctx.signal?.aborted;
+  state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
+  track(state);
+  const correction = checksAccepted && state.messageQueue.some(isQueuedMessagePendingDelivery);
+  const acceptance: ValidationAcceptance = { accepted: checksAccepted && !correction };
+  const carried = fixCheckKeys(task, state.tasks);
+  return {
+    state,
+    stop: wctx.signal?.aborted ? ('aborted' as const) : undefined,
+    correction,
+    acceptance,
+    error: correction
+      ? CORRECTION_AFTER_CHECKS
+      : failedChecks
+          .map((run) => checkFailureText(run, { carried: carried.get(run.checkId) }))
+          .join('\n\n'),
+  };
+}

@@ -3,7 +3,7 @@ import { SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import { assertModelWritablePathConfined } from '../../core/scope/control-plane.js';
 import { computeDiff } from '../../utils/diff.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { readConfinedEntry } from '../orchestrator/approval/file-snapshots/entry.js';
+import { readConfinedEntry } from '../orchestrator/approval/file-snapshots/entry/read.js';
 import type { AppliedFile, BundleApplyResult, BundleBaseline } from './file-bundle.js';
 import { compareBundleBaseline } from './bundle-baseline.js';
 import type { FileBundleCandidate } from './parse-file-bundle.js';

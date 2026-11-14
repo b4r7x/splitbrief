@@ -1,9 +1,10 @@
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
-import { publishError } from '../events.js';
+import { publishError } from '../publish/notice.js';
 import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.js';
-import { parkStoppedRun, rebaseOnPersistedWorkflowState } from '../state-ops.js';
+import { parkStoppedRun } from '../state-ops/halts.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,

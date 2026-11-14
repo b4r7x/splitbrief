@@ -48,8 +48,8 @@ import {
 import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
-import { enqueueUserMessage } from '../queue/submit.js';
-import { transitionAndSave } from '../state-ops.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { runRetryStep } from './step.js';
 import type { RetryInvokeResult } from './types.js';
 

@@ -11,7 +11,7 @@ import type { SessionRef } from '../../core/types/session-ref.js';
 import { boundEngineEventForConsumer } from '../../engine/events/bound.js';
 import type { Implementer } from '../../engine/implementers/types.js';
 import { publishRetainedWorkspaceNotice } from '../../engine/orchestrator/isolation/retention.js';
-import { applyDecidedRecovery } from '../../engine/orchestrator/recovery/actions.js';
+import { applyDecidedRecovery } from '../../engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { applyOfferedSeatSwap } from '../../engine/orchestrator/run/seat-swap.js';
 import { runWorkflow } from '../../engine/orchestrator/run/workflow.js';

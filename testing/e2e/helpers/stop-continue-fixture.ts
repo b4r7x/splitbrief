@@ -29,7 +29,7 @@ import { loadConfig } from '../../../src/core/config/load/io.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { parseContinueActionOption } from '../../../src/cli/options/continue-action.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
-import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
+import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';

@@ -21,20 +21,21 @@ import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../recovery/builders/checks.js';
 import { failingFilesFromKeys } from '../task/file-owner.js';
 import { failureKeys } from '../validation/extract-failure-keys.js';
-import { claimVerification, verifyClaimChecks } from '../triage.js';
+import { verifyClaimChecks } from '../review/verify-claims.js';
+import { claimVerification } from '../review/verify-claims.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { abortError } from '../../../utils/abort.js';
 import {
   captureChangedFilesBaseline,
   serializeChangedFilesBaseline,
 } from '../changed-files-baseline.js';
+import { runPreReview } from '../review/checks/gate.js';
 import {
   buildPreReviewInputs,
   classifyRequiredChecks,
   runPreReviewChecks,
-  runPreReview,
   type RunPreReviewChecksOptions,
-} from './pre-review-checks.js';
+} from '../review/checks/required.js';
 
 function makePlan(checks: Check[]): Plan {
   return {

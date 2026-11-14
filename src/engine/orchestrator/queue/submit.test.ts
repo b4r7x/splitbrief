@@ -16,8 +16,8 @@ import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js
 import { resetLoggerForTests } from '../../../lib/logger.js';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject, makeResearchingState } from '#testing/helpers/queue.js';
-import { createWriteSequencer } from '../serial-executor.js';
-import { transitionAndSave } from '../state-ops.js';
+import { createWriteSequencer } from '../../../utils/serial-executor.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { createQueueHandler } from './submit.js';
 import { readMessages } from '../../../core/sessions/log/reader.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';

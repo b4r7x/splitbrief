@@ -29,15 +29,15 @@ import type { EngineEvent, EventBus } from '../../events/types.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { deriveRunStatus } from '../../../core/sessions/run/status.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
-import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../recovery/builders/review-failed.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import * as entry from '../approval/file-snapshots/entry.js';
-import * as stagedProject from '../approval/staged-project.js';
+import * as entry from '../approval/file-snapshots/entry/write.js';
+import * as stagedProject from '../approval/staged-project/promote.js';
 import * as backup from './backup.js';
 import { applyBackupDir, readApplyBackup, writeApplyBackup } from './backup.js';
 import * as merge from './merge.js';
@@ -48,15 +48,16 @@ import { acquireLiveness } from '../run/liveness.js';
 import { runTasksAndReview } from '../run/task-execution.js';
 import { activeApply } from '../session-lifecycle/shutdown.js';
 import { readWorkspaceRecord } from '../isolation/retention.js';
-import { captureReviewedCandidate, readApplyEntry } from './states.js';
+import { captureReviewedCandidate } from './states.js';
+import { readApplyEntry } from './entry-read.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 
-vi.mock('../approval/staged-project.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../approval/staged-project.js')>();
+vi.mock('../approval/staged-project/promote.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../approval/staged-project/promote.js')>();
   return { ...actual, promoteStagedChanges: vi.fn(actual.promoteStagedChanges) };
 });
-vi.mock('../approval/file-snapshots/entry.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../approval/file-snapshots/entry.js')>();
+vi.mock('../approval/file-snapshots/entry/write.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../approval/file-snapshots/entry/write.js')>();
   return { ...actual, writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink) };
 });
 vi.mock('./backup.js', async (importOriginal) => {
@@ -161,12 +162,12 @@ async function choose(run: ApplyRun, action: 'retry-same-worker' | 'restore-back
 }
 
 beforeEach(async () => {
-  const actualStaged = await vi.importActual<typeof import('../approval/staged-project.js')>(
-    '../approval/staged-project.js',
-  );
-  const actualEntry = await vi.importActual<typeof import('../approval/file-snapshots/entry.js')>(
-    '../approval/file-snapshots/entry.js',
-  );
+  const actualStaged = await vi.importActual<
+    typeof import('../approval/staged-project/promote.js')
+  >('../approval/staged-project/promote.js');
+  const actualEntry = await vi.importActual<
+    typeof import('../approval/file-snapshots/entry/write.js')
+  >('../approval/file-snapshots/entry/write.js');
   const actualMerge = await vi.importActual<typeof import('./merge.js')>('./merge.js');
   vi.mocked(stagedProject.promoteStagedChanges)
     .mockReset()
@@ -439,8 +440,8 @@ describe('runApply', { timeout: 60_000 }, () => {
         writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
         writeFileSync(join(run.ws, 'b.txt'), 'ours b\n');
         const actualEntry = await vi.importActual<
-          typeof import('../approval/file-snapshots/entry.js')
-        >('../approval/file-snapshots/entry.js');
+          typeof import('../approval/file-snapshots/entry/write.js')
+        >('../approval/file-snapshots/entry/write.js');
         vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
           async (root, path, ...rest) => {
             if (root === run.dir && path === 'b.txt') throw new Error('disk full');
@@ -599,8 +600,8 @@ describe('runApply', { timeout: 60_000 }, () => {
         writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
         writeFileSync(join(run.ws, 'b.txt'), 'ours b\n');
         const actualEntry = await vi.importActual<
-          typeof import('../approval/file-snapshots/entry.js')
-        >('../approval/file-snapshots/entry.js');
+          typeof import('../approval/file-snapshots/entry/write.js')
+        >('../approval/file-snapshots/entry/write.js');
         const probe = await open(join(run.dir, 'a.txt'), 'r');
         const handlePrototype: { sync: () => Promise<void> } = Object.getPrototypeOf(probe);
         await probe.close();
@@ -790,8 +791,8 @@ describe('runApply', { timeout: 60_000 }, () => {
   describe('partial-apply recovery', () => {
     const failOn = async (run: ApplyRun, file: string) => {
       const actualEntry = await vi.importActual<
-        typeof import('../approval/file-snapshots/entry.js')
-      >('../approval/file-snapshots/entry.js');
+        typeof import('../approval/file-snapshots/entry/write.js')
+      >('../approval/file-snapshots/entry/write.js');
       vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
         if (root === run.dir && path === file) throw new Error('disk full');
         return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
@@ -1071,9 +1072,9 @@ describe('runApply', { timeout: 60_000 }, () => {
   it('is the active Apply while it writes, and until the run it applies releases its liveness', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
       writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
-      const actualStaged = await vi.importActual<typeof import('../approval/staged-project.js')>(
-        '../approval/staged-project.js',
-      );
+      const actualStaged = await vi.importActual<
+        typeof import('../approval/staged-project/promote.js')
+      >('../approval/staged-project/promote.js');
       const writing = Promise.withResolvers<void>();
       const hold = Promise.withResolvers<void>();
       vi.mocked(stagedProject.promoteStagedChanges).mockImplementationOnce(async (input) => {

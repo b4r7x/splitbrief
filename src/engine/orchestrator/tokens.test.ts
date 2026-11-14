@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { addRunnerCallUsageToTokenUsage, addUsage, recordTaskUsage } from './tokens.js';
+import { addRunnerCallUsageToTokenUsage, addUsage } from './tokens.js';
+import { recordTaskUsage } from './task/record-usage.js';
 import { splitSeatTokenTotals } from '../../core/providers/seat-totals.js';
 import { totalOutputTokens } from '../../core/schemas/tokens.js';
 import type { RunnerCallCounterCoverage } from '../../core/schemas/runner-call.js';

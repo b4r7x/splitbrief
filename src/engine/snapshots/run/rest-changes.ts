@@ -3,7 +3,7 @@ import type { SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { entryToRestore } from '../../orchestrator/approval/file-snapshots/restore.js';
-import type { ChangeEntry } from '../../orchestrator/approval/file-snapshots/entry.js';
+import type { ChangeEntry } from '../../orchestrator/approval/file-snapshots/entry/read.js';
 import { entryStoreDir } from '../../orchestrator/isolation/entry-snapshot.js';
 import { readManifest } from '../manifest.js';
 import { readRunLedger, resolveLedgerRunSnapshot } from './ledger.js';

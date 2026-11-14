@@ -4,7 +4,7 @@ import type { SessionRef } from '../../src/core/types/session-ref.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import { saveState } from '../../src/core/state/persistence.js';
 import { formatTasks } from '../../src/engine/spec/formatter.js';
-import { readWorkflowStateHead } from '../../src/engine/orchestrator/state-ops.js';
+import { readWorkflowStateHead } from '../../src/engine/orchestrator/state-ops/head.js';
 
 /**
  * Persist a task-run fixture the way a planned run leaves it — `state.json` and its `tasks.md`

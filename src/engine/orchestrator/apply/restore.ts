@@ -4,7 +4,8 @@ import { error } from '../../../utils/error.js';
 import { rmdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { isENOENT, isNodeError } from '../../../utils/errno.js';
-import { type ChangeEntry, writeConfinedEntryOrLink } from '../approval/file-snapshots/entry.js';
+import { writeConfinedEntryOrLink } from '../approval/file-snapshots/entry/write.js';
+import type { ChangeEntry } from '../approval/file-snapshots/entry/read.js';
 import {
   type ApplyBackup,
   backupSideEntry,
@@ -12,8 +13,9 @@ import {
   readBackupBlob,
   removeApplyWriteTemporaries,
 } from './backup.js';
-import { readApplyEntry, sameSideEntry, type SideEntry, unsafeEntryError } from './states.js';
-import { transitionAndSave } from '../state-ops.js';
+import { sameSideEntry, type SideEntry } from './states.js';
+import { readApplyEntry, unsafeEntryError } from './entry-read.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { refreshSessionRow } from '../session-lifecycle/finalize.js';
 
 type ApplyBackupInput = { projectDir: string; sessionId: string; backupId: string };

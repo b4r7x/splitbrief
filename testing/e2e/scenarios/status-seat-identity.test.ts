@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from 'node:util';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
 import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
-import { configWithSwitchedSeat } from '../../../src/engine/orchestrator/recovery/switch-seat.js';
+import { configWithSwitchedSeat } from '../../../src/engine/orchestrator/recovery/seat/switch/config.js';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';

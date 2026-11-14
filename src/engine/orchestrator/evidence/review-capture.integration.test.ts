@@ -21,7 +21,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { sessionDir } from '../../../core/paths.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { captureTaskReviewChanges } from './review-capture.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { appendReviewChanges, readReviewChanges } from '../../../core/evidence/review-changes.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { ImplementerOptions } from '../../implementers/types.js';

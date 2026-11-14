@@ -10,36 +10,34 @@ import { countNoun } from '../../../utils/pluralize.js';
 import { acceptedSentence } from '../../../core/review/accepted.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
-import {
-  createBusTextHandler,
-  publishError,
-  publishFixCycleStarted,
-  publishRecoveryResolved,
-  publishWarning,
-} from '../events.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishRecoveryResolved } from '../publish/recovery.js';
+import { publishFixCycleStarted } from '../publish/review.js';
+import { createBusTextHandler } from '../publish/runner.js';
 import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
 } from '../recovery/builders/apply.js';
-import { removeClosedRunWorkspace } from '../run/close.js';
+import { removeClosedRunWorkspace } from '../isolation/closed-runs.js';
 import { heldLiveness } from '../run/liveness.js';
 import { trackActiveApply } from '../session-lifecycle/shutdown.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import type { WorkflowContext } from '../types.js';
-import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { writeConfinedEntry } from '../approval/file-snapshots/entry/write.js';
 import { applyBackupDir, readApplyBackup, removeApplyWriteTemporaries } from './backup.js';
 import { bindApplyHandOffs, handOff } from './hand-off.js';
 import { type ApplyConflict, type ApplyMerge, mergeApplyStates } from './merge.js';
-import { reconcileApplyBackup, restoreApplyBackup } from './restore.js';
+import { restoreApplyBackup } from './restore.js';
 import {
   candidateOf,
   captureApplyStates,
   readBaseBytes,
-  readSideEntry,
   sameSideEntry,
   type SideEntry,
 } from './states.js';
+import { readSideEntry } from './entry-read.js';
 import { writeApply } from './write.js';
+import { raiseApplyHalt, haltCutApply } from './halt.js';
 
 type ApplyResult =
   | { outcome: 'applied'; state: WorkflowState; files: string[] }
@@ -53,52 +51,6 @@ type TextMarkerConflict = ApplyConflict & {
   ours: Extract<SideEntry, { kind: 'file' }>;
   theirs: Extract<SideEntry, { kind: 'file' }>;
 };
-
-function raiseApplyHalt(
-  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>,
-  state: WorkflowState,
-  issue: RecoveryIssue,
-  setTrackedState?: ((state: WorkflowState) => void) | undefined,
-): WorkflowState {
-  publishError({
-    bus: wctx.bus,
-    phase: state.phase,
-    message: issue.message,
-    safety: {
-      category: 'recovery',
-      code: issue.reason === 'apply-partial' ? 'apply_partial' : 'apply_conflict',
-    },
-  });
-  return raisePendingRecovery(wctx, state, issue, setTrackedState);
-}
-
-/**
- * A process that went away inside Apply leaves its `applying` record and no halt. This raises the
- * apply-partial halt that Retry and Restore answer, from what the checkout holds now.
- */
-export async function haltCutApply(
-  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>,
-  state: WorkflowState,
-  backupId: string,
-  setTrackedState?: ((state: WorkflowState) => void) | undefined,
-): Promise<WorkflowState> {
-  const reconciliation = await reconcileApplyBackup({
-    projectDir: wctx.projectDir,
-    sessionId: wctx.sessionId,
-    backupId,
-  });
-  return raiseApplyHalt(
-    wctx,
-    state,
-    buildApplyPartialRecoveryIssue({
-      backupId,
-      backupDir: applyBackupDir(wctx.projectDir, wctx.sessionId, backupId),
-      reconciliation,
-      createdAt: new Date().toISOString(),
-    }),
-    setTrackedState,
-  );
-}
 
 type ApplyInput = {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;

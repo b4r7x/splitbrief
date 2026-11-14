@@ -1,5 +1,5 @@
 import { TASKS_FILE } from '../../../../src/core/paths.js';
-import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
+import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/plan-files/card.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { scenarioId } from '../../contracts/identifiers.js';

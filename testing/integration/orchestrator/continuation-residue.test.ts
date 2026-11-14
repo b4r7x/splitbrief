@@ -10,7 +10,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { readMessages } from '../../../src/core/sessions/log/reader.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { readInterruptedPartial } from '../../../src/engine/orchestrator/continuation.js';
+import { readInterruptedPartial } from '../../../src/engine/orchestrator/continuation/interrupted.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { makeImplementerRetryInvoker } from '../../../src/engine/orchestrator/escalation/make-implementer-retry-invoker.js';
 import { createImplementerBase } from '../../../src/engine/implementers/pipeline/run.js';

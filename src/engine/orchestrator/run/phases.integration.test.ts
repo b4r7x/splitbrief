@@ -45,7 +45,7 @@ import { writeSpecFile } from '../../../core/sessions/spec-files.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createValidator } from '../validation/run.js';
-import { createContinuationHolder } from '../continuation.js';
+import { createContinuationHolder } from '../continuation/holder.js';
 import type { OrchestratorCallbacks, WorkflowContext, WorkflowSinks } from '../types.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
@@ -1176,7 +1176,7 @@ describe('runPlanningPhases', () => {
 
   it('Re-run Apply after an Apply conflict is the active Apply while it runs', async () => {
     const { activeApply } = await import('../session-lifecycle/shutdown.js');
-    const { applyRecoveryAction } = await import('../recovery/actions.js');
+    const { applyRecoveryAction } = await import('../recovery/actions/apply.js');
     const { buildApplyConflictRecoveryIssue } = await import('../recovery/builders/apply.js');
     const actual = await vi.importActual<typeof import('../apply/run.js')>('../apply/run.js');
     const { projectDir, sessionId } = setupProject();

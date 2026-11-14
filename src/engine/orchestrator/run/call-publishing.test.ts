@@ -4,7 +4,7 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import type { Reviewer } from '../../reviewers/types.js';
 import type { PlannerOutputCallbacks, TypedCallContext } from '../../planners/types.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
-import { createBusTextHandler } from '../events.js';
+import { createBusTextHandler } from '../publish/runner.js';
 import { withPlannerCallPublishing, withReviewerCallPublishing } from './call-publishing.js';
 
 const TYPED_ANSWER = '{"id":"V3","command":"npm test","declined":[]}';

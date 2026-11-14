@@ -24,14 +24,15 @@ import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { loadState } from '../../core/state/persistence.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { isQueuedMessagePendingReviewer } from '../../core/queue/state.js';
-import { createQueueHandler, enqueueUserMessage } from './queue/submit.js';
-import { createWriteSequencer } from './serial-executor.js';
-import { runFinalReviewPhase } from './final-review.js';
-import { createContinuationHolder } from './continuation.js';
+import { createQueueHandler } from './queue/submit.js';
+import { enqueueUserMessage } from './queue/enqueue.js';
+import { createWriteSequencer } from '../../utils/serial-executor.js';
+import { runFinalReviewPhase } from './review/phase.js';
+import { createContinuationHolder } from './continuation/holder.js';
 import { createSteeringPort } from '../calls/steering.js';
 import type { TypedCallContext } from '../planners/types.js';
 import { settleMidCallDeliveries, trackMidCallDelivery } from './queue/mid-call.js';
-import { transitionAndSave } from './state-ops.js';
+import { transitionAndSave } from './state-ops/transition.js';
 
 const git = vi.hoisted(() => ({ beforeStatus: undefined as (() => void) | undefined }));
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { MAX_SUMMARY_LENGTH, createRecoveryIssue, summarizeText } from './issue.js';
-import { buildRetryExhaustedRecoveryIssue } from './task.js';
+import { buildRetryExhaustedRecoveryIssue } from './retry.js';
 
 describe('summarizeText', () => {
   it('cuts text over the cap with … and keeps the mark inside the cap', () => {

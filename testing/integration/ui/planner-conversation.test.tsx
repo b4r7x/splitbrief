@@ -21,7 +21,7 @@ import type { ClarificationQuestion } from '../../../src/core/schemas/question.j
 import type { PlannerConversation } from '../../../src/core/schemas/workflow/state.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
-import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init/options.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { questionPromptStore } from '../../../src/stores/prompts/question.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';

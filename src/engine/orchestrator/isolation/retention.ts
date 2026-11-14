@@ -32,7 +32,8 @@ import { toErrorMessage } from '../../../utils/format/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.js';
 import type { EventBus } from '../../events/types.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishError } from '../publish/notice.js';
 import type { IsolatedWorkspace } from './types.js';
 
 const MAX_RECORD_BYTES = 8 * 1024 * 1024;

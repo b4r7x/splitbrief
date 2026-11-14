@@ -9,10 +9,11 @@ import { briefCorrections } from '../../../core/state/lineage.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { ImplementerResult } from '../../implementers/types.js';
-import { recordBriefCorrection, transitionAndSave } from '../state-ops.js';
+import { recordBriefCorrection } from '../state-ops/corrections.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { clearPendingQueue } from './clear.js';
 import { formatDrainedMessages } from './prompt.js';
-import { enqueueUserMessage } from './submit.js';
+import { enqueueUserMessage } from './enqueue.js';
 import {
   absorbBuildCorrections,
   absorbBuildCorrectionsById,
@@ -23,7 +24,7 @@ import {
 } from './build-corrections.js';
 import { createSteeringPort, type SteerOutcome } from '../../calls/steering.js';
 import { createQueueHandler } from './submit.js';
-import { createWriteSequencer } from '../serial-executor.js';
+import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { trackMidCallDelivery } from './mid-call.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

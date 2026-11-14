@@ -7,7 +7,7 @@ import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
+import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

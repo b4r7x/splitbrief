@@ -7,8 +7,8 @@ import { assertPathConfined, pathConfinementError } from '../../../lib/fs/confin
 import { matches } from '../../../utils/error.js';
 import { anchorAction } from '../../spec/plan-tasks.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { transitionAndSave } from '../state-ops.js';
-import type { ContinuationHolder } from '../continuation.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import type { ContinuationHolder } from '../continuation/holder.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
 import { entryStoreDir } from '../isolation/entry-snapshot.js';

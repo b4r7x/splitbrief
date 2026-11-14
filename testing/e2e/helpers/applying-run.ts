@@ -6,7 +6,7 @@ import { reactivateExistingSession } from '../../../src/core/sessions/active-poi
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { applyBackupDir, writeApplyBackup } from '../../../src/engine/orchestrator/apply/backup.js';
-import { captureAcquisitionBaseline } from '../../../src/engine/orchestrator/approval/file-snapshots/entry.js';
+import { captureAcquisitionBaseline } from '../../../src/engine/orchestrator/approval/file-snapshots/entry/baseline.js';
 import { buildApplyPartialRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/apply.js';
 import { stagedWorkspaceRoot } from '../../../src/engine/orchestrator/isolation/retention.js';
 import { createSnapshot } from '../../../src/engine/snapshots/create.js';

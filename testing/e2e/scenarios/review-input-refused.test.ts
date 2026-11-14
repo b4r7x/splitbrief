@@ -9,7 +9,7 @@ import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
-import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
+import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { runRows } from '../../../src/features/workflow/closed/copy/rows.js';
 import { factSpans } from '../../../src/features/workflow/closed/copy/rows.js';

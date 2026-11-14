@@ -20,11 +20,9 @@ import { sha256Hex } from '../../src/utils/sha256.js';
 import { applyFileBundle } from '../../src/engine/implementers/apply-file-bundle.js';
 import { captureBundleBaseline } from '../../src/engine/implementers/bundle-baseline.js';
 import type { BundleApplyResult } from '../../src/engine/implementers/file-bundle.js';
-import {
-  getChangedFilesSinceSnapshot,
-  type getChangedFilesSnapshot,
-} from '../../src/engine/orchestrator/approval/file-snapshots/capture.js';
-import { createStagedProject } from '../../src/engine/orchestrator/approval/staged-project.js';
+import type { getChangedFilesSnapshot } from '../../src/engine/orchestrator/approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../../src/engine/orchestrator/approval/file-snapshots/changed-since.js';
+import { createStagedProject } from '../../src/engine/orchestrator/approval/staged-project/create.js';
 import { recordApiApplyEvidence } from '../../src/engine/orchestrator/evidence/task.js';
 import { runRetryStep } from '../../src/engine/orchestrator/escalation/step.js';
 import { makeTask } from './factories/task.js';

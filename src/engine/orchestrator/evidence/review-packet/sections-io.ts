@@ -18,9 +18,9 @@ import { type RunStartBase, resolveRunStartBase } from '../../../../lib/git/refs
 import { diffFileEntries } from '../../../../lib/git/entry-diff.js';
 import { splitDiffByFile } from '../../../../lib/git/diff-sections.js';
 import { error } from '../../../../utils/error.js';
-import { readConfinedEntry } from '../../approval/file-snapshots/entry.js';
-import { createRunBaseReader, type RunBaseFile } from '../../isolation/acquisition.js';
-import type { RunBase } from '../../isolation/base-tree.js';
+import { readConfinedEntry } from '../../approval/file-snapshots/entry/read.js';
+import { createRunBaseReader, type RunBaseFile } from '../../isolation/run-base/reader.js';
+import type { RunBase } from '../../isolation/run-base/tree.js';
 import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from '../../../../core/gitignore-bookkeeping.js';
 import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
 import { uniqueSorted } from '../../../../utils/collections.js';

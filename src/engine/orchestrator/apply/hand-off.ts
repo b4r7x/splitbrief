@@ -1,6 +1,6 @@
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { transition } from '../../../core/state/machine.js';
-import { transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import type { ApplyConflict } from './merge.js';
 import { entryKey } from './states.js';
 

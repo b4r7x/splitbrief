@@ -7,8 +7,10 @@ import { writeConfig } from '../../../core/config/load/io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { buildSeatDownIssue, switchSeatOffer } from './builders/task.js';
-import { loadSeatSwapContext, readSeatOfRecord } from './seat-swap-context.js';
+import { buildSeatDownIssue } from './builders/seat-down.js';
+import { switchSeatOffer } from './builders/switch-offer.js';
+import { readSeatOfRecord } from './seat/of-record.js';
+import { loadSeatSwapContext } from './seat/swap-context.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
 
 const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));

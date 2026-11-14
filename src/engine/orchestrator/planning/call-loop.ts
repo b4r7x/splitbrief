@@ -7,8 +7,8 @@ import type { PlannerConversation, WorkflowState } from '../../../core/schemas/w
 import type { PlannerReplyAnswer } from '../../../core/schemas/question.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { transitionAndSave } from '../state-ops.js';
-import { publishInfo } from '../events.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { publishInfo } from '../publish/notice.js';
 import type { EventBus } from '../../events/types.js';
 
 /** The rejections the planner has to respect, as the lead of its prompt; empty when there are none. */

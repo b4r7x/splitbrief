@@ -3,12 +3,10 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { BoundaryPark, WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
-import {
-  commitWorkflowState,
-  raisePendingRecovery,
-  rebaseOnPersistedWorkflowState,
-  stateOpsError,
-} from '../state-ops.js';
+import { raisePendingRecovery } from '../state-ops/halts.js';
+import { commitWorkflowState } from '../state-ops/commit.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
+import { stateOpsError } from '../state-ops/errors.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import {
   getRunnerCatalogDisplayName,
@@ -25,15 +23,17 @@ import {
   withActiveTaskSnapshot,
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
-import { configForProfile, createTaskImplementer } from './routing.js';
-import { publishError, publishTasksPlanned, publishWarning } from '../events.js';
-import { checkDependencyGate } from './dependency-gate.js';
-import { selectRoutingProfile } from './routing-selection.js';
+import { configForProfile, createTaskImplementer } from '../context-routing/profile.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishTasksPlanned } from '../publish/task.js';
+import { publishError } from '../publish/notice.js';
+import { checkDependencyGate } from './gates/dependency.js';
+import { selectRoutingProfile } from '../context-routing/select.js';
 import { absorbAcceptedFiles } from './post-task.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
-import { runScheduledReview } from '../run/review.js';
+import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/brief-blocked.js';
+import { runScheduledReview } from '../review/loop/scheduled.js';
 import { recordCheckoutRunSnapshot } from '../run/snapshots.js';
 
 type RunTaskLoopOptions = {

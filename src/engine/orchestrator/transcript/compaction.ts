@@ -24,7 +24,7 @@ import {
   isStillPendingQueuedTranscriptMessage,
   reconstructPlannerConversation,
 } from './rebuild.js';
-import { pruneResumeUserMessages } from '../state-ops.js';
+import { pruneResumeUserMessages } from '../state-ops/corrections.js';
 
 const MIN_COMPACTION_KEEP_RECENT = 1;
 

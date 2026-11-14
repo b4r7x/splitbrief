@@ -46,7 +46,7 @@ import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { join } from 'node:path';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/sessions/spec-files.js';
-import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/review-failed.js';
 import { addTuiEvent } from './tui-sink.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
 import { attachedMessage, expectCompactMessage } from '#testing/helpers/user-message.js';

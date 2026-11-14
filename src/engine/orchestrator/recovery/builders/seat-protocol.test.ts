@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
 import { typedOutputError } from '../../../runners/typed-output.js';
-import type { SeatSwapContext } from './task.js';
+import type { SeatSwapContext } from '../seat/swap-context.js';
 import {
   buildSeatProtocolErrorRecoveryIssue,
   type SeatProtocolRecoveryOptions,

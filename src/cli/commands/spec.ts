@@ -33,12 +33,13 @@ import {
   planFullTurn,
   type PlanRound,
 } from '../../engine/spec/prompts/plan-session.js';
-import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat-wait.js';
+import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat/call.js';
 import {
   runPlanSession,
   type PlanSessionOutcome,
 } from '../../engine/orchestrator/planning/plan-session.js';
-import { checkFullPlan, planTurnText } from '../../engine/orchestrator/planning/session.js';
+import { checkFullPlan } from '../../engine/orchestrator/planning/compile.js';
+import { planTurnText } from '../../engine/orchestrator/planning/turn-text.js';
 import { questionsText } from '../../core/state/planning-conversation.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../bootstrap/discovery.js';

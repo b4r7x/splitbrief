@@ -36,27 +36,23 @@ import { createSnapshot } from '../../snapshots/create.js';
 import { recordRunSnapshot } from '../../snapshots/run/ledger.js';
 import { markExited, writeLockfile } from '../../../core/sessions/lock/file.js';
 import { recordLocalTaskEvidence } from '../evidence/task.js';
-import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
+import { reconcileWorkspaceToBase } from '../isolation/run-base/reader.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
-import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
-import { runPlanApproval } from '../planning/session.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
+import { buildReviewFailedRecoveryIssue } from '../recovery/builders/review-failed.js';
+import { runPlanApproval } from '../planning/approval.js';
 import {
   foreignWorkspaceNotice,
   readWorkspaceRecord,
   stagedWorkspaceRoot,
 } from '../isolation/retention.js';
-import {
-  closeRunIfOpen,
-  filesStillOnDiskSuffix,
-  rejectCheckoutRun,
-  removeClosedRunWorkspaces,
-} from './close.js';
+import { closeRunIfOpen, filesStillOnDiskSuffix, rejectCheckoutRun } from './close.js';
+import { removeClosedRunWorkspaces } from '../isolation/closed-runs.js';
 
 const removal = vi.hoisted(() => ({ patchExisted: [] as boolean[] }));
-vi.mock('../isolation/remove-worktree.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../isolation/remove-worktree.js')>();
+vi.mock('../isolation/worktree/remove.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../isolation/worktree/remove.js')>();
   return {
     ...actual,
     removeRunWorkspace: async (...args: Parameters<typeof actual.removeRunWorkspace>) => {

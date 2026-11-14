@@ -20,8 +20,8 @@ import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { createRunIsolation } from '../../../src/engine/orchestrator/isolation/create.js';
-import { promoteStagedChanges } from '../../../src/engine/orchestrator/approval/staged-project.js';
-import { getChangedFilesSinceSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/capture.js';
+import { promoteStagedChanges } from '../../../src/engine/orchestrator/approval/staged-project/promote.js';
+import { getChangedFilesSinceSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/changed-since.js';
 
 const roots: string[] = [];
 afterEach(() => {

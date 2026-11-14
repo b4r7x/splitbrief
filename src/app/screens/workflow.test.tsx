@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/sessions/spec-files.js';
 import { writeLockfile } from '../../core/sessions/lock/file.js';
-import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/review-failed.js';
 import { buildApplyConflictRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
@@ -37,7 +37,7 @@ import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { SeatWait } from '../../core/schemas/workflow/seat.js';
 import type { EngineEvent } from '../../engine/events/types.js';
-import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init/options.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,

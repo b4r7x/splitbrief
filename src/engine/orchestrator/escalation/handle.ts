@@ -8,24 +8,24 @@ import { isAbortedOutcome, recordNoProgressCut, runHeldCorrection } from './held
 import { runRetryStep, type BlockedReport } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { publishError, publishWarning, publishWarningFromError } from '../events.js';
-import { raiseBriefHalt, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishWarningFromError } from '../publish/notice.js';
+import { publishError } from '../publish/notice.js';
+import { raiseBriefHalt, raisePendingRecovery } from '../state-ops/halts.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { revertedDir } from '../../../core/paths.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { haltAttempts } from '../recovery/builders/details.js';
-import {
-  buildRetryExhaustedRecoveryIssue,
-  buildSeatDownIssue,
-  recoveryBuilderForRunnerOutcome,
-  runnerDefectRow,
-  runnerHaltRow,
-} from '../recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
+import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/runner-outcome.js';
+import { runnerDefectRow, runnerHaltRow } from '../recovery/builders/runner-defect.js';
+import { buildSeatDownIssue } from '../recovery/builders/seat-down.js';
 import { classifySeatFailure, type SeatFailureClassification } from '../../runners/seat-failure.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+import { loadSeatSwapContext } from '../recovery/seat/swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';

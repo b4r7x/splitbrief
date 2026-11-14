@@ -2,62 +2,29 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ConsultQuestion } from '../../../core/schemas/consult.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
-import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
-import type { WorkflowContext } from '../types.js';
-import type { RetryAttemptFailure } from '../escalation/types.js';
 
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { sessionError } from '../../../core/sessions/errors.js';
-import { retentionError } from '../isolation/retention.js';
-import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format/time.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishError } from '../publish/notice.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
-import type { BlockedReport } from '../escalation/step.js';
-import { raiseBriefHalt, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { raisePendingRecovery } from '../state-ops/halts.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { recordTaskUsage } from '../tokens.js';
+import { recordTaskUsage } from './record-usage.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
-import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
-import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
 import { haltOf } from '../../../core/recovery/halt.js';
-import {
-  diagnosePlannerCallFailure,
-  plannerCallHaltIssue,
-  plannerHaltRow,
-} from '../recovery/planner-call-failure.js';
-import { consultHaltDetails, haltAttempts } from '../recovery/builders/details.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { haltAttempts } from '../recovery/builders/details.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { isConsultError } from '../consult/request.js';
-import { typedOutputError } from '../../runners/typed-output.js';
-import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
-import { readBriefWorkedMs } from './worked-time.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
-
-export type RetryAndRecordOptions = {
-  wctx: WorkflowContext;
-  task: Task;
-  initialError: string;
-  state: WorkflowState;
-  taskStartSnapshot?: ChangedFilesSnapshot;
-  initialChangedFiles?: string[] | undefined;
-  /** How the first attempt ended, when it ended on a machine outcome. */
-  initialFailure?: RetryAttemptFailure | undefined;
-  /** The first attempt's blocked report, when it stopped asking for a decision. */
-  initialBlocked?: BlockedReport | undefined;
-  /** The user's answer to a change of what the first attempt reported. */
-  initialAnswer?: string | undefined;
-  /** The unfinished calls in a row before a consult that runs again, which its halt kept. */
-  unfinishedCalls?: number | undefined;
-  tokensBefore: TokenUsage;
-  taskBreakdowns: TaskTokenUsage[];
-  setTrackedState: (s: WorkflowState) => void;
-};
+import type { RetryAndRecordOptions } from './types.js';
+import { handleTaskPlannerCallFailure, recordFailedTask } from './planner-failure.js';
 
 /** A failed consult names the planner's call: `Planner consult for T001 failed`. */
 export function consultFailureLabel(taskId: TaskId): string {
@@ -85,124 +52,6 @@ export function consultHandedBackToLoop(state: WorkflowState, task: Task): boole
     current.parentId === lineageIdOf(task) &&
     !state.tasks.some((t) => t.id === task.id)
   );
-}
-
-type TaskFailureContext = Pick<RetryAndRecordOptions, 'wctx' | 'task' | 'initialChangedFiles'>;
-
-async function recordFailedTask(
-  opts: TaskFailureContext,
-  state: WorkflowState,
-  attempts: number,
-): Promise<void> {
-  await persistTaskEvidence({
-    wctx: opts.wctx,
-    state,
-    task: opts.task,
-    recordKind: 'retry',
-    details: {
-      status: 'failed',
-      method: 'failed',
-      retries: attempts,
-      durationMs: await readBriefWorkedMs(
-        { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
-        opts.task.id,
-      ),
-      initialChangedFiles: opts.initialChangedFiles,
-    },
-  });
-}
-
-/**
- * Recovers a failed consult call during a task from its latest saved state, preserving aborts.
- * `consult` is the question the last consult was asked; the park keeps it for a consult failure.
- */
-export async function handleTaskPlannerCallFailure(
-  opts: TaskFailureContext &
-    Pick<RetryAndRecordOptions, 'state' | 'setTrackedState'> & {
-      err: unknown;
-      label: string;
-      consult?: ConsultQuestion | undefined;
-    },
-): Promise<WorkflowState> {
-  const { wctx, task, err, setTrackedState } = opts;
-  if (
-    retentionError.isFailed(err) ||
-    retentionError.isMoved(err) ||
-    retentionError.isUnavailable(err) ||
-    sessionError.isLocalSaveFailure(err)
-  )
-    throw err;
-  if (isAbortError(err) || wctx.signal?.aborted) {
-    const stoppedState = loadState(wctx) ?? opts.state;
-    setTrackedState(stoppedState);
-    return stoppedState;
-  }
-  const runner = wctx.config.planner;
-  const diagnosis = diagnosePlannerCallFailure({ err, label: opts.label, runner, seat: 'plan' });
-  const publishRow = (message: string) =>
-    publishError({
-      bus: wctx.bus,
-      phase: opts.state.phase,
-      message,
-      resetAt: diagnosis.resetsAt?.toISOString(),
-    });
-  const recoveryBaseState = loadState(wctx) ?? opts.state;
-  if (recoveryBaseState.pendingRecovery) {
-    publishRow(diagnosis.message);
-    setTrackedState(recoveryBaseState);
-    return recoveryBaseState;
-  }
-  // A planner out of quota or signed out on the consult halts on PLAN, not as a brief
-  // that exhausted its retries. A *Seat down* halt parks the brief at its consult and the
-  // question it asked: the brief keeps its files, and Switch, Try again and Try later ask
-  // that consult again.
-  let issue: RecoveryIssue;
-  let row = diagnosis.message;
-  if (typedOutputError.isSeatProtocol(err)) {
-    issue = await seatProtocolHaltIssue({
-      projectDir: wctx.projectDir,
-      config: wctx.config,
-      modelCache: wctx.modelCache,
-      signal: wctx.signal,
-      error: err,
-      phase: recoveryBaseState.phase,
-      task,
-    });
-  } else if (diagnosis.failure === 'call-failed' && !isConsultError(err)) {
-    issue = buildRetryExhaustedRecoveryIssue({
-      task,
-      phase: recoveryBaseState.phase,
-      validationSummary: diagnosis.message,
-      ...haltAttempts(recoveryBaseState, task, { booked: true }),
-      allowRetryOverride: true,
-      selectedImplementerProfile: wctx.implementerProfile,
-      createdAt: nowIso(),
-    });
-  } else {
-    issue = await plannerCallHaltIssue({
-      projectDir: wctx.projectDir,
-      modelCache: wctx.modelCache,
-      signal: wctx.signal,
-      config: wctx.config,
-      diagnosis,
-      task,
-      phase: recoveryBaseState.phase,
-      seat: 'plan',
-      seatSwitches: recoveryBaseState.seatSwitches,
-      swap: { seat: 'plan', runner },
-      details: consultHaltDetails(task.id),
-    });
-    row = plannerHaltRow(issue, diagnosis);
-  }
-  publishRow(row);
-  const nextState = raiseBriefHalt(
-    wctx,
-    recoveryBaseState,
-    { taskId: task.id, issue, consult: isConsultError(err) ? opts.consult : undefined },
-    setTrackedState,
-  );
-  await recordFailedTask(opts, nextState, recoveryBaseState.attempt);
-  return nextState;
 }
 
 /**

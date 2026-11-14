@@ -28,17 +28,13 @@ import {
 import { createGitClient } from '../../../lib/git/client.js';
 import { isInsideRoot } from '../../../lib/fs/confinement.js';
 import { installDiagnosticSink } from '../../../lib/warn.js';
-import {
-  getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-} from '../approval/file-snapshots/capture.js';
-import { promoteStagedChanges } from '../approval/staged-project.js';
-import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry.js';
-import {
-  ensureIsolationWorktree,
-  parseIsolationMarker,
-  removeNodeModulesExclude,
-} from './worktree.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
+import { promoteStagedChanges } from '../approval/staged-project/promote.js';
+import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry/baseline.js';
+import { removeNodeModulesExclude } from './worktree/node-modules.js';
+import { ensureIsolationWorktree } from './worktree/ensure.js';
+import { parseIsolationMarker } from './worktree/ensure.js';
 
 const SESSION_ID = '2026-08-04-203317-spec-orchestrator-loop';
 const ORIGINAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;

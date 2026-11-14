@@ -22,10 +22,8 @@ import { readConfigDocument } from '../../core/config/load/document.js';
 import { loadConfig, writeConfig } from '../../core/config/load/io.js';
 import { HeadlessJsonRecordSchema } from '../../engine/events/public-json.js';
 import { reactivateExistingSession, writeActive } from '../../core/sessions/active-pointer.js';
-import {
-  buildContextOverflowRecoveryIssue,
-  buildSeatDownIssue,
-} from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildContextOverflowRecoveryIssue } from '../../engine/orchestrator/recovery/builders/context-overflow.js';
+import { buildSeatDownIssue } from '../../engine/orchestrator/recovery/builders/seat-down.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { runHeadless } from './run.js';
@@ -48,7 +46,7 @@ import {
 import { readWorkspaceRecord } from '../../engine/orchestrator/isolation/retention.js';
 import { createRunIsolation } from '../../engine/orchestrator/isolation/create.js';
 import { createSnapshot } from '../../engine/snapshots/create.js';
-import { buildRetryExhaustedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/retry.js';
 import { sessionDir, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';

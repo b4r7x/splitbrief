@@ -6,7 +6,7 @@ import { resumeStep } from '../../../src/core/sessions/run/status.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { publishRecoveryPrompted } from '../../../src/engine/orchestrator/events.js';
+import { publishRecoveryPrompted } from '../../../src/engine/orchestrator/publish/recovery.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { addTuiEvent } from '../../../src/features/workflow/tui-sink.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';

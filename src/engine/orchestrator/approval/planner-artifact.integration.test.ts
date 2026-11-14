@@ -23,7 +23,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../../runners/types.js';
 import { beginDeclaredArtifactReview, cleanupStaleArtifactReviews } from './planner-artifact.js';
-import { createStagedProject } from './staged-project.js';
+import { createStagedProject } from './staged-project/create.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;

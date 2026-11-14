@@ -34,8 +34,8 @@ import {
   serializeChangedFilesBaseline,
 } from './changed-files-baseline.js';
 import { currentCandidateId } from './evidence/record-checks.js';
-import { runFinalReviewPhase } from './final-review.js';
-import { NO_VISION_REVIEW } from './review-renders.js';
+import { runFinalReviewPhase } from './review/phase.js';
+import { NO_VISION_REVIEW } from './review/renders.js';
 import { createCliPlanner } from '../planners/cli.js';
 import type { ConfiguredProviderRuntime } from '../detection/provider-outcomes.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';

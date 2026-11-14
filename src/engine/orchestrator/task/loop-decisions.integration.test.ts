@@ -26,8 +26,8 @@ import type { ImplementerOptions, RetryOptions } from '../../implementers/types.
 import type { Validator } from '../validation/types.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
-import { enqueueUserMessage } from '../queue/submit.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
 import { runTaskLoop } from './loop.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';

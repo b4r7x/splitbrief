@@ -14,7 +14,7 @@ import { isTestPatternSafe } from '../../../core/validation/test-discovery.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
-import { publishWarning } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
 import { formatValidationCommand } from '../validation/commands.js';
 
 const PACKAGE_MANAGERS = ['npm', 'npx', 'node', 'pnpm', 'yarn', 'bun', 'make', 'just'];

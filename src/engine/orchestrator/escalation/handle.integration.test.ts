@@ -38,10 +38,10 @@ import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factor
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
-import { createImplementerPublisher } from '../events.js';
+import { createImplementerPublisher } from '../publish/runner.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
-import { enqueueUserMessage } from '../queue/submit.js';
-import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
+import { CORRECTION_AFTER_CHECKS } from '../task/gates/brief.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 

@@ -12,11 +12,11 @@ import { plainUserMessage, type UserMessageInput } from '../../../core/types/use
 import { buildResumeContext } from './rebuild.js';
 import { attachedMessage } from '#testing/helpers/user-message.js';
 import { createEventBus } from '../../events/bus.js';
-import { recordSteer } from '../continuation.js';
-import { transitionAndSave } from '../state-ops.js';
+import { recordSteer } from '../continuation/loop.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { readRunEvents } from '../../events/replay.js';
-import { enqueueUserMessage } from '../queue/submit.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
 import { recordUserMessage } from './user-message.js';
 import { readMessages } from '../../../core/sessions/log/reader.js';
 import {

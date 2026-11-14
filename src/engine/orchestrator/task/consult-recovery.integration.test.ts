@@ -24,7 +24,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowContext } from '../types.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { retryAndRecord } from './retry.js';
 import { runSingleTask } from './step.js';
 

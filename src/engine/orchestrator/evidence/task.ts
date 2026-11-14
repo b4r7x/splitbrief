@@ -1,7 +1,7 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
-import type { CheckRunResult } from '../validation/run-checks.js';
+import type { CheckRunResult } from '../validation/checks/types.js';
 import type {
   EvidenceApiApply,
   EvidenceCheckEntry,

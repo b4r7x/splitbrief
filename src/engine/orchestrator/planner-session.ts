@@ -7,10 +7,10 @@ import type { SteeringPort } from '../calls/steering.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
-import { withFreshSessionReissue } from './resume-context.js';
-import { publishSeatAnswerRefused } from './events.js';
-import { transitionAndSave } from './state-ops.js';
-import { runThrowingSeatCall } from './escalation/seat-wait.js';
+import { withFreshSessionReissue } from './transcript/resume-context.js';
+import { publishSeatAnswerRefused } from './publish/seat.js';
+import { transitionAndSave } from './state-ops/transition.js';
+import { runThrowingSeatCall } from './escalation/seat/call.js';
 
 /** What one typed call on the planner's own thread is built from. */
 export type PlannerSessionCall<T> = Readonly<{

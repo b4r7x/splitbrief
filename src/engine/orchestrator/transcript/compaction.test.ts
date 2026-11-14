@@ -10,7 +10,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { attachedMessage } from '#testing/helpers/user-message.js';
 import { createEventBus } from '../../events/bus.js';
-import { recordSteer } from '../continuation.js';
+import { recordSteer } from '../continuation/loop.js';
 import { buildResumeContext } from './rebuild.js';
 import { drainQueue } from '../queue/drain.js';
 import { findLatestSummary, readSessionLog } from '../../../core/sessions/log/reader.js';

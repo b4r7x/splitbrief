@@ -7,7 +7,8 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import { createEventBus } from '../../events/bus.js';
-import { checkRegistry, enabledReviewChecks, runChecks } from './run-checks.js';
+import { runChecks } from './checks/runner.js';
+import { checkRegistry, enabledReviewChecks } from './checks/runner.js';
 
 const PLAN: Plan = {
   summary: 'Plan summary',

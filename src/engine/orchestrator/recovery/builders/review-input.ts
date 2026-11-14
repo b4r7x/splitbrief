@@ -2,11 +2,13 @@ import { join } from 'node:path';
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import { capitalize } from '../../../../utils/capitalize.js';
-import type { FinalReviewFailure } from '../../final-review.js';
+import type { FinalReviewFailure } from '../../review/types.js';
 import { inputTooLargeFacts } from '../../../runners/input-limit.js';
 import { haltActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
-import { inputTooLargeDetail, switchSeatOffer, type SeatSwapContext } from './task.js';
+import { inputTooLargeDetail } from './runner-defect.js';
+import { switchSeatOffer } from './switch-offer.js';
+import type { SeatSwapContext } from '../seat/swap-context.js';
 
 export function reviewInputTooLargeMessage(
   failure: Extract<FinalReviewFailure, { kind: 'input-too-large' }>,

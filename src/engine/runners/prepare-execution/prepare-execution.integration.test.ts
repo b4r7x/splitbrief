@@ -16,7 +16,7 @@ import {
 } from '#testing/helpers/compatible-cli-shim.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { createImplementerSeat } from '../../orchestrator/run/init-seats.js';
+import { createImplementerSeat } from '../../orchestrator/run/init/seats.js';
 import { createEventBus } from '../../events/bus.js';
 import { createCustomRunnerRuntime } from '../custom-runner-runtime.js';
 

@@ -16,8 +16,8 @@ import { processError } from '../../../lib/process/errors.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import type { EngineEventOf } from '../../events/types.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
-import { applyTriage } from '../triage.js';
-import { runBriefGate } from './brief-gate.js';
+import { applyTriage } from '../review/triage.js';
+import { runBriefGate } from './gates/brief.js';
 
 const FILES = {
   'package.json': JSON.stringify({

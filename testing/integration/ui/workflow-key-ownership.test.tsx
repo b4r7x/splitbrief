@@ -16,7 +16,7 @@ import {
   formatApprovalActionDescription,
 } from '../../../src/features/workflow/prompt-rows/approval.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
-import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init/options.js';
 import type { ReviewInputEffects } from '../../../src/features/workflow/review-gate/input-handler.js';
 import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RuntimeCommandDef } from '../../../src/core/runtime/commands/types.js';

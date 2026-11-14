@@ -8,7 +8,7 @@ import type {
   PlannerSummaryOptions,
   PlannerUserTurnOptions,
 } from '../../planners/types.js';
-import { publishRunnerCallEvent } from '../events.js';
+import { publishRunnerCallEvent } from '../publish/runner.js';
 import type { WorkflowContext } from '../types.js';
 
 export type PlannerCallPublisherContext = {

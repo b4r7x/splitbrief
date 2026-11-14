@@ -7,13 +7,11 @@ import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import { resumeStep, deriveRunStatus } from '../../../core/sessions/run/status.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
-import { publishRecoveryPrompted } from '../../../engine/orchestrator/events.js';
+import { publishRecoveryPrompted } from '../../../engine/orchestrator/publish/recovery.js';
 import { publishRetainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
-import {
-  type ApplyRecoveryActionResult,
-  applyRecoveryAction,
-  applyDecidedRecovery,
-} from '../../../engine/orchestrator/recovery/actions.js';
+import { applyDecidedRecovery } from '../../../engine/orchestrator/recovery/actions/apply.js';
+import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions/apply.js';
+import type { ApplyRecoveryActionResult } from '../../../engine/orchestrator/recovery/actions/types.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { filesStillOnDiskSuffix } from '../../../engine/orchestrator/run/close.js';
 import { plannerSupportsImages } from '../../../engine/providers/capabilities.js';

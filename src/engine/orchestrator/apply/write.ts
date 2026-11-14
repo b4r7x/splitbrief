@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { promoteStagedChanges } from '../approval/staged-project.js';
-import { transitionAndSave } from '../state-ops.js';
+import { promoteStagedChanges } from '../approval/staged-project/promote.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import type { WorkflowPersistenceContext } from '../types.js';
 import { writeApplyBackup } from './backup.js';
 import type { ApplyStates } from './states.js';

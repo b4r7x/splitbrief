@@ -4,14 +4,9 @@ import { readEntryAtRef } from '../../../../lib/git/refs.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { error, matches } from '../../../../utils/error.js';
 import { isPathConfinementError, readCurrentFileContent } from './contents.js';
-import {
-  readConfinedEntry,
-  sameFileEntry,
-  writeConfinedEntry,
-  writeConfinedSymlink,
-  type ChangeEntry,
-  type FileSnapshotEntry,
-} from './entry.js';
+import { writeConfinedEntry, writeConfinedSymlink } from './entry/write.js';
+import { sameFileEntry } from './entry/read.js';
+import { readConfinedEntry, type ChangeEntry, type FileSnapshotEntry } from './entry/read.js';
 import type { FileContentSnapshot, RestoreChangedFilesResult } from './types.js';
 
 export const restoreError = {

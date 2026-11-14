@@ -3,7 +3,7 @@ import { reopensPlanCard } from '../../../core/sessions/run/status.js';
 import type { PlannerCallbacksContext, WorkflowContext } from '../types.js';
 import type { Planner } from '../../planners/types.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
-import { runPlanApproval } from '../planning/session.js';
+import { runPlanApproval } from '../planning/approval.js';
 import { plannerCallbacksContextOf, plannerFeature } from './planner-callbacks-context.js';
 
 /** Re-opens the plan card of a run parked at it; returns null for any run that does not reopen it. */

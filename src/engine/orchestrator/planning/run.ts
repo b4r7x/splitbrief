@@ -3,7 +3,8 @@ import { PLAN_JSON_FILE } from '../../../core/paths.js';
 import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import { planRevisedTurn } from '../../spec/prompts/plan-session.js';
 import { standingPlanCorrection } from './halt.js';
-import { runPlanApproval, runPlanningSession } from './session.js';
+import { runPlanningSession } from './session.js';
+import { runPlanApproval } from './approval.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {

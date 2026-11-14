@@ -13,7 +13,7 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import type { IsolationStrategy } from '../../../src/core/schemas/enums.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
-import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
+import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import {
   cli,

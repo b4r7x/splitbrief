@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
-import { runBriefGate } from '../task/brief-gate.js';
+import { runBriefGate } from '../task/gates/brief.js';
 import type { EscalationContext } from './types.js';
 
 export type ValidateAndCommitOptions = {

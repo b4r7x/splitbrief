@@ -20,7 +20,8 @@ import {
   PlannerArtifactSemanticIdSchema,
 } from '../../../core/schemas/planner-artifact.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { prepareArtifactStageLease, type ArtifactStageLease } from './artifact-stage-manifest.js';
+import type { ArtifactStageLease } from './artifact-stage/types.js';
+import { prepareArtifactStageLease } from './artifact-stage/lease.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const itWindows = process.platform === 'win32' ? it : it.skip;

@@ -1,5 +1,5 @@
 import type { Summary } from '../../src/core/schemas/summary.js';
-import type { RunWorkflowOptions } from '../../src/engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../src/engine/orchestrator/run/init/options.js';
 
 const trackedWorkflows = new Map<AbortController, Promise<Summary>>();
 

@@ -17,9 +17,9 @@ import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue/state.j
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Implementer } from '../../implementers/types.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
-import { enqueueUserMessage } from '../queue/submit.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
 import { clearPendingQueue } from '../queue/clear.js';
-import { CORRECTION_AFTER_CHECKS } from './brief-gate.js';
+import { CORRECTION_AFTER_CHECKS } from './gates/brief.js';
 import { runSingleTask } from './step.js';
 
 afterEach(() => {

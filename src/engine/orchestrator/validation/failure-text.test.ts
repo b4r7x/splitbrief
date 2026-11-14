@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { captureText } from '../../../lib/process/errors.js';
 import { failureKeys } from './extract-failure-keys.js';
 import { checkFailureText } from './failure-text.js';
-import type { CheckRunResult } from './run-checks.js';
+import type { CheckRunResult } from './checks/types.js';
 import { boundedOutputTail } from './stage.js';
 
 const NOISE = Array.from(

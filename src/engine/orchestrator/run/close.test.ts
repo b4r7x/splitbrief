@@ -17,18 +17,14 @@ import { sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { writeRunPatch } from '../apply/patch.js';
 import { recordLocalTaskEvidence, recordSkippedTaskEvidence } from '../evidence/task.js';
-import { removeRunWorkspace } from '../isolation/remove-worktree.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
-import {
-  closedChangesSuffix,
-  closeRunIfOpen,
-  endRunAtRest,
-  filesStillOnDiskSuffix,
-} from './close.js';
+import { removeRunWorkspace } from '../isolation/worktree/remove.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
+import { closedChangesSuffix, closeRunIfOpen, filesStillOnDiskSuffix } from './close.js';
+import { endRunAtRest } from './end.js';
 
 vi.mock('../apply/patch.js', () => ({ writeRunPatch: vi.fn() }));
-vi.mock('../isolation/remove-worktree.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../isolation/remove-worktree.js')>();
+vi.mock('../isolation/worktree/remove.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../isolation/worktree/remove.js')>();
   return {
     ...actual,
     removeRunWorkspace: vi.fn().mockResolvedValue(null),

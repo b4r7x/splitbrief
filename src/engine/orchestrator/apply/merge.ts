@@ -4,23 +4,20 @@ import { mergeFileEntries } from '../../../lib/git/entry-merge.js';
 import { assertPathConfined } from '../../../lib/fs/confinement.js';
 import { isENOENT } from '../../../utils/errno.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import {
-  type ChangeEntry,
-  linkStaysInProject,
-  writeConfinedEntryOrLink,
-} from '../approval/file-snapshots/entry.js';
+import { writeConfinedEntryOrLink } from '../approval/file-snapshots/entry/write.js';
+import { linkStaysInProject } from '../approval/file-snapshots/entry/link.js';
+import type { ChangeEntry } from '../approval/file-snapshots/entry/read.js';
 import {
   type ApplyStates,
   type BaseEntry,
   entryKey,
-  readApplyEntry,
   readBaseBytes,
-  readSideEntry,
   sameAsBase,
   sameSideEntry,
   type SideEntry,
   verifyApplyStates,
 } from './states.js';
+import { readApplyEntry, readSideEntry } from './entry-read.js';
 
 export type ApplyConflictKind =
   | 'text'

@@ -4,7 +4,8 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow/changed-files.js';
 import { uniqueProjectFiles } from './types.js';
-import { getChangedFilesSinceSnapshot, getChangedFilesSnapshot } from './capture.js';
+import { getChangedFilesSnapshot } from './capture.js';
+import { getChangedFilesSinceSnapshot } from './changed-since.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
 

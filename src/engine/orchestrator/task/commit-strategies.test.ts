@@ -12,7 +12,7 @@ import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import type { CommitStrategy } from '../../../core/schemas/enums.js';
 import { validateCommitAndAdvance } from './commit.js';
-import type { ValidationAcceptance } from '../validation/acceptance.js';
+import type { ValidationAcceptance } from '../validation/types.js';
 
 const git = vi.hoisted(() => ({ calls: [] as string[] }));
 vi.mock('simple-git', () => ({
@@ -32,8 +32,8 @@ vi.mock('simple-git', () => ({
 }));
 
 const transitions = vi.hoisted(() => ({ count: 0 }));
-vi.mock('../state-ops.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../state-ops.js')>();
+vi.mock('../state-ops/transition.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../state-ops/transition.js')>();
   return {
     ...actual,
     transitionAndSave: (...args: Parameters<typeof actual.transitionAndSave>) => {

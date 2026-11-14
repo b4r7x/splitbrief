@@ -26,7 +26,7 @@ import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js'
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
-import { transitionAndSave } from '../../../src/engine/orchestrator/state-ops.js';
+import { transitionAndSave } from '../../../src/engine/orchestrator/state-ops/transition.js';
 import { readQueueForPrompt } from '../../../src/engine/orchestrator/queue/drain.js';
 
 const dirs: string[] = [];

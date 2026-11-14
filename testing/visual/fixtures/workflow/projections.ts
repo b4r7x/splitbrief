@@ -15,7 +15,7 @@ import {
   reviewPromptTooLargeProjection,
   reviewPromptTooLargeRecoveryIssue,
 } from './halt-text-projections.js';
-import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
+import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/plan-files/card.js';
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
@@ -96,21 +96,27 @@ import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores
 import { type ScenarioId, scenarioId } from '../../contracts/identifiers.js';
 import { tasksCardProjection } from './artifact-card-projections.js';
 import { outputLimitWarningProjection } from './output-limit-projection.js';
+import { buildReviewFailedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/review-failed.js';
 import {
-  buildRetryExhaustedRecoveryIssue,
-  buildReviewFailedRecoveryIssue,
-  buildSeatDownIssue,
   buildLeftIsolationRecoveryIssue,
   buildCheckoutChangedRecoveryIssue,
+} from '../../../../src/engine/orchestrator/recovery/builders/isolation.js';
+import { buildDependencyBlockedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/brief-blocked.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/retry.js';
+import {
   buildRepeatedTimeoutRecoveryIssue,
   buildRunnerCheckFailedRecoveryIssue,
-  buildDependencyBlockedRecoveryIssue,
   buildMissingModelRecoveryIssue,
+} from '../../../../src/engine/orchestrator/recovery/builders/runner-defect.js';
+import {
   runnerDefectRow,
   runnerHaltRow,
+} from '../../../../src/engine/orchestrator/recovery/builders/runner-defect.js';
+import {
+  buildSeatDownIssue,
   type SeatDownRecoveryOptions,
-  type SeatSwapContext,
-} from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+} from '../../../../src/engine/orchestrator/recovery/builders/seat-down.js';
+import type { SeatSwapContext } from '../../../../src/engine/orchestrator/recovery/seat/swap-context.js';
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
 import { getRunnerCatalogDisplayName } from '../../../../src/core/config/accessors/runner-config.js';
 import { timedOutMessage } from '../../../../src/lib/process/errors.js';
@@ -131,22 +137,26 @@ import {
   plannerHaltRow,
 } from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
 import { consultFailureLabel } from '../../../../src/engine/orchestrator/task/retry.js';
+import { publishWarning } from '../../../../src/engine/orchestrator/publish/notice.js';
 import {
-  planCheckRow,
-  publishConsultAnswered,
-  publishDebug,
-  publishError,
-  publishInfo,
+  publishSeatAnswerRefused,
+  publishSeatSwitched,
+} from '../../../../src/engine/orchestrator/publish/seat.js';
+import {
   publishRecoveryActionSelected,
   publishRecoveryPrompted,
   publishRecoveryResolved,
+} from '../../../../src/engine/orchestrator/publish/recovery.js';
+import { publishConsultAnswered } from '../../../../src/engine/orchestrator/publish/recovery.js';
+import { publishTaskStart } from '../../../../src/engine/orchestrator/publish/task.js';
+import {
+  planCheckRow,
   publishReviewCheck,
   publishReviewChecks,
-  publishSeatAnswerRefused,
-  publishWarning,
-  publishSeatSwitched,
-  publishTaskStart,
-} from '../../../../src/engine/orchestrator/events.js';
+} from '../../../../src/engine/orchestrator/publish/review.js';
+import { publishInfo } from '../../../../src/engine/orchestrator/publish/notice.js';
+import { publishDebug } from '../../../../src/engine/orchestrator/publish/notice.js';
+import { publishError } from '../../../../src/engine/orchestrator/publish/notice.js';
 import { revertedDir } from '../../../../src/core/paths.js';
 import type { Config } from '../../../../src/core/schemas/config.js';
 import { error } from '../../../../src/utils/error.js';
@@ -170,7 +180,7 @@ import { seatAxisWords } from '../../../../src/core/runners/effort-channel.js';
 import { formatSeatChangeIdentities } from '../../../../src/core/crew/identity.js';
 import { formatRecoveryHeadline } from '../../../../src/core/recovery/headline.js';
 import { fallbackBlockedReason } from '../../../../src/core/crew/fallback.js';
-import { configWithSwitchedSeat } from '../../../../src/engine/orchestrator/recovery/switch-seat.js';
+import { configWithSwitchedSeat } from '../../../../src/engine/orchestrator/recovery/seat/switch/config.js';
 import type { ScopedCliCatalogAttempt } from '../../../../src/engine/detection/cli-catalog-outcomes.js';
 import {
   atRestProjections,

@@ -8,8 +8,8 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { nowIso } from '../../../utils/format/time.js';
 import type { EventBus } from '../../events/types.js';
-import { publishUserMessage } from '../events.js';
-import { recordResumeUserMessage } from '../state-ops.js';
+import { publishUserMessage } from '../publish/notice.js';
+import { recordResumeUserMessage } from '../state-ops/corrections.js';
 
 export function recordUserMessage(
   scope: SessionRef & { bus: EventBus; phase: Phase },

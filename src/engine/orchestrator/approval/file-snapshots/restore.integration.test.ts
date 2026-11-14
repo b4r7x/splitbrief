@@ -10,8 +10,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { getChangedFilesSinceSnapshot, getChangedFilesSnapshot } from './capture.js';
-import { readConfinedEntry } from './entry.js';
+import { getChangedFilesSnapshot } from './capture.js';
+import { getChangedFilesSinceSnapshot } from './changed-since.js';
+import { readConfinedEntry } from './entry/read.js';
 import { restoreDirtyFilesFromSnapshot } from './restore.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';

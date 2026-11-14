@@ -4,7 +4,7 @@ import { makeMessage, makeStateWithQueue, setupProject } from '#testing/helpers/
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { drainAndFormat } from './queue-drain.js';
 import { saveState } from '../../../core/state/persistence.js';
-import { transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { trackMidCallDelivery } from '../queue/mid-call.js';
 
 const dirs: string[] = [];

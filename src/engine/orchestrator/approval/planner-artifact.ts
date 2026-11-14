@@ -17,11 +17,8 @@ import type {
   BeginDeclaredArtifactReviewInput,
 } from '../../runners/types.js';
 import type * as RunnerTypes from '../../runners/types.js';
-import {
-  prepareArtifactStageLease,
-  type ArtifactLeaseReceipt,
-  type ArtifactStageRead,
-} from './artifact-stage-manifest.js';
+import type { ArtifactLeaseReceipt, ArtifactStageRead } from './artifact-stage/types.js';
+import { prepareArtifactStageLease } from './artifact-stage/lease.js';
 
 const REVIEW_DIRECTORY = '.custom-runner-review';
 const ARTIFACT_REVIEW_LABEL = 'Custom planner artifact';

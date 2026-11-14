@@ -42,7 +42,7 @@ import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { runSingleTask } from './step.js';
 
 afterEach(() => {

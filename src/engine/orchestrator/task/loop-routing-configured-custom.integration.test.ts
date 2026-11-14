@@ -15,7 +15,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { createStagedProject } from '../approval/staged-project.js';
+import { createStagedProject } from '../approval/staged-project/create.js';
 import { createImplementer } from '../../runners/factory.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
@@ -23,7 +23,7 @@ import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.j
 import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
 import type { RunnerGate } from '../../runners/prepared-execution.js';
-import { configForProfile } from './routing.js';
+import { configForProfile } from '../context-routing/profile.js';
 import { runTaskLoop } from './loop.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 

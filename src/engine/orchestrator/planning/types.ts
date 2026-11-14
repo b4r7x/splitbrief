@@ -47,3 +47,9 @@ export type PlanningProducerResult =
       state: WorkflowState;
       outcome: PlanningTerminalOutcome;
     }>;
+
+/** What a plan is checked against: the build seat's context, the project, the run's skills. */
+export type PlanCheckContext = Pick<
+  PlannerCallbacksContext,
+  'config' | 'projectDir' | 'modelCache' | 'detectedContextLength' | 'skillsContext'
+>;

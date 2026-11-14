@@ -8,10 +8,8 @@ import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
 import { getCurrentDiff } from '../../../../lib/git/diff.js';
 import { getGitStatus } from '../../../../lib/git/files.js';
-import {
-  getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-} from '../../approval/file-snapshots/capture.js';
+import { getChangedFilesSnapshot } from '../../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../../approval/file-snapshots/changed-since.js';
 import { captureTaskReviewChanges } from '../review-capture.js';
 import { resolveRunReviewScope } from './run-scope.js';
 

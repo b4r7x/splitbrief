@@ -36,11 +36,11 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { TriageRecord } from '../../../core/schemas/workflow/review-record.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { appendMessage } from '../../../core/sessions/log/writer.js';
 import { makeMessage } from '#testing/helpers/queue.js';
-import type { ContinuationHolder } from '../continuation.js';
-import { resumeContinuation } from './init.js';
+import type { ContinuationHolder } from '../continuation/holder.js';
+import { resumeContinuation } from './init/resume-repair.js';
 import { runTasksAndReview } from './task-execution.js';
 
 let dirs: string[] = [];

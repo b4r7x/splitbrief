@@ -1,8 +1,9 @@
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { isQueuedMessageClearable } from '../../../core/queue/state.js';
 import type { QueueClearResult } from '../types.js';
-import type { WriteSequencer } from '../serial-executor.js';
+import type { WriteSequencer } from '../../../utils/serial-executor.js';
 import type { QueueHandlerContext, QueueStateMutationOptions } from './types.js';
 
 export function clearPendingQueue({

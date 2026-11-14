@@ -14,7 +14,7 @@ import {
   drainQueueForReview,
   readQueueForPrompt,
 } from '../../../src/engine/orchestrator/queue/drain.js';
-import { enqueueUserMessage } from '../../../src/engine/orchestrator/queue/submit.js';
+import { enqueueUserMessage } from '../../../src/engine/orchestrator/queue/enqueue.js';
 import { queueCopy } from '../../../src/features/workflow/queue-copy.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../src/stores/workflow/actions/hydrate.js';

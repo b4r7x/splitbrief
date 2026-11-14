@@ -10,27 +10,26 @@ import { haltOf } from '../../../../core/recovery/halt.js';
 import type { SavedCatalog } from '../../../../core/discovery/catalog-read-merge.js';
 import { routeAuthState } from '../../../../core/runners/route-auth.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
+import { buildReviewFailedRecoveryIssue } from './review-failed.js';
+import { buildApprovalDeniedRecoveryIssue, buildSnapshotFailedRecoveryIssue } from './approval.js';
+import { buildCheckoutChangedRecoveryIssue, buildLeftIsolationRecoveryIssue } from './isolation.js';
 import {
-  buildApprovalDeniedRecoveryIssue,
-  buildCheckoutChangedRecoveryIssue,
-  buildContextOverflowRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
   buildImplementerUnavailableRecoveryIssue,
-  buildLeftIsolationRecoveryIssue,
+} from './brief-blocked.js';
+import { buildContextOverflowRecoveryIssue } from './context-overflow.js';
+import { buildRetryExhaustedRecoveryIssue } from './retry.js';
+import { recoveryBuilderForRunnerOutcome } from './runner-outcome.js';
+import { buildRunnerInputTooLargeRecoveryIssue } from './runner-defect.js';
+import {
   buildMissingModelRecoveryIssue,
   buildRecipeInvalidRecoveryIssue,
   buildRepeatedTimeoutRecoveryIssue,
-  buildRetryExhaustedRecoveryIssue,
-  buildReviewFailedRecoveryIssue,
   buildRunnerCheckFailedRecoveryIssue,
-  buildRunnerInputTooLargeRecoveryIssue,
-  buildSeatDownIssue,
-  runnerDefectRow,
-  buildSnapshotFailedRecoveryIssue,
-  recoveryBuilderForRunnerOutcome,
-  runnerHaltRow,
-  switchSeatOffer,
-} from './task.js';
+} from './runner-defect.js';
+import { runnerDefectRow, runnerHaltRow } from './runner-defect.js';
+import { buildSeatDownIssue } from './seat-down.js';
+import { switchSeatOffer } from './switch-offer.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 

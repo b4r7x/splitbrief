@@ -17,7 +17,7 @@ import { reactivateExistingSession } from '../../../src/core/sessions/active-poi
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
-import { switchSeatAndPrepareResume } from '../../../src/engine/orchestrator/recovery/switch-seat-resume.js';
+import { switchSeatAndPrepareResume } from '../../../src/engine/orchestrator/recovery/seat/switch/resume.js';
 import { createRecoveryDriver } from '../../../src/features/workflow/recovery/driver.js';
 import { addTuiEvent } from '../../../src/features/workflow/tui-sink.js';
 import {

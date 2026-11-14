@@ -32,7 +32,7 @@ import {
   recordRunSnapshotForRun,
 } from '../engine/orchestrator/run/snapshots.js';
 import { continueRun } from '../engine/orchestrator/run/continue.js';
-import { parkStoppedRun } from '../engine/orchestrator/state-ops.js';
+import { parkStoppedRun } from '../engine/orchestrator/state-ops/halts.js';
 import { createSnapshot } from '../engine/snapshots/create.js';
 import * as lifecycle from '../engine/snapshots/run/lifecycle.js';
 import { atRestComposer, atRestRailStages } from '../features/workflow/at-rest.js';

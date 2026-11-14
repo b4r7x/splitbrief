@@ -5,15 +5,11 @@ import type { WorkflowFixtureProjection } from './projections.js';
 import { typedOutputError } from '../../../../src/engine/runners/typed-output.js';
 import { buildSeatProtocolErrorRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/seat-protocol.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/review-input.js';
-import {
-  buildRunnerInputTooLargeRecoveryIssue,
-  runnerDefectRow,
-} from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import { buildRunnerInputTooLargeRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/runner-defect.js';
+import { runnerDefectRow } from '../../../../src/engine/orchestrator/recovery/builders/runner-defect.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
-import {
-  publishError,
-  publishRecoveryPrompted,
-} from '../../../../src/engine/orchestrator/events.js';
+import { publishRecoveryPrompted } from '../../../../src/engine/orchestrator/publish/recovery.js';
+import { publishError } from '../../../../src/engine/orchestrator/publish/notice.js';
 import { makeImplState } from '../../../helpers/factories/workflow-state.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { VISUAL_WORKFLOW_SESSION_ID } from '../screen-fixtures.js';

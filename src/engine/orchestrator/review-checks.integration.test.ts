@@ -26,10 +26,11 @@ import {
   captureChangedFilesBaseline,
   serializeChangedFilesBaseline,
 } from './changed-files-baseline.js';
-import { startBaseGate } from './base-gate.js';
-import { runPreReviewChecks } from './run/pre-review-checks.js';
-import { runReviewCheck, runReviewChecks, type ReviewChecksOutcome } from './review-checks.js';
-import { enabledReviewChecks } from './validation/run-checks.js';
+import { startBaseGate } from './validation/base-gate.js';
+import { runPreReviewChecks } from './review/checks/required.js';
+import { runReviewChecks, type ReviewChecksOutcome } from './review/checks/run-all.js';
+import { runReviewCheck } from './review/checks/run-one.js';
+import { enabledReviewChecks } from './validation/checks/runner.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs/promises')>()),

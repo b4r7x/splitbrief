@@ -1,7 +1,8 @@
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
-import { endRunAtRest, assertCanCloseRun } from '../../../engine/orchestrator/run/close.js';
+import { assertCanCloseRun } from '../../../engine/orchestrator/run/close.js';
+import { endRunAtRest } from '../../../engine/orchestrator/run/end.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';

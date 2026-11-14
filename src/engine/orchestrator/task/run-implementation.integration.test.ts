@@ -29,9 +29,11 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import { makeImplementerRetryInvoker } from '../escalation/make-implementer-retry-invoker.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
-import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
-import { createQueueHandler, enqueueUserMessage } from '../queue/submit.js';
+import { createQueueHandler } from '../queue/submit.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
 import { clearPendingQueue } from '../queue/clear.js';
 import {
   makeBusRecorder,
@@ -41,12 +43,12 @@ import {
   makePlanner,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createContinuationHolder } from '../continuation.js';
+import { createContinuationHolder } from '../continuation/holder.js';
 import type { AttemptWorkspace, RunIsolation } from '../isolation/types.js';
 import type { Implementer, ImplementerOptions, RetryOptions } from '../../implementers/types.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
 import { createSteeringPort, type SteerOutcome } from '../../calls/steering.js';
-import { createWriteSequencer } from '../serial-executor.js';
+import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import type { InvokeOpts } from '../../implementers/types.js';
 import {
   customRunnerSecurityPosture,
@@ -63,11 +65,11 @@ import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { fixBriefDescription, type FixFinding } from '../../../core/review/fix/task.js';
 import {
   captureProjectFileHashes,
-  getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
 } from '../approval/file-snapshots/capture.js';
-import { createStagedProject } from '../approval/staged-project.js';
-import { gateAttemptChanges } from './attempt-gate.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
+import { createStagedProject } from '../approval/staged-project/create.js';
+import { gateAttemptChanges } from './gates/attempt.js';
 import { runImplementation } from './run-implementation.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { attachedMessage } from '#testing/helpers/user-message.js';

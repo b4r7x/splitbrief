@@ -21,11 +21,8 @@ import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js'
 import { assertResumeTerminal, resumeSavedSession } from './resume.js';
 import { settleReadyRun } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
-import {
-  endRunAtRest,
-  endRunError,
-  closedChangesSuffix,
-} from '../../../engine/orchestrator/run/close.js';
+import { endRunError, closedChangesSuffix } from '../../../engine/orchestrator/run/close.js';
+import { endRunAtRest } from '../../../engine/orchestrator/run/end.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import {
   type ContinueOpts,

@@ -3,7 +3,7 @@ import {
   beginDeclaredArtifactReview,
   cleanupStaleArtifactReviews,
 } from '../orchestrator/approval/planner-artifact.js';
-import { createStagedProject } from '../orchestrator/approval/staged-project.js';
+import { createStagedProject } from '../orchestrator/approval/staged-project/create.js';
 import type {
   ArtifactApprovalReview,
   CustomRunnerAdmissionPolicy,

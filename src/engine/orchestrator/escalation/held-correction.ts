@@ -3,13 +3,13 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { publishNoProgressCut } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import { publishNoProgressCut } from '../publish/task.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep, type RetryStepResult } from './step.js';
 import { failedRetry, type EscalationContext, type RetryAttemptFailure } from './types.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
-import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/task.js';
+import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/runner-outcome.js';
 
 /**
  * Outcomes every further attempt reproduces: a signed-out or quota-exhausted

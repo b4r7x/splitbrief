@@ -20,7 +20,7 @@ import type { SessionLogEntry } from '../../../src/core/schemas/session-log.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init/options.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';

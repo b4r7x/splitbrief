@@ -14,7 +14,7 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
-import { buildContextOverflowRecoveryIssue } from '../recovery/builders/task.js';
+import { buildContextOverflowRecoveryIssue } from '../recovery/builders/context-overflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 
 let dirs: string[] = [];

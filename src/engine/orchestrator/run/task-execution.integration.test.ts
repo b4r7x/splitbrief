@@ -48,7 +48,7 @@ import type {
   ImplementerResult,
   RetryOptions,
 } from '../../implementers/types.js';
-import { createContinuationHolder, type ContinuationHolder } from '../continuation.js';
+import { createContinuationHolder, type ContinuationHolder } from '../continuation/holder.js';
 import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -62,13 +62,13 @@ import { readMessages } from '../../../core/sessions/log/reader.js';
 import { listSnapshots, readManifest } from '../../snapshots/manifest.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { runTasksAndReview } from './task-execution.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
-import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
+import { buildReviewFailedRecoveryIssue } from '../recovery/builders/review-failed.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { formatRetryPrompt } from '../../spec/prompt-formatter.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { NO_VISION_REVIEW } from '../review-renders.js';
+import { NO_VISION_REVIEW } from '../review/renders.js';
 
 /** How many times the session transcript holds this user turn. */
 async function userTurns(ref: { projectDir: string; sessionId: string }, text: string) {

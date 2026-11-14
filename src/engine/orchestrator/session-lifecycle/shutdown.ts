@@ -4,8 +4,10 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { warnStderr } from '../../../lib/warn.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { withSignalHandlers } from '../signals.js';
-import { commitWorkflowState, readWorkflowStateHead, stateOpsError } from '../state-ops.js';
+import { withSignalHandlers } from '../../../lib/process/signals.js';
+import { commitWorkflowState } from '../state-ops/commit.js';
+import { readWorkflowStateHead } from '../state-ops/head.js';
+import { stateOpsError } from '../state-ops/errors.js';
 
 function persistTrackedState(ref: SessionRef, state: WorkflowState): void {
   const head = readWorkflowStateHead(ref);

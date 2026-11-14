@@ -16,7 +16,7 @@ import { saveState } from '../../../src/core/state/persistence.js';
 import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { generateSessionId } from '../../../src/core/sessions/id.js';
 import { listSessions } from '../../../src/core/sessions/io.js';
-import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/retry.js';
 import { processError } from '../../../src/lib/process/errors.js';
 import type { Implementer } from '../../../src/engine/implementers/types.js';
 import type { Planner } from '../../../src/engine/planners/types.js';

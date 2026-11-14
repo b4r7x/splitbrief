@@ -20,7 +20,7 @@ import {
 } from '../changed-files-baseline.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { checkEntries } from './task.js';
-import type { CheckRunResult } from '../validation/run-checks.js';
+import type { CheckRunResult } from '../validation/checks/types.js';
 
 export async function currentCandidateId(
   workspaceDir: string,

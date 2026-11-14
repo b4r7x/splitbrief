@@ -14,8 +14,9 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../../../core/paths.js';
-import { captureAcquisitionBaseline } from './file-snapshots/entry.js';
-import { createStagedProject, promoteStagedChanges } from './staged-project.js';
+import { captureAcquisitionBaseline } from './file-snapshots/entry/baseline.js';
+import { createStagedProject } from './staged-project/create.js';
+import { promoteStagedChanges } from './staged-project/promote.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 // The empty-project regression exercises staging without creating a Git

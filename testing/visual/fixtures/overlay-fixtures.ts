@@ -42,7 +42,7 @@ import {
   nameDraftsNotRemoved,
   reportDraftNotSaved,
 } from '../../../src/stores/ui/session-drafts.js';
-import { stateOpsError } from '../../../src/engine/orchestrator/state-ops.js';
+import { stateOpsError } from '../../../src/engine/orchestrator/state-ops/errors.js';
 import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/picker/labels.js';
 import { commitPlannerTierSelection } from '../../../src/features/runners/config-transforms/seat-selection.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection/tool.js';
@@ -60,15 +60,11 @@ import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
-import {
-  publishError,
-  publishInfo,
-  publishRecoveryPrompted,
-} from '../../../src/engine/orchestrator/events.js';
-import {
-  buildApprovalDeniedRecoveryIssue,
-  buildCheckoutChangedRecoveryIssue,
-} from '../../../src/engine/orchestrator/recovery/builders/task.js';
+import { publishRecoveryPrompted } from '../../../src/engine/orchestrator/publish/recovery.js';
+import { publishInfo } from '../../../src/engine/orchestrator/publish/notice.js';
+import { publishError } from '../../../src/engine/orchestrator/publish/notice.js';
+import { buildApprovalDeniedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/approval.js';
+import { buildCheckoutChangedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/isolation.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { recoveryNoticeStore } from '../../../src/stores/workflow/recovery-notice.js';

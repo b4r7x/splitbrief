@@ -7,7 +7,7 @@ import { flushEffects } from '#testing/helpers/ink.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { toEngineEventEntry } from '../../../../src/core/sessions/log/writer.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
-import { endRunAtRest } from '../../../../src/engine/orchestrator/run/close.js';
+import { endRunAtRest } from '../../../../src/engine/orchestrator/run/end.js';
 import { createRecoveryBus } from '../../../../src/engine/orchestrator/recovery/bus.js';
 import { saveState } from '../../../../src/core/state/persistence.js';
 import { writeEvidenceLedger } from '../../../../src/core/evidence/ledger-storage.js';

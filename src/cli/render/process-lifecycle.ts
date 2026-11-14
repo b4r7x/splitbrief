@@ -5,7 +5,7 @@ import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { teardownStores } from '../bootstrap/init.js';
-import { SIGNAL_EXIT_CODE, type TerminationSignal } from '../../engine/orchestrator/signals.js';
+import { SIGNAL_EXIT_CODE, type TerminationSignal } from '../../lib/process/signals.js';
 
 interface RestoreTerminalOptions {
   fullscreen: boolean;

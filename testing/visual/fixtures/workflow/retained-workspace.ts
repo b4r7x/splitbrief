@@ -4,7 +4,7 @@ import {
   WORKSPACE_NOTICE_CATEGORY,
 } from '../../../../src/core/sessions/workspace-notice.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
-import { buildRetryExhaustedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/retry.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeImplState } from '../../../helpers/factories/workflow-state.js';
 import { scenarioId } from '../../contracts/identifiers.js';

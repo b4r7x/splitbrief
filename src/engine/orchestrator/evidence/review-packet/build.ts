@@ -3,27 +3,34 @@ import {
   ReviewPacketSchema,
   REVIEW_PACKET_VERSION,
 } from '../../../../core/schemas/review/packet.js';
-import { DRIFT_REPORT_FILE, EVIDENCE_FILE } from '../../../../core/paths.js';
+import {
+  DRIFT_REPORT_FILE,
+  EVIDENCE_FILE,
+  reviewPacketJsonPath,
+  reviewPacketMarkdownPath,
+} from '../../../../core/paths.js';
 import { nowIso } from '../../../../utils/format/time.js';
 import { readEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
 import { readDriftReport } from '../../drift/io.js';
 import {
   buildChanges,
   buildChecks,
-  buildCost,
   buildDrift,
   buildEscalations,
   buildEvidence,
-  buildRun,
   buildValidation,
 } from './sections.js';
+import { buildCost, buildRun } from './run-and-cost.js';
 import { buildFinalReview, resolveChangedFiles, sourceArtifactMissing } from './sections-io.js';
 import { readBriefQuality, readCheckpoints, readPacketEvents, readReadiness } from './artifacts.js';
 import { addMissing } from './missing-artifacts.js';
 import type { BuildReviewPacketOptions } from './types.js';
 import { makeRecoveryWithSources } from './recovery.js';
-import { runBaseOf } from '../../isolation/base-tree.js';
+import { runBaseOf } from '../../isolation/run-base/tree.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
+import { writeSecureFile } from '../../../../lib/fs/secure.js';
+import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
+import { stringifyReviewPacket, renderReviewPacketMarkdown } from './render.js';
 
 export const REVIEWER_CHECKLIST = [
   'Inspect changed files against the requested scope.',
@@ -106,4 +113,19 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
   };
 
   return ReviewPacketSchema.parse(packet);
+}
+
+export async function writeReviewPacket(
+  opts: BuildReviewPacketOptions & Readonly<{ modelCache: ModelCacheAccessor }>,
+): Promise<ReviewPacket> {
+  const packet = await buildReviewPacket(opts);
+  writeSecureFile(
+    reviewPacketJsonPath({ projectDir: opts.projectDir, sessionId: opts.sessionId }),
+    stringifyReviewPacket(packet),
+  );
+  writeSecureFile(
+    reviewPacketMarkdownPath({ projectDir: opts.projectDir, sessionId: opts.sessionId }),
+    renderReviewPacketMarkdown(packet, opts.modelCache),
+  );
+  return packet;
 }

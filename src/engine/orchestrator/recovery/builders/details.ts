@@ -3,7 +3,7 @@ import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { lineageAttemptsOf, type WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path/patterns.js';
-import { withoutRunBanners } from '../../validation/extract-failure-keys.js';
+import { withoutRunBanners } from '../../validation/manager-output.js';
 import { summarizeText } from './issue.js';
 
 export function summarizeValidation(opts: { validationSummary?: string | undefined }): {

@@ -11,7 +11,7 @@ import { buildFinalReviewPrompt } from '../../spec/prompts/review.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildPlanSessionPrompt } from '../../spec/prompts/plan-session.js';
 import { discoverSkills } from '../../skill-discovery.js';
-import { buildApiReviewContext } from '../api-review-context.js';
+import { buildApiReviewContext } from '../review/api-context.js';
 import { buildSkillsContext } from './skills-context.js';
 
 // What a seat needs to use the skill: its instructions, where its files live, and the

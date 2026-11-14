@@ -21,8 +21,8 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import type { DetectionCacheSnapshot } from './detection/cache.js';
 import { loadDetectionCacheSnapshot, saveDetectionCache } from './detection/cache.js';
 import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/from-options.js';
-import { createWorktree } from './orchestrator/isolation/create-worktree.js';
-import { removeWorktree } from './orchestrator/isolation/remove-worktree.js';
+import { createWorktree } from './orchestrator/isolation/worktree/create.js';
+import { removeWorktree } from './orchestrator/isolation/worktree/remove.js';
 
 const HARD_CUT_CONTEXT = 'runtime-hard-cut-context-v1';
 

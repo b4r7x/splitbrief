@@ -30,10 +30,11 @@ import {
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-import { enqueueUserMessage } from '../queue/submit.js';
-import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
+import { CORRECTION_AFTER_CHECKS } from '../task/gates/brief.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
-import { applyConsultAnswer, type ConsultApplyContext } from './apply.js';
+import { applyConsultAnswer } from './apply.js';
+import type { ConsultApplyContext } from './types.js';
 import { restoreInterruptedTaskFiles } from '../task/rollback.js';
 
 const dirs: string[] = [];

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands/schema.js';
 import { shellQuoteArg } from '../../utils/shell-quote.js';
-import { createStagedProject } from '../orchestrator/approval/staged-project.js';
+import { createStagedProject } from '../orchestrator/approval/staged-project/create.js';
 import {
   customRunnerSecurityPosture,
   type ConfiguredCustomRunner,

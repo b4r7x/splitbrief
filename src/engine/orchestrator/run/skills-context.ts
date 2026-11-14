@@ -12,7 +12,7 @@ import {
   realpathOrNull,
   skillRoot,
 } from '../../skill-discovery.js';
-import { publishWarning } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
 
 async function resolveSkills(
   selected: SkillMeta[] | undefined,

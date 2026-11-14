@@ -4,15 +4,17 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/change
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks, type PreHookResult } from '../../hooks/run-pre.js';
-import { raisePendingRecovery } from '../state-ops.js';
-import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { raisePendingRecovery } from '../state-ops/halts.js';
+import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/approval.js';
 import { nowIso } from '../../../utils/format/time.js';
-import { publishTaskStart, publishWarning, publishError } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishTaskStart } from '../publish/task.js';
+import { publishError } from '../publish/notice.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { buildRoutingEventFields } from './routing-fields.js';
+import { buildRoutingEventFields } from '../context-routing/event-fields.js';
 import { runsOnOwnFiles } from './refresh-code.js';
 import { skipBrief } from './skip-brief.js';
 

@@ -10,18 +10,15 @@ import { getGitForDir } from '../../../lib/git/client.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
 import { isENOENT } from '../../../utils/errno.js';
 import { listWorkspaceEntries } from '../../snapshots/files.js';
+import { getChangedFilesSnapshot, storeEntryBlob } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import {
-  getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-  storeEntryBlob,
-} from '../approval/file-snapshots/capture.js';
-import {
-  readConfinedEntry,
-  readProjectSymlink,
   removeConfinedSymlink,
   writeConfinedEntry,
   writeConfinedSymlink,
-} from '../approval/file-snapshots/entry.js';
+} from '../approval/file-snapshots/entry/write.js';
+import { readProjectSymlink } from '../approval/file-snapshots/entry/link.js';
+import { readConfinedEntry } from '../approval/file-snapshots/entry/read.js';
 import {
   entryToRestore,
   restoreDirtyFilesFromSnapshot,

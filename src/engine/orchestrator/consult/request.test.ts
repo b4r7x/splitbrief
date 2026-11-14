@@ -20,7 +20,8 @@ import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { retryFailureLabel } from '../task/retry.js';
-import { isConsultError, requestConsult, type ConsultContext } from './request.js';
+import { isConsultError, requestConsult } from './request.js';
+import type { ConsultContext } from './types.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 
 const config = makeConfig();

@@ -3,7 +3,7 @@ import { formatRecoveryPrompt } from './recovery/prompt-text.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { RECOVERY_REASONS } from '../../core/schemas/enums.js';
 import { taskId } from '../../core/schemas/task.js';
-import { buildRetryExhaustedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/retry.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 

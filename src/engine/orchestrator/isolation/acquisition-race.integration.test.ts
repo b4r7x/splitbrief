@@ -3,7 +3,7 @@ import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry.js';
+import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry/baseline.js';
 import { prepareWorktreeAcquisition } from './acquisition.js';
 
 const race = vi.hoisted(() => ({

@@ -21,7 +21,7 @@ import { skillsStore } from '../../../stores/project/skills.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, sessionDir } from '../../../core/paths.js';
 import { readSpecFile, writeSpecFile } from '../../../core/sessions/spec-files.js';
-import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-failed.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-input.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
@@ -38,7 +38,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseContinueActionOption } from '../../options/continue-action.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { saveDetectionCache } from '../../../engine/detection/cache.js';
-import * as entry from '../../../engine/orchestrator/approval/file-snapshots/entry.js';
+import * as entry from '../../../engine/orchestrator/approval/file-snapshots/entry/write.js';
 import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { readyToApplyMessage } from '../../sessions/resolve.js';
 import { readLockfile } from '../../../core/sessions/lock/file.js';
@@ -50,13 +50,16 @@ import { setupWorkflow } from '../../setup.js';
 import { registerContinueCommand } from './register.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
-vi.mock('../../../engine/orchestrator/approval/file-snapshots/entry.js', async (importOriginal) => {
-  const actual =
-    await importOriginal<
-      typeof import('../../../engine/orchestrator/approval/file-snapshots/entry.js')
-    >();
-  return { ...actual, writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink) };
-});
+vi.mock(
+  '../../../engine/orchestrator/approval/file-snapshots/entry/write.js',
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import('../../../engine/orchestrator/approval/file-snapshots/entry/write.js')
+      >();
+    return { ...actual, writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink) };
+  },
+);
 
 type HeadlessRun = {
   feature: string;
@@ -1432,7 +1435,7 @@ describe('continueCommand --action accept-as-is|apply|apply-as-is|discard|end-ru
       writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
       saveReady(run);
       const actual = await vi.importActual<typeof entry>(
-        '../../../engine/orchestrator/approval/file-snapshots/entry.js',
+        '../../../engine/orchestrator/approval/file-snapshots/entry/write.js',
       );
       vi.mocked(entry.writeConfinedEntryOrLink).mockImplementationOnce(async (...args) => {
         process.emit('SIGTERM', 'SIGTERM');
@@ -1537,7 +1540,7 @@ describe('continueCommand --action accept-as-is|apply|apply-as-is|discard|end-ru
           writeFileSync(join(run.ws, 'b.txt'), 'ours b\n');
           saveReady(run);
           const actual = await vi.importActual<typeof entry>(
-            '../../../engine/orchestrator/approval/file-snapshots/entry.js',
+            '../../../engine/orchestrator/approval/file-snapshots/entry/write.js',
           );
           vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
             async (root, path, ...rest) => {

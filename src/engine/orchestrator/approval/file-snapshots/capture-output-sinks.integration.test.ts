@@ -14,7 +14,8 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 const CHILD_SCRIPT = `
   import { writeFileSync } from 'node:fs';
   import { join } from 'node:path';
-  import { getChangedFilesSinceSnapshot, getChangedFilesSnapshot } from ${JSON.stringify(new URL('./capture.ts', import.meta.url).href)};
+  import { getChangedFilesSinceSnapshot } from ${JSON.stringify(new URL('./changed-since.ts', import.meta.url).href)};
+  import { getChangedFilesSnapshot } from ${JSON.stringify(new URL('./capture.ts', import.meta.url).href)};
 
   const project = process.env['SPLITBRIEF_TEST_SINK_PROJECT'];
   const resultPath = process.env['SPLITBRIEF_TEST_SINK_RESULT'];

@@ -8,9 +8,11 @@ import { nameWriteTarget, SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib
 import { isENOENT } from '../../../utils/errno.js';
 import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import { readConfinedEntry, removeWriteTemporaries } from '../approval/file-snapshots/entry.js';
-import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
-import { readApplyEntry, sameSideEntry, type SideEntry, sideChangedError } from './states.js';
+import { removeWriteTemporaries } from '../approval/file-snapshots/entry/write.js';
+import { readConfinedEntry } from '../approval/file-snapshots/entry/read.js';
+import { stripGitignoreBookkeeping } from '../approval/staged-project/gitignore.js';
+import { sameSideEntry, type SideEntry, sideChangedError } from './states.js';
+import { readApplyEntry } from './entry-read.js';
 
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const ModeSchema = z.number().int().min(0).max(0o777);

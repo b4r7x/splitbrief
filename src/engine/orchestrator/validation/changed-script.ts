@@ -6,8 +6,8 @@ import { isNodeError } from '../../../utils/errno.js';
 import { isTestScript } from '../../../core/validation/stacks/registry.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';
-import { createRunBaseReader, type RunBaseFile } from '../isolation/acquisition.js';
-import type { RunBase } from '../isolation/base-tree.js';
+import { createRunBaseReader, type RunBaseFile } from '../isolation/run-base/reader.js';
+import type { RunBase } from '../isolation/run-base/tree.js';
 import { type CheckDefinition, checkDefinition } from './reviewer-command-policy.js';
 
 /** Composer's own `@` commands, which name no script. */

@@ -6,21 +6,18 @@ import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js
 import type { WorkflowContext } from '../types.js';
 import type { runImplementation } from './run-implementation.js';
 import { nowIso } from '../../../utils/format/time.js';
-import { publishError } from '../events.js';
-import { raiseBriefHalt } from '../state-ops.js';
-import {
-  buildSeatDownIssue,
-  recoveryBuilderForRunnerOutcome,
-  runnerDefectRow,
-  runnerHaltRow,
-} from '../recovery/builders/task.js';
+import { publishError } from '../publish/notice.js';
+import { raiseBriefHalt } from '../state-ops/halts.js';
+import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/runner-outcome.js';
+import { runnerDefectRow, runnerHaltRow } from '../recovery/builders/runner-defect.js';
+import { buildSeatDownIssue } from '../recovery/builders/seat-down.js';
 import { haltAttempts } from '../recovery/builders/details.js';
 import { haltOf } from '../../../core/recovery/halt.js';
 import { classifySeatFailure } from '../../runners/seat-failure.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { boundedHandBack } from '../escalation/types.js';
 import { retryAndRecord } from './retry.js';
-import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+import { loadSeatSwapContext } from '../recovery/seat/swap-context.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 
 export async function handleFailedImplementation(opts: {

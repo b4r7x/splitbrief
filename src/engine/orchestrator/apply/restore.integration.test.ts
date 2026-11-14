@@ -16,13 +16,13 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import * as entry from '../approval/file-snapshots/entry.js';
+import * as entry from '../approval/file-snapshots/entry/write.js';
 import { reconcileApplyBackup, restoreApplyBackup, undoApply } from './restore.js';
 import { runApply } from './run.js';
 import { captureReviewedCandidate } from './states.js';
 
-vi.mock('../approval/file-snapshots/entry.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../approval/file-snapshots/entry.js')>();
+vi.mock('../approval/file-snapshots/entry/write.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../approval/file-snapshots/entry/write.js')>();
   return { ...actual, writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink) };
 });
 
@@ -33,9 +33,9 @@ const USER_A = lines('one', 'two', 'three', 'four', 'FIVE');
 const read = (root: string, file: string): string => readFileSync(join(root, file), 'utf8');
 
 beforeEach(async () => {
-  const actualEntry = await vi.importActual<typeof import('../approval/file-snapshots/entry.js')>(
-    '../approval/file-snapshots/entry.js',
-  );
+  const actualEntry = await vi.importActual<
+    typeof import('../approval/file-snapshots/entry/write.js')
+  >('../approval/file-snapshots/entry/write.js');
   vi.mocked(entry.writeConfinedEntryOrLink)
     .mockReset()
     .mockImplementation(actualEntry.writeConfinedEntryOrLink);
@@ -76,9 +76,9 @@ async function partialApply(run: ApplyRun): Promise<string> {
     candidate: await captureReviewedCandidate({ ...ref, workspace: run.workspace }),
   });
   saveState(ref, state);
-  const actualEntry = await vi.importActual<typeof import('../approval/file-snapshots/entry.js')>(
-    '../approval/file-snapshots/entry.js',
-  );
+  const actualEntry = await vi.importActual<
+    typeof import('../approval/file-snapshots/entry/write.js')
+  >('../approval/file-snapshots/entry/write.js');
   vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
     if (root === run.dir && path === 'z.txt') throw new Error('disk full');
     return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
@@ -252,8 +252,8 @@ describe('undoApply', { timeout: 60_000 }, () => {
         makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: run.workspace }),
       );
       const actualEntry = await vi.importActual<
-        typeof import('../approval/file-snapshots/entry.js')
-      >('../approval/file-snapshots/entry.js');
+        typeof import('../approval/file-snapshots/entry/write.js')
+      >('../approval/file-snapshots/entry/write.js');
       vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
         if (root === run.dir && path === failOn) throw new Error('disk full');
         return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
@@ -374,8 +374,8 @@ describe('restoreApplyBackup — entries it must not touch', { timeout: 60_000 }
     await withApplyRun(FILES, { sessionId: SESSION_ID }, async (run) => {
       const backupId = await partialApply(run);
       const actualEntry = await vi.importActual<
-        typeof import('../approval/file-snapshots/entry.js')
-      >('../approval/file-snapshots/entry.js');
+        typeof import('../approval/file-snapshots/entry/write.js')
+      >('../approval/file-snapshots/entry/write.js');
       vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
         if (root === run.dir && path === 'a.txt') writeFileSync(join(run.dir, 'a.txt'), 'racing\n');
         return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);

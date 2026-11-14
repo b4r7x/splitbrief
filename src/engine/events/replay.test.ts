@@ -13,7 +13,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { attachedMessage, expectCompactMessage } from '#testing/helpers/user-message.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createJsonlSink } from './sinks/jsonl.js';
-import { recordSteer } from '../orchestrator/continuation.js';
+import { recordSteer } from '../orchestrator/continuation/loop.js';
 import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { saveState } from '../../core/state/persistence.js';

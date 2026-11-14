@@ -73,8 +73,8 @@ import {
   writeActive,
 } from '../../../core/sessions/active-pointer.js';
 import { generateSessionId } from '../../../core/sessions/id.js';
-import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { canSignalProcess } from '../../../lib/process/liveness.js';
@@ -83,7 +83,7 @@ import { readProcessStartTimeMs } from '../../../lib/process/start-time.js';
 import { readRunnerPids, recordRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { simpleGit } from 'simple-git';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
-import type { RunWorkflowOptions } from './init.js';
+import type { RunWorkflowOptions } from './init/options.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
-import type { SeatSwapContext } from './task.js';
+import type { SeatSwapContext } from '../seat/swap-context.js';
 import {
   buildPlannerCallFailedRecoveryIssue,
   buildPlanSessionHaltRecoveryIssue,

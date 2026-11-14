@@ -7,7 +7,7 @@ import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { persistApiApplyEvidence } from '../evidence/persistence.js';
 import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
-import { recordBriefCorrection } from '../state-ops.js';
+import { recordBriefCorrection } from '../state-ops/corrections.js';
 import { commitQueueMessagesDrained, readQueueForPrompt } from './drain.js';
 import { formatDrainedMessages, formatMessageInput, imagesFromMessages } from './prompt.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';

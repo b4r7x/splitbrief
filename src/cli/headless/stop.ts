@@ -3,7 +3,7 @@ import {
   type TerminationSignal,
   withSignalHandlers,
   SIGNAL_EXIT_CODE,
-} from '../../engine/orchestrator/signals.js';
+} from '../../lib/process/signals.js';
 
 /**
  * Runs `work` under the headless stop. The first SIGINT, SIGTERM or SIGHUP aborts the signal

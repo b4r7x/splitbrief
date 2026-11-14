@@ -10,7 +10,7 @@ import { checkCrewAvailability } from '../engine/detection/crew.js';
 import { readConfiguredCliRoutes } from './configured-readiness.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
-import { removeClosedRunWorkspaces } from '../engine/orchestrator/run/close.js';
+import { removeClosedRunWorkspaces } from '../engine/orchestrator/isolation/closed-runs.js';
 import { cliError } from './errors.js';
 import { setProjectRoot, toErrorMessage } from '../utils/format/errors.js';
 import { initLogger } from '../core/logger.js';

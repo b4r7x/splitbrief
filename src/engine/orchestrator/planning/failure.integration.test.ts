@@ -28,7 +28,7 @@ import { apiContextError } from '../../providers/api-context-diagnostic.js';
 import { streamCompletion } from '../../providers/openai-stream/completion.js';
 import { interruptedError } from '../../planners/claude-invoke.js';
 import type { PlannerCallbacksContext } from '../types.js';
-import { addUsageAndSave } from '../state-ops.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
 import { handlePlanningFailure } from './failure.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { runPlanningSession } from './session.js';

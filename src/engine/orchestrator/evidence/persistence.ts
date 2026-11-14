@@ -3,13 +3,14 @@ import { isTaskSettled, type Task, type TaskId } from '../../../core/schemas/tas
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowContext } from '../types.js';
-import { publishError, publishWarning } from '../events.js';
-import { raisePendingRecovery } from '../state-ops.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishError } from '../publish/notice.js';
+import { raisePendingRecovery } from '../state-ops/halts.js';
 import { createRecoveryIssue } from '../recovery/builders/issue.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { isOwnRunWorkspace } from '../isolation/remove-worktree.js';
+import { isOwnRunWorkspace } from '../isolation/worktree/remove.js';
 import {
   recordApiApplyEvidence,
   recordLocalTaskEvidence,
@@ -32,7 +33,7 @@ import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js
 import { sessionFileFailure } from '../../../core/sessions/errors.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import { checkSessionLockStatus } from '../../../core/sessions/lock/status.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
 import { changedSinceAtRest } from '../../snapshots/run/rest-changes.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';

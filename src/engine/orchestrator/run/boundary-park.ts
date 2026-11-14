@@ -1,8 +1,9 @@
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { BoundaryPark, WorkflowContext } from '../types.js';
-import { recordSteer } from '../continuation.js';
-import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
+import { recordSteer } from '../continuation/loop.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { afterLastBrief } from '../../../core/sessions/run/status.js';
 

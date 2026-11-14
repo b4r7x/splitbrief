@@ -13,9 +13,9 @@ import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { buildSeatDownIssue } from './builders/task.js';
-import { loadSeatSwapContext } from './seat-swap-context.js';
-import { switchSeatAndPrepareResume } from './switch-seat-resume.js';
+import { buildSeatDownIssue } from './builders/seat-down.js';
+import { loadSeatSwapContext } from './seat/swap-context.js';
+import { switchSeatAndPrepareResume } from './seat/switch/resume.js';
 
 const dirs: string[] = [];
 afterEach(() => {

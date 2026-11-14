@@ -2,7 +2,7 @@ import { cpSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
-import { runBaseOf } from '../isolation/base-tree.js';
+import { runBaseOf } from '../isolation/run-base/tree.js';
 import { changedDefinitionRefusal } from './changed-script.js';
 
 const PACKAGE = JSON.stringify({ scripts: { test: 'vitest run', lint: 'biome check' } });

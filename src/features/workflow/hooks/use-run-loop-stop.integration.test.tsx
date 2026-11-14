@@ -24,9 +24,9 @@ import { reactivateExistingSession } from '../../../core/sessions/active-pointer
 import { readSession } from '../../../core/sessions/io.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { resumeStep } from '../../../core/sessions/run/status.js';
-import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
+import { transitionAndSave } from '../../../engine/orchestrator/state-ops/transition.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
-import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-failed.js';
 import { readRunEvents } from '../../../engine/events/replay.js';
 import {
   WORKFLOW_CANCEL_REASON_USER,
@@ -36,7 +36,7 @@ import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { continueRun } from '../../../engine/orchestrator/run/continue.js';
 import { hydrateResume } from '../resume/hydration.js';
-import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/context-overflow.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import {
   killAllProcesses,

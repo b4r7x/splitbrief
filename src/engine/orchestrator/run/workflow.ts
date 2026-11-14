@@ -33,13 +33,17 @@ import {
 } from '../../events/workflow-cancel.js';
 import type { ResumeContextHolder, WorkflowContext } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
-import { publishDebug, publishError, publishInfo, publishWarning } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishInfo } from '../publish/notice.js';
+import { publishDebug } from '../publish/notice.js';
+import { publishError } from '../publish/notice.js';
 import { reopenSessionRecord, saveFinalSession } from '../session-lifecycle/finalize.js';
 import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
 import { createRunIsolation } from '../isolation/create.js';
 
-import { type RunWorkflowOptions, initializeWorkflow } from './init.js';
+import type { RunWorkflowOptions } from './init/options.js';
+import { initializeWorkflow } from './init/initialize.js';
 import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
 import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
@@ -52,14 +56,11 @@ import {
   type PlannerCallPublisherContext,
 } from './call-publishing.js';
 import { acquireLiveness } from './liveness.js';
-import { closeRunIfOpen, userStopStoppedWork } from './close.js';
-import {
-  followCommittedState,
-  parkStoppedRun,
-  readWorkflowStateHead,
-  rebaseOnPersistedWorkflowState,
-  recordLastFailure,
-} from '../state-ops.js';
+import { closeRunIfOpen } from './close.js';
+import { userStopStoppedWork } from './end.js';
+import { parkStoppedRun, recordLastFailure } from '../state-ops/halts.js';
+import { followCommittedState } from '../state-ops/commit.js';
+import { readWorkflowStateHead, rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { SANDBOX_DIR, sessionDir } from '../../../core/paths.js';
 import { resumeStep } from '../../../core/sessions/run/status.js';
 import { createSteeringPort } from '../../calls/steering.js';

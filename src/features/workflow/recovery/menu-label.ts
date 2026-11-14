@@ -10,7 +10,7 @@ import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { isSeatLevelRetry } from '../../../engine/orchestrator/recovery/actions.js';
+import { isSeatLevelRetry } from '../../../engine/orchestrator/recovery/actions/retry.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 
 const REVIEW_FAILED_REVISE_CONSEQUENCE = 'sends your note to the reviewer';

@@ -28,7 +28,7 @@ import type { Check } from '../../../core/schemas/task.js';
 import { createValidator } from '../validation/run.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { runSingleTask } from './step.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import * as escalationHandle from '../escalation/handle.js';
 import { failedRetry } from '../escalation/types.js';
 

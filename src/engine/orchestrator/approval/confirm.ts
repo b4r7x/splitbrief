@@ -4,7 +4,7 @@ import {
   publishApprovalGranted,
   publishApprovalPrompted,
   publishApprovalRejected,
-} from './events.js';
+} from '../publish/approval.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { GateActionInput, GateDecision } from './types.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -12,7 +12,7 @@ import type { Check, Task } from '../../../core/schemas/task.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import { protectedWriteClass } from './action-classifier.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
-import { checkRegistry } from '../validation/run-checks.js';
+import { checkRegistry } from '../validation/checks/runner.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 
 /** A confirmation the run already granted holds for the same path and operation. */

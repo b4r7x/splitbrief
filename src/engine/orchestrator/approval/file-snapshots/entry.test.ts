@@ -12,20 +12,16 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, join } from 'node:path';
+import { writeConfinedEntry, writeConfinedSymlink } from './entry/write.js';
 import {
   captureAcquisitionBaseline,
   entriesMatch,
   matchesAcquisitionBaseline,
-  readChangeEntry,
-  readConfinedEntry,
-  linkStaysInProject,
-  readProjectSymlink,
-  sameChangeEntry,
-  sameFileEntry,
-  writeConfinedEntry,
-  writeConfinedSymlink,
-} from './entry.js';
-import type { FileSnapshotEntry } from './entry.js';
+} from './entry/baseline.js';
+import { linkStaysInProject, readProjectSymlink } from './entry/link.js';
+import { sameChangeEntry, sameFileEntry } from './entry/read.js';
+import { readChangeEntry, readConfinedEntry } from './entry/read.js';
+import type { FileSnapshotEntry } from './entry/read.js';
 import { restoreDirtyFilesFromSnapshot } from './restore.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

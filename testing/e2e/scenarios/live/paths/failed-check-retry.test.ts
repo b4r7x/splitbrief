@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveImplementerProfiles } from '../../../../../src/core/config/accessors/implementer-profiles.js';
 import { createEventBus } from '../../../../../src/engine/events/bus.js';
-import { createImplementerPublisher } from '../../../../../src/engine/orchestrator/events.js';
+import { createImplementerPublisher } from '../../../../../src/engine/orchestrator/publish/runner.js';
 import { runWorkflow } from '../../../../../src/engine/orchestrator/run/workflow.js';
 import { createImplementer } from '../../../../../src/engine/runners/factory.js';
 import { resetAllStores } from '#testing/helpers/stores.js';

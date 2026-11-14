@@ -14,10 +14,10 @@ import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import type { Validator } from '../validation/types.js';
 import type { EscalationContext } from './types.js';
-import { enqueueUserMessage } from '../queue/submit.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
 import { clearPendingQueue } from '../queue/clear.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
+import { CORRECTION_AFTER_CHECKS } from '../task/gates/brief.js';
 import { validateAndCommit } from './validate-and-commit.js';
 
 let dirs: string[] = [];

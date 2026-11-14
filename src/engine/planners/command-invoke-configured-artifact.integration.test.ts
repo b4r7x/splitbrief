@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
-import { createStagedProject } from '../orchestrator/approval/staged-project.js';
+import { createStagedProject } from '../orchestrator/approval/staged-project/create.js';
 import { createConfiguredCustomPlanner as createAdmittedConfiguredCustomPlanner } from './command-invoke.js';
 import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
 import { customRunnerSecurityPosture } from '../runners/custom-trust.js';

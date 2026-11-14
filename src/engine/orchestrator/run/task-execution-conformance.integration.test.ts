@@ -10,7 +10,7 @@ import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { runCodeDir } from '../kept-work.js';
 import { runTasksAndReview } from './task-execution.js';
-import { initializeWorkflow } from './init.js';
+import { initializeWorkflow } from './init/initialize.js';
 import { baselineDir, snapshotManifestPath } from '../../../core/paths.js';
 
 vi.mock('node:fs/promises', async (importOriginal) => {

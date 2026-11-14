@@ -20,7 +20,7 @@ import {
   STOP_SHEET_PARKED_LEGEND,
   STOP_SHEET_TITLE,
 } from '../../../src/features/workflow/stop/options.js';
-import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init/options.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';

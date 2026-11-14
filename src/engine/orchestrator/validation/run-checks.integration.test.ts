@@ -9,21 +9,17 @@ import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { makePlanner, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { runPreReview } from '../run/pre-review-checks.js';
+import { runPreReview } from '../review/checks/gate.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { createEventBus } from '../../events/bus.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
 import { withApplyRun } from '#testing/helpers/apply-run.js';
-import { runBaseOf } from '../isolation/base-tree.js';
-import {
-  checkRegistry,
-  planApprovesNpmScripts,
-  reviewCheckList,
-  runChecks,
-  type RunChecksOptions,
-} from './run-checks.js';
+import { runBaseOf } from '../isolation/run-base/tree.js';
+import { runChecks } from './checks/runner.js';
+import { checkRegistry, planApprovesNpmScripts, reviewCheckList } from './checks/runner.js';
+import type { RunChecksOptions } from './checks/types.js';
 import type { ValidationCommandRunner } from './types.js';
 
 function makePlan(checks: Check[]): Plan {

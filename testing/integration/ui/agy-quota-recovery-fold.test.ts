@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/group.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { publishRunnerCallEvent } from '../../../src/engine/orchestrator/events.js';
+import { publishRunnerCallEvent } from '../../../src/engine/orchestrator/publish/runner.js';
 import { createCliPlanner } from '../../../src/engine/planners/cli.js';
 import { buildConversationRowsProjection } from '../../../src/features/workflow/conversation-rows/build.js';
 import { materializeConversationRowsWindow } from '../../../src/features/workflow/conversation-rows/materialize-window.js';

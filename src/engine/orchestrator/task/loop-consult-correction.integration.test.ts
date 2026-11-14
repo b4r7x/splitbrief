@@ -15,7 +15,7 @@ import { plainUserMessage } from '../../../core/types/user-input.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createChangeDetector } from '../../change-detection.js';
-import { enqueueUserMessage } from '../queue/submit.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];

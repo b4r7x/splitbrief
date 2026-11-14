@@ -25,13 +25,13 @@ import { writeSeatIdentities } from '../../../core/state/seats/record.js';
 import { seatWaitToolWord } from '../../../core/sessions/seat-wait-line.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import type { SeatIds } from '../../../core/crew/seat-ids.js';
-import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
-import { resumeSeatWait } from '../escalation/seat-wait.js';
-import {
-  buildReviewFailedRecoveryIssue,
-  buildRunnerInputTooLargeRecoveryIssue,
-  buildSeatDownIssue,
-} from './builders/task.js';
+import { commitSeatSwitch } from './seat/switch/commit.js';
+import { planSwitchSeatRecoveryAction } from './seat/switch/plan.js';
+import { applyRecoveryAction } from './actions/apply.js';
+import { resumeSeatWait } from '../escalation/seat/wait.js';
+import { buildReviewFailedRecoveryIssue } from './builders/review-failed.js';
+import { buildRunnerInputTooLargeRecoveryIssue } from './builders/runner-defect.js';
+import { buildSeatDownIssue } from './builders/seat-down.js';
 import { buildReviewInputTooLargeRecoveryIssue } from './builders/review-input.js';
 import { inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { EngineEventSchema } from '../../events/schema.js';
@@ -41,7 +41,7 @@ import {
   expectCompactMessage,
   expectResumedMessage,
 } from '#testing/helpers/user-message.js';
-import { transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';

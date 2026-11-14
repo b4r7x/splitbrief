@@ -11,7 +11,7 @@ import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { validateCommitAndAdvance } from './commit.js';
-import type { ValidationAcceptance } from '../validation/acceptance.js';
+import type { ValidationAcceptance } from '../validation/types.js';
 
 const git = vi.hoisted(() => ({ calls: [] as string[] }));
 vi.mock('simple-git', () => ({

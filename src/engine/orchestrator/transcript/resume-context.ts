@@ -1,0 +1,155 @@
+import type { Config } from '../../../core/schemas/config.js';
+import type { ResumeContextHolder } from '../types.js';
+import type { EventBus } from '../../events/types.js';
+import type { Planner, PriorMessage } from '../../planners/types.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { typedRunnerCallErrorCode } from '../../implementers/pipeline/call-result.js';
+import { isSessionExpiredError } from '../../session-expiry.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishDebug } from '../publish/notice.js';
+import { buildResumeContext } from './rebuild.js';
+import { compactResumeTranscript, keepRecentCountForThreshold } from './compaction.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
+import { resolveCompactionFormat } from '../../../core/schemas/compaction.js';
+import {
+  PLANNER_SESSION_EXPIRED_CODE,
+  PLANNER_SESSION_REFUSED_CODE,
+} from '../../../core/sessions/planner-reissue.js';
+import { publishRunnerCallEvent } from '../publish/runner.js';
+import { isAbortError } from '../../../utils/abort.js';
+import { labelError } from '../../../utils/format/errors.js';
+
+export type ApplyRebuiltContextOpts = {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  resumeHolder: ResumeContextHolder | undefined;
+  requireNonEmpty?: boolean | undefined;
+};
+
+export type AutoCompactResumeOpts = {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  config: Pick<Config, 'workflow' | 'planner'>;
+  planner: Pick<Planner, 'capabilities' | 'summarize' | 'summarizeStructured'>;
+  state: WorkflowState;
+  signal?: AbortSignal | undefined;
+};
+
+export async function autoCompactResumeContext(
+  opts: AutoCompactResumeOpts,
+): Promise<WorkflowState> {
+  const threshold = opts.config.workflow.compactionThreshold;
+  if (threshold === undefined) return opts.state;
+  const summarize = opts.planner.summarize;
+  if (opts.planner.capabilities.supportsSelfSummarisation !== true || !summarize) return opts.state;
+
+  const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
+  const rebuilt = await buildResumeContext({ ref });
+  if (rebuilt.messages.length <= threshold) return opts.state;
+
+  try {
+    const format = resolveCompactionFormat(
+      opts.config.workflow.compactionFormat,
+      opts.config.planner.kind,
+    );
+    const result = await compactResumeTranscript({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      planner: opts.planner,
+      keepRecentCount: keepRecentCountForThreshold(threshold),
+      format,
+      ...(opts.signal !== undefined && { signal: opts.signal }),
+      onCallEvent: (event) =>
+        publishRunnerCallEvent(
+          { bus: opts.bus, phase: opts.state.phase, rootDir: opts.projectDir },
+          event,
+        ),
+      onFallback: () =>
+        publishDebug({
+          bus: opts.bus,
+          phase: 'researching',
+          message: 'Structured compaction returned invalid JSON; saved freeform summary instead.',
+        }),
+    });
+    return addUsageAndSave(
+      { projectDir: opts.projectDir, sessionId: opts.sessionId, bus: opts.bus },
+      opts.state,
+      'planner',
+      result.usage,
+    );
+  } catch (err) {
+    if (opts.signal?.aborted || isAbortError(err)) return opts.state;
+    publishDebug({
+      bus: opts.bus,
+      phase: 'researching',
+      message: labelError('Transcript auto-compaction failed', err),
+    });
+    return opts.state;
+  }
+}
+
+export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promise<void> {
+  const { projectDir, sessionId, bus, resumeHolder, requireNonEmpty } = opts;
+  const rebuilt = await buildResumeContext({ ref: { projectDir, sessionId } });
+  if (rebuilt.warning === 'state-unavailable') {
+    publishWarning({
+      bus,
+      phase: 'researching',
+      message:
+        'Your queued messages were not sent to the planner: the saved run state could not be read. Send them again.',
+    });
+    return;
+  }
+  if (!resumeHolder) return;
+  if (requireNonEmpty && rebuilt.messages.length === 0) return;
+  resumeHolder.messages = rebuilt.messages;
+}
+
+/**
+ * Issues one planning call: a step's or a revision's. A call that resumed the planner's thread and
+ * finds it expired, or refused as too long, runs once more, on a fresh session with the rebuilt
+ * transcript, as a continued run would: the seat has already dropped the thread. Any other
+ * failure, and a failure of the call issued again, is the caller's.
+ */
+export async function withFreshSessionReissue<T>(opts: {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  planner: Pick<Planner, 'capabilities'>;
+  /** The state the call starts on: the thread it names is the one the call resumes. */
+  state: WorkflowState;
+  signal?: AbortSignal | undefined;
+  issue: (priorMessages?: PriorMessage[]) => Promise<T>;
+}): Promise<T> {
+  const { projectDir, sessionId, bus, state, signal } = opts;
+  const resumed =
+    opts.planner.capabilities.supportsSessionResume && Boolean(state.plannerSessionId);
+  try {
+    return await opts.issue();
+  } catch (err) {
+    const expired = isSessionExpiredError(err);
+    const refused = typedRunnerCallErrorCode(err) === 'input-too-large';
+    if (!resumed || signal?.aborted || !(expired || refused)) throw err;
+    publishDebug({
+      bus,
+      phase: state.phase,
+      message: expired
+        ? 'Planner session expired; the call runs again on a fresh session with the conversation so far.'
+        : 'Planner tool refused the session as too long; the call runs again on a fresh session with the conversation so far.',
+      safety: {
+        category: 'planner',
+        code: expired ? PLANNER_SESSION_EXPIRED_CODE : PLANNER_SESSION_REFUSED_CODE,
+      },
+    });
+    const rebuilt: ResumeContextHolder = { messages: [] };
+    await applyRebuiltContext({
+      projectDir,
+      sessionId,
+      bus,
+      resumeHolder: rebuilt,
+    });
+    return opts.issue(rebuilt.messages);
+  }
+}

@@ -8,7 +8,8 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createCommandPlanner } from '../../planners/command-invoke.js';
 import { requestTyped } from '../../runners/typed-output.js';
-import { seatFailureFromError, seatResetWaitDeadline } from '../escalation/seat-wait.js';
+import { seatResetWaitDeadline } from '../escalation/seat/wait.js';
+import { seatFailureFromError } from '../escalation/seat/call.js';
 import { diagnosePlannerCallFailure } from './planner-call-failure.js';
 
 const LIMIT_LINE = "Error: You've hit your usage limit. Your limit resets at 3pm.";

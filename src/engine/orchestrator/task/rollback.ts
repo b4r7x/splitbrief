@@ -6,7 +6,8 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/change
 import { loadState } from '../../../core/state/persistence.js';
 import { labelError } from '../../../utils/format/errors.js';
 import { pluralize } from '../../../utils/pluralize.js';
-import { publishWarning, publishWarningFromError } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishWarningFromError } from '../publish/notice.js';
 import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';
 import type { WorkflowContext } from '../types.js';
 import { restoreWorkspaceFiles } from '../isolation/entry-snapshot.js';

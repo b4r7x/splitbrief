@@ -44,11 +44,9 @@ import type { ConversationRow } from './types.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
-import {
-  buildCheckoutChangedRecoveryIssue,
-  buildRunnerInputTooLargeRecoveryIssue,
-  runnerDefectRow,
-} from '../../../engine/orchestrator/recovery/builders/task.js';
+import { buildCheckoutChangedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/isolation.js';
+import { buildRunnerInputTooLargeRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/runner-defect.js';
+import { runnerDefectRow } from '../../../engine/orchestrator/recovery/builders/runner-defect.js';
 import { inputTooLargeRefusal } from '../../../engine/runners/input-limit.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

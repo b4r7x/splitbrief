@@ -9,15 +9,15 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { saveState } from '../../../core/state/persistence.js';
-import * as stagedProject from '../approval/staged-project.js';
+import * as stagedProject from '../approval/staged-project/promote.js';
 import { activeApply, awaitActiveWorkflowShutdown } from '../session-lifecycle/shutdown.js';
 import { runApplyAtRest } from './at-rest.js';
 import * as backup from './backup.js';
 import * as lockfile from '../../../core/sessions/lock/file.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
 
-vi.mock('../approval/staged-project.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../approval/staged-project.js')>();
+vi.mock('../approval/staged-project/promote.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../approval/staged-project/promote.js')>();
   return { ...actual, promoteStagedChanges: vi.fn(actual.promoteStagedChanges) };
 });
 vi.mock('../../../core/sessions/lock/file.js', async (importOriginal) => {
@@ -62,8 +62,8 @@ function applyAtRest(run: ApplyRun) {
     });
 }
 
-const actualStaged = await vi.importActual<typeof import('../approval/staged-project.js')>(
-  '../approval/staged-project.js',
+const actualStaged = await vi.importActual<typeof import('../approval/staged-project/promote.js')>(
+  '../approval/staged-project/promote.js',
 );
 const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
 const actualLockfile = await vi.importActual<typeof import('../../../core/sessions/lock/file.js')>(

@@ -22,18 +22,15 @@ import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diag
 import { labelError } from '../../../utils/format/errors.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { inputTooLargeFigures, type PromptSize } from '../../runners/input-limit.js';
-import {
-  inputTooLargeDetail,
-  runnerDefectRow,
-  runnerHaltRow,
-  toolReported,
-} from './builders/task.js';
+import { inputTooLargeDetail } from './builders/runner-defect.js';
+import { runnerDefectRow, runnerHaltRow } from './builders/runner-defect.js';
+import { toolReported } from './builders/seat-down.js';
 import {
   buildPlannerCallFailedRecoveryIssue,
   type PlannerCallFailureRecoveryOptions,
   type PlannerSeatFailure,
 } from './builders/planner.js';
-import { loadSeatSwapContext } from './seat-swap-context.js';
+import { loadSeatSwapContext } from './seat/swap-context.js';
 
 /**
  * What the classifier read from a seat-down failure: the classification and the

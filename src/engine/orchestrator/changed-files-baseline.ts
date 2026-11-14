@@ -14,9 +14,9 @@ import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared
 import type { Task } from '../../core/schemas/task.js';
 import type { PersistedChangedFilesBaseline } from '../../core/schemas/workflow/changed-files.js';
 import type { ChangedFilesSnapshot } from '../../core/schemas/workflow/changed-files.js';
-import { readProjectSymlink } from './approval/file-snapshots/entry.js';
+import { readProjectSymlink } from './approval/file-snapshots/entry/link.js';
 import { listWorkspaceEntries } from '../snapshots/files.js';
-import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/changed-since.js';
 import { recordedTargetOutput } from './evidence/task.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from '../../core/gitignore-bookkeeping.js';

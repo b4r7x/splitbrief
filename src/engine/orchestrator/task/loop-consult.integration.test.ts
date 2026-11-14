@@ -29,7 +29,7 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { sessionDir } from '../../../core/paths.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';

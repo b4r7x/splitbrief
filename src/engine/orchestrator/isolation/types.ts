@@ -2,7 +2,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
-import type { AcquisitionBaseline } from '../approval/file-snapshots/entry.js';
+import type { AcquisitionBaseline } from '../approval/file-snapshots/entry/baseline.js';
 
 export type IsolationRole = 'planner' | 'implementer';
 

@@ -5,43 +5,24 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { StagedWorkspaceLeafSchema } from '../../../core/schemas/retained-workspace.js';
 import { transition } from '../../../core/state/machine.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { toErrorMessage } from '../../../utils/format/errors.js';
 import { error, matches } from '../../../utils/error.js';
 import type { EventBus } from '../../events/types.js';
-import { recordInterruptedCalls } from '../../calls/interrupted.js';
-import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { writeRunPatch } from '../apply/patch.js';
 import { persistStoppedBriefEvidence } from '../evidence/persistence.js';
 import { recordRejectEvidence } from '../evidence/task.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import {
-  publishInfo,
-  publishRecoveryActionSelected,
-  publishRecoveryResolved,
-  publishRunRejected,
-  publishWarning,
-} from '../events.js';
-import { removeRunWorkspace } from '../isolation/remove-worktree.js';
-import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
+import { publishWarning } from '../publish/notice.js';
+import { publishRunRejected } from '../publish/review.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
-import {
-  commitWorkflowState,
-  MAX_STATE_CONFLICT_RETRIES,
-  readWorkflowStateHead,
-  rebaseOnPersistedWorkflowState,
-  stateOpsError,
-  transitionAndSave,
-} from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { commitWorkflowState } from '../state-ops/commit.js';
+import { readWorkflowStateHead, rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
+import { MAX_STATE_CONFLICT_RETRIES, stateOpsError } from '../state-ops/errors.js';
 import { rejectRunSnapshot } from '../../snapshots/run/lifecycle.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 import { APPLY_UNFINISHED_REFUSAL } from '../../../core/runtime/commands/messages.js';
-import { listSessionIds, sessionsRootLabel } from '../../../core/sessions/orphans.js';
-import {
-  foreignWorkspaceNotice,
-  readWorkspaceRecordFile,
-  stagedWorkspaceRoot,
-} from '../isolation/retention.js';
-import { warnError, warnStderr } from '../../../lib/warn.js';
+import { stagedWorkspaceRoot } from '../isolation/retention.js';
+import { removeClosedRunWorkspace } from '../isolation/closed-runs.js';
 
 /**
  * Whether files the run wrote are still in the checkout. A checkout run's ledger books what each
@@ -70,67 +51,6 @@ export function closedChangesSuffix(ref: SessionRef, state: WorkflowState): stri
   return patch === undefined
     ? filesStillOnDiskSuffix(ref, state)
     : ` Run changes not applied are saved in ${patch}; apply them with git apply.`;
-}
-
-export async function removeClosedRunWorkspace(
-  scope: SessionRef & { bus?: EventBus | undefined },
-  workspace: NonNullable<WorkflowState['workspace']>,
-  phase: WorkflowState['phase'],
-): Promise<void> {
-  try {
-    const foreign = await removeRunWorkspace(scope.projectDir, scope.sessionId, workspace);
-    if (foreign !== null && scope.bus !== undefined) {
-      publishInfo({ bus: scope.bus, phase, message: foreignWorkspaceNotice(foreign) });
-    }
-  } catch (err) {
-    if (scope.bus !== undefined) {
-      publishWarning({
-        bus: scope.bus,
-        phase,
-        message: `Could not remove the run workspace at ${workspace.path}: ${toErrorMessage(err)}`,
-      });
-    }
-  }
-  scope.bus?.publish({ type: 'workspace_closed', ts: Date.now(), phase });
-}
-
-export async function removeClosedRunWorkspaces(projectDir: string): Promise<void> {
-  let sessionIds: string[];
-  try {
-    sessionIds = listSessionIds(projectDir);
-  } catch (err) {
-    warnError(
-      `Could not list ${sessionsRootLabel(projectDir)}, so leftover workspaces from closed runs may remain`,
-      err,
-    );
-    return;
-  }
-  for (const sessionId of sessionIds) {
-    const ref = { projectDir, sessionId };
-    let workspacePath: string | undefined;
-    try {
-      const head = readWorkflowStateHead(ref);
-      if (head === null) continue;
-      const { state } = head;
-      const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
-      if (status.kind !== 'closed') continue;
-      const workspace = state.workspace;
-      if (
-        workspace === undefined ||
-        (workspace.kind !== 'worktree' && workspace.kind !== 'staged-copy')
-      ) {
-        continue;
-      }
-      workspacePath = workspace.path;
-      if ((await readWorkspaceRecordFile(ref)) === null) continue;
-      const foreign = await removeRunWorkspace(projectDir, sessionId, workspace);
-      if (foreign !== null) warnStderr(foreignWorkspaceNotice(foreign), 'at-exit');
-    } catch (err) {
-      if (workspacePath !== undefined) {
-        warnError(`Could not remove the run workspace at ${workspacePath}`, err);
-      }
-    }
-  }
 }
 
 export async function closeRunIfOpen(
@@ -273,61 +193,4 @@ export const endRunError = {
 
 export function assertCanCloseRun(state: WorkflowState): void {
   if (applyUnfinished(state)) throw endRunError.applying();
-}
-
-/**
- * A user stop stopped work only when it left the run open or closed it as ended. End run on a
- * ready run is its Discard, and a complete run had nothing left to stop.
- */
-export function userStopStoppedWork(state: WorkflowState): boolean {
-  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
-  return status.kind === 'open' || (status.kind === 'closed' && status.as === 'ended');
-}
-
-export async function endRun(
-  scope: SessionRef & { bus: EventBus },
-  state: WorkflowState,
-  atRestFrom?: number,
-): Promise<{ state: WorkflowState; closedNow: boolean }> {
-  const latest = rebaseOnPersistedWorkflowState(scope, state);
-  const issue = latest.pendingRecovery;
-  const closure = await closeRunIfOpen(scope, latest);
-  if (closure.closedNow) {
-    if (issue !== undefined) {
-      publishRecoveryActionSelected({
-        bus: scope.bus,
-        phase: latest.phase,
-        issue,
-        action: 'end-run',
-      });
-      publishRecoveryResolved({
-        bus: scope.bus,
-        phase: closure.state.phase,
-        issue,
-        action: 'end-run',
-        outcome: 'aborted',
-      });
-    }
-    if (userStopStoppedWork(closure.state)) {
-      scope.bus.publish({
-        type: 'workflow_cancelled',
-        ts: Date.now(),
-        phase: closure.state.phase,
-        reason: WORKFLOW_CANCEL_REASON_USER,
-        ...(atRestFrom !== undefined && { atRestFrom }),
-      });
-    }
-  }
-  return closure;
-}
-
-export async function endRunAtRest(
-  scope: SessionRef & { bus: EventBus },
-  state: WorkflowState,
-): Promise<{ state: WorkflowState; closedNow: boolean }> {
-  const atRestFrom = Date.now();
-  await recordInterruptedCalls(scope, rebaseOnPersistedWorkflowState(scope, state));
-  const closure = await endRun(scope, state, atRestFrom);
-  finalizeRunAtRest({ ref: scope, state: closure.state });
-  return closure;
 }

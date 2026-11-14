@@ -3,13 +3,13 @@ import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { Planner } from '../../planners/types.js';
 import type { EventBus } from '../../events/types.js';
-import {
-  addUsageAndSave,
-  rebaseOnPersistedWorkflowState,
-  transitionAndSave,
-} from '../state-ops.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { claimQueuedMessage, releaseQueuedMessage } from './drain.js';
-import { publishDebug, publishInfo, publishRunnerCallEvent } from '../events.js';
+import { publishRunnerCallEvent } from '../publish/runner.js';
+import { publishInfo } from '../publish/notice.js';
+import { publishDebug } from '../publish/notice.js';
 import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
 import { labelError } from '../../../utils/format/errors.js';
 import { formatQueuedMessagePreview } from '../../../core/queue/preview.js';

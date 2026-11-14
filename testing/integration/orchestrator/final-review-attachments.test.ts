@@ -20,7 +20,7 @@ import {
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
-import { runFinalReviewPhase } from '../../../src/engine/orchestrator/final-review.js';
+import { runFinalReviewPhase } from '../../../src/engine/orchestrator/review/phase.js';
 
 const dirs: string[] = [];
 

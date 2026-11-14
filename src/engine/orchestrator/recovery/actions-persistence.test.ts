@@ -16,8 +16,8 @@ import { briefCorrections } from '../../../core/state/lineage.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
-import { applyRecoveryAction } from './actions.js';
-import { buildRetryExhaustedRecoveryIssue } from './builders/task.js';
+import { applyRecoveryAction } from './actions/apply.js';
+import { buildRetryExhaustedRecoveryIssue } from './builders/retry.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 

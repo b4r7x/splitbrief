@@ -13,7 +13,7 @@ import {
 import { redactSecrets } from '../../../utils/redact/secrets.js';
 import { truncateByChars } from '../../../utils/display-text/truncate.js';
 import type { FailureKeys } from './extract-failure-keys.js';
-import type { CheckRunResult } from './run-checks.js';
+import type { CheckRunResult } from './checks/types.js';
 import { boundedOutputTail } from './stage.js';
 
 /** The failure keys a failure text lists before the output tail; the rest are counted. */

@@ -8,7 +8,7 @@ import { nowIso } from '../../../utils/format/time.js';
 import { deserializeChangedFilesBaseline } from '../changed-files-baseline.js';
 import { getOrCreateLedger } from '../evidence/persistence.js';
 import { currentCandidateId } from '../evidence/record-checks.js';
-import type { CheckRunResult } from './run-checks.js';
+import type { CheckRunResult } from './checks/types.js';
 
 /**
  * Where a run keeps the result of each command it ran, so one command runs once per state of the

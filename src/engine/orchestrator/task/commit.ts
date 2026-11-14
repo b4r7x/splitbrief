@@ -2,18 +2,18 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ValidationAcceptance } from '../validation/acceptance.js';
+import type { ValidationAcceptance } from '../validation/types.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
-import { publishTaskComplete } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import { publishTaskComplete } from '../publish/task.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { readBriefWorkedMs } from './worked-time.js';
 import { lineageRemainder } from './booking.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 
 type ValidateCommitOptions = {
   task: Task;

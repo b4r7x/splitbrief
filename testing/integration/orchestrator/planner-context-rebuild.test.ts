@@ -10,7 +10,7 @@ import { appendMessage } from '../../../src/core/sessions/log/writer.js';
 import { reactivateExistingSession } from '../../../src/core/sessions/active-pointer.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
-import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
+import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions/apply.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import { parsePreparedConfig } from '../../../src/engine/runners/prepared-execution.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

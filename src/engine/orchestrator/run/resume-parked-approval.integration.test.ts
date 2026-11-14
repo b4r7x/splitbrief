@@ -23,7 +23,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { formatPlanMarkdown } from '../../spec/plan-markdown.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
-import { createContinuationHolder } from '../continuation.js';
+import { createContinuationHolder } from '../continuation/holder.js';
 import { resumeParkedApproval } from './resume-parked-approval.js';
 
 let projectDir = '';

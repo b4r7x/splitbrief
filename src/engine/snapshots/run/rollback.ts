@@ -15,11 +15,9 @@ import { error } from '../../../utils/error.js';
 import { readManifest } from '../manifest.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { saveReplacedEntries } from '../../orchestrator/isolation/entry-snapshot.js';
-import {
-  readConfinedEntry,
-  sameFileEntry,
-  writeConfinedEntry,
-} from '../../orchestrator/approval/file-snapshots/entry.js';
+import { writeConfinedEntry } from '../../orchestrator/approval/file-snapshots/entry/write.js';
+import { sameFileEntry } from '../../orchestrator/approval/file-snapshots/entry/read.js';
+import { readConfinedEntry } from '../../orchestrator/approval/file-snapshots/entry/read.js';
 import {
   ACCEPTED_RUN_SNAPSHOT_NAME,
   createRunLedger,

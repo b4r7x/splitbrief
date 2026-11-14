@@ -23,3 +23,12 @@ export interface Validator {
 export type ValidatorDeps = {
   runCommand?: ValidationCommandRunner | undefined;
 };
+export type ValidationAcceptance = { accepted: boolean };
+export interface ValidationResult {
+  passed: boolean;
+  timedOut?: true | undefined;
+  error?: string | undefined;
+  output?: string | undefined;
+  command?: string | undefined;
+  exitCode?: number | undefined;
+}

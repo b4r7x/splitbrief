@@ -24,10 +24,10 @@ import type { RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
 import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
-import { createStagedProject } from '../approval/staged-project.js';
+import { createStagedProject } from '../approval/staged-project/create.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
-import { configForProfile, createTaskImplementer } from './routing.js';
+import { configForProfile, createTaskImplementer } from '../context-routing/profile.js';
 import type { EscalationContext } from '../escalation/types.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 

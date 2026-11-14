@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
 import {
   readActive,
   readActiveRecord,

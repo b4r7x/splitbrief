@@ -38,10 +38,10 @@ import { error } from '../../utils/error.js';
 import type { EngineEvent } from '../events/types.js';
 import type { ApiContextDiagnostic } from '../providers/api-context-diagnostic.js';
 import { runPlanningSession } from './planning/session.js';
-import { applyRecoveryAction } from './recovery/actions.js';
+import { applyRecoveryAction } from './recovery/actions/apply.js';
 import { MAX_SUMMARY_LENGTH } from './recovery/builders/issue.js';
 import { buildPlannerCallFailedRecoveryIssue } from './recovery/builders/planner.js';
-import { buildReviewFailedRecoveryIssue } from './recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from './recovery/builders/review-failed.js';
 import { runTasksAndReview } from './run/task-execution.js';
 
 const universe = vi.hoisted(() => ({ fullDiff: '', changedFiles: [] as string[] }));

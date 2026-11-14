@@ -74,3 +74,20 @@ export const attemptCleanupError = {
       cause,
     ),
 } as const;
+
+export const isolationError = {
+  seedSymlink: (file: string) =>
+    error(
+      'isolation-seed-symlink',
+      `Cannot seed isolation worktree: "${file}" is a symlink that does not stay inside the project.`,
+      { file },
+    ),
+  excludeLockTimeout: (lockPath: string) =>
+    error(
+      'isolation-exclude-lock-timeout',
+      `Timed out waiting for exclude file lock: ${lockPath}`,
+      {
+        lockPath,
+      },
+    ),
+} as const;

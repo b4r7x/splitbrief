@@ -28,7 +28,7 @@ import {
   restoreWorkspaceFiles,
 } from './entry-snapshot.js';
 
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { withAttemptRestoreScope } from '../task/restore-scope.js';
 
 const SESSION = 's1';

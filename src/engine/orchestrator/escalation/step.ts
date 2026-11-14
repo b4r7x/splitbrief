@@ -1,14 +1,12 @@
 import { loadState } from '../../../core/state/persistence.js';
 import { readImplementerReport, type ImplementerReport } from '../../../core/schemas/consult.js';
-import {
-  addUsageAndSave,
-  rebaseOnPersistedWorkflowState,
-  transitionAndSave,
-} from '../state-ops.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
+import { transitionAndSave } from '../state-ops/transition.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
-import { gateAttemptChanges } from '../task/attempt-gate.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { withContinuationLoop } from '../continuation.js';
+import { gateAttemptChanges } from '../task/gates/attempt.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
+import { withContinuationLoop } from '../continuation/loop.js';
 import { briefContinuation, changedDeclaredFiles } from '../kept-work.js';
 import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
@@ -21,7 +19,8 @@ import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { isResumableWorkspaceStop, settleThrownCall } from '../isolation/retention.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
-import { commitWorkflowState, stateOpsError } from '../state-ops.js';
+import { commitWorkflowState } from '../state-ops/commit.js';
+import { stateOpsError } from '../state-ops/errors.js';
 import { withAttemptRestoreScope } from '../task/restore-scope.js';
 
 /** The direct writer's blocked report: the attempt stopped asking for a decision. */

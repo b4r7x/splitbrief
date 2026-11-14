@@ -3,7 +3,7 @@ import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
-import { buildReviewFailedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/review-failed.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, type renderFeature } from '#testing/helpers/ink.js';

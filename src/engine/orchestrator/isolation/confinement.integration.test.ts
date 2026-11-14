@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { simpleGit } from 'simple-git';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { createWorktree } from './create-worktree.js';
-import { removeWorktree } from './remove-worktree.js';
+import { createWorktree } from './worktree/create.js';
+import { removeWorktree } from './worktree/remove.js';
 import { TREES_DIR } from '../../../core/paths.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;

@@ -18,10 +18,10 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { formatMessageInput } from '../queue/prompt.js';
-import { recordBriefCorrection } from '../state-ops.js';
-import { applyRecoveryAction } from './actions.js';
+import { recordBriefCorrection } from '../state-ops/corrections.js';
+import { applyRecoveryAction } from './actions/apply.js';
 import { buildReviewInputTooLargeRecoveryIssue } from './builders/review-input.js';
-import { buildReviewFailedRecoveryIssue } from './builders/task.js';
+import { buildReviewFailedRecoveryIssue } from './builders/review-failed.js';
 
 // A process can stop between two state writes (a kill, a lost machine, or a write that throws).
 // The armed write of state.json stops the action there; every other write is real.

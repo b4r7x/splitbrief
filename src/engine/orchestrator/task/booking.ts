@@ -4,7 +4,7 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/change
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { lineageFilesToBook, lineageHasOpenBrief } from '../../../core/state/lineage.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { unbookedFiles } from '../evidence/task.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 

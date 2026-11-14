@@ -39,7 +39,7 @@ import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-ru
 import { requestTyped } from '../../engine/runners/typed-output.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import { buildFinalReviewPrompt, reviewChangeText } from '../../engine/spec/prompts/review.js';
-import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat-wait.js';
+import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat/call.js';
 import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
 import { confinedWriteFile } from '../../lib/fs/confined.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs/secure.js';

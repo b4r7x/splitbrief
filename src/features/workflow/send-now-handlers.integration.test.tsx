@@ -17,7 +17,7 @@ import { readRunEvents } from '../../engine/events/replay.js';
 import {
   withContinuationLoop,
   type ContinuationLoopBodyArgs,
-} from '../../engine/orchestrator/continuation.js';
+} from '../../engine/orchestrator/continuation/loop.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { finalizeEndedRun } from '../../engine/orchestrator/session-lifecycle/finalize.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';

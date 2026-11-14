@@ -19,7 +19,7 @@ import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
 import { taskId } from '../../core/schemas/task.js';
-import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/review-failed.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
 import { RecoveryMenu } from './components/recovery-menu.js';
 import {

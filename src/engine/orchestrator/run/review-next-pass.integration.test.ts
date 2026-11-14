@@ -29,8 +29,8 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { createSnapshot } from '../../snapshots/create.js';
-import { parkStoppedRun } from '../state-ops.js';
-import { resumeContinuation } from './init.js';
+import { parkStoppedRun } from '../state-ops/halts.js';
+import { resumeContinuation } from './init/resume-repair.js';
 import { runTasksAndReview } from './task-execution.js';
 
 let dirs: string[] = [];

@@ -28,9 +28,9 @@ import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { createContinuationHolder } from '../continuation.js';
+import { createContinuationHolder } from '../continuation/holder.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
-import { enqueueUserMessage } from '../queue/submit.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
 
 afterEach(() => {
   vi.restoreAllMocks();

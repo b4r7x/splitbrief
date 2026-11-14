@@ -11,7 +11,7 @@ import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { createChangeDetector } from '../../change-detection.js';
 import { createEventBus } from '../../events/bus.js';
-import { createImplementerPublisher } from '../../orchestrator/events.js';
+import { createImplementerPublisher } from '../../orchestrator/publish/runner.js';
 import type { EngineEvent } from '../../events/types.js';
 
 type PublisherEvent =

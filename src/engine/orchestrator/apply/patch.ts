@@ -17,8 +17,8 @@ import { error } from '../../../utils/error.js';
 import { resolveValidatedBlobPath } from '../../snapshots/blob-resolver.js';
 import { collectTrackedFiles, hashFile, listWorkspaceEntries } from '../../snapshots/files.js';
 import { readManifest } from '../../snapshots/manifest.js';
-import { readChangeEntry, readConfinedEntry } from '../approval/file-snapshots/entry.js';
-import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
+import { readChangeEntry, readConfinedEntry } from '../approval/file-snapshots/entry/read.js';
+import { stripGitignoreBookkeeping } from '../approval/staged-project/gitignore.js';
 
 type WorkspaceBase = { path: string; base: { snapshotId: string } };
 

@@ -10,7 +10,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
-import { initializeWorkflow } from './init.js';
+import { initializeWorkflow } from './init/initialize.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';

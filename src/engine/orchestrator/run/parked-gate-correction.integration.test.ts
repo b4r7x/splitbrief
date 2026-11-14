@@ -19,7 +19,7 @@ import { appendMessage } from '../../../core/sessions/log/writer.js';
 import { readMessages } from '../../../core/sessions/log/reader.js';
 import { formatPlanMarkdown } from '../../spec/plan-markdown.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
-import { createContinuationHolder } from '../continuation.js';
+import { createContinuationHolder } from '../continuation/holder.js';
 import { resumeParkedApproval } from './resume-parked-approval.js';
 
 const CORRECTION = 'Use the cached parser and cover invalid input';

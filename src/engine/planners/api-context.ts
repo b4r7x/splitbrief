@@ -1,5 +1,5 @@
 import { estimateTokens } from '../../core/tokens/estimate.js';
-import { readConfinedEntry } from '../orchestrator/approval/file-snapshots/entry.js';
+import { readConfinedEntry } from '../orchestrator/approval/file-snapshots/entry/read.js';
 import { BASE_OUTPUT_RESERVE_TOKENS } from '../providers/api-budget.js';
 import { resolveApplicationContextTokens } from '../providers/runtime-context.js';
 import type { ProjectContext } from './context.js';

@@ -33,13 +33,18 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { EngineEvent } from '../../events/types.js';
 import { readRunEvents } from '../../events/replay.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
-import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue } from '../recovery/builders/review-failed.js';
 import { closeRunIfOpen } from './close.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 
 const race = vi.hoisted(() => ({ writePassedAfterRead: false, writeOpenAfterRead: false }));
-vi.mock('../state-ops.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../state-ops.js')>();
+vi.mock('../state-ops/head.js', async (importOriginal) => {
+  const actual = {
+    ...(await importOriginal<typeof import('../state-ops/head.js')>()),
+    ...(await vi.importActual<typeof import('../state-ops/transition.js')>(
+      '../state-ops/transition.js',
+    )),
+  };
   return {
     ...actual,
     rebaseOnPersistedWorkflowState: (

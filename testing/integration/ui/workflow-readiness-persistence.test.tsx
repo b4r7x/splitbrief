@@ -8,7 +8,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
-import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init/options.js';
 import { READINESS_FILE, sessionDir } from '../../../src/core/paths.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 

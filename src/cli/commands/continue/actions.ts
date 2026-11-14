@@ -4,10 +4,8 @@ import { type CrewSeatId, CREW_SEAT_LABELS } from '../../../core/crew/identity.j
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
-import {
-  applyRecoveryAction,
-  seatRunnerValue,
-} from '../../../engine/orchestrator/recovery/actions.js';
+import { seatRunnerValue } from '../../../engine/orchestrator/recovery/seat/switch/plan.js';
+import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';

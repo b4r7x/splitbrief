@@ -20,7 +20,7 @@ import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { labelError } from '../../../utils/format/errors.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import type { EventBus } from '../../events/types.js';
-import { publishWarning } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
 import { sanitizeDiscoveredValidation } from '../planning/sanitize-discovered-validation.js';
 import { fingerprintFiles } from '../changed-files-baseline.js';
 import { formatValidationCommand, NO_TEST_FILE_FOUND, resolveTestTarget } from './commands.js';

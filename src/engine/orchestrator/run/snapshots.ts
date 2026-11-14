@@ -5,7 +5,7 @@ import type { EventBus } from '../../events/types.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
 import { recordRunSnapshot } from '../../snapshots/run/ledger.js';
-import { publishWarningFromError } from '../events.js';
+import { publishWarningFromError } from '../publish/notice.js';
 
 const RUN_BASELINE_SNAPSHOT_NAME = 'run-baseline';
 const RUN_SNAPSHOT_NAME = 'pre-final-review';

@@ -1,7 +1,7 @@
 import { PLAN_CORRECTION_GOES_AGAIN } from '../../../core/recovery/causes.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { raisePendingRecovery } from '../state-ops.js';
+import { raisePendingRecovery } from '../state-ops/halts.js';
 import type { WorkflowPersistenceContext } from '../types.js';
 import type { PlanningPhaseOptions } from './types.js';
 

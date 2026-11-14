@@ -44,7 +44,7 @@ import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createSteeringPort } from '../../calls/steering.js';
-import type { FinalReviewResult } from '../final-review.js';
+import type { FinalReviewResult } from '../review/types.js';
 import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
@@ -55,14 +55,15 @@ import type {
   TriageResult,
 } from '../../../core/schemas/review/verdict.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';
-import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
+import { switchSeatAndPrepareResume } from '../recovery/seat/switch/resume.js';
 import { error } from '../../../utils/error.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 import { stuckTarget } from '../../../core/review/stuck.js';
-import { claimVerification, verifyClaimChecks } from '../triage.js';
+import { verifyClaimChecks } from '../review/verify-claims.js';
+import { claimVerification } from '../review/verify-claims.js';
 import { processError } from '../../../lib/process/errors.js';
 
 const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
@@ -70,13 +71,9 @@ vi.mock('../../detection/runner-evidence.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../detection/runner-evidence.js')>()),
   ...evidence,
 }));
-import {
-  followPendingReview,
-  followReviewAnswer,
-  haltVerdictlessReview,
-  reviewPassed,
-  runScheduledReview,
-} from './review.js';
+import { followReviewAnswer, reviewPassed } from '../review/loop/follow.js';
+import { haltVerdictlessReview } from '../review/loop/halts.js';
+import { followPendingReview, runScheduledReview } from '../review/loop/scheduled.js';
 
 const CODEX_INPUT_TOO_LARGE =
   'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1106026}';

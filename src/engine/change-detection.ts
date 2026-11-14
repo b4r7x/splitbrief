@@ -6,7 +6,10 @@ import { getCurrentChangedFiles } from '../lib/git/files.js';
 import { readFileModeAtHead, showFileAtHead } from '../lib/git/refs.js';
 import { isENOENT } from '../utils/errno.js';
 import { computeDiff } from '../utils/diff.js';
-import { readChangeEntry, type ChangeEntry } from './orchestrator/approval/file-snapshots/entry.js';
+import {
+  readChangeEntry,
+  type ChangeEntry,
+} from './orchestrator/approval/file-snapshots/entry/read.js';
 import { hashFile, listWorkspaceEntries } from './snapshots/files.js';
 
 function hasGitMetadata(projectDir: string): boolean {

@@ -1,87 +1,27 @@
-import {
-  CONSULT_ANSWER_JSON_SCHEMA,
-  consultAnswerSchemaFor,
-  type ConsultAnswer,
-  type ConsultReason,
-  type ImplementerReport,
-} from '../../../core/schemas/consult.js';
+import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import type { Config } from '../../../core/schemas/config.js';
-import type { TriageResult } from '../../../core/schemas/review/verdict.js';
-import type { Task, TaskId } from '../../../core/schemas/task.js';
-import { plannerFixWork, stuckAnswerErrors } from '../../../core/review/stuck.js';
-import { dueCriterionIds } from '../../../core/review/scope.js';
-import type { Plan } from '../../../core/schemas/plan.js';
+import type { TaskId } from '../../../core/schemas/task.js';
+import { plannerFixWork } from '../../../core/review/stuck.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import { lineageIdOf, nextTaskIds } from '../../../core/state/task-insert.js';
-import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
-import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
-import type { EventBus } from '../../events/types.js';
-import type { Planner } from '../../planners/types.js';
-import type { SeatProtocolError } from '../../runners/typed-output.js';
-import { orderChangedFiles } from '../../change-detection.js';
-import { refusedCheckErrors, unconfiguredRenderCheckErrors } from '../../spec/plan-checks.js';
 import { buildConsultPrompt, type ConsultPromptInput } from '../../spec/prompts/consult.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { readChangeEntry } from '../approval/file-snapshots/entry.js';
-import { entryToRestore } from '../approval/file-snapshots/restore.js';
-import type { SessionRef } from '../../../core/types/session-ref.js';
-import { entryStoreDir } from '../isolation/entry-snapshot.js';
-import { runBaseOf } from '../isolation/base-tree.js';
+import { runBaseOf } from '../isolation/run-base/tree.js';
 import { resolveRunUniverse, runUserFiles } from '../evidence/review-packet/sections-io.js';
-import { fixTaskTargetErrors } from '../triage.js';
-import { publishConsultAnswered, publishRunnerCallEvent } from '../events.js';
+import { publishConsultAnswered } from '../publish/recovery.js';
+import { publishRunnerCallEvent } from '../publish/runner.js';
 import { askPlannerSession, type PlannerSessionTurn } from '../planner-session.js';
-import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import {
   checkRegistry,
   enabledReviewChecks,
   planApprovesNpmScripts,
-} from '../validation/run-checks.js';
-import {
-  buildStageContext,
-  type StageContext,
-  unresolvedTestCheckErrors,
-} from '../validation/run.js';
-
-export type ConsultContext = Readonly<{
-  projectDir: string;
-  workspaceDir: string;
-  sessionId: string;
-  bus: EventBus;
-  /** With the state's approval, whether a `cmd` check of a rewrite or split may run an npm script. */
-  config: Config;
-  planner: Pick<Planner, 'capabilities' | 'typedCall'>;
-  /** The state the consult runs on; every transition it saves is persisted. */
-  state: WorkflowState;
-  signal?: AbortSignal | undefined;
-  /** Receives the state after each saved transition: a session handle, the record, the count. */
-  onStateChange?: ((state: WorkflowState) => void) | undefined;
-}>;
-
-export type ConsultRequestInput = Readonly<{
-  task: Task;
-  reason: ConsultReason;
-  failingOutput: string;
-  report?: ImplementerReport | null | undefined;
-  /**
-   * A stuck review's consult: the reviewer's next fix work, which the answer reshapes, the ids of
-   * the blockers that did not move, and the red checks and Apply conflicts that block.
-   */
-  stuck?:
-    | Readonly<{
-        fixWork: TriageResult;
-        blockerIds: readonly string[];
-        redInputs: readonly string[];
-      }>
-    | undefined;
-}>;
-
-export type ConsultOutcome =
-  | Readonly<{ answer: ConsultAnswer }>
-  | Readonly<{ error: SeatProtocolError }>;
+} from '../validation/checks/runner.js';
+import { buildStageContext } from '../validation/run.js';
+import type { ConsultRequestInput, ConsultContext, ConsultOutcome } from './types.js';
+import { answerContract } from './answer-contract.js';
+import { taskDiff } from './task-diff.js';
 
 /** The failures a consult produced, including returned protocol errors the caller throws. */
 const consultErrors = new WeakSet<object>();
@@ -89,95 +29,6 @@ const consultErrors = new WeakSet<object>();
 /** Whether `err` came out of a consult, for a caller that halts on that failure. */
 export function isConsultError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && consultErrors.has(err);
-}
-
-export function criteriaCheckIds(criteria: readonly string[], plan: Plan | undefined): string[] {
-  const served = new Set(criteria);
-  const checkIds = new Set<string>();
-  for (const criterion of plan?.criteria ?? []) {
-    if (!served.has(criterion.id)) continue;
-    for (const checkId of criterion.checkIds) checkIds.add(checkId);
-  }
-  return [...checkIds];
-}
-
-function verifySelectionErrors(
-  task: Task,
-  state: WorkflowState,
-  answer: ConsultAnswer['answer'],
-): string[] {
-  if (answer.action !== 'verify') return [];
-  const { checkIds } = answer;
-  if (checkIds.length === 0) return ['the verify selection names no check'];
-  const known = checkRegistry({ task, tasks: state.tasks, plan: state.plan });
-  const unknown = checkIds.filter((checkId) => !known.has(checkId));
-  if (unknown.length > 0) {
-    return [`the verify selection names unknown checks: ${unknown.join(', ')}`];
-  }
-  // The brief gate checks a criterion only once it is due, so a later owner's check never binds.
-  const due = new Set(dueCriterionIds(state, task.id));
-  const dueCriteria = (task.criteria ?? []).filter((criterionId) => due.has(criterionId));
-  const missing = criteriaCheckIds(dueCriteria, state.plan).filter(
-    (checkId) => !checkIds.includes(checkId),
-  );
-  return missing.length === 0
-    ? []
-    : [`the verify selection misses the task's criteria checks: ${missing.join(', ')}`];
-}
-
-/**
- * The answer contract of one consult. A rewrite or a split never brings in a `cmd` check that the
- * plan command policy refuses or whose npm script no one adds, a `render` check that names no
- * scenario id or that the run cannot render, or a `test` check whose value is not one test file in
- * the workspace or in the files of the answer or of a pending task. A fix task's rewrite or split
- * never targets the user's own files the run left alone. A verify answer names a known check and
- * every check of the task's due criteria (`verifySelectionErrors`), and a stuck review's answer
- * meets `stuckAnswerErrors`. Such an answer fails the schema and the seat gets its one repair.
- */
-function answerContract(
-  task: Task,
-  reason: ConsultReason,
-  stuck: ConsultRequestInput['stuck'],
-  checks: {
-    known: ReadonlySet<string>;
-    /** The run a verify selection is checked against: its checks and its due criteria. */
-    state: WorkflowState;
-    npmScriptsApproved: boolean;
-    projectDir: string;
-    renderCommand: string | undefined;
-    testChecks: StageContext;
-    pendingFiles: readonly string[];
-    userFiles: ReadonlySet<string>;
-  },
-) {
-  return {
-    jsonSchema: CONSULT_ANSWER_JSON_SCHEMA,
-    schemaName: 'consult_answer',
-    schema: consultAnswerSchemaFor(task, reason).superRefine((value, ctx) => {
-      const specs =
-        value.answer.action === 'rewrite-task'
-          ? [value.answer.task]
-          : value.answer.action === 'split-task'
-            ? value.answer.tasks
-            : [];
-      const specChecks = specs.flatMap((spec) => spec.checks);
-      for (const message of [
-        ...refusedCheckErrors(specChecks, {
-          npmScriptsApproved: checks.npmScriptsApproved,
-          projectDir: checks.projectDir,
-          writtenFiles: [...checks.pendingFiles, ...specs.flatMap((spec) => spec.suggestedFiles)],
-        }).map((error) => error.message),
-        ...unconfiguredRenderCheckErrors(specChecks, checks.renderCommand),
-        ...unresolvedTestCheckErrors(specs, checks.testChecks, checks.pendingFiles),
-        ...fixTaskTargetErrors(specs, checks.userFiles),
-        ...(stuck === undefined
-          ? verifySelectionErrors(task, checks.state, value.answer)
-          : stuckAnswerErrors(value.answer, { ...stuck, knownChecks: checks.known })),
-      ]) {
-        ctx.addIssue({ code: 'custom', message });
-      }
-    }),
-  };
 }
 
 /**
@@ -200,56 +51,6 @@ async function consultUserFiles(
       runBase: runBaseOf(ctx, ctx.state),
     }),
   );
-}
-
-async function taskFileDiff(
-  projectDir: string,
-  snapshot: ChangedFilesSnapshot,
-  file: string,
-  ref: SessionRef,
-): Promise<string> {
-  try {
-    const before = await entryToRestore(projectDir, snapshot, file, entryStoreDir(ref));
-    const after = await readChangeEntry(projectDir, file);
-    return await diffFileEntries({
-      path: file,
-      before: before.kind === 'absent' ? null : before,
-      after: after.kind === 'absent' ? null : after,
-    });
-  } catch {
-    // The diff is context for the answer; a file that cannot be read must not stop the call.
-    return '';
-  }
-}
-
-/**
- * The task's diff: what is on disk now against the lineage's start, the workspace when its
- * first brief dispatched. It holds every attempt, revision and split subtask of the task. The
- * brief's own files are diffed, in the brief's order; every other changed file is only named.
- * Null when no start is recorded (a task not dispatched yet, or an older state).
- */
-async function taskDiff(
-  projectDir: string,
-  state: WorkflowState,
-  task: Task,
-  ref: SessionRef,
-): Promise<ConsultPromptInput['taskDiff']> {
-  const start = state.lineages?.[lineageIdOf(task)]?.startSnapshot;
-  if (start === undefined) return null;
-  let files: string[];
-  try {
-    files = await getChangedFilesSinceSnapshot(projectDir, start);
-  } catch {
-    // The diff is context for the answer; a workspace that cannot be read must not stop the call.
-    return null;
-  }
-  const briefFiles = files.filter((file) => isInDeclaredSet(file, task.suggestedFiles));
-  const diffs: { path: string; diff: string }[] = [];
-  for (const file of orderChangedFiles(briefFiles, task.suggestedFiles)) {
-    const diff = await taskFileDiff(projectDir, start, file, ref);
-    if (diff !== '') diffs.push({ path: file, diff });
-  }
-  return { diffs, otherFiles: files.filter((file) => !briefFiles.includes(file)) };
 }
 
 function promptInput(

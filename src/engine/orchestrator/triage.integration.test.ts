@@ -20,8 +20,8 @@ import { selectRunningBrief, selectTaskListView } from '../../core/run-view/brie
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { readRunEvents } from '../events/replay.js';
 import { createJsonlSink } from '../events/sinks/jsonl.js';
-import { publishTasksPlanned } from './events.js';
-import { applyTriage, startFixCycle } from './triage.js';
+import { publishTasksPlanned } from './publish/task.js';
+import { applyTriage, startFixCycle } from './review/triage.js';
 
 const dirs: string[] = [];
 afterEach(() => {

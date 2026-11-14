@@ -3,8 +3,8 @@ import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry.js';
-import { promoteStagedChanges } from '../approval/staged-project.js';
+import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry/baseline.js';
+import { promoteStagedChanges } from '../approval/staged-project/promote.js';
 import { prepareWorktreeAcquisition } from './acquisition.js';
 
 const roots: string[] = [];

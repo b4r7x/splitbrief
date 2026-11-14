@@ -6,8 +6,8 @@ import type { EventBus } from '../../events/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import type { PreparationPolicy } from '../../runners/prepare-execution/types.js';
 import type { prepareExecution } from '../../runners/prepare-execution/prepare-execution.js';
-import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
-import { publishWarning } from '../events.js';
+import { switchSeatAndPrepareResume } from '../recovery/seat/switch/resume.js';
+import { publishWarning } from '../publish/notice.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 
 /** The seat swap a quota halt offered, as the operator took it. */

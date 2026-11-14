@@ -14,7 +14,7 @@ import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { fauxPlanner } from '#testing/helpers/faux/planner.js';
 import { readQueueForPrompt, releaseQueuedMessage } from './drain.js';
-import { addUsageAndSave } from '../state-ops.js';
+import { addUsageAndSave } from '../state-ops/usage.js';
 import { makeResearchingState, setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { trustedShimGate } from '#testing/helpers/command-shim.js';

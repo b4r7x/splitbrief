@@ -1,5 +1,5 @@
 import type { AcceptRunSnapshotResult } from '../../../core/runtime/commands/types.js';
-import { createWriteSequencer } from '../../orchestrator/serial-executor.js';
+import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import { createSnapshot } from '../create.js';
 import { ACCEPTED_RUN_SNAPSHOT_NAME, createRunLedger, writeRunLedger } from './ledger.js';
 import { rejectRunSnapshotBody } from './rollback.js';

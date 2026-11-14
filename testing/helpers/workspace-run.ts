@@ -5,7 +5,7 @@ import { ensureSessionDir } from '../../src/core/sessions/spec-files.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import { createInitialState } from '../../src/core/state/machine.js';
 import { saveState } from '../../src/core/state/persistence.js';
-import { reconcileWorkspaceToBase } from '../../src/engine/orchestrator/isolation/acquisition.js';
+import { reconcileWorkspaceToBase } from '../../src/engine/orchestrator/isolation/run-base/reader.js';
 import { createRunIsolation } from '../../src/engine/orchestrator/isolation/create.js';
 import { createSnapshot } from '../../src/engine/snapshots/create.js';
 import { RUN_CREW } from './factories/workflow-state.js';

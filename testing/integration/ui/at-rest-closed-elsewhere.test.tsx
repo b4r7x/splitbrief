@@ -17,7 +17,7 @@ import { loadOwnerWorkflowState } from '../../../src/core/state/resume-hydration
 import { hydrateRun, readRunHistory } from '../../../src/features/workflow/run-history.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
-import { endRunAtRest } from '../../../src/engine/orchestrator/run/close.js';
+import { endRunAtRest } from '../../../src/engine/orchestrator/run/end.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';

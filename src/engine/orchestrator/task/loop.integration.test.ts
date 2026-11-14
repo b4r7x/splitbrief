@@ -19,8 +19,8 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/change
 import type { EngineEvent } from '../../events/types.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
-import { enqueueUserMessage } from '../queue/submit.js';
-import { workflowStatePath } from '../state-ops.js';
+import { enqueueUserMessage } from '../queue/enqueue.js';
+import { workflowStatePath } from '../state-ops/head.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];

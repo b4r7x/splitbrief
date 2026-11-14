@@ -20,7 +20,7 @@ import { createRunIsolation } from './create.js';
 import { readWorkspaceRecord } from './retention.js';
 import { isolationWorktreeRoot, sessionDir } from '../../../core/paths.js';
 import { createSnapshot } from '../../snapshots/create.js';
-import { reconcileWorkspaceToBase } from './acquisition.js';
+import { reconcileWorkspaceToBase } from './run-base/reader.js';
 import { hashFile } from '../../snapshots/files.js';
 
 const dirs: string[] = [];

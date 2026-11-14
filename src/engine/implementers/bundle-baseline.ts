@@ -1,7 +1,7 @@
 import { confinedFileIdentity } from '../../lib/fs/confined.js';
 import { assertModelWritablePathConfined } from '../../core/scope/control-plane.js';
 import type { Task } from '../../core/schemas/task.js';
-import { readConfinedEntry } from '../orchestrator/approval/file-snapshots/entry.js';
+import { readConfinedEntry } from '../orchestrator/approval/file-snapshots/entry/read.js';
 import { FILE_BUNDLE_MAX_FILES, type BundleBaseline } from './file-bundle.js';
 import { unsafePathReason } from './parse-file-bundle.js';
 

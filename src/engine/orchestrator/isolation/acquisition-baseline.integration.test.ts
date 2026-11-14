@@ -13,7 +13,8 @@ import { join } from 'node:path';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createStagedProject, promoteStagedChanges } from '../approval/staged-project.js';
+import { createStagedProject } from '../approval/staged-project/create.js';
+import { promoteStagedChanges } from '../approval/staged-project/promote.js';
 import type { IsolatedWorkspace } from './types.js';
 import { createRunIsolation } from './create.js';
 

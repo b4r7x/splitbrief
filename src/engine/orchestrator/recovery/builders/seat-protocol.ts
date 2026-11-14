@@ -6,7 +6,8 @@ import { seatProtocolHeadline, type SeatProtocolError } from '../../../runners/t
 import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 import { chooseRecommended, haltActions } from './actions.js';
-import { switchSeatOffer, type SeatSwapContext } from './task.js';
+import { switchSeatOffer } from './switch-offer.js';
+import type { SeatSwapContext } from '../seat/swap-context.js';
 import { taskFiles } from './details.js';
 
 export interface SeatProtocolRecoveryOptions extends RecoveryBuilderBase {

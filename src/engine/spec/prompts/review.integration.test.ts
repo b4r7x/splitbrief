@@ -19,7 +19,7 @@ import {
 } from '#testing/helpers/typed-planner.js';
 import { REVIEW_FILE, reviewChangeFile, sessionDir } from '../../../core/paths.js';
 import { getChangedFilesSnapshot } from '../../orchestrator/approval/file-snapshots/capture.js';
-import { runFinalReviewPhase } from '../../orchestrator/final-review.js';
+import { runFinalReviewPhase } from '../../orchestrator/review/phase.js';
 import { buildFinalReviewPrompt, reviewChangeText, type ReviewPlanData } from './review.js';
 import { DIRECT_WRITER_TASK_RULE, TASK_CMD_CHECK_RULE } from './plan-session.js';
 

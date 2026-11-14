@@ -12,7 +12,7 @@ import {
   makeStateWithQueue,
   makeMessage,
 } from '#testing/helpers/queue.js';
-import { createWriteSequencer } from '../serial-executor.js';
+import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import { createClearQueueHandler } from './clear.js';
 import { createQueueHandler } from './submit.js';
 

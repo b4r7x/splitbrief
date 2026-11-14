@@ -5,7 +5,7 @@ import type { Plan } from '../../../core/schemas/plan.js';
 import { createEventBus } from '../../events/bus.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/validation-fixtures.js';
-import { runChecks } from './run-checks.js';
+import { runChecks } from './checks/runner.js';
 
 const PROBE = [
   'const secrets = ["OPENAI_API_KEY", "AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN", "SSH_AUTH_SOCK"];',

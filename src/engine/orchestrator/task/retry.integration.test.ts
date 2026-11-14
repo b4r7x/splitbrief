@@ -32,9 +32,10 @@ import { failedRetry, type RetryResult } from '../escalation/types.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { error } from '../../../utils/error.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { requestConsult } from '../consult/request.js';
-import { handleTaskPlannerCallFailure, retryAndRecord } from './retry.js';
+import { retryAndRecord } from './retry.js';
+import { handleTaskPlannerCallFailure } from './planner-failure.js';
 
 vi.mock('../escalation/handle.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../escalation/handle.js')>();

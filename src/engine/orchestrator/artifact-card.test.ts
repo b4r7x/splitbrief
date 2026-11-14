@@ -7,7 +7,7 @@ import { buildSpecFrontmatter } from '../../core/sessions/spec-files.js';
 import { taskId, type Task } from '../../core/schemas/task.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import type { EventBus } from '../events/types.js';
-import { buildArtifactExcerpt, publishArtifactWritten } from './artifact-card.js';
+import { buildArtifactExcerpt, publishArtifactWritten } from './plan-files/card.js';
 
 function filler(label: string, count: number): string[] {
   return Array.from({ length: count }, (_, index) => `${label} body line ${index + 1}`);

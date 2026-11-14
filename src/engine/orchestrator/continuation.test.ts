@@ -10,12 +10,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { STATE_FILE } from '../../core/paths.js';
-import {
-  createContinuationHolder,
-  readInterruptedPartial,
-  withContinuationLoop,
-  type ContinuationLoopCtx,
-} from './continuation.js';
+import { withContinuationLoop, type ContinuationLoopCtx } from './continuation/loop.js';
+import { createContinuationHolder } from './continuation/holder.js';
+import { readInterruptedPartial } from './continuation/interrupted.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
 import { appendEngineEvent, appendMessage } from '../../core/sessions/log/writer.js';
 import { createEventBus } from '../events/bus.js';

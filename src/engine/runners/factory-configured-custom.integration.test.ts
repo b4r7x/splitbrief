@@ -7,7 +7,7 @@ import {
   beginDeclaredArtifactReview,
   cleanupStaleArtifactReviews,
 } from '../orchestrator/approval/planner-artifact.js';
-import { createStagedProject } from '../orchestrator/approval/staged-project.js';
+import { createStagedProject } from '../orchestrator/approval/staged-project/create.js';
 import { defaultContext, makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';

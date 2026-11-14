@@ -37,7 +37,7 @@ import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
 import { CURSOR_MODEL_REFUSAL, writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 

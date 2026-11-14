@@ -5,10 +5,10 @@ import type { PlanningPhaseResult } from '../planning/types.js';
 import { awaitsApply, resumeStep } from '../../../core/sessions/run/status.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { runApply } from '../apply/run.js';
-import { publishWarning } from '../events.js';
+import { publishWarning } from '../publish/notice.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { runPlanningPhase } from '../planning/run.js';
-import { transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops/transition.js';
 import { plannerCallbacksContextOf, plannerFeature } from './planner-callbacks-context.js';
 import { resumeParkedApproval } from './resume-parked-approval.js';
 

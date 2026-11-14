@@ -28,8 +28,8 @@ import {
 import type { Config } from '../../../core/schemas/config.js';
 import { createGitClient } from '../../../lib/git/client.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { denialMessage, gateAttemptChanges } from '../task/attempt-gate.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
+import { denialMessage, gateAttemptChanges } from '../task/gates/attempt.js';
 import { withAttemptRestoreScope } from '../task/restore-scope.js';
 import { createRunnerSandboxEnv } from '../../runners/sandbox-env.js';
 import { sandboxCredentialValues } from '../../runners/sandbox-credential-values.js';
@@ -41,10 +41,10 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { createSnapshot } from '../../snapshots/create.js';
-import { reconcileWorkspaceToBase } from './acquisition.js';
+import { reconcileWorkspaceToBase } from './run-base/reader.js';
 import { createRunIsolation } from './create.js';
 import { captureWorkspaceSnapshot } from './entry-snapshot.js';
-import { removeRunWorkspace } from './remove-worktree.js';
+import { removeRunWorkspace } from './worktree/remove.js';
 import { readWorkspaceRecord } from './retention.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;

@@ -22,7 +22,7 @@ import type { ImplementerOptions, RetryOptions } from '../../implementers/types.
 import type { Validator } from '../validation/types.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
-import { applyRecoveryAction } from '../recovery/actions.js';
+import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { runSingleTask } from './step.js';
 
 afterEach(() => {

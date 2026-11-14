@@ -14,11 +14,9 @@ import { ensureSessionDir, writeSpecFile } from '../../../../src/core/sessions/s
 import { resumeStep } from '../../../../src/core/sessions/run/status.js';
 import { saveState } from '../../../../src/core/state/persistence.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
-import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run/init.js';
-import {
-  rebaseOnPersistedWorkflowState,
-  transitionAndSave,
-} from '../../../../src/engine/orchestrator/state-ops.js';
+import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run/init/options.js';
+import { transitionAndSave } from '../../../../src/engine/orchestrator/state-ops/transition.js';
+import { rebaseOnPersistedWorkflowState } from '../../../../src/engine/orchestrator/state-ops/head.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
 import { prepareExecution } from '../../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparationPolicy } from '../../../../src/engine/runners/prepare-execution/types.js';

@@ -2,9 +2,6 @@ import { readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isInternalGitStatusPath, SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { fsError } from '../../../lib/fs/secure.js';
-import { assertPathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
-import { isENOENT, isNodeError } from '../../../utils/errno.js';
 import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { resolveValidatedBlobPath } from '../../snapshots/blob-resolver.js';
@@ -13,12 +10,9 @@ import { readManifest } from '../../snapshots/manifest.js';
 import {
   type AcquisitionBaseline,
   captureAcquisitionBaseline,
-  type ChangeEntry,
-  linkStaysInProject,
-  readChangeEntry,
-  readConfinedEntry,
-} from '../approval/file-snapshots/entry.js';
-import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
+} from '../approval/file-snapshots/entry/baseline.js';
+import { type ChangeEntry, readConfinedEntry } from '../approval/file-snapshots/entry/read.js';
+import { stripGitignoreBookkeeping } from '../approval/staged-project/gitignore.js';
 
 export type SideEntry =
   | { kind: 'absent' }
@@ -49,7 +43,7 @@ export async function readBaseBytes(path: string, entry: BaseEntry): Promise<Buf
   return bytes;
 }
 
-async function normalizeWorkspaceEntry(
+export async function normalizeWorkspaceEntry(
   entry: ChangeEntry,
   path: string,
   base: ReadonlyMap<string, BaseEntry>,
@@ -230,7 +224,7 @@ export async function captureReviewedCandidate(input: {
   return candidateOf(await captureApplyStates(input));
 }
 
-type ApplySide = 'ours' | 'theirs';
+export type ApplySide = 'ours' | 'theirs';
 
 export function sideChangedError(side: ApplySide, path: string) {
   return error(
@@ -262,54 +256,4 @@ export async function verifyApplyStates(states: ApplyStates): Promise<void> {
   ]);
   verifySideEntries('theirs', states.theirs, checkout.entries);
   verifySideEntries('ours', states.ours, ours);
-}
-
-type SideReadInput = {
-  states: ApplyStates;
-  path: string;
-  side: ApplySide;
-  expected: Extract<SideEntry, { kind: 'file' }>;
-};
-
-export function unsafeEntryError(cause: unknown): boolean {
-  return (
-    fsError.isInvalidId(cause) ||
-    fsError.isSymlinkWrite(cause) ||
-    pathConfinementError.isSymlinkRead(cause) ||
-    pathConfinementError.isSymlinkParent(cause) ||
-    pathConfinementError.isEscapesRoot(cause) ||
-    (isNodeError(cause) && cause.code === 'ENOTDIR')
-  );
-}
-
-/** The entry at `path`: a file, nothing, or a project symlink; null for any other entry. */
-export async function readApplyEntry(dir: string, path: string): Promise<ChangeEntry | null> {
-  assertPathConfined(path, dir);
-  try {
-    const entry = await readChangeEntry(dir, path);
-    if (entry.kind === 'symlink' && !(await linkStaysInProject(dir, path, entry.target))) {
-      return null;
-    }
-    return entry;
-  } catch (cause) {
-    if (isENOENT(cause)) return { kind: 'absent' };
-    if (unsafeEntryError(cause)) return null;
-    throw cause;
-  }
-}
-
-export async function readSideEntry(
-  input: SideReadInput,
-): Promise<Extract<ChangeEntry, { kind: 'file' }>> {
-  const { states, path, side } = input;
-  const dir = side === 'ours' ? states.workspaceDir : states.projectDir;
-  const observed = await readApplyEntry(dir, path);
-  const current =
-    observed !== null && side === 'ours'
-      ? await normalizeWorkspaceEntry(observed, path, states.base)
-      : observed;
-  if (current === null || current.kind !== 'file' || !sameSideEntry(current, input.expected)) {
-    throw sideChangedError(input.side, input.path);
-  }
-  return current;
 }

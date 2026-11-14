@@ -5,11 +5,8 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { appendReviewChanges } from '../../../core/evidence/review-changes.js';
 import { warnError } from '../../../lib/warn.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import {
-  readChangeEntry,
-  sameChangeEntry,
-  type ChangeEntry,
-} from '../approval/file-snapshots/entry.js';
+import { sameChangeEntry } from '../approval/file-snapshots/entry/read.js';
+import { readChangeEntry, type ChangeEntry } from '../approval/file-snapshots/entry/read.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
 import { entryStoreDir } from '../isolation/entry-snapshot.js';
 

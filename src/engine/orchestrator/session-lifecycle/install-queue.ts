@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { EventBus } from '../../events/types.js';
 import { createQueueHandler } from '../queue/submit.js';
 import { createClearQueueHandler } from '../queue/clear.js';
-import { createWriteSequencer } from '../serial-executor.js';
+import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import type { Planner } from '../../planners/types.js';
 import type { WorkflowContext, WorkflowSinks } from '../types.js';
 import type { SteeringPort } from '../../calls/steering.js';

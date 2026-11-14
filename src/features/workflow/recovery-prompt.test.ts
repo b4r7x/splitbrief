@@ -5,15 +5,15 @@ import type { RecoveryIssue, SwitchSeatOffer } from '../../core/schemas/recovery
 import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../engine/orchestrator/recovery/builders/checks.js';
+import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/review-failed.js';
 import {
   buildCheckoutChangedRecoveryIssue,
   buildLeftIsolationRecoveryIssue,
-  buildRetryExhaustedRecoveryIssue,
-  buildReviewFailedRecoveryIssue,
-  buildRunnerCheckFailedRecoveryIssue,
-  buildSeatDownIssue,
-  type SeatSwapContext,
-} from '../../engine/orchestrator/recovery/builders/task.js';
+} from '../../engine/orchestrator/recovery/builders/isolation.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/retry.js';
+import { buildRunnerCheckFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/runner-defect.js';
+import { buildSeatDownIssue } from '../../engine/orchestrator/recovery/builders/seat-down.js';
+import type { SeatSwapContext } from '../../engine/orchestrator/recovery/seat/swap-context.js';
 import { buildPlannerCallFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/planner.js';
 import { buildApplyPartialRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
 import { formatTruncatedList } from '../../core/formatting.js';

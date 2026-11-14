@@ -13,7 +13,7 @@ import {
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { validateCommitAndAdvance } from './commit.js';
-import type { ValidationAcceptance } from '../validation/acceptance.js';
+import type { ValidationAcceptance } from '../validation/types.js';
 
 const spawned = vi.hoisted(() => ({ commands: [] as string[] }));
 vi.mock('node:child_process', async (importOriginal) => {

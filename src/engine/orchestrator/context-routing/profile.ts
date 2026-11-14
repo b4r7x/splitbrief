@@ -1,0 +1,70 @@
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowContext } from '../types.js';
+import type { RoutingDecision } from './types.js';
+import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
+import { createImplementerPublisher } from '../publish/runner.js';
+import type { Implementer } from '../../implementers/types.js';
+import { error } from '../../../utils/error.js';
+
+export function configForProfile(
+  config: WorkflowContext['config'],
+  profile: ResolvedImplementerProfile,
+): WorkflowContext['config'] {
+  const profiles = config.implementerProfiles;
+  const implementer = profile.config;
+
+  if (profiles === undefined) {
+    return { ...config, implementer };
+  }
+
+  return {
+    ...config,
+    implementer,
+    implementerProfiles: {
+      ...profiles,
+      default: profile.name,
+    },
+  };
+}
+
+export function selectedProfileFromDecision(
+  profiles: ResolvedImplementerProfile[],
+  decision: RoutingDecision,
+): ResolvedImplementerProfile | undefined {
+  if (decision.selectedProfile === undefined) return undefined;
+  return profiles.find((profile) => profile.name === decision.selectedProfile);
+}
+
+export async function createTaskImplementer(opts: {
+  wctx: WorkflowContext;
+  profile: ResolvedImplementerProfile;
+  singleImplementerMode: boolean;
+}): Promise<Implementer> {
+  if (opts.singleImplementerMode && opts.profile.isDefault) return opts.wctx.implementer;
+  const factory = opts.wctx.createImplementer;
+  if (factory === undefined) {
+    throw error('runner-gate-mismatch', 'Prepared implementer factory is unavailable.');
+  }
+  return factory({
+    publisher: createImplementerPublisher(opts.wctx.bus),
+    slot: { role: 'implementer', profile: opts.profile.name },
+  });
+}
+
+/** The BUILD profile a recovery action pinned this brief to, read from the run state. */
+export function retryProfileForTask(state: WorkflowState, task: Task): string | undefined {
+  return state.retryProfile?.taskId === task.id ? state.retryProfile.profile : undefined;
+}
+
+export function routingBlockMessage(decision: RoutingDecision): string {
+  const context =
+    decision.contextLength === undefined
+      ? `${decision.estimatedTokens} estimated tokens`
+      : `${decision.estimatedTokens}/${decision.contextLength} estimated tokens`;
+  return [
+    `Task ${decision.taskId} cannot be routed to an implementer profile (${context}).`,
+    'Pause and revise the plan, reduce required context, or configure a larger implementer profile.',
+    decision.reason,
+  ].join(' ');
+}

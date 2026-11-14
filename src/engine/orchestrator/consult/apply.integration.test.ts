@@ -27,7 +27,8 @@ import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import type { OrchestratorCallbacks } from '../types.js';
-import { applyConsultAnswer, type ConsultApplyContext } from './apply.js';
+import { applyConsultAnswer } from './apply.js';
+import type { ConsultApplyContext } from './types.js';
 import {
   attachedMessage,
   expectCompactMessage,
