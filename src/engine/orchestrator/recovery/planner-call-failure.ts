@@ -11,13 +11,13 @@ import {
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
-import { runnerLoginInstruction } from '../../runners/auth-failure.js';
-import { cliToolCheckError, cliToolCheckWords } from '../../runners/start-gate.js';
-import type { SeatFailureClassification } from '../../runners/seat-failure.js';
-import { usageLimitAdvice } from '../../runners/usage-limit.js';
+import { runnerLoginInstruction } from '../../runners/seat-failure/auth.js';
+import { cliToolCheckError, cliToolCheckWords } from '../../runners/seat-gates.js';
+import type { SeatFailureClassification } from '../../runners/seat-failure/classify.js';
+import { usageLimitAdvice } from '../../runners/seat-failure/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diagnostic.js';
 import { labelError } from '../../../utils/format/errors.js';
 import { nowIso } from '../../../utils/format/time.js';

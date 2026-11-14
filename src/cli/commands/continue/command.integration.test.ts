@@ -23,7 +23,7 @@ import { CONFIG_FILE, SPLITBRIEF_DIR, sessionDir } from '../../../core/paths.js'
 import { readSpecFile, writeSpecFile } from '../../../core/sessions/spec-files.js';
 import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-failed.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-input.js';
-import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -37,7 +37,7 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseContinueActionOption } from '../../options/continue-action.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { saveDetectionCache } from '../../../engine/detection/cache.js';
+import { saveDetectionCache } from '../../../engine/detection/cache/store.js';
 import * as entry from '../../../engine/orchestrator/approval/file-snapshots/entry/write.js';
 import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { readyToApplyMessage } from '../../sessions/resolve.js';

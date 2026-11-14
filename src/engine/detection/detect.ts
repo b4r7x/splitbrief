@@ -22,10 +22,10 @@ import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import {
   resolveCliExecutable,
   resolveCliExecutableAliases,
-  type CliExecutableResolver,
-} from '../runners/resolve-cli-executable.js';
+} from '../runners/cli-executable/resolve.js';
+import type { CliExecutableResolver } from '../runners/cli-executable/types.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
-import { probeCliReadiness } from '../runners/cli-tools/readiness-probe.js';
+import { probeCliReadiness } from '../runners/cli-tools/probe/readiness.js';
 import { trackToolCheck } from '../probe-activity.js';
 import { readHostModelSelection } from '../runners/host-model-selection.js';
 

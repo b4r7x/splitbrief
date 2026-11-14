@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  calculateCostBreakdown,
-  describeOfferingBillingPresentation,
-  resolveProviderRunMetadata,
-} from './breakdown.js';
+import { calculateCostBreakdown } from './breakdown.js';
+import { describeOfferingBillingPresentation, resolveProviderRunMetadata } from './run-metadata.js';
 import type { ProviderRunMetadata } from '../../../core/schemas/cost.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { taskId } from '../../../core/schemas/task.js';

@@ -10,10 +10,11 @@ import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../../core/readiness/json.j
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { cliAuthRemediation } from '../../../core/readiness/cli-remediation.js';
-import { runnerDiscoveryContextKey } from '../../detection/runner-evidence.js';
+import { runnerDiscoveryContextKey } from '../../detection/context-key.js';
 import { getSplitbriefPath } from '../../../core/paths.js';
-import { saveDetectionCache } from '../../detection/cache.js';
-import { customRunnerRefusal, evaluateCandidate } from './evaluate-candidate.js';
+import { saveDetectionCache } from '../../detection/cache/store.js';
+import { evaluateCandidate } from './evaluate-candidate.js';
+import { customRunnerRefusal } from './evaluate-command.js';
 import type { RunnerCandidate } from './runner-candidates.js';
 import type { PreparationContext, PrepareExecutionDependencies } from './types.js';
 

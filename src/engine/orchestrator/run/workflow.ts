@@ -10,7 +10,7 @@ import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
 import { resolveSpecMetadata } from '../../providers/model/display-names.js';
-import { NULL_CACHE } from '../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../providers/model/runtime-snapshot.js';
 import {
   clearProcessLedger,
   createProcessScope,
@@ -44,7 +44,7 @@ import { createRunIsolation } from '../isolation/create.js';
 
 import type { RunWorkflowOptions } from './init/options.js';
 import { initializeWorkflow } from './init/initialize.js';
-import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
+import { clearBridgedCliState } from '../../runners/sandbox/state/bridge.js';
 import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 import { runPlanningPhases } from './phases.js';

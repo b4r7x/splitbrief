@@ -21,7 +21,7 @@ import { registerStartCommand } from '../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../src/cli/commands/start/types.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, LOCKFILE, STATE_FILE } from '../../src/core/paths.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
-import { prepareExecution } from '../../src/engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../src/engine/runners/prepare-execution/prepare.js';
 import type { probeRunnerAvailability } from '../../src/engine/runners/probe-availability.js';
 
 export const runHeadlessMock = vi.fn<StartDeps['runHeadless']>();

@@ -3,13 +3,14 @@ import type {
   CliImplementerBuildArgsInput,
   CliOutputContract,
   CliPlannerBuildArgsInput,
-  CliProbeContract,
   CliPromptTransport,
   CliPromptEncoder,
   CliProtocolEvent,
   CliTerminalInput,
 } from './contract.js';
-import { CandidateEvidence, contractSha256 } from '../../providers/candidate-contract.js';
+import type { CliProbeContract } from './probe/contract.js';
+import { contractSha256 } from '../../providers/candidate/contract.js';
+import { CandidateEvidence } from '../../providers/candidate/evidence.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 export const CLI_PROMPT_SENTINEL = '<PROMPT>' as const;

@@ -4,19 +4,19 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createCandidateEvidenceCapture } from '../../providers/candidate-contract.js';
+import { createCandidateEvidenceCapture } from '../../providers/candidate/evidence.js';
 import { prependPath } from '#testing/helpers/command-shim.js';
-import { CLI_CONFORMANCE_CANDIDATES as claudeCodeCandidates } from './claude-code.js';
-import { CLI_CONFORMANCE_CANDIDATES as codexCandidates } from './codex.js';
-import { CLI_CONFORMANCE_CANDIDATES as opencodeCandidates } from './opencode.js';
-import { CLI_CONFORMANCE_CANDIDATES as copilotCandidates } from './copilot.js';
+import { CLI_CONFORMANCE_CANDIDATES as claudeCodeCandidates } from './claude-code/conformance.js';
+import { CLI_CONFORMANCE_CANDIDATES as codexCandidates } from './codex/conformance.js';
+import { CLI_CONFORMANCE_CANDIDATES as opencodeCandidates } from './opencode/adapter.js';
+import { CLI_CONFORMANCE_CANDIDATES as copilotCandidates } from './copilot/adapter.js';
 import { CLI_CONFORMANCE_CANDIDATES as kiloCodeCandidates } from './kilo-code.js';
-import { CLI_CONFORMANCE_CANDIDATES as cursorCandidates } from './cursor.js';
-import { CLI_CONFORMANCE_CANDIDATES as commandCodeCandidates } from './command-code.js';
+import { CLI_CONFORMANCE_CANDIDATES as cursorCandidates } from './cursor/conformance.js';
+import { CLI_CONFORMANCE_CANDIDATES as commandCodeCandidates } from './command-code/conformance.js';
 import type { RawCliCandidateContract, UnregisteredCliCandidate } from './candidate-contract.js';
-import { CLI_CONFORMANCE_EXIT_CODES, type CliConformanceRole } from './contract-harness.js';
-import { runProductionCliConformance } from './contract-harness-production.js';
-import { runRawCliConformance } from './contract-harness-raw.js';
+import { CLI_CONFORMANCE_EXIT_CODES, type CliConformanceRole } from './contract-harness/harness.js';
+import { runProductionCliConformance } from './contract-harness/production.js';
+import { runRawCliConformance } from './contract-harness/raw.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -27,13 +27,13 @@ type ConformanceModule = Readonly<{
 }>;
 
 const CONFORMANCE_MODULES: readonly ConformanceModule[] = [
-  { modulePath: join(here, 'claude-code.ts'), candidates: claudeCodeCandidates },
-  { modulePath: join(here, 'codex.ts'), candidates: codexCandidates },
-  { modulePath: join(here, 'opencode.ts'), candidates: opencodeCandidates },
-  { modulePath: join(here, 'copilot.ts'), candidates: copilotCandidates },
+  { modulePath: join(here, 'claude-code/conformance.ts'), candidates: claudeCodeCandidates },
+  { modulePath: join(here, 'codex/conformance.ts'), candidates: codexCandidates },
+  { modulePath: join(here, 'opencode/adapter.ts'), candidates: opencodeCandidates },
+  { modulePath: join(here, 'copilot/adapter.ts'), candidates: copilotCandidates },
   { modulePath: join(here, 'kilo-code.ts'), candidates: kiloCodeCandidates },
-  { modulePath: join(here, 'cursor.ts'), candidates: cursorCandidates },
-  { modulePath: join(here, 'command-code.ts'), candidates: commandCodeCandidates },
+  { modulePath: join(here, 'cursor/conformance.ts'), candidates: cursorCandidates },
+  { modulePath: join(here, 'command-code/conformance.ts'), candidates: commandCodeCandidates },
 ];
 
 const CONFORMANCE_ROWS = CONFORMANCE_MODULES.flatMap((module) =>

@@ -9,7 +9,8 @@ import {
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { refusedCheckErrors, unconfiguredRenderCheckErrors } from '../../spec/plan-checks.js';
+import { refusedCheckErrors } from '../../spec/plan/render-checks.js';
+import { unconfiguredRenderCheckErrors } from '../../spec/plan/render-checks.js';
 import { fixTaskTargetErrors } from '../review/contract-errors.js';
 import { checkRegistry } from '../validation/checks/runner.js';
 import { type StageContext, unresolvedTestCheckErrors } from '../validation/run.js';

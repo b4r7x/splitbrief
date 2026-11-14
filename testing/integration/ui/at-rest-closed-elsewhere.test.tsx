@@ -34,7 +34,7 @@ import {
   useRunContinue,
   type UseRunContinueResult,
 } from '../../../src/features/workflow/hooks/use-run-continue.js';
-import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../src/engine/runners/prepare-execution/prepared.js';
 
 const VIEWPORT = { cols: 120, rows: 40 } as const;
 

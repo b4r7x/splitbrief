@@ -17,7 +17,7 @@ import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
-import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
+import { resolveCustomExecutable } from '../../../src/engine/runners/cli-executable/custom.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, test } from 'vitest';
 import { mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { validateTaskPath, pathError } from './paths-io.js';
+import { validateTaskPath, pathError } from '../engine/implementers/pipeline/apply-code.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;

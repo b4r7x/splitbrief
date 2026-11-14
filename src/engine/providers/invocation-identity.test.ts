@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type OpenAI from 'openai';
 import type { Config } from '../../core/schemas/config.js';
 import { InvocationIdentitySchema } from '../../core/schemas/invocation-identity.js';
-import { collectRunnerCallResult } from '../calls/collector.js';
+import { collectRunnerCallResult } from '../calls/collector/collect.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { EngineEventSchema } from '../events/schema.js';

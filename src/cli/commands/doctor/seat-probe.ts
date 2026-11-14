@@ -13,7 +13,7 @@ import {
 import {
   classifySeatFailure,
   type SeatFailureClassification,
-} from '../../../engine/runners/seat-failure.js';
+} from '../../../engine/runners/seat-failure/classify.js';
 import { cliError } from '../../errors.js';
 
 export const SEAT_PROBE_SEATS = ['plan', 'build', 'review'] as const;

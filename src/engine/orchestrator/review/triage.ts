@@ -10,7 +10,7 @@ import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.
 import { type WorkflowState, fixCyclesOf } from '../../../core/schemas/workflow/state.js';
 import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
 import { insertTasks } from '../../../core/state/task-insert.js';
-import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { publishTasksPlanned } from '../publish/task.js';
 import { publishFixCycleStarted } from '../publish/review.js';
 import { writeTasksArtifact } from '../plan-files/write.js';

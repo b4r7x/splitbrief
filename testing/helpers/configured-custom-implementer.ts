@@ -7,11 +7,9 @@ import {
   type ConfiguredCustomImplementerOptions,
 } from '../../src/engine/implementers/command-invoke.js';
 import type { Implementer } from '../../src/engine/implementers/types.js';
-import { prepareCustomRunnerAdmission } from '../../src/engine/runners/custom-admission.js';
-import {
-  customRunnerSecurityPosture,
-  type ConfiguredCustomRunner,
-} from '../../src/engine/runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../../src/engine/runners/custom/admission.js';
+import { customRunnerSecurityPosture } from '../../src/engine/runners/custom/posture.js';
+import type { ConfiguredCustomRunner } from '../../src/engine/runners/custom/posture.js';
 import type { CustomRunnerRuntimePort } from '../../src/engine/runners/types.js';
 import { makeConfig, defaultContext } from './factories/config.js';
 import { makeTask } from './factories/task.js';

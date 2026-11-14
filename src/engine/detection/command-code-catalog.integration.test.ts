@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
-import { detectRunnerEvidence } from './runner-evidence.js';
+import { resolveCliExecutable } from '../runners/cli-executable/resolve.js';
+import { detectRunnerEvidence } from './runner-evidence/detect.js';
 
 const listing = [
   'Available models  ·  2 models',

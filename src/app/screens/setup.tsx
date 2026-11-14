@@ -14,7 +14,7 @@ import type { AttachedInput } from '../../core/schemas/attachment.js';
 import { cliSignInStep } from '../../core/readiness/cli-remediation.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
-import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../engine/runners/prepare-execution/prepare.js';
 import { CREW_IDENTITY_COLUMN } from '../../features/crew/format.js';
 import { crewActivate } from '../../features/crew/rows.js';
 import { PresetRowView } from '../../features/crew/preset-row.js';

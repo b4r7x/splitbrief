@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import type { Reviewer } from '../../reviewers/types.js';
+import type { Reviewer } from '../../planners/reviewer.js';
 import type { PlannerOutputCallbacks, TypedCallContext } from '../../planners/types.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import { createBusTextHandler } from '../publish/runner.js';

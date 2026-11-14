@@ -12,9 +12,9 @@ import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { saveState } from '../../../core/state/persistence.js';
 import type { PreparationPolicy } from '../../runners/prepare-execution/types.js';
-import type { prepareExecution } from '../../runners/prepare-execution/prepare-execution.js';
+import type { prepareExecution } from '../../runners/prepare-execution/prepare.js';
 import type { EngineEvent } from '../../events/types.js';
-import type { PreparedExecution } from '../../runners/prepared-execution.js';
+import type { PreparedExecution } from '../../runners/prepare-execution/prepared.js';
 import { applyOfferedSeatSwap, type SeatSwapChoice } from './seat-swap.js';
 
 let dirs: string[] = [];

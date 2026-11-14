@@ -10,12 +10,12 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeCallbacks, runWorkspaceDir } from '#testing/helpers/orchestrator-factories.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
-import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
+import { resolveCustomExecutable } from '../../../src/engine/runners/cli-executable/custom.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
   type RunnerGate,
-} from '../../../src/engine/runners/prepared-execution.js';
+} from '../../../src/engine/runners/prepare-execution/prepared.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const dirs: string[] = [];

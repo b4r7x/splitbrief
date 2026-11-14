@@ -16,10 +16,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import { loadState } from '../../../src/core/state/persistence.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
-import {
-  cacheIdentity,
-  persistSnapshot,
-} from '../../../src/engine/providers/models-dev-cache/store.js';
+import { cacheIdentity, persistSnapshot } from '../../../src/engine/providers/models-dev/store.js';
 import { queueCopy } from '../../../src/features/workflow/queue-copy.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

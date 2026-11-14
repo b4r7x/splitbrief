@@ -6,10 +6,8 @@ import type {
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool/types.js';
 import { cliDetectionFromReadiness } from '../../../src/engine/detection/detect.js';
-import {
-  type RememberedCliCatalog,
-  saveDetectionCache,
-} from '../../../src/engine/detection/cache.js';
+import { saveDetectionCache } from '../../../src/engine/detection/cache/store.js';
+import type { RememberedCliCatalog } from '../../../src/engine/detection/cache/schema.js';
 import { getSplitbriefPath } from '../../../src/core/paths.js';
 import type { CliReadinessFacts } from '../../../src/core/schemas/readiness.js';
 import { deriveCliReadiness } from '../../../src/core/readiness/cli-remediation.js';

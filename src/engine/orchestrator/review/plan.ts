@@ -2,7 +2,7 @@ import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { fenced } from '../../spec/prompts/builder.js';
-import type { ReviewPlanData } from '../../spec/prompts/review.js';
+import type { ReviewPlanData } from '../../spec/prompts/review/types.js';
 
 /** The plan's own data as the review prompt presents it. */
 export function reviewPlanData(state: WorkflowState): ReviewPlanData {

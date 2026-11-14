@@ -12,7 +12,7 @@ import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
-} from '../../src/engine/runners/prepared-execution.js';
+} from '../../src/engine/runners/prepare-execution/prepared.js';
 
 export function preparedHeadlessExecution(input: {
   projectDir: string;

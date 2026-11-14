@@ -12,7 +12,7 @@ import { resumeStep } from '../../../core/sessions/run/status.js';
 import { createLogger } from '../../../lib/logger.js';
 import type { PriorMessage } from '../../planners/types.js';
 import type { RequestTypedResult } from '../../runners/typed-output.js';
-import { planRepairWarning } from '../../spec/plan-checks.js';
+import { planRepairWarning } from '../../spec/plan/checks.js';
 import {
   MAX_QUESTION_ROUNDS,
   planAnswersTurn,

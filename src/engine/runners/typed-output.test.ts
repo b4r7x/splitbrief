@@ -5,7 +5,6 @@ import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import {
-  extractLastJsonObject,
   fallbackInstruction,
   requestTyped,
   type RequestTypedOptions,
@@ -15,6 +14,7 @@ import {
   seatProtocolHeadline,
   typedOutputError,
 } from './typed-output.js';
+import { extractLastJsonObject } from './extract-json.js';
 
 const probeSchema = z.object({ answer: z.string(), count: z.number() });
 type Probe = z.infer<typeof probeSchema>;

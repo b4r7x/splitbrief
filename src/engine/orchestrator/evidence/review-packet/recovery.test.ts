@@ -12,7 +12,7 @@ import type { PacketEvent } from './types.js';
 import { buildReviewPacket } from './build.js';
 import { makeRecoveryWithSources } from './recovery.js';
 import { renderReviewPacketMarkdown } from './render.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 
 const switched: PacketEvent = {
   type: 'seat_switched',

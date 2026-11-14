@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { RunnerCallCounterCoverage } from '../../core/schemas/runner-call.js';
 import {
   BackendTokenUsageSchema,
-  accumulateRunnerCallUsage,
-  applyRunnerCallUsageSample,
   normalizeRunnerCallUsage,
   toTokenDelta,
+} from './usage/normalize.js';
+import {
+  accumulateRunnerCallUsage,
+  applyRunnerCallUsageSample,
   accumulateTokenUsage,
-} from './usage.js';
+} from './usage/accumulate.js';
 
 // Every category a sample does not report stays missing; each test names only
 // the counters its payload actually carries.

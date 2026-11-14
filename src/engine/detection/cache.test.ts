@@ -15,17 +15,17 @@ import {
   mergeCatalogRead,
 } from '../../core/discovery/catalog-read-merge.js';
 import { detectionContextsForCurrentConfig } from './store-publication.js';
-import type { DetectionCacheSnapshot, RememberedCliCatalog } from './cache.js';
+import type { DetectionCacheSnapshot, RememberedCliCatalog } from './cache/schema.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import {
-  DETECTION_CACHE_VERSION,
   invalidateCache,
   loadDetectionCacheSnapshot,
   loadRememberedCliRuntime,
   loadRememberedPresentationSnapshot,
   loadRememberedSnapshot,
   saveDetectionCache,
-} from './cache.js';
+} from './cache/store.js';
+import { DETECTION_CACHE_VERSION } from './cache/schema.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const CACHE_CONTEXT = 'readiness-context-v1';

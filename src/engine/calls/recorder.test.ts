@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createRunnerCallRecorder, type RunnerCallRecorder } from './recorder.js';
+import { createRunnerCallRecorder } from './recorder/create.js';
+import type { RunnerCallRecorder } from './recorder/types.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
 import {
   RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,

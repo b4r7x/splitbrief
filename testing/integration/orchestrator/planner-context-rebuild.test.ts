@@ -11,8 +11,8 @@ import { reactivateExistingSession } from '../../../src/core/sessions/active-poi
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions/apply.js';
-import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
-import { parsePreparedConfig } from '../../../src/engine/runners/prepared-execution.js';
+import { resolveCustomExecutable } from '../../../src/engine/runners/cli-executable/custom.js';
+import { parsePreparedConfig } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';

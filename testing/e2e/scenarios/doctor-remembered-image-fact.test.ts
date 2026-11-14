@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from 'node:util';
 import { afterEach, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
-import { loadRememberedSnapshot } from '../../../src/engine/detection/cache.js';
+import { loadRememberedSnapshot } from '../../../src/engine/detection/cache/store.js';
 import { createDetectionService } from '../../../src/engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../../src/engine/detection/store-publication.js';
 import { detectionStore } from '../../../src/stores/discovery/detection.js';

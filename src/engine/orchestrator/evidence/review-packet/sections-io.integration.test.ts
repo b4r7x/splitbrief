@@ -12,7 +12,7 @@ import type { ReviewPacket } from '../../../../core/schemas/review/packet.js';
 import { buildFinalReview, resolveChangedFiles, resolveRunUniverse } from './sections-io.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 import { createSnapshot } from '../../../snapshots/create.js';
 
 let dirs: string[] = [];

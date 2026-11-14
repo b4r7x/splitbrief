@@ -22,7 +22,7 @@ import type {
 } from '../../../../core/schemas/recovery/schemas.js';
 import type { SeatSwitchRecord } from '../../../../core/schemas/workflow/seat.js';
 import { includes } from '../../../../utils/type-guards.js';
-import { modelRefusalMessage } from '../../../runners/auth-failure.js';
+import { modelRefusalMessage } from '../../../runners/seat-failure/auth.js';
 import { cliPromptLimit } from '../../../runners/cli-tools/registry.js';
 import type { PromptLength } from '../../../runners/input-limit.js';
 import type { SeatSwapContext } from '../seat/swap-context.js';

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
-import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
+import { saveDetectionCache } from '../../../src/engine/detection/cache/store.js';
 import { configWithSwitchedSeat } from '../../../src/engine/orchestrator/recovery/seat/switch/config.js';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';

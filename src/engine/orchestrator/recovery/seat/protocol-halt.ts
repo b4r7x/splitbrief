@@ -6,7 +6,7 @@ import type { Task } from '../../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { nowIso } from '../../../../utils/format/time.js';
 import type { SeatProtocolError } from '../../../runners/typed-output.js';
-import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../providers/model/runtime-snapshot.js';
 import { buildSeatProtocolErrorRecoveryIssue } from '../builders/seat-protocol.js';
 import { loadSeatSwapContext } from './swap-context.js';
 import { raisePendingRecovery } from '../../state-ops/halts.js';

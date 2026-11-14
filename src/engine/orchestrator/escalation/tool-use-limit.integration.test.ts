@@ -14,7 +14,7 @@ import {
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { transition } from '../../../core/state/machine.js';
-import { createRunnerCallRecorder } from '../../calls/recorder.js';
+import { createRunnerCallRecorder } from '../../calls/recorder/create.js';
 import type { RunnerCallResult } from '../../calls/types.js';
 import {
   runnerCallFailureMessage,

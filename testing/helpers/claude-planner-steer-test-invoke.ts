@@ -1,5 +1,5 @@
-import { invokeClaudePlanner } from '../../src/engine/planners/claude-invoke.js';
-import { createRunnerSandboxEnv } from '../../src/engine/runners/sandbox-env.js';
+import { invokeClaudePlanner } from '../../src/engine/planners/claude-code/invoke.js';
+import { createRunnerSandboxEnv } from '../../src/engine/runners/sandbox/env.js';
 import type { CliStartGate } from '../../src/engine/runners/start-gate.js';
 import { admittedCliSeat } from './runner-gate.js';
 

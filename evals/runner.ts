@@ -7,12 +7,12 @@ import { plainUserMessage } from '../src/core/types/user-input.js';
 import { createEventBus } from '../src/engine/events/bus.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { runWorkflow } from '../src/engine/orchestrator/run/workflow.js';
-import type { ModelCacheAccessor } from '../src/engine/providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../src/engine/providers/model/runtime-snapshot.js';
 import {
   loadModelsDevCatalogCache,
   type ModelsDevCatalogSnapshot,
-} from '../src/engine/providers/models-dev-cache.js';
-import { prepareExecution } from '../src/engine/runners/prepare-execution/prepare-execution.js';
+} from '../src/engine/providers/models-dev/cache.js';
+import { prepareExecution } from '../src/engine/runners/prepare-execution/prepare.js';
 import { releasePreparedSession } from '../src/core/sessions/prepared-rollback.js';
 import { createCassetteRecorder } from '#testing/helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '#testing/helpers/cassette/replayer.js';

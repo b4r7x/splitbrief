@@ -3,9 +3,9 @@ import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.j
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { EventBus } from '../../events/types.js';
-import type { PreparedExecution } from '../../runners/prepared-execution.js';
+import type { PreparedExecution } from '../../runners/prepare-execution/prepared.js';
 import type { PreparationPolicy } from '../../runners/prepare-execution/types.js';
-import type { prepareExecution } from '../../runners/prepare-execution/prepare-execution.js';
+import type { prepareExecution } from '../../runners/prepare-execution/prepare.js';
 import { switchSeatAndPrepareResume } from '../recovery/seat/switch/resume.js';
 import { publishWarning } from '../publish/notice.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';

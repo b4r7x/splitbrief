@@ -7,8 +7,8 @@ import type { RouteCatalogReads } from '../../../engine/detection/route-catalog.
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
 import { resolveSeatDisplayName } from '../../../engine/providers/model/display-names.js';
 import { resolveSeatImageFact } from '../../../engine/providers/model/resolution.js';
-import type { ArgVectorPreflightCheckInput } from '../../../engine/runners/arg-vector-preflight.js';
-import type { collectRunnerAdmissionChecks } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { ArgVectorPreflightCheckInput } from '../../../engine/runners/arg-vector/preflight.js';
+import type { collectRunnerAdmissionChecks } from '../../../engine/runners/prepare-execution/prepare.js';
 import { probeRunnerAvailability } from '../../../engine/runners/probe-availability.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';

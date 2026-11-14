@@ -5,7 +5,7 @@ import {
 import { sessionDir } from '../../../core/paths.js';
 import type { Planner, PlannerSummaryMessage } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../calls/usage.js';
+import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
 import type {
   ResolvedCompactionFormat,
   StructuredSummary,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { apiBudgetError, estimateBundleOutputReserve, measureApiBudget } from './api-budget.js';
-import type { ApiBudgetBuildTarget, ApiRuntimeContext } from './runtime-context.js';
+import { apiBudgetError } from './api/admission.js';
+import { estimateBundleOutputReserve, measureApiBudget } from './api/budget.js';
+import type { ApiBudgetBuildTarget, ApiRuntimeContext } from './api/runtime-context.js';
 
 function context(overrides: Partial<ApiRuntimeContext> = {}): ApiRuntimeContext {
   return {

@@ -1,12 +1,7 @@
 import { isRecord } from '../../../utils/type-guards.js';
-import {
-  readShellCommand,
-  resolveFollowingLinks,
-  type PathAccess,
-  type PathReference,
-  type PathScope,
-  type ShellReading,
-} from './shell-paths.js';
+import { readShellCommand, resolveFollowingLinks } from './shell/read.js';
+import type { ShellReading } from './shell/types.js';
+import type { PathAccess, PathReference, PathScope } from './shell/types.js';
 
 export type ToolUse = Readonly<{ name: string; input: Readonly<Record<string, unknown>> }>;
 

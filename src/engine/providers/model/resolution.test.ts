@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import {
-  NULL_CACHE,
   getEffectiveModelId,
   getModelsDevEntries,
   lookupModelsDevModel,
@@ -9,8 +8,9 @@ import {
   resolveExactModelsDevModel,
   resolveExactRuntimeModel,
   resolveSeatImageFact,
-  type ModelCacheAccessor,
 } from './resolution.js';
+import { NULL_CACHE } from './runtime-snapshot.js';
+import type { ModelCacheAccessor } from './runtime-snapshot.js';
 import { findKnownModel } from '../../../core/providers/known-models.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 

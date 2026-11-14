@@ -9,7 +9,7 @@ import { loadState } from '../../../src/core/state/persistence.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../../src/engine/implementers/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
+import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

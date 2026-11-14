@@ -5,7 +5,7 @@ import type { RunRecord } from '../../core/sessions/run/record.js';
 import { applyUnfinished } from '../../core/sessions/run/status.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { Screen } from '../../core/navigation/types.js';
-import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../engine/runners/prepare-execution/prepared.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 
 /**

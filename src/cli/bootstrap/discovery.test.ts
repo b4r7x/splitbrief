@@ -8,13 +8,13 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfig } from '../../core/config/load/io.js';
-import { saveDetectionCache } from '../../engine/detection/cache.js';
+import { saveDetectionCache } from '../../engine/detection/cache/store.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import {
   MODELS_DEV_CATALOG_PARSER_VERSION,
   MODELS_DEV_CATALOG_URL,
   resolveModelsDevCatalogCachePath,
-} from '../../engine/providers/models-dev-cache/store.js';
+} from '../../engine/providers/models-dev/store.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/discovery/detection.js';

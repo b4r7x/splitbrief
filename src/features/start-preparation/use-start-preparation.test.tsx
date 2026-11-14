@@ -15,7 +15,7 @@ import { sessionDir } from '../../core/paths.js';
 import type {
   PreparationOutcome,
   PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
 import { useStartPreparation } from './use-start-preparation.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 

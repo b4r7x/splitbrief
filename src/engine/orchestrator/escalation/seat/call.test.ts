@@ -15,7 +15,10 @@ import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { seatWaitToolWord } from '../../../../core/sessions/seat-wait-line.js';
 import { loadState } from '../../../../core/state/persistence.js';
 import type { EngineEvent, EventBus } from '../../../events/types.js';
-import { isTransientSeatFailure, type SeatAttempt } from '../../../runners/transient.js';
+import {
+  isTransientSeatFailure,
+  type SeatAttempt,
+} from '../../../runners/seat-failure/transient.js';
 import { throwMappedError } from '../../../streaming/stream-errors.js';
 import { configWithSwitchedSeat } from '../../recovery/seat/switch/config.js';
 import { transitionAndSave } from '../../state-ops/transition.js';

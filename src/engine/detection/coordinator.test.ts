@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDetectionCoordinator } from './coordinator.js';
+import { createDetectionCoordinator } from './coordinator/create.js';
 import {
   detectionContextKey,
   detectionSourceContextKey,

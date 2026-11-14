@@ -1,7 +1,8 @@
 import type { PlanProposal } from '../../../core/schemas/plan.js';
 import { buildRoutingPreviewMetadata } from '../../routing-preview.js';
-import { pathsNotFiles, pathsOutsideProject, type PlanTaskFit } from '../../spec/plan-checks.js';
-import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { pathsNotFiles, pathsOutsideProject } from '../../spec/plan/task-checks.js';
+import type { PlanTaskFit } from '../../spec/plan/types.js';
+import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { refreshCurrentCode } from '../task/refresh-code.js';
 
 /**

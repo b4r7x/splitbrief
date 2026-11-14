@@ -6,7 +6,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { EventBus, EventSink } from '../../../engine/events/types.js';
 import type { SeatSwapChoice } from '../../../engine/orchestrator/run/seat-swap.js';
-import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../engine/runners/prepare-execution/prepared.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 
 export type PendingRecoveryResult =

@@ -26,11 +26,11 @@ import type {
   DetectionServiceResult,
 } from '../../engine/detection/service.js';
 import { createProductionDetectionDeps } from '../../engine/detection/deps.js';
-import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare.js';
 import type {
   PreparationOutcome,
   PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../stores/prompts/approval.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';

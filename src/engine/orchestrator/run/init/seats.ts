@@ -2,14 +2,14 @@ import type { Config } from '../../../../core/schemas/config.js';
 import { configuredReviewerSeat } from '../../../../core/config/accessors/reviewer-seat.js';
 import { resolveImplementerProfiles } from '../../../../core/config/accessors/implementer-profiles.js';
 import type { Planner } from '../../../planners/types.js';
-import type { Reviewer } from '../../../reviewers/types.js';
+import type { Reviewer } from '../../../planners/reviewer.js';
 import type { Implementer, ImplementerFactoryOptions } from '../../../implementers/types.js';
 import type { CustomRunnerRuntimePort } from '../../../runners/types.js';
-import type { PreparedExecution } from '../../../runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../runners/prepare-execution/prepared.js';
 import { createPlanner, createImplementer, createReviewer } from '../../../runners/factory.js';
 import type { EventBus } from '../../../events/types.js';
 import { createImplementerPublisher } from '../../publish/runner.js';
-import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../providers/model/runtime-snapshot.js';
 
 type SeatBase = {
   config: Config;

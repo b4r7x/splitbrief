@@ -1,7 +1,7 @@
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { error } from '../../utils/error.js';
 import type { InvokeResult } from '../runners/types.js';
-import { toTokenDeltaFromRunnerCallUsage } from './usage.js';
+import { toTokenDeltaFromRunnerCallUsage } from './usage/normalize.js';
 import type { RunnerCallResult } from './types.js';
 
 export function toInvokeResult(result: RunnerCallResult): InvokeResult {

@@ -1,0 +1,13 @@
+import { findConfiguredCustomCommand } from '../../../core/config/custom-commands/catalog.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { ConfiguredCustomRunner } from './posture.js';
+
+export function resolveConfiguredCustomRunner(
+  config: Config,
+  role: ActiveRunnerRole,
+): ConfiguredCustomRunner | null {
+  const command = findConfiguredCustomCommand(config, readActiveRunner({ config, role }));
+  return command === undefined ? null : { source: 'configured', command };
+}

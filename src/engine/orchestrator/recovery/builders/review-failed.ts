@@ -15,7 +15,7 @@ import type { ReviewRecord } from '../../../../core/schemas/workflow/review-reco
 import {
   apiContextError,
   apiContextRecoveryFacts,
-} from '../../../providers/api-context-diagnostic.js';
+} from '../../../providers/api/context-diagnostic.js';
 import type { FinalReviewFailure } from '../../review/types.js';
 import { haltActions, chooseRecommended } from './actions.js';
 import { type RecoveryBuilderBase, createRecoveryIssue, compactFacts } from './issue.js';

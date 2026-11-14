@@ -1,6 +1,8 @@
 import type { ZodIssue } from 'zod';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
 import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
+import { sanitizeRunnerCallRawPreview } from './bounded-payload.js';
+import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 
 const MAX_PREVIEW_DEPTH = 4;
 const MAX_COLLECTION_ITEMS = 20;
@@ -213,4 +215,19 @@ function fitPreview(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   if (maxChars <= TRUNCATED.length) return TRUNCATED.slice(0, maxChars);
   return `${text.slice(0, maxChars - TRUNCATED.length)}${TRUNCATED}`;
+}
+
+export function unknownUpstreamWarningInput(
+  event: Extract<RunnerCallEvent, { type: 'call_unknown_upstream' }>,
+): RunnerCallWarningInput {
+  return {
+    code: 'unknown_upstream',
+    severity: 'warning',
+    source: event.backendMetadata.source ?? 'upstream',
+    surface: 'debug',
+    parser: event.backendMetadata.parser,
+    upstreamType: event.backendMetadata.upstreamType,
+    channel: event.backendMetadata.channel,
+    message: sanitizeRunnerCallRawPreview(event.rawPreview),
+  };
 }

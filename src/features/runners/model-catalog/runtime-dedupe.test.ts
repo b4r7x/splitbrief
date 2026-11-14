@@ -3,11 +3,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { uniqueModelIds } from '#testing/helpers/model-catalog.js';
-import {
-  nativeCliCatalogToDetectedModels,
-  parseCopilotHelpConfigCatalog,
-} from '../../../engine/providers/cli-model-catalog.js';
-import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import { nativeCliCatalogToDetectedModels } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
+import { parseCopilotHelpConfigCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/listing.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/runtime-snapshot.js';
 import { resolveAndSort } from './runtime-dedupe.js';
 
 describe('toModelOption displayName precedence', () => {

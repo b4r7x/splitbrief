@@ -3,7 +3,7 @@ import { taskId } from '../../../../core/schemas/task.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { renderChecksLogForPrompt } from './checks-log.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 
 const EVIDENCE_PATH = '/project/.splitbrief/sessions/sess/evidence.json';
 const SESSION_LOG_PATH = '/project/.splitbrief/sessions/sess/session.jsonl';

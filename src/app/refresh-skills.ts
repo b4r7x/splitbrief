@@ -1,4 +1,4 @@
-import { discoverSkills } from '../engine/skill-discovery.js';
+import { discoverSkills } from '../engine/skills/discover.js';
 import { configStore } from '../stores/project/config.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { feedbackStore } from '../stores/ui/feedback.js';

@@ -2,7 +2,7 @@ import { ensureHeadlessConfig, setupWorkflow } from '../../setup.js';
 import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrides/from-options.js';
 import { serializeReadinessReportJson } from '../../../core/readiness/json.js';
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
-import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
+import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepare-execution/prepared.js';
 import { resolveSelectedSkills } from '../../options/skills.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
 import { prepareStartExecution } from './prepare.js';

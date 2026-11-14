@@ -6,11 +6,10 @@ import {
 } from '../../../core/providers/canonical-model-id.js';
 import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
-import {
-  resolveModelCatalog,
-  type ResolvedModelCatalogEntry,
-} from '../../../engine/providers/model/catalog.js';
-import { type ModelCacheAccessor, NULL_CACHE } from '../../../engine/providers/model/resolution.js';
+import { resolveModelCatalog } from '../../../engine/providers/model/catalog.js';
+import type { ResolvedModelCatalogEntry } from '../../../engine/providers/model/types.js';
+import { NULL_CACHE } from '../../../engine/providers/model/runtime-snapshot.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/runtime-snapshot.js';
 import { type ModelOption, sortModelsByRecency } from './recency.js';
 
 /**

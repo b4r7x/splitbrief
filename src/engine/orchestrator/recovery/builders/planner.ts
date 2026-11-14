@@ -12,7 +12,7 @@ import { compactFacts, createRecoveryIssue } from './issue.js';
 import { chooseRecommended, haltActions } from './actions.js';
 import { taskFiles } from './details.js';
 import { inputTooLargeFacts } from '../../../runners/input-limit.js';
-import type { SeatFailureClassification } from '../../../runners/seat-failure.js';
+import type { SeatFailureClassification } from '../../../runners/seat-failure/classify.js';
 import { refusalStopDetail } from './runner-defect.js';
 import { buildSeatDownIssue } from './seat-down.js';
 import { modelRefusalHalt, seatRouteRefusal } from './switch-offer.js';

@@ -16,7 +16,8 @@ import type { Config } from '../../../../core/schemas/config.js';
 import type { SeatSwapCandidate } from '../../../../core/schemas/recovery/schemas.js';
 import type { ReviewerConfig } from '../../../../core/schemas/runner/reviewer.js';
 import { includes } from '../../../../utils/type-guards.js';
-import { type DetectionCacheSnapshot, loadRememberedSnapshot } from '../../../detection/cache.js';
+import { loadRememberedSnapshot } from '../../../detection/cache/store.js';
+import type { DetectionCacheSnapshot } from '../../../detection/cache/schema.js';
 import { cliSeatDiscoveryContext } from '../../../detection/cli-context.js';
 import { detectAvailableCliTools } from '../../../detection/detect.js';
 import {
@@ -24,8 +25,8 @@ import {
   routeReadsCatalog,
   freshRouteCatalog,
 } from '../../../detection/route-catalog.js';
-import { detectRunnerEvidence } from '../../../detection/runner-evidence.js';
-import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
+import { detectRunnerEvidence } from '../../../detection/runner-evidence/detect.js';
+import type { ModelCacheAccessor } from '../../../providers/model/runtime-snapshot.js';
 import { readSeatOfRecord } from './of-record.js';
 import { seatCandidateOfRunner } from './switch/config.js';
 

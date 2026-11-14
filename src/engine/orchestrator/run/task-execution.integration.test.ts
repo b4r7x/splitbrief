@@ -66,8 +66,8 @@ import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/review-failed.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
-import { formatRetryPrompt } from '../../spec/prompt-formatter.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import { formatRetryPrompt } from '../../spec/prompts/task.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import { NO_VISION_REVIEW } from '../review/renders.js';
 
 /** How many times the session transcript holds this user turn. */

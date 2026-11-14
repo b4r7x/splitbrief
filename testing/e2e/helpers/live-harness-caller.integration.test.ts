@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   detect: vi.fn<typeof import('../../../src/engine/detection/detect.js').detectAvailableCliTools>(),
   prepare:
     vi.fn<
-      typeof import('../../../src/engine/runners/prepare-execution/prepare-execution.js').prepareExecution
+      typeof import('../../../src/engine/runners/prepare-execution/prepare.js').prepareExecution
     >(),
   workflow: vi.fn<typeof import('../../../src/engine/orchestrator/run/workflow.js').runWorkflow>(),
   apply: vi.fn<typeof import('../../../src/engine/orchestrator/apply/run.js').runApply>(),
@@ -27,7 +27,7 @@ vi.mock('../../../src/engine/detection/detect.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/engine/detection/detect.js')>()),
   detectAvailableCliTools: mocks.detect,
 }));
-vi.mock('../../../src/engine/runners/prepare-execution/prepare-execution.js', () => ({
+vi.mock('../../../src/engine/runners/prepare-execution/prepare.js', () => ({
   prepareExecution: mocks.prepare,
 }));
 vi.mock('../../../src/engine/orchestrator/run/workflow.js', () => ({

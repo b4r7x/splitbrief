@@ -16,7 +16,7 @@ import {
   credentialForContract,
   endpointForContract,
   environmentOf,
-} from './conformance.js';
+} from './conformance/shared.js';
 
 export interface UnregisteredOpenAICompatProvider
   extends ProviderDefWithMetadata,

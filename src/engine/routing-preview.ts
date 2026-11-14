@@ -3,19 +3,15 @@ import { join } from 'node:path';
 import { resolveImplementerProfiles } from '../core/config/accessors/implementer-profiles.js';
 import { projectName } from '../core/project-meta.js';
 import type { Config } from '../core/schemas/config.js';
-import type { Task } from '../core/schemas/task.js';
-import type {
-  PlanReviewEstimateStatus,
-  PlanReviewRisk,
-  PlanTaskReviewMetadata,
-} from '../core/plan-review/types.js';
+import type { Task, TaskId } from '../core/schemas/task.js';
 import { routeTaskToImplementerProfile } from './orchestrator/context-routing/route.js';
 import { buildRouteTaskOptions } from './orchestrator/context-routing/route-input.js';
-import type { ModelCacheAccessor } from './providers/model/resolution.js';
+import type { ModelCacheAccessor } from './providers/model/runtime-snapshot.js';
 import { buildProjectLanguageContext } from './spec/prompts/language-context.js';
-import type { PlanContext } from './spec/prompt-formatter.js';
+import type { PlanContext } from './spec/prompts/task.js';
 import { isENOENT } from '../utils/errno.js';
 import { assertWritablePathConfined } from '../lib/fs/confinement.js';
+import type { TaskContextFit, CurrentCodeContextMode } from '../core/schemas/enums.js';
 
 function previewProjectContext(projectDir: string, skillsContext: string | undefined) {
   return {
@@ -150,4 +146,31 @@ function routingPreviewReason(
     return `${reason}; review estimate could not refresh current code`;
   }
   return reason;
+}
+
+export type PlanReviewRisk = 'low' | 'medium' | 'high';
+export type PlanReviewEstimateStatus =
+  | 'refreshed-current-code'
+  | 'brief-current-code'
+  | 'missing-current-code'
+  | 'current-code-unavailable'
+  | 'pending-earlier-task';
+
+export type PlanReviewRoutingBlockKind = 'no-capable-worker';
+
+export interface PlanTaskReviewMetadata {
+  taskId: TaskId;
+  workerProfile?: string | undefined;
+  contextFit?: TaskContextFit | undefined;
+  estimatedTokens?: number | undefined;
+  contextLength?: number | undefined;
+  estimateStatus?: PlanReviewEstimateStatus | undefined;
+  routingReason?: string | undefined;
+  routingBlockKind?: PlanReviewRoutingBlockKind | undefined;
+  currentCodeContextMode?: CurrentCodeContextMode | undefined;
+  currentCodeTruncated?: boolean | undefined;
+  validationStatus?: 'pending' | 'pass' | 'warn' | 'fail' | undefined;
+  risk?: PlanReviewRisk | undefined;
+  stale?: boolean | undefined;
+  checkpoint?: string | undefined;
 }

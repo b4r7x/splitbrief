@@ -11,7 +11,7 @@ import { loadConfig } from '../../../src/core/config/load/io.js';
 import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
+import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 
 // Runner availability is a live network claim, and the default config points the
 // implementer at a local Ollama. The shared no-claim mock keeps the verdict off

@@ -1,5 +1,5 @@
 import type { ImplementerWriteMode } from '../../../core/schemas/runner/implementer.js';
-import type { BuildOutputContract } from '../../implementers/file-bundle.js';
+import type { BuildOutputContract } from '../../implementers/file-bundle/contract.js';
 import { buildLanguageContext, type LanguageContext } from './language-context.js';
 
 export const GIT_READ_ONLY_RULE =

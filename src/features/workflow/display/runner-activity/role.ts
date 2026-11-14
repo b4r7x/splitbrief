@@ -3,7 +3,7 @@ import { cliToolIdForCommand } from '../../../../core/runners/cli-tool/catalog.j
 import type { ActiveRunnerRole } from '../../../../core/runners/seat-roles.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
 import { resolveModelDisplayName } from '../../../../engine/providers/model/display-names.js';
-import type { ModelCacheAccessor } from '../../../../engine/providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../../engine/providers/model/runtime-snapshot.js';
 import { modelCacheStore } from '../../../../stores/discovery/model-cache/state.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import type { RunnerActivityDisplayInput } from './types.js';

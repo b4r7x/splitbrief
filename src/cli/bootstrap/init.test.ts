@@ -19,11 +19,14 @@ import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
 import { detectCapabilities } from '../../engine/providers/capabilities.js';
 import * as capabilitiesModule from '../../engine/providers/capabilities.js';
-import { loadDetectionCacheSnapshot, saveDetectionCache } from '../../engine/detection/cache.js';
+import {
+  loadDetectionCacheSnapshot,
+  saveDetectionCache,
+} from '../../engine/detection/cache/store.js';
 import * as detectionServiceModule from '../../engine/detection/service.js';
 import * as cliDiscoveryModule from '../../engine/providers/discovery.js';
-import * as modelsDevCacheModule from '../../engine/providers/models-dev-cache.js';
-import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
+import * as modelsDevCacheModule from '../../engine/providers/models-dev/cache.js';
+import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev/cache.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { detectionContextsForCurrentConfig } from '../../engine/detection/store-publication.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';

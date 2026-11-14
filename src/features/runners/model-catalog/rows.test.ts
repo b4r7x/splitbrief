@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
 import { AUTOMATIC_MODEL } from '../../../core/providers/automatic-model.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
-import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/suggestions.js';
 import type { ModelOption, ModelVariant } from './recency.js';
 import { routeDraftOf, stepOptionAxis } from './option-axis.js';
 import { mergeOptionFamilies } from './option-merge.js';

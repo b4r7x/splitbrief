@@ -11,7 +11,7 @@ import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../stores/prompts/approval.js';
 import { ApprovalPrompt } from '../workflow/components/approval-prompt/prompt.js';
-import { formatCustomRunnerDisclosure } from '../../engine/runners/custom-runner-disclosure.js';
+import { formatCustomRunnerDisclosure } from '../../engine/runners/custom/disclosure.js';
 import { escapeTrustLiteral } from '../../core/trust/literal.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { SOFT_SEP } from '../../core/separators.js';

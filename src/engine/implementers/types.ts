@@ -9,13 +9,13 @@ import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js
 import type { RunnerFailureOutcomeState } from '../runners/errors.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { TextChunkMarks } from '../events/types.js';
-import type { CliSeat } from '../runners/start-gate.js';
+import type { CliSeat } from '../runners/seat-gates.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/runner/implementer.js';
-import type { RunnerSlot } from '../runners/prepared-execution.js';
-import type { BundleApplyResult } from './file-bundle.js';
+import type { RunnerSlot } from '../runners/prepare-execution/prepared.js';
+import type { BundleApplyResult } from './file-bundle/contract.js';
 import type { ImplementerReport } from '../../core/schemas/consult.js';
-import type { PlanContext } from '../spec/prompt-formatter.js';
+import type { PlanContext } from '../spec/prompts/task.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { RetryKind } from '../../core/pipeline-spec/ladder.js';
 

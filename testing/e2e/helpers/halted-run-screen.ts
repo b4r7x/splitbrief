@@ -10,7 +10,7 @@ import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
-import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import type { RunWorkflowFn } from '../../../src/features/workflow/hooks/use-run-loop.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';

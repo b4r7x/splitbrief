@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DetectionCacheSnapshot, RememberedCliCatalog } from './cache.js';
+import type { DetectionCacheSnapshot, RememberedCliCatalog } from './cache/schema.js';
 import { savedRouteCatalog } from './route-catalog.js';
 
 function snapshot(cliCatalogs: readonly RememberedCliCatalog[]): DetectionCacheSnapshot {

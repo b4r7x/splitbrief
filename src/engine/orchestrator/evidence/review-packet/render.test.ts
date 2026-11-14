@@ -4,7 +4,7 @@ import { type ReviewPacket, ReviewPacketSchema } from '../../../../core/schemas/
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { reusedNote } from '../../../../core/validation/reused-note.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 describe('renderReviewPacketMarkdown review seat', () => {

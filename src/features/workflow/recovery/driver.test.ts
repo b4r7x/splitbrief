@@ -17,7 +17,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../engine/runners/prepare-execution/prepared.js';
 import { configStore } from '../../../stores/project/config.js';
 import {
   composerDraftStore,

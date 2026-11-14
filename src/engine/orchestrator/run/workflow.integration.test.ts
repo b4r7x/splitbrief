@@ -30,7 +30,7 @@ import {
   expectResumedMessage,
 } from '#testing/helpers/user-message.js';
 import { PlanSchema } from '../../../core/schemas/plan.js';
-import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -42,7 +42,7 @@ import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
 import type { PlannerOutputCallbacks } from '../../../engine/planners/types.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
-import type { PreparedExecution } from '../../runners/prepared-execution.js';
+import type { PreparedExecution } from '../../runners/prepare-execution/prepared.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import {
@@ -87,7 +87,7 @@ import type { RunWorkflowOptions } from './init/options.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
+import { parsePreparedConfig, type RunnerGate } from '../../runners/prepare-execution/prepared.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { shutdownWorkflow } from '../session-lifecycle/shutdown.js';

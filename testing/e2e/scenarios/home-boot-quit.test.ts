@@ -9,7 +9,7 @@ import {
   cacheIdentity,
   catalogState,
   persistSnapshot,
-} from '../../../src/engine/providers/models-dev-cache/store.js';
+} from '../../../src/engine/providers/models-dev/store.js';
 import { terminalSequences } from '../../../src/lib/terminal/control.js';
 import { stripTerminalControls } from '../../../src/utils/display-text/sanitize.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';

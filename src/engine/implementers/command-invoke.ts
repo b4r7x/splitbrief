@@ -4,9 +4,9 @@ import { createImplementerBase } from './pipeline/run.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { createChangeDetector } from '../change-detection.js';
 import { assertImplementerKind } from '../config-assertions.js';
-import type { AdmittedCustomRunnerInvocation } from '../runners/custom-launchability.js';
+import type { AdmittedCustomRunnerInvocation } from '../runners/custom/launchability.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
-import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox/env.js';
 import { invokeCommandRunner } from '../runners/command-based.js';
 
 /** A shell implementer returns code on stdout; an agent implementer writes the files itself. */

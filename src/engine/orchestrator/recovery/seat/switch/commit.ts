@@ -4,7 +4,7 @@ import { SeatAccountCauseSchema } from '../../../../../core/recovery/account-cau
 import { formatRecoveryHeadline } from '../../../../../core/recovery/headline.js';
 import { recoveryFactString } from '../../../../../core/schemas/recovery/facts.js';
 import { resolveSeatChangeIdentities } from '../../../../providers/model/display-names.js';
-import { NULL_CACHE } from '../../../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../../../providers/model/runtime-snapshot.js';
 import { publishSeatSwitched } from '../../../publish/seat.js';
 import { publishRecoveryResolved } from '../../../publish/recovery.js';
 import { publishReviewSeatRenderNote } from '../../../review/seat-note.js';

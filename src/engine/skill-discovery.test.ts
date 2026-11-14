@@ -38,9 +38,8 @@ afterEach(() => {
 });
 
 // Dynamic import after HOME is set so homedir() picks it up
-const { discoverSkills, loadSkillContent, buildSkillsSection, skillRoot } = await import(
-  './skill-discovery.js'
-);
+const { discoverSkills } = await import('./skills/discover.js');
+const { loadSkillContent, buildSkillsSection, skillRoot } = await import('./skills/content.js');
 
 afterEach(() => {
   rmSync(OUTSIDE, { recursive: true, force: true });

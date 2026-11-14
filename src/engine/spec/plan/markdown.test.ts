@@ -1,0 +1,94 @@
+import { describe, expect, it } from 'vitest';
+import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { formatPlanMarkdown } from './markdown.js';
+
+describe('formatPlanMarkdown', () => {
+  it('renders the summary, decisions, criteria, run checks, project gate, batches and protected operations', () => {
+    const plan = makePlanProposal({
+      checks: [{ id: 'K9', kind: 'cmd', value: 'npm test' }],
+      gate: ['npm run release-check', 'npm run lint'],
+      criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K9'] }],
+      tasks: [
+        makeTaskSpec({ contextFiles: ['src/names.ts'] }),
+        makeTaskSpec({
+          id: 'T002',
+          title: 'Pin the dependency',
+          dependsOn: ['T001'],
+          batch: 2,
+          suggestedFiles: ['package.json'],
+          checks: [{ id: 'K2', kind: 'cmd', value: 'npm ls' }],
+          protectedOperations: [{ path: 'package.json', operation: 'write' }],
+        }),
+      ],
+    });
+
+    expect(formatPlanMarkdown(plan, [])).toBe(
+      [
+        'Greet people by name',
+        '',
+        '## Protected operations',
+        '',
+        '- T002: write package.json',
+        '',
+        '## Decisions',
+        '',
+        '- Keep the greeting in one module',
+        '',
+        '## Criteria',
+        '',
+        '- C1: A name gets a greeting (checks: K1, K9)',
+        '',
+        '## Run checks',
+        '',
+        '- K9 cmd: npm test',
+        '',
+        '## Project gate',
+        '',
+        '- V1: npm run release-check',
+        '- V2: npm run lint',
+        '',
+        '## Tasks',
+        '',
+        '### Batch 1',
+        '',
+        '#### T001 Add the greeting',
+        '',
+        'Return a greeting for a name',
+        '',
+        '- Criteria: C1',
+        '- Checks: K1 test: src/hello.test.ts',
+        '- Suggested files: src/hello.ts',
+        '- Context files: src/names.ts',
+        '',
+        '### Batch 2',
+        '',
+        '#### T002 Pin the dependency',
+        '',
+        'Return a greeting for a name',
+        '',
+        '- Criteria: C1',
+        '- Checks: K2 cmd: npm ls',
+        '- Suggested files: package.json',
+        '- Depends on: T001',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('opens with what the reader has to settle before approving', () => {
+    const plan = makePlanProposal({
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker' }],
+    });
+    const lines = formatPlanMarkdown(plan, [
+      'Render check K-render needs validation.render, which is not set.',
+    ]).split('\n');
+    expect(lines.slice(0, 6)).toEqual([
+      'Greet people by name',
+      '',
+      '## Before you approve',
+      '',
+      '- Render check K-render needs validation.render, which is not set.',
+      '',
+    ]);
+  });
+});

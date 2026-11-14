@@ -18,14 +18,15 @@ import {
   lookupCliPlannerAdapter,
   lookupCliReadinessProbe,
 } from './registry.js';
-import { CODEX_NATIVE_MODEL_CATALOG_PROBE, codexPlannerAdapter } from './codex.js';
-import { isDeclaredCliProbeContract } from './contract.js';
+import { codexPlannerAdapter } from './codex/adapter.js';
+import { CODEX_NATIVE_MODEL_CATALOG_PROBE } from './codex/adapter.js';
+import { isDeclaredCliProbeContract } from './probe/contract.js';
 import {
-  nativeCliCatalogToDetectedModels,
-  parseCommandCodeNativeModelCatalog,
   parseCopilotHelpConfigCatalog,
   parseCursorModels,
-} from '../../providers/cli-model-catalog.js';
+} from './probe/native-catalog/listing.js';
+import { parseCommandCodeNativeModelCatalog } from './probe/native-catalog/command-code.js';
+import { nativeCliCatalogToDetectedModels } from './probe/native-catalog/entries.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../../..');
 const CURSOR_LIST_MODELS_FIXTURE = readFileSync(

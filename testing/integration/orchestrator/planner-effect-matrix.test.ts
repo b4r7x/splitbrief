@@ -6,11 +6,11 @@ import type { CliExecutableReceipt } from '../../../src/core/discovery/detection
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type { RunnerCallEvent } from '../../../src/engine/calls/types.js';
 import { createPlanner } from '../../../src/engine/runners/factory.js';
-import { executableChangedMessage } from '../../../src/engine/runners/resolve-cli-executable.js';
-import { CLI_CONFORMANCE_EXIT_CODES } from '../../../src/engine/runners/cli-tools/contract-harness.js';
-import { runFactoryEffectConformance } from '../../../src/engine/runners/cli-tools/contract-harness-effects.js';
-import { admitCandidateEffect } from '../../../src/engine/providers/candidate-contract.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
+import { executableChangedMessage } from '../../../src/engine/runners/cli-executable/identity.js';
+import { CLI_CONFORMANCE_EXIT_CODES } from '../../../src/engine/runners/cli-tools/contract-harness/harness.js';
+import { runFactoryEffectConformance } from '../../../src/engine/runners/cli-tools/contract-harness/effects.js';
+import { admitCandidateEffect } from '../../../src/engine/providers/candidate/effect.js';
+import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import {
   effectScenario,
   fixtureExecutable,

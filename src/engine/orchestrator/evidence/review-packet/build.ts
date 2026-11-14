@@ -29,7 +29,7 @@ import { makeRecoveryWithSources } from './recovery.js';
 import { runBaseOf } from '../../isolation/run-base/tree.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { writeSecureFile } from '../../../../lib/fs/secure.js';
-import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../providers/model/runtime-snapshot.js';
 import { stringifyReviewPacket, renderReviewPacketMarkdown } from './render.js';
 
 export const REVIEWER_CHECKLIST = [

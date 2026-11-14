@@ -33,7 +33,7 @@ import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/a
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
-import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

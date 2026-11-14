@@ -13,7 +13,7 @@ import {
   type PreparationOutcome,
   type PreparedExecution,
   type RunnerGate,
-} from '../engine/runners/prepared-execution.js';
+} from '../engine/runners/prepare-execution/prepared.js';
 import { createInitialState } from '../core/state/machine.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle/state.js';

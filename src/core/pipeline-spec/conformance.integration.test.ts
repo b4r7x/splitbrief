@@ -25,9 +25,9 @@ import {
   MAX_VALIDATION_OUTPUT_CHARS,
 } from '../../engine/orchestrator/validation/stage.js';
 import type { Planner } from '../../engine/planners/types.js';
-import { isAuthFailureDiagnostic } from '../../engine/runners/auth-failure.js';
-import { isUsageLimitDiagnostic } from '../../engine/runners/usage-limit.js';
-import { formatRetryPrompt } from '../../engine/spec/prompt-formatter.js';
+import { isAuthFailureDiagnostic } from '../../engine/runners/seat-failure/auth.js';
+import { isUsageLimitDiagnostic } from '../../engine/runners/seat-failure/usage-limit.js';
+import { formatRetryPrompt } from '../../engine/spec/prompts/task.js';
 import { SIGKILL_DELAY_MS } from '../../lib/process/termination.js';
 import { GenerationCommonFields } from '../schemas/runner/fields.js';
 import { FinalReviewVerdictSchema } from '../schemas/summary.js';

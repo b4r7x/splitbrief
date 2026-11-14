@@ -21,7 +21,7 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { TaskSpecSchema } from '../../../core/schemas/plan.js';
-import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { planConfirmations } from './confirm.js';
 
 function makeInput(overrides: Partial<GateChangedFilesInput> = {}): GateChangedFilesInput {

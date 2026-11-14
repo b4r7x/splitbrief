@@ -8,7 +8,7 @@ import type {
   RetryOptions,
 } from './types.js';
 import { createImplementerBase } from './pipeline/run.js';
-import { formatTaskPrompt, formatRetryPrompt } from '../spec/prompt-formatter.js';
+import { formatTaskPrompt, formatRetryPrompt } from '../spec/prompts/task.js';
 import { getProvider } from '../providers/registry.js';
 import { createProviderAvailability } from '../providers/client/availability.js';
 import { createClientFromProvider } from '../providers/client/connection.js';
@@ -20,12 +20,8 @@ import { toStreamClient } from '../providers/openai-stream/client.js';
 import type { StreamClient } from '../providers/openai-stream/request.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner/fields.js';
 import { apiInvocationEvidence } from '../runners/invocation-identity.js';
-import {
-  admitApiCall,
-  apiBudgetError,
-  apiBuildTargets,
-  type PreparedApiSeat,
-} from '../providers/api-budget.js';
+import { admitApiCall, apiBudgetError, type PreparedApiSeat } from '../providers/api/admission.js';
+import { apiBuildTargets } from '../providers/api/budget.js';
 import { currentCodeContextMode } from '../orchestrator/context-routing/headings.js';
 
 // Constructs the provider and its availability helper inside a try so a

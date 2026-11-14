@@ -2,8 +2,8 @@ import { chmodSync, existsSync, mkdirSync, realpathSync, writeFileSync } from 'n
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { invokeCommandRunner } from './command-based.js';
-import { customRunnerSecurityPosture } from './custom-trust.js';
-import { admitCustomRunner } from './custom-launchability.js';
+import { customRunnerSecurityPosture } from './custom/posture.js';
+import { admitCustomRunner } from './custom/launchability.js';
 import {
   admittedCustomRunner,
   customRunner,

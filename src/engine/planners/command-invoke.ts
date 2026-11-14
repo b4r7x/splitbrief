@@ -13,10 +13,10 @@ import {
   type CustomRunnerRuntimePort,
   type PreparedDeclaredArtifactReview,
 } from '../runners/types.js';
-import type { AdmittedCustomRunnerInvocation } from '../runners/custom-launchability.js';
-import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
-import { resolveCustomRunnerEnvironment } from '../runners/redaction.js';
-import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
+import type { AdmittedCustomRunnerInvocation } from '../runners/custom/launchability.js';
+import type { ConfiguredCustomRunner } from '../runners/custom/posture.js';
+import { resolveCustomRunnerEnvironment } from '../runners/custom/redaction.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox/env.js';
 import {
   PlannerArtifactAttemptIdSchema,
   PlannerArtifactSemanticIdSchema,

@@ -3,14 +3,16 @@ import { findKnownModel } from '../../../core/providers/known-models.js';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  nativeCliCatalogToDetectedModels,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
-} from '../cli-model-catalog.js';
+} from '../../runners/cli-tools/probe/native-catalog/opencode.js';
+import { nativeCliCatalogToDetectedModels } from '../../runners/cli-tools/probe/native-catalog/entries.js';
 import { formatModelName } from '../../../core/providers/model-display.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import { CATALOG_SUGGESTION_MEMBERSHIP, resolveModelCatalog } from './catalog.js';
-import { getModelsDevEntries, type ModelCacheAccessor } from './resolution.js';
+import { resolveModelCatalog } from './catalog.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from './suggestions.js';
+import { getModelsDevEntries } from './resolution.js';
+import type { ModelCacheAccessor } from './runtime-snapshot.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 describe('runner-owned catalog resolution', () => {

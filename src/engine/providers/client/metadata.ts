@@ -8,7 +8,6 @@ import type {
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { warnError } from '../../../lib/warn.js';
 import { error as createError } from '../../../utils/error.js';
-import { createProviderShell } from './shell.js';
 import { resolveApiKeyOverride } from './api-key.js';
 import { assertCredentialPrefix, validateProviderBaseURL } from './connection.js';
 import {
@@ -236,6 +235,22 @@ export function createMetadataProvider<TRaw extends { id: string }>(
         }
         return null;
       }
+    },
+  };
+}
+export function createProviderShell(base: { name: string; baseURL: string; isLocal: boolean }): {
+  base: { name: string; baseURL: string; isLocal: boolean };
+  trackError(message: string | undefined): void;
+  getLastError(): string | undefined;
+} {
+  let lastError: string | undefined;
+  return {
+    base,
+    trackError(message: string | undefined) {
+      lastError = message;
+    },
+    getLastError() {
+      return lastError;
     },
   };
 }

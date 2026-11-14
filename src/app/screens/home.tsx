@@ -8,7 +8,7 @@ import {
   TOOLS_NOT_CHECKED_TITLE,
 } from '../../core/discovery/copy.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../engine/runners/prepare-execution/prepare.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
 import { Composer, type HomeNotice } from '../../components/composer/view.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';

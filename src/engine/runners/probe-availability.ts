@@ -12,7 +12,7 @@ import type {
   RunnerAvailabilityVerdict,
 } from '../../core/readiness/checks/availability.js';
 import type { Config } from '../../core/schemas/config.js';
-import { createInFlightProbeSharing } from '../detection/runner-evidence.js';
+import { createInFlightProbeSharing } from '../detection/in-flight-probes.js';
 import { sanitizeProviderDiagnostic } from '../providers/client/request.js';
 import { getProvider } from '../providers/registry.js';
 import {

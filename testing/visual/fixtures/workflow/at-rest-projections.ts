@@ -39,7 +39,7 @@ import type { TaskTokenUsage } from '../../../../src/core/schemas/tokens.js';
 import {
   describeOfferingBillingPresentation,
   resolveProviderRunMetadata,
-} from '../../../../src/engine/providers/cost/breakdown.js';
+} from '../../../../src/engine/providers/cost/run-metadata.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
 import { buildLeftIsolationRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/isolation.js';
 import { buildRunnerInputTooLargeRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/runner-defect.js';

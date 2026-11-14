@@ -25,9 +25,9 @@ import {
 import { writePlanJson } from '../../core/sessions/plan-file.js';
 import { requestTyped } from '../../engine/runners/typed-output.js';
 import { formatTasks } from '../../engine/spec/formatter.js';
-import { renderCheckNotes } from '../../engine/spec/plan-checks.js';
-import { formatPlanMarkdown } from '../../engine/spec/plan-markdown.js';
-import { taskFromSpec } from '../../engine/spec/plan-tasks.js';
+import { renderCheckNotes } from '../../engine/spec/plan/render-checks.js';
+import { formatPlanMarkdown } from '../../engine/spec/plan/markdown.js';
+import { taskFromSpec } from '../../engine/spec/plan/tasks.js';
 import {
   MAX_QUESTION_ROUNDS,
   planFullTurn,
@@ -47,19 +47,19 @@ import { resolveSpecMetadata } from '../../engine/providers/model/display-names.
 import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
 import { workflowOptsToCLIOverrides } from '../../core/config/runtime/overrides/from-options.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
-import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
+import { createCustomRunnerRuntime } from '../../engine/runners/custom/runtime.js';
 import {
   promptCustomRunnerArtifactApproval,
   promptCustomRunnerDisclosure,
   promptForLine,
 } from '../custom-runner-prompts.js';
 import { ALLOW_REPO_RUNNERS_HELP } from '../options/workflow.js';
-import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../engine/runners/prepare-execution/prepare.js';
 import {
   releasePreparedExecutionOwnership,
   rollbackPreparedExecutionOwnership,
   type PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
 import type { Config } from '../../core/schemas/config.js';
 import { clearStaleSessionForCli } from '../sessions/resolve.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../preparation.js';

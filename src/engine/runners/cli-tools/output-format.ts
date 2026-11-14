@@ -1,8 +1,8 @@
 import { error } from '../../../utils/error.js';
 import type { OutputFormat } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../calls/usage.js';
-import { getLineParser } from '../../streaming/output-parsers.js';
+import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
+import { getLineParser } from '../../streaming/parse/select.js';
 import type { ParsedLine } from '../types.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 

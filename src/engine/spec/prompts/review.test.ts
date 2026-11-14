@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import type { TriageInput } from '../../../core/schemas/review/verdict.js';
-import {
-  buildFinalReviewPrompt,
-  planBody,
-  reviewInputsSection,
-  triageLines,
-  type ReviewPlanData,
-} from './review.js';
+import { buildFinalReviewPrompt } from './review/final.js';
+import { reviewInputsSection, triageLines } from './review/changes.js';
+import { planBody } from './review/plan.js';
+import type { ReviewPlanData } from './review/types.js';
 
 const TEST_STRENGTH_ITEM =
   '7. **Test Strength**: For each test a task adds, check that the test fails when the behaviour the task names breaks. A test that still passes with that behaviour broken is a finding.';

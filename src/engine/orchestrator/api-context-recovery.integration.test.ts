@@ -36,7 +36,7 @@ import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { error } from '../../utils/error.js';
 import type { EngineEvent } from '../events/types.js';
-import type { ApiContextDiagnostic } from '../providers/api-context-diagnostic.js';
+import type { ApiContextDiagnostic } from '../providers/api/context-diagnostic.js';
 import { runPlanningSession } from './planning/session.js';
 import { applyRecoveryAction } from './recovery/actions/apply.js';
 import { MAX_SUMMARY_LENGTH } from './recovery/builders/issue.js';

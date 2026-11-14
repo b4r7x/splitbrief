@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { getSplitbriefPath } from '../../../../core/paths.js';
-import { saveDetectionCache } from '../../../detection/cache.js';
+import { saveDetectionCache } from '../../../detection/cache/store.js';
 import { configPath } from '../../../../core/config/load/document.js';
 import { writeConfig } from '../../../../core/config/load/io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -14,8 +14,8 @@ import { loadSeatSwapContext } from './swap-context.js';
 import type { CliProviderAuth } from '../../../../core/discovery/detection/auth.js';
 
 const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
-vi.mock('../../../detection/runner-evidence.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../detection/runner-evidence.js')>()),
+vi.mock('../../../detection/runner-evidence/detect.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../detection/runner-evidence/detect.js')>()),
   ...evidence,
 }));
 const live = vi.hoisted(() => ({ detectAvailableCliTools: vi.fn() }));

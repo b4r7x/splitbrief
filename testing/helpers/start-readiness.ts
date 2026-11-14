@@ -4,7 +4,7 @@ import { CliExecutableReceiptSchema } from '../../src/core/discovery/detection/e
 import type { RunnerEvidence } from '../../src/core/discovery/runner-evidence.js';
 import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool/catalog.js';
 import type { Config } from '../../src/core/schemas/config.js';
-import { runnerDiscoveryContextKey } from '../../src/engine/detection/runner-evidence.js';
+import { runnerDiscoveryContextKey } from '../../src/engine/detection/context-key.js';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';
 
 export const executable = CliExecutableReceiptSchema.parse({

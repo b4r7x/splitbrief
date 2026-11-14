@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DetectedModel } from '../../../src/core/discovery/detection/model.js';
-import { parseCursorModels } from '../../../src/engine/providers/cli-model-catalog.js';
+import { parseCursorModels } from '../../../src/engine/runners/cli-tools/probe/native-catalog/listing.js';
 import type { ModelOption } from '../../../src/features/runners/model-catalog/recency.js';
 
 const FIXTURE = join(import.meta.dirname, '../../fixtures/cursor/list-models.txt');

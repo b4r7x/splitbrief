@@ -11,13 +11,14 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliProviderAuth } from '../core/discovery/detection/auth.js';
 import { deriveCliReadiness } from '../core/readiness/cli-remediation.js';
 import { CLI_TOOL_CATALOG } from '../core/runners/cli-tool/catalog.js';
-import { saveDetectionCache } from '../engine/detection/cache.js';
-import { detectRunnerEvidence } from '../engine/detection/runner-evidence.js';
+import { saveDetectionCache } from '../engine/detection/cache/store.js';
+import { detectRunnerEvidence } from '../engine/detection/runner-evidence/detect.js';
 import { detectConfiguredCliReadiness, readConfiguredCliRoutes } from './configured-readiness.js';
 
 // The fresh model-list read spawns the tool; each case sees only the read it answers.
-vi.mock('../engine/detection/runner-evidence.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../engine/detection/runner-evidence.js')>();
+vi.mock('../engine/detection/runner-evidence/detect.js', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('../engine/detection/runner-evidence/detect.js')>();
   return { ...original, detectRunnerEvidence: vi.fn(original.detectRunnerEvidence) };
 });
 

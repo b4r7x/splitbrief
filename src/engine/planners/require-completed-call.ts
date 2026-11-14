@@ -1,6 +1,6 @@
 import { error } from '../../utils/error.js';
 import type { RunnerCallResult } from '../calls/types.js';
-import { stderrUsageLimit } from '../runners/usage-limit.js';
+import { stderrUsageLimit } from '../runners/seat-failure/usage-limit.js';
 
 export function requireCompletedCall(result: RunnerCallResult): RunnerCallResult {
   let failed = result;

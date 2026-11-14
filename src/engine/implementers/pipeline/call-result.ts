@@ -13,7 +13,7 @@ import {
   classifySeatFailure,
   type SeatFailureClassification,
   type SeatFailureSource,
-} from '../../runners/seat-failure.js';
+} from '../../runners/seat-failure/classify.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 

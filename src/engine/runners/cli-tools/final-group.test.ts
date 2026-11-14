@@ -2,11 +2,11 @@ import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { RunnerCallContext } from '../../calls/types.js';
-import { codexPlannerAdapter } from './codex.js';
+import { codexPlannerAdapter } from './codex/adapter.js';
 import type { CliPlannerAdapter } from './contract.js';
-import { cursorPlannerAdapter } from './cursor.js';
+import { cursorPlannerAdapter } from './cursor/adapter.js';
 import { kiloPlannerAdapter } from './kilo-code.js';
-import { opencodePlannerAdapter } from './opencode.js';
+import { opencodePlannerAdapter } from './opencode/adapter.js';
 import { invokeCliAdapter } from '../invoke-cli-adapter.js';
 
 type Step = Readonly<{ message: string }> | 'tool';

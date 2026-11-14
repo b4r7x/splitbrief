@@ -1,4 +1,4 @@
-import type { ResolvedModelMembership } from '../../../engine/providers/model/catalog.js';
+import type { ResolvedModelMembership } from '../../../engine/providers/model/types.js';
 
 /** One provider-qualified spelling of a merged model row. */
 export interface ModelVariant {

@@ -44,20 +44,18 @@ import { buildRepoChecks } from '../../../src/core/readiness/checks/repo.js';
 import { buildRunnerChecks } from '../../../src/core/readiness/checks/runner/build.js';
 import { selectNextAction } from '../../../src/core/readiness/status.js';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
-import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
+import type { PreparationOutcome } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import {
   REPO_LOCAL_RUNNER_FIX,
   REPO_LOCAL_RUNNER_REFUSAL,
-} from '../../../src/engine/runners/prepare-execution/evaluate-candidate.js';
+} from '../../../src/engine/runners/prepare-execution/evaluate-command.js';
 import { blockedCheck } from '../../../src/engine/runners/prepare-execution/runner-candidates.js';
-import { formatCustomRunnerTrustRequest } from '../../../src/engine/runners/custom-runner-disclosure.js';
+import { formatCustomRunnerTrustRequest } from '../../../src/engine/runners/custom/disclosure.js';
 import { openApprovalPrompt } from '../../../src/stores/prompts/approval.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection/tool.js';
 import type { DetectedModel } from '../../../src/core/discovery/detection/model.js';
-import {
-  nativeCliCatalogToDetectedModels,
-  parseOpenCodeNativeModelCatalog,
-} from '../../../src/engine/providers/cli-model-catalog.js';
+import { parseOpenCodeNativeModelCatalog } from '../../../src/engine/runners/cli-tools/probe/native-catalog/opencode.js';
+import { nativeCliCatalogToDetectedModels } from '../../../src/engine/runners/cli-tools/probe/native-catalog/entries.js';
 import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';

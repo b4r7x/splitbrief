@@ -10,14 +10,14 @@ import type {
 } from '../../../src/core/discovery/detection/auth.js';
 import type { DetectedModel } from '../../../src/core/discovery/detection/model.js';
 import {
-  nativeCliCatalogToDetectedModels,
   parseAntigravityModelCatalog,
-  parseCodexNativeModelCatalog,
-  parseCommandCodeNativeModelCatalog,
   parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
-  parseKiloNativeModelCatalog,
-} from '../../../src/engine/providers/cli-model-catalog.js';
+} from '../../../src/engine/runners/cli-tools/probe/native-catalog/listing.js';
+import { parseKiloNativeModelCatalog } from '../../../src/engine/runners/cli-tools/probe/native-catalog/opencode.js';
+import { parseCommandCodeNativeModelCatalog } from '../../../src/engine/runners/cli-tools/probe/native-catalog/command-code.js';
+import { parseCodexNativeModelCatalog } from '../../../src/engine/runners/cli-tools/probe/native-catalog/codex.js';
+import { nativeCliCatalogToDetectedModels } from '../../../src/engine/runners/cli-tools/probe/native-catalog/entries.js';
 import { resolveSeatDisplayName } from '../../../src/engine/providers/model/display-names.js';
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
@@ -47,7 +47,7 @@ import { formatNeedsSignInSaveFeedback } from '../../../src/features/runners/pic
 import { commitPlannerTierSelection } from '../../../src/features/runners/config-transforms/seat-selection.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection/tool.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
-import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import { trackActiveApply } from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';

@@ -9,7 +9,7 @@ import type { SessionSelectDeps } from '../../../src/stores/navigation/session-s
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { ProviderCatalogOutcome } from '../../../src/engine/providers/types.js';
-import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import { createCommandContext } from '../../../src/core/runtime/commands/context-factory.js';
 import type {
   RuntimeCommandContext,

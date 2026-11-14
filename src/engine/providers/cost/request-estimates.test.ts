@@ -7,7 +7,7 @@ import {
   type CallUsageEvidence,
   type UsageBoundary,
 } from '../../../core/schemas/usage-evidence.js';
-import type { ResolvedPricing } from '../pricing-resolver.js';
+import type { ResolvedPricing } from './pricing.js';
 import { InvocationIdentitySchema } from '../../../core/schemas/invocation-identity.js';
 import { callRunnerKey, sumRequestEstimates } from './request-estimates.js';
 

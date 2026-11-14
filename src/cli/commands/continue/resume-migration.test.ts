@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { resumeSavedSession } from './resume.js';
 

@@ -12,18 +12,13 @@ import { CONFIRM_PHRASE, type TieredApprovalRequest } from '../../core/approval/
 import { normalizeCustomCommand } from '../../core/config/custom-commands/schema.js';
 import { taskId } from '../../core/schemas/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  customRunnerSecurityPosture,
-  markCustomRunnerTrusted,
-  resolveCustomRunnerTrustFile,
-  type ConfiguredCustomRunner,
-} from './custom-trust.js';
-import {
-  prepareCustomRunnerAdmission,
-  type PrepareCustomRunnerAdmissionOptions,
-} from './custom-admission.js';
-import { resolveCustomExecutable } from './resolve-cli-executable.js';
-import { customRunnerRefusal } from './prepare-execution/evaluate-candidate.js';
+import { markCustomRunnerTrusted, resolveCustomRunnerTrustFile } from './custom/trust.js';
+import { customRunnerSecurityPosture } from './custom/posture.js';
+import type { ConfiguredCustomRunner } from './custom/posture.js';
+import { prepareCustomRunnerAdmission } from './custom/admission.js';
+import type { PrepareCustomRunnerAdmissionOptions } from './custom/types.js';
+import { resolveCustomExecutable } from './cli-executable/custom.js';
+import { customRunnerRefusal } from './prepare-execution/evaluate-command.js';
 
 const RECEIPT_CONFIRMATION_NOTICE = 'Exact confirmation stores an owner-only reusable receipt.';
 let directories: string[] = [];

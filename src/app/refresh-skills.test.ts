@@ -10,8 +10,8 @@ import type { SkillMeta } from '../core/skills/types.js';
 
 const scan = vi.hoisted(() => ({ failWith: null as Error | null }));
 
-vi.mock('../engine/skill-discovery.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../engine/skill-discovery.js')>();
+vi.mock('../engine/skills/discover.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../engine/skills/discover.js')>();
   return {
     ...actual,
     discoverSkills: (dir: string) =>

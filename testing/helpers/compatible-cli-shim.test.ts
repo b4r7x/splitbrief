@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { delimiter } from 'node:path';
 import { expect, it } from 'vitest';
-import { resolveCustomExecutable } from '../../src/engine/runners/resolve-cli-executable.js';
+import { resolveCustomExecutable } from '../../src/engine/runners/cli-executable/custom.js';
 import { safeChildEnvironment } from '../integration/cli/pty/run.js';
 import { activateSafeCliShimPath } from './compatible-cli-shim.js';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';

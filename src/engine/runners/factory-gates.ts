@@ -4,20 +4,21 @@ import {
   PLANNER_CLI_TOOL_IDS,
 } from '../../core/runners/cli-tool/catalog.js';
 import type { PlannerTierRole, ActiveRunnerRole } from '../../core/runners/seat-roles.js';
-import { semanticConfiguredArgViolations } from './arg-vector-preflight.js';
+import { semanticConfiguredArgViolations } from './arg-vector/authority.js';
 import { error } from '../../utils/error.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
-import type { ConfiguredCustomRunner } from './custom-trust.js';
-import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
+import type { ConfiguredCustomRunner } from './custom/posture.js';
+import type { AdmittedCustomRunnerInvocation } from './custom/launchability.js';
 import type { CustomRunnerRuntimePort } from './types.js';
 import { runnerConfigError } from './errors.js';
-import { runnerGateFor, type CliSeat, type CliSeatGates } from './start-gate.js';
+import { runnerGateFor } from './start-gate.js';
+import type { CliSeat, CliSeatGates } from './seat-gates.js';
 import type {
   PreparedConfig,
   RunnerGate,
   RunnerGateExpectation,
   RunnerSlot,
-} from './prepared-execution.js';
+} from './prepare-execution/prepared.js';
 import { runnerRoleForSlot, type RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 

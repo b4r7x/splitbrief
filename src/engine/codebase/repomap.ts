@@ -1,18 +1,19 @@
 import { relative } from 'node:path';
-import { resolveFromProject } from '../../utils/path/patterns.js';
 import { mkdir, stat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { resolveFromProject } from '../../utils/path/patterns.js';
 import { warnError } from '../../lib/warn.js';
 import { createLogger } from '../../lib/logger.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { uniqueInOrder } from '../../utils/collections.js';
 import { initParser, parseFile } from './parse.js';
 import { createParseCache } from './cache.js';
-import { resolveCodebaseCacheDir, resolveRepoMapDbPath } from './cache-path.js';
 import { buildGraph } from './graph.js';
 import { pagerank } from './pagerank.js';
 import { formatWithBudget } from './budget.js';
 import { extractMentionedFilenames } from './extract-mentioned-filenames.js';
 import { discoverFiles } from './discover-files.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 
 export const MAX_FILE_SIZE_BYTES = 100_000;
 export const PARSE_CONCURRENCY = 8;
@@ -112,4 +113,14 @@ async function parseWithConcurrencyLimit<T>(
   const workers = Array.from({ length: Math.min(concurrency, files.length) }, () => worker());
   await Promise.all(workers);
   return results;
+}
+
+const REPOMAP_DB_FILE = 'repomap.sqlite';
+
+export function resolveCodebaseCacheDir(projectDir: string): string {
+  return resolve(projectDir, SPLITBRIEF_DIR);
+}
+
+export function resolveRepoMapDbPath(projectDir: string): string {
+  return join(resolveCodebaseCacheDir(projectDir), REPOMAP_DB_FILE);
 }

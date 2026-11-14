@@ -6,7 +6,7 @@ import { requireCompletedCall } from '../../planners/require-completed-call.js';
 import {
   opencodePlannerAdapter,
   opencodeProtocolEvents,
-} from '../../runners/cli-tools/opencode.js';
+} from '../../runners/cli-tools/opencode/adapter.js';
 import type { RunnerCallResult } from '../../calls/types.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { processError } from '../../../lib/process/errors.js';

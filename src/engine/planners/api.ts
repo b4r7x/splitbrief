@@ -17,7 +17,7 @@ import {
   resolveApiCallContext,
   type ApiSeatRole,
   type PreparedApiSeat,
-} from '../providers/api-budget.js';
+} from '../providers/api/admission.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';
 import type { OpenAIResponseFormat, StreamClient } from '../providers/openai-stream/request.js';
 import {
@@ -28,7 +28,7 @@ import { fallbackInstruction, type TypedSchemaInput } from '../runners/typed-out
 import { matches } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
 
-import type { ApiRuntimeContext } from '../providers/runtime-context.js';
+import type { ApiRuntimeContext } from '../providers/api/runtime-context.js';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 

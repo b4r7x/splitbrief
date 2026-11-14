@@ -45,10 +45,8 @@ const production = vi.hoisted(() => ({
   requestStopNow: vi.fn(),
 }));
 
-vi.mock('../engine/runners/prepare-execution/prepare-execution.js', async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import('../engine/runners/prepare-execution/prepare-execution.js')
-  >()),
+vi.mock('../engine/runners/prepare-execution/prepare.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../engine/runners/prepare-execution/prepare.js')>()),
   prepareExecution: production.prepareExecution,
 }));
 vi.mock('../core/sessions/run/record-io.js', async (importOriginal) => ({
@@ -71,8 +69,8 @@ vi.mock('../engine/providers/catalog-detection.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../engine/providers/catalog-detection.js')>()),
   detectProviderCatalog: production.detectProviderCatalog,
 }));
-vi.mock('../engine/skill-discovery.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../engine/skill-discovery.js')>()),
+vi.mock('../engine/skills/discover.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../engine/skills/discover.js')>()),
   discoverSkills: production.discoverSkills,
 }));
 vi.mock('../features/workflow/run-requests/departure.js', async (importOriginal) => ({

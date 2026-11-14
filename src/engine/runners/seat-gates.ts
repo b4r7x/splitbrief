@@ -1,0 +1,167 @@
+import { runnerSlotId } from '../../core/config/accessors/runner-config.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
+import type { RunnerReadinessCauseId } from '../../core/readiness/types.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool/types.js';
+import { type AppError, error, matches } from '../../utils/error.js';
+import type { RunnerCallResult } from '../calls/types.js';
+import type { RunnerGate, RunnerSlot } from './prepare-execution/prepared.js';
+import { executableChangedMessage } from './cli-executable/identity.js';
+import { type CliStartGate, missingCliStartGate, assertCliStartGate } from './start-gate.js';
+
+/** Why a CLI tool that changed during a run did not pass its re-check. */
+export type CliToolCheckFailure = Readonly<{
+  message: string;
+  fix: string;
+  cause?: RunnerReadinessCauseId | undefined;
+}>;
+
+export type CliToolRecheck =
+  | Readonly<{ kind: 'admitted'; gates: readonly Extract<RunnerGate, { kind: 'cli' }>[] }>
+  | Readonly<{ kind: 'blocked'; failure: CliToolCheckFailure }>;
+
+/** Checks one CLI tool again the way the run's preparation checked it, for every seat on it. */
+export type RecheckCliTool = (
+  tool: CliToolId,
+  signal: AbortSignal | undefined,
+) => Promise<CliToolRecheck>;
+
+/** One CLI seat of a run: the gate its calls start from, and the re-check that replaces it. */
+export type CliSeat = Readonly<{
+  tool: CliToolId;
+  current: () => CliStartGate;
+  recheck: (signal: AbortSignal | undefined) => Promise<void>;
+}>;
+
+export type CliSeatGates = Readonly<{ seat: (slot: RunnerSlot) => CliSeat }>;
+
+export type CliToolCheckFailedError = AppError<
+  'cli-tool-check-failed',
+  Readonly<{ tool: CliToolId; fix: string; cause?: RunnerReadinessCauseId | undefined }>
+>;
+
+export const cliToolCheckError = {
+  failed: (tool: CliToolId, failure: CliToolCheckFailure): CliToolCheckFailedError =>
+    error('cli-tool-check-failed', failure.message, {
+      tool,
+      fix: failure.fix,
+      cause: failure.cause,
+    }),
+  isFailed: (err: unknown): err is CliToolCheckFailedError => matches('cli-tool-check-failed')(err),
+} as const;
+
+/** The words a check-failed halt shows on every seat: what the check found, then its fix. */
+export function cliToolCheckWords(err: CliToolCheckFailedError): string {
+  return `${err.message} ${err.data.fix}`;
+}
+
+type CliRunnerGate = Extract<RunnerGate, { kind: 'cli' }>;
+
+/**
+ * The run's CLI gates, one cell per seat. A re-check runs once per tool however
+ * many seats ask for it at the same time, and its new receipt replaces the gate
+ * of every seat on that tool.
+ */
+export function createCliSeatGates(
+  input: Readonly<{ gates: readonly RunnerGate[]; recheck: RecheckCliTool }>,
+): CliSeatGates {
+  const cells = new Map<string, { gate: CliRunnerGate }>(
+    input.gates.flatMap((gate) =>
+      gate.kind === 'cli' ? [[runnerSlotId(gate.slot), { gate }] as const] : [],
+    ),
+  );
+  const running = new Map<CliToolId, Promise<void>>();
+
+  async function recheckTool(tool: CliToolId, signal: AbortSignal | undefined): Promise<void> {
+    const answer = await input.recheck(tool, signal);
+    if (answer.kind === 'blocked') throw cliToolCheckError.failed(tool, answer.failure);
+    for (const gate of answer.gates) {
+      const cell = cells.get(runnerSlotId(gate.slot));
+      if (cell !== undefined) cell.gate = gate;
+    }
+  }
+
+  function recheck(tool: CliToolId, signal: AbortSignal | undefined): Promise<void> {
+    const pending = running.get(tool);
+    if (pending !== undefined) return pending;
+    const next = recheckTool(tool, signal).finally(() => running.delete(tool));
+    running.set(tool, next);
+    return next;
+  }
+
+  return {
+    seat: (slot) => {
+      const cell = cells.get(runnerSlotId(slot));
+      if (cell === undefined) {
+        throw error(
+          'runner-gate-mismatch',
+          `Runner gate does not match the prepared ${slot.role} context.`,
+          {
+            kind: 'cli',
+            role: slot.role,
+          },
+        );
+      }
+      const tool = cell.gate.tool;
+      return {
+        tool,
+        current: () => ({
+          tool: cell.gate.tool,
+          executable: cell.gate.executable,
+          installedVersion: cell.gate.installedVersion,
+        }),
+        recheck: (signal) => recheck(tool, signal),
+      };
+    },
+  };
+}
+
+/** The seat a CLI adapter calls through; an adapter built with none was never admitted. */
+export function requireCliSeat(tool: CliToolId, seat: CliSeat | undefined): CliSeat {
+  if (seat === undefined || seat.tool !== tool) return missingCliStartGate(tool);
+  return seat;
+}
+
+const isExecutableDrift = matches('cli-executable-identity-drift');
+
+/** A call that stopped before spawn because the admitted file changed or is gone. */
+function driftedBeforeSpawn(result: RunnerCallResult): boolean {
+  return (
+    result.status !== 'completed' &&
+    (result.error.code === 'cli-executable-identity-drift' ||
+      result.error.code === 'spawn-not-found')
+  );
+}
+
+/**
+ * Every CLI call of a seat starts the exact file its gate admitted. When that
+ * file changed in place or is gone, the seat re-checks the tool once and makes
+ * the call again on the new receipt. A file that changes again after its
+ * re-check passed fails closed.
+ */
+export async function callAdmittedCli(
+  seat: CliSeat,
+  signal: AbortSignal | undefined,
+  call: (executable: CliExecutableIdentity, gate: CliStartGate) => Promise<RunnerCallResult>,
+): Promise<RunnerCallResult> {
+  const attempt = async (): Promise<RunnerCallResult | 'drift'> => {
+    const gate = seat.current();
+    try {
+      const result = await call(assertCliStartGate(seat.tool, gate), gate);
+      return driftedBeforeSpawn(result) ? 'drift' : result;
+    } catch (cause) {
+      if (isExecutableDrift(cause)) return 'drift';
+      throw cause;
+    }
+  };
+  const first = await attempt();
+  if (first !== 'drift') return first;
+  await seat.recheck(signal);
+  const second = await attempt();
+  if (second !== 'drift') return second;
+  const displayName = CLI_TOOL_CATALOG[seat.tool].displayName;
+  throw cliToolCheckError.failed(seat.tool, {
+    message: executableChangedMessage(displayName),
+    fix: `Wait until the ${displayName} update is complete.`,
+  });
+}

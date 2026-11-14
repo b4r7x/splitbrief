@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  boundRunnerCallToolUse,
   createRunnerCallDeltaLimiter,
   formatLimitSize,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
@@ -12,6 +11,7 @@ import {
   runnerCallToolUseCountLimit,
   runnerCallToolUseStopLimit,
 } from './output-limit.js';
+import { boundRunnerCallToolUse } from './bounded-payload.js';
 
 describe('formatLimitSize', () => {
   it('writes a whole number of MiB as MB', () => {

@@ -14,7 +14,7 @@ import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../../src/core/paths.js';
 import { AUTOMATIC_MODEL } from '../../../src/core/providers/automatic-model.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
+import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import type { StartDeps } from '../../../src/cli/commands/start/types.js';
 
 // Runner availability is a live network claim, and this config points the

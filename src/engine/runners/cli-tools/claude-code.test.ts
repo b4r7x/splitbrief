@@ -1,5 +1,5 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../calls/usage.js';
+import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
 import {
   mkdirSync,
   mkdtempSync,
@@ -12,12 +12,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  CLI_CONFORMANCE_CANDIDATES,
-  claudeCodeImplementerAdapter,
-  claudeCodePlannerAdapter,
-  claudeProtocolEvents,
-} from './claude-code.js';
+import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code/adapter.js';
+import { CLI_CONFORMANCE_CANDIDATES } from './claude-code/conformance.js';
+import { claudeProtocolEvents } from './claude-code/protocol.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from '../../../core/schemas/plan.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';

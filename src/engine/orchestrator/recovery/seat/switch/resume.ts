@@ -3,8 +3,8 @@ import type { SeatSwapCandidate } from '../../../../../core/schemas/recovery/sch
 import { sameSeatCandidate, type CrewSeatId } from '../../../../../core/crew/identity.js';
 import type { WorkflowState } from '../../../../../core/schemas/workflow/state.js';
 import type { EventBus } from '../../../../events/types.js';
-import { prepareExecution } from '../../../../runners/prepare-execution/prepare-execution.js';
-import type { PreparationOutcome } from '../../../../runners/prepared-execution.js';
+import { prepareExecution } from '../../../../runners/prepare-execution/prepare.js';
+import type { PreparationOutcome } from '../../../../runners/prepare-execution/prepared.js';
 import type { PreparationPolicy } from '../../../../runners/prepare-execution/types.js';
 import { loadConfig } from '../../../../../core/config/load/io.js';
 import { recordSeatOfRecord } from '../../../../../core/config/load/record-seat.js';

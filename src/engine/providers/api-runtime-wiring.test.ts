@@ -6,12 +6,12 @@ import type { Config } from '../../core/schemas/config.js';
 import { createApiImplementer } from '../implementers/api.js';
 import { createPlanner, createReviewer } from '../runners/factory.js';
 import type { RunnerFactoryAuthority } from '../runners/factory-gates.js';
-import type { RunnerSlot } from '../runners/prepared-execution.js';
+import type { RunnerSlot } from '../runners/prepare-execution/prepared.js';
 import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
-import { admitApiCall, type PreparedApiSeat } from './api-budget.js';
+import { admitApiCall, type PreparedApiSeat } from './api/admission.js';
 import { apiConnectionContextKey } from './selected-model.js';
 import type { ProviderDef } from './types.js';
-import type { ApiDeadlineRun } from './api-deadlines.js';
+import type { ApiDeadlineRun } from './api/deadlines.js';
 import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
@@ -30,8 +30,8 @@ const dispatches: WireRequest[] = [];
 /** The total deadline each call handed the deadline runner. */
 const deadlineTotals: (number | undefined)[] = [];
 
-vi.mock('./api-deadlines.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./api-deadlines.js')>();
+vi.mock('./api/deadlines.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./api/deadlines.js')>();
   return {
     ...actual,
     runWithApiDeadlines: (run: ApiDeadlineRun<unknown>) => {

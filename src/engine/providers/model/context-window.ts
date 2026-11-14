@@ -3,13 +3,13 @@ import { isProviderId } from '../../../core/schemas/enums.js';
 import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
 import { findKnownModel } from '../../../core/providers/known-models.js';
 import {
-  getBundledModels,
   getEffectiveModelId,
   lookupCatalogModelByModelId,
   lookupModelsDevModel,
   lookupRuntimeModel,
-  type ModelCacheAccessor,
 } from './resolution.js';
+import { getBundledModels } from './runtime-snapshot.js';
+import type { ModelCacheAccessor } from './runtime-snapshot.js';
 import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
 
 export type ContextWindowSource = 'models-dev' | 'runtime' | 'known-catalog' | 'automatic-catalog';

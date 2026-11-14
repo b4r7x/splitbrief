@@ -24,7 +24,7 @@ import { reactivateExistingSession } from '../../../../core/sessions/active-poin
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { SummaryBase } from '../../summary/build.js';
 import type { SpecMetadata } from '../../../../core/sessions/spec-files.js';
-import { parsePreparedConfig } from '../../../runners/prepared-execution.js';
+import { parsePreparedConfig } from '../../../runners/prepare-execution/prepared.js';
 
 function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
   return createRunIsolation({

@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchModelsDevCatalog, getModelsForProvider } from './models-dev.js';
+import { fetchModelsDevCatalog, getModelsForProvider } from './models-dev/catalog.js';
 import { getModelsDevEntries } from './model/resolution.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';

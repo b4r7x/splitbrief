@@ -14,7 +14,7 @@ import {
 import { join } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
 import { isolationWorktreePath, isolationWorktreeRoot, sessionDir } from '../../../core/paths.js';
-import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import type { Implementer } from '../../implementers/types.js';

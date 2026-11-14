@@ -1,8 +1,8 @@
 import type { ImplementerWriteMode } from '../../../core/schemas/runner/implementer.js';
 import { scopeEntryPatterns, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { Task } from '../../../core/schemas/task.js';
-import { declaredPathProblem } from '../../implementers/bundle-baseline.js';
-import { FILE_BUNDLE_MAX_FILES } from '../../implementers/file-bundle.js';
+import { declaredPathProblem } from '../../implementers/file-bundle/baseline.js';
+import { FILE_BUNDLE_MAX_FILES } from '../../implementers/file-bundle/contract.js';
 import type { ProfileFit } from './types.js';
 
 function normalizeScopePattern(pattern: string): string {

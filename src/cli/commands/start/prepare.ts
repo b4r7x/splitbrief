@@ -2,12 +2,12 @@ import type { EffectiveConfigResult } from '../../../core/config/runtime/effecti
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 import {
   type PreparationOutcome,
   rollbackPreparedExecutionOwnership,
   type PreparedExecution,
-} from '../../../engine/runners/prepared-execution.js';
+} from '../../../engine/runners/prepare-execution/prepared.js';
 import type { CustomRunnerAdmissionPolicy } from '../../../engine/runners/types.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../../preparation.js';

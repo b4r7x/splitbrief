@@ -2,7 +2,8 @@ import type { PlanAnswer, PlanProposal, PlanResult } from '../../../core/schemas
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
-import { blocksPlan, type PlanCheckError } from '../../spec/plan-checks.js';
+import { blocksPlan } from '../../spec/plan/checks.js';
+import type { PlanCheckError } from '../../spec/plan/types.js';
 import { MAX_QUESTION_ROUNDS } from '../../spec/prompts/plan-session.js';
 
 /** What the next planner call of the session carries. */

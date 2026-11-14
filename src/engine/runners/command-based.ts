@@ -1,14 +1,14 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type { TextChunkMarks } from '../events/types.js';
-import { spawnAndCollect } from '../streaming/spawn-collect.js';
-import { createCustomRunnerRedactor, resolveCustomRunnerEnvironment } from './redaction.js';
+import { spawnAndCollect } from '../streaming/spawn-collect/collect.js';
+import { createCustomRunnerRedactor, resolveCustomRunnerEnvironment } from './custom/redaction.js';
 import {
   customRunnerAdmissionError,
   parseAdmittedCustomRunnerInvocation,
   revalidateCustomRunnerInvocation,
   type AdmittedCustomRunnerInvocation,
-} from './custom-launchability.js';
+} from './custom/launchability.js';
 
 /**
  * Where the command comes from. An admitted custom command runs its revalidated absolute path

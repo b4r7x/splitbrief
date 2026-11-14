@@ -9,8 +9,8 @@ import { createCommandPlanner } from '../planners/command-invoke.js';
 import { createPlannerBase } from '../planners/base.js';
 import { ONE_SHOT_API_CAPS } from '../planners/types.js';
 import { toOpenAIRequest } from '../providers/openai-stream/request.js';
-import { claudeCodePlannerAdapter } from './cli-tools/claude-code.js';
-import { opencodePlannerAdapter } from './cli-tools/opencode.js';
+import { claudeCodePlannerAdapter } from './cli-tools/claude-code/adapter.js';
+import { opencodePlannerAdapter } from './cli-tools/opencode/adapter.js';
 import {
   fallbackInstruction,
   requestTyped,

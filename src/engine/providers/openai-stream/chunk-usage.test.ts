@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
 import { StreamUsageSchema, toStreamChunk } from './chunk.js';
-import { normalizeRunnerCallUsage } from '../../calls/usage.js';
+import { normalizeRunnerCallUsage } from '../../calls/usage/normalize.js';
 
 function sdkChunk(usage: ChatCompletionChunk['usage']): ChatCompletionChunk {
   return {

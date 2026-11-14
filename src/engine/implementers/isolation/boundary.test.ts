@@ -3,19 +3,14 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
-import { parseAntigravityLine } from '../../streaming/parse-antigravity.js';
+import { parseAntigravityLine } from '../../runners/cli-tools/antigravity/protocol.js';
 import type { CliProtocolEvent } from '../../runners/cli-tools/contract.js';
-import { commandCodeProtocolEvents } from '../../runners/cli-tools/command-code.js';
-import { cursorProtocolEvents } from '../../runners/cli-tools/cursor.js';
+import { commandCodeProtocolEvents } from '../../runners/cli-tools/command-code/protocol.js';
+import { cursorProtocolEvents } from '../../runners/cli-tools/cursor/protocol.js';
 import { kiloImplementerProtocolEvents } from '../../runners/cli-tools/kilo-code.js';
-import { opencodeProtocolEvents } from '../../runners/cli-tools/opencode.js';
-import {
-  createIsolationBoundary,
-  findIsolationBreach,
-  formatIsolationBreach,
-  isolationToolUseGuard,
-  type IsolationBoundary,
-} from './boundary.js';
+import { opencodeProtocolEvents } from '../../runners/cli-tools/opencode/adapter.js';
+import { createIsolationBoundary, type IsolationBoundary } from './boundary.js';
+import { findIsolationBreach, formatIsolationBreach, isolationToolUseGuard } from './breach.js';
 
 const FIXTURES = join(import.meta.dirname, '../../../../testing/fixtures');
 const ARTIFACTS = join(import.meta.dirname, '../../../../.test-artifacts');

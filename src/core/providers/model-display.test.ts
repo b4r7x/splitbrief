@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { parseCursorNativeModelCatalog } from '../../engine/providers/cli-model-catalog.js';
+import { parseCursorNativeModelCatalog } from '../../engine/runners/cli-tools/probe/native-catalog/listing.js';
 import { formatModelName, peelDisplayLabel } from './model-display.js';
 
 describe('formatModelName', () => {

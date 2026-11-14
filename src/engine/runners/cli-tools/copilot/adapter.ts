@@ -1,0 +1,283 @@
+import { accumulateTokenUsage } from '../../../calls/usage/accumulate.js';
+import type { TokenDelta } from '../../../../core/schemas/tokens.js';
+import { CLI_TOOL_CATALOG } from '../../../../core/runners/cli-tool/catalog.js';
+import type { ParsedLine } from '../../types.js';
+import { contractSha256 } from '../../../providers/candidate/contract.js';
+import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from '../contract.js';
+import { validateCliArgs } from '../validate-args.js';
+import { parseCopilotLine } from './protocol.js';
+import { isRecord } from '../../../../utils/type-guards.js';
+
+const COPILOT_ID = 'copilot' as const;
+const COPILOT_COMMAND = 'copilot' as const;
+const COPILOT_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
+const COPILOT_VERSION_ARGS = Object.freeze(['--version'] as const);
+
+const COPILOT_PROTECTED_FLAGS = new Set([
+  '--agent',
+  '--allow-all',
+  '--allow-all-tools',
+  '--autopilot',
+  '--effort',
+  '--model',
+  '--mode',
+  '--no-ask-user',
+  '--output-format',
+  '--plan',
+  '--prompt',
+  '--reasoning-effort',
+  '--yolo',
+  '-p',
+]);
+const COPILOT_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-p']);
+
+type CopilotPlannerBuildInput = Parameters<CliPlannerAdapter<'copilot'>['buildArgs']>[0];
+type CopilotImplementerBuildInput = Parameters<CliImplementerAdapter<'copilot'>['buildArgs']>[0];
+type CopilotTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
+
+function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: readonly string[] }) {
+  return validateCliArgs({
+    ...input,
+    protectedFlags: COPILOT_PROTECTED_FLAGS,
+    protectedShortValueFlags: COPILOT_PROTECTED_SHORT_VALUE_FLAGS,
+  });
+}
+
+function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
+  const events: CliProtocolEvent[] = [];
+  if (parsed.text !== undefined && parsed.text.length > 0) {
+    events.push({
+      type: 'text',
+      channel: parsed.channel ?? (parsed.isResult ? 'result' : 'stdout'),
+      text: parsed.text,
+    });
+  }
+  if (parsed.usage !== undefined) {
+    events.push({
+      type: 'usage',
+      usage: parsed.usage,
+      semantics: parsed.usageSemantics ?? (parsed.isResult ? 'final' : 'delta'),
+    });
+  }
+  if (parsed.sessionId !== undefined)
+    events.push({ type: 'session', nativeSessionId: parsed.sessionId });
+  // Copilot's completion event is unverified live, so a tool event is recorded as done when it arrives.
+  for (const toolUse of [...(parsed.toolUse ?? []), ...(parsed.toolUseDone ?? [])]) {
+    events.push({
+      type: 'tool-use',
+      id: toolUse.id ?? null,
+      name: toolUse.name,
+      input: { ...toolUse.input },
+      ...(toolUse.output !== undefined && { output: toolUse.output }),
+    });
+  }
+  for (const warning of parsed.warning ?? []) {
+    events.push({ type: 'warning', code: warning.code, message: warning.message });
+  }
+  return events;
+}
+
+export function copilotPlannerProtocolEvents(line: string): readonly CliProtocolEvent[] {
+  return copilotFailureEvents(line) ?? toProtocolEvents(parseCopilotLine(line));
+}
+
+export function copilotImplementerProtocolEvents(line: string): readonly CliProtocolEvent[] {
+  return copilotFailureEvents(line) ?? toProtocolEvents(parseCopilotLine(line));
+}
+
+function copilotFailureEvents(line: string): readonly CliProtocolEvent[] | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(line.trim());
+  } catch {
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  const subtype = typeof value.subtype === 'string' ? value.subtype : undefined;
+  const isErrorLine = value.type === 'error';
+  const isFailedResult =
+    value.type === 'result' &&
+    (value.is_error === true || (subtype !== undefined && subtype !== 'success'));
+  if (!isErrorLine && !isFailedResult) return null;
+  const fallback = isErrorLine ? 'Copilot reported an error' : 'Copilot call failed';
+  const message = copilotErrorMessage(value) ?? fallback;
+  return [
+    {
+      type: 'result',
+      status: 'failed',
+      text: '',
+      usage: null,
+      nativeSessionId: null,
+      error: { code: 'copilot-error', message },
+      partial: false,
+    },
+  ];
+}
+
+function copilotErrorMessage(value: Record<string, unknown>): string | undefined {
+  const data = isRecord(value.data) ? value.data : undefined;
+  const error = isRecord(value.error) ? value.error : undefined;
+  for (const candidate of [
+    value.message,
+    data?.message,
+    error?.message,
+    typeof value.result === 'string' ? value.result : undefined,
+    typeof value.error === 'string' ? value.error : undefined,
+  ]) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate;
+  }
+  return undefined;
+}
+
+function terminal(input: { events: readonly CliProtocolEvent[] }): CopilotTerminalEvent {
+  const explicit = input.events.findLast(
+    (event): event is CopilotTerminalEvent => event.type === 'result',
+  );
+  if (explicit !== undefined && explicit.status !== 'completed') return explicit;
+  let usage: TokenDelta | null = null;
+  let nativeSessionId: string | null = null;
+  for (const event of input.events) {
+    if (event.type === 'usage') usage = accumulateTokenUsage(usage, event.usage, event.semantics);
+    if (event.type === 'session') nativeSessionId = event.nativeSessionId;
+  }
+  return {
+    type: 'result',
+    status: 'completed',
+    text: '',
+    usage,
+    nativeSessionId,
+    error: null,
+    partial: false,
+  };
+}
+
+function plannerBaseArgs(input: CopilotPlannerBuildInput): string[] {
+  return [
+    ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.effort === undefined ? [] : ['--effort', input.effort]),
+    ...(input.imagePaths ?? []).flatMap((path) => ['--attachment', path]),
+    '--plan',
+    '--allow-all-tools',
+    '--no-ask-user',
+    '--output-format',
+    'json',
+  ];
+}
+
+function implementerBaseArgs(input: CopilotImplementerBuildInput): string[] {
+  return [
+    ...(input.model === undefined ? [] : ['--model', input.model]),
+    ...(input.effort === undefined ? [] : ['--effort', input.effort]),
+    ...(input.imagePaths ?? []).flatMap((path) => ['--attachment', path]),
+    '--allow-all',
+    '--output-format',
+    'json',
+  ];
+}
+
+function createProbe() {
+  return {
+    version: {
+      command: [COPILOT_COMMAND, ...COPILOT_VERSION_ARGS] as const,
+      cwd: 'neutral' as const,
+      maxOutputBytes: 4_096,
+    },
+  } as const;
+}
+
+function createPlannerAdapter(): CliPlannerAdapter<'copilot'> {
+  return {
+    descriptor: CLI_TOOL_CATALOG.copilot,
+    role: 'planner',
+    supportsSessionResume: false,
+    supportsEffort: CLI_TOOL_CATALOG.copilot.supportsEffort,
+    promptTransport: COPILOT_PROMPT_TRANSPORT,
+    baseArgs: plannerBaseArgs,
+    buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
+    validateArgs,
+    environment: {},
+    outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
+    parse: copilotPlannerProtocolEvents,
+    terminal,
+    probe: createProbe(),
+  };
+}
+
+function createImplementerAdapter(): CliImplementerAdapter<'copilot'> {
+  return {
+    descriptor: CLI_TOOL_CATALOG.copilot,
+    role: 'implementer',
+    promptTransport: COPILOT_PROMPT_TRANSPORT,
+    baseArgs: implementerBaseArgs,
+    buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
+    validateArgs,
+    environment: {},
+    outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
+    parse: copilotImplementerProtocolEvents,
+    terminal,
+    probe: createProbe(),
+  };
+}
+
+export const copilotPlannerAdapter = createPlannerAdapter();
+export const copilotImplementerAdapter = createImplementerAdapter();
+
+export type RawCopilotCliContract = Readonly<{
+  id: typeof COPILOT_ID;
+  command: typeof COPILOT_COMMAND;
+  role: 'planner' | 'implementer';
+  versionArgs: readonly ['--version'];
+  auth: Readonly<{
+    kind: 'env-or-native';
+    env: readonly ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'];
+  }>;
+  rawInvocation: readonly string[];
+  promptTransport: 'stdin';
+  expectedRawTerminal: 'process-exit';
+  asOf: '2026-09-21';
+}>;
+
+export type CopilotCliConformanceCandidate = Readonly<{
+  id: typeof COPILOT_ID;
+  role: 'planner' | 'implementer';
+  rawContract: RawCopilotCliContract;
+  contractSha256: string;
+  adapter: CliPlannerAdapter<'copilot'> | CliImplementerAdapter<'copilot'>;
+}>;
+
+function rawContract(role: 'planner' | 'implementer'): RawCopilotCliContract {
+  return {
+    id: COPILOT_ID,
+    command: COPILOT_COMMAND,
+    role,
+    versionArgs: COPILOT_VERSION_ARGS,
+    auth: { kind: 'env-or-native', env: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'] },
+    rawInvocation:
+      role === 'planner'
+        ? ['--plan', '--allow-all-tools', '--no-ask-user', '--output-format', 'json']
+        : ['--allow-all', '--output-format', 'json'],
+    promptTransport: 'stdin',
+    expectedRawTerminal: 'process-exit',
+    asOf: '2026-09-21',
+  };
+}
+
+const plannerRawContract = rawContract('planner');
+const implementerRawContract = rawContract('implementer');
+
+export const CLI_CONFORMANCE_CANDIDATES: readonly CopilotCliConformanceCandidate[] = Object.freeze([
+  Object.freeze({
+    id: COPILOT_ID,
+    role: 'planner',
+    rawContract: plannerRawContract,
+    contractSha256: contractSha256(plannerRawContract),
+    adapter: copilotPlannerAdapter,
+  }),
+  Object.freeze({
+    id: COPILOT_ID,
+    role: 'implementer',
+    rawContract: implementerRawContract,
+    contractSha256: contractSha256(implementerRawContract),
+    adapter: copilotImplementerAdapter,
+  }),
+]);

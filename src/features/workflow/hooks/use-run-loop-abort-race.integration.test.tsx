@@ -8,7 +8,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { PlannerConfig } from '../../../core/schemas/runner/planner.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
-import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../engine/runners/prepare-execution/prepared.js';
 import { useInputMode } from './use-input-mode.js';
 import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from './use-run-loop.js';

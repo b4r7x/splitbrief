@@ -1,18 +1,16 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import type { CliExecutableReceipt } from '../../src/core/discovery/detection/executable.js';
-import {
-  customRunnerSecurityPosture,
-  resolveCustomRunnerAdmissionScope,
-  type ConfiguredCustomRunner,
-} from '../../src/engine/runners/custom-trust.js';
+import { resolveCustomRunnerAdmissionScope } from '../../src/engine/runners/custom/trust.js';
+import { customRunnerSecurityPosture } from '../../src/engine/runners/custom/posture.js';
+import type { ConfiguredCustomRunner } from '../../src/engine/runners/custom/posture.js';
 import {
   invokeCommandRunner,
   type CommandRunnerOptions,
   type CommandRunnerSource,
 } from '../../src/engine/runners/command-based.js';
 import type { RunnerCallEvent } from '../../src/engine/calls/types.js';
-import type { AdmittedCustomRunnerInvocation } from '../../src/engine/runners/custom-launchability.js';
+import type { AdmittedCustomRunnerInvocation } from '../../src/engine/runners/custom/launchability.js';
 
 export function executableReceipt(path = process.execPath): CliExecutableReceipt {
   const realPath = realpathSync(path);

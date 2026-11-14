@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { createRunnerCallRecorder } from '../../../src/engine/calls/recorder.js';
+import { createRunnerCallRecorder } from '../../../src/engine/calls/recorder/create.js';
 import { createStdoutTextSink } from '../../../src/engine/events/sinks/stdout-text.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../../src/engine/implementers/types.js';

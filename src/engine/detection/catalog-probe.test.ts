@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isDeclaredCliProbeContract } from '../runners/cli-tools/contract.js';
+import { isDeclaredCliProbeContract } from '../runners/cli-tools/probe/contract.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
 
 describe('OpenCode catalog probe parsing', () => {

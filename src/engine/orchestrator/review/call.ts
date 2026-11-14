@@ -3,7 +3,7 @@ import { requireReviewSeat } from '../../../core/config/accessors/reviewer-runne
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { Reviewer } from '../../reviewers/types.js';
+import type { Reviewer } from '../../planners/reviewer.js';
 import type { EventBus } from '../../events/types.js';
 import {
   requestTyped,

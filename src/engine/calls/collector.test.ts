@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { collectRunnerCallResult } from './collector.js';
-import { createRunnerCallRecorder } from './recorder.js';
+import { collectRunnerCallResult } from './collector/collect.js';
+import { createRunnerCallRecorder } from './recorder/create.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH, RunnerCallResultSchema } from './schema.js';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES, RUNNER_CALL_WARNING_MAX_ITEMS } from './output-limit.js';
 import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';

@@ -1,5 +1,5 @@
-import type { RememberedPresentation } from '../../engine/detection/cache.js';
-import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
+import type { RememberedPresentation } from '../../engine/detection/cache/schema.js';
+import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev/cache.js';
 import type { modelCacheStore } from './model-cache/state.js';
 import type { DiscoverySourceContexts } from './model-cache/types.js';
 import type { detectionStore } from './detection.js';

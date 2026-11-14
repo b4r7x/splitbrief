@@ -8,7 +8,7 @@ import { createEventBus } from '../../../src/engine/events/bus.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { checkFailureText } from '../../../src/engine/orchestrator/validation/failure-text.js';
 import { runChecks } from '../../../src/engine/orchestrator/validation/checks/runner.js';
-import { parsePreparedConfig } from '../../../src/engine/runners/prepared-execution.js';
+import { parsePreparedConfig } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import {
   defaultContext,
   makeConfig,

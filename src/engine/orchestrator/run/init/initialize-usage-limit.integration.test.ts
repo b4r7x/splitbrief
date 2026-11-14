@@ -30,7 +30,7 @@ import type { RunIsolation } from '../../isolation/types.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
-} from '../../../runners/prepared-execution.js';
+} from '../../../runners/prepare-execution/prepared.js';
 import { markHooksConfigTrusted } from '../../../../core/hooks/trust.js';
 
 const WEEKLY_RESET_MS = Date.parse('2026-10-29T10:00:00.000Z');

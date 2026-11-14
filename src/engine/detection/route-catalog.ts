@@ -7,7 +7,7 @@ import {
   type RouteAuthState,
 } from '../../core/runners/route-auth.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
-import type { DetectionCacheSnapshot, RememberedCliCatalog } from './cache.js';
+import type { DetectionCacheSnapshot, RememberedCliCatalog } from './cache/schema.js';
 
 export type RouteCatalog = Readonly<{
   models: readonly DetectedModel[];

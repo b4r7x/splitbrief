@@ -7,10 +7,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
-import {
-  cacheIdentity,
-  persistSnapshot,
-} from '../../../src/engine/providers/models-dev-cache/store.js';
+import { cacheIdentity, persistSnapshot } from '../../../src/engine/providers/models-dev/store.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';

@@ -5,8 +5,8 @@ import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
-import { detectRunnerEvidence } from './runner-evidence.js';
+import { resolveCliExecutable } from '../runners/cli-executable/resolve.js';
+import { detectRunnerEvidence } from './runner-evidence/detect.js';
 
 const OLD_CEILING_BYTES = 64 * 1024;
 const CODEX_CATALOG_BUDGET_BYTES = 2 * 1024 * 1024;

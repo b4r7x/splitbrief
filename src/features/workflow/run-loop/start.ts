@@ -26,8 +26,8 @@ import type { OrchestratorCallbacks, WorkflowSinks } from '../../../engine/orche
 import { addTuiEvent } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
-import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
-import type { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PreparedExecution } from '../../../engine/runners/prepare-execution/prepared.js';
+import type { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 import { readinessBlockerMessage } from '../../../core/readiness/format.js';
 import {
   createAbortHandlerScope,

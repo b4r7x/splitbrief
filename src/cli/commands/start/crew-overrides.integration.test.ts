@@ -19,11 +19,9 @@ import { selectDefaultCrew } from '../../../core/crew/default.js';
 import { checkCrewAvailability } from '../../../engine/detection/crew.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
-import { saveDetectionCache } from '../../../engine/detection/cache.js';
-import {
-  detectRunnerEvidence,
-  runnerDiscoveryContextKey,
-} from '../../../engine/detection/runner-evidence.js';
+import { saveDetectionCache } from '../../../engine/detection/cache/store.js';
+import { detectRunnerEvidence } from '../../../engine/detection/runner-evidence/detect.js';
+import { runnerDiscoveryContextKey } from '../../../engine/detection/context-key.js';
 import { configStore } from '../../../stores/project/config.js';
 import { installDiagnosticSink } from '../../../lib/warn.js';
 import { runHeadlessStart } from './streaming.js';
@@ -36,8 +34,9 @@ vi.mock('../../../engine/detection/detect.js', async (original) => ({
 }));
 
 // Reading a tool's model list spawns the tool; each case sees only the list it answers.
-vi.mock('../../../engine/detection/runner-evidence.js', async (original) => {
-  const actual = await original<typeof import('../../../engine/detection/runner-evidence.js')>();
+vi.mock('../../../engine/detection/runner-evidence/detect.js', async (original) => {
+  const actual =
+    await original<typeof import('../../../engine/detection/runner-evidence/detect.js')>();
   return { ...actual, detectRunnerEvidence: vi.fn(actual.detectRunnerEvidence) };
 });
 

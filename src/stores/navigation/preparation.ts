@@ -4,7 +4,7 @@ import { rollbackPreparedSession } from '../../core/sessions/prepared-rollback.j
 import type {
   PreparationOutcome,
   PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { createStore, storeBase } from '../create-store.js';
 import { routerStore } from './router.js';

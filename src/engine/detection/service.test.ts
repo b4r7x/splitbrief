@@ -17,11 +17,11 @@ import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { detectionContextKey } from './types.js';
 import { scopedCliCatalogConnection } from './cli-catalog-outcomes.js';
 import { createProductionDetectionDeps } from './deps.js';
-import { loadRememberedSnapshot, saveDetectionCache } from './cache.js';
+import { loadRememberedSnapshot, saveDetectionCache } from './cache/store.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev-cache.js';
-import { fetchModelsDevCatalogWithCache } from '../providers/models-dev.js';
+import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev/cache.js';
+import { fetchModelsDevCatalogWithCache } from '../providers/models-dev/catalog.js';
 import {
   createDetectionService,
   type DetectionDeps,

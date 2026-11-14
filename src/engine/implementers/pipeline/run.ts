@@ -19,18 +19,15 @@ import {
   type BuildOutputContract,
   type BundleApplyResult,
   type BundleBaseline,
-} from '../file-bundle.js';
-import { captureBundleBaseline } from '../bundle-baseline.js';
-import { parseFileBundle } from '../parse-file-bundle.js';
-import { applyFileBundle } from '../apply-file-bundle.js';
+} from '../file-bundle/contract.js';
+import { captureBundleBaseline } from '../file-bundle/baseline.js';
+import { parseFileBundle } from '../file-bundle/parse.js';
+import { applyFileBundle } from '../file-bundle/apply.js';
 import { assertPathConfined } from '../../../lib/fs/confinement.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import { formatErrorWithHint } from '../../error-hints.js';
-import {
-  formatImplementerSystemPreamble,
-  formatTaskPrompt,
-  formatRetryPrompt,
-} from '../../spec/prompt-formatter.js';
+import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from '../../spec/prompts/system.js';
+import { formatTaskPrompt, formatRetryPrompt } from '../../spec/prompts/task.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { DEFAULT_AVAILABILITY } from '../../availability.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
@@ -55,12 +52,12 @@ import {
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
-import { extractLastJsonObject } from '../../runners/typed-output.js';
+import { extractLastJsonObject } from '../../runners/extract-json.js';
 import { readImplementerReport } from '../../../core/schemas/consult.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { processError } from '../../../lib/process/errors.js';
-import { isApiDeadlineError } from '../../providers/api-deadlines.js';
-import { cliToolCheckError, cliToolCheckWords } from '../../runners/start-gate.js';
+import { isApiDeadlineError } from '../../providers/api/deadlines.js';
+import { cliToolCheckError, cliToolCheckWords } from '../../runners/seat-gates.js';
 import {
   checkoutChanges,
   formatCheckoutChanges,

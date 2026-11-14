@@ -6,11 +6,11 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { formatRetryPrompt, formatTaskPrompt } from '../../spec/prompt-formatter.js';
-import { buildFinalReviewPrompt } from '../../spec/prompts/review.js';
+import { formatRetryPrompt, formatTaskPrompt } from '../../spec/prompts/task.js';
+import { buildFinalReviewPrompt } from '../../spec/prompts/review/final.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildPlanSessionPrompt } from '../../spec/prompts/plan-session.js';
-import { discoverSkills } from '../../skill-discovery.js';
+import { discoverSkills } from '../../skills/discover.js';
 import { buildApiReviewContext } from '../review/api-context.js';
 import { buildSkillsContext } from './skills-context.js';
 

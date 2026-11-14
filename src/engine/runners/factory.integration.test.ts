@@ -27,21 +27,17 @@ import {
 } from './factory.js';
 import { customRunnerFactoryError, type RunnerFactoryAuthority } from './factory-gates.js';
 import { requireReviewSeat } from '../../core/config/accessors/reviewer-runner.js';
-import {
-  createCliSeatGates,
-  type CliStartGate,
-  type CliToolCheckFailure,
-  type RecheckCliTool,
-} from './start-gate.js';
+import type { CliStartGate } from './start-gate.js';
+import { createCliSeatGates, type CliToolCheckFailure, type RecheckCliTool } from './seat-gates.js';
 import type { CustomRunnerRuntimePort } from './types.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
-import type { RunnerGate, RunnerSlot } from './prepared-execution.js';
-import { resolveConfiguredCustomRunner } from './configured-custom.js';
-import { customRunnerSecurityPosture } from './custom-trust.js';
-import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
+import type { RunnerGate, RunnerSlot } from './prepare-execution/prepared.js';
+import { resolveConfiguredCustomRunner } from './custom/configured.js';
+import { customRunnerSecurityPosture } from './custom/posture.js';
+import type { AdmittedCustomRunnerInvocation } from './custom/launchability.js';
 import type { PlannerFactoryOptions } from '../planners/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
-import { resolveCliExecutableAliases } from './resolve-cli-executable.js';
+import { resolveCliExecutableAliases } from './cli-executable/resolve.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { CUSTOM_ONLY_CLI_TOOL_IDS } from '../../core/runners/cli-tool/custom-only.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';

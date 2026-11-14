@@ -15,7 +15,7 @@ import {
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
 import { buildCost } from '../../orchestrator/evidence/review-packet/run-and-cost.js';
-import type { ResolvedPricing } from '../pricing-resolver.js';
+import type { ResolvedPricing } from './pricing.js';
 import { calculateCostBreakdown } from './breakdown.js';
 import { sumRequestEstimates } from './request-estimates.js';
 

@@ -1,7 +1,7 @@
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { formatErrorWithHint } from '../error-hints.js';
-import { parseUsageLimitReset } from '../runners/usage-limit.js';
+import { parseUsageLimitReset } from '../runners/seat-failure/reset-time.js';
 import { redactSecrets } from '../../utils/redact/secrets.js';
 import { isRecord } from '../../utils/type-guards.js';
 

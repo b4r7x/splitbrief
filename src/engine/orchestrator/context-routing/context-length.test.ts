@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
-import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/runtime-context.js';
+import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/api/runtime-context.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { resolveProfileContextLength } from './context-length.js';
 

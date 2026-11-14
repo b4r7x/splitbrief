@@ -5,7 +5,7 @@ import { streamCompletion } from './openai-stream/completion.js';
 import type { OpenAIResponseFormat, StreamClient } from './openai-stream/request.js';
 import type { StreamMessage } from './types.js';
 import type { ApiInvocationEvidence } from '../runners/invocation-identity.js';
-import type { ApiRuntimeObservation } from './api-runtime-status.js';
+import type { ApiRuntimeObservation } from './api/runtime-status.js';
 
 export type { StreamMessage } from './types.js';
 

@@ -10,7 +10,7 @@ import { readClaudeCodeModelOptions } from '../../../core/providers/claude-code-
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { createDetectionService, type DetectionDeps } from '../../../engine/detection/service.js';
 import { resolveModelCatalog } from '../../../engine/providers/model/catalog.js';
-import { getRuntimeModelSnapshot } from '../../../engine/providers/model/resolution.js';
+import { getRuntimeModelSnapshot } from '../../../engine/providers/model/runtime-snapshot.js';
 import type {
   ConfiguredProviderOutcome,
   ConfiguredProviderRuntime,

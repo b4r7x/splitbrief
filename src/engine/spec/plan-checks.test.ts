@@ -5,14 +5,11 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { PlanProposalSchema, type PlanProposal } from '../../core/schemas/plan.js';
-import {
-  checkPlan,
-  planRepairWarning,
-  refusedCheckErrors,
-  renderCheckNotes,
-  type PlanTaskFit,
-} from './plan-checks.js';
-import { NULL_CACHE } from '../providers/model/resolution.js';
+import { checkPlan, planRepairWarning } from './plan/checks.js';
+import { refusedCheckErrors } from './plan/render-checks.js';
+import { renderCheckNotes } from './plan/render-checks.js';
+import type { PlanTaskFit } from './plan/types.js';
+import { NULL_CACHE } from '../providers/model/runtime-snapshot.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 const projectDir = '/repo';

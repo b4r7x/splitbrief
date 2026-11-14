@@ -1,17 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { toTokenDelta } from '../../calls/usage.js';
+import { toTokenDelta } from '../../calls/usage/normalize.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { CURSOR_CLI_ADMISSION_VERDICT } from '../../../core/runners/cli-tool/builders.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
-import {
-  CLI_CONFORMANCE_CANDIDATES,
-  cursorImplementerAdapter,
-  cursorPlannerAdapter,
-  cursorProtocolEvents,
-} from './cursor.js';
+import { cursorProtocolEvents } from './cursor/protocol.js';
+import { CLI_CONFORMANCE_CANDIDATES } from './cursor/conformance.js';
+import { cursorImplementerAdapter, cursorPlannerAdapter } from './cursor/adapter.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
 const WRITE_ENABLING_FLAGS = ['--force', '--yolo', '-f'] as const;

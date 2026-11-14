@@ -3,12 +3,12 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
-import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
+import { detectRunnerEvidence } from '../../detection/runner-evidence/detect.js';
 import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import type { CliProbeContract } from './contract.js';
-import { providerOracleAuthFact } from './provider-oracle.js';
-import { probeCliReadiness } from './readiness-probe.js';
+import type { CliProbeContract } from './probe/contract.js';
+import { providerOracleAuthFact } from './probe/provider-oracle.js';
+import { probeCliReadiness } from './probe/readiness.js';
 
 async function nodeExecutable(): Promise<CliExecutableIdentity> {
   const path = await realpath(process.execPath);

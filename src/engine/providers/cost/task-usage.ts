@@ -1,8 +1,8 @@
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
-import { resolvePricing } from '../pricing-resolver.js';
-import type { ModelCacheAccessor } from '../model/resolution.js';
-import { buildProviderUsageSegment, resolveTaskPricingModel } from '../cost-math.js';
+import { resolvePricing } from './pricing.js';
+import type { ModelCacheAccessor } from '../model/runtime-snapshot.js';
+import { buildProviderUsageSegment, resolveTaskPricingModel } from './math.js';
 import { resolveCallPricing, sumRequestEstimates } from './request-estimates.js';
 
 export interface CalculateTaskUsageCostOptions {

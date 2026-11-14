@@ -40,7 +40,7 @@ import { sessionResumeExpiredError } from '../../session-expiry.js';
 import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { reviewCheckList } from '../validation/checks/runner.js';
 import { resumeContinuation } from '../run/init/resume-repair.js';
-import { measureApiBudget } from '../../providers/api-budget.js';
+import { measureApiBudget } from '../../providers/api/budget.js';
 import { runPlanningPhase } from './run.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { readRunEvents } from '../../events/replay.js';

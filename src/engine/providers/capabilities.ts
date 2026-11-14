@@ -1,7 +1,8 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { ProviderDef } from './types.js';
 import { resolveRunnerContextWindow } from './model/context-window.js';
-import { type ModelCacheAccessor, resolveSeatImageFact } from './model/resolution.js';
+import { resolveSeatImageFact } from './model/resolution.js';
+import type { ModelCacheAccessor } from './model/runtime-snapshot.js';
 import { resolveSeatModel } from '../runners/host-model-selection.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { warnError } from '../../lib/warn.js';

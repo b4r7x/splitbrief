@@ -1,5 +1,5 @@
 import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
-import type { ModelCacheAccessor } from '../../../src/engine/providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../src/engine/providers/model/runtime-snapshot.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import type { DetectedModel } from '../../../src/core/discovery/detection/model.js';
 import type { ProviderId } from '../../../src/core/schemas/enums.js';

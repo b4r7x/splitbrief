@@ -2,7 +2,7 @@ import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { ApplyRecoveryActionResult } from '../../../engine/orchestrator/recovery/actions/types.js';
 import { filesStillOnDiskSuffix } from '../../../engine/orchestrator/run/close.js';
-import { parsePreparedConfig } from '../../../engine/runners/prepared-execution.js';
+import { parsePreparedConfig } from '../../../engine/runners/prepare-execution/prepared.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import type { PendingRecoveryResult, RecoveryDriverState } from './types.js';
 

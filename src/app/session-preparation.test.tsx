@@ -15,7 +15,7 @@ import {
   parsePreparedConfig,
   type PreparationOutcome,
   type PreparedExecution,
-} from '../engine/runners/prepared-execution.js';
+} from '../engine/runners/prepare-execution/prepared.js';
 import { closeApprovalPrompt, openApprovalPrompt } from '../stores/prompts/approval.js';
 import {
   continueRunInPlace,

@@ -40,11 +40,11 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
-import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare.js';
 import type {
   PreparationOutcome,
   PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
 import { closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import { CONFIRM_PHRASE, type TieredApprovalResponse } from '../../core/approval/types.js';
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';

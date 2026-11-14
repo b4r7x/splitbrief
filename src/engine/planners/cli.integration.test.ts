@@ -19,7 +19,7 @@ import {
   CURSOR_MODEL_REFUSAL_FORMS,
   writeCursorRefusalShim,
 } from '#testing/helpers/cursor-refusal.js';
-import { cliToolCheckError } from '../runners/start-gate.js';
+import { cliToolCheckError } from '../runners/seat-gates.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { PlannerFactoryOptions } from './types.js';

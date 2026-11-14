@@ -10,9 +10,9 @@ import type { RouteCatalogReads } from '../../../engine/detection/route-catalog.
 import {
   type ArgVectorPreflightCheckInput,
   collectArgVectorPreflightChecks,
-} from '../../../engine/runners/arg-vector-preflight.js';
-import { collectCustomRunnerConsentChecks } from '../../../engine/runners/consent-preflight.js';
-import { collectRunnerAdmissionChecks } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+} from '../../../engine/runners/arg-vector/preflight.js';
+import { collectCustomRunnerConsentChecks } from '../../../engine/runners/custom/consent-preflight.js';
+import { collectRunnerAdmissionChecks } from '../../../engine/runners/prepare-execution/prepare.js';
 
 const CLI_READINESS_CHECK_IDS: ReadonlySet<string> = new Set(
   CLI_TOOL_IDS.map((tool) => cliReadinessCheckId(tool)),

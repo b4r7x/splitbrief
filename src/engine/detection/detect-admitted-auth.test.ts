@@ -5,8 +5,8 @@ import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import { error } from '../../utils/error.js';
-import { probeCliReadiness } from '../runners/cli-tools/readiness-probe.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { probeCliReadiness } from '../runners/cli-tools/probe/readiness.js';
+import { resolveCliExecutable } from '../runners/cli-executable/resolve.js';
 import { detectAvailableCliTools } from './detect.js';
 
 const HOST_STATE_ENV = [

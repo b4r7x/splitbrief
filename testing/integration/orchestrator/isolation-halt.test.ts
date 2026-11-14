@@ -12,7 +12,7 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createChangeDetector } from '../../../src/engine/change-detection.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
 import { createImplementerBase } from '../../../src/engine/implementers/pipeline/run.js';
-import type { CliSeat } from '../../../src/engine/runners/start-gate.js';
+import type { CliSeat } from '../../../src/engine/runners/seat-gates.js';
 import type { ImplementerPublisher, InvokeOpts } from '../../../src/engine/implementers/types.js';
 import { createImplementerPublisher } from '../../../src/engine/orchestrator/publish/runner.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions/apply.js';

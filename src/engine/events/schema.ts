@@ -40,7 +40,6 @@ import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
 import { RunnerCallTextChannelSchema } from '../../core/schemas/runner-call.js';
 import { WORKFLOW_CANCEL_REASONS } from './workflow-cancel.js';
 import { SeatAccountCauseSchema } from '../../core/recovery/account-cause.js';
-import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
   RunnerCallArtifactSchema,
@@ -220,6 +219,14 @@ const runnerCallToolUseEventSchema = z.discriminatedUnion('stage', [
 ]);
 
 export const WorkflowCancelReasonSchema = z.enum(WORKFLOW_CANCEL_REASONS);
+
+export const TASK_REVIEW_COMMANDS = [
+  'continue',
+  'redo-task',
+  'edit-notes',
+  'revise-plan',
+  'abort',
+] as const;
 
 export const taskReviewRequestFields = {
   taskId: TaskIdSchema,

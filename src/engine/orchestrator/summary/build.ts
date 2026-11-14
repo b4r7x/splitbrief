@@ -14,7 +14,7 @@ import { readFinalReviewRecord } from '../../../core/review/store.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import {
   briefInFlight,
   getFailedTaskIds,

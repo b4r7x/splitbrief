@@ -81,8 +81,8 @@ export interface SkillMeta { id: string; name: string; description: string; path
 ```
 
 ```ts
-// src/engine/skill-discovery.ts — produces SkillMeta values
-import type { SkillMeta } from '../core/skills/types.js';
+// src/engine/skills/discover.ts — produces SkillMeta values
+import type { SkillMeta } from '../../core/skills/types.js';
 ```
 
 Why: if producers and stores/features both consume the type, place the contract in `core/` so lower layers do not import from `engine/`.

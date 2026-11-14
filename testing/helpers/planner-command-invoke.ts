@@ -7,7 +7,7 @@ import {
   cleanupStaleArtifactReviews,
 } from '../../src/engine/orchestrator/approval/planner-artifact.js';
 import { createStagedProject } from '../../src/engine/orchestrator/approval/staged-project/create.js';
-import type { ConfiguredCustomRunner } from '../../src/engine/runners/custom-trust.js';
+import type { ConfiguredCustomRunner } from '../../src/engine/runners/custom/posture.js';
 import type { CustomRunnerRuntimePort } from '../../src/engine/runners/types.js';
 import { createTempDir, cleanupTempDir } from './temp-dir.js';
 import { createTestGitRepo } from './git.js';

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import http from 'node:http';
 import { z } from 'zod';
 import { createMetadataProvider } from './metadata.js';
-import { resolveProviderRunMetadata } from '../cost/breakdown.js';
+import { resolveProviderRunMetadata } from '../cost/run-metadata.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 const REAL_HTTP_RELEASE_DEADLINE_MS = 1_000;

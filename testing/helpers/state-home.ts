@@ -17,6 +17,6 @@ afterAll(async () => {
   // a test file's `vi.mock` of `node:fs` applies.
   const { disposeNodeRuntime } = await import('./compatible-cli-shim.js');
   disposeNodeRuntime();
-  const { removeSandboxTempDirs } = await import('../../src/engine/runners/sandbox-state-paths.js');
+  const { removeSandboxTempDirs } = await import('../../src/engine/runners/sandbox/state/paths.js');
   for (const dir of createdTempDirs) removeSandboxTempDirs(dir);
 });

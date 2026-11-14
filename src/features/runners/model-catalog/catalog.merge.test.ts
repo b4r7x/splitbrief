@@ -6,11 +6,11 @@ import type { CliProviderAuthFact } from '../../../core/discovery/detection/auth
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
 import {
-  nativeCliCatalogToDetectedModels,
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
-} from '../../../engine/providers/cli-model-catalog.js';
-import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+} from '../../../engine/runners/cli-tools/probe/native-catalog/opencode.js';
+import { nativeCliCatalogToDetectedModels } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/runtime-snapshot.js';
 import { buildRightModels, countModelOptions, modelRowMatchesId } from './catalog.js';
 import { isOptionFamily, routePrefixesOf } from './option-axis.js';
 import type { PickerOption } from './options.js';

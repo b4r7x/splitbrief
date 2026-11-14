@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   COMMAND_CODE_PROTECTED_FLAGS,
   COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
-} from './command-code.js';
-import { CURSOR_PROTECTED_FLAGS, CURSOR_PROTECTED_SHORT_VALUE_FLAGS } from './cursor.js';
+} from './command-code/adapter.js';
+import { CURSOR_PROTECTED_FLAGS, CURSOR_PROTECTED_SHORT_VALUE_FLAGS } from './cursor/adapter.js';
 import { parseCliSemanticVector, validateCliArgs } from './validate-args.js';
 
 const BASE_ARGS = ['run'];

@@ -20,8 +20,8 @@ import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { CliImplementerConfig } from '../../../core/schemas/runner/implementer.js';
 import type { RunnerCallContext } from '../../calls/types.js';
 import { createCliImplementer } from '../../implementers/cli.js';
-import { antigravityImplementerAdapter } from '../../runners/cli-tools/antigravity.js';
-import { invokeProcessCli } from '../../runners/cli-tools/process-invoke.js';
+import { antigravityImplementerAdapter } from '../../runners/cli-tools/antigravity/adapter.js';
+import { invokeProcessCli } from '../../runners/cli-tools/process-invoke/invoke.js';
 import { runTaskLoop } from './loop.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 

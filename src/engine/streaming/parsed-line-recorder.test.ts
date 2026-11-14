@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../calls/output-limit.js';
-import { createRunnerCallRecorder } from '../calls/recorder.js';
+import { createRunnerCallRecorder } from '../calls/recorder/create.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
 

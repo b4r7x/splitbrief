@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../../src/engine/implementers/types.js';
 import type { ConsultAnswer } from '../../../src/core/schemas/consult.js';
-import { formatRetryPrompt } from '../../../src/engine/spec/prompt-formatter.js';
+import { formatRetryPrompt } from '../../../src/engine/spec/prompts/task.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import {
@@ -27,7 +27,7 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
   type RunnerGate,
-} from '../../../src/engine/runners/prepared-execution.js';
+} from '../../../src/engine/runners/prepare-execution/prepared.js';
 import {
   cannotConsult,
   guidanceConsult,

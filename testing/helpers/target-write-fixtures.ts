@@ -17,9 +17,9 @@ import {
   writeEvidenceLedger,
 } from '../../src/core/evidence/ledger-storage.js';
 import { sha256Hex } from '../../src/utils/sha256.js';
-import { applyFileBundle } from '../../src/engine/implementers/apply-file-bundle.js';
-import { captureBundleBaseline } from '../../src/engine/implementers/bundle-baseline.js';
-import type { BundleApplyResult } from '../../src/engine/implementers/file-bundle.js';
+import { applyFileBundle } from '../../src/engine/implementers/file-bundle/apply.js';
+import { captureBundleBaseline } from '../../src/engine/implementers/file-bundle/baseline.js';
+import type { BundleApplyResult } from '../../src/engine/implementers/file-bundle/contract.js';
 import type { getChangedFilesSnapshot } from '../../src/engine/orchestrator/approval/file-snapshots/capture.js';
 import { getChangedFilesSinceSnapshot } from '../../src/engine/orchestrator/approval/file-snapshots/changed-since.js';
 import { createStagedProject } from '../../src/engine/orchestrator/approval/staged-project/create.js';

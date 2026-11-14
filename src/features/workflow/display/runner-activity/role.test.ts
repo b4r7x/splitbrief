@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
-import type { ModelCacheAccessor } from '../../../../engine/providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../../engine/providers/model/runtime-snapshot.js';
 import { runnerActivityLedgerItem } from './ledger-item.js';
 import { runnerActivityRoleLabel } from './role.js';
 import { resolveRunnerActivityModelNames, runnerActivityModelRole } from './role.js';

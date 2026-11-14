@@ -4,7 +4,7 @@ import type { Implementer, ImplementerOptions, RetryOptions } from '../../implem
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import { lineageAttemptsOf } from '../../../core/schemas/workflow/state.js';
-import type { SeatAttempt } from '../../runners/transient.js';
+import type { SeatAttempt } from '../../runners/seat-failure/transient.js';
 import { addUsageAndSave } from '../state-ops/usage.js';
 import {
   absorbBuildCorrections,

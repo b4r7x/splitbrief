@@ -11,7 +11,8 @@ import { routeAuthState } from '../core/runners/route-auth.js';
 import type { Config } from '../core/schemas/config.js';
 import type { CliReadinessResult } from '../core/schemas/readiness.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
-import { loadRememberedSnapshot, type RememberedCliCatalog } from '../engine/detection/cache.js';
+import { loadRememberedSnapshot } from '../engine/detection/cache/store.js';
+import type { RememberedCliCatalog } from '../engine/detection/cache/schema.js';
 import { cliSeatDiscoveryContext } from '../engine/detection/cli-context.js';
 import { detectAvailableCliReadiness } from '../engine/detection/detect.js';
 import {
@@ -20,7 +21,7 @@ import {
   routeReadsCatalog,
   freshRouteCatalog,
 } from '../engine/detection/route-catalog.js';
-import { detectRunnerEvidence } from '../engine/detection/runner-evidence.js';
+import { detectRunnerEvidence } from '../engine/detection/runner-evidence/detect.js';
 import { resolveSeatModel } from '../engine/runners/host-model-selection.js';
 import {
   type RunnerCandidate,

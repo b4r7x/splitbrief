@@ -21,7 +21,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ContinueDeps } from './command.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../../preparation.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 import { briefPosition } from '../../../core/state/selectors.js';
 import { configStore } from '../../../stores/project/config.js';
 

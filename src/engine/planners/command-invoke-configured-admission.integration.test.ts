@@ -4,11 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands/schema.js';
 import { shellQuoteArg } from '../../utils/shell-quote.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project/create.js';
-import {
-  customRunnerSecurityPosture,
-  type ConfiguredCustomRunner,
-} from '../runners/custom-trust.js';
-import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
+import { customRunnerSecurityPosture } from '../runners/custom/posture.js';
+import type { ConfiguredCustomRunner } from '../runners/custom/posture.js';
+import { prepareCustomRunnerAdmission } from '../runners/custom/admission.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import { createConfiguredCustomPlanner as createPreparedConfiguredCustomPlanner } from './command-invoke.js';
 import {

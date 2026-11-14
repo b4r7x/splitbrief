@@ -20,7 +20,7 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
   type RunnerGate,
-} from '../../../src/engine/runners/prepared-execution.js';
+} from '../../../src/engine/runners/prepare-execution/prepared.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const DENY_PRE_TASK_HOOKS: HooksConfig = {

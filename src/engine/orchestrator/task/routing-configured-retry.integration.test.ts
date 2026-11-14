@@ -20,10 +20,10 @@ import { resolveImplementerProfiles } from '../../../core/config/accessors/imple
 import { createImplementer } from '../../runners/factory.js';
 import type { ImplementerFactoryOptions } from '../../implementers/types.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
-import type { RunnerGate } from '../../runners/prepared-execution.js';
-import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
-import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
-import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
+import type { RunnerGate } from '../../runners/prepare-execution/prepared.js';
+import { resolveConfiguredCustomRunner } from '../../runners/custom/configured.js';
+import { customRunnerSecurityPosture } from '../../runners/custom/posture.js';
+import { prepareCustomRunnerAdmission } from '../../runners/custom/admission.js';
 import { createStagedProject } from '../approval/staged-project/create.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';

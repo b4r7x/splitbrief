@@ -253,7 +253,7 @@ export const gates: readonly Gate[] = [
     id: '33',
     description: 'No runtime commercial metadata URL fetch outside models.dev module',
     command:
-      '{ { rg -n "fetch(Json)?WithTimeout\\(" src/ --glob \'!**/*.test.*\' | rg -i "privacy|/terms|pricing|marketing|quota" | rg -v "^src/engine/providers/models-dev\\.ts:" || true; rg -n "privacyURL|termsURL" src/ --glob \'!**/*.test.*\' | rg -v "^src/core/providers/" | rg -v "^src/engine/providers/candidate-contract.ts:" || true; } | wc -l; }',
+      '{ { rg -n "fetch(Json)?WithTimeout\\(" src/ --glob \'!**/*.test.*\' | rg -i "privacy|/terms|pricing|marketing|quota" | rg -v "^src/engine/providers/models-dev/" || true; rg -n "privacyURL|termsURL" src/ --glob \'!**/*.test.*\' | rg -v "^src/core/providers/" | rg -v "^src/engine/providers/candidate/contract.ts:" || true; } | wc -l; }',
     expected: 0,
   },
   {

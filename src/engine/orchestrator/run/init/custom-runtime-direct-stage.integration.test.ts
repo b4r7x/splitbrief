@@ -15,10 +15,13 @@ import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
 import { reactivateExistingSession } from '../../../../core/sessions/active-pointer.js';
 import { resolveImplementerProfiles } from '../../../../core/config/accessors/implementer-profiles.js';
 import { createStagedProject } from '../../approval/staged-project/create.js';
-import { resolveConfiguredCustomRunner } from '../../../runners/configured-custom.js';
-import { customRunnerSecurityPosture } from '../../../runners/custom-trust.js';
-import { prepareCustomRunnerAdmission } from '../../../runners/custom-admission.js';
-import { parsePreparedConfig, type RunnerGate } from '../../../runners/prepared-execution.js';
+import { resolveConfiguredCustomRunner } from '../../../runners/custom/configured.js';
+import { customRunnerSecurityPosture } from '../../../runners/custom/posture.js';
+import { prepareCustomRunnerAdmission } from '../../../runners/custom/admission.js';
+import {
+  parsePreparedConfig,
+  type RunnerGate,
+} from '../../../runners/prepare-execution/prepared.js';
 import { runTaskLoop } from '../../task/loop.js';
 import { configForProfile, createTaskImplementer } from '../../context-routing/profile.js';
 import { initializeWorkflow } from './initialize.js';

@@ -10,7 +10,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import {
   createProject,
   processRunnerOf,
-} from '../../../engine/runners/cli-tools/contract-harness.js';
+} from '../../../engine/runners/cli-tools/contract-harness/harness.js';
 import type {
   CliInvocation,
   CliPlannerAdapter,
@@ -18,11 +18,11 @@ import type {
 } from '../../../engine/runners/cli-tools/contract.js';
 import { preparePrompt } from '../../../engine/runners/cli-tools/prompt-transport.js';
 import { toCliEnvironment } from '../../../engine/runners/invoke-cli-adapter.js';
-import { createCustomRunnerRedactor } from '../../../engine/runners/redaction.js';
-import { resolveCliExecutableAliases } from '../../../engine/runners/resolve-cli-executable.js';
-import { sandboxCredentialValues } from '../../../engine/runners/sandbox-credential-values.js';
-import { createRunnerSandboxEnv } from '../../../engine/runners/sandbox-env.js';
-import { clearBridgedCliState } from '../../../engine/runners/sandbox-state-bridge.js';
+import { createCustomRunnerRedactor } from '../../../engine/runners/custom/redaction.js';
+import { resolveCliExecutableAliases } from '../../../engine/runners/cli-executable/resolve.js';
+import { sandboxCredentialValues } from '../../../engine/runners/sandbox/credential-values.js';
+import { createRunnerSandboxEnv } from '../../../engine/runners/sandbox/env.js';
+import { clearBridgedCliState } from '../../../engine/runners/sandbox/state/bridge.js';
 import { cliError } from '../../errors.js';
 import { type SeatProbeSeat, type SeatProbeCapture, seatProbeAdapter } from './seat-probe.js';
 

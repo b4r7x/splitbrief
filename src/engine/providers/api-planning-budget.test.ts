@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createApiPlanner, invokeApiTransport } from '../planners/api.js';
-import { admitApiCall, apiBuildTargets, estimateBundleOutputReserve } from './api-budget.js';
-import { readApiContextDiagnostic } from './api-context-diagnostic.js';
+import { admitApiCall } from './api/admission.js';
+import { apiBuildTargets } from './api/budget.js';
+import { estimateBundleOutputReserve } from './api/budget.js';
+import { readApiContextDiagnostic } from './api/context-diagnostic.js';
 import { apiConnectionContextKey } from './selected-model.js';
 
 function config(provider = 'lm-studio', contextLength?: number) {

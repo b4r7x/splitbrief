@@ -2,7 +2,7 @@ import { chmodSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { loadRememberedSnapshot } from '../../../src/engine/detection/cache.js';
+import { loadRememberedSnapshot } from '../../../src/engine/detection/cache/store.js';
 import { createDetectionService } from '../../../src/engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../../src/engine/detection/store-publication.js';
 import { refreshPickerDetection } from '../../../src/features/runners/refresh-detection.js';

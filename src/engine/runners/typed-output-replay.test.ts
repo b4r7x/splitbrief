@@ -5,10 +5,15 @@ import { z } from 'zod';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import { isRecord } from '../../utils/type-guards.js';
-import { antigravityPlannerAdapter, antigravityProtocolEvents } from './cli-tools/antigravity.js';
-import { claudeCodePlannerAdapter } from './cli-tools/claude-code.js';
-import { codexPlannerAdapter, codexProtocolEvents } from './cli-tools/codex.js';
-import { extractLastJsonObject, requestTyped, type TypedSeatCall } from './typed-output.js';
+import {
+  antigravityPlannerAdapter,
+  antigravityProtocolEvents,
+} from './cli-tools/antigravity/adapter.js';
+import { claudeCodePlannerAdapter } from './cli-tools/claude-code/adapter.js';
+import { codexProtocolEvents } from './cli-tools/codex/protocol.js';
+import { codexPlannerAdapter } from './cli-tools/codex/adapter.js';
+import { requestTyped, type TypedSeatCall } from './typed-output.js';
+import { extractLastJsonObject } from './extract-json.js';
 
 const FIXTURE_DIR = join(import.meta.dirname, '../../../testing/fixtures/typed-output');
 const CLAUDE_FIXTURE = 'claude-code-2.1.286.jsonl';

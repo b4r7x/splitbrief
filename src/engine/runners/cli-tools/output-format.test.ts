@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { matches } from '../../../utils/error.js';
-import { claudeCodeImplementerAdapter } from './claude-code.js';
-import { codexImplementerAdapter } from './codex.js';
-import { opencodeImplementerAdapter } from './opencode.js';
+import { claudeCodeImplementerAdapter } from './claude-code/adapter.js';
+import { codexImplementerAdapter } from './codex/adapter.js';
+import { opencodeImplementerAdapter } from './opencode/adapter.js';
 import { STRUCTURED_TERMINAL_TOOL_IDS } from '../../../core/config/load/validation/config.js';
 import { CLI_IMPLEMENTER_ADAPTERS, CLI_PLANNER_ADAPTERS } from './registry.js';
 import type { CliImplementerAdapter, CliProtocolEvent } from './contract.js';

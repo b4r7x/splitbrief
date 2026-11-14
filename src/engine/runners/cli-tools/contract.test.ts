@@ -4,13 +4,13 @@ import type {
   CliImplementerAdapter,
   CliOutputContract,
   CliPlannerAdapter,
-  CliProbeContract,
   CliProtocolEvent,
 } from './contract.js';
-import { claudeCodePlannerAdapter } from './claude-code.js';
-import { codexImplementerAdapter } from './codex.js';
+import type { CliProbeContract } from './probe/contract.js';
+import { claudeCodePlannerAdapter } from './claude-code/adapter.js';
+import { codexImplementerAdapter } from './codex/adapter.js';
 import { admitCliRoleVector, type CliRoleAllowlist } from './contract.js';
-import { opencodePlannerAdapter } from './opencode.js';
+import { opencodePlannerAdapter } from './opencode/adapter.js';
 import { parseCliSemanticVector } from './validate-args.js';
 
 const probe = {

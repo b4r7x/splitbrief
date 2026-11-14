@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import { lineageIdOf, insertTasks } from '../../../core/state/task-insert.js';
 import { error } from '../../../utils/error.js';
-import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { publishTaskReplaced, publishTasksInserted } from '../publish/task.js';
 import { publishTasksPlanned } from '../publish/task.js';
 import { transitionAndSave } from '../state-ops/transition.js';

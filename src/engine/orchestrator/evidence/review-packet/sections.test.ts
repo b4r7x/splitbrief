@@ -9,7 +9,7 @@ import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { buildChanges, buildChecks, buildValidation } from './sections.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { renderWholeChecksLog } from './checks-log.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 
 function stateWith(...tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   return { ...createInitialState('feat'), tasks };

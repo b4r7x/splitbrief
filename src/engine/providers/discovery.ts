@@ -3,15 +3,13 @@ import type { CliExecutableIdentity } from '../../core/discovery/detection/execu
 import { hasNativeCliCatalog } from '../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { throwIfAborted } from '../../utils/abort.js';
-import {
-  detectRunnerEvidence,
-  type DetectRunnerEvidenceOptions,
-} from '../detection/runner-evidence.js';
+import { detectRunnerEvidence } from '../detection/runner-evidence/detect.js';
+import type { DetectRunnerEvidenceOptions } from '../detection/runner-evidence/types.js';
 import {
   scopedCliCatalogConnection,
   type ScopedCliCatalogAttempt,
 } from '../detection/cli-catalog-outcomes.js';
-import type { CliExecutableResolver } from '../runners/resolve-cli-executable.js';
+import type { CliExecutableResolver } from '../runners/cli-executable/types.js';
 
 type NativeCatalogContext = RunnerDiscoveryContext &
   Readonly<{

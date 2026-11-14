@@ -12,8 +12,8 @@ import {
   onlyAddsLineBreaks,
   reconcileFinalText,
 } from '../streaming/final-text.js';
-import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke.js';
-import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
+import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke/invoke.js';
+import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox/credential-values.js';
 import { boundedRunnerCallMessage } from '../calls/status.js';
 
 type InvokeCliOptions = {

@@ -1,47 +1,29 @@
-import type { EffortLevel } from '../../../core/schemas/enums.js';
-import type { Attachment } from '../../../core/schemas/attachment.js';
-import { throwMappedError } from '../../streaming/stream-errors.js';
-import { isApiDeadlineError, runWithApiDeadlines } from '../api-deadlines.js';
+import { isApiDeadlineError, runWithApiDeadlines } from '../api/deadlines.js';
 import { TRUNCATION_WARNING } from '../constants.js';
-import {
-  deriveApiRuntimeStatus,
-  type ApiRuntimeObservation,
-  type ApiRuntimeSignal,
-} from '../api-runtime-status.js';
+import { deriveApiRuntimeStatus, type ApiRuntimeSignal } from '../api/runtime-status.js';
 import { apiConnectionContextKey } from '../selected-model.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
 import { throwIfAborted } from '../../../utils/abort.js';
-import { error as createError } from '../../../utils/error.js';
-import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
+import { createRunnerCallRecorder } from '../../calls/recorder/create.js';
 import { createRunnerCallId } from '../../calls/call-id.js';
 import {
   RUNNER_CALL_STOPPED_ERROR,
   createRunnerCallCredentialRedactor,
-  runnerCallErrorFromUnknown,
   runnerCallInterruptedStatus,
 } from '../../calls/status.js';
-import type { RunnerCallCredentialRedactor } from '../../calls/status.js';
-import { normalizeRunnerCallUsage } from '../../calls/usage.js';
-import type {
-  RunnerCallContext,
-  RunnerCallEvent,
-  RunnerCallResult,
-  RunnerCallUsage,
-} from '../../calls/types.js';
+import { normalizeRunnerCallUsage } from '../../calls/usage/normalize.js';
+import type { RunnerCallContext, RunnerCallResult, RunnerCallUsage } from '../../calls/types.js';
 import {
   apiConnectionKey,
   snapshotApiInvocationIdentity,
-  type ApiInvocationEvidence,
 } from '../../runners/invocation-identity.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import { redactSecrets } from '../../../utils/redact/secrets.js';
-import { isRecord } from '../../../utils/type-guards.js';
-import { StreamChunkSchema, type StreamChoiceDelta, recordInvalidOpenAiChunk } from './chunk.js';
+import { StreamChunkSchema, recordInvalidOpenAiChunk } from './chunk.js';
 import {
   type ChatMessage,
   type OpenAIContentPart,
   type OpenAIImagePart,
-  type OpenAIResponseFormat,
   type StreamClient,
   type StreamCompletionEndpoint,
   effortField,
@@ -51,31 +33,10 @@ import {
   tokenLimitFields,
   toProviderMessages,
 } from './request.js';
-import {
-  resolveOpenAICompatPolicy,
-  type OpenAICompatFinishReason,
-  type OpenAICompatPolicy,
-} from '../openai-compat-policy.js';
-
-interface StreamCompletionOptions {
-  temperature: number;
-  onProgress: (text: string) => void;
-  endpoint?: StreamCompletionEndpoint | undefined;
-  maxTokens?: number | undefined;
-  signal?: AbortSignal | undefined;
-  effort?: EffortLevel | undefined;
-  responseFormat?: OpenAIResponseFormat | undefined;
-  images?: Attachment[] | undefined;
-  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
-  callContext?: RunnerCallContext | undefined;
-  credentialValues?: readonly string[] | undefined;
-  policy?: OpenAICompatPolicy | undefined;
-  /** The seat's `timeout`; absent, the call has no deadline. */
-  timeoutMs?: number | undefined;
-  /** Supplied by a dispatch that resolved its provider; absent, auth and billing stay unknown. */
-  invocationEvidence?: ApiInvocationEvidence | undefined;
-  runtimeObservation?: ApiRuntimeObservation | undefined;
-}
+import { resolveOpenAICompatPolicy, type OpenAICompatPolicy } from '../openai-compat-policy.js';
+import type { StreamCompletionOptions } from './types.js';
+import { emitToolUseDeltas, emitText, isPolicyFinishReason, emitOpenAiTerminal } from './emit.js';
+import { finishOpenAiFailure, redactThrownError, throwRedactedAbort } from './errors.js';
 
 function openAiCallContext(model: string, endpoint: StreamCompletionOptions['endpoint']) {
   return {
@@ -86,124 +47,6 @@ function openAiCallContext(model: string, endpoint: StreamCompletionOptions['end
     model,
     axes: [],
   } satisfies RunnerCallContext;
-}
-
-function emitText(
-  recorder: RunnerCallRecorder,
-  text: string,
-  onProgress: (text: string) => void,
-  redactCredential: RunnerCallCredentialRedactor,
-): void {
-  if (text.length === 0) return;
-  const safeText = redactCredential(text);
-  recorder.text({ channel: 'assistant', text: safeText });
-  onProgress(safeText);
-}
-
-function emitToolUseDeltas(
-  recorder: RunnerCallRecorder,
-  delta: StreamChoiceDelta | undefined,
-  redactCredential: RunnerCallCredentialRedactor,
-): void {
-  if (delta === undefined) return;
-
-  for (const toolCall of delta.tool_calls ?? []) {
-    recorder.toolUseDelta({
-      toolUseId: toolCall.id === undefined ? null : redactCredential(toolCall.id),
-      name: toolCall.function?.name === undefined ? null : redactCredential(toolCall.function.name),
-      inputDelta: redactCredential(toolCall.function?.arguments ?? ''),
-    });
-  }
-
-  if (delta.function_call !== undefined) {
-    recorder.toolUseDelta({
-      toolUseId: null,
-      name:
-        delta.function_call.name === undefined ? null : redactCredential(delta.function_call.name),
-      inputDelta: redactCredential(delta.function_call.arguments ?? ''),
-    });
-  }
-}
-
-function emitOpenAiTerminal(
-  recorder: RunnerCallRecorder,
-  finishReason: string | null,
-  usage: RunnerCallUsage | null,
-  policy: OpenAICompatPolicy,
-): void {
-  if (finishReason !== null && !isPolicyFinishReason(policy, finishReason)) {
-    recorder.finishFailed({
-      status: 'failed',
-      error: {
-        code: 'openai_unknown_finish_reason',
-        message: `OpenAI response ended with unknown finish_reason ${finishReason}`,
-      },
-      usage,
-      nativeSessionId: null,
-    });
-    return;
-  }
-
-  switch (finishReason) {
-    case 'stop':
-      recorder.finishCompleted({ usage, nativeSessionId: null });
-      return;
-    case 'length':
-      recorder.finishFailed({
-        status: 'truncated',
-        error: {
-          code: 'output-token-limit',
-          message: 'OpenAI response ended because the max token limit was reached',
-        },
-        usage,
-        nativeSessionId: null,
-      });
-      return;
-    case 'content_filter':
-      recorder.finishFailed({
-        status: 'refused',
-        error: {
-          code: 'openai_finish_reason_content_filter',
-          message: 'OpenAI response was blocked by the content filter',
-        },
-        usage,
-        nativeSessionId: null,
-      });
-      return;
-    case 'tool_calls':
-    case 'function_call':
-      recorder.finishFailed({
-        status: 'unsupported_tool',
-        error: {
-          code: `openai_finish_reason_${finishReason}`,
-          message: `OpenAI response requested unsupported ${finishReason}`,
-        },
-        usage,
-        nativeSessionId: null,
-      });
-      return;
-    case null:
-      return;
-    default: {
-      const exhaustive: never = finishReason;
-      recorder.finishFailed({
-        status: 'failed',
-        error: {
-          code: 'openai_unknown_finish_reason',
-          message: `OpenAI response ended with unknown finish_reason ${exhaustive}`,
-        },
-        usage,
-        nativeSessionId: null,
-      });
-    }
-  }
-}
-
-function isPolicyFinishReason(
-  policy: OpenAICompatPolicy,
-  finishReason: string,
-): finishReason is OpenAICompatFinishReason {
-  return policy.finishReasons.some((allowedReason) => allowedReason === finishReason);
 }
 
 function resolveCompletionPolicy(
@@ -220,80 +63,6 @@ function resolveCompletionPolicy(
       apiBase: endpoint?.apiBase,
     })
   );
-}
-
-function mapProviderError(err: unknown, endpoint: StreamCompletionOptions['endpoint']): unknown {
-  try {
-    throwMappedError(err, endpoint);
-  } catch (mapped) {
-    return mapped;
-  }
-}
-
-function redactStreamErrorData(
-  kind: string,
-  data: unknown,
-  redactCredential: RunnerCallCredentialRedactor,
-): unknown {
-  if (!isRecord(data)) return undefined;
-  const redactString = (value: unknown): string | undefined =>
-    typeof value === 'string' ? redactSecrets(redactCredential(value)) : undefined;
-
-  switch (kind) {
-    case 'stream-connection-refused':
-      return {
-        provider: redactString(data.provider),
-        apiBase: redactString(data.apiBase),
-      };
-    case 'stream-http-status':
-      return {
-        provider: redactString(data.provider),
-        status: typeof data.status === 'number' ? data.status : undefined,
-        detail: redactString(data.detail),
-      };
-    case 'stream-api-error':
-      return {
-        provider: redactString(data.provider),
-        detail: redactString(data.detail),
-      };
-    case 'stream-empty-response':
-      return { provider: redactString(data.provider) };
-    case 'stream-invalid-payload':
-      return { reason: redactString(data.reason) };
-    default:
-      return undefined;
-  }
-}
-
-function throwRedactedAbort(
-  signal: AbortSignal | undefined,
-  redactCredential: RunnerCallCredentialRedactor,
-): never {
-  try {
-    throwIfAborted(signal);
-  } catch (err: unknown) {
-    throw redactThrownError(err, redactCredential);
-  }
-  throw createError('operation-aborted', 'Operation aborted');
-}
-
-function finishOpenAiFailure(
-  recorder: RunnerCallRecorder,
-  err: unknown,
-  endpoint: StreamCompletionOptions['endpoint'],
-  usage: RunnerCallUsage | null,
-  credentialValues: readonly string[],
-  redactCredential: RunnerCallCredentialRedactor,
-): never {
-  const mapped = mapProviderError(err, endpoint);
-  const safeMapped = redactThrownError(mapped, redactCredential);
-  recorder.finishFailed({
-    status: 'failed',
-    error: runnerCallErrorFromUnknown(safeMapped, 'openai_stream_error', credentialValues),
-    usage,
-    nativeSessionId: null,
-  });
-  throw safeMapped;
 }
 
 export async function streamCompletion(
@@ -439,18 +208,4 @@ export async function streamCompletion(
 
   emitOpenAiTerminal(recorder, finishReason, usage, policy);
   return recorder.finalResult();
-}
-
-function redactThrownError(err: unknown, redactCredential: RunnerCallCredentialRedactor): Error {
-  const safeMessage = redactSecrets(redactCredential(toErrorMessage(err)));
-  if (!(err instanceof Error)) {
-    return createError('provider-stream-error', safeMessage);
-  }
-
-  const metadata: Record<string, unknown> = isRecord(err) ? err : {};
-  const kind = typeof metadata.kind === 'string' ? metadata.kind : undefined;
-  if (kind === undefined) return createError('openai_stream_error', safeMessage);
-
-  const data = redactStreamErrorData(kind, metadata.data, redactCredential);
-  return data === undefined ? createError(kind, safeMessage) : createError(kind, safeMessage, data);
 }

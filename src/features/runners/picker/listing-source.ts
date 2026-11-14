@@ -1,7 +1,7 @@
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
-import type { ResolvedModelMembership } from '../../../engine/providers/model/catalog.js';
+import type { ResolvedModelMembership } from '../../../engine/providers/model/types.js';
 import type { RightRow } from '../model-catalog/types.js';
 
 export interface ListingSource {

@@ -16,7 +16,7 @@ import {
   type SeatAttempt,
   type SeatFailure,
   type SeatRetryInfo,
-} from '../../../runners/transient.js';
+} from '../../../runners/seat-failure/transient.js';
 import { publishSeatWaitEnded, publishSeatRetry } from '../../publish/seat.js';
 import { automaticSeatSwitch } from '../../recovery/builders/switch-offer.js';
 import { loadSeatSwapContext } from '../../recovery/seat/swap-context.js';

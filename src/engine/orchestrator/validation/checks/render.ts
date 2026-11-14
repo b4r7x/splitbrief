@@ -11,7 +11,7 @@ import {
 } from '../../../../lib/process/errors.js';
 import { parseShellCommand } from '../../../../utils/parse-shell-command.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
-import { RENDER_ID_PATTERN } from '../../../spec/plan-checks.js';
+import { RENDER_ID_PATTERN } from '../../../spec/plan/render-checks.js';
 import { failureKeys } from '../extract-failure-keys.js';
 import { notRunnableReason, boundedOutputTail } from '../stage.js';
 import type { ValidationCommandRunner } from '../types.js';

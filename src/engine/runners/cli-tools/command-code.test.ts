@@ -1,23 +1,25 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { projectRunnerCallActivity } from '../../calls/activity.js';
-import { toTokenDelta } from '../../calls/usage.js';
+import { projectRunnerCallActivity } from '../../calls/activity/project.js';
+import { toTokenDelta } from '../../calls/usage/normalize.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { COMMAND_CODE_CLI_ADMISSION_VERDICT } from '../../../core/runners/cli-tool/builders.js';
-import { contractSha256 } from '../../providers/candidate-contract.js';
+import { contractSha256 } from '../../providers/candidate/contract.js';
 import { CLI_PROMPT_SENTINEL, UnregisteredCliCandidate } from './candidate-contract.js';
 import type { CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
+import { commandCodeProtocolEvents } from './command-code/protocol.js';
+import { CLI_CONFORMANCE_CANDIDATES } from './command-code/conformance.js';
 import {
-  CLI_CONFORMANCE_CANDIDATES,
-  COMMAND_CODE_PROTECTED_FLAGS,
-  COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
   commandCodeImplementerAdapter,
   commandCodePlannerAdapter,
-  commandCodeProtocolEvents,
-} from './command-code.js';
+} from './command-code/adapter.js';
+import {
+  COMMAND_CODE_PROTECTED_FLAGS,
+  COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
+} from './command-code/adapter.js';
 
 const NDJSON_FIXTURE = join(
   import.meta.dirname,

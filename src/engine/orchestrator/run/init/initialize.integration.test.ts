@@ -63,7 +63,7 @@ import type { RunIsolation } from '../../isolation/types.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
-} from '../../../runners/prepared-execution.js';
+} from '../../../runners/prepare-execution/prepared.js';
 import { markHooksConfigTrusted } from '../../../../core/hooks/trust.js';
 import { loadConfig, writeConfig } from '../../../../core/config/load/io.js';
 import { configWithSwitchedSeat } from '../../recovery/seat/switch/config.js';

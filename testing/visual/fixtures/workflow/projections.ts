@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { replacedFilesSavedIn } from '../../../../src/core/runtime/commands/messages.js';
 import { redactSecrets } from '../../../../src/utils/redact/secrets.js';
-import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
+import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity/project.js';
 import { retentionError } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
 import {
@@ -59,9 +59,12 @@ import {
   haltAndSwitch,
 } from '../../../helpers/events/agy-quota.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
-import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
-import { renderCheckNotes, reviewSeatRunNote } from '../../../../src/engine/spec/plan-checks.js';
-import { NULL_CACHE } from '../../../../src/engine/providers/model/resolution.js';
+import { formatPlanMarkdown } from '../../../../src/engine/spec/plan/markdown.js';
+import {
+  renderCheckNotes,
+  reviewSeatRunNote,
+} from '../../../../src/engine/spec/plan/render-checks.js';
+import { NULL_CACHE } from '../../../../src/engine/providers/model/runtime-snapshot.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
 import {
   buildRequiredChecksUnrunnableRecoveryIssue,
@@ -71,7 +74,7 @@ import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
 } from '../../../../src/engine/orchestrator/recovery/builders/apply.js';
-import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
+import { taskFromSpec } from '../../../../src/engine/spec/plan/tasks.js';
 import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
 import { transition } from '../../../../src/core/state/machine.js';
@@ -83,12 +86,12 @@ import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-
 import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery/prompt-text.js';
 import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-projection.js';
 import { formatUsageLimitWarning } from '../../../../src/core/recovery/usage-limit-step.js';
-import { createRunnerCallRecorder } from '../../../../src/engine/calls/recorder.js';
+import { createRunnerCallRecorder } from '../../../../src/engine/calls/recorder/create.js';
 import { createImplementerCallContext } from '../../../../src/engine/implementers/pipeline/call-result.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../../../../src/engine/calls/types.js';
-import { claudeCodePlannerAdapter } from '../../../../src/engine/runners/cli-tools/claude-code.js';
-import { commandCodeProtocolEvents } from '../../../../src/engine/runners/cli-tools/command-code.js';
-import { recordCliProtocolEvent } from '../../../../src/engine/runners/cli-tools/process-invoke.js';
+import { claudeCodePlannerAdapter } from '../../../../src/engine/runners/cli-tools/claude-code/adapter.js';
+import { commandCodeProtocolEvents } from '../../../../src/engine/runners/cli-tools/command-code/protocol.js';
+import { recordCliProtocolEvent } from '../../../../src/engine/runners/cli-tools/process-invoke/protocol-event.js';
 import { createCliTextForwarder } from '../../../../src/engine/runners/invoke-cli-adapter.js';
 import type { ApprovalPromptState } from '../../../../src/stores/prompts/approval.js';
 import type { TieredApprovalRequest } from '../../../../src/core/approval/types.js';
@@ -117,13 +120,13 @@ import {
   type SeatDownRecoveryOptions,
 } from '../../../../src/engine/orchestrator/recovery/builders/seat-down.js';
 import type { SeatSwapContext } from '../../../../src/engine/orchestrator/recovery/seat/swap-context.js';
-import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
+import { parseUsageLimitReset } from '../../../../src/engine/runners/seat-failure/reset-time.js';
 import { getRunnerCatalogDisplayName } from '../../../../src/core/config/accessors/runner-config.js';
 import { timedOutMessage } from '../../../../src/lib/process/errors.js';
-import { executableChangedMessage } from '../../../../src/engine/runners/resolve-cli-executable.js';
-import { cliToolCheckError } from '../../../../src/engine/runners/start-gate.js';
+import { executableChangedMessage } from '../../../../src/engine/runners/cli-executable/identity.js';
+import { cliToolCheckError } from '../../../../src/engine/runners/seat-gates.js';
 import { CLI_TOOL_CATALOG } from '../../../../src/core/runners/cli-tool/catalog.js';
-import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
+import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure/classify.js';
 import {
   consultHaltDetails,
   reviewSeatDetails,

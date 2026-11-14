@@ -7,8 +7,9 @@ import {
   createConfiguredImplementerFixtures,
   implement,
 } from '#testing/helpers/configured-custom-implementer.js';
-import { customRunnerSecurityPosture, markCustomRunnerTrusted } from '../runners/custom-trust.js';
-import { resolveCustomExecutable } from '../runners/resolve-cli-executable.js';
+import { markCustomRunnerTrusted } from '../runners/custom/trust.js';
+import { customRunnerSecurityPosture } from '../runners/custom/posture.js';
+import { resolveCustomExecutable } from '../runners/cli-executable/custom.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 

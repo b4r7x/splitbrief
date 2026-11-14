@@ -67,8 +67,8 @@ import { claimVerification } from '../verify-claims.js';
 import { processError } from '../../../../lib/process/errors.js';
 
 const evidence = vi.hoisted(() => ({ detectRunnerEvidence: vi.fn() }));
-vi.mock('../../../detection/runner-evidence.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../detection/runner-evidence.js')>()),
+vi.mock('../../../detection/runner-evidence/detect.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../detection/runner-evidence/detect.js')>()),
   ...evidence,
 }));
 import { followReviewAnswer, reviewPassed } from './follow.js';

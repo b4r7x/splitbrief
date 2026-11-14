@@ -6,7 +6,7 @@ import { feedbackStore } from '../ui/feedback.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
 import type { NavigateArgs } from './router.js';
 import type { RunStatus } from '../../core/sessions/run/status.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';

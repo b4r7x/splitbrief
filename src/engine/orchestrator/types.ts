@@ -4,7 +4,7 @@ import type { StepCut } from '../../core/schemas/run-step.js';
 import type { ContinuationHolder } from './continuation/holder.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
-import type { Reviewer } from '../reviewers/types.js';
+import type { Reviewer } from '../planners/reviewer.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { SpecMetadata } from '../../core/sessions/spec-files.js';
 import type { Summary } from '../../core/schemas/summary.js';
@@ -19,7 +19,7 @@ import type {
   TieredApprovalResponse,
 } from '../../core/approval/types.js';
 import type { ApprovalReviewInput } from '../runners/types.js';
-import type { ModelCacheAccessor } from '../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../providers/model/runtime-snapshot.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';

@@ -50,12 +50,10 @@ import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
 import { createSteeringPort, type SteerOutcome } from '../../calls/steering.js';
 import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import type { InvokeOpts } from '../../implementers/types.js';
-import {
-  customRunnerSecurityPosture,
-  type ConfiguredCustomRunner,
-} from '../../runners/custom-trust.js';
-import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
-import type { RunnerGate } from '../../runners/prepared-execution.js';
+import { customRunnerSecurityPosture } from '../../runners/custom/posture.js';
+import type { ConfiguredCustomRunner } from '../../runners/custom/posture.js';
+import { prepareCustomRunnerAdmission } from '../../runners/custom/admission.js';
+import type { RunnerGate } from '../../runners/prepare-execution/prepared.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import { createConfiguredCustomImplementer } from '../../implementers/command-invoke.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';

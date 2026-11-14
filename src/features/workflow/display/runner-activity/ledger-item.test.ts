@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { projectRunnerCallActivity } from '../../../../engine/calls/activity.js';
+import { projectRunnerCallActivity } from '../../../../engine/calls/activity/project.js';
 import { normalizeRunnerCallWarning } from '../../../../engine/calls/warnings.js';
-import { parseOpencodeLine } from '../../../../engine/streaming/parse-opencode.js';
+import { parseOpencodeLine } from '../../../../engine/streaming/parse/opencode.js';
 import {
   cleanRunnerActivityText,
   runnerActivityDiagnosticPreview,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { admitCandidateEffect } from './candidate-contract.js';
+import { admitCandidateEffect } from './candidate/effect.js';
 
 describe('candidate effect contract admission', () => {
   it('requires a PASS terminal outcome before any receipt admits', () => {

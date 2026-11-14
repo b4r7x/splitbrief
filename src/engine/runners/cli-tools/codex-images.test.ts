@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { codexPlannerAdapter } from './codex.js';
+import { codexPlannerAdapter } from './codex/adapter.js';
 
 describe('Codex review image argv', () => {
   it.each([undefined, [], ['/tmp/dashboard.png', '/tmp/settings panel.png']])(

@@ -6,12 +6,8 @@ import type { ProjectContext } from '../../../core/state/types.js';
 import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import type { EventBus } from '../../events/types.js';
-import {
-  buildSkillsSection,
-  discoverSkills,
-  realpathOrNull,
-  skillRoot,
-} from '../../skill-discovery.js';
+import { discoverSkills, realpathOrNull } from '../../skills/discover.js';
+import { buildSkillsSection, skillRoot } from '../../skills/content.js';
 import { publishWarning } from '../publish/notice.js';
 
 async function resolveSkills(

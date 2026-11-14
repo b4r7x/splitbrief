@@ -9,19 +9,15 @@ import { buildRightModels, countModelOptions } from './catalog.js';
 import { resolveAndSort } from './runtime-dedupe.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
-import {
-  getBundledModels,
-  type ModelCacheAccessor,
-} from '../../../engine/providers/model/resolution.js';
+import { getBundledModels } from '../../../engine/providers/model/runtime-snapshot.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/runtime-snapshot.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { uniqueModelIds } from '#testing/helpers/model-catalog.js';
-import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
-import {
-  nativeCliCatalogToDetectedModels,
-  parseCodexNativeModelCatalog,
-  parseKiloNativeModelCatalog,
-  type NativeCliModelCatalog,
-} from '../../../engine/providers/cli-model-catalog.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/suggestions.js';
+import { parseKiloNativeModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/opencode.js';
+import { parseCodexNativeModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/codex.js';
+import { nativeCliCatalogToDetectedModels } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
+import type { NativeCliModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { runnerRoleForActiveRole } from '../../../core/runners/seat-roles.js';
 

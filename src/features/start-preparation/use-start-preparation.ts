@@ -4,7 +4,7 @@ import {
   releasePreparedExecutionOwnership,
   type PreparationOutcome,
   type PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
 import {
   CHECKING_TOOLS_STAGE,
   preparationStore,

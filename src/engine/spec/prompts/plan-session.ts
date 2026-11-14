@@ -3,11 +3,10 @@ import type { PlanProposal } from '../../../core/schemas/plan.js';
 import { PROTECTED_PATHS_TEXT } from '../../../core/pipeline-spec/scope.js';
 import { PACKAGE_TEST_COMMAND } from '../../../core/validation/stacks/typescript.js';
 import { FILE_TESTS } from '../../orchestrator/planning/sanitize-discovered-validation.js';
-import type { PlanCheckError } from '../plan-checks.js';
+import type { PlanCheckError } from '../plan/types.js';
 import { buildPrompt, instructionsSection, skillsSection } from './builder.js';
 import { buildLanguageContextSections, type LanguageContext } from './language-context.js';
 import { GIT_READ_ONLY_RULE } from './system.js';
-import { GATES_ARE_SPLITBRIEFS, SKILLS_WITH_EVERY_BRIEF } from './tasks.js';
 
 /** The question rounds a planning session may ask before it must return a plan. */
 export const MAX_QUESTION_ROUNDS = 2;
@@ -192,3 +191,10 @@ export function planRevisedTurn(planJson: string, correction: string): string {
   const plan = reviewed === '' ? '' : `\n\nThe plan they reviewed:\n${reviewed}`;
   return `The user asked for changes to the plan:\n\n${correction}${plan}\n\nReturn the corrected complete plan.`;
 }
+/** The checks are SPLITBRIEF's, so a brief never orders the implementer to run them. */
+export const GATES_ARE_SPLITBRIEFS =
+  "Name the test files and cases only: the implementer writes or changes the test files among the brief's files, and SPLITBRIEF runs the checks itself, and the project gate before the final review. Never tell the implementer to run a test, typecheck, lint, format, screenshot or render command.";
+
+/** The implementer gets the run's skills beside every brief, so a brief restates none of them. */
+export const SKILLS_WITH_EVERY_BRIEF =
+  'Every brief reaches the implementer together with the Active Project Skills section: do not copy that section into a brief, and do not point a brief at skill files.';

@@ -4,11 +4,9 @@ import { inlineRunnerCommand } from '../../src/core/config/custom-commands/schem
 import { isCustomCommandRunner } from '../../src/core/config/custom-commands/tuple.js';
 import { findConfiguredCustomCommand } from '../../src/core/config/custom-commands/catalog.js';
 import type { Config } from '../../src/core/schemas/config.js';
-import {
-  inlineRunnerSecurityPosture,
-  markCustomRunnerTrusted,
-} from '../../src/engine/runners/custom-trust.js';
-import { resolveCustomExecutable } from '../../src/engine/runners/resolve-cli-executable.js';
+import { markCustomRunnerTrusted } from '../../src/engine/runners/custom/trust.js';
+import { inlineRunnerSecurityPosture } from '../../src/engine/runners/custom/posture.js';
+import { resolveCustomExecutable } from '../../src/engine/runners/cli-executable/custom.js';
 
 /**
  * Models a machine whose owner already confirmed the `shell`/`agent` runner

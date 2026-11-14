@@ -20,7 +20,7 @@ import {
 } from '../../engine/orchestrator/continuation/loop.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { finalizeEndedRun } from '../../engine/orchestrator/session-lifecycle/finalize.js';
-import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../engine/runners/prepare-execution/prepared.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { clearAllHandlers } from './run-requests/registry.js';

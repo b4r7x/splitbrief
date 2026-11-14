@@ -22,7 +22,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { configStore } from '../../../stores/project/config.js';
 import { pickerViewStore } from '../../../stores/ui/picker-view.js';
-import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/suggestions.js';
 import { buildRightModels, countModelOptions } from '../model-catalog/catalog.js';
 import { BROWSE_CATALOG_TEXT } from '../model-catalog/rows.js';
 import type { RightRow } from '../model-catalog/types.js';

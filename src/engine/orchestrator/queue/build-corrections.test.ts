@@ -28,7 +28,7 @@ import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { trackMidCallDelivery } from './mid-call.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import type { ConfiguredProviderRuntime } from '../../detection/provider-outcomes.js';
 import { resolveAutoModel } from '../../../core/providers/model-selection.js';
 

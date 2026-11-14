@@ -4,7 +4,7 @@ import {
   GLOBAL_SKILL_SCAN_PATH_LABELS,
 } from '../../core/skills/scan-paths.js';
 import type { SkillMeta } from '../../core/skills/types.js';
-import { discoverSkills } from '../../engine/skill-discovery.js';
+import { discoverSkills } from '../../engine/skills/discover.js';
 import { cliError } from '../errors.js';
 
 export function parseSkillIdsOption(value: string): string[] {

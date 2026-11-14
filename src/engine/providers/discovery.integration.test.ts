@@ -6,7 +6,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { CliAuthChannelId } from '../../core/runners/cli-tool/auth-channels.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { resolveCliExecutable } from '../runners/cli-executable/resolve.js';
 import type { ScopedCliCatalogAttempt } from '../detection/cli-catalog-outcomes.js';
 import { discoverAllCliTools } from './discovery.js';
 

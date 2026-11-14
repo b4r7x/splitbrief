@@ -4,7 +4,8 @@ import type { RunnerConfig } from '../../../core/config/accessors/runner-config.
 import { seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
 import { formatSeatChangeNotice, seatIdentityChanges } from '../../../core/state/seats/changes.js';
 import type { SeatChange } from '../../../core/state/seats/changes.js';
-import { NULL_CACHE, type ModelCacheAccessor } from './resolution.js';
+import { NULL_CACHE } from './runtime-snapshot.js';
+import type { ModelCacheAccessor } from './runtime-snapshot.js';
 import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import {

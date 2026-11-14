@@ -1,7 +1,7 @@
 import { readImplementerReport, type ImplementerReport } from '../../../../core/schemas/consult.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import { extractLastJsonObject } from '../../../../engine/runners/typed-output.js';
+import { extractLastJsonObject } from '../../../../engine/runners/extract-json.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import {
   hasTaskBriefMetadataKeys,

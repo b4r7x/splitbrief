@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { resumeSavedSession } from './resume.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeConfig } from '../../../core/config/load/io.js';
-import { saveDetectionCache } from '../../../engine/detection/cache.js';
+import { saveDetectionCache } from '../../../engine/detection/cache/store.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import {
   readSeatIdentities,

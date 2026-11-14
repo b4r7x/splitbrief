@@ -4,7 +4,7 @@ import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review/v
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { error } from '../../../utils/error.js';
 import type { EventBus } from '../../events/types.js';
-import type { ApiContextDiagnostic } from '../../providers/api-context-diagnostic.js';
+import type { ApiContextDiagnostic } from '../../providers/api/context-diagnostic.js';
 import type { PromptSize, PromptLength } from '../../runners/input-limit.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import type { PlannerCallDiagnosis } from '../recovery/planner-call-failure.js';

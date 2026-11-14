@@ -23,7 +23,10 @@ import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js'
 import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/runner-outcome.js';
 import { runnerDefectRow, runnerHaltRow } from '../recovery/builders/runner-defect.js';
 import { buildSeatDownIssue } from '../recovery/builders/seat-down.js';
-import { classifySeatFailure, type SeatFailureClassification } from '../../runners/seat-failure.js';
+import {
+  classifySeatFailure,
+  type SeatFailureClassification,
+} from '../../runners/seat-failure/classify.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { loadSeatSwapContext } from '../recovery/seat/swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';

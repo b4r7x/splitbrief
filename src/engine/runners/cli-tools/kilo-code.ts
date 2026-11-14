@@ -1,7 +1,7 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { ParsedLine } from '../types.js';
-import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
-import { contractSha256 } from '../../providers/candidate-contract.js';
+import { parseOpencodeLine } from '../../streaming/parse/opencode.js';
+import { contractSha256 } from '../../providers/candidate/contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { errorLineProtocolEvents, errorLineTerminal } from './final-group.js';
 import { validateCliArgs } from './validate-args.js';

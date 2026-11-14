@@ -9,9 +9,10 @@ import {
 import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/suggestions.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
-import { NULL_CACHE, type ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import { NULL_CACHE } from '../../../engine/providers/model/runtime-snapshot.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/runtime-snapshot.js';
 import type { PickerOption } from './options.js';
 import { mergeOptionFamilies } from './option-merge.js';
 import { mergeProviderVariants } from './provider-merge.js';

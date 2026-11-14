@@ -38,7 +38,7 @@ import { readWorkspaceRecord } from '../isolation/retention.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
-import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';

@@ -1,5 +1,6 @@
 import { estimateTokens } from '../../../core/tokens/estimate.js';
-import { formatImplementerSystemPreamble, formatTaskPrompt } from '../../spec/prompt-formatter.js';
+import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from '../../spec/prompts/system.js';
+import { formatTaskPrompt } from '../../spec/prompts/task.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
 import type { TaskPromptEstimateOptions, ContextFitOptions } from './types.js';

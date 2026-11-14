@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { EngineEventSchema } from '../events/schema.js';
-import { projectRunnerCallActivity } from './activity.js';
+import { projectRunnerCallActivity } from './activity/project.js';
 import { createRunnerAttemptCallbackBuffer } from './callback-buffer.js';
-import { collectRunnerCallResult } from './collector.js';
-import { createRunnerCallRecorder } from './recorder.js';
+import { collectRunnerCallResult } from './collector/collect.js';
+import { createRunnerCallRecorder } from './recorder/create.js';
 import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 

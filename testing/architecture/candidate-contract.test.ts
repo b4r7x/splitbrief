@@ -4,15 +4,15 @@ import {
   type OpenAICompatPolicy,
 } from '../../src/engine/providers/openai-compat-policy.js';
 import {
-  CandidateEvidence,
   RawProviderCandidateContract,
   UnregisteredProviderCandidate,
   baseUrlEnvironmentName,
   canonicalJson,
   contractSha256,
-  normalizeCandidateEvidence,
   requiresLiveModelDiscovery,
-} from '../../src/engine/providers/candidate-contract.js';
+} from '../../src/engine/providers/candidate/contract.js';
+import { normalizeCandidateEvidence } from '../../src/engine/providers/candidate/evidence.js';
+import { CandidateEvidence } from '../../src/engine/providers/candidate/evidence.js';
 import {
   CLI_PROMPT_SENTINEL,
   CliConformanceCandidatesSchema,

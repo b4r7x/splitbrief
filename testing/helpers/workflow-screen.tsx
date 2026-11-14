@@ -15,7 +15,7 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
   type RunnerGate,
-} from '../../src/engine/runners/prepared-execution.js';
+} from '../../src/engine/runners/prepare-execution/prepared.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { routerStore } from '../../src/stores/navigation/router.js';

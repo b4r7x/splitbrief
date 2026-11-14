@@ -8,14 +8,10 @@ import {
   apiContextRecoveryFacts,
   readApiContextDiagnostic,
   type ApiContextDiagnostic,
-} from '../providers/api-context-diagnostic.js';
-import {
-  absolutePathsNamed,
-  apiPlanningInputBudget,
-  buildApiPlanningContext,
-  type ApiContextManifestEntry,
-  type ApiPlanningContext,
-} from './api-context.js';
+} from '../providers/api/context-diagnostic.js';
+import { apiPlanningInputBudget, buildApiPlanningContext } from './api-context/build.js';
+import { absolutePathsNamed } from './api-context/mentions.js';
+import type { ApiContextManifestEntry, ApiPlanningContext } from './api-context/types.js';
 import { buildProjectContext } from './context.js';
 
 type PacketInput = Parameters<typeof buildApiPlanningContext>[0];

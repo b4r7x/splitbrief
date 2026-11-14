@@ -37,14 +37,15 @@ import {
   type ReviewVerdict,
 } from '../../core/schemas/review/verdict.js';
 import type { ReviewRecord } from '../../core/schemas/workflow/review-record.js';
-import type { Reviewer } from '../../engine/reviewers/types.js';
+import type { Reviewer } from '../../engine/planners/reviewer.js';
 import { createReviewer } from '../../engine/runners/factory.js';
-import { prepareReviewExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
-import type { PreparedReviewExecution } from '../../engine/runners/prepared-execution.js';
-import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
+import { prepareReviewExecution } from '../../engine/runners/prepare-execution/prepare.js';
+import type { PreparedReviewExecution } from '../../engine/runners/prepare-execution/prepared.js';
+import { createCustomRunnerRuntime } from '../../engine/runners/custom/runtime.js';
 import { requestTyped } from '../../engine/runners/typed-output.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
-import { buildFinalReviewPrompt, reviewChangeText } from '../../engine/spec/prompts/review.js';
+import { buildFinalReviewPrompt } from '../../engine/spec/prompts/review/final.js';
+import { reviewChangeText } from '../../engine/spec/prompts/review/changes.js';
 import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat/call.js';
 import { seatReadsChangeFile } from '../../core/runners/capabilities.js';
 import { confinedWriteFile } from '../../lib/fs/confined.js';

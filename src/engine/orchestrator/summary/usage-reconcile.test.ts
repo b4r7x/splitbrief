@@ -7,7 +7,7 @@ import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { addUsage } from '../tokens.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { TokenUsageSchema } from '../../../core/schemas/tokens.js';
-import { toTokenDelta } from '../../calls/usage.js';
+import { toTokenDelta } from '../../calls/usage/normalize.js';
 import { buildSummary } from './build.js';
 import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
 

@@ -5,7 +5,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationAcceptance } from '../validation/types.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
-import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
 import { publishTaskComplete } from '../publish/task.js';
 import { transitionAndSave } from '../state-ops/transition.js';

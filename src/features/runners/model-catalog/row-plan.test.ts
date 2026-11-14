@@ -7,15 +7,17 @@ import { formatContextLength } from '../../../core/formatting.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import {
-  nativeCliCatalogToDetectedModels,
   parseAntigravityModelCatalog,
-  parseCodexNativeModelCatalog,
   parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
+} from '../../../engine/runners/cli-tools/probe/native-catalog/listing.js';
+import {
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
-  type NativeCliModelCatalog,
-} from '../../../engine/providers/cli-model-catalog.js';
+} from '../../../engine/runners/cli-tools/probe/native-catalog/opencode.js';
+import { parseCodexNativeModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/codex.js';
+import { nativeCliCatalogToDetectedModels } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
+import type { NativeCliModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
 import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { SOFT_SEP } from '../../../core/separators.js';

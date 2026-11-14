@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { projectRunnerDiscoveryContext } from './runner-discovery-context.js';
 import type { RunnerDiscoveryContext } from './runner-discovery-context.js';
-import { runnerDiscoveryContextKey } from '../../../engine/detection/runner-evidence.js';
+import { runnerDiscoveryContextKey } from '../../../engine/detection/context-key.js';
 import type { ActiveRunnerRole } from '../../runners/seat-roles.js';
 import type { Config } from '../../schemas/config.js';
 

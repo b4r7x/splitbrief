@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import YAML from 'yaml';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepared-rollback.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

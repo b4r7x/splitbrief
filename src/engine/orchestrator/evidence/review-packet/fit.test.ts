@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildFinalReviewPrompt,
-  type FinalReviewPromptInput,
-} from '../../../spec/prompts/review.js';
+import { buildFinalReviewPrompt } from '../../../spec/prompts/review/final.js';
+import type { FinalReviewPromptInput } from '../../../spec/prompts/review/types.js';
 import type { PromptLimit } from '../../../runners/input-limit.js';
 import { fallbackInstruction } from '../../../runners/typed-output.js';
 import { REVIEW_ANSWER_JSON_SCHEMA } from '../../../../core/schemas/review/verdict.js';

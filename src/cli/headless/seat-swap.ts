@@ -3,7 +3,7 @@ import {
   applyOfferedSeatSwap,
   type SeatSwapChoice,
 } from '../../engine/orchestrator/run/seat-swap.js';
-import type { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
+import type { prepareExecution } from '../../engine/runners/prepare-execution/prepare.js';
 import { emitRecoveryAndFailIfPending } from './outcome.js';
 import { loadOwnedState, publishHandoffNotice, recoveryBus } from './recovery-step.js';
 import type { HeadlessRun } from './types.js';

@@ -4,10 +4,8 @@ import { expect, it } from 'vitest';
 import { requireReviewSeat } from '../../src/core/config/accessors/reviewer-runner.js';
 import { inlineRunnerCommand } from '../../src/core/config/custom-commands/schema.js';
 import { isCustomCommandRunner } from '../../src/core/config/custom-commands/tuple.js';
-import {
-  inlineRunnerSecurityPosture,
-  readCustomRunnerTrust,
-} from '../../src/engine/runners/custom-trust.js';
+import { readCustomRunnerTrust } from '../../src/engine/runners/custom/trust.js';
+import { inlineRunnerSecurityPosture } from '../../src/engine/runners/custom/posture.js';
 import { makeConfig } from './factories/config.js';
 import { trustDeclaredRunners } from './runner-trust.js';
 import { withTempDir } from './temp-dir.js';

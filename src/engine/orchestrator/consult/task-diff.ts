@@ -6,7 +6,7 @@ import { lineageIdOf } from '../../../core/state/task-insert.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { orderChangedFiles } from '../../change-detection.js';
-import type { ConsultPromptInput } from '../../spec/prompts/consult.js';
+import type { ConsultPromptInput } from '../../spec/prompts/consult/types.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { readChangeEntry } from '../approval/file-snapshots/entry/read.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';

@@ -1,9 +1,11 @@
-import { selectBuildOutputContract } from '../../implementers/file-bundle.js';
-import { apiBuildTargets, estimateBundleOutputReserve } from '../../providers/api-budget.js';
+import { selectBuildOutputContract } from '../../implementers/file-bundle/contract.js';
+import { apiBuildTargets } from '../../providers/api/budget.js';
+import { estimateBundleOutputReserve } from '../../providers/api/budget.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
-import { formatImplementerSystemPreamble, formatTaskPrompt } from '../../spec/prompt-formatter.js';
+import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from '../../spec/prompts/system.js';
+import { formatTaskPrompt } from '../../spec/prompts/task.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProfileFit, RouteTaskOptions } from './types.js';
 import type { CurrentCodeContextMode, TaskContextFit } from '../../../core/schemas/enums.js';

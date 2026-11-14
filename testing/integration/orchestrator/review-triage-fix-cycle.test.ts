@@ -21,7 +21,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
+import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import type { TypedCallContext } from '../../../src/engine/planners/types.js';
 import type { TypedSeatCall } from '../../../src/engine/runners/typed-output.js';
 import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';

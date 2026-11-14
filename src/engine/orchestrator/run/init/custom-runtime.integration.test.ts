@@ -18,15 +18,15 @@ import { composeWorkflowCustomRunnerRuntime } from './custom-runtime.js';
 import { initializeWorkflow } from './initialize.js';
 import { createRunIsolation } from '../../isolation/create.js';
 import type { RunIsolation } from '../../isolation/types.js';
-import { prepareCustomRunnerAdmission } from '../../../runners/custom-admission.js';
-import { customRunnerSecurityPosture } from '../../../runners/custom-trust.js';
-import { resolveConfiguredCustomRunner } from '../../../runners/configured-custom.js';
+import { prepareCustomRunnerAdmission } from '../../../runners/custom/admission.js';
+import { customRunnerSecurityPosture } from '../../../runners/custom/posture.js';
+import { resolveConfiguredCustomRunner } from '../../../runners/custom/configured.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
   type RunnerGate,
   type RunnerSlot,
-} from '../../../runners/prepared-execution.js';
+} from '../../../runners/prepare-execution/prepared.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {

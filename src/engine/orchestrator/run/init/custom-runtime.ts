@@ -1,7 +1,7 @@
 import { getRunnerCatalogDisplayName } from '../../../../core/config/accessors/runner-config.js';
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Planner } from '../../../planners/types.js';
-import { createCustomRunnerRuntime } from '../../../runners/custom-runner-runtime.js';
+import { createCustomRunnerRuntime } from '../../../runners/custom/runtime.js';
 import type { CustomRunnerRuntimePort } from '../../../runners/types.js';
 import type { OrchestratorCallbacks } from '../../types.js';
 

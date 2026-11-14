@@ -10,8 +10,8 @@ import { createImplementerBase } from './pipeline/run.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
-import { callAdmittedCli, requireCliSeat } from '../runners/start-gate.js';
-import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
+import { callAdmittedCli, requireCliSeat } from '../runners/seat-gates.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox/env.js';
 import { withOutputFormat } from '../runners/cli-tools/output-format.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 import { lookupCliImplementerAdapter } from '../runners/cli-tools/registry.js';
@@ -19,12 +19,9 @@ import type { CliImplementerAdapter } from '../runners/cli-tools/contract.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import type { Task } from '../../core/schemas/task.js';
 import { undeclaredFiles } from '../../core/scope/declared-set.js';
-import { stderrUsageLimit } from '../runners/usage-limit.js';
-import {
-  createIsolationBoundary,
-  formatIsolationBreach,
-  isolationToolUseGuard,
-} from './isolation/boundary.js';
+import { stderrUsageLimit } from '../runners/seat-failure/usage-limit.js';
+import { createIsolationBoundary } from './isolation/boundary.js';
+import { formatIsolationBreach, isolationToolUseGuard } from './isolation/breach.js';
 
 /**
  * REQ-016 declared-effect gate: a direct-write CLI implementer succeeds when

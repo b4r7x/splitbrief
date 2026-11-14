@@ -12,7 +12,7 @@ import {
 import { readSession, rowFor, saveSummary } from '../../../core/sessions/io.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run/status.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import { recordedSeatIdentity } from '../../../core/state/seats/record.js';
 import { activeTimeOf, phaseTimesOf, readRunMarks } from '../summary/active-time.js';
 import { buildSummary } from '../summary/build.js';

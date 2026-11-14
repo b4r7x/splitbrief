@@ -22,14 +22,14 @@ import { error } from '../../utils/error.js';
 import {
   isDeclaredCliProbeContract,
   type CliProbeContract,
-} from '../runners/cli-tools/contract.js';
+} from '../runners/cli-tools/probe/contract.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
-import type { CliReadinessProbeEvidence } from '../runners/cli-tools/cli-probe-evidence.js';
-import type { ProbeCliReadinessOptions } from '../runners/cli-tools/readiness-probe.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import type { CliReadinessProbeEvidence } from '../runners/cli-tools/probe/evidence.js';
+import type { ProbeCliReadinessOptions } from '../runners/cli-tools/probe/readiness.js';
+import { resolveCliExecutable } from '../runners/cli-executable/resolve.js';
 import { detectAll, detectAvailableCliReadiness, detectAvailableCliTools } from './detect.js';
-import { detectRunnerEvidence } from './runner-evidence.js';
-import * as readinessProbeModule from '../runners/cli-tools/readiness-probe.js';
+import { detectRunnerEvidence } from './runner-evidence/detect.js';
+import * as readinessProbeModule from '../runners/cli-tools/probe/declared-readiness.js';
 
 const executable: CliExecutableIdentity = {
   path: '/trusted/bin/tool',

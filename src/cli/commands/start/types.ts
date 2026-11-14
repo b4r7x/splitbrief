@@ -3,7 +3,7 @@ import type { runHeadless } from '../../headless/run.js';
 import type { initStores } from '../../bootstrap/init.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
-import type { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 
 export interface StartDeps {
   runHeadless: typeof runHeadless;

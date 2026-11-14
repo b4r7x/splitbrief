@@ -23,13 +23,11 @@ import type { PickerOption } from '../model-catalog/options.js';
 import { rightRowKey } from '../model-catalog/rows.js';
 import type { RightRow } from '../model-catalog/types.js';
 import type { ModelOption } from '../model-catalog/recency.js';
-import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
-import {
-  nativeCliCatalogToDetectedModels,
-  parseCursorNativeModelCatalog,
-  parseOpenCodeNativeModelCatalog,
-  type NativeCliModelCatalog,
-} from '../../../engine/providers/cli-model-catalog.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/suggestions.js';
+import { parseCursorNativeModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/listing.js';
+import { parseOpenCodeNativeModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/opencode.js';
+import { nativeCliCatalogToDetectedModels } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
+import type { NativeCliModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
 import { formatToolsByline } from './byline.js';
 import { formatModelCatalogGuidance } from './catalog-guidance.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';

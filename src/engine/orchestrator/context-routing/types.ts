@@ -1,11 +1,11 @@
-import type { BuildOutputContract } from '../../implementers/file-bundle.js';
+import type { BuildOutputContract } from '../../implementers/file-bundle/contract.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import type { ImplementerWriteMode } from '../../../core/schemas/runner/implementer.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
-import type { PlanContext } from '../../spec/prompt-formatter.js';
+import type { PlanContext } from '../../spec/prompts/task.js';
 import type { TaskContextFit, CurrentCodeContextMode } from '../../../core/schemas/enums.js';
 
 export interface TaskPromptEstimateOptions {

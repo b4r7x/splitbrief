@@ -6,7 +6,7 @@ import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
-import { createClaudeCodePlanner } from '../planners/claude-code.js';
+import { createClaudeCodePlanner } from '../planners/claude-code/planner.js';
 import { createCliPlanner } from '../planners/cli.js';
 import { createCliImplementer } from '../implementers/cli.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
@@ -20,8 +20,8 @@ const dispatch = vi.hoisted(() => ({
   recorders: [] as Array<{ context: RunnerCallContext; events: RunnerCallEvent[] }>,
 }));
 
-vi.mock('../calls/recorder.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../calls/recorder.js')>();
+vi.mock('../calls/recorder/create.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../calls/recorder/create.js')>();
   return {
     ...actual,
     createRunnerCallRecorder: (opts: Parameters<typeof actual.createRunnerCallRecorder>[0]) => {
@@ -51,9 +51,9 @@ vi.mock('../orchestrator/planning/mutation-guard.js', async (importOriginal) => 
 });
 
 // The generic CLI dispatch seam: one recorder per spawn, finished as scripted.
-vi.mock('./cli-tools/process-invoke.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./cli-tools/process-invoke.js')>();
-  const { createRunnerCallRecorder } = await import('../calls/recorder.js');
+vi.mock('./cli-tools/process-invoke/invoke.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./cli-tools/process-invoke/invoke.js')>();
+  const { createRunnerCallRecorder } = await import('../calls/recorder/create.js');
   return {
     ...actual,
     invokeProcessCli: async (

@@ -40,12 +40,12 @@ import { createRunIsolation } from '../../../engine/orchestrator/isolation/creat
 import { readWorkspaceRecord } from '../../../engine/orchestrator/isolation/retention.js';
 import { createSnapshot } from '../../../engine/snapshots/create.js';
 import { readRunEvents } from '../../../engine/events/replay.js';
-import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare.js';
 import type { BoundaryPark } from '../../../engine/orchestrator/types.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
-} from '../../../engine/runners/prepared-execution.js';
+} from '../../../engine/runners/prepare-execution/prepared.js';
 import { plainAnswer, useInputMode, type QuestionAnswer } from './use-input-mode.js';
 import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop } from './use-run-loop.js';

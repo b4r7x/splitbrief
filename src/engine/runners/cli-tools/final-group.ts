@@ -1,5 +1,5 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../calls/usage.js';
+import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
 import { appendMessage } from '../../streaming/final-text.js';
 import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
 import { isRecord } from '../../../utils/type-guards.js';

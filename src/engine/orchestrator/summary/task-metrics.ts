@@ -3,7 +3,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { calculateTaskUsageCost, isTaskUsageCostKnown } from '../../providers/cost/task-usage.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 
 /**
  * The seat fields are the run's *pricing* identity — the seat the tokens were

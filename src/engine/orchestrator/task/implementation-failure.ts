@@ -13,7 +13,7 @@ import { runnerDefectRow, runnerHaltRow } from '../recovery/builders/runner-defe
 import { buildSeatDownIssue } from '../recovery/builders/seat-down.js';
 import { haltAttempts } from '../recovery/builders/details.js';
 import { haltOf } from '../../../core/recovery/halt.js';
-import { classifySeatFailure } from '../../runners/seat-failure.js';
+import { classifySeatFailure } from '../../runners/seat-failure/classify.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { boundedHandBack } from '../escalation/types.js';
 import { retryAndRecord } from './retry.js';

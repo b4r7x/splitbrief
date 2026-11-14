@@ -9,7 +9,7 @@ import type {
   ModelsDevCacheFailure,
   ModelsDevCatalogCacheOutcome,
   ModelsDevCatalogSnapshot,
-} from '../providers/models-dev-cache.js';
+} from '../providers/models-dev/cache.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { throwIfAborted } from '../../utils/abort.js';
 

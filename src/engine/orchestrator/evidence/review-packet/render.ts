@@ -13,7 +13,7 @@ import {
 } from '../../../providers/model/display-names.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { formatFindingCounts, setAsideLine } from '../../../../core/review/verdict.js';
-import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../providers/model/runtime-snapshot.js';
 import type { ActiveRunnerRole } from '../../../../core/runners/seat-roles.js';
 import { renderChecksLog } from './checks-log.js';
 

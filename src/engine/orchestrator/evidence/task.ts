@@ -9,7 +9,7 @@ import type {
   EvidencePromotedFile,
   EvidenceTask,
 } from '../../../core/schemas/evidence.js';
-import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import {
   findOrSeed,
   recomputeValidationSummary,

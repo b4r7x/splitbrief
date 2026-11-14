@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CliProtocolEvent } from './contract.js';
 import { finalGroupTerminal } from './final-group.js';
-import { createProtocolEventLog } from './process-invoke.js';
+import { createProtocolEventLog } from './process-invoke/protocol-event.js';
 
 const MAX_BYTES = 1_000;
 

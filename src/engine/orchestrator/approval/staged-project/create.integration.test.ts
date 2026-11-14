@@ -18,7 +18,7 @@ import { getChangedFilesSinceSnapshot } from '../file-snapshots/changed-since.js
 import { captureAcquisitionBaseline } from '../file-snapshots/entry/baseline.js';
 import { createStagedProject } from './create.js';
 import { promoteStagedChanges } from './promote.js';
-import { sandboxTempDir } from '../../../runners/sandbox-state-paths.js';
+import { sandboxTempDir } from '../../../runners/sandbox/state/paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

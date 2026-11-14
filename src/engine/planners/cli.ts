@@ -27,8 +27,8 @@ import {
 } from '../orchestrator/planning/mutation-guard.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
-import { callAdmittedCli, requireCliSeat } from '../runners/start-gate.js';
-import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
+import { callAdmittedCli, requireCliSeat } from '../runners/seat-gates.js';
+import { createRunnerSandboxEnv } from '../runners/sandbox/env.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 
 function isRecoverableResumeNoise(event: RunnerCallEvent, resumeId: string): boolean {

@@ -11,8 +11,8 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
-import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/runtime-context.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/api/runtime-context.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { selectRoutingProfile } from './select.js';
 

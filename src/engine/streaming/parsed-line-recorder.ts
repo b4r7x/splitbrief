@@ -1,5 +1,5 @@
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import type { RunnerCallRecorder } from '../calls/recorder.js';
+import type { RunnerCallRecorder } from '../calls/recorder/types.js';
 import type { ParsedLine, ParsedTextChannel } from '../runners/types.js';
 import type { TextChunkMarks } from '../events/types.js';
 import {
@@ -7,7 +7,7 @@ import {
   type RunnerCallDeltaLimitResult,
 } from '../calls/output-limit.js';
 import { reconcileFinalText } from './final-text.js';
-import { accumulateTokenUsage } from '../calls/usage.js';
+import { accumulateTokenUsage } from '../calls/usage/accumulate.js';
 
 export interface ParsedLineRecorder {
   readonly usage: TokenDelta | null;

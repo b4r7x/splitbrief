@@ -1,13 +1,16 @@
 import type { RunnerConfig } from '../../src/core/config/accessors/runner-config.js';
 import type { CliToolId } from '../../src/core/runners/cli-tool/types.js';
-import type { RunnerGate, RunnerSlot } from '../../src/engine/runners/prepared-execution.js';
+import type {
+  RunnerGate,
+  RunnerSlot,
+} from '../../src/engine/runners/prepare-execution/prepared.js';
+import type { CliStartGate } from '../../src/engine/runners/start-gate.js';
 import {
   createCliSeatGates,
   type CliSeat,
   type CliSeatGates,
-  type CliStartGate,
   type RecheckCliTool,
-} from '../../src/engine/runners/start-gate.js';
+} from '../../src/engine/runners/seat-gates.js';
 import { executableReceipt } from './custom-command-based.js';
 
 function unexpectedRecheck(tool: CliToolId): Error {

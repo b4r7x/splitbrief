@@ -240,7 +240,9 @@ describe('CLI tool catalog', () => {
   });
 
   it('carries the runtime adapter sources of every admitted candidate', () => {
-    expect(existsSync(resolveRepoPath('src/engine/runners/cli-tools/antigravity.ts'))).toBe(true);
+    expect(existsSync(resolveRepoPath('src/engine/runners/cli-tools/antigravity/adapter.ts'))).toBe(
+      true,
+    );
     expect('cursor' in CLI_TOOL_CATALOG).toBe(true);
     expect('command-code' in CLI_TOOL_CATALOG).toBe(true);
     expect('antigravity' in CLI_TOOL_CATALOG).toBe(true);

@@ -17,7 +17,7 @@ import {
   setupTaskProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
-import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { runSingleTask } from './step.js';
 
 afterEach(() => {

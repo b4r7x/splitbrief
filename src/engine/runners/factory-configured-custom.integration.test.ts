@@ -12,7 +12,7 @@ import { defaultContext, makeConfig } from '#testing/helpers/factories/config.js
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { resolveCustomRunnerTrustFile } from './custom-trust.js';
+import { resolveCustomRunnerTrustFile } from './custom/trust.js';
 import {
   createImplementer as createPreparedImplementer,
   createPlanner as createPreparedPlanner,
@@ -21,15 +21,15 @@ import {
 import type { CustomRunnerRuntimePort } from './types.js';
 import type { PlannerFactoryOptions } from '../planners/types.js';
 import type { ImplementerFactoryOptions } from '../implementers/types.js';
-import { resolveConfiguredCustomRunner } from './configured-custom.js';
-import { prepareCustomRunnerAdmission } from './custom-admission.js';
-import { customRunnerSecurityPosture } from './custom-trust.js';
+import { resolveConfiguredCustomRunner } from './custom/configured.js';
+import { prepareCustomRunnerAdmission } from './custom/admission.js';
+import { customRunnerSecurityPosture } from './custom/posture.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { prepareExecution } from './prepare-execution/prepare-execution.js';
+import { prepareExecution } from './prepare-execution/prepare.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import { processError } from '../../lib/process/errors.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
-import type { RunnerGate } from './prepared-execution.js';
+import type { RunnerGate } from './prepare-execution/prepared.js';
 
 type CustomRunnerRole = 'planner' | 'implementer';
 type CustomCommandContract = 'output' | 'direct';

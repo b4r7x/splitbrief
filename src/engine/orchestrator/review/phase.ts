@@ -74,25 +74,22 @@ import {
 import {
   apiContextError,
   readApiContextDiagnostic,
-} from '../../providers/api-context-diagnostic.js';
-import {
-  type ModelCacheAccessor,
-  resolveSeatImageFact,
-  NULL_CACHE,
-} from '../../providers/model/resolution.js';
-import type { Reviewer } from '../../reviewers/types.js';
+} from '../../providers/api/context-diagnostic.js';
+import { resolveSeatImageFact } from '../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../providers/model/runtime-snapshot.js';
+import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
+import type { Reviewer } from '../../planners/reviewer.js';
 import { cliPromptLimit } from '../../runners/cli-tools/registry.js';
 import { promptLength, inputTooLargeFigures } from '../../runners/input-limit.js';
 import type { RequestTypedResult } from '../../runners/typed-output.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { refusedCheckErrors, unconfiguredRenderCheckErrors } from '../../spec/plan-checks.js';
+import { refusedCheckErrors } from '../../spec/plan/render-checks.js';
+import { unconfiguredRenderCheckErrors } from '../../spec/plan/render-checks.js';
 import { workspaceReadInstructions } from '../../spec/prompts/builder.js';
 import { composeContinuation } from '../../spec/prompts/continuation.js';
-import {
-  type ReviewTouchedNotSuggested,
-  triageLines,
-  reviewChangeText,
-} from '../../spec/prompts/review.js';
+import { triageLines } from '../../spec/prompts/review/changes.js';
+import { reviewChangeText } from '../../spec/prompts/review/changes.js';
+import type { ReviewTouchedNotSuggested } from '../../spec/prompts/review/types.js';
 import { deserializeChangedFilesBaseline } from '../changed-files-baseline.js';
 import { withContinuationLoop } from '../continuation/loop.js';
 import type { ContinuationHolder } from '../continuation/holder.js';

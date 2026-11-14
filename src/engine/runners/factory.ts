@@ -1,9 +1,9 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
-import type { Reviewer } from '../reviewers/types.js';
+import type { Reviewer } from '../planners/reviewer.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { resolveConfiguredCustomRunner } from './configured-custom.js';
+import { resolveConfiguredCustomRunner } from './custom/configured.js';
 import { runnerGateFor } from './start-gate.js';
 import {
   admitPlannerBackend,
@@ -31,7 +31,7 @@ function lazy<T>(load: () => Promise<T>): () => Promise<T> {
   return () => (p ??= load());
 }
 
-const loadClaudeCodePlanner = lazy(() => import('../planners/claude-code.js'));
+const loadClaudeCodePlanner = lazy(() => import('../planners/claude-code/planner.js'));
 const loadCliPlanner = lazy(() => import('../planners/cli.js'));
 const loadApiPlanner = lazy(() => import('../planners/api.js'));
 const loadCommandPlanner = lazy(() => import('../planners/command-invoke.js'));

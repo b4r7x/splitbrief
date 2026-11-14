@@ -6,9 +6,9 @@ import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { TypedSeatCall } from '../runners/typed-output.js';
 import type { PlannerTierRole } from '../../core/runners/seat-roles.js';
-import type { CliSeat } from '../runners/start-gate.js';
-import type { ApiRuntimeContext } from '../providers/runtime-context.js';
-import type { ModelCacheAccessor } from '../providers/model/resolution.js';
+import type { CliSeat } from '../runners/seat-gates.js';
+import type { ApiRuntimeContext } from '../providers/api/runtime-context.js';
+import type { ModelCacheAccessor } from '../providers/model/runtime-snapshot.js';
 
 export interface PlannerFactoryOptions {
   /** The run seat whose admitted CLI gate every call of the adapter starts from. */

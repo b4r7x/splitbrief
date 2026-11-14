@@ -13,7 +13,7 @@ import {
   type Task,
 } from '../../../core/schemas/task.js';
 import { TaskStatusSchema } from '../../../core/schemas/enums.js';
-import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import {
   cleanupTaskProjects,

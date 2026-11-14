@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { costKnownFlags } from './cost.js';
 import { calculateCostBreakdown } from '../../engine/providers/cost/breakdown.js';
-import type { ModelCacheAccessor } from '../../engine/providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../engine/providers/model/runtime-snapshot.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 const usage = makeUsage({

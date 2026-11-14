@@ -16,7 +16,7 @@ import { makeTask } from './testing/helpers/factories/task.ts';
 import { projectRunnerCallEvent } from './src/engine/calls/event-projection.ts';
 import { createImplementerCallContext } from './src/engine/implementers/pipeline/call-result.ts';
 import { createPlannerCallContext } from './src/engine/planners/call-context.ts';
-import { spawnAndCollect } from './src/engine/streaming/spawn-collect.ts';
+import { spawnAndCollect } from './src/engine/streaming/spawn-collect/collect.ts';
 import { invokeCommandRunner } from './src/engine/runners/command-based.ts';
 import { summarize } from './src/engine/planners/summary.ts';
 import { streamCompletion } from './src/engine/providers/openai-stream/completion.ts';

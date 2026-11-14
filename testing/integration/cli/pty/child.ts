@@ -18,9 +18,9 @@ import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run
 import { transitionAndSave } from '../../../../src/engine/orchestrator/state-ops/transition.js';
 import { rebaseOnPersistedWorkflowState } from '../../../../src/engine/orchestrator/state-ops/head.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
-import { prepareExecution } from '../../../../src/engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../../src/engine/runners/prepare-execution/prepare.js';
 import type { PreparationPolicy } from '../../../../src/engine/runners/prepare-execution/types.js';
-import type { PreparedExecution } from '../../../../src/engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../../src/engine/runners/prepare-execution/prepared.js';
 import { renderApp as productionRenderApp } from '../../../../src/cli/render/app.js';
 import { configStore } from '../../../../src/stores/project/config.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';

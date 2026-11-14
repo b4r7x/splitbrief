@@ -20,7 +20,7 @@ import {
   recordStoppedTaskEvidence,
   unbookedFiles,
 } from './task.js';
-import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
 import type { ActionClass, TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';

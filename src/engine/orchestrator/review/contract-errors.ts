@@ -7,7 +7,7 @@ import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { TriageResult, TriageInput } from '../../../core/schemas/review/verdict.js';
 import type { Task, Check } from '../../../core/schemas/task.js';
 import { uniqueSorted } from '../../../utils/collections.js';
-import { checkTaskIdentities } from '../../spec/plan-checks.js';
+import { checkTaskIdentities } from '../../spec/plan/task-checks.js';
 import { checkRegistry } from '../validation/checks/runner.js';
 
 export function triageContractErrors(

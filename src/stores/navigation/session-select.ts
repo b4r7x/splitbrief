@@ -8,7 +8,7 @@ import type { OverlayType } from '../../core/navigation/types.js';
 import type { RunRecord } from '../../core/sessions/run/record.js';
 import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import { APPLY_RUNNING_REFUSAL } from '../../core/runtime/commands/messages.js';
-import type { PreparationOutcome } from '../../engine/runners/prepared-execution.js';
+import type { PreparationOutcome } from '../../engine/runners/prepare-execution/prepared.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
 import { createStore, storeBase } from '../create-store.js';

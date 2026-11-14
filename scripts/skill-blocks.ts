@@ -32,11 +32,11 @@ import {
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,
 } from '../src/engine/runners/cli-tools/registry.js';
-import { SEAT_RETRY_MAX_DELAY_MS } from '../src/engine/runners/transient.js';
+import { SEAT_RETRY_MAX_DELAY_MS } from '../src/engine/runners/seat-failure/transient.js';
 import { fallbackInstruction } from '../src/engine/runners/typed-output.js';
 import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from '../src/engine/spec/headings.js';
-import { formatTaskPrompt } from '../src/engine/spec/prompt-formatter.js';
-import { buildConsultPrompt } from '../src/engine/spec/prompts/consult.js';
+import { formatTaskPrompt } from '../src/engine/spec/prompts/task.js';
+import { buildConsultPrompt } from '../src/engine/spec/prompts/consult/build.js';
 import { buildLanguageContext } from '../src/engine/spec/prompts/language-context.js';
 import { IMPLEMENTER_RUNS_NO_CHECKS, workspaceRules } from '../src/engine/spec/prompts/system.js';
 import { buildTaskFormatExample } from '../src/engine/spec/prompts/task-format-example.js';

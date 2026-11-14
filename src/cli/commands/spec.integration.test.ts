@@ -37,7 +37,7 @@ import {
   typedCallFromTasks,
 } from '#testing/helpers/typed-planner.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { saveDetectionCache } from '../../engine/detection/cache.js';
+import { saveDetectionCache } from '../../engine/detection/cache/store.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();

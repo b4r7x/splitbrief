@@ -18,8 +18,8 @@ import type { PreparationPolicy } from '../../../../runners/prepare-execution/ty
 import type {
   PreparationOutcome,
   PreparedExecution,
-} from '../../../../runners/prepared-execution.js';
-import type { prepareExecution } from '../../../../runners/prepare-execution/prepare-execution.js';
+} from '../../../../runners/prepare-execution/prepared.js';
+import type { prepareExecution } from '../../../../runners/prepare-execution/prepare.js';
 import { switchSeatAndPrepareResume } from './resume.js';
 import { seatRunnerValue } from './plan.js';
 

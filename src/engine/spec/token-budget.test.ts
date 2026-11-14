@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTaskPrompt } from './prompt-formatter.js';
+import { formatTaskPrompt } from './prompts/task.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
 import { truncateMiddle, computeTokenBudget } from './token-budget.js';

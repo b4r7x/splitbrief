@@ -46,7 +46,7 @@ import {
   type ContractShimProfile,
 } from '#testing/helpers/command-shim.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
-import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
+import { resolveCustomExecutable } from '../../../src/engine/runners/cli-executable/custom.js';
 import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';

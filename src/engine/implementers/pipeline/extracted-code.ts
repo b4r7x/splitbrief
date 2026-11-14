@@ -3,7 +3,7 @@ import { confinedExists, confinedReadFileAsync } from '../../../lib/fs/confined.
 import { pathConfinementError } from '../../../lib/fs/confinement.js';
 import { matches } from '../../../utils/error.js';
 import { extractCode } from '../../parsers/response-extractor.js';
-import { applyCode, hasApplicablePatch } from '../apply.js';
+import { applyCode, hasApplicablePatch } from './apply-code.js';
 import { computeDiff } from '../../../utils/diff.js';
 
 const isPathEscape = matches('path-confined-escape');

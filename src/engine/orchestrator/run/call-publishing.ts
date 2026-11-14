@@ -1,5 +1,5 @@
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { Reviewer } from '../../reviewers/types.js';
+import type { Reviewer } from '../../planners/reviewer.js';
 import type {
   Planner,
   PlannerCallEventCallbacks,

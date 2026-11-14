@@ -19,7 +19,7 @@ import { resolveImplementerProfiles } from '../../../core/config/accessors/imple
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { cliVocabularyTool, formatModelName } from '../../../core/providers/model-display.js';
 import { resolveModelCatalog } from './catalog.js';
-import type { ModelCacheAccessor } from './resolution.js';
+import type { ModelCacheAccessor } from './runtime-snapshot.js';
 
 type SeatCandidate = Parameters<typeof candidateIdsOf>[0];
 

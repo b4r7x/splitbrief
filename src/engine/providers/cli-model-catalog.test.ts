@@ -6,18 +6,22 @@ import { MAX_CLI_CATALOG_READ_MODELS } from '../../core/discovery/catalog-read-m
 import { type DetectedModel, DetectedModelSchema } from '../../core/discovery/detection/model.js';
 import { resolveModelCatalog } from './model/catalog.js';
 import {
-  nativeCliCatalogToDetectedModels,
   parseAntigravityModelCatalog,
-  parseCodexNativeModelCatalog,
-  parseCommandCodeNativeModelCatalog,
-  parseCompleteCommandCodeNativeModelCatalog,
   parseCopilotHelpConfigCatalog,
   parseCursorNativeModelCatalog,
+} from '../runners/cli-tools/probe/native-catalog/listing.js';
+import {
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
   parseOpenCodeVerboseModelCatalog,
-  type NativeCliModelCatalog,
-} from './cli-model-catalog.js';
+} from '../runners/cli-tools/probe/native-catalog/opencode.js';
+import {
+  parseCommandCodeNativeModelCatalog,
+  parseCompleteCommandCodeNativeModelCatalog,
+} from '../runners/cli-tools/probe/native-catalog/command-code.js';
+import { parseCodexNativeModelCatalog } from '../runners/cli-tools/probe/native-catalog/codex.js';
+import { nativeCliCatalogToDetectedModels } from '../runners/cli-tools/probe/native-catalog/entries.js';
+import type { NativeCliModelCatalog } from '../runners/cli-tools/probe/native-catalog/entries.js';
 
 // Two-model slice of `codex debug models --bundled` (codex-cli 0.153.3, captured 2026-09-08).
 const CODEX_BUNDLED_SLICE = {

@@ -14,9 +14,9 @@ import {
 } from '../../core/discovery/detection/executable.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { resolveCliExecutable } from '../runners/cli-executable/resolve.js';
 import { detectionRuntimeNamespace } from './cli-context.js';
-import { detectRunnerEvidence } from './runner-evidence.js';
+import { detectRunnerEvidence } from './runner-evidence/detect.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 

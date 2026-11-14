@@ -17,10 +17,10 @@ import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import {
   resolveCliExecutable,
   resolveCliExecutableAliases,
-  resolveCustomExecutable,
-  revalidateCliExecutableIdentity,
   sanitizedRuntimePath,
-} from './resolve-cli-executable.js';
+} from './cli-executable/resolve.js';
+import { resolveCustomExecutable } from './cli-executable/custom.js';
+import { revalidateCliExecutableIdentity } from './cli-executable/identity.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { versionedCli } from '#testing/helpers/versioned-cli.js';
 

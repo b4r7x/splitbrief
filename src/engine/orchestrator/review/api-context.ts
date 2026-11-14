@@ -3,18 +3,16 @@ import type { TriageInput } from '../../../core/schemas/review/verdict.js';
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
 import { splitDiffByFile } from '../../../lib/git/diff-sections.js';
-import {
-  apiPlanningInputBudget,
-  type ApiContextManifestEntry,
-} from '../../planners/api-context.js';
+import { apiPlanningInputBudget } from '../../planners/api-context/build.js';
+import type { ApiContextManifestEntry } from '../../planners/api-context/types.js';
 import { renderWholeChecksLog } from '../evidence/review-packet/checks-log.js';
-import {
-  buildFinalReviewPrompt,
-  reviewInputsSection,
-  type ReviewPlanData,
-  type ReviewFileDiff,
-  type ReviewTouchedNotSuggested,
-} from '../../spec/prompts/review.js';
+import { buildFinalReviewPrompt } from '../../spec/prompts/review/final.js';
+import { reviewInputsSection } from '../../spec/prompts/review/changes.js';
+import type {
+  ReviewPlanData,
+  ReviewFileDiff,
+  ReviewTouchedNotSuggested,
+} from '../../spec/prompts/review/types.js';
 
 /** The packet's own names for the sections that are no file of their own. */
 const RUN_DIFF = 'run diff';

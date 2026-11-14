@@ -27,9 +27,9 @@ import {
   pruneSandboxNpmCache,
   runnerSandboxIdentity,
   withPrependedPathDirectory,
-} from '../../runners/sandbox-env.js';
-import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
-import { removeSandboxTempDirs } from '../../runners/sandbox-state-paths.js';
+} from '../../runners/sandbox/env.js';
+import { clearBridgedCliState } from '../../runners/sandbox/state/bridge.js';
+import { removeSandboxTempDirs } from '../../runners/sandbox/state/paths.js';
 import { removeWorktree } from './worktree/remove.js';
 import { attemptCleanupError } from './errors.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';

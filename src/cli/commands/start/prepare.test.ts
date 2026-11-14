@@ -14,7 +14,7 @@ import { sessionDir } from '../../../core/paths.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 import { cliPreparationPolicy } from '../../preparation.js';
 import { prepareStartExecution } from './prepare.js';
 

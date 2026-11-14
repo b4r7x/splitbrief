@@ -13,7 +13,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { type SpecFileRef, readSpecFile } from '../../../core/sessions/spec-files.js';
 import { isSessionConversation } from '../../../core/state/planning-conversation.js';
 import { buildRepoMap } from '../../codebase/repomap.js';
-import { absolutePathsNamed } from '../../planners/api-context.js';
+import { absolutePathsNamed } from '../../planners/api-context/mentions.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import type { PriorMessage, Planner } from '../../planners/types.js';
 import { fallbackInstruction } from '../../runners/typed-output.js';

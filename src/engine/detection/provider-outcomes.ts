@@ -4,7 +4,7 @@ import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { ProviderCatalogFailureKind, ProviderCatalogOutcome } from '../providers/types.js';
-import { runnerDiscoveryContextKey } from './runner-evidence.js';
+import { runnerDiscoveryContextKey } from './context-key.js';
 
 /**
  * A configured connection is deliberately narrower than a provider adapter.

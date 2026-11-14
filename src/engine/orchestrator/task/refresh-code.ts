@@ -5,7 +5,7 @@ import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import { confinedExists, confinedReadFileAsync } from '../../../lib/fs/confined.js';
 import { assertPathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
 import { matches } from '../../../utils/error.js';
-import { anchorAction } from '../../spec/plan-tasks.js';
+import { anchorAction } from '../../spec/plan/tasks.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import type { ContinuationHolder } from '../continuation/holder.js';

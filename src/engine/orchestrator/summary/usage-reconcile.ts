@@ -10,7 +10,7 @@ import {
   RunnerCallUsageSemanticsSchema,
 } from '../../calls/schema.js';
 import type { RunnerCallContext, RunnerCallUsage } from '../../calls/types.js';
-import { accumulateRunnerCallUsage } from '../../calls/usage.js';
+import { accumulateRunnerCallUsage } from '../../calls/usage/accumulate.js';
 import { addRunnerCallUsageToTokenUsage } from '../tokens.js';
 
 type RunnerCallRole = RunnerCallContext['role'];

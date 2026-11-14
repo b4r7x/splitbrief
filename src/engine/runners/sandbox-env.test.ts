@@ -27,17 +27,16 @@ import {
 } from '../../core/runners/cli-tool/auth-channels.js';
 import type { ImplementerConfig } from '../../core/schemas/runner/implementer.js';
 import {
-  cliAuthChannelEnvKeys,
   createRunnerSandboxEnv,
   createSandboxEnv,
   prependCliExecutableDirectory,
-  runnerAuthEnvKeys,
   runnerSandboxIdentity,
   withPrependedPathDirectory,
-} from './sandbox-env.js';
-import { sandboxCredentialValues } from './sandbox-credential-values.js';
-import { bridgedCliStatePresent, clearBridgedCliState } from './sandbox-state-bridge.js';
-import { removeSandboxTempDirs } from './sandbox-state-paths.js';
+} from './sandbox/env.js';
+import { cliAuthChannelEnvKeys, runnerAuthEnvKeys } from './sandbox/auth-env.js';
+import { sandboxCredentialValues } from './sandbox/credential-values.js';
+import { bridgedCliStatePresent, clearBridgedCliState } from './sandbox/state/bridge.js';
+import { removeSandboxTempDirs } from './sandbox/state/paths.js';
 import { createRunnerCallCredentialRedactor } from '../calls/status.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 

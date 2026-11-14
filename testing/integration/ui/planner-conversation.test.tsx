@@ -30,7 +30,7 @@ import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { createTestSinks } from '#testing/helpers/planning-phase.js';
-import { createClaudeCodePlanner } from '../../../src/engine/planners/claude-code.js';
+import { createClaudeCodePlanner } from '../../../src/engine/planners/claude-code/planner.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';

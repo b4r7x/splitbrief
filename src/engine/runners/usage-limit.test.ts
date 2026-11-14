@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
-import { isUsageLimitDiagnostic, parseUsageLimitReset, usageLimitAdvice } from './usage-limit.js';
-import { isAuthFailureDiagnostic } from './auth-failure.js';
-import { classifySeatFailure } from './seat-failure.js';
-import { codexImplementerAdapter } from './cli-tools/codex.js';
-import { claudeProtocolEvents } from './cli-tools/claude-code.js';
-import { opencodeImplementerAdapter, opencodeProtocolEvents } from './cli-tools/opencode.js';
+import { isUsageLimitDiagnostic, usageLimitAdvice } from './seat-failure/usage-limit.js';
+import { parseUsageLimitReset } from './seat-failure/reset-time.js';
+import { isAuthFailureDiagnostic } from './seat-failure/auth.js';
+import { classifySeatFailure } from './seat-failure/classify.js';
+import { codexImplementerAdapter } from './cli-tools/codex/adapter.js';
+import { claudeProtocolEvents } from './cli-tools/claude-code/protocol.js';
+import {
+  opencodeImplementerAdapter,
+  opencodeProtocolEvents,
+} from './cli-tools/opencode/adapter.js';
 import { kiloPlannerAdapter, kiloPlannerProtocolEvents } from './cli-tools/kilo-code.js';
 import { runnerCallOutcome } from '../implementers/pipeline/call-result.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';

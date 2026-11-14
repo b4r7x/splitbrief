@@ -20,8 +20,8 @@ import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type {
   PreparationOutcome,
   PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
-import { parsePreparedConfig } from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
+import { parsePreparedConfig } from '../../engine/runners/prepare-execution/prepared.js';
 import { skillsStore } from '../project/skills.js';
 import { overlayStore } from '../ui/overlay.js';
 import { hydrateFromState } from '../workflow/actions/hydrate.js';

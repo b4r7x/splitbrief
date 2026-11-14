@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createInitialState } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
-import { captureBundleBaseline } from '../../implementers/bundle-baseline.js';
+import { captureBundleBaseline } from '../../implementers/file-bundle/baseline.js';
 import {
   createEvidenceLedger,
   findOrSeed,
@@ -13,7 +13,7 @@ import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { evidenceLedgerPath, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { EvidenceLedgerSchema, type EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import {
   checkEntries,
   recordLocalTaskEvidence,

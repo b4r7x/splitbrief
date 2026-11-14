@@ -8,7 +8,7 @@ workerThreads.Worker = class extends OriginalWorker {
   constructor(filename, options) {
     const cacheParse =
       typeof filename === 'string' &&
-      filename.includes('/models-dev-cache/parse-worker.ts') &&
+      filename.includes('/models-dev/parse-worker.ts') &&
       options?.workerData?.kind === 'record';
     const heldSource = `
 const { existsSync, watch, writeFileSync } = require('node:fs');

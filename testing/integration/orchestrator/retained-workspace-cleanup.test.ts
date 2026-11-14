@@ -10,7 +10,7 @@ import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { createRunIsolation } from '../../../src/engine/orchestrator/isolation/create.js';
 import { readWorkspaceRecord } from '../../../src/engine/orchestrator/isolation/retention.js';
-import { sandboxRoot } from '../../../src/engine/runners/sandbox-state-paths.js';
+import { sandboxRoot } from '../../../src/engine/runners/sandbox/state/paths.js';
 
 vi.mock('node:fs/promises', async (original) => ({
   ...(await original<typeof import('node:fs/promises')>()),

@@ -4,14 +4,14 @@ import type {
   RequestEstimateItem,
   RequestEstimateReason,
 } from '../../../core/schemas/cost.js';
-import type { BillingAttribution, RateSnapshot } from '../../../core/schemas/cost.js';
-import type { InvocationIdentity } from '../../../core/schemas/invocation-identity.js';
+import type { RateSnapshot } from '../../../core/schemas/cost.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import { runnerIdentityKey } from '../../../core/providers/catalog.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool/catalog.js';
-import { selectPricingForContext } from '../cost-math.js';
-import { resolvePricing, type ResolvedPricing } from '../pricing-resolver.js';
-import type { ModelCacheAccessor } from '../model/resolution.js';
+import { selectPricingForContext } from './math.js';
+import { resolvePricing, type ResolvedPricing } from './pricing.js';
+import type { ModelCacheAccessor } from '../model/runtime-snapshot.js';
+import { identity, unavailable } from './call-billing.js';
 
 /**
  * Rates for one recorded call. A function lets a run that used several models
@@ -256,28 +256,6 @@ function selectedThreshold(pricing: ResolvedPricing, contextTokens: number): num
   return threshold;
 }
 
-const UNKNOWN_BILLING: BillingAttribution = { posture: 'unknown', basis: 'unknown' };
-
-/**
- * Who paid for one call, read from the identity the invocation recorded and
- * from nothing else — a configured preference is not a method, and a tool's
- * catalogued default is not evidence about this call. `InvocationIdentitySchema`
- * is where a basis becomes proof: it already refuses one whose channels
- * disagree, whose evidence id does not match the channel it names, or that
- * claims a subscription covered an api-key invocation. So a proven basis here is
- * proven, and everything else — no identity, no evidence, a channel nobody
- * enforced — is unknown.
- */
-export function deriveCallBilling(identity: InvocationIdentity | undefined): BillingAttribution {
-  const billing = identity?.billing;
-  if (billing === undefined || billing.basis === 'unknown') return UNKNOWN_BILLING;
-  return {
-    posture: billing.posture,
-    basis: billing.basis,
-    ...(billing.evidenceId !== undefined && { evidenceId: billing.evidenceId }),
-  };
-}
-
 function generatedTokensKnown(usage: NonNullable<CallUsageEvidence['usage']>): boolean {
   if (usage.providerTotals?.output !== undefined) return true;
   return reported(usage.counterCoverage, 'output') && reported(usage.counterCoverage, 'reasoning');
@@ -298,50 +276,6 @@ function reported(
 
 function perMillion(tokens: number, ratePer1M: number): number {
   return (tokens / 1_000_000) * ratePer1M;
-}
-
-function unavailable(
-  call: CallUsageEvidence,
-  reasons: RequestEstimateReason[],
-  rates: RateSnapshot | undefined,
-): RequestEstimateItem {
-  return {
-    ...identity(call),
-    amount: null,
-    knownSubtotal: 0,
-    completeness: 'unavailable',
-    reasons,
-    ...(rates !== undefined && { rates }),
-  };
-}
-
-function identity(
-  call: CallUsageEvidence,
-): Pick<
-  RequestEstimateItem,
-  | 'callId'
-  | 'taskId'
-  | 'attempt'
-  | 'role'
-  | 'model'
-  | 'usageBoundary'
-  | 'billing'
-  | 'invocationIdentity'
-> {
-  return {
-    callId: call.callId,
-    ...(call.taskId !== undefined && { taskId: call.taskId }),
-    ...(call.attempt !== undefined && { attempt: call.attempt }),
-    role: call.role,
-    ...((call.invocationIdentity?.model ?? call.model) !== undefined && {
-      model: call.invocationIdentity?.model ?? call.model,
-    }),
-    usageBoundary: call.usageBoundary,
-    billing: deriveCallBilling(call.invocationIdentity),
-    ...(call.invocationIdentity !== undefined && {
-      invocationIdentity: call.invocationIdentity,
-    }),
-  };
 }
 
 function collectReasons(reasons: readonly RequestEstimateReason[]): RequestEstimateReason[] {

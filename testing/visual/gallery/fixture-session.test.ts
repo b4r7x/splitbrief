@@ -35,10 +35,8 @@ const production = vi.hoisted(() => ({
 
 const setupFailure = vi.hoisted(() => ({ armed: false }));
 
-vi.mock('../../../src/engine/runners/prepare-execution/prepare-execution.js', async (original) => ({
-  ...(await original<
-    typeof import('../../../src/engine/runners/prepare-execution/prepare-execution.js')
-  >()),
+vi.mock('../../../src/engine/runners/prepare-execution/prepare.js', async (original) => ({
+  ...(await original<typeof import('../../../src/engine/runners/prepare-execution/prepare.js')>()),
   prepareExecution: production.prepareExecution,
 }));
 vi.mock('../../../src/features/runners/refresh-detection.js', async (original) => ({
@@ -53,8 +51,8 @@ vi.mock('../../../src/engine/providers/catalog-detection.js', async (original) =
   ...(await original<typeof import('../../../src/engine/providers/catalog-detection.js')>()),
   detectProviderCatalog: production.detectProviderCatalog,
 }));
-vi.mock('../../../src/engine/skill-discovery.js', async (original) => ({
-  ...(await original<typeof import('../../../src/engine/skill-discovery.js')>()),
+vi.mock('../../../src/engine/skills/discover.js', async (original) => ({
+  ...(await original<typeof import('../../../src/engine/skills/discover.js')>()),
   discoverSkills: production.discoverSkills,
 }));
 vi.mock('../../../src/lib/clipboard/clipboard.js', async (original) => ({

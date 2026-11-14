@@ -43,7 +43,7 @@ import {
 } from './runner.js';
 import { calculateCostBreakdown } from '../src/engine/providers/cost/breakdown.js';
 import { lookupCatalogModelByModelId } from '../src/engine/providers/model/resolution.js';
-import type { ModelsDevCatalogSnapshot } from '../src/engine/providers/models-dev-cache.js';
+import type { ModelsDevCatalogSnapshot } from '../src/engine/providers/models-dev/cache.js';
 import type { QualityCheckResult } from './scenarios/types.js';
 import type { Summary } from '../src/core/schemas/summary.js';
 import type { EngineEvent } from '../src/engine/events/types.js';

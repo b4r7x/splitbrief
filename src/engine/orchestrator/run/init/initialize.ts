@@ -27,7 +27,7 @@ import {
   resolveCrewDisplayNames,
   labelSeatChange,
 } from '../../../providers/model/display-names.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 import { resumeSeatWait } from '../../escalation/seat/wait.js';
 import { publishWarning } from '../../publish/notice.js';
 import { publishSeatSwitched } from '../../publish/seat.js';

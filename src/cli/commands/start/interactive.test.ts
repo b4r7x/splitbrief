@@ -7,7 +7,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { writeConfigMarker, prepareExecutionMock } from '#testing/helpers/start-command.js';
-import { saveDetectionCache } from '../../../engine/detection/cache.js';
+import { saveDetectionCache } from '../../../engine/detection/cache/store.js';
 import * as initStoresModule from '../../bootstrap/init.js';
 import * as setupModule from '../../setup.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
@@ -17,7 +17,7 @@ import {
   readActiveRecord,
   type ActiveSessionReceipt,
 } from '../../../core/sessions/active-pointer.js';
-import type { PreparationOutcome } from '../../../engine/runners/prepared-execution.js';
+import type { PreparationOutcome } from '../../../engine/runners/prepare-execution/prepared.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../../stores/prompts/approval.js';
 import type {

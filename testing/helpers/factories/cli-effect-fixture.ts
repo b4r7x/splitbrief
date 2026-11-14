@@ -14,7 +14,7 @@ import type { Task } from '../../../src/core/schemas/task.js';
 import {
   runFactoryEffectConformance,
   type CliEffectDeclaration,
-} from '../../../src/engine/runners/cli-tools/contract-harness-effects.js';
+} from '../../../src/engine/runners/cli-tools/contract-harness/effects.js';
 
 const execFileAsync = promisify(execFile);
 

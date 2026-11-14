@@ -6,7 +6,7 @@ import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { RouteAuthState } from '../../../core/runners/route-auth.js';
 import { billingWord } from '../../../core/runners/runner-billing.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { providerOracleCommand } from '../../../engine/runners/cli-tools/provider-oracle.js';
+import { providerOracleCommand } from '../../../engine/runners/cli-tools/probe/provider-oracle.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { localConnectionProvider } from '../local-connection/model.js';
 import { routeDraftOf } from '../model-catalog/option-axis.js';

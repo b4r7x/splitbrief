@@ -3,9 +3,9 @@ import {
   loadDetectionCacheSnapshot,
   loadRememberedSnapshot,
   saveDetectionCache,
-  type RememberedCliCatalog,
-} from './cache.js';
-import { createDetectionCoordinator } from './coordinator.js';
+} from './cache/store.js';
+import type { RememberedCliCatalog } from './cache/schema.js';
+import { createDetectionCoordinator } from './coordinator/create.js';
 import {
   type CliModelSnapshot,
   type DetectionCoordinator,
@@ -35,7 +35,7 @@ import {
   refreshModelsDev,
 } from './models-dev-lane.js';
 import { assertNever } from '../../utils/type-guards.js';
-import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev-cache.js';
+import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev/cache.js';
 import { createOpaqueIdFactory } from '../../utils/opaque-id.js';
 
 export type { DetectionProjection } from './types.js';

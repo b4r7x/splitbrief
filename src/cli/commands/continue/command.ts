@@ -15,7 +15,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
 import { assertResumeTerminal, resumeSavedSession } from './resume.js';
 import { settleRequestedApply } from './settle.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 import { closedChangesSuffix } from '../../../engine/orchestrator/run/close.js';
 import {
   acceptAsIsAction,

@@ -1,6 +1,6 @@
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { PreparationPolicy } from '../../../engine/runners/prepare-execution/types.js';
-import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../engine/runners/prepare-execution/prepared.js';
 import { openApprovalPrompt } from '../../../stores/prompts/approval.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../../stores/project/config.js';

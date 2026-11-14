@@ -1,6 +1,6 @@
 import { defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { formatTaskPrompt } from '../prompt-formatter.js';
+import { formatTaskPrompt } from './task.js';
 import { describe, it, expect } from 'vitest';
 import { buildLanguageContext } from './language-context.js';
 import { buildImplementerSystemPreamble, buildSystemPreamble } from './system.js';

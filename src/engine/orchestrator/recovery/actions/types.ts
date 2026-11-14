@@ -8,7 +8,7 @@ import type {
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { UserMessageInput } from '../../../../core/types/user-input.js';
 import type { EventBus } from '../../../events/types.js';
-import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../providers/model/runtime-snapshot.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'

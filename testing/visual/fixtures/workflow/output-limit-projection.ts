@@ -1,8 +1,6 @@
 import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-projection.js';
-import {
-  boundRunnerCallToolUse,
-  runnerCallLimitWarning,
-} from '../../../../src/engine/calls/output-limit.js';
+import { runnerCallLimitWarning } from '../../../../src/engine/calls/output-limit.js';
+import { boundRunnerCallToolUse } from '../../../../src/engine/calls/bounded-payload.js';
 import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../../../src/engine/calls/warnings.js';
 import { scenarioId } from '../../contracts/identifiers.js';

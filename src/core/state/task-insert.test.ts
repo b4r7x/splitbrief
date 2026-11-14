@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { insertTasks, lineageIdOf } from './task-insert.js';
-import { taskFromSpec } from '../../engine/spec/plan-tasks.js';
+import { taskFromSpec } from '../../engine/spec/plan/tasks.js';
 import { taskId } from '../schemas/task.js';
 import type { TaskSpec } from '../schemas/plan.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

@@ -1,7 +1,5 @@
-import {
-  buildFinalReviewPrompt,
-  type FinalReviewPromptInput,
-} from '../../../spec/prompts/review.js';
+import { buildFinalReviewPrompt } from '../../../spec/prompts/review/final.js';
+import type { FinalReviewPromptInput } from '../../../spec/prompts/review/types.js';
 import type { PromptLimit } from '../../../runners/input-limit.js';
 
 export type ReviewInputDrop = Readonly<{ trim: 'task-evidence'; items: readonly string[] }>;

@@ -37,7 +37,7 @@ import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js'
 import { continueRun } from '../../../engine/orchestrator/run/continue.js';
 import { hydrateResume } from '../resume/hydration.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/context-overflow.js';
-import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
+import type { PreparedExecution } from '../../../engine/runners/prepare-execution/prepared.js';
 import {
   killAllProcesses,
   registeredProcessCount,

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { basename, dirname } from 'node:path';
 import { parsePlanJson } from '../../core/sessions/plan-file.js';
 import { writeSpecFile } from '../../core/sessions/spec-files.js';
-import { blocksPlan, checkPlan } from '../../engine/spec/plan-checks.js';
+import { blocksPlan, checkPlan } from '../../engine/spec/plan/checks.js';
 import { configStore } from '../../stores/project/config.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { externalEditRequestStore } from '../../stores/ui/external-edit-request.js';

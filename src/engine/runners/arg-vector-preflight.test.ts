@@ -15,13 +15,13 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import {
   type ArgVectorPreflightCheckInput,
-  checkRunnerArgVector,
   collectArgVectorPreflightChecks,
-  semanticConfiguredArgViolations,
-} from './arg-vector-preflight.js';
-import { antigravityPlannerAdapter } from './cli-tools/antigravity.js';
-import { buildClaudeArgs } from './claude/args.js';
-import { codexPlannerAdapter } from './cli-tools/codex.js';
+} from './arg-vector/preflight.js';
+import { semanticConfiguredArgViolations } from './arg-vector/authority.js';
+import { checkRunnerArgVector } from './arg-vector/check.js';
+import { antigravityPlannerAdapter } from './cli-tools/antigravity/adapter.js';
+import { buildClaudeArgs } from '../planners/claude-code/args.js';
+import { codexPlannerAdapter } from './cli-tools/codex/adapter.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import { abortError } from '../../utils/abort.js';
 

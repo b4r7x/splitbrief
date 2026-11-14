@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunnerCallEvent } from '../../../src/engine/calls/types.js';
-import { spawnAndCollect } from '../../../src/engine/streaming/spawn-collect.js';
+import { spawnAndCollect } from '../../../src/engine/streaming/spawn-collect/collect.js';
 
 function forceGc(): void {
   globalThis.gc?.();

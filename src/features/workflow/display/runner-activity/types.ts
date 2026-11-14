@@ -1,5 +1,5 @@
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import type { ModelCacheAccessor } from '../../../../engine/providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../../engine/providers/model/runtime-snapshot.js';
 import type { ActivityDisplayValueFit } from '../activity-text.js';
 
 export type RunnerActivityLedgerTone = 'info' | 'success' | 'warning' | 'error' | 'textDim';

@@ -6,7 +6,7 @@ import {
 } from './detection-adapter.js';
 import { modelCacheStore } from './model-cache/state.js';
 import { detectionStore } from './detection.js';
-import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
+import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev/cache.js';
 
 // Persisted context keys are `<source>|<percent-encoded context>`; ':' is not
 // in the accepted alphabet, so a fixture must use the same shape as a real key.

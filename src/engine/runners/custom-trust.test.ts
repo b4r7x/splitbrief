@@ -14,17 +14,16 @@ import type { CliExecutableReceipt } from '../../core/discovery/detection/execut
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { prepareCustomRunnerAdmission } from './custom-admission.js';
-import { buildCustomRunnerDisclosure } from './custom-runner-disclosure.js';
+import { prepareCustomRunnerAdmission } from './custom/admission.js';
+import { buildCustomRunnerDisclosure } from './custom/disclosure.js';
 import {
-  customRunnerSecurityPosture,
-  inlineRunnerSecurityPosture,
   markCustomRunnerTrusted,
   readCustomRunnerTrust,
   resolveCustomRunnerAdmissionScope,
   resolveCustomRunnerTrustFile,
-} from './custom-trust.js';
-import { resolveCustomExecutable } from './resolve-cli-executable.js';
+} from './custom/trust.js';
+import { customRunnerSecurityPosture, inlineRunnerSecurityPosture } from './custom/posture.js';
+import { resolveCustomExecutable } from './cli-executable/custom.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 let directories: string[] = [];

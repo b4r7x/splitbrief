@@ -4,7 +4,7 @@ import type { SavedCatalog } from '../../../core/discovery/catalog-read-merge.js
 import type { CliProviderAuth } from '../../../core/discovery/detection/auth.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import { routeAuthState } from '../../../core/runners/route-auth.js';
-import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/catalog.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/suggestions.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { isOptionFamily, routePrefixesOf } from './option-axis.js';
 import type { ModelOption } from './recency.js';

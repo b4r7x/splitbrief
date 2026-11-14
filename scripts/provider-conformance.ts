@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
-import { PROVIDER_CONFORMANCE_EXIT_CODES } from '../src/engine/providers/conformance.js';
-import { runProductionProviderConformance } from '../src/engine/providers/conformance-production.js';
-import { runRawProviderConformance } from '../src/engine/providers/conformance-raw.js';
+import { PROVIDER_CONFORMANCE_EXIT_CODES } from '../src/engine/providers/conformance/shared.js';
+import { runProductionProviderConformance } from '../src/engine/providers/conformance/production.js';
+import { runRawProviderConformance } from '../src/engine/providers/conformance/raw.js';
 import { parseConformanceArguments } from './conformance-arguments.js';
 
 type ParsedArguments =

@@ -9,7 +9,7 @@ import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import {
   releasePreparedExecutionOwnership,
   type PreparationOutcome,
-} from '../../../engine/runners/prepared-execution.js';
+} from '../../../engine/runners/prepare-execution/prepared.js';
 import { assertNoLiveSessionForCli } from '../../sessions/resolve.js';
 import { prepareStartOutcome } from './prepare.js';
 import { preparedExecutionOrThrow } from '../../preparation.js';

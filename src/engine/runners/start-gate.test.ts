@@ -9,16 +9,14 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import {
   admitFreshCliStart,
   assertCliStartGate,
-  callAdmittedCli,
-  createCliSeatGates,
   runnerGateFor,
   type CliStartGate,
-  type CliToolRecheck,
 } from './start-gate.js';
+import { callAdmittedCli, createCliSeatGates, type CliToolRecheck } from './seat-gates.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { error } from '../../utils/error.js';
-import type { RunnerGate, RunnerGateExpectation } from './prepared-execution.js';
-import type { AdmittedCustomRunnerInvocation } from './custom-launchability.js';
+import type { RunnerGate, RunnerGateExpectation } from './prepare-execution/prepared.js';
+import type { AdmittedCustomRunnerInvocation } from './custom/launchability.js';
 
 const EXECUTABLE_CONTENT_DIGEST = 'a'.repeat(64);
 

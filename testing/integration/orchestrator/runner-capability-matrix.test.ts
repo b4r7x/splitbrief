@@ -5,12 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableReceipt } from '../../../src/core/discovery/detection/executable.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool/types.js';
 import { createPlanner } from '../../../src/engine/runners/factory.js';
-import { executableChangedMessage } from '../../../src/engine/runners/resolve-cli-executable.js';
-import { codexPlannerAdapter } from '../../../src/engine/runners/cli-tools/codex.js';
-import { opencodePlannerAdapter } from '../../../src/engine/runners/cli-tools/opencode.js';
-import { CLI_CONFORMANCE_EXIT_CODES } from '../../../src/engine/runners/cli-tools/contract-harness.js';
-import { runFactoryEffectConformance } from '../../../src/engine/runners/cli-tools/contract-harness-effects.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
+import { executableChangedMessage } from '../../../src/engine/runners/cli-executable/identity.js';
+import { codexPlannerAdapter } from '../../../src/engine/runners/cli-tools/codex/adapter.js';
+import { opencodePlannerAdapter } from '../../../src/engine/runners/cli-tools/opencode/adapter.js';
+import { CLI_CONFORMANCE_EXIT_CODES } from '../../../src/engine/runners/cli-tools/contract-harness/harness.js';
+import { runFactoryEffectConformance } from '../../../src/engine/runners/cli-tools/contract-harness/effects.js';
+import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import {
   effectScenario,
   fixtureExecutable,

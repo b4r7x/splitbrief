@@ -1,5 +1,5 @@
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
-import { applyRunnerCallUsageSample } from '../../calls/usage.js';
+import { applyRunnerCallUsageSample } from '../../calls/usage/accumulate.js';
 import type { EngineEvent } from '../../events/types.js';
 
 type RunnerCallEngineEvent = Extract<EngineEvent, { type: `runner_call_${string}` }>;

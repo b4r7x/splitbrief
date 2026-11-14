@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ChatCompletionChunk } from 'openai/resources/chat/completions';
 import { runnerCallUnknownUpstreamPreview } from '../../calls/unknown-upstream.js';
-import type { RunnerCallRecorder } from '../../calls/recorder.js';
+import type { RunnerCallRecorder } from '../../calls/recorder/types.js';
 
 export const StreamFunctionCallDeltaSchema = z.looseObject({
   name: z.string().optional(),

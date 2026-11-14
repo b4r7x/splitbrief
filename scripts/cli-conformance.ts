@@ -6,10 +6,10 @@ import {
 import {
   CLI_CONFORMANCE_EXIT_CODES,
   type CliConformanceRole,
-} from '../src/engine/runners/cli-tools/contract-harness.js';
-import { runCwdCliConformance } from '../src/engine/runners/cli-tools/contract-harness-cwd.js';
-import { runProductionCliConformance } from '../src/engine/runners/cli-tools/contract-harness-production.js';
-import { runRawCliConformance } from '../src/engine/runners/cli-tools/contract-harness-raw.js';
+} from '../src/engine/runners/cli-tools/contract-harness/harness.js';
+import { runCwdCliConformance } from '../src/engine/runners/cli-tools/contract-harness/cwd.js';
+import { runProductionCliConformance } from '../src/engine/runners/cli-tools/contract-harness/production.js';
+import { runRawCliConformance } from '../src/engine/runners/cli-tools/contract-harness/raw.js';
 import { parseConformanceArguments } from './conformance-arguments.js';
 
 type ParsedArguments =

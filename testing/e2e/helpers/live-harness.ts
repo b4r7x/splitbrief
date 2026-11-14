@@ -21,7 +21,7 @@ import type {
   OrchestratorCallbacks,
   WorkflowSinks,
 } from '../../../src/engine/orchestrator/types.js';
-import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepared-rollback.js';
 import {
   DRIFT_REPORT_FILE,

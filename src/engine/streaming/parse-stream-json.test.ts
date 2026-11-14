@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { formatUsageLimitWarning } from '../../core/recovery/usage-limit-step.js';
-import { createStreamParser, parseStreamLine } from './parse-stream-json.js';
+import { parseStreamLine } from './parse/stream-json/line.js';
+import { createStreamParser } from './parse/stream-json/parser.js';
 
 function jsonLine(value: unknown): string {
   return JSON.stringify(value);

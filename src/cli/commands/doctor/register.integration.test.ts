@@ -29,17 +29,15 @@ import type { RunnerAvailabilityFact } from '../../../core/readiness/checks/avai
 import type { ReadinessCheck } from '../../../core/readiness/types.js';
 import { CliExecutableReceiptSchema } from '../../../core/discovery/detection/executable.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
-import {
-  detectRunnerEvidence,
-  runnerDiscoveryContextKey,
-} from '../../../engine/detection/runner-evidence.js';
-import { collectRunnerAdmissionChecks } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { detectRunnerEvidence } from '../../../engine/detection/runner-evidence/detect.js';
+import { runnerDiscoveryContextKey } from '../../../engine/detection/context-key.js';
+import { collectRunnerAdmissionChecks } from '../../../engine/runners/prepare-execution/prepare.js';
 import type { SeatProbeCall } from './seat-probe.js';
 import { registerDoctorCommand } from './register.js';
 import type { DoctorDeps } from './register.js';
 import { detectConfiguredCliReadiness } from '../../configured-readiness.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../../../engine/constants.js';
-import { saveDetectionCache } from '../../../engine/detection/cache.js';
+import { saveDetectionCache } from '../../../engine/detection/cache/store.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
@@ -47,9 +45,9 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliReadinessFactsFor } from '#testing/helpers/factories/detection.js';
 
 // Reading a tool's model list spawns the tool; a case that counts the reads answers them itself.
-vi.mock('../../../engine/detection/runner-evidence.js', async (importOriginal) => {
+vi.mock('../../../engine/detection/runner-evidence/detect.js', async (importOriginal) => {
   const original =
-    await importOriginal<typeof import('../../../engine/detection/runner-evidence.js')>();
+    await importOriginal<typeof import('../../../engine/detection/runner-evidence/detect.js')>();
   return { ...original, detectRunnerEvidence: vi.fn(original.detectRunnerEvidence) };
 });
 

@@ -12,7 +12,7 @@ import { basename, delimiter, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ConfigSchema } from '../../core/schemas/config.js';
 import { matches } from '../../utils/error.js';
-import { customRunnerAdmissionError } from './custom-launchability.js';
+import { customRunnerAdmissionError } from './custom/launchability.js';
 import { checkRunnerTrust, rejectUntrustedRunners } from './trust.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 

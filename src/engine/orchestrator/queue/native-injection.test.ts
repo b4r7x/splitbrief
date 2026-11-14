@@ -18,7 +18,7 @@ import { addUsageAndSave } from '../state-ops/usage.js';
 import { makeResearchingState, setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { trustedShimGate } from '#testing/helpers/command-shim.js';
-import { createClaudeCodePlanner } from '../../planners/claude-code.js';
+import { createClaudeCodePlanner } from '../../planners/claude-code/planner.js';
 import { withPlannerCallPublishing } from '../run/call-publishing.js';
 import { drainAndFormat } from '../planning/queue-drain.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';

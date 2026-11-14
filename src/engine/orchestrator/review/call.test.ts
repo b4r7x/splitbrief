@@ -7,7 +7,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import type { Reviewer } from '../../reviewers/types.js';
+import type { Reviewer } from '../../planners/reviewer.js';
 import type { TypedCallContext } from '../../planners/types.js';
 import type { RunnerCallResult } from '../../calls/types.js';
 import { createSteeringPort } from '../../calls/steering.js';

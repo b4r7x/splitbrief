@@ -4,10 +4,10 @@ import type { CliExecutableIdentity } from '../../core/discovery/detection/execu
 import { admitStart } from '../../core/discovery/runner-evidence.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import type { CliAuthChannelId } from '../../core/runners/cli-tool/auth-channels.js';
-import type { CliReadinessProbeEvidence } from '../runners/cli-tools/cli-probe-evidence.js';
-import type { probeDeclaredCliReadinessEvidence } from '../runners/cli-tools/readiness-probe.js';
-import type { CliExecutableResolver } from '../runners/resolve-cli-executable.js';
-import { detectRunnerEvidence } from './runner-evidence.js';
+import type { CliReadinessProbeEvidence } from '../runners/cli-tools/probe/evidence.js';
+import type { probeDeclaredCliReadinessEvidence } from '../runners/cli-tools/probe/declared-readiness.js';
+import type { CliExecutableResolver } from '../runners/cli-executable/types.js';
+import { detectRunnerEvidence } from './runner-evidence/detect.js';
 
 const TESTED_VERSION = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
 

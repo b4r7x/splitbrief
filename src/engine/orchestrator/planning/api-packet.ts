@@ -1,13 +1,10 @@
-import { buildApiPlanningContext } from '../../planners/api-context.js';
+import { buildApiPlanningContext } from '../../planners/api-context/build.js';
 import { buildProjectContext } from '../../planners/context.js';
 import type { PriorMessage } from '../../planners/types.js';
-import { apiContextError } from '../../providers/api-context-diagnostic.js';
-import {
-  apiBudgetError,
-  BASE_OUTPUT_RESERVE_TOKENS,
-  measureApiBudget,
-} from '../../providers/api-budget.js';
-import type { ApiRuntimeContext } from '../../providers/runtime-context.js';
+import { apiContextError } from '../../providers/api/context-diagnostic.js';
+import { apiBudgetError } from '../../providers/api/admission.js';
+import { BASE_OUTPUT_RESERVE_TOKENS, measureApiBudget } from '../../providers/api/budget.js';
+import type { ApiRuntimeContext } from '../../providers/api/runtime-context.js';
 
 /**
  * A transport repair sends the turn again with the failed answer. The packet leaves one output

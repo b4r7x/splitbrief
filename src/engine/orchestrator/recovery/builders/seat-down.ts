@@ -18,10 +18,13 @@ import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js
 import type { Task } from '../../../../core/schemas/task.js';
 import type { SeatSwitchRecord } from '../../../../core/schemas/workflow/seat.js';
 import { recordedSeatIdentityInput } from '../../../providers/model/display-names.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
-import { runnerAccountDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
-import type { SeatFailureClassification } from '../../../runners/seat-failure.js';
-import { usageLimitAdvice } from '../../../runners/usage-limit.js';
+import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
+import {
+  runnerAccountDisplayName,
+  runnerLoginInstruction,
+} from '../../../runners/seat-failure/auth.js';
+import type { SeatFailureClassification } from '../../../runners/seat-failure/classify.js';
+import { usageLimitAdvice } from '../../../runners/seat-failure/usage-limit.js';
 import type { SeatSwapContext } from '../seat/swap-context.js';
 import { haltActions, chooseRecommended } from './actions.js';
 import { taskFiles, attemptDetails } from './details.js';

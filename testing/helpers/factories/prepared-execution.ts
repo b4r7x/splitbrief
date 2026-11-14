@@ -6,7 +6,7 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
   type RunnerGate,
-} from '../../../src/engine/runners/prepared-execution.js';
+} from '../../../src/engine/runners/prepare-execution/prepared.js';
 import { makeRunnerGate, testCliSeats } from '../runner-gate.js';
 
 function seatGates(config: Config, preparationId: string): ReadonlyArray<RunnerGate> {

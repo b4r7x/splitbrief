@@ -8,7 +8,7 @@ import { reconcileTokenUsage } from '../../../engine/orchestrator/summary/usage-
 import { addRunnerCallUsageToTokenUsage } from '../../../engine/orchestrator/tokens.js';
 import { isReviewSeatCall } from '../../../engine/calls/review-seat.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
-import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/runtime-snapshot.js';
 import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { ZERO_TOKEN_USAGE } from '../../../core/schemas/tokens.js';

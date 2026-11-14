@@ -4,11 +4,14 @@ import { describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
 import { parseEngineEvent } from '../events/schema.js';
-import { createRunnerCallRecorder } from '../calls/recorder.js';
+import { createRunnerCallRecorder } from '../calls/recorder/create.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
-import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './cli-tools/claude-code.js';
+import {
+  claudeCodeImplementerAdapter,
+  claudeCodePlannerAdapter,
+} from './cli-tools/claude-code/adapter.js';
 import type { CliInvocation, CliProtocolEvent } from './cli-tools/contract.js';
-import { recordCliProtocolEvent } from './cli-tools/process-invoke.js';
+import { recordCliProtocolEvent } from './cli-tools/process-invoke/protocol-event.js';
 import { createCliTextForwarder, invokeCliAdapter } from './invoke-cli-adapter.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;

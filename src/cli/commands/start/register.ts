@@ -13,7 +13,7 @@ import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import { runHeadlessStart } from './streaming.js';
 import { runInteractiveStart } from './interactive.js';
 import type { StartDeps } from './types.js';
-import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 
 export const defaultStartDeps: StartDeps = {
   runHeadless,

@@ -8,7 +8,7 @@ import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { buildRun } from './run-and-cost.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 
 describe('buildRun seat identity kinds', () => {
   function makeRun(summary: Parameters<typeof buildRun>[0]['summary'], state: WorkflowState) {

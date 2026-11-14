@@ -4,7 +4,7 @@ import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import type { PlanAnswer, PlanResult } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { typedOutputError, type RequestTypedResult } from '../../runners/typed-output.js';
-import type { PlanCheckError } from '../../spec/plan-checks.js';
+import type { PlanCheckError } from '../../spec/plan/types.js';
 import { runPlanSession, type PlanTurn } from './plan-session.js';
 
 const questions = (round: number): PlanResult => ({

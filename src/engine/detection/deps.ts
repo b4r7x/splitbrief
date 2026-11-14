@@ -16,7 +16,7 @@ import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { includes } from '../../utils/type-guards.js';
 import { detectAll } from './detect.js';
-import { runnerDiscoveryContextKey } from './runner-evidence.js';
+import { runnerDiscoveryContextKey } from './context-key.js';
 import {
   cloneConfiguredProviderOutcome,
   configuredProviderConnection,
@@ -29,7 +29,7 @@ import type {
   DetectionSourceContexts,
   ResolvedDetectionSourceContexts,
 } from './service.js';
-import { fetchModelsDevCatalogWithCache } from '../providers/models-dev.js';
+import { fetchModelsDevCatalogWithCache } from '../providers/models-dev/catalog.js';
 import { discoverAllCliTools } from '../providers/discovery.js';
 import { detectProviderCatalog } from '../providers/catalog-detection.js';
 import type { ProviderOverrides } from '../providers/types.js';

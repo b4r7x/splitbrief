@@ -17,9 +17,9 @@ import {
   hydrateModelsDevCatalogIntoStores,
 } from '../../stores/discovery/detection-adapter.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { loadRememberedPresentationSnapshot } from '../../engine/detection/cache.js';
-import { loadModelsDevCatalogCache } from '../../engine/providers/models-dev-cache.js';
-import { discoverSkills } from '../../engine/skill-discovery.js';
+import { loadRememberedPresentationSnapshot } from '../../engine/detection/cache/store.js';
+import { loadModelsDevCatalogCache } from '../../engine/providers/models-dev/cache.js';
+import { discoverSkills } from '../../engine/skills/discover.js';
 import type { Config } from '../../core/schemas/config.js';
 import { loadConfig } from '../../core/config/load/io.js';
 

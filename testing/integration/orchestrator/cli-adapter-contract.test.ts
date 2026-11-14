@@ -27,9 +27,9 @@ import {
   CLI_IMPLEMENTER_ADAPTERS,
   lookupCliPlannerAdapter,
 } from '../../../src/engine/runners/cli-tools/registry.js';
-import { probeCliReadiness } from '../../../src/engine/runners/cli-tools/readiness-probe.js';
+import { probeCliReadiness } from '../../../src/engine/runners/cli-tools/probe/readiness.js';
 import { invokeCliAdapter } from '../../../src/engine/runners/invoke-cli-adapter.js';
-import { resolveCliExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
+import { resolveCliExecutable } from '../../../src/engine/runners/cli-executable/resolve.js';
 import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';

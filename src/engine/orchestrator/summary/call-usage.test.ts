@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CallUsageEvidenceSchema } from '../../../core/schemas/usage-evidence.js';
 import { projectRunnerCallEvents } from '../../calls/event-projection.js';
-import { createRunnerCallRecorder } from '../../calls/recorder.js';
+import { createRunnerCallRecorder } from '../../calls/recorder/create.js';
 import type { RunnerCallEvent, RunnerCallUsage } from '../../calls/types.js';
 import { EngineEventSchema } from '../../events/schema.js';
 import type { EngineEvent } from '../../events/types.js';

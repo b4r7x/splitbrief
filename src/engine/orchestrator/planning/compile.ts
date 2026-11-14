@@ -6,14 +6,11 @@ import { writePlanJson, parsePlanJson } from '../../../core/sessions/plan-file.j
 import { readSpecFileOrEmpty, writeSpecFile } from '../../../core/sessions/spec-files.js';
 import { readManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { detectStack } from '../../../core/validation/stacks/registry.js';
-import {
-  renderCheckNotes,
-  type PlanCheckError,
-  checkPlan,
-  blocksPlan,
-} from '../../spec/plan-checks.js';
-import { formatPlanMarkdown } from '../../spec/plan-markdown.js';
-import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { checkPlan, blocksPlan } from '../../spec/plan/checks.js';
+import { renderCheckNotes } from '../../spec/plan/render-checks.js';
+import type { PlanCheckError } from '../../spec/plan/types.js';
+import { formatPlanMarkdown } from '../../spec/plan/markdown.js';
+import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { writeAndPublishPlanArtifacts } from '../plan-files/write.js';
 import { publishWarning } from '../publish/notice.js';
 import { transitionAndSave } from '../state-ops/transition.js';

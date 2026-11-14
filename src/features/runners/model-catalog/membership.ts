@@ -1,7 +1,5 @@
-import {
-  CATALOG_SUGGESTION_MEMBERSHIP,
-  type ResolvedModelMembership,
-} from '../../../engine/providers/model/catalog.js';
+import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/suggestions.js';
+import type { ResolvedModelMembership } from '../../../engine/providers/model/types.js';
 import type { ModelOption } from './recency.js';
 
 const MEMBERSHIP_RANK = {

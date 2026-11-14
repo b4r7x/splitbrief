@@ -12,7 +12,7 @@ import {
   seatIdentitiesFromConfig,
   writeSeatIdentities,
 } from '../../../src/core/state/seats/record.js';
-import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
+import { saveDetectionCache } from '../../../src/engine/detection/cache/store.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

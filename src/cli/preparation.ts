@@ -9,7 +9,7 @@ import type { PreparationPolicy } from '../engine/runners/prepare-execution/type
 import type {
   PreparedExecution,
   PreparationOutcome,
-} from '../engine/runners/prepared-execution.js';
+} from '../engine/runners/prepare-execution/prepared.js';
 import type { CustomRunnerAdmissionPolicy } from '../engine/runners/types.js';
 import { warnStderr } from '../lib/warn.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';

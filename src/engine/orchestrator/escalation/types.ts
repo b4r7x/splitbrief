@@ -10,7 +10,7 @@ import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
 import type { IsolationRole } from '../isolation/types.js';
-import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import { HAND_BACK_MAX_CHARS } from '../../../core/pipeline-spec/ladder.js';
 
 export type RetryFailureDetail = Readonly<{

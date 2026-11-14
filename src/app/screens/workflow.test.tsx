@@ -41,7 +41,7 @@ import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init/opti
 import {
   parsePreparedConfig,
   type PreparedExecution,
-} from '../../engine/runners/prepared-execution.js';
+} from '../../engine/runners/prepare-execution/prepared.js';
 import {
   getContentTopRow,
   railConnectorString,
