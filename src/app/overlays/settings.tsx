@@ -198,10 +198,7 @@ export function SettingsOverlay() {
         rowBudget={listBudget}
         onRowActivate={activate}
         pinnedHead={pinnedHead}
-        section={{
-          ...listSection,
-          renderHeader: (section) => <Text color={t.textDim}>{section}</Text>,
-        }}
+        section={listSection}
         decorations={{
           hasAfter: decorations.after,
           renderAfter: () => verdictLine,

@@ -255,7 +255,6 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
         rowBudget={budget}
         section={{
           by: sectionOf,
-          renderHeader: (label) => <Text color={t.textDim}>{label}</Text>,
           gapBetweenSections: showGaps,
           headerFor: (label) => showHeaders && label !== CONTINUE_SECTION,
         }}

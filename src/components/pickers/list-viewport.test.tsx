@@ -49,7 +49,6 @@ describe('ListViewport', () => {
         section={{
           by: (item) => item.scope,
           gapBetweenSections: true,
-          renderHeader: (section) => <Text>{section}</Text>,
         }}
         renderItem={(item) => <Text>{item.id}</Text>}
       />,
@@ -87,7 +86,6 @@ describe('ListViewport', () => {
         maxVisible={5}
         section={{
           by: (item) => item.scope,
-          renderHeader: (section) => <Text>{section}</Text>,
         }}
         renderItem={(item) => <Text>{item.id}</Text>}
       />,
@@ -162,7 +160,6 @@ describe('ListViewport', () => {
         section={{
           by: (item) => item.scope,
           gapBetweenSections: true,
-          renderHeader: (section) => <Text>{section}</Text>,
         }}
         renderItem={(item, { globalIndex }) => <Text>{`${item.id}:${globalIndex}`}</Text>}
       />,
@@ -172,6 +169,38 @@ describe('ListViewport', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('g1:2');
     expect(frame).toContain('↓ 2 more');
+
+    ui.unmount();
+  });
+
+  it('draws each section label as one header line, cut at the width and stripped of terminal controls', async () => {
+    const items = [
+      { id: 'p1', scope: 'pro\x1b[31mject' },
+      { id: 'g1', scope: 'a global section label far wider than the list' },
+    ];
+
+    const ui = renderFeature(
+      <ListViewport
+        items={items}
+        selectedIndex={0}
+        width={20}
+        getKey={(item) => item.id}
+        rowBudget={4}
+        section={{ by: (item) => item.scope }}
+        renderItem={(item) => <Text>{item.id}</Text>}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    const lines = nonEmptyLines(frame).map((line) => line.trimEnd());
+    expect(frame).not.toContain('\x1b[31m');
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toBe('project');
+    expect(lines[1]).toBe('p1');
+    expect(lines[2]).toMatch(/^a global section.*…$/);
+    expect(lines[2]?.length).toBeLessThanOrEqual(20);
+    expect(lines[3]).toBe('g1');
 
     ui.unmount();
   });
@@ -306,7 +335,6 @@ describe('ListViewport scrollbar', () => {
         rowBudget={5}
         section={{
           by: (item) => item.scope,
-          renderHeader: (section) => <Text>{section}</Text>,
         }}
         renderItem={(item) => <Text>{item.id}</Text>}
       />,

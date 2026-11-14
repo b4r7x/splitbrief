@@ -195,10 +195,7 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
           onRowActivate={(index) => {
             void runResult(index);
           }}
-          section={{
-            ...section,
-            renderHeader: (label) => <Text color={t.textDim}>{label}</Text>,
-          }}
+          section={section}
           placeholder={<Text color={t.textDim}>No matching commands</Text>}
           renderItem={(result, ctx) => {
             // A command or skill row shares one label column so the description edge holds still

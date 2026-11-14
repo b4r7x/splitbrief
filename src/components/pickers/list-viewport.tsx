@@ -12,10 +12,10 @@ import {
 import { ScrollIndicator } from '../scroll-indicator.js';
 import { computeListDisplayWindow } from './scroll-window.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from './row-zone.js';
+import { ListGroupHeader } from '../list-row/row.js';
 
 export interface ListSectionConfig<T> {
   by: (item: T) => string;
-  renderHeader: (section: string, index: number) => ReactNode;
   gapBetweenSections?: boolean | undefined;
   headerFor?: ((section: string) => boolean) | undefined;
 }
@@ -161,7 +161,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
           case 'header':
             return (
               <Box key={`header-${slot.section}-${slot.itemIndex}`}>
-                {section?.renderHeader(slot.section, i)}
+                <ListGroupHeader label={slot.section} />
               </Box>
             );
           case 'gap':

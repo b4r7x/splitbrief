@@ -211,13 +211,8 @@ export function SkillsPicker() {
         skills.length === 0 ? <ScanRoots /> : <Text color={t.textDim}>No matching skills</Text>
       }
       section={{
-        by: (skill) => skill.scope,
+        by: (skill) => SECTION_LABELS[skill.scope],
         gapBetweenSections: true,
-        renderHeader: (section) => (
-          <Text color={t.textDim}>
-            {section === 'project' ? SECTION_LABELS.project : SECTION_LABELS.global}
-          </Text>
-        ),
       }}
       renderItem={(skill, { isCursor, innerWidth }) => {
         const nameColWidth = Math.max(8, Math.min(26, Math.floor(innerWidth / 4)));

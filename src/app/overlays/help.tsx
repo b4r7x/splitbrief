@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Box, useInput } from 'ink';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
-import { ListGroupHeader, ListRow } from '../../components/list-row/row.js';
+import { ListRow } from '../../components/list-row/row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { CLOSE_HINT, formatKeyHints, SCROLL_HINT } from '../../components/key-legend.js';
@@ -173,7 +173,6 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
           section={{
             by: (row) => row.section,
             headerFor: () => listBudget >= SECTION_HEADER_MIN_ROWS,
-            renderHeader: (label) => <ListGroupHeader label={label} />,
           }}
           renderItem={(row, ctx) => {
             // Command names all fit the column, so it never moves for them. A keyboard chord is
