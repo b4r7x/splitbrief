@@ -1,6 +1,7 @@
+import { revisionsMatch } from '../../../lib/fs/atomic-write/revision.js';
 import type { ConfigRevision } from '../../../lib/fs/atomic-write/types.js';
 import type { StateOperationConflictData, StateOperationExpectedRevision } from './errors.js';
-import { type StateHead, revisionsMatch } from './head.js';
+import type { StateHead } from './head.js';
 
 type ExpectedIdentity = Readonly<{
   stateRevision: number | null;

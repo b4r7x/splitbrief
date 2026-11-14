@@ -1,7 +1,5 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import { confinedExists, confinedReadFileAsync } from '../../../../lib/fs/confined.js';
-import { assertPathConfined, assertWritablePathConfined } from '../../../../lib/fs/confinement.js';
+import { assertPathConfined } from '../../../../lib/fs/confinement.js';
 
 const PATH_CONFINEMENT_ERROR_KINDS = new Set([
   'path-confined-escape',
@@ -40,22 +38,6 @@ export async function readCurrentFileContent(
   assertPathConfined(file, projectDir);
   if (!confinedExists(projectDir, file)) return null;
   return confinedReadFileAsync(projectDir, file);
-}
-
-export async function writeCurrentFileContent(
-  projectDir: string,
-  file: string,
-  content: string | null,
-): Promise<void> {
-  assertWritablePathConfined(file, projectDir);
-  const filePath = join(projectDir, file);
-  if (content === null) {
-    await rm(filePath, { force: true });
-    return;
-  }
-  await mkdir(dirname(filePath), { recursive: true });
-  assertWritablePathConfined(file, projectDir);
-  await writeFile(filePath, content, 'utf-8');
 }
 
 export { isPathConfinementError };

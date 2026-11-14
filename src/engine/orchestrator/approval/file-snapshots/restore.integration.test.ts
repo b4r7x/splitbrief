@@ -199,7 +199,7 @@ describe('restoreDirtyFilesFromSnapshot', () => {
     createTestGitRepo(dir);
     try {
       // The file is absent at snapshot time, committed inside the window, so the
-      // committed-leg path drives the restore through writeCurrentFileContent(null).
+      // committed-leg path drives the restore through writeConfinedEntry with an absent entry.
       const snapshot = await getChangedFilesSnapshot(dir);
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(dir, 'src', 'added.ts'), 'export const added = true;\n');

@@ -1157,6 +1157,46 @@ describe('createDetectionService', () => {
     });
   });
 
+  it('reports a failed catalog read after a snapshot with the snapshot generation, request and check time', async () => {
+    const clock = createClock();
+    let fail = false;
+    const initialCatalog: ModelsDevCatalog = {
+      openai: {
+        id: 'openai',
+        models: { 'gpt-test': { id: 'gpt-test' } },
+      },
+    };
+    const deps = makeDeps({
+      now: clock.now,
+      fetchModelsDevCatalog: async () => {
+        if (!fail) return modelsDevOutcome(initialCatalog);
+        throw new Error('Models.dev request failed');
+      },
+    });
+
+    const loaded = await service.loadDetection({ deps });
+    const first = outcomes(loaded).modelsDev;
+    if (first.kind !== 'fresh') {
+      throw new Error(`Expected fresh initial models.dev outcome, got ${first.kind}.`);
+    }
+
+    clock.advance(1_000);
+    fail = true;
+    const refreshed = await service.refreshDetection({ deps });
+    const failed = outcomes(refreshed).modelsDev;
+
+    expect(failed).toMatchObject({
+      kind: 'failed',
+      generation: first.snapshot.generation + 3,
+      requestId: first.snapshot.requestId + 3,
+      checkedAt: clock.now(),
+    });
+    if (failed.kind !== 'failed') {
+      throw new Error(`Expected failed models.dev outcome, got ${failed.kind}.`);
+    }
+    expect(failed.checkedAt).not.toBe(first.snapshot.fetchedAt);
+  });
+
   it('invalidates explicitly without making manual refresh delete snapshots first', async () => {
     const deps = makeDeps();
 

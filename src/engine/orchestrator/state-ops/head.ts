@@ -22,16 +22,6 @@ export function workflowStatePath(ref: SessionRef): string {
   return join(realpathSync(sessionDir(ref.projectDir, ref.sessionId)), STATE_FILE);
 }
 
-export function revisionsMatch(left: ConfigRevision, right: ConfigRevision): boolean {
-  return (
-    left.rawSha256 === right.rawSha256 &&
-    left.fileIdentity.dev === right.fileIdentity.dev &&
-    left.fileIdentity.ino === right.fileIdentity.ino &&
-    left.fileIdentity.size === right.fileIdentity.size &&
-    left.fileIdentity.mtimeNs === right.fileIdentity.mtimeNs
-  );
-}
-
 export function readStateHead(ref: SessionRef): StateHead | null {
   const path = workflowStatePath(ref);
   if (!existsSync(path)) return null;

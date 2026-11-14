@@ -208,15 +208,6 @@ export async function refreshModelsDev(
           failure: cacheOutcome.failure,
         };
       case 'stale':
-        return {
-          kind: 'failed',
-          source: 'models-dev',
-          contextKey: outer.snapshot.contextKey,
-          generation: outer.snapshot.generation,
-          requestId: outer.snapshot.requestId,
-          checkedAt: outer.snapshot.validatedAt,
-          failure: cacheOutcome.failure,
-        };
       case 'fresh':
         return {
           kind: 'failed',
