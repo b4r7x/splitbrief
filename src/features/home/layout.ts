@@ -2,6 +2,7 @@ import { overlayWidth } from '../../core/navigation/overlay-rect.js';
 import { wrapHard } from '../../utils/display-text/wrap.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { getLogoTier, getLogoHeight, getLogoWidth, type LogoTier } from './logo.js';
+import type { HomeToolCheck } from './tool-check.js';
 
 interface HomeLayoutInput {
   cols: number;
@@ -106,7 +107,10 @@ function getContentAwareSessionLimit(input: SessionLimitInput): SessionLimit {
   };
 }
 
-function shownSessionRows(limit: SessionLimit, sessionCount: number): number {
+function shownSessionRows(
+  limit: Pick<SessionLimit, 'recentSessionLimit' | 'showHiddenCount'>,
+  sessionCount: number,
+): number {
   return Math.min(sessionCount, limit.recentSessionLimit) + (limit.showHiddenCount ? 1 : 0);
 }
 
@@ -163,4 +167,59 @@ export function getHomeLayout({
     showHiddenCount,
     sessionCapacity,
   };
+}
+
+/** Below this height the box would crowd out sessions; the hint line takes over. */
+const DISCOVERY_PANEL_MIN_ROWS = 24;
+/** Panel height plus one breathing row — the slack the box needs to render whole. */
+const DISCOVERY_PANEL_SLACK_ROWS = 5;
+
+interface HomeLayoutStateInput {
+  cols: number;
+  rows: number;
+  /** The run count that the session budget counts. */
+  sessionCount: number;
+  /** The runs the list can show and focus. */
+  listedSessions: number;
+  sessionsFocused: boolean;
+  dockRows: number;
+  noConfig: boolean;
+  toolCheck: HomeToolCheck;
+}
+
+interface HomeLayoutState {
+  layout: HomeLayout;
+  hasRoomForSessions: boolean;
+  canFocus: boolean;
+  sessionsActive: boolean;
+  discoveryPanelFits: boolean;
+  /** The tool check shows on the hint line, not in its box. */
+  hintNotice: boolean;
+}
+
+export function deriveHomeLayoutState({
+  cols,
+  rows,
+  sessionCount,
+  listedSessions,
+  sessionsFocused,
+  dockRows,
+  noConfig,
+  toolCheck,
+}: HomeLayoutStateInput): HomeLayoutState {
+  const screen = { cols, rows, sessionCount, dockRows, noConfig };
+  const preliminaryLayout = getHomeLayout({ ...screen, sessionsFocused: false });
+  const focusedLayout = getHomeLayout({ ...screen, sessionsFocused: true });
+  const hasRoomForSessions = preliminaryLayout.recentSessionLimit > 0;
+  const canFocus = focusedLayout.recentSessionLimit > 0 && listedSessions > 0;
+  const sessionsActive = sessionsFocused && canFocus;
+  const layout = sessionsActive ? focusedLayout : preliminaryLayout;
+  // The box needs real slack below the rendered session rows, or it would be
+  // clipped to a partial slice; without slack the hint line carries the notice.
+  const renderedSessionRows = hasRoomForSessions ? shownSessionRows(layout, listedSessions) : 0;
+  const discoveryPanelFits =
+    rows >= DISCOVERY_PANEL_MIN_ROWS &&
+    layout.sessionCapacity - renderedSessionRows >= DISCOVERY_PANEL_SLACK_ROWS;
+  const hintNotice = toolCheck === 'warm' || (toolCheck !== null && !discoveryPanelFits);
+  return { layout, hasRoomForSessions, canFocus, sessionsActive, discoveryPanelFits, hintNotice };
 }

@@ -30,7 +30,7 @@ const DISCOVERY_PANEL_CHROME_COLS = 6;
  * has stalled), then vanishes without leaving a residue — the slack absorbs
  * both states, so nothing above or below ever moves.
  */
-export function DiscoveryPanel({ width }: { width: number }) {
+export function ToolCheckBox({ width }: { width: number }) {
   const theme = useTheme();
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);

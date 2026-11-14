@@ -1,19 +1,12 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect, useState } from 'react';
 import { Box } from 'ink';
-import {
-  BOOT_MANIFEST_TITLE,
-  REFRESHING_TOOLS_TITLE,
-  TOOL_CHECK_FAILED_TITLE,
-  TOOLS_NOT_CHECKED_TITLE,
-} from '../../core/discovery/copy.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
-import { Composer, type HomeNotice } from '../../components/composer/view.js';
+import { Composer } from '../../components/composer/view.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { SOFT_SEP } from '../../core/separators.js';
 import { HomeSeatBlock } from '../../features/home/components/seat-block.js';
 import { RecentSessions } from '../../features/home/recent-sessions/panel.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
@@ -37,10 +30,10 @@ import {
   sessionSelectStore,
 } from '../../stores/navigation/session-select.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
-import { getHomeLayout, NO_CONFIG_NOTICE } from '../../features/home/layout.js';
+import { deriveHomeLayoutState, NO_CONFIG_NOTICE } from '../../features/home/layout.js';
+import { deriveHomeComposerHint } from '../../features/home/hint.js';
 import { getLogo } from '../../features/home/logo.js';
 import { deriveHomeToolCheck } from '../../features/home/tool-check.js';
-import { RECENT_SESSIONS_HINT } from '../../features/home/recent-sessions/list.js';
 import { useRecentSessionsFocus } from '../../features/home/recent-sessions/use-focus.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 import { checkingStatusText, prepareStart } from '../prepare-start.js';
@@ -52,10 +45,8 @@ import { observePreparationCleanup } from '../../features/start-preparation/obse
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/fs/listing.js';
-import { DiscoveryPanel } from '../../features/home/components/tool-check-box.js';
+import { ToolCheckBox } from '../../features/home/components/tool-check-box.js';
 
-const DEFAULT_HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+k commands`;
-const HOME_HINT = `/help${SOFT_SEP}/crew${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+r recent${SOFT_SEP}ctrl+k commands`;
 const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
 
 export interface HomeScreenDeps {
@@ -76,10 +67,6 @@ const defaultHomeScreenDeps: HomeScreenDeps = {
   sessionSelect: sessionSelectDeps,
 };
 
-/** Below this height the box would crowd out sessions; the hint line takes over. */
-const DISCOVERY_PANEL_MIN_ROWS = 24;
-/** Panel height plus one breathing row — the slack the box needs to render whole. */
-const DISCOVERY_PANEL_SLACK_ROWS = 5;
 export function HomeScreen({
   commands,
   onRuntimeCommand,
@@ -133,37 +120,18 @@ export function HomeScreen({
   const checkingStage = preparationStore.use(selectCheckingStage);
   const showPreparationPanel =
     approvalPending || preparationState.kind === 'blocked' || preparationState.kind === 'failed';
-  const preliminaryLayout = getHomeLayout({
-    cols,
-    rows,
-    sessionCount: totalCount,
-    sessionsFocused: false,
-    dockRows: dock.rows,
-    noConfig,
-  });
-  const focusedLayout = getHomeLayout({
-    cols,
-    rows,
-    sessionCount: totalCount,
-    sessionsFocused: true,
-    dockRows: dock.rows,
-    noConfig,
-  });
-  const hasRoomForSessions = preliminaryLayout.recentSessionLimit > 0;
-  const canFocus = focusedLayout.recentSessionLimit > 0 && sessions.length > 0;
-  const sessionsActive = sessionsFocused && canFocus;
-  const layout = sessionsActive ? focusedLayout : preliminaryLayout;
+  const { layout, hasRoomForSessions, canFocus, sessionsActive, discoveryPanelFits, hintNotice } =
+    deriveHomeLayoutState({
+      cols,
+      rows,
+      sessionCount: totalCount,
+      listedSessions: sessions.length,
+      sessionsFocused,
+      dockRows: dock.rows,
+      noConfig,
+      toolCheck,
+    });
   const interactionBlocked = hasOverlay || showPreparationPanel;
-
-  // The box needs real slack below the rendered session rows, or it would be
-  // clipped to a partial slice; without slack the hint line carries the notice.
-  const renderedSessionRows = hasRoomForSessions
-    ? Math.min(sessions.length, layout.recentSessionLimit) + (layout.showHiddenCount ? 1 : 0)
-    : 0;
-  const discoveryPanelFits =
-    rows >= DISCOVERY_PANEL_MIN_ROWS &&
-    layout.sessionCapacity - renderedSessionRows >= DISCOVERY_PANEL_SLACK_ROWS;
-  const hintNotice = toolCheck === 'warm' || (toolCheck !== null && !discoveryPanelFits);
   const { frame: refreshFrame } = useSpinnerFrame(
     hintNotice && (toolCheck === 'cold' || toolCheck === 'warm'),
   );
@@ -215,33 +183,14 @@ export function HomeScreen({
     onCancel: () => startPreparation.cancel(closeApprovalPrompt),
   });
 
-  let homeHint: string | undefined;
-  let homeNotice: HomeNotice | undefined;
-  if (!interactionBlocked) {
-    homeHint = DEFAULT_HOME_HINT;
-    if (canFocus) homeHint = HOME_HINT;
-    if (sessionsActive) homeHint = RECENT_SESSIONS_HINT;
-    // The notice borrows the reserved hint line instead of adding a row; under feedback it keeps
-    // that line and the feedback stacks above it.
-    else if (hintNotice) {
-      if (toolCheck === 'failed') {
-        homeNotice = {
-          text: `${TOOL_CHECK_FAILED_TITLE}${SOFT_SEP}open /settings to retry`,
-          tone: 'error',
-        };
-      } else if (toolCheck === 'not-run') {
-        homeNotice = {
-          text: `${TOOLS_NOT_CHECKED_TITLE}${SOFT_SEP}open /settings to retry`,
-          tone: 'warning',
-        };
-      } else {
-        homeNotice = {
-          text: `${refreshFrame} ${toolCheck === 'cold' ? BOOT_MANIFEST_TITLE : REFRESHING_TOOLS_TITLE}`,
-          tone: 'textDim',
-        };
-      }
-    }
-  }
+  const { homeHint, homeNotice } = deriveHomeComposerHint({
+    interactionBlocked,
+    canFocus,
+    sessionsActive,
+    hintNotice,
+    toolCheck,
+    refreshFrame,
+  });
 
   // The check the user is waiting on borrows the same reserved row, so the status appears and goes
   // without moving anything above or below it. Only an attempt this screen owns can be given up,
@@ -316,7 +265,7 @@ export function HomeScreen({
                 alignItems="center"
                 overflow="hidden"
               >
-                {discoveryPanelFits && <DiscoveryPanel width={layout.width} />}
+                {discoveryPanelFits && <ToolCheckBox width={layout.width} />}
               </Box>
             </Box>
 

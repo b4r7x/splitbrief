@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getHomeLayout, RESTING_DOCK_ROWS } from './layout.js';
+import { deriveHomeLayoutState, getHomeLayout, RESTING_DOCK_ROWS } from './layout.js';
 
 const AT_REST = { dockRows: RESTING_DOCK_ROWS, noConfig: false } as const;
 
@@ -256,5 +256,83 @@ describe('getHomeLayout', () => {
     expect(getHomeLayout({ cols: 120, rows: 30, ...AT_REST }).inputBottomMargin).toBe(1);
     expect(getHomeLayout({ cols: 120, rows: 37, ...AT_REST }).inputBottomMargin).toBe(1);
     expect(getHomeLayout({ cols: 120, rows: 38, ...AT_REST }).inputBottomMargin).toBe(2);
+  });
+});
+
+describe('deriveHomeLayoutState', () => {
+  const SCREEN = {
+    sessionCount: 0,
+    listedSessions: 0,
+    sessionsFocused: false,
+    toolCheck: null,
+    ...AT_REST,
+  } as const;
+  const sessions = (count: number) => ({ sessionCount: count, listedSessions: count });
+
+  it('lets the recent sessions take focus only where the focused list keeps a row and a run is listed', () => {
+    const noFocusedRow = deriveHomeLayoutState({ ...SCREEN, cols: 60, rows: 18, ...sessions(3) });
+    expect(noFocusedRow).toMatchObject({ hasRoomForSessions: true, canFocus: false });
+    const noRun = deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 24 });
+    expect(noRun).toMatchObject({ hasRoomForSessions: true, canFocus: false });
+    const focusable = deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 24, ...sessions(3) });
+    expect(focusable).toMatchObject({ hasRoomForSessions: true, canFocus: true });
+  });
+
+  it('uses the focused layout only while the focus holds', () => {
+    const focused = deriveHomeLayoutState({
+      ...SCREEN,
+      cols: 80,
+      rows: 24,
+      ...sessions(3),
+      sessionsFocused: true,
+    });
+    expect(focused.sessionsActive).toBe(true);
+    expect(focused.layout).toEqual(
+      getHomeLayout({ cols: 80, rows: 24, sessionCount: 3, sessionsFocused: true, ...AT_REST }),
+    );
+    const noFocusedRow = deriveHomeLayoutState({
+      ...SCREEN,
+      cols: 60,
+      rows: 18,
+      ...sessions(3),
+      sessionsFocused: true,
+    });
+    expect(noFocusedRow.sessionsActive).toBe(false);
+    expect(noFocusedRow.layout).toEqual(
+      getHomeLayout({ cols: 60, rows: 18, sessionCount: 3, ...AT_REST }),
+    );
+  });
+
+  it('fits the tool check box only on a terminal of 24 rows or more', () => {
+    expect(deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 23 }).discoveryPanelFits).toBe(false);
+    expect(deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 24 }).discoveryPanelFits).toBe(true);
+  });
+
+  it('gives the box up when the shown session rows leave it fewer than five rows', () => {
+    const oneRun = deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 24, ...sessions(1) });
+    expect(oneRun.discoveryPanelFits).toBe(false);
+    const resting = deriveHomeLayoutState({ ...SCREEN, cols: 120, rows: 40, ...sessions(13) });
+    expect(resting.discoveryPanelFits).toBe(true);
+    const focused = deriveHomeLayoutState({
+      ...SCREEN,
+      cols: 120,
+      rows: 40,
+      ...sessions(13),
+      sessionsFocused: true,
+    });
+    expect(focused.discoveryPanelFits).toBe(false);
+  });
+
+  it('puts a warm check, or a check whose box does not fit, on the hint line', () => {
+    const fits = { ...SCREEN, cols: 80, rows: 24 };
+    expect(deriveHomeLayoutState({ ...fits, toolCheck: 'warm' }).hintNotice).toBe(true);
+    expect(deriveHomeLayoutState({ ...fits, toolCheck: 'cold' }).hintNotice).toBe(false);
+    expect(deriveHomeLayoutState({ ...fits, toolCheck: 'failed' }).hintNotice).toBe(false);
+    expect(deriveHomeLayoutState(fits).hintNotice).toBe(false);
+    const noFit = { ...SCREEN, cols: 80, rows: 23 };
+    expect(deriveHomeLayoutState({ ...noFit, toolCheck: 'cold' }).hintNotice).toBe(true);
+    expect(deriveHomeLayoutState({ ...noFit, toolCheck: 'failed' }).hintNotice).toBe(true);
+    expect(deriveHomeLayoutState({ ...noFit, toolCheck: 'not-run' }).hintNotice).toBe(true);
+    expect(deriveHomeLayoutState(noFit).hintNotice).toBe(false);
   });
 });
