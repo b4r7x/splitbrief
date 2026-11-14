@@ -30,7 +30,8 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { BRAILLE_SPINNER_FRAMES, glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
-import { clearAllHandlers, requestSeatChangeAtBoundary } from '../run-requests/handlers.js';
+import { clearAllHandlers } from '../run-requests/registry.js';
+import { requestSeatChangeAtBoundary } from '../run-requests/boundary.js';
 import { trackProbe } from '../../../engine/probe-activity.js';
 import { InputFooter } from './input-footer.js';
 

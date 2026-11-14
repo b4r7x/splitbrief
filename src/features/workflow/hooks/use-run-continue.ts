@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { continueRun } from '../../../engine/orchestrator/run/continue.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
-import { resumeParkedRun } from '../run-requests/handlers.js';
+import { resumeParkedRun } from '../run-requests/stop-resume.js';
 import { rereadRunAtRest } from '../run-requests/end-run.js';
 import { hydrateResume, resumeFailureMessage } from '../resume/hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';

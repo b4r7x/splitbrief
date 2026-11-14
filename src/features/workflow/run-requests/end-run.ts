@@ -10,7 +10,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { requestCancel } from './handlers.js';
+import { requestCancel } from './stop-resume.js';
 import { hydrateResume } from '../resume/hydration.js';
 import { readRunHistory } from '../run-history.js';
 import { addTuiEvent } from '../tui-sink.js';

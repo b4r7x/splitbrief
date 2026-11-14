@@ -75,9 +75,12 @@ vi.mock('../engine/skill-discovery.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../engine/skill-discovery.js')>()),
   discoverSkills: production.discoverSkills,
 }));
-vi.mock('../features/workflow/run-requests/handlers.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../features/workflow/run-requests/handlers.js')>()),
+vi.mock('../features/workflow/run-requests/departure.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../features/workflow/run-requests/departure.js')>()),
   requestQuit: production.requestQuit,
+}));
+vi.mock('../features/workflow/run-requests/stop-resume.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../features/workflow/run-requests/stop-resume.js')>()),
   requestStopNow: production.requestStopNow,
 }));
 

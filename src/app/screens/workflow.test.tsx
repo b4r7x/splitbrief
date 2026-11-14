@@ -63,7 +63,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
 import { hydrateResume } from '../../features/workflow/resume/hydration.js';
-import { requestStopNow } from '../../features/workflow/run-requests/handlers.js';
+import { requestStopNow } from '../../features/workflow/run-requests/stop-resume.js';
 import { listRowLead } from '../../components/list-row/lead.js';
 import { glyph } from '../../lib/glyphs.js';
 import { arrowSep } from '../../core/separators.js';

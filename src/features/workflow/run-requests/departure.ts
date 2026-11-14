@@ -1,9 +1,11 @@
 import { continueRunCommand } from '../../../core/recovery/resume-command.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
+import { activeApply } from '../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { warnStderr } from '../../../lib/warn.js';
 import { type RouteData, routerStore } from '../../../stores/navigation/router.js';
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import {
   flushSessionDrafts,
   leaveWasRefusedHere,
@@ -12,10 +14,13 @@ import {
   nameDraftsNotRemoved,
 } from '../../../stores/ui/session-drafts.js';
 import { departureStore, type Departure } from '../../../stores/workflow/departure.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
+import { runHandlers, stopWaitingForStop, writeRunRequests } from './registry.js';
+import { requestStopNow } from './stop-resume.js';
 
 /** Whether the screen moved to another run since the departure was asked for: it is stale then. */
-export function leftOrigin(origin: RouteData): boolean {
+function leftOrigin(origin: RouteData): boolean {
   const route = routerStore.get();
   return (
     origin.screen === 'workflow' &&
@@ -30,7 +35,7 @@ export function leftOrigin(origin: RouteData): boolean {
  * from the screen that showed the refusal goes without it; any other screen, the same run reopened
  * included, holds again.
  */
-export function leave(departure: Departure | null): void {
+function leave(departure: Departure | null): void {
   try {
     flushSessionDrafts();
   } catch (err) {
@@ -70,7 +75,7 @@ export function leave(departure: Departure | null): void {
  * Apply cannot be cut, so a departure asked for while this process applies waits for it. Once it
  * settles a quit still quits; a home goes only to an applied run, so a halt never goes unseen.
  */
-export function departAfterApply(apply: Promise<void>, origin: RouteData): void {
+function departAfterApply(apply: Promise<void>, origin: RouteData): void {
   void apply.then(() => {
     const departure = departureStore.take();
     if (departure === null || leftOrigin(origin)) return;
@@ -85,4 +90,49 @@ export function departAfterApply(apply: Promise<void>, origin: RouteData): void 
     }
     leave(departure);
   });
+}
+
+function requestDeparture(kind: Departure['kind'], run: () => void): void {
+  const waiting = departureStore.get() !== null;
+  if (!departureStore.queue({ kind, run })) return;
+  const origin = routerStore.get();
+  const apply = activeApply();
+  if (apply !== undefined) {
+    if (!waiting) departAfterApply(apply, origin);
+    return;
+  }
+  stopWaitingForStop();
+  const complete = () => {
+    const phase = stopStore.get().phase;
+    if (phase === 'failed' || leftOrigin(origin)) {
+      stopWaitingForStop();
+      departureStore.reset();
+      return;
+    }
+    if (phase !== 'parked' && phase !== 'ended') return;
+    stopWaitingForStop();
+    leave(departureStore.take());
+  };
+  writeRunRequests({ unsubscribeDeparture: stopStore.subscribe(complete) });
+  const handlers = runHandlers();
+  // A boundary pause can still hold an engine promise. Drain it before leaving its screen.
+  if (stopStore.get().phase === 'parked' && handlers.stop) {
+    stopStore.request('stop-now');
+    handlers.stop();
+  } else if (!requestStopNow()) {
+    stopWaitingForStop();
+    leave(departureStore.take());
+  }
+  complete();
+}
+
+export function requestLeaveSession(): void {
+  requestDeparture('home', () => {
+    overlayStore.close();
+    routerStore.navigate({ to: 'home' });
+  });
+}
+
+export function requestQuit(exit: () => void): void {
+  requestDeparture('quit', exit);
 }

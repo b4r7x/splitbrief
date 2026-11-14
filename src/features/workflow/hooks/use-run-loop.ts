@@ -18,7 +18,7 @@ import {
   setStopHandler,
   setResumeHandler,
   clearAllHandlers,
-} from '../run-requests/handlers.js';
+} from '../run-requests/registry.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { stopInProgress, stopStore } from '../../../stores/workflow/stop.js';

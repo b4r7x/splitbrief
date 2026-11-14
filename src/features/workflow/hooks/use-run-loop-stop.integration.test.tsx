@@ -53,14 +53,10 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/prompts/approval.js';
-import {
-  clearAllHandlers,
-  requestLeaveSession,
-  requestQuit,
-  requestSeatChangeAtBoundary,
-  requestStopNow,
-  resumeParkedRun,
-} from '../run-requests/handlers.js';
+import { clearAllHandlers } from '../run-requests/registry.js';
+import { requestLeaveSession, requestQuit } from '../run-requests/departure.js';
+import { requestSeatChangeAtBoundary } from '../run-requests/boundary.js';
+import { requestStopNow, resumeParkedRun } from '../run-requests/stop-resume.js';
 import { requestEndRun } from '../run-requests/end-run.js';
 import { useStopByline } from '../stop/use-byline.js';
 import { plainAnswer, useInputMode } from './use-input-mode.js';

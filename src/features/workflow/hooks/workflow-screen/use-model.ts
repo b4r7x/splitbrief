@@ -10,11 +10,9 @@ import {
 } from '../../../../core/paths.js';
 import { checkSessionLiveness } from '../../../../core/sessions/lock/file.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../../../engine/orchestrator/run/heartbeat.js';
-import {
-  requestLeaveSession,
-  requestResume,
-  setResumeHandler,
-} from '../../run-requests/handlers.js';
+import { requestLeaveSession } from '../../run-requests/departure.js';
+import { requestResume } from '../../run-requests/stop-resume.js';
+import { setResumeHandler } from '../../run-requests/registry.js';
 import { rereadRunAtRest } from '../../run-requests/end-run.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';

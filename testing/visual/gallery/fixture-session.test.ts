@@ -61,9 +61,14 @@ vi.mock('../../../src/lib/clipboard/clipboard.js', async (original) => ({
   ...(await original<typeof import('../../../src/lib/clipboard/clipboard.js')>()),
   copyToClipboard: production.copyToClipboard,
 }));
-vi.mock('../../../src/features/workflow/run-requests/handlers.js', async (original) => ({
-  ...(await original<typeof import('../../../src/features/workflow/run-requests/handlers.js')>()),
+vi.mock('../../../src/features/workflow/run-requests/departure.js', async (original) => ({
+  ...(await original<typeof import('../../../src/features/workflow/run-requests/departure.js')>()),
   requestQuit: production.requestQuit,
+}));
+vi.mock('../../../src/features/workflow/run-requests/stop-resume.js', async (original) => ({
+  ...(await original<
+    typeof import('../../../src/features/workflow/run-requests/stop-resume.js')
+  >()),
   requestStopNow: production.requestStopNow,
 }));
 vi.mock('../../../src/features/workflow/external-editor/command.js', async (original) => ({

@@ -31,7 +31,7 @@ import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-
 import type { CheckpointId, ScenarioId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
 import { NO_CORRECTION_MESSAGE } from '../../../../src/features/workflow/recovery/actions.js';
-import { requestSteer } from '../../../../src/features/workflow/run-requests/handlers.js';
+import { requestSteer } from '../../../../src/features/workflow/run-requests/stop-resume.js';
 import { noWordsRefusal } from '../../../../src/core/recovery/typed-words.js';
 import { plainUserMessage } from '../../../../src/core/types/user-input.js';
 import {

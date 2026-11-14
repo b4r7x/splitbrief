@@ -23,12 +23,9 @@ import { finalizeEndedRun } from '../../engine/orchestrator/session-lifecycle/fi
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import {
-  clearAllHandlers,
-  consumeBoundaryPause,
-  requestBoundaryPause,
-  requestSteer,
-} from './run-requests/handlers.js';
+import { clearAllHandlers } from './run-requests/registry.js';
+import { consumeBoundaryPause, requestBoundaryPause } from './run-requests/boundary.js';
+import { requestSteer } from './run-requests/stop-resume.js';
 import { useInputMode } from './hooks/use-input-mode.js';
 import { useRunContinue } from './hooks/use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from './hooks/use-run-loop.js';

@@ -13,7 +13,7 @@ import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { createRuntimeCommands } from '../../../src/core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../../../src/core/runtime/commands/dispatch.js';
-import { clearAllHandlers } from '../../../src/features/workflow/run-requests/handlers.js';
+import { clearAllHandlers } from '../../../src/features/workflow/run-requests/registry.js';
 import { cancelEscapeAction } from '../../../src/lib/terminal/escape-debounce.js';
 import {
   STOP_SHEET_LEGEND,

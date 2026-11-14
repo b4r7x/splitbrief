@@ -23,7 +23,7 @@ import {
   operationsStore,
   selectScheduledReview,
 } from '../../../stores/workflow/operations/state.js';
-import { requestSteer } from '../run-requests/handlers.js';
+import { requestSteer } from '../run-requests/stop-resume.js';
 import { composerDraftStore } from '../../../stores/ui/composer-draft.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';

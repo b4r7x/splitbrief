@@ -62,13 +62,9 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { ToolModelPicker } from '../../../app/overlays/runners.js';
 import { toolRowFocus } from '../../../core/navigation/types.js';
 import { configStore } from '../../../stores/project/config.js';
-import {
-  abortTurn,
-  requestBoundaryPause,
-  requestStopNow,
-  requestCancel,
-  clearAllHandlers,
-} from '../run-requests/handlers.js';
+import { abortTurn, clearAllHandlers } from '../run-requests/registry.js';
+import { requestBoundaryPause } from '../run-requests/boundary.js';
+import { requestStopNow, requestCancel } from '../run-requests/stop-resume.js';
 import { requestEndRun } from '../run-requests/end-run.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {

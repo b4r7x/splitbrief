@@ -26,7 +26,7 @@ import { feedbackStore } from '../stores/ui/feedback.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { cancelEscapeAction } from '../lib/terminal/escape-debounce.js';
-import * as handlers from '../features/workflow/run-requests/handlers.js';
+import * as handlers from '../features/workflow/run-requests/registry.js';
 import {
   activeApply,
   trackActiveApply,

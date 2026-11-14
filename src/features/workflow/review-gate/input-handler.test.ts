@@ -20,7 +20,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
-import { clearAllHandlers, setQueueHandler } from '../run-requests/handlers.js';
+import { clearAllHandlers, setQueueHandler } from '../run-requests/registry.js';
 import { REVIEW_UNKNOWN_COMMAND_MESSAGE, reviewOpeningPromptMessage } from './commands.js';
 import { openReviewFileExternally } from './external-edit.js';
 import { createReviewInputHandler, type ReviewInputEffects } from './input-handler.js';

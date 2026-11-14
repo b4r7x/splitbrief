@@ -36,7 +36,7 @@ import {
   clearAllHandlers,
   requestClearQueue,
   setResumeHandler,
-} from '../features/workflow/run-requests/handlers.js';
+} from '../features/workflow/run-requests/registry.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
 import { workflowCommands } from '../core/runtime/commands/defs/workflow.js';
 import { activityBatchKey } from '../features/workflow/conversation-rows/activity/batch-key.js';

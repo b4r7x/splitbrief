@@ -9,7 +9,8 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
-import { clearAllHandlers, requestSteer, setStopHandler } from '../run-requests/handlers.js';
+import { clearAllHandlers, setStopHandler } from '../run-requests/registry.js';
+import { requestSteer } from '../run-requests/stop-resume.js';
 import {
   plainAnswer,
   useInputMode,

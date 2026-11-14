@@ -11,7 +11,7 @@ import { installDiagnosticSink } from '../../../lib/warn.js';
 import { configStore } from '../../../stores/project/config.js';
 import type { PrepareExecutionFn, RunWorkflowFn } from '../hooks/use-run-loop.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
-import { clearAllHandlers } from '../run-requests/handlers.js';
+import { clearAllHandlers } from '../run-requests/registry.js';
 import { runTuiWorkflow } from './start.js';
 
 type EngineOptions = Parameters<RunWorkflowFn>[0];

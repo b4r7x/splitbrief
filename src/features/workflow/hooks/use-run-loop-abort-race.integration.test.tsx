@@ -18,7 +18,7 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { configStore } from '../../../stores/project/config.js';
-import { clearAllHandlers } from '../run-requests/handlers.js';
+import { clearAllHandlers } from '../run-requests/registry.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import {
   clearActiveReceipt,

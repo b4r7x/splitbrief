@@ -44,7 +44,8 @@ import {
 } from '../hooks/use-input-mode.js';
 import { createRecoveryDriver } from './driver.js';
 import type { PendingRecoveryResult } from './types.js';
-import { clearAllHandlers, requestSteer, setStopHandler } from '../run-requests/handlers.js';
+import { clearAllHandlers, setStopHandler } from '../run-requests/registry.js';
+import { requestSteer } from '../run-requests/stop-resume.js';
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { join } from 'node:path';

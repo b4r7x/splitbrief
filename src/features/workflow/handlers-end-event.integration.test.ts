@@ -26,7 +26,8 @@ import {
 import { configStore } from '../../stores/project/config.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { clearAllHandlers, requestResume, setResumeHandler } from './run-requests/handlers.js';
+import { clearAllHandlers, setResumeHandler } from './run-requests/registry.js';
+import { requestResume } from './run-requests/stop-resume.js';
 import { requestEndRun } from './run-requests/end-run.js';
 
 describe('End run at rest', () => {

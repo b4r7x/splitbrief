@@ -3,7 +3,8 @@ import { renderInputMode } from '#testing/helpers/input-mode.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { questionPromptStore } from '../../../stores/prompts/question.js';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
-import { clearAllHandlers, requestSteer } from '../run-requests/handlers.js';
+import { clearAllHandlers } from '../run-requests/registry.js';
+import { requestSteer } from '../run-requests/stop-resume.js';
 import type { PlannerConversation } from '../../../core/schemas/workflow/state.js';
 import {
   plainAnswer,

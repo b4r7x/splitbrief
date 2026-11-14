@@ -15,7 +15,7 @@ import { setActiveTerminalHandover } from '../../../src/lib/terminal/editor-hand
 import {
   setQueueHandler,
   clearAllHandlers,
-} from '../../../src/features/workflow/run-requests/handlers.js';
+} from '../../../src/features/workflow/run-requests/registry.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';

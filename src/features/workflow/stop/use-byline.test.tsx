@@ -17,7 +17,7 @@ import {
   requestBoundaryPause,
   requestSeatChangeAtBoundary,
   spendSeatChange,
-} from '../run-requests/handlers.js';
+} from '../run-requests/boundary.js';
 import { useStopByline } from './use-byline.js';
 
 function Lead() {

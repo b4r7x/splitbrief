@@ -78,7 +78,7 @@ Example, `src/features/workflow/`:
 
 | File | Purpose |
 |---|---|
-| `handlers.ts` | Engine↔UI bridge. Module-scoped handler registry. |
+| `run-requests/registry.ts` | Engine↔UI bridge. Module-scoped handler registry and the state of the run requests; the other `run-requests/` files read and write that state through its functions. |
 | `keyboard.ts` | Pure keyboard-action dispatchers (workflow-scope). |
 | `layout/snapshot.ts` | Pure geometry snapshots that read from multiple stores. |
 | `usage-details-model.ts` | Derives token counts, cost amounts and rows for the usage overlay. |

@@ -15,7 +15,7 @@ import {
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopInProgress, stopStore } from '../../../stores/workflow/stop.js';
 import { spawnEditorProcess } from '../external-editor/spawn.js';
-import { requestEnqueue } from '../run-requests/handlers.js';
+import { requestEnqueue } from '../run-requests/registry.js';
 import { type UseInputModeResult, answerWaitingQuestion } from '../hooks/use-input-mode.js';
 import { queueCopy } from '../queue-copy.js';
 import {

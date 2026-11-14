@@ -35,13 +35,15 @@ import {
   setStopHandler,
   setClearQueueHandler,
   setQueueHandler,
+} from '../run-requests/registry.js';
+import {
   consumeBoundaryInterrupt,
   consumeBoundaryPause,
   seatChangeWaits,
   landBoundaryPause,
   requestSeatChangeAtBoundary,
   spendSeatChange,
-} from '../run-requests/handlers.js';
+} from '../run-requests/boundary.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { parkStoppedRun } from '../../../engine/orchestrator/state-ops/halts.js';
 import { endRunError } from '../../../engine/orchestrator/run/close.js';

@@ -10,13 +10,9 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { MenuRows } from './menu-rows.js';
-import {
-  cancelBoundaryPause,
-  requestBoundaryPause,
-  requestStopNow,
-  requestResume,
-  requestLeaveSession,
-} from '../run-requests/handlers.js';
+import { cancelBoundaryPause, requestBoundaryPause } from '../run-requests/boundary.js';
+import { requestStopNow, requestResume } from '../run-requests/stop-resume.js';
+import { requestLeaveSession } from '../run-requests/departure.js';
 import { requestEndRun } from '../run-requests/end-run.js';
 import {
   STOP_SHEET_LEGEND,

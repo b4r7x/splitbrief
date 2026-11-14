@@ -28,8 +28,11 @@ const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle/
 const { runViewStore } = await import('../../../src/stores/workflow/run-view.js');
 const { createInitialState, transition } = await import('../../../src/core/state/machine.js');
 const { saveState } = await import('../../../src/core/state/persistence.js');
-const { requestBoundaryPause, requestCancel, requestResume } = await import(
-  '../../../src/features/workflow/run-requests/handlers.js'
+const { requestBoundaryPause } = await import(
+  '../../../src/features/workflow/run-requests/boundary.js'
+);
+const { requestCancel, requestResume } = await import(
+  '../../../src/features/workflow/run-requests/stop-resume.js'
 );
 
 const ENTER = '\r';

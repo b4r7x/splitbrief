@@ -10,7 +10,7 @@ import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/wor
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import type { DraftDocument } from '../../../core/schemas/draft-document.js';
-import { setWaitingPromptHandler } from '../run-requests/handlers.js';
+import { setWaitingPromptHandler } from '../run-requests/registry.js';
 
 /** A question's answer: the message the run takes, and the draft the composer sent it from. */
 export interface QuestionAnswer {

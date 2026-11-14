@@ -9,11 +9,11 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
   clearAllHandlers,
-  consumeBoundaryPause,
   createAbortHandlerScope,
   setCancelHandler,
   setResumeHandler,
-} from '../run-requests/handlers.js';
+} from '../run-requests/registry.js';
+import { consumeBoundaryPause } from '../run-requests/boundary.js';
 import { StopSheet } from './sheet.js';
 import { stopSheetRows } from './options.js';
 

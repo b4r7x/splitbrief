@@ -1,13 +1,9 @@
 import { useRef } from 'react';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
-import {
-  requestClearQueue,
-  requestLeaveSession,
-  requestQuit,
-  requestResume,
-  requestSteer,
-} from '../features/workflow/run-requests/handlers.js';
+import { requestClearQueue } from '../features/workflow/run-requests/registry.js';
+import { requestLeaveSession, requestQuit } from '../features/workflow/run-requests/departure.js';
+import { requestResume, requestSteer } from '../features/workflow/run-requests/stop-resume.js';
 import { requestEndRun } from '../features/workflow/run-requests/end-run.js';
 import type { ConversationRowAction } from '../features/workflow/conversation-rows/row-actions/build.js';
 import { readConversationRowActions } from '../features/workflow/conversation-rows/row-actions/read.js';

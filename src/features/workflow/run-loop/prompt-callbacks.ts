@@ -5,7 +5,7 @@ import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { selectRunningBrief } from '../../../core/run-view/briefs.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
-import { setWaitingPromptHandler } from '../run-requests/handlers.js';
+import { setWaitingPromptHandler } from '../run-requests/registry.js';
 import type { OrchestratorCallbacks } from '../../../engine/orchestrator/types.js';
 import type { PlannerConversation } from '../../../core/schemas/workflow/state.js';
 import { questionPromptStore } from '../../../stores/prompts/question.js';

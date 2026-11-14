@@ -21,7 +21,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { buildPromptCallbacks } from '../run-loop/prompt-callbacks.js';
-import { requestSteer, resumeParkedRun } from '../run-requests/handlers.js';
+import { requestSteer, resumeParkedRun } from '../run-requests/stop-resume.js';
 import { Header } from './header.js';
 import { Sidebar } from './sidebar/panel.js';
 

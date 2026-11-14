@@ -30,7 +30,7 @@ import { taskId } from '../../../src/core/schemas/task.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { listRowLead } from '../../../src/components/list-row/lead.js';
-import { setStopHandler } from '../../../src/features/workflow/run-requests/handlers.js';
+import { setStopHandler } from '../../../src/features/workflow/run-requests/registry.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { wireAppMouse } from '../../../src/app/mouse.js';

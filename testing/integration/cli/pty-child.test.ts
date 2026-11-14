@@ -17,13 +17,15 @@ import type {
 import {
   abortTurn,
   clearAllHandlers,
-  consumeBoundaryInterrupt,
-  consumeBoundaryPause,
   createAbortHandlerScope,
-  requestQuit,
   setCancelHandler,
   setQueueHandler,
-} from '../../../src/features/workflow/run-requests/handlers.js';
+} from '../../../src/features/workflow/run-requests/registry.js';
+import {
+  consumeBoundaryInterrupt,
+  consumeBoundaryPause,
+} from '../../../src/features/workflow/run-requests/boundary.js';
+import { requestQuit } from '../../../src/features/workflow/run-requests/departure.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { plainUserMessage, type UserMessageInput } from '../../../src/core/types/user-input.js';

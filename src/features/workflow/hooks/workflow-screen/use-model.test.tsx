@@ -34,7 +34,7 @@ import {
   trackActiveApply,
 } from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { Rail } from '../../components/rail.js';
-import { clearAllHandlers } from '../../run-requests/handlers.js';
+import { clearAllHandlers } from '../../run-requests/registry.js';
 import { useWorkflowScreen } from './use-model.js';
 
 type Model = ReturnType<typeof useWorkflowScreen>;
