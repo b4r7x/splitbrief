@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { glyph, markdownLayoutGlyphs } from '../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../display-text/width.js';
-import { layoutMarkdownTable } from './layout/table.js';
+import { glyph, markdownLayoutGlyphs } from '../../../lib/glyphs.js';
+import { getTerminalCellWidth } from '../../display-text/width.js';
+import { layoutMarkdownTable } from './table.js';
 import type {
   MarkdownLayoutLine,
   MarkdownTableAlignment,
   MarkdownTableBlock,
   MarkdownTableCell,
-} from './types.js';
+} from '../types.js';
 
 function lineText(line: MarkdownLayoutLine): string {
   return line.segments.map((segment) => segment.text).join('');

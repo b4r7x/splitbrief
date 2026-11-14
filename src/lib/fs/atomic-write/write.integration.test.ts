@@ -25,20 +25,14 @@ import { createHash } from 'node:crypto';
 import { link, open } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  confinedAtomicWriteFileSync,
-  confinedAtomicWriteFileSyncForTest,
-} from './fs/atomic-write/write-sync.js';
-import {
-  confinedAtomicWriteFile,
-  confinedAtomicWriteFileForTest,
-} from './fs/atomic-write/write.js';
+import { confinedAtomicWriteFileSync, confinedAtomicWriteFileSyncForTest } from './write-sync.js';
+import { confinedAtomicWriteFile, confinedAtomicWriteFileForTest } from './write.js';
 import type {
   ConfinedAtomicWriteTestOperations,
   ConfinedAtomicWriteSyncTestOperations,
-} from './fs/atomic-write/operations.js';
-import type { ConfigRevision } from './fs/atomic-write/types.js';
-import { readProcessStartTimeMs } from './process/start-time.js';
+} from './operations.js';
+import type { ConfigRevision } from './types.js';
+import { readProcessStartTimeMs } from '../../process/start-time.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const tmpDirs: string[] = [];

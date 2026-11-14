@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readValidatedJsonResult, parseJsonlLine } from './fs/read.js';
+import { readValidatedJsonResult, parseJsonlLine } from './read.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
