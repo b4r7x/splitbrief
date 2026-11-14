@@ -1,0 +1,1429 @@
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import * as fs from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
+import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { createEvidenceLedger } from '../../../../core/evidence/ledger-state.js';
+import {
+  readEvidenceLedger,
+  writeEvidenceLedger,
+} from '../../../../core/evidence/ledger-storage.js';
+import { runBaseTreesRoot } from '../../../../core/paths.js';
+import type { Config } from '../../../../core/schemas/config.js';
+import type { Task } from '../../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
+import { saveState } from '../../../../core/state/persistence.js';
+import { processError } from '../../../../lib/process/errors.js';
+import { resetLoggerForTests } from '../../../../lib/logger.js';
+import * as commandRunner from '../../../../lib/process/spawn/run-command.js';
+import type { EngineEvent, EngineEventOf } from '../../../events/types.js';
+import { recordLocalTaskEvidence } from '../../evidence/task.js';
+import {
+  captureChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+} from '../../changed-files-baseline.js';
+import { startBaseGate } from '../../validation/base-gate.js';
+import { runPreReviewChecks } from './required.js';
+import { runReviewChecks, type ReviewChecksOutcome } from './run-all.js';
+import { runReviewCheck } from './run-one.js';
+import { enabledReviewChecks } from '../../validation/checks/runner.js';
+
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs/promises')>()),
+}));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  resetLoggerForTests();
+});
+
+const FILES = {
+  'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+  'src/a.ts': 'export const a = 1;\n',
+};
+const NEW_RED = 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.';
+const OLD_RED = 'src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.';
+
+type CommandAnswer = 'pass' | { red: string; stderr?: string } | { throws: unknown };
+
+/**
+ * Runs the project gate `gate` on a real run workspace and run base. `answer` decides each command
+ * by its text and where it runs: the run workspace or the run base, and the folder it runs in.
+ */
+async function reviewChecks(
+  run: ApplyRun,
+  opts: {
+    gate: string[];
+    answer?: (command: string, at: 'workspace' | 'base', cwd: string) => CommandAnswer;
+    config?: Config;
+    tasks?: Task[];
+    state?: Partial<WorkflowState>;
+    /** False for an older run that recorded no workspace, and so no run base. */
+    runBase?: boolean;
+    signal?: AbortSignal;
+  },
+) {
+  const tasks = opts.tasks ?? [
+    makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/a.ts'] }),
+  ];
+  const state: WorkflowState = makeImplState(tasks, {
+    phase: 'final-review',
+    ...(opts.runBase !== false && { workspace: run.workspace }),
+    plan: {
+      summary: 'Run the project gate.',
+      criteria: [],
+      decisions: [],
+      checks: [],
+      gate: opts.gate,
+      validation: null,
+    },
+    ...opts.state,
+  });
+  const ref = { projectDir: run.dir, sessionId: run.sessionId };
+  saveState(ref, state);
+  const commands: Array<{ command: string; at: 'workspace' | 'base' }> = [];
+  vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args, options) => {
+    const command = [cmd, ...args].join(' ');
+    const cwd = options?.cwd ?? '';
+    const at = cwd === run.ws ? 'workspace' : 'base';
+    commands.push({ command, at });
+    const answer = opts.answer?.(command, at, cwd) ?? 'pass';
+    if (answer === 'pass') return { stdout: 'ok', stderr: '', code: 0 };
+    if ('throws' in answer) throw answer.throws;
+    throw processError.exitCode({
+      command,
+      code: 1,
+      stderr: answer.stderr ?? '',
+      output: answer.red,
+    });
+  });
+  const { bus, events } = makeBusRecorder();
+  const config = opts.config ?? makeConfig();
+  const baseGate = startBaseGate({
+    ref,
+    workspaceDir: run.ws,
+    config,
+    bus,
+    state,
+    phase: () => state.phase,
+    signal: opts.signal,
+  });
+  // The base run settles before the review starts, so the commands run in one fixed order.
+  await Promise.all(
+    enabledReviewChecks(config, state.plan).map((check) => baseGate?.outcome(check.id)),
+  );
+  try {
+    const outcome: ReviewChecksOutcome = await runReviewChecks({
+      projectDir: run.dir,
+      workspaceDir: run.ws,
+      sessionId: run.sessionId,
+      config,
+      bus,
+      state,
+      signal: opts.signal,
+      baseGate,
+    });
+    return { outcome, events, commands, ref };
+  } finally {
+    await baseGate?.stop();
+  }
+}
+
+function rows(events: EngineEvent[]): EngineEventOf<'full_suite'>[] {
+  return events.filter(
+    (event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite',
+  );
+}
+
+function planned(events: EngineEvent[]): EngineEventOf<'review_checks'>[] {
+  return events.filter(
+    (event): event is EngineEventOf<'review_checks'> => event.type === 'review_checks',
+  );
+}
+
+describe('runReviewCheck at the brief gate', () => {
+  it.each([
+    {
+      name: 'mixed compiler and test failures',
+      output: `${NEW_RED}\n FAIL  src/b.test.ts > fails`,
+      complete: true,
+      ownLeft: 1,
+      fresh: [NEW_RED],
+    },
+    {
+      name: 'a carried compiler failure after character 4000',
+      output: `${OLD_RED}\n${' '.repeat(4100)}\n${NEW_RED}`,
+      complete: true,
+      ownLeft: 1,
+      fresh: [NEW_RED],
+    },
+    {
+      name: 'an incomplete process capture',
+      output: OLD_RED,
+      complete: false,
+      ownLeft: undefined,
+      fresh: ['output over the capture limit'],
+    },
+  ])('rejects $name', async ({ output, complete, ownLeft, fresh }) => {
+    await withApplyRun(FILES, { sessionId: 'sess-brief-red' }, async (run) => {
+      const { bus, events } = makeBusRecorder();
+      vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+        processError.exitCode({
+          command: 'npm test',
+          code: 1,
+          stderr: '',
+          output,
+          truncated: !complete,
+        }),
+      );
+      const result = await runReviewCheck({
+        check: { id: 'V1', command: 'npm test' },
+        moment: 'brief',
+        carried: { failureKeys: [NEW_RED], sharedWith: new Map(), exempt: false },
+        checkOptions: {
+          projectDir: run.ws,
+          config: makeConfig(),
+          bus,
+          phase: 'implementing',
+          npmScriptsApproved: false,
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test' }],
+        },
+      });
+      expect(result.run.status).toBe('fail');
+      expect([...result.fresh].sort()).toEqual([...fresh].sort());
+      expect(rows(events).at(-1)).toMatchObject({ passed: false });
+      if (ownLeft === undefined) expect(rows(events).at(-1)).not.toHaveProperty('own');
+      else expect(rows(events).at(-1)).toMatchObject({ ownLeft });
+      expect(commandRunner.runCommand).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // An own failure the re-run does not show settles the check, even when the red stopped before
+  // it; the next review re-runs the whole command.
+  it.each([
+    {
+      name: 'a new stage-1 failure that skips stage 2',
+      output: 'src/first.ts(1,1): error TS2322: New failure.',
+      carried: NEW_RED,
+    },
+    {
+      name: 'a passing smoke row before a new compiler failure skips the carried test',
+      output: `tests/test_smoke.py::test_ok PASSED [ 50%]\n${NEW_RED}`,
+      carried: 'tests/test_later.py::test_fails',
+    },
+  ])('settles $name', async ({ output, carried }) => {
+    await withApplyRun(FILES, { sessionId: 'sess-brief-settle' }, async (run) => {
+      const { bus, events } = makeBusRecorder();
+      vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+        processError.exitCode({ command: 'npm test', code: 1, stderr: '', output }),
+      );
+      const result = await runReviewCheck({
+        check: { id: 'V1', command: 'npm test' },
+        moment: 'brief',
+        carried: { failureKeys: [carried], sharedWith: new Map(), exempt: false },
+        checkOptions: {
+          projectDir: run.ws,
+          config: makeConfig(),
+          bus,
+          phase: 'implementing',
+          npmScriptsApproved: false,
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test' }],
+        },
+      });
+      expect(result.run.status).toBe('fail');
+      expect(result.fresh).toEqual([]);
+      expect(rows(events).at(-1)).toMatchObject({ passed: true, own: 1, ownLeft: 0, others: 1 });
+    });
+  });
+
+  it('publishes the ownership verdict when the command passes', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-brief-green' }, async (run) => {
+      const { bus, events } = makeBusRecorder();
+      vi.spyOn(commandRunner, 'runCommand').mockResolvedValue({
+        stdout: 'ok',
+        stderr: '',
+        code: 0,
+      });
+      const result = await runReviewCheck({
+        check: { id: 'V1', command: 'npm test' },
+        moment: 'brief',
+        carried: { failureKeys: [NEW_RED], sharedWith: new Map(), exempt: false },
+        checkOptions: {
+          projectDir: run.ws,
+          config: makeConfig(),
+          bus,
+          phase: 'implementing',
+          npmScriptsApproved: false,
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test' }],
+        },
+      });
+      expect(result.fresh).toEqual([]);
+      expect(rows(events).at(-1)).toMatchObject({
+        passed: true,
+        own: 1,
+        ownLeft: 0,
+        deferred: 0,
+        others: 0,
+      });
+    });
+  });
+});
+
+describe('runReviewChecks', { timeout: 60_000 }, () => {
+  it('with End-of-run checks off publishes one off row and runs no gate command', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-off' }, async (run) => {
+      const { outcome, events, commands } = await reviewChecks(run, {
+        gate: ['npm test'],
+        config: makeConfig({ validation: { endChecks: false } }),
+      });
+
+      expect(planned(events)).toEqual([
+        expect.objectContaining({ type: 'review_checks', status: 'off' }),
+      ]);
+      expect(rows(events)).toEqual([]);
+      expect(commands).toEqual([]);
+      expect(outcome.section).toContain('End-of-run checks are off');
+      expect(outcome.section).toContain('SPLITBRIEF ran no reviewer check before this review');
+    });
+  });
+
+  it.each([
+    { name: 'an empty gate', state: {} },
+    { name: 'no plan', state: { plan: undefined } },
+    {
+      name: 'an older plan without a gate',
+      state: {
+        plan: { summary: 'Older plan.', criteria: [], decisions: [], checks: [], validation: null },
+      },
+    },
+  ])('with $name publishes one none row and runs nothing', async ({ state }) => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-none' }, async (run) => {
+      const { outcome, events, commands } = await reviewChecks(run, { gate: [], state });
+
+      expect(planned(events)).toEqual([
+        expect.objectContaining({ type: 'review_checks', status: 'none' }),
+      ]);
+      expect(rows(events)).toEqual([]);
+      expect(commands).toEqual([]);
+      expect(outcome.section).toContain('The plan names no project gate');
+    });
+  });
+
+  it('runs the gate commands the plan names, in order, with the ids V1, V2, …', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-gate' }, async (run) => {
+      const { outcome, events, commands } = await reviewChecks(run, {
+        gate: ['npm test', 'npx --no-install vitest run'],
+      });
+
+      expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'npm test @ base',
+        'npx --no-install vitest run @ base',
+        'npm test @ workspace',
+        'npx --no-install vitest run @ workspace',
+      ]);
+      expect(
+        rows(events).filter((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toEqual([
+        expect.objectContaining({ id: 'V1', command: 'npm test', passed: true }),
+        expect.objectContaining({ id: 'V2', command: 'npx --no-install vitest run', passed: true }),
+      ]);
+      expect(outcome.section).toContain('ran the project gate the plan names');
+      expect(outcome.section).toContain('- V1 `npm test`: passed');
+      expect(outcome.section).toContain('- V2 `npx --no-install vitest run`: passed');
+    });
+  });
+
+  it('stops at the first gate command with new failures and runs no later one', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-red' }, async (run) => {
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        gate: ['npm test', 'npx --no-install vitest run'],
+        answer: (command, at) =>
+          command === 'npm test' && at === 'workspace' ? { red: NEW_RED } : 'pass',
+      });
+
+      expect(commands).toEqual([
+        { command: 'npm test', at: 'base' },
+        { command: 'npx --no-install vitest run', at: 'base' },
+        { command: 'npm test', at: 'workspace' },
+      ]);
+      expect(
+        rows(events).map((row) => [row.id, row.moment, row.status, row.passed, row.detail]),
+      ).toEqual([
+        ['V1', 'base', 'running', undefined, undefined],
+        ['V1', 'base', 'done', true, undefined],
+        ['V2', 'base', 'running', undefined, undefined],
+        ['V2', 'base', 'done', true, undefined],
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'done', false, undefined],
+        ['V2', 'pre-review', 'not-run', undefined, 'V1 failed'],
+      ]);
+      expect(
+        rows(events)
+          .filter((row) => row.moment === 'pre-review' && row.status === 'running')
+          .map((row) => row.waitsOnBase),
+      ).toEqual([undefined, true]);
+      const reviewDone = rows(events).find(
+        (row) => row.moment === 'pre-review' && row.status === 'done',
+      );
+      expect(reviewDone).toMatchObject({ newFailures: 1, preExisting: 0, newKeys: [NEW_RED] });
+      expect(reviewDone).not.toHaveProperty('preExistingKeys');
+      const state = outcome.state;
+      expect(state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({
+          id: 'V1.1',
+          kind: 'defect',
+          source: 'check',
+          file: 'src/a.ts',
+          checkIds: ['V1'],
+          command: 'npm test',
+          output: NEW_RED,
+          failureKeys: [NEW_RED],
+          redKeys: [NEW_RED],
+        }),
+      ]);
+      expect(state.pendingTriage?.inputs[0]?.text).toContain('Reviewer check V1 (npm test)');
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged).toEqual([
+        expect.objectContaining({ id: 'V1', command: 'npm test', exitCode: 1 }),
+      ]);
+      expect(outcome.section).toContain('- V2 `npx --no-install vitest run`: not run, V1 failed');
+    });
+  });
+
+  it('marks a red that also fails at the run base pre-existing and runs the next command', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-old-red' }, async (run) => {
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        gate: ['npm test', 'npx --no-install vitest run'],
+        answer: (command) => (command === 'npm test' ? { red: OLD_RED } : 'pass'),
+      });
+
+      expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'npm test @ base',
+        'npx --no-install vitest run @ base',
+        'npm test @ workspace',
+        'npx --no-install vitest run @ workspace',
+      ]);
+      expect(rows(events).filter((row) => row.status === 'done')).toEqual([
+        expect.objectContaining({ id: 'V1', moment: 'base', passed: false }),
+        expect.objectContaining({ id: 'V2', moment: 'base', passed: true }),
+        expect.objectContaining({
+          id: 'V1',
+          moment: 'pre-review',
+          passed: false,
+          newFailures: 0,
+          preExisting: 1,
+          preExistingKeys: [OLD_RED],
+        }),
+        expect.objectContaining({ id: 'V2', moment: 'pre-review', passed: true }),
+      ]);
+      const reviewDone = rows(events).find(
+        (row) => row.moment === 'pre-review' && row.status === 'done',
+      );
+      expect(reviewDone).not.toHaveProperty('detail');
+      expect(reviewDone).not.toHaveProperty('newKeys');
+      expect(outcome).toMatchObject({
+        preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
+      });
+      expect(outcome.state.pendingTriage).toBeUndefined();
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')).toMatchObject({
+        preExisting: [OLD_RED],
+      });
+      expect(outcome.section).toContain(
+        `failed, 0 new failure(s); 1 pre-existing (also red at the run base)\ncheck V1 did not pass (fail): 1 failure\nPre-existing failures (also red at the run base):\n- ${OLD_RED}\nOutput tail:`,
+      );
+    });
+  });
+
+  it('marks a red that depends on the length of the folder path pre-existing at the run base', async () => {
+    await withApplyRun(
+      FILES,
+      { sessionId: 'sess-checks-path-length-red-in-a-long-run-workspace' },
+      async (run) => {
+        const { outcome, events } = await reviewChecks(run, {
+          gate: ['npm test'],
+          answer: (_command, _at, cwd) => (cwd.length >= run.ws.length ? { red: OLD_RED } : 'pass'),
+        });
+
+        expect(
+          rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+        ).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
+        expect(outcome).toMatchObject({
+          preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
+        });
+        expect(outcome.state.pendingTriage).toBeUndefined();
+      },
+    );
+  });
+
+  // Q2 review B3: the base row read `fails at the run base too` whether the run stopped or went on.
+  it('counts and labels the new and pre-existing keys of a mixed red', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-mixed-red' }, async (run) => {
+      const { outcome, events } = await reviewChecks(run, {
+        gate: ['npm test', 'npx --no-install vitest run'],
+        answer: (command, at) =>
+          command !== 'npm test'
+            ? 'pass'
+            : { red: at === 'workspace' ? `${NEW_RED}\n${OLD_RED}` : OLD_RED },
+      });
+
+      expect(
+        rows(events).map((row) => [
+          row.id,
+          row.moment,
+          row.status,
+          row.newFailures,
+          row.preExisting,
+        ]),
+      ).toEqual([
+        ['V1', 'base', 'running', undefined, undefined],
+        ['V1', 'base', 'done', undefined, undefined],
+        ['V2', 'base', 'running', undefined, undefined],
+        ['V2', 'base', 'done', undefined, undefined],
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'done', 1, 1],
+        ['V2', 'pre-review', 'not-run', undefined, undefined],
+      ]);
+      expect(
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toMatchObject({ newKeys: [NEW_RED], preExistingKeys: [OLD_RED] });
+      const listing = outcome.section.split('Output tail:')[0] ?? '';
+      expect(listing).toContain(
+        `New failures:\n- ${NEW_RED}\nPre-existing failures (also red at the run base):\n- ${OLD_RED}`,
+      );
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(`New failures:\n- ${NEW_RED}`);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(OLD_RED);
+    });
+  });
+
+  it('refuses a command the policy rejects, names it in the section and never runs it', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-refused' }, async (run) => {
+      const { outcome, events, commands } = await reviewChecks(run, {
+        gate: ['npm test && rm -rf src'],
+      });
+
+      expect(commands).toEqual([]);
+      expect(rows(events).at(-1)).toMatchObject({
+        id: 'V1',
+        status: 'refused',
+        detail: 'contains a shell operator',
+      });
+      expect(outcome.section).toContain(
+        '- V1 `npm test && rm -rf src`: refused, contains a shell operator',
+      );
+    });
+  });
+
+  it('queues a new failure when the workspace times out and the run base passes', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-timeout-new' }, async (run) => {
+      const { outcome, events } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (command, at) =>
+          at === 'workspace'
+            ? { throws: processError.timeout({ command, timeoutMs: 1000, output: '' }) }
+            : 'pass',
+      });
+
+      expect(rows(events).filter((row) => row.status === 'done')).toEqual([
+        expect.objectContaining({ id: 'V1', moment: 'base', passed: true }),
+        expect.objectContaining({ id: 'V1', moment: 'pre-review', passed: false, newFailures: 1 }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({ id: 'V1.1', file: null }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
+        'failed with new failures.\ncheck V1 did not pass (fail):',
+      );
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('timed out');
+      expect(outcome.section).toContain(
+        '- V1 `npm test`: failed, 1 new failure(s)\ncheck V1 did not pass (fail):',
+      );
+    });
+  });
+
+  it('marks a timeout at both the workspace and the run base not verified, never pre-existing', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-timeout-old' }, async (run) => {
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        gate: ['npm test', 'npx --no-install vitest run'],
+        answer: (command) =>
+          command === 'npm test'
+            ? { throws: processError.timeout({ command, timeoutMs: 1000, output: '' }) }
+            : 'pass',
+      });
+
+      expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'npm test @ base',
+        'npx --no-install vitest run @ base',
+        'npm test @ workspace',
+      ]);
+      const baseDone = rows(events).find(
+        (row) => row.moment === 'base' && row.status === 'done' && row.id === 'V1',
+      );
+      expect(baseDone).toMatchObject({ id: 'V1', passed: false, timedOut: true });
+      const reviewDone = rows(events).find(
+        (row) => row.moment === 'pre-review' && row.status === 'done',
+      );
+      expect(reviewDone).toMatchObject({
+        id: 'V1',
+        passed: false,
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: 1,
+        detail: 'both runs timed out',
+        timedOut: true,
+      });
+      expect(reviewDone).not.toHaveProperty('newKeys');
+      expect(reviewDone).not.toHaveProperty('preExistingKeys');
+      expect(outcome.state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({
+          id: 'V1.1',
+          file: null,
+          checkIds: ['V1'],
+        }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
+        'failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs timed out); the reviewer decides.',
+      );
+      expect(outcome.section).toContain(
+        '- V1 `npm test`: failed, not verified at the run base (both runs timed out); the reviewer decides\ncheck V1 did not pass (fail):',
+      );
+      expect(outcome.section).toContain('- V2 `npx --no-install vitest run`: not run, V1 failed');
+      expect(outcome.section).toContain('A failure marked not verified at the run base');
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('marks two reds without diagnostics and the same exit code not verified, never pre-existing', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-silent-both' }, async (run) => {
+      const { outcome } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: () => ({ red: '' }),
+      });
+
+      expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+      expect(outcome.section).toContain(
+        '- V1 `npm test`: failed, not verified at the run base (both runs exited with code 1 without diagnostics); the reviewer decides\ncheck V1 did not pass (fail):',
+      );
+    });
+  });
+
+  it('marks incomplete captures at both runs not verified and never pre-existing', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-incomplete' }, async (run) => {
+      const { outcome, events } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (command) => ({
+          throws: processError.exitCode({
+            command,
+            code: 1,
+            output: NEW_RED,
+            stderr: '',
+            truncated: true,
+          }),
+        }),
+      });
+      expect(
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toMatchObject({ preExisting: 0, notVerified: 1 });
+      expect(outcome.state.pendingTriage?.inputs[0]?.redKeys).toEqual([
+        'output over the capture limit',
+      ]);
+    });
+  });
+
+  it.each([
+    {
+      name: 'an npm script banner',
+      command: 'npm test',
+      files: FILES,
+      red: '> x@1.0.0 test\n> node -e "process.exit(1)"',
+      reason: 'both runs exited with code 1 without diagnostics',
+    },
+    {
+      name: 'a make error summary',
+      command: 'make check',
+      files: { ...FILES, Makefile: 'check:\n\t@exit 1\n' },
+      red: 'make: *** [Makefile:2: check] Error 1',
+      reason: 'both runs exited with code 1: make: *** [Makefile:2: check] Error 1',
+    },
+  ])('marks two reds that print only $name not verified, never pre-existing', async (red) => {
+    await withApplyRun(red.files, { sessionId: 'sess-checks-runner-lines' }, async (run) => {
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        gate: [red.command],
+        answer: () => ({ red: red.red }),
+      });
+
+      expect(commands).toEqual([
+        { command: red.command, at: 'base' },
+        { command: red.command, at: 'workspace' },
+      ]);
+      expect(
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toMatchObject({
+        id: 'V1',
+        passed: false,
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: 1,
+        detail: red.reason,
+      });
+      expect(outcome.state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({
+          id: 'V1.1',
+          file: null,
+          checkIds: ['V1'],
+          output: red.red,
+        }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
+        `failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${red.reason}); the reviewer decides.`,
+      );
+      expect(outcome.section).toContain(
+        `- V1 \`${red.command}\`: failed, not verified at the run base (${red.reason}); the reviewer decides\ncheck V1 did not pass (fail): ${red.reason.slice('both runs '.length)}\nOutput tail:\n${red.red}`,
+      );
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('marks a red with diagnostics not verified when the run base re-run times out', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-timeout' }, async (run) => {
+      const { outcome, events } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (command, at) =>
+          at === 'workspace'
+            ? { red: OLD_RED }
+            : { throws: processError.timeout({ command, timeoutMs: 1000, output: '' }) },
+      });
+
+      expect(outcome.section).toContain(
+        'not verified at the run base (the run base re-run timed out); the reviewer decides',
+      );
+      expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+      expect(
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toMatchObject({ newFailures: 0, preExisting: 0, notVerified: 1 });
+    });
+  });
+
+  // C3 review: a base commit Git could not check out crashed the review and left the base row
+  // running.
+  it('marks a red not verified with the Git error when the run base cannot be checked out', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-checkout' }, async (run) => {
+      const unreachable = 'f'.repeat(40);
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        gate: ['npm test'],
+        state: {
+          workspace: { ...run.workspace, base: { ...run.workspace.base, head: unreachable } },
+        },
+        answer: (_command, at) => (at === 'workspace' ? { red: NEW_RED } : 'pass'),
+      });
+
+      expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
+      const base = rows(events).filter((row) => row.moment === 'base');
+      expect(base.map((row) => row.status)).toEqual(['not-run']);
+      expect(base[0]?.detail).toContain('the run base could not be prepared');
+      const settled = rows(events).find(
+        (row) => row.moment === 'pre-review' && row.status === 'done',
+      );
+      expect(settled).toMatchObject({ passed: false, newFailures: 0, notVerified: 1 });
+      expect(settled?.detail).toContain('the run base could not be prepared');
+      expect(settled?.detail).toContain(unreachable);
+      expect(outcome.section).toContain(
+        '- V1 `npm test`: failed, not verified at the run base (the run base could not be prepared',
+      );
+      expect(outcome.section).toContain(`Failures:\n- ${NEW_RED}\nOutput tail:`);
+      expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
+        'SPLITBRIEF could not verify its run base re-run (the run base could not be prepared',
+      );
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(
+        'failed at the run base too',
+      );
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')).toBeDefined();
+      expect(logged.find((entry) => entry.id === 'V1')).not.toHaveProperty('base');
+    });
+  });
+
+  it.each(['reconcile', 'link'] as const)(
+    'settles a base preparation %s failure as not verified with its error',
+    async (step) => {
+      await withApplyRun(
+        FILES,
+        {
+          sessionId: `sess-checks-base-${step}`,
+          atBase: (dir) => writeFileSync(join(dir, 'src/a.ts'), 'export const a = 2;\n'),
+        },
+        async (run) => {
+          mkdirSync(join(run.dir, 'node_modules'));
+          mkdirSync(runBaseTreesRoot(), { recursive: true });
+          const before = readdirSync(runBaseTreesRoot());
+          const failure = new Error(`${step} preparation denied`);
+          if (step === 'reconcile') {
+            const rename = fs.rename;
+            vi.spyOn(fs, 'rename').mockImplementation(async (source, target) => {
+              if (String(target).startsWith(runBaseTreesRoot())) throw failure;
+              return rename(source, target);
+            });
+          } else {
+            vi.spyOn(fs, 'symlink').mockRejectedValueOnce(failure);
+          }
+          const { outcome, events, commands, ref } = await reviewChecks(run, {
+            gate: ['npm test'],
+            answer: () => ({ red: NEW_RED }),
+          });
+          expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
+          expect(
+            rows(events)
+              .filter((row) => row.moment === 'base')
+              .map((row) => row.status),
+          ).toEqual(['not-run']);
+          const settled = rows(events).find(
+            (row) => row.moment === 'pre-review' && row.status === 'done',
+          );
+          expect(settled).toMatchObject({ passed: false, newFailures: 0, notVerified: 1 });
+          expect(settled?.detail).toContain('the run base could not be prepared');
+          expect(settled?.detail).toContain(failure.message);
+          expect(outcome.section).toContain(`not verified at the run base`);
+          expect(outcome.section).toContain(failure.message);
+          expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+          expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(failure.message);
+          const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+          expect(logged.find((entry) => entry.id === 'V1')).toBeDefined();
+          expect(logged.find((entry) => entry.id === 'V1')).not.toHaveProperty('base');
+          expect(readdirSync(runBaseTreesRoot())).toEqual(before);
+        },
+      );
+    },
+  );
+
+  it('settles a preparation failure with both the original and cleanup errors', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-cleanup' }, async (run) => {
+      mkdirSync(runBaseTreesRoot(), { recursive: true });
+      const before = readdirSync(runBaseTreesRoot());
+      const remove = fs.rm;
+      vi.spyOn(fs, 'rm').mockImplementation(async (path, options) => {
+        if (String(path).startsWith(runBaseTreesRoot())) throw new Error('base cleanup denied');
+        return remove(path, options);
+      });
+      try {
+        const { outcome, events, commands } = await reviewChecks(run, {
+          gate: ['npm test'],
+          state: {
+            workspace: { ...run.workspace, base: { ...run.workspace.base, head: 'f'.repeat(40) } },
+          },
+          answer: () => ({ red: NEW_RED }),
+        });
+        expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
+        const settled = rows(events).find(
+          (row) => row.moment === 'pre-review' && row.status === 'done',
+        );
+        expect(settled?.notVerified).toBe(1);
+        expect(settled?.detail).toContain('f'.repeat(40));
+        expect(settled?.detail).toContain('base cleanup denied');
+        expect(outcome.section).toContain('base cleanup denied');
+        expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('base cleanup denied');
+      } finally {
+        vi.restoreAllMocks();
+        for (const name of readdirSync(runBaseTreesRoot())) {
+          if (!before.includes(name)) rmSync(join(runBaseTreesRoot(), name), { recursive: true });
+        }
+      }
+    });
+  });
+
+  it.each(['pass', 'fail'] as const)(
+    'warns about the cleanup error of a completed %s base command and keeps its result for the split',
+    async (baseStatus) => {
+      await withApplyRun(FILES, { sessionId: 'sess-checks-completed-cleanup' }, async (run) => {
+        mkdirSync(runBaseTreesRoot(), { recursive: true });
+        const before = readdirSync(runBaseTreesRoot());
+        let tree = '';
+        try {
+          const { outcome, events, commands, ref } = await reviewChecks(run, {
+            gate: ['npm test', 'npx --no-install vitest run'],
+            answer: (command, at) => {
+              if (at === 'workspace') return command === 'npm test' ? { red: OLD_RED } : 'pass';
+              if (command !== 'npm test') return 'pass';
+              const name = readdirSync(runBaseTreesRoot()).find((entry) => !before.includes(entry));
+              if (name === undefined) throw new Error('the base command has no tree');
+              tree = join(runBaseTreesRoot(), name);
+              execFileSync('git', ['worktree', 'lock', tree], { cwd: run.dir, stdio: 'pipe' });
+              return baseStatus === 'pass' ? 'pass' : { red: OLD_RED };
+            },
+          });
+          expect(
+            rows(events)
+              .filter((row) => row.moment === 'base')
+              .map((row) => [row.id, row.status, row.passed]),
+          ).toEqual([
+            ['V1', 'running', undefined],
+            ['V1', 'done', baseStatus === 'pass'],
+            ['V2', 'running', undefined],
+            ['V2', 'done', true],
+          ]);
+          const warning = events.find(
+            (event): event is EngineEventOf<'warning'> =>
+              event.type === 'warning' && event.message.includes('cleanup of run base tree'),
+          );
+          expect(warning?.message).toContain(tree);
+          expect(warning?.message).toContain('locked');
+          const settled = rows(events).find(
+            (row) => row.moment === 'pre-review' && row.status === 'done' && row.id === 'V1',
+          );
+          expect(settled).toMatchObject(
+            baseStatus === 'pass'
+              ? { passed: false, newFailures: 1, preExisting: 0 }
+              : { passed: false, newFailures: 0, preExisting: 1 },
+          );
+          expect(settled).not.toHaveProperty('notVerified');
+          expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+            'npm test @ base',
+            'npx --no-install vitest run @ base',
+            'npm test @ workspace',
+            ...(baseStatus === 'fail' ? ['npx --no-install vitest run @ workspace'] : []),
+          ]);
+          const logged = (readEvidenceLedger(ref)?.tasks[0]?.checks ?? []).find(
+            (entry) => entry.id === 'V1',
+          );
+          expect(logged).toMatchObject({
+            base: { output: baseStatus === 'pass' ? 'ok' : OLD_RED },
+          });
+          expect(outcome.section).not.toContain('failed, not verified at the run base');
+          expect(outcome.state.pendingTriage?.inputs.length ?? 0).toBe(
+            baseStatus === 'pass' ? 1 : 0,
+          );
+          expect(existsSync(tree)).toBe(true);
+          expect(existsSync(join(run.dir, '.git/worktrees', basename(tree)))).toBe(true);
+        } finally {
+          if (tree !== '') {
+            execFileSync('git', ['worktree', 'unlock', tree], { cwd: run.dir, stdio: 'pipe' });
+            execFileSync('git', ['worktree', 'remove', '--force', tree], {
+              cwd: run.dir,
+              stdio: 'pipe',
+            });
+          }
+        }
+      });
+    },
+  );
+
+  it('warns about a stale tree it cannot remove while a repeated base re-run still compares keys', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-stale-cleanup' }, async (run) => {
+      mkdirSync(runBaseTreesRoot(), { recursive: true });
+      const gone = spawnSync(process.execPath, ['-e', '']).pid;
+      const stale = join(runBaseTreesRoot(), `base-${gone}-locked`);
+      execFileSync('git', ['worktree', 'add', '--detach', stale, 'HEAD'], {
+        cwd: run.dir,
+        stdio: 'pipe',
+      });
+      execFileSync('git', ['worktree', 'lock', stale], { cwd: run.dir, stdio: 'pipe' });
+      const logDir = createTempDir('review-checks-log');
+      enableDebugLog(logDir);
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const { outcome, events, commands } = await reviewChecks(run, {
+            gate: ['npm test', 'npx --no-install vitest run'],
+            answer: (command) => (command === 'npm test' ? { red: OLD_RED } : 'pass'),
+          });
+          // The run base does not change, so the second base run takes the stored results, makes
+          // no base tree and shows no base row.
+          expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+            ...(attempt === 0 ? ['npm test @ base', 'npx --no-install vitest run @ base'] : []),
+            'npm test @ workspace',
+            'npx --no-install vitest run @ workspace',
+          ]);
+          expect(rows(events).some((row) => row.moment === 'base')).toBe(attempt === 0);
+          const settled = rows(events).find(
+            (row) => row.moment === 'pre-review' && row.status === 'done' && row.id === 'V1',
+          );
+          expect(settled).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
+          expect(settled).not.toHaveProperty('detail');
+          expect(outcome.section).toContain(
+            'failed, 0 new failure(s); 1 pre-existing (also red at the run base)\n',
+          );
+          expect(outcome.section).toContain(
+            'Pre-existing failures (also red at the run base):\n- src/legacy.ts(3,7)',
+          );
+          expect(existsSync(stale)).toBe(true);
+          expect(existsSync(join(run.dir, '.git/worktrees', basename(stale)))).toBe(true);
+        }
+        const warnings = loggedDiagnostics(logDir);
+        expect(warnings).toHaveLength(1);
+        expect(warnings.every((warning) => warning.includes(stale))).toBe(true);
+        expect(warnings.every((warning) => warning.includes('locked'))).toBe(true);
+      } finally {
+        cleanupTempDir(logDir);
+        execFileSync('git', ['worktree', 'unlock', stale], { cwd: run.dir, stdio: 'pipe' });
+        execFileSync('git', ['worktree', 'remove', '--force', stale], {
+          cwd: run.dir,
+          stdio: 'pipe',
+        });
+      }
+    });
+  });
+
+  // L4: the base re-run of a live run was red for reasons nobody could read; its output was dropped.
+  it('records the base re-run output on the check evidence beside the workspace output', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-output' }, async (run) => {
+      const { ref } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (_command, at) => ({ red: at === 'workspace' ? NEW_RED : OLD_RED }),
+      });
+
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')).toMatchObject({
+        exitCode: 1,
+        output: NEW_RED,
+        base: { exitCode: 1, output: OLD_RED },
+      });
+    });
+  });
+
+  // L4 review B1: a long red kept only its first 4000 characters and its last 4096, so a vitest
+  // failure list at the end was lost and both sides matched on the same stderr notice.
+  it('keys a long red by its whole output, so a stderr notice it shares with the run base is its only pre-existing key', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-long-red' }, async (run) => {
+      const passing = Array.from({ length: 200 }, (_, i) => ` ✓ src/x.test.ts > passes ${i} 2ms`);
+      const red = (failing: string) => ({
+        red: [...passing, ` FAIL  ${failing}`].join('\n'),
+        stderr: 'biome.json:38: the key files.ignore is deprecated',
+      });
+      const { outcome, events, ref } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (_command, at) =>
+          red(at === 'workspace' ? 'src/new.test.ts > adds' : 'src/old.test.ts > keeps'),
+      });
+
+      expect(
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toMatchObject({ newFailures: 1, preExisting: 1 });
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('src/new.test.ts::adds');
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toEqual([
+        'biome.json:38: the key files.ignore is deprecated',
+      ]);
+    });
+  });
+
+  it('marks a red at a run base copy with no base commit not verified, even when its keys match', async () => {
+    await withApplyRun(
+      FILES,
+      { sessionId: 'sess-checks-base-incomplete', strategy: 'staged-copy' },
+      async (run) => {
+        const { outcome, events, ref } = await reviewChecks(run, {
+          gate: ['npm test'],
+          answer: () => ({ red: OLD_RED }),
+        });
+
+        const reason =
+          'the run recorded no base commit, so its run base copy has no Git history, file modes or symlinks';
+        expect(outcome.section).toContain(
+          `- V1 \`npm test\`: failed, not verified at the run base (${reason}); the reviewer decides\ncheck V1 did not pass (fail): 1 failure\nFailures:\n- ${OLD_RED}\nOutput tail:`,
+        );
+        expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+        expect(
+          rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+        ).toMatchObject({ newFailures: 0, preExisting: 0, notVerified: 1, detail: reason });
+        const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+        expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
+      },
+    );
+  });
+
+  it('runs a reviewer check of any stack, and a package script without plan approval', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-any-stack' }, async (run) => {
+      const { outcome, commands } = await reviewChecks(run, {
+        gate: ['mvn test', 'npm run lint', './gradlew test', 'bin/test'],
+        state: { approve: 'none' },
+      });
+
+      expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'mvn test @ base',
+        'npm run lint @ base',
+        './gradlew test @ base',
+        'mvn test @ workspace',
+        'npm run lint @ workspace',
+        './gradlew test @ workspace',
+      ]);
+      expect(outcome.section).toContain('- V4 `bin/test`: refused, runs a program by path');
+    });
+  });
+
+  it('names the exit code of a red command that printed nothing, with no file', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-silent' }, async (run) => {
+      const { outcome } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (_command, at) => (at === 'workspace' ? { red: '' } : 'pass'),
+      });
+
+      expect(outcome.state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({ id: 'V1.1', file: null }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('exited with code 1');
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain('No task changed it.');
+    });
+  });
+
+  it('queues one input per failing file, each naming the task that last changed it', async () => {
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/a.ts'] }),
+      makeTask({ id: 'T002', status: 'done', suggestedFiles: ['src/b.ts'] }),
+    ];
+    await withApplyRun(
+      { ...FILES, 'src/b.ts': 'export const b = 2;\n' },
+      { sessionId: 'sess-checks-owners' },
+      async (run) => {
+        let ledger = createEvidenceLedger({ sessionId: run.sessionId, feature: 'f', tasks });
+        for (const [task, file] of [
+          [tasks[0], 'src/a.ts'],
+          [tasks[1], 'src/b.ts'],
+        ] as const) {
+          if (task === undefined) throw new Error('missing task fixture');
+          ledger = recordLocalTaskEvidence({
+            ledger,
+            task,
+            status: 'done',
+            changedFiles: [file],
+          });
+        }
+        writeEvidenceLedger({ projectDir: run.dir, sessionId: run.sessionId }, ledger);
+
+        const { outcome } = await reviewChecks(run, {
+          gate: ['npm test'],
+          tasks,
+          answer: (_command, at) =>
+            at === 'workspace'
+              ? { red: `${NEW_RED}\nsrc/b.ts(2,3): error TS2304: Cannot find name x.` }
+              : 'pass',
+        });
+
+        const inputs = outcome.state.pendingTriage?.inputs ?? [];
+        expect(inputs.map((input) => [input.id, input.file])).toEqual([
+          ['V1.1', 'src/a.ts'],
+          ['V1.2', 'src/b.ts'],
+        ]);
+        expect(inputs[0]?.text).toContain('Last changed by T001.');
+        expect(inputs[1]?.text).toContain('Last changed by T002.');
+        expect(inputs[0]?.text).toContain(`- ${NEW_RED}`);
+        expect(inputs[0]?.text).not.toContain('src/b.ts');
+        expect(inputs[1]?.text).toContain('- src/b.ts(2,3): error TS2304: Cannot find name x.');
+        expect(inputs[1]?.text).not.toContain('src/a.ts');
+      },
+    );
+  });
+
+  // Live run 2026-10-09: a fix task must know which failures of the red command are its own.
+  it('queues an input only for a file with new failures, carrying the new keys that name it', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-own-keys' }, async (run) => {
+      const { outcome } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (_command, at) => ({
+          red: at === 'workspace' ? `${NEW_RED}\n${OLD_RED}` : OLD_RED,
+        }),
+      });
+
+      expect(
+        (outcome.state.pendingTriage?.inputs ?? []).map((input) => [
+          input.id,
+          input.file,
+          input.failureKeys,
+        ]),
+      ).toEqual([['V1.1', 'src/a.ts', [NEW_RED]]]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.redKeys).toEqual([NEW_RED, OLD_RED]);
+    });
+  });
+
+  it('names a new failure that only the head of a long output shows', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-long-red' }, async (run) => {
+      const noise = Array.from(
+        { length: 200 },
+        (_, index) => `    Type 'Section<${index}>' is not assignable to type 'Section<never>'.`,
+      ).join('\n');
+      const { outcome } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (_command, at) =>
+          at === 'workspace' ? { red: `${NEW_RED}\n${noise}\n${OLD_RED}` } : { red: OLD_RED },
+      });
+
+      expect(
+        (outcome.state.pendingTriage?.inputs ?? []).map((input) => [input.file, input.failureKeys]),
+      ).toEqual([['src/a.ts', [NEW_RED]]]);
+    });
+  });
+
+  it('bounds each file listing and keeps test assertions when the output tail is noise', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-test-messages' }, async (run) => {
+      const noise = 'runner event\n'.repeat(500);
+      const { outcome } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (_command, at) =>
+          at === 'base'
+            ? 'pass'
+            : {
+                red: [
+                  ...Array.from(
+                    { length: 12 },
+                    (_line, index) =>
+                      ` FAIL  src/a.test.ts > adds ${index}\nAssertionError: expected ${index} to be 20`,
+                  ),
+                  ' FAIL  src/b.test.ts > subtracts',
+                  'AssertionError: expected 3 to be 4',
+                  noise,
+                ].join('\n'),
+              },
+      });
+      const inputs = outcome.state.pendingTriage?.inputs ?? [];
+
+      expect(inputs.map((input) => input.file)).toEqual(['src/a.test.ts', 'src/b.test.ts']);
+      expect(inputs[0]?.output).not.toContain('AssertionError');
+      expect(inputs[0]?.text).toContain(
+        '12 failures\nFailures:\n- src/a.test.ts::adds 0\n  AssertionError: expected 0 to be 20',
+      );
+      expect(inputs[0]?.text.match(/^- /gm)).toHaveLength(10);
+      expect(inputs[0]?.text).toContain('and 2 more');
+      expect(inputs[0]?.text).not.toContain('Output tail:');
+      expect(inputs[0]?.text).not.toContain('src/b.test.ts');
+      expect(inputs[0]?.text).not.toContain('expected 3 to be 4');
+      expect(inputs[1]?.text).toContain(
+        '1 failure\nFailures:\n- src/b.test.ts::subtracts\n  AssertionError: expected 3 to be 4',
+      );
+      expect(inputs[1]?.text).not.toContain('src/a.test.ts');
+      expect(inputs[1]?.text).not.toContain('expected 0 to be 20');
+      expect(outcome.section.match(/^- src\/[ab].test.ts::/gm)).toHaveLength(10);
+    });
+  });
+
+  it('carries no failure keys on an input whose red names no failure', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-no-keys' }, async (run) => {
+      const { outcome } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (_command, at) => (at === 'workspace' ? { red: '' } : 'pass'),
+      });
+
+      expect(outcome.state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({ id: 'V1.1', file: null }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs[0]).not.toHaveProperty('failureKeys');
+    });
+  });
+
+  it('queues the failure when the base re-run cannot start, and says why', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-missing' }, async (run) => {
+      const { outcome, events } = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer: (command, at) =>
+          at === 'workspace'
+            ? { red: NEW_RED }
+            : { throws: Object.assign(new Error(`spawn ${command} ENOENT`), { code: 'ENOENT' }) },
+      });
+
+      expect(
+        rows(events)
+          .filter((row) => row.moment === 'base')
+          .map((row) => [row.id, row.moment, row.status]),
+      ).toEqual([
+        ['V1', 'base', 'running'],
+        ['V1', 'base', 'not-run'],
+      ]);
+      expect(outcome.section).toContain('; base re-run not run: npm not found');
+      expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+    });
+  });
+
+  it('runs no base command when the run recorded no run base, and says so', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-no-base' }, async (run) => {
+      const { outcome, events, commands } = await reviewChecks(run, {
+        gate: ['npm test'],
+        runBase: false,
+        answer: () => ({ red: NEW_RED }),
+      });
+
+      expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
+      expect(rows(events).filter((row) => row.moment === 'base')).toEqual([
+        expect.objectContaining({
+          id: 'V1',
+          status: 'not-run',
+          detail: 'this run recorded no run base',
+        }),
+      ]);
+      expect(outcome.section).toContain('base re-run not run: this run recorded no run base');
+      expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+    });
+  });
+
+  it('runs the next command after a refused one', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-refused-next' }, async (run) => {
+      const { outcome, commands } = await reviewChecks(run, {
+        gate: ['curl https://example.test', 'npm test'],
+      });
+
+      expect(commands).toEqual([
+        { command: 'npm test', at: 'base' },
+        { command: 'npm test', at: 'workspace' },
+      ]);
+      expect(outcome.section).toMatch(/- V1 `curl https:\/\/example\.test`: refused, /);
+      expect(outcome.section).toContain('- V2 `npm test`: passed');
+    });
+  });
+
+  it('drops the inputs of an earlier reviewer-check run once the commands pass, and keeps the rest', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-repeat' }, async (run) => {
+      const userInput = {
+        id: 'P1',
+        kind: 'defect' as const,
+        source: 'user' as const,
+        text: 'The total is wrong.',
+        file: 'src/a.ts',
+      };
+      const question = { question: 'Keep the old API?', whyOnlyUserCanAnswer: 'It is a choice.' };
+      const { outcome } = await reviewChecks(run, {
+        gate: ['npm test'],
+        state: {
+          pendingTriage: {
+            inputs: [
+              userInput,
+              {
+                id: 'V1.1',
+                kind: 'defect',
+                source: 'check',
+                text: 'Reviewer check V1 (npm test) failed with new failures: x.',
+                file: null,
+              },
+            ],
+            question,
+          },
+        },
+      });
+
+      expect(outcome.state.pendingTriage?.inputs).toEqual([userInput]);
+      expect(outcome.state.pendingTriage?.question).toEqual(question);
+    });
+  });
+
+  it('refuses npm test when the run changed the test script, and never runs it', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-changed-script' }, async (run) => {
+      writeFileSync(
+        join(run.ws, 'package.json'),
+        JSON.stringify({ scripts: { test: 'node -e "process.exit(0)"' } }),
+      );
+      const { outcome, events, commands } = await reviewChecks(run, {
+        gate: ['npm test'],
+      });
+
+      // The run base holds the test script the run began with, so only the workspace refuses it.
+      expect(commands).toEqual([{ command: 'npm test', at: 'base' }]);
+      expect(rows(events).at(-1)).toMatchObject({
+        id: 'V1',
+        moment: 'pre-review',
+        status: 'refused',
+        detail: 'runs the package script test, which this run changed',
+      });
+      expect(outcome.section).toContain(
+        '- V1 `npm test`: refused, runs the package script test, which this run changed',
+      );
+    });
+  });
+});
+
+describe('reviewer checks run each command once per tree state', () => {
+  /** A run whose workspace changed `src/a.ts` since the run began, as the run baseline records. */
+  async function changedRun(run: ApplyRun): Promise<Partial<WorkflowState>> {
+    const baseline = await captureChangedFilesBaseline(run.ws);
+    writeFileSync(join(run.ws, 'src', 'a.ts'), 'export const a = 2;\n');
+    return { changedFilesBaseline: serializeChangedFilesBaseline(baseline) };
+  }
+
+  it('reuses the pre-review run of the same command on an unchanged workspace', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-once-pre-review' }, async (run) => {
+      const changed = await changedRun(run);
+      const state = makeImplState(
+        [makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/a.ts'] })],
+        {
+          phase: 'final-review',
+          workspace: run.workspace,
+          ...changed,
+          plan: {
+            summary: 'Run the tests.',
+            criteria: [],
+            decisions: [],
+            checks: [{ id: 'K1', kind: 'cmd', value: 'npm test' }],
+            validation: null,
+          },
+        },
+      );
+      const preReviewCommands: string[] = [];
+      await runPreReviewChecks({
+        state,
+        workspaceDir: run.ws,
+        projectDir: run.dir,
+        sessionId: run.sessionId,
+        config: makeConfig(),
+        bus: makeBusRecorder().bus,
+        phase: 'final-review',
+        npmScriptsApproved: true,
+        runCommand: async (cmd, args) => {
+          preReviewCommands.push([cmd, ...args].join(' '));
+          return { stdout: 'ok', stderr: '', code: 0 };
+        },
+      });
+
+      const { commands, events } = await reviewChecks(run, {
+        gate: ['npm test'],
+        state: changed,
+      });
+
+      expect(preReviewCommands).toEqual(['npm test']);
+      expect(commands).toEqual([{ command: 'npm test', at: 'base' }]);
+      expect(
+        rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
+      ).toMatchObject({
+        id: 'V1',
+        passed: true,
+        reusedAt: expect.any(String),
+      });
+    });
+  });
+
+  it('runs a command once in the workspace and once at the run base, and reuses both on the next review', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-once-base' }, async (run) => {
+      const changed = await changedRun(run);
+      const answer = (command: string) => (command === 'npm test' ? { red: OLD_RED } : 'pass');
+      const first = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer,
+        state: changed,
+      });
+      expect(first.commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'npm test @ base',
+        'npm test @ workspace',
+      ]);
+
+      const second = await reviewChecks(run, {
+        gate: ['npm test'],
+        answer,
+        state: changed,
+      });
+
+      expect(second.commands).toEqual([]);
+      expect(
+        rows(second.events)
+          .filter((row) => row.status === 'done')
+          .map((row) => [row.moment, row.reusedAt !== undefined, row.preExisting]),
+      ).toEqual([['pre-review', true, 1]]);
+      expect(second.outcome).toMatchObject({
+        preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
+      });
+    });
+  });
+});

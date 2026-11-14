@@ -11,13 +11,17 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { createInitialState, transition } from '../../../core/state/machine.js';
+import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
+import {
+  CLOSE_RUN_SESSION_ID,
+  setupCloseRunWorkspace,
+} from '#testing/helpers/close-run-workspace.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
@@ -27,7 +31,7 @@ import {
   makePlanner,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { startWorkspaceRun, WORKSPACE_RUN_BINARY } from '#testing/helpers/workspace-run.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
@@ -62,27 +66,12 @@ vi.mock('../isolation/worktree/remove.js', async (importOriginal) => {
   };
 });
 
-const SESSION_ID = '2026-10-04-close-run';
-const realStateHome = process.env.XDG_STATE_HOME;
-let dirs: string[] = [];
+const SESSION_ID = CLOSE_RUN_SESSION_ID;
+const { dirs, openWorkspaceRun } = setupCloseRunWorkspace();
 
 beforeEach(() => {
   removal.patchExisted = [];
-  const stateHome = createTempDir('close-run-state-home');
-  dirs.push(stateHome);
-  process.env.XDG_STATE_HOME = stateHome;
 });
-
-afterEach(() => {
-  if (realStateHome === undefined) delete process.env.XDG_STATE_HOME;
-  else process.env.XDG_STATE_HOME = realStateHome;
-  for (const dir of dirs) cleanupTempDir(dir);
-  dirs = [];
-});
-
-function openWorkspaceRun(strategy: 'worktree' | 'staged-copy') {
-  return startWorkspaceRun({ strategy, sessionId: SESSION_ID, dirs });
-}
 
 /**
  * A checkout run inside its brief T001, which declares lib/lerp.mjs and has written it and an
@@ -807,139 +796,5 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
       status: 'in_progress',
       changedFiles: ['lib/lerp.mjs', 'lib/smooth.mjs', 'test/lerp.test.mjs'],
     });
-  });
-});
-
-describe('removeClosedRunWorkspaces', () => {
-  it.each([
-    {
-      closedReason: 'ended',
-      close: (state: WorkflowState) => transition(state, { type: 'CLOSE_RUN' }),
-    },
-    {
-      closedReason: 'discarded',
-      close: (state: WorkflowState) => transition(state, { type: 'CLOSE_RUN', as: 'discarded' }),
-    },
-    {
-      closedReason: 'applied',
-      close: (state: WorkflowState) =>
-        transition(
-          transition(
-            {
-              ...state,
-              phase: 'complete',
-              reviewStatus: 'passed',
-            },
-            { type: 'APPLY_START', backupId: 'backup-1' },
-          ),
-          { type: 'APPLY_DONE', files: [] },
-        ),
-    },
-  ] as const)(
-    'removes a closed worktree run ($closedReason) with its record still set',
-    { timeout: 60_000 },
-    async ({ close }) => {
-      const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
-      saveState(ref, close(state));
-
-      expect(await readWorkspaceRecord(ref)).not.toBeNull();
-      expect(existsSync(workspaceDir)).toBe(true);
-
-      await removeClosedRunWorkspaces(ref.projectDir);
-
-      expect(existsSync(workspaceDir)).toBe(false);
-      const wtList = execFileSync('git', ['worktree', 'list', '--porcelain'], {
-        cwd: ref.projectDir,
-        encoding: 'utf8',
-      });
-      expect(wtList).not.toContain(workspaceDir);
-      const branches = execFileSync('git', ['branch', '--list'], {
-        cwd: ref.projectDir,
-        encoding: 'utf8',
-      });
-      expect(branches).not.toContain(`splitbrief/${SESSION_ID}`);
-      expect(await readWorkspaceRecord(ref)).toBeNull();
-    },
-  );
-
-  it('removes a closed staged-copy run with its record still set', {
-    timeout: 60_000,
-  }, async () => {
-    const { ref, state, workspaceDir } = await openWorkspaceRun('staged-copy');
-    saveState(ref, transition(state, { type: 'CLOSE_RUN' }));
-
-    expect(await readWorkspaceRecord(ref)).not.toBeNull();
-    expect(existsSync(workspaceDir)).toBe(true);
-
-    await removeClosedRunWorkspaces(ref.projectDir);
-
-    expect(existsSync(workspaceDir)).toBe(false);
-    expect(await readWorkspaceRecord(ref)).toBeNull();
-  });
-
-  it('an open run and a ready-to-apply run with records keep their workspaces', {
-    timeout: 60_000,
-  }, async () => {
-    const openRun = await openWorkspaceRun('worktree');
-    expect(await readWorkspaceRecord(openRun.ref)).not.toBeNull();
-    expect(existsSync(openRun.workspaceDir)).toBe(true);
-
-    await removeClosedRunWorkspaces(openRun.ref.projectDir);
-
-    expect(existsSync(openRun.workspaceDir)).toBe(true);
-    expect(await readWorkspaceRecord(openRun.ref)).not.toBeNull();
-
-    const readyRun = await openWorkspaceRun('worktree');
-    const readyState: WorkflowState = {
-      ...readyRun.state,
-      phase: 'complete',
-      reviewStatus: 'passed',
-    };
-    saveState(readyRun.ref, readyState);
-    expect(await readWorkspaceRecord(readyRun.ref)).not.toBeNull();
-    expect(existsSync(readyRun.workspaceDir)).toBe(true);
-
-    await removeClosedRunWorkspaces(readyRun.ref.projectDir);
-
-    expect(existsSync(readyRun.workspaceDir)).toBe(true);
-    expect(await readWorkspaceRecord(readyRun.ref)).not.toBeNull();
-  });
-
-  // A kept record warns again at each start; a gone path this checkout does not own clears it.
-  it('a closed run whose state.workspace.path does not match its confined path clears its record silently for a missing foreign workspace', {
-    timeout: 60_000,
-  }, async () => {
-    const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
-    const closedState: WorkflowState = {
-      ...transition(state, { type: 'CLOSE_RUN' }),
-      workspace: {
-        ...state.workspace!,
-        path: join(ref.projectDir, 'mismatched-path'),
-      },
-    };
-    saveState(ref, closedState);
-    expect(await readWorkspaceRecord(ref)).not.toBeNull();
-
-    const logDir = createTempDir('close-run-log-');
-    dirs.push(logDir);
-    enableDebugLog(logDir);
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      await expect(removeClosedRunWorkspaces(ref.projectDir)).resolves.toBeUndefined();
-      expect(stderrSpy).not.toHaveBeenCalled();
-      expect(loggedDiagnostics(logDir)).toEqual([]);
-      expect(await readWorkspaceRecord(ref)).toBeNull();
-      expect(existsSync(workspaceDir)).toBe(true);
-
-      stderrSpy.mockClear();
-      await expect(removeClosedRunWorkspaces(ref.projectDir)).resolves.toBeUndefined();
-      expect(stderrSpy).not.toHaveBeenCalled();
-      expect(loggedDiagnostics(logDir)).toEqual([]);
-      expect(await readWorkspaceRecord(ref)).toBeNull();
-      expect(existsSync(workspaceDir)).toBe(true);
-    } finally {
-      stderrSpy.mockRestore();
-      resetLoggerForTests();
-    }
   });
 });
