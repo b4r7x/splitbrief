@@ -7,13 +7,13 @@ import {
   promptOwnsInput,
 } from './use-mouse-scroll.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { closeApprovalPrompt, openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt, openApprovalPrompt } from '../../../stores/prompts/approval.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { completionStore } from '../../../stores/ui/completion.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
 

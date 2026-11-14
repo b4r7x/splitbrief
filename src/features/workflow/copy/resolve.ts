@@ -1,7 +1,7 @@
 import { isAbsolute, relative } from 'node:path';
 import { configStore } from '../../../stores/project/config.js';
 import { getVisibleBriefWindow, reviewStore } from '../../../stores/workflow/review.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { getRunnerCommand } from '../../../core/config/accessors/runner-config.js';
 import type { CopyTarget } from '../../../core/runtime/commands/types.js';
 import { assertNever } from '../../../utils/type-guards.js';

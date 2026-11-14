@@ -7,7 +7,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { glyph } from '../../lib/glyphs.js';
 import { _resetMouseZones, hitTopmostZone } from '../../lib/terminal/mouse-zones.js';
-import { ListRow } from '../list-row.js';
+import { ListRow } from '../list-row/row.js';
 import { defaultTheme, ThemeProvider } from '../theme.js';
 import { SingleColumnPicker } from './single-column.js';
 

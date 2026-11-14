@@ -1,5 +1,5 @@
 import { getTerminalCellWidth } from '../utils/display-text/width.js';
-import { SOFT_SEP } from './separators.js';
+import { SOFT_SEP } from '../core/separators.js';
 
 // The two-cell slot a key legend opens with: the mark, its trailing space, and nothing else, so
 // its first key lands on the text column the words around it open on. The guillemet is untiered

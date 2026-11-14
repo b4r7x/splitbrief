@@ -16,7 +16,7 @@ import {
   type PreparationOutcome,
   type PreparedExecution,
 } from '../engine/runners/prepared-execution.js';
-import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt, openApprovalPrompt } from '../stores/prompts/approval.js';
 import {
   continueRunInPlace,
   sessionSelectStore,

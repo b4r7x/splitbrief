@@ -9,7 +9,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markCancellationRequested } from '../../../stores/workflow/actions/interrupt.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { runSeatIdentity } from '../../../core/providers/seat-identity.js';

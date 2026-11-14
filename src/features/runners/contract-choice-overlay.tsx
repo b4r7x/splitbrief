@@ -2,7 +2,7 @@ import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
 import { SOFT_SEP } from '../../core/separators.js';
-import { listRowLead } from '../../components/list-row.js';
+import { listRowLead } from '../../components/list-row/lead.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../core/runners/seat-roles.js';

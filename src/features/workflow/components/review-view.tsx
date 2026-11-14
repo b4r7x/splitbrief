@@ -6,11 +6,11 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { ScrollIndicator } from '../../../components/scroll-indicator.js';
+import { ScrollableDocument } from '../../../components/scrollable-document/document.js';
 import {
   clampScrollableDocumentOffset,
   getScrollableDocumentLineCount,
-  ScrollableDocument,
-} from '../../../components/scrollable-document.js';
+} from '../../../components/scrollable-document/window.js';
 import { Divider } from '../../../components/divider.js';
 import { FramePanel } from './frame-panel.js';
 import { getReviewColumnWidth, getReviewContentLayout, REVIEW_FRAME_ROWS } from '../layout/rect.js';

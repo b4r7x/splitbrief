@@ -29,7 +29,7 @@ import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -45,7 +45,7 @@ import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import { closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import { CONFIRM_PHRASE, type TieredApprovalResponse } from '../../core/approval/types.js';
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
 import { wireAppMouse } from '../mouse.js';

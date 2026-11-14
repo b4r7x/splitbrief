@@ -29,7 +29,7 @@ import { overlayStore } from '../stores/ui/overlay.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
-import { questionPromptStore } from '../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../stores/prompts/question.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import {
@@ -47,7 +47,7 @@ import { resolveAttachment } from '../core/attachments/resolve.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
-import { detectionStore } from '../stores/project/detection.js';
+import { detectionStore } from '../stores/discovery/detection.js';
 import { readActive } from '../core/sessions/active-pointer.js';
 import type {
   AcceptRunResult,

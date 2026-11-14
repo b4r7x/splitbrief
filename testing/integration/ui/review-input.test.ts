@@ -7,7 +7,7 @@ import { PassThrough } from 'node:stream';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { terminalSequences } from '../../../src/lib/terminal/control.js';

@@ -120,7 +120,7 @@ async function startComposer(): Promise<void> {
   ] = await Promise.all([
     import('react'),
     import('../../../../src/cli/render/app.js'),
-    import('../../../../src/components/composer/composer.js'),
+    import('../../../../src/components/composer/view.js'),
     import('../../../../src/stores/project/config.js'),
     import('../../../helpers/factories/config.js'),
     import('../../../../src/stores/ui/terminal-size.js'),
@@ -197,9 +197,9 @@ async function startTracking(): Promise<void> {
     import('../../../../src/cli/render/app.js'),
     import('../../../visual/gallery/fixture-session.js'),
     import('../../../visual/catalog.js'),
-    import('../../../../src/stores/workflow/events.js'),
+    import('../../../../src/stores/workflow/events/state.js'),
     import('../../../../src/stores/workflow/conversation-scroll.js'),
-    import('../../../../src/stores/workflow/lifecycle.js'),
+    import('../../../../src/stores/workflow/lifecycle/state.js'),
     import('../../../../src/stores/workflow/run-view.js'),
   ]);
   const scenario = listVisualScenarios().find(

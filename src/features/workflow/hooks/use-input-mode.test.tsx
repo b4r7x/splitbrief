@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../../../stores/prompts/question.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';

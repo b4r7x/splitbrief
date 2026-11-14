@@ -2,7 +2,7 @@ import { plainUserMessage } from '../../../core/types/user-input.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';
-import { fitKeyLegend } from '../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../components/key-legend.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { slashHandoffPending } from '../slash-handoff.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';

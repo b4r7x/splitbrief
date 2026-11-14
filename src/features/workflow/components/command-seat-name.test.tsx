@@ -11,7 +11,7 @@ import {
   makeRunnerCallStarted,
 } from '#testing/helpers/events/runner-call.js';
 import { configStore } from '../../../stores/project/config.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';

@@ -4,7 +4,8 @@ import type { EngineEventOf } from '../../../src/engine/events/types.js';
 import { deriveLiveStatus } from '../../../src/features/workflow/display/live-activity.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
-import { lifecycleStore, type LifecycleState } from '../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
+import type { LifecycleState } from '../../../src/stores/workflow/lifecycle/types.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import type { RunView } from '../../../src/core/run-view/reduce.js';
 

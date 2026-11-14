@@ -6,7 +6,7 @@ import { sessionsRoot } from '../../../src/core/paths.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/group.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
-import { mergeEventLog } from '../../../src/stores/workflow/events.js';
+import { mergeEventLog } from '../../../src/stores/workflow/events/merge.js';
 import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';

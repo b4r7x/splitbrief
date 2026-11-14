@@ -2,7 +2,7 @@ import { ThemeText as Text } from '../../../components/theme.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import { Box } from 'ink';
 import { useSharedClock } from '../../../hooks/use-shared-clock.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { useStores } from '../../../stores/use-stores.js';

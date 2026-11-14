@@ -12,9 +12,9 @@ import { cliDetectionFor, cliDetectionsFor } from '#testing/helpers/factories/de
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { _resetMouseZones } from '../../../src/lib/terminal/mouse-zones.js';
-import { listRowLead } from '../../../src/components/list-row.js';
+import { listRowLead } from '../../../src/components/list-row/lead.js';
 import { configStore } from '../../../src/stores/project/config.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';

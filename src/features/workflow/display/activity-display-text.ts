@@ -6,7 +6,7 @@ import {
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { fitKeyLegend } from '../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../components/key-legend.js';
 
 const LABEL_VALUE_SEPARATOR = '  ';
 

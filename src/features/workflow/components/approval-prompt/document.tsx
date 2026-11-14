@@ -19,7 +19,7 @@ import {
 } from '../../prompt-rows/approval.js';
 import type { ReviewDraftTarget } from '../../review-commands.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
-import { fitKeyLegend } from '../../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { MARK_SLOT_CELLS } from '../../../../components/row-leading.js';
 import { MenuRows } from '../../stop/menu-rows.js';

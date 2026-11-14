@@ -1,4 +1,4 @@
-import { availableRows } from '../../pickers/scroll-window.js';
+import { availableRows } from '../../pickers/scroll-offset.js';
 
 const SUGGESTION_PANEL_CHROME_ROWS = 4;
 const SUGGESTION_PANEL_SAFETY_MARGIN = 8;

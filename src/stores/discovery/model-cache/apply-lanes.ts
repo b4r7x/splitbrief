@@ -24,13 +24,13 @@ import {
 } from './reconcile-cli-catalogs.js';
 import {
   freshness,
-  laneGeneration,
   laneIsOutdated,
   laneRefreshState,
   modelsDevRefresh,
   modelsDevValue,
   sourceRefresh,
 } from './refresh-lanes.js';
+import { laneGeneration } from './lane-context.js';
 import type { DiscoverySourceRefresh, ModelCacheState, ProviderModelCache } from './types.js';
 
 export function providerModels(

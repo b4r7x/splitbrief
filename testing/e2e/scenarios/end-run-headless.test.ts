@@ -28,7 +28,7 @@ import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';

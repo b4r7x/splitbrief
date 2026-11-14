@@ -1,5 +1,6 @@
-import { lifecycleStore } from '../lifecycle.js';
-import { _lifecycleInternal, markLifecycleCancellationRequested } from '../lifecycle.js';
+import { lifecycleStore } from '../lifecycle/state.js';
+import { _lifecycleInternal } from '../lifecycle/state.js';
+import { markLifecycleCancellationRequested } from '../lifecycle/marks.js';
 import { _operationsInternal } from '../operations/state.js';
 import { markOperationsCancellationRequested } from '../operations/reducer.js';
 

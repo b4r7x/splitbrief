@@ -1,5 +1,5 @@
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';

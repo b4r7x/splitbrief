@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { getScrollbarThumb, hasScrollbarOverflow, scrollbarCell } from '../scrollbar.js';
-import { windowSlice } from './scroll-window.js';
+import { windowSlice } from './scroll-offset.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from './row-zone.js';
 
 interface SingleColumnPickerProps<T> {

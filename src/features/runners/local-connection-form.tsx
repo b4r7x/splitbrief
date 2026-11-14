@@ -1,10 +1,10 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect, useRef, useState } from 'react';
 import { Box, useInput } from 'ink';
-import { ListRow } from '../../components/list-row.js';
+import { ListRow } from '../../components/list-row/row.js';
 import { MultilineInput } from '../../components/input/multiline-input.js';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
-import { windowSlice } from '../../components/pickers/scroll-window.js';
+import { windowSlice } from '../../components/pickers/scroll-offset.js';
 import { parseApiKeyEnvRef } from '../../core/config/credentials.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import type { DetectedModel } from '../../core/discovery/detection/model.js';

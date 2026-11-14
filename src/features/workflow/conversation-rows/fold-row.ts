@@ -1,4 +1,4 @@
-import { fitKeyLegend } from '../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../components/key-legend.js';
 import { getShortcutKey } from '../../../core/keybindings/registry.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';

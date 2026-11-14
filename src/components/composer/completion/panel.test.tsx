@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { CompletionPanel } from './completion-panel.js';
+import { CompletionPanel } from './panel.js';
 
 const ITEMS = ['alpha', 'bravo', 'charlie', 'delta', 'echo'];
 

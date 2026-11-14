@@ -19,7 +19,7 @@ import {
   saveSessionDraft,
 } from '../../stores/ui/session-drafts.js';
 import { departureStore } from '../../stores/workflow/departure.js';
-import { eventsStore } from '../../stores/workflow/events.js';
+import { eventsStore } from '../../stores/workflow/events/state.js';
 import { diffEventKey } from '../../core/sections/events.js';
 import { readLatestDiffKey } from '../../features/workflow/conversation-rows/read-row-actions.js';
 import { makeDiffReadCounter } from '#testing/helpers/events/implementer.js';
@@ -49,8 +49,8 @@ import {
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
 import type { WorkflowScreenDeps } from '../../features/workflow/hooks/workflow-screen/use-model.js';
-import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
-import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { questionPromptStore } from '../../stores/prompts/question.js';
+import { openApprovalPrompt } from '../../stores/prompts/approval.js';
 import { CommandPaletteOverlay } from '../overlays/palette.js';
 import { useRuntimeCommands } from '../command-context.js';
 import {
@@ -64,7 +64,7 @@ import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js'
 import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
 import { hydrateResume } from '../../features/workflow/resume-hydration.js';
 import { requestStopNow } from '../../features/workflow/handlers.js';
-import { listRowLead } from '../../components/list-row.js';
+import { listRowLead } from '../../components/list-row/lead.js';
 import { glyph } from '../../lib/glyphs.js';
 import { arrowSep } from '../../core/separators.js';
 import { saveFinalSession } from '../../engine/orchestrator/session-lifecycle/finalize.js';
@@ -89,7 +89,7 @@ const { feedbackStore } = await import('../../stores/ui/feedback.js');
 const { composerLiveStore } = await import('../../stores/ui/composer-live.js');
 const { composerDraftStore } = await import('../../stores/ui/composer-draft.js');
 const { stopStore } = await import('../../stores/workflow/stop.js');
-const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/composer.js');
+const { COMMANDS_ONLY_NOTICE } = await import('../../components/composer/view.js');
 const { runViewStore } = await import('../../stores/workflow/run-view.js');
 const { completionStore } = await import('../../stores/ui/completion.js');
 const { useAppKeys } = await import('../keys.js');

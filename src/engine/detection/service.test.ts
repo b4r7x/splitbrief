@@ -18,7 +18,7 @@ import { detectionContextKey } from './types.js';
 import { scopedCliCatalogConnection } from './cli-catalog-outcomes.js';
 import { createProductionDetectionDeps } from './deps.js';
 import { loadRememberedSnapshot, saveDetectionCache } from './cache.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev-cache.js';
 import { fetchModelsDevCatalogWithCache } from '../providers/models-dev.js';

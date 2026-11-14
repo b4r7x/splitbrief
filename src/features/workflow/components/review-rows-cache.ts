@@ -2,7 +2,7 @@ import {
   renderMarkdownRows,
   type RenderMarkdownRowsOptions,
 } from '../../../components/markdown.js';
-import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
+import type { ScrollableDocumentRow } from '../../../components/scrollable-document/window.js';
 
 interface ReviewRowsCacheEntry {
   options: RenderMarkdownRowsOptions;

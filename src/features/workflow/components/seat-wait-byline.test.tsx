@@ -10,7 +10,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { _runViewInternal, runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';

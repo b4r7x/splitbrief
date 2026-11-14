@@ -6,7 +6,7 @@ import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { writeEmptyDetectionCache } from '#testing/helpers/write-empty-detection-cache.js';
 import { flushEffects } from '#testing/helpers/ink.js';
 import type { ReactElement } from 'react';
-import type { Composer } from '../../../src/components/composer/composer.js';
+import type { Composer } from '../../../src/components/composer/view.js';
 import type { RuntimeCommandDef } from '../../../src/core/runtime/commands/types.js';
 
 const ENTER = '\r';
@@ -21,9 +21,7 @@ async function loadRuntime() {
   const React = await import('react');
   const { Box } = await import('ink');
   const { render } = await import('ink-testing-library');
-  const { Composer: ComposerComponent } = await import(
-    '../../../src/components/composer/composer.js'
-  );
+  const { Composer: ComposerComponent } = await import('../../../src/components/composer/view.js');
   const { initStores, teardownStores } = await import('../../../src/cli/bootstrap/init.js');
   const { awaitBackgroundDiscovery } = await import('../../../src/cli/bootstrap/discovery.js');
   const { resetAllStores } = await import('#testing/helpers/stores.js');

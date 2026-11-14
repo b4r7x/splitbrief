@@ -2,7 +2,7 @@ import { createStore, storeBase } from '../create-store.js';
 import { preparationStore } from '../navigation/preparation.js';
 import { routerStore } from '../navigation/router.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
-import { lifecycleStore } from './lifecycle.js';
+import { lifecycleStore } from './lifecycle/state.js';
 import { runViewStore } from './run-view.js';
 
 export type StopIntent = 'none' | 'stop-now' | 'pause-after-brief' | 'end-run' | 'quit';

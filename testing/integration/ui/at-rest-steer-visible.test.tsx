@@ -21,7 +21,7 @@ import { saveState } from '../../../src/core/state/persistence.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';

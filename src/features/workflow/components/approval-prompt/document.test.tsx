@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { listRowLead } from '../../../../components/list-row.js';
+import { listRowLead } from '../../../../components/list-row/lead.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../../core/composer/document.js';

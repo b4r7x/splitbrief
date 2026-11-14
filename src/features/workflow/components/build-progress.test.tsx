@@ -12,9 +12,9 @@ import { defaultTheme, ThemeText as Text } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { BuildProgressBlock } from './build-progress.js';
 
 // Ink resolves chalk's colour level against the capture stdout unless FORCE_COLOR is set before

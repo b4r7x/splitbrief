@@ -54,7 +54,7 @@ function savedTexts(): string[] {
 /** Import a fresh module tree (post-resetModules) so the store and the
  *  persistence module are the same references. */
 async function loadModules() {
-  const mod = await import('./persistence.js');
+  const mod = await import('./input-history-persistence.js');
   const { inputHistoryStore } = await import('./input-history.js');
   return { ...mod, inputHistoryStore };
 }

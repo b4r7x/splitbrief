@@ -1,6 +1,6 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -52,7 +52,7 @@ import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { queueCopy } from '../queue-copy.js';
 import { messageSeat } from '../../../core/queue/state.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';

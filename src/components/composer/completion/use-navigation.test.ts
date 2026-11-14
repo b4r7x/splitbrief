@@ -2,7 +2,7 @@ import { createElement, useRef } from 'react';
 import { Text } from 'ink';
 import { describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
-import { useCompletionNavigation } from './use-completion-navigation.js';
+import { useCompletionNavigation } from './use-navigation.js';
 
 const ENTER = '\r';
 const UP = '\x1b[A';

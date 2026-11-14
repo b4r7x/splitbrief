@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Fzf, type FzfResultItem } from 'fzf';
-import { useCompletionSelection } from '../use-completion-selection.js';
-import { useCompletionNavigation } from '../use-completion-navigation.js';
+import { useCompletionSelection } from '../use-selection.js';
+import { useCompletionNavigation } from '../use-navigation.js';
 
 const MAX_RESULTS = 50;
 

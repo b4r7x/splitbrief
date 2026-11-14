@@ -3,7 +3,9 @@ import { Box, Text } from 'ink';
 import type { Key } from 'ink';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_RENDER_VIEWPORT, flushEffects, renderFeature } from '#testing/helpers/ink.js';
-import { MultilineInput, type InputAtom, type InputEdit } from './multiline-input.js';
+import { MultilineInput } from './multiline-input.js';
+import type { InputEdit } from './atoms.js';
+import type { InputAtom } from './atoms.js';
 
 const CTRL_R = '\x12';
 const CTRL_U = '\x15';

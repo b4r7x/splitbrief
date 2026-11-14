@@ -29,7 +29,7 @@ import type { Phase } from '../../../src/core/schemas/enums.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { glyph } from '../../../src/lib/glyphs.js';
-import { listRowLead } from '../../../src/components/list-row.js';
+import { listRowLead } from '../../../src/components/list-row/lead.js';
 import { setStopHandler } from '../../../src/features/workflow/handlers.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { createMockFilteredStdin, pointerEvent } from '#testing/helpers/mouse-zones.js';
@@ -40,9 +40,9 @@ const workflowDeps = { runWorkflow };
 let projectDir = '';
 
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
-const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
+const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle/state.js');
 const { runViewStore } = await import('../../../src/stores/workflow/run-view.js');
-const { openApprovalPrompt } = await import('../../../src/stores/approval-prompt/prompt.js');
+const { openApprovalPrompt } = await import('../../../src/stores/prompts/approval.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 

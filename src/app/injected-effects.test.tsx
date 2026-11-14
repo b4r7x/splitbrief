@@ -82,7 +82,7 @@ vi.mock('../features/workflow/handlers.js', async (importOriginal) => ({
 }));
 
 const { configStore } = await import('../stores/project/config.js');
-const { detectionStore } = await import('../stores/project/detection.js');
+const { detectionStore } = await import('../stores/discovery/detection.js');
 const { overlayStore } = await import('../stores/ui/overlay.js');
 const { pickerViewStore } = await import('../stores/ui/picker-view.js');
 const { routerStore } = await import('../stores/navigation/router.js');

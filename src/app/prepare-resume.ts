@@ -7,7 +7,7 @@ import { prepareExecution } from '../engine/runners/prepare-execution/prepare-ex
 import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import type { PreparationPolicy } from '../engine/runners/prepare-execution/types.js';
 import type { PreparationOutcome } from '../engine/runners/prepared-execution.js';
-import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt, openApprovalPrompt } from '../stores/prompts/approval.js';
 import type { SessionSelectDeps } from '../stores/navigation/session-select.js';
 import { configStore } from '../stores/project/config.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';

@@ -10,7 +10,7 @@ import { ConfigSchema } from '../../src/core/schemas/config.js';
 import { ModelsDevCatalogSchema } from '../../src/core/schemas/models-dev.js';
 import { resolveModelCatalog } from '../../src/engine/providers/model/catalog.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
-import { detectionStore } from '../../src/stores/project/detection.js';
+import { detectionStore } from '../../src/stores/discovery/detection.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId } from './contracts/identifiers.js';

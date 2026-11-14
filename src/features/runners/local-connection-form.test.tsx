@@ -10,7 +10,7 @@ import type { DetectedModel } from '../../core/discovery/detection/model.js';
 import { __testResetProbeActivity, trackProbe } from '../../engine/probe-activity.js';
 import type { ProviderCatalogOutcome } from '../../engine/providers/types.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

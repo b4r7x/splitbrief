@@ -4,7 +4,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { listRowLead } from '../../components/list-row.js';
+import { listRowLead } from '../../components/list-row/lead.js';
 import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

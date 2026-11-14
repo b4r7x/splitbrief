@@ -37,11 +37,11 @@ import { eventRows, buildConversationRows } from '#testing/helpers/event-rows.js
 import { rowText } from './conversation-rows/row-format/rows.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
-import { eventsStore } from '../../stores/workflow/events.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { eventsStore } from '../../stores/workflow/events/state.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { selectRunningBrief } from '../../core/run-view/briefs.js';
-import { tokensStore } from '../../stores/workflow/tokens.js';
+import { tokensStore } from '../../stores/workflow/tokens/state.js';
 import { operationsStore } from '../../stores/workflow/operations/state.js';
 import { hydrateRun, readRunHistory } from './run-history.js';
 

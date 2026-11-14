@@ -12,7 +12,7 @@ import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

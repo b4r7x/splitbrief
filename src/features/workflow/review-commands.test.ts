@@ -6,7 +6,7 @@ import {
   reviewDraftTarget,
   reviewOpeningPromptMessage,
 } from './review-commands.js';
-import { fitKeyLegend } from '../../core/key-legend.js';
+import { fitKeyLegend } from '../../components/key-legend.js';
 
 describe('REVIEW_HINT', () => {
   // Asserted against the literal legend rather than against the constant it names, so the

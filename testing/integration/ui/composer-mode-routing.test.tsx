@@ -5,7 +5,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import type { RuntimeCommandDef } from '../../../src/core/runtime/commands/types.js';
-import { Composer } from '../../../src/components/composer/composer.js';
+import { Composer } from '../../../src/components/composer/view.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
 
 const ENTER = '\r';

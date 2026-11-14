@@ -1,8 +1,5 @@
-import {
-  _lifecycleInternal,
-  clearLifecycleInterrupted,
-  clearLifecyclePaused,
-} from '../lifecycle.js';
+import { _lifecycleInternal } from '../lifecycle/state.js';
+import { clearLifecycleInterrupted, clearLifecyclePaused } from '../lifecycle/marks.js';
 
 export function markInterruptResumed(): void {
   _lifecycleInternal.set((s) => clearLifecycleInterrupted(s));

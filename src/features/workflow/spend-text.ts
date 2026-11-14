@@ -1,4 +1,4 @@
-import { tokensStore, type TokensState } from '../../stores/workflow/tokens.js';
+import { tokensStore, type TokensState } from '../../stores/workflow/tokens/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { routerStore, type RouteData } from '../../stores/navigation/router.js';

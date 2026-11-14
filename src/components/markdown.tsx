@@ -14,7 +14,7 @@ import type {
   MarkdownLayoutRow,
   MarkdownLayoutSegment,
 } from '../utils/markdown/types.js';
-import type { ScrollableDocumentRow } from './scrollable-document.js';
+import type { ScrollableDocumentRow } from './scrollable-document/window.js';
 import type { Theme } from '../core/theme/palette.js';
 
 export interface MarkdownSegmentStyle {

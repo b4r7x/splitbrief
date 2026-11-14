@@ -7,8 +7,8 @@ import { makeTaskStart, makeTaskComplete } from '#testing/helpers/events/task.js
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
-import { eventsStore } from '../../../../stores/workflow/events.js';
-import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { eventsStore } from '../../../../stores/workflow/events/state.js';
+import { lifecycleStore } from '../../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { addEvent } from '../../../../stores/workflow/actions/event.js';

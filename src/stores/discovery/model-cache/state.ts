@@ -40,12 +40,9 @@ import {
   configuredProviderValues,
   freezeConfiguredProviders,
 } from './reconcile-providers.js';
-import {
-  initialRefresh,
-  laneContext,
-  legacyOutcomes,
-  sourceContextsMatch,
-} from './refresh-lanes.js';
+import { legacyOutcomes } from './refresh-lanes.js';
+import { laneContext, sourceContextsMatch } from './lane-context.js';
+import { initialRefresh } from './lane-context.js';
 import type {
   DetectionStoreHydration,
   DetectionStoreState,

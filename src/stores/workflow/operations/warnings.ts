@@ -1,6 +1,6 @@
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { cleanOperationText } from './operation-text.js';
+import { cleanOperationText } from './text.js';
 import type { OperationWarningGroup, OperationWarningSeverity } from './state.js';
 
 const MAX_WARNINGS = 20;

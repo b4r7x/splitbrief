@@ -29,7 +29,7 @@ import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { inputHistoryStore } from '../../../src/stores/ui/input-history.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { attachmentsStore } from '../../../src/stores/workflow/attachments.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 
 describe('composer @ files', () => {

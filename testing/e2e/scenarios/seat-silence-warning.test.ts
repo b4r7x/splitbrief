@@ -12,7 +12,7 @@ import {
   runnerSilenceMs,
 } from '../../../src/features/workflow/display/build-progress.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
 import { operationsStore } from '../../../src/stores/workflow/operations/state.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

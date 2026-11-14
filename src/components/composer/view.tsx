@@ -1,7 +1,8 @@
 import { ThemeText as Text, useTheme } from '../theme.js';
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import { Box, type Key } from 'ink';
-import { MultilineInput, type InputEdit } from '../input/multiline-input.js';
+import { MultilineInput } from '../input/multiline-input.js';
+import type { InputEdit } from '../input/atoms.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
 import { ReferenceCompletionMenu } from './completion/reference/menu.js';
 import { useCommandCompletion } from './completion/command/hook.js';
@@ -52,7 +53,7 @@ import {
 } from './hint-zones.js';
 import { useReviewKeys } from './use-review-keys.js';
 import { useDraftSync } from './use-draft-sync.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import {

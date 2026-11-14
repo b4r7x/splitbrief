@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { listRowLead } from '../../../src/components/list-row.js';
+import { listRowLead } from '../../../src/components/list-row/lead.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,

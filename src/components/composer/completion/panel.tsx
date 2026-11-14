@@ -4,7 +4,7 @@ import { Box } from 'ink';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import { getScrollbarThumb, scrollbarCell } from '../../scrollbar.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { keepInViewOffset } from '../../pickers/scroll-window.js';
+import { keepInViewOffset } from '../../pickers/scroll-offset.js';
 
 export function CompletionPanel<T>({
   items,

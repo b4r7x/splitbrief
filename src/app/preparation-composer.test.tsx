@@ -14,7 +14,7 @@ import { createInitialState } from '../core/state/machine.js';
 import { loadOwnerWorkflowState } from '../core/state/resume-hydration.js';
 import type { PrepareExecutionInput } from '../engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparationOutcome } from '../engine/runners/prepared-execution.js';
-import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt, openApprovalPrompt } from '../stores/prompts/approval.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { draftDocumentText, inputHistoryStore } from '../stores/ui/input-history.js';

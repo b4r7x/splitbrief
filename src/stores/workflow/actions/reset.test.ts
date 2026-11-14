@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { addEvent } from './event.js';
 import { resetWorkflow } from './reset.js';
-import { eventsStore } from '../events.js';
-import { tokensStore } from '../tokens.js';
-import { lifecycleStore } from '../lifecycle.js';
+import { eventsStore } from '../events/state.js';
+import { tokensStore } from '../tokens/state.js';
+import { lifecycleStore } from '../lifecycle/state.js';
 import { runViewStore } from '../run-view.js';
 import { stopStore } from '../stop.js';
-import { approvalPromptStore, openApprovalPrompt } from '../../approval-prompt/prompt.js';
+import { approvalPromptStore, openApprovalPrompt } from '../../prompts/approval.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeTaskStart, makeTaskComplete } from '#testing/helpers/events/task.js';
 

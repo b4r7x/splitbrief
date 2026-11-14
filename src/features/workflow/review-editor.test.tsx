@@ -8,7 +8,7 @@ import { editorStore } from '../../stores/ui/editor.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import type { Phase } from '../../core/schemas/enums.js';

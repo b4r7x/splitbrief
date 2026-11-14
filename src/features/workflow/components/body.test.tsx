@@ -6,7 +6,7 @@ import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { configStore } from '../../../stores/project/config.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';

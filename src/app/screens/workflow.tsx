@@ -87,7 +87,7 @@ import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { haltReadsNoWords } from '../../core/run-view/halt.js';
-import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { questionOptions, questionPromptStore } from '../../stores/prompts/question.js';
 import {
   recoveryComposerHint,
   RECOVERY_EMPTY_ENTER_NOTICE,

@@ -12,15 +12,15 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { makeBriefBoundaryEvents } from '#testing/helpers/events/task.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { clearAllHandlers, setResumeHandler } from '../handlers.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';

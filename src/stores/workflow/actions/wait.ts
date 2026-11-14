@@ -1,8 +1,5 @@
-import {
-  _lifecycleInternal,
-  markLifecycleWaitEnded,
-  markLifecycleWaitStarted,
-} from '../lifecycle.js';
+import { _lifecycleInternal } from '../lifecycle/state.js';
+import { markLifecycleWaitEnded, markLifecycleWaitStarted } from '../lifecycle/marks.js';
 import { runViewStore } from '../run-view.js';
 
 export function markWaitStarted(ts = Date.now()): void {

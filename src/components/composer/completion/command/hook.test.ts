@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { Box, Text } from 'ink';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Composer } from '../../composer.js';
+import { Composer } from '../../view.js';
 import { renderFeature, flushEffects, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';

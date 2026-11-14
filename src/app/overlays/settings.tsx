@@ -3,15 +3,15 @@ import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { Box } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import {
-  availableRows,
   computeListDisplayWindow,
   isItemIndexVisible,
 } from '../../components/pickers/scroll-window.js';
-import { ListRow } from '../../components/list-row.js';
+import { availableRows } from '../../components/pickers/scroll-offset.js';
+import { ListRow } from '../../components/list-row/row.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { RuleHeader } from '../../components/rule-header.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';

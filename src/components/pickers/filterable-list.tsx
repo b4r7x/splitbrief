@@ -9,7 +9,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { availableRows } from './scroll-window.js';
+import { availableRows } from './scroll-offset.js';
 import { ListViewport, type ListSectionConfig } from './list-viewport.js';
 
 interface FilterableListProps<T> {

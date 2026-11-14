@@ -12,10 +12,7 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import {
-  questionOptions,
-  questionPromptStore as store,
-} from '../../../stores/question-prompt/prompt.js';
+import { questionOptions, questionPromptStore as store } from '../../../stores/prompts/question.js';
 import { QUESTION_ANSWER_ROWS } from '../prompt-rows/question.js';
 import { PlannerQuestion } from './planner-question.js';
 

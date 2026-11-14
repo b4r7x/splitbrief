@@ -11,7 +11,7 @@ import { rowText } from '../../../src/features/workflow/conversation-rows/row-fo
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
 import { stopByline } from '../../../src/features/workflow/stop/copy.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';

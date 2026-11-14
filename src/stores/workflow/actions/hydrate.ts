@@ -1,14 +1,15 @@
 import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue/state.js';
+import { taskAttemptTotalTokens } from '../tokens/update.js';
 import {
   _tokensInternal,
-  taskAttemptTotalTokens,
   type PerTaskTokens,
   type TaskAttemptTokens,
   type TokensState,
-} from '../tokens.js';
-import { _lifecycleInternal, type LifecycleState } from '../lifecycle.js';
+} from '../tokens/state.js';
+import { _lifecycleInternal } from '../lifecycle/state.js';
+import type { LifecycleState } from '../lifecycle/types.js';
 import { _runViewInternal } from '../run-view.js';
 import { settleReviewNone, settleRunView } from '../../../core/run-view/settle.js';
 

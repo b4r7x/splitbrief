@@ -4,7 +4,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
-import { Composer } from '../../../src/components/composer/composer.js';
+import { Composer } from '../../../src/components/composer/view.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
 import {
   attachmentFailureText,

@@ -28,7 +28,7 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { useInputMode } from '../../../src/features/workflow/hooks/use-input-mode.js';
 import {

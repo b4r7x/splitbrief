@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
-import { listRowLead } from '../../../components/list-row.js';
+import { listRowLead } from '../../../components/list-row/lead.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';

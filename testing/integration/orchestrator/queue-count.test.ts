@@ -20,7 +20,7 @@ import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../src/stores/workflow/actions/hydrate.js';
 import { loadEvents } from '../../../src/stores/workflow/actions/load.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
 
 const dirs: string[] = [];
 
@@ -83,7 +83,7 @@ describe('queue count across delivery and reopening', () => {
         '-e',
         `import { loadState } from './src/core/state/persistence.js';
        import { hydrateFromState } from './src/stores/workflow/actions/hydrate.js';
-       import { lifecycleStore } from './src/stores/workflow/lifecycle.js';
+       import { lifecycleStore } from './src/stores/workflow/lifecycle/state.js';
        hydrateFromState(loadState(JSON.parse(process.argv[1])));
        process.stdout.write(String(lifecycleStore.get().queueDepth));`,
         JSON.stringify(ref),

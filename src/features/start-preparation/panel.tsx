@@ -3,10 +3,8 @@ import type { ReactNode } from 'react';
 import { useInput } from 'ink';
 import { OverlayPanel, type OverlayCard } from '../../components/overlays/overlay-panel.js';
 import { RuleHeader } from '../../components/rule-header.js';
-import {
-  ScrollableDocument,
-  type ScrollableDocumentRow,
-} from '../../components/scrollable-document.js';
+import { ScrollableDocument } from '../../components/scrollable-document/document.js';
+import type { ScrollableDocumentRow } from '../../components/scrollable-document/window.js';
 import { getScrollViewportContentWidth } from '../../components/scrollbar.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';

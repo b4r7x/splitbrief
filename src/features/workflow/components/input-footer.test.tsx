@@ -12,12 +12,12 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
@@ -27,7 +27,7 @@ import {
   type RunningOperation,
 } from '../../../stores/workflow/operations/state.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { BRAILLE_SPINNER_FRAMES, glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { clearAllHandlers, requestSeatChangeAtBoundary } from '../handlers.js';

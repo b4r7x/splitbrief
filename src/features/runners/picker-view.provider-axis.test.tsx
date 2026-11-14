@@ -11,7 +11,7 @@ import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inheritPlannerOption, type PickerOption } from './model-catalog/options.js';

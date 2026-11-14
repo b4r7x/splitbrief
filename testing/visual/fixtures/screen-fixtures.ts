@@ -9,7 +9,7 @@ import { writeConfig } from '../../../src/core/config/load/io.js';
 import { configPath, readConfigDocument } from '../../../src/core/config/load/document.js';
 import type { CLIOverrides } from '../../../src/core/config/runtime/overrides/schema.js';
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { trackToolCheck } from '../../../src/engine/probe-activity.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool/types.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
@@ -51,7 +51,7 @@ import {
 } from '../../../src/engine/runners/prepare-execution/evaluate-candidate.js';
 import { blockedCheck } from '../../../src/engine/runners/prepare-execution/runner-candidates.js';
 import { formatCustomRunnerTrustRequest } from '../../../src/engine/runners/custom-runner-disclosure.js';
-import { openApprovalPrompt } from '../../../src/stores/approval-prompt/prompt.js';
+import { openApprovalPrompt } from '../../../src/stores/prompts/approval.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection/tool.js';
 import type { DetectedModel } from '../../../src/core/discovery/detection/model.js';
 import {

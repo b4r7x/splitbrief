@@ -11,7 +11,7 @@ import { EngineEventSchema } from '../../engine/events/schema.js';
 import { createCallEvidenceSink } from '../../engine/orchestrator/summary/call-evidence.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { tokensStore } from '../../stores/workflow/tokens.js';
+import { tokensStore } from '../../stores/workflow/tokens/state.js';
 import { readCostText, usageDetailsForRun } from './spend-text.js';
 
 const tempDirs: string[] = [];

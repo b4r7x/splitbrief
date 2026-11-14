@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { useStores } from '../../stores/use-stores.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';

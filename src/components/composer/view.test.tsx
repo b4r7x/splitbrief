@@ -17,23 +17,23 @@ import type { InputMode } from '../../core/navigation/types.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { getInputHistoryDocuments, inputHistoryStore } from '../../stores/ui/input-history.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import { tokensStore } from '../../stores/workflow/tokens.js';
+import { tokensStore } from '../../stores/workflow/tokens/state.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { completionStore } from '../../stores/ui/completion.js';
 import { MAX_ATTACHMENT_BYTES } from '../../core/schemas/attachment.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
-import { COMMANDS_ONLY_NOTICE, Composer } from './composer.js';
+import { COMMANDS_ONLY_NOTICE, Composer } from './view.js';
 
 vi.mock('node:fs', async (original) => ({
   ...(await original<typeof import('node:fs')>()),

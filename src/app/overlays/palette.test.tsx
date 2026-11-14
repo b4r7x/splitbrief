@@ -19,7 +19,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { skillsStore } from '../../stores/project/skills.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { commandPaletteMruStore } from '../../stores/ui/command-palette-mru.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
@@ -40,7 +40,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { glyph } from '../../lib/glyphs.js';
-import { Composer } from '../../components/composer/composer.js';
+import { Composer } from '../../components/composer/view.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { CommandPaletteOverlay } from './palette.js';
 

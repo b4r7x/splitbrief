@@ -4,7 +4,7 @@ import { Box, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
-import { ListRow } from '../../components/list-row.js';
+import { ListRow } from '../../components/list-row/row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { isItemIndexVisible } from '../../components/pickers/scroll-window.js';

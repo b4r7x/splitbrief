@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { renderInputMode } from '#testing/helpers/input-mode.js';
 import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
-import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../../stores/prompts/question.js';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
 import { clearAllHandlers, requestSteer } from './handlers.js';
 import type { PlannerConversation } from '../../core/schemas/workflow/state.js';
@@ -11,7 +11,7 @@ import {
   type UseInputModeResult,
 } from './hooks/use-input-mode.js';
 import { createDraftDocument } from '../../core/composer/document.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { seedBriefs } from '#testing/helpers/stores.js';

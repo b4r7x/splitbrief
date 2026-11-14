@@ -10,7 +10,7 @@ import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { configStore } from '../../stores/project/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { useStores } from '../../stores/use-stores.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { CliToolDetection } from '../../core/discovery/detection/tool.js';

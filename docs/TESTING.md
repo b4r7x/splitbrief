@@ -143,7 +143,7 @@ Cost-aware implementer routing, Apply, and the plan card follow the same rule: t
 
 **Plan card.** Pure `parseReviewCommand` cases live in `src/features/workflow/review-commands.test.ts`. Handler routing, external-editor spawn, and terminal handover during review input belong in `testing/integration/ui/review-input.test.ts`. The card's engine contract (approve, a typed correction, a re-validated `plan.json` edit, `approve: none`) lives in the `the plan card` block of `src/engine/orchestrator/planning/session.test.ts`. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
 
-**Input history persistence.** Debounced `~/.splitbrief/history` writes and teardown at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`.
+**Input history persistence.** Debounced `~/.splitbrief/history` writes and teardown at the composer persistence boundary stay in `src/stores/ui/input-history-persistence.test.ts`.
 
 **Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
 

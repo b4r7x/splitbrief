@@ -17,7 +17,7 @@ import {
 } from '../../engine/providers/models-dev-cache/store.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { installDiagnosticSink } from '../../lib/warn.js';
 import {
   awaitBackgroundDiscovery,

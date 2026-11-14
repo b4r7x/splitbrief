@@ -4,7 +4,7 @@ import { UsageDetails } from '../../features/workflow/usage-details.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
-import { tokensStore } from '../../stores/workflow/tokens.js';
+import { tokensStore } from '../../stores/workflow/tokens/state.js';
 import { operationsStore } from '../../stores/workflow/operations/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';

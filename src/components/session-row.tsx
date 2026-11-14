@@ -1,6 +1,6 @@
 import { ThemeText as Text, useTheme } from './theme.js';
 import { Box } from 'ink';
-import { listRowLead } from './list-row.js';
+import { listRowLead } from './list-row/lead.js';
 import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
 import type { Session } from '../core/schemas/session.js';

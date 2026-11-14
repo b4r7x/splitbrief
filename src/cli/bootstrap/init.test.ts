@@ -9,7 +9,7 @@ import type { CliToolDetection, ProviderDetection } from '../../core/discovery/d
 import { initStores, initStoresForTuiMount, teardownStores } from './init.js';
 import { awaitBackgroundDiscovery } from './discovery.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { controlsStore } from '../../stores/ui/controls.js';

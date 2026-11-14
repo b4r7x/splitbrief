@@ -20,8 +20,8 @@ import {
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import type { CommandCompletionRow } from './menu.js';
-import { useCompletionSelection } from '../use-completion-selection.js';
-import { useCompletionNavigation } from '../use-completion-navigation.js';
+import { useCompletionSelection } from '../use-selection.js';
+import { useCompletionNavigation } from '../use-navigation.js';
 import { activeApply } from '../../../../engine/orchestrator/session-lifecycle/shutdown.js';
 
 interface UseCommandCompletionOptions {

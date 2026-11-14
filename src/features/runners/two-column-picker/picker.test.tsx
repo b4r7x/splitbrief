@@ -7,7 +7,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones, hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
-import { ListRow } from '../../../components/list-row.js';
+import { ListRow } from '../../../components/list-row/row.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';

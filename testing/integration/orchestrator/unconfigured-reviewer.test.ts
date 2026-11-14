@@ -18,7 +18,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
-import { tokensStore } from '../../../src/stores/workflow/tokens.js';
+import { tokensStore } from '../../../src/stores/workflow/tokens/state.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import {

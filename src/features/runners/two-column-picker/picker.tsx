@@ -1,9 +1,9 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
-import { ListRow } from '../../../components/list-row.js';
+import { ListRow } from '../../../components/list-row/row.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
-import { availableRows } from '../../../components/pickers/scroll-window.js';
+import { availableRows } from '../../../components/pickers/scroll-offset.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';

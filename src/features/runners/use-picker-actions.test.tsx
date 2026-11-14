@@ -9,7 +9,7 @@ import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import { seatAxisFocus } from '../../core/navigation/types.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
@@ -25,7 +25,7 @@ import {
   type PreparationOrigin,
 } from '../../stores/navigation/preparation.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { seedBriefs } from '#testing/helpers/stores.js';

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

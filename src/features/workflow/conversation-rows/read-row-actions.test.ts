@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { diffEventKey } from '../../../core/sections/events.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { makeDiffReadCounter } from '#testing/helpers/events/implementer.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { readConversationScrollSnapshot } from '../layout/snapshot.js';

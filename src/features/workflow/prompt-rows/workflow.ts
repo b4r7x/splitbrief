@@ -1,4 +1,4 @@
-import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
+import type { ApprovalPromptState } from '../../../stores/prompts/approval.js';
 import {
   getApprovalPromptRows,
   getReviewDocumentPromptRows,

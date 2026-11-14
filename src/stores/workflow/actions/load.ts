@@ -1,11 +1,13 @@
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { _eventsInternal, mergeEventLog } from '../events.js';
-import { _lifecycleInternal, lifecycleStore } from '../lifecycle.js';
+import { mergeEventLog } from '../events/merge.js';
+import { _eventsInternal } from '../events/state.js';
+import { _lifecycleInternal, lifecycleStore } from '../lifecycle/state.js';
 import { updateOperations } from '../operations/reducer.js';
 import { _operationsInternal } from '../operations/state.js';
 import { _runViewInternal, runViewStore } from '../run-view.js';
 import { reduceRunView } from '../../../core/run-view/reduce.js';
-import { _tokensInternal, updateTokens } from '../tokens.js';
+import { updateTokens } from '../tokens/update.js';
+import { _tokensInternal } from '../tokens/state.js';
 import { reduceLifecycle } from './event.js';
 import { resetWorkflowHistory } from './reset.js';
 

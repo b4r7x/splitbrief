@@ -7,7 +7,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import { loadRememberedSnapshot } from '../../../src/engine/detection/cache.js';
 import { createDetectionService } from '../../../src/engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../../../src/engine/detection/store-publication.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { resetAllStores } from '#testing/helpers/stores.js';

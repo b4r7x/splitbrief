@@ -21,7 +21,7 @@ import { loadOwnerWorkflowState } from '../../../src/core/state/resume-hydration
 import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
 import { hydrateRun, readRunHistory } from '../../../src/features/workflow/run-history.js';
-import { closeApprovalPrompt } from '../../../src/stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt } from '../../../src/stores/prompts/approval.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';

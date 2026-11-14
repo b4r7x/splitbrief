@@ -26,7 +26,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { useInputMode } from '../../../src/features/workflow/hooks/use-input-mode.js';
 import { glyph } from '../../../src/lib/glyphs.js';

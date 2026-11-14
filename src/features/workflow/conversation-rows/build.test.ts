@@ -1,7 +1,8 @@
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
-import { eventsStore, mergeEventLog } from '../../../stores/workflow/events.js';
+import { mergeEventLog } from '../../../stores/workflow/events/merge.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createElement, Fragment } from 'react';
 import { ConversationRowView } from '../components/conversation-flow/row-view.js';

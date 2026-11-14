@@ -1,9 +1,9 @@
 import { ThemeText as Text, useTheme } from '../../../theme.js';
 import { Box } from 'ink';
-import { listRowLead } from '../../../list-row.js';
+import { listRowLead } from '../../../list-row/lead.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
-import { CompletionPanel } from '../completion-panel.js';
+import { CompletionPanel } from '../panel.js';
 
 const NARROW_FOOTER_COLS = 50;
 

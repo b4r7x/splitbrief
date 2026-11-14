@@ -1,4 +1,4 @@
-import { LIST_ROW_LABEL_FLOOR } from '../../components/list-row.js';
+import { LIST_ROW_LABEL_FLOOR } from '../../components/list-row/fit.js';
 import { formatContextLength } from '../../core/formatting.js';
 import { formatModelName } from '../../core/providers/model-display.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';

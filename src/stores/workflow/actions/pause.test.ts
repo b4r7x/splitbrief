@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { addEvent } from './event.js';
 import { markWorkflowPaused } from './pause.js';
 import { resetWorkflow } from './reset.js';
-import { lifecycleStore } from '../lifecycle.js';
+import { lifecycleStore } from '../lifecycle/state.js';
 import { runViewStore } from '../run-view.js';
 
 describe('markWorkflowPaused', () => {

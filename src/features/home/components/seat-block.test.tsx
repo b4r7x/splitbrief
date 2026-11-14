@@ -13,7 +13,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { configStore } from '../../../stores/project/config.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import { detectionStore } from '../../../stores/project/detection.js';
+import { detectionStore } from '../../../stores/discovery/detection.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { HomeSeatBlock } from './seat-block.js';
 

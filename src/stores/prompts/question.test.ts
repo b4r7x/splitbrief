@@ -3,7 +3,7 @@ import { plainUserMessage, type UserMessageInput } from '../../core/types/user-i
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { composerLiveStore } from '../ui/composer-live.js';
-import { questionOptions, questionPromptStore as store } from './prompt.js';
+import { questionOptions, questionPromptStore as store } from './question.js';
 
 const questions: ClarificationQuestion[] = [
   {

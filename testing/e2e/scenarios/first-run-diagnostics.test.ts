@@ -10,7 +10,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { configStore } from '../../../src/stores/project/config.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';

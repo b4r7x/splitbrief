@@ -8,7 +8,7 @@ import {
   retrySessionPreparation,
   sessionSelectStore,
 } from '../stores/navigation/session-select.js';
-import { approvalPromptStore, closeApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { approvalPromptStore, closeApprovalPrompt } from '../stores/prompts/approval.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 
 /**

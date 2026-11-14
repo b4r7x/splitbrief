@@ -5,7 +5,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../stores/ui/controls.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { Screen } from '../../core/navigation/types.js';

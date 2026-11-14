@@ -11,12 +11,9 @@ import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import {
   closeApprovalPrompt,
   openApprovalPrompt,
-} from '../../../../src/stores/approval-prompt/prompt.js';
+} from '../../../../src/stores/prompts/approval.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
-import {
-  questionOptions,
-  questionPromptStore,
-} from '../../../../src/stores/question-prompt/prompt.js';
+import { questionOptions, questionPromptStore } from '../../../../src/stores/prompts/question.js';
 import { controlsStore } from '../../../../src/stores/ui/controls.js';
 import { addEvent } from '../../../../src/stores/workflow/actions/event.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';

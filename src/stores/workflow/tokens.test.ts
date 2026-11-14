@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tokensStore, updateTokens } from './tokens.js';
+import { updateTokens } from './tokens/update.js';
+import { tokensStore } from './tokens/state.js';
 import { addEvent } from './actions/event.js';
 import { markCancellationRequested } from './actions/interrupt.js';
 import { resetWorkflow } from './actions/reset.js';

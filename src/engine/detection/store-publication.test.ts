@@ -12,7 +12,7 @@ import type {
 } from './service.js';
 import { createProductionDetectionDeps } from './deps.js';
 import { createStore } from '../../stores/create-store.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import {
   createProcessScope,

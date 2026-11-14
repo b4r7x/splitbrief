@@ -12,7 +12,7 @@ import type { PreparedExecution } from '../../../engine/runners/prepared-executi
 import { useInputMode } from './use-input-mode.js';
 import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from './use-run-loop.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';

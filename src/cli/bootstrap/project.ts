@@ -1,6 +1,6 @@
 import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
-import { installHistoryPersistence } from '../../stores/ui/persistence.js';
+import { installHistoryPersistence } from '../../stores/ui/input-history-persistence.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { readUiPrefs } from '../../core/settings/ui-prefs.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';

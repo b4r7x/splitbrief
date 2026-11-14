@@ -2,7 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import { Box } from 'ink';
 import { configStore } from '../../../stores/project/config.js';
-import { detectionStore } from '../../../stores/project/detection.js';
+import { detectionStore } from '../../../stores/discovery/detection.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';

@@ -12,7 +12,7 @@ import { useAppKeys } from '../../../src/app/keys.js';
 import { useWorkflowKeys } from '../../../src/features/workflow/hooks/use-keys.js';
 import { FeedbackRow } from '../../../src/features/workflow/components/feedback-row.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';

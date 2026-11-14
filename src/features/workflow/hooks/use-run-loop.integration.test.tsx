@@ -34,7 +34,7 @@ import {
   rememberDetectedTools,
 } from '#testing/helpers/factories/detection.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
-import { detectionStore } from '../../../stores/project/detection.js';
+import { detectionStore } from '../../../stores/discovery/detection.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import { createRunIsolation } from '../../../engine/orchestrator/isolation/create.js';
 import { readWorkspaceRecord } from '../../../engine/orchestrator/isolation/retention.js';
@@ -51,9 +51,9 @@ import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop } from './use-run-loop.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';

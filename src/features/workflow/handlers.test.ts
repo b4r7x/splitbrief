@@ -41,10 +41,10 @@ import {
   setResumeHandler,
   spendSeatChange,
 } from './handlers.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
-import { eventsStore } from '../../stores/workflow/events.js';
+import { eventsStore } from '../../stores/workflow/events/state.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { stopStore } from '../../stores/workflow/stop.js';
@@ -64,7 +64,7 @@ import { buildPromptCallbacks } from './prompt-callbacks.js';
 import { plainAnswer } from './hooks/use-input-mode.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { reviewStore } from '../../stores/workflow/review.js';
-import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../../stores/prompts/question.js';
 
 describe('createAbortHandlerScope', () => {
   afterEach(() => {

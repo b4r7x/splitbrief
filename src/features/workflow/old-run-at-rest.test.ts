@@ -10,7 +10,7 @@ import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import { deriveRunStatus } from '../../core/sessions/run/status.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow/state.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
-import { eventsStore } from '../../stores/workflow/events.js';
+import { eventsStore } from '../../stores/workflow/events/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { hydrateRun } from './run-history.js';
 

@@ -10,7 +10,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { configStore } from '../../../src/stores/project/config.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';

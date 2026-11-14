@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Box, useInput } from 'ink';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
-import { ListGroupHeader, ListRow } from '../../components/list-row.js';
+import { ListGroupHeader, ListRow } from '../../components/list-row/row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -27,7 +27,7 @@ import {
 import { configStore } from '../../stores/project/config.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { eventsStore } from '../../stores/workflow/events.js';
+import { eventsStore } from '../../stores/workflow/events/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { clamp } from '../../utils/math.js';

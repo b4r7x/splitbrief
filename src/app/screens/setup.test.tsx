@@ -31,10 +31,10 @@ import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
-import { approvalPromptStore, openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore, openApprovalPrompt } from '../../stores/prompts/approval.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import type {
   DiscoveryRefreshRequest,
   DiscoverySourceContexts,

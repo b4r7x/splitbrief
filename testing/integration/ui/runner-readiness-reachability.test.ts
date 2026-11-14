@@ -14,7 +14,7 @@ import {
 import { deriveCliReadinessStatus } from '../../../src/core/schemas/readiness.js';
 import { deriveCliReadiness } from '../../../src/core/readiness/cli-remediation.js';
 import { detectAll, detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import {
   assemblePickerDescriptors,
   buildPickerOptions,

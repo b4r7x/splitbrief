@@ -19,7 +19,7 @@ import { glyph } from '../../lib/glyphs.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { type ConfigSaveResult, configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';

@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Box, type TextProps } from 'ink';
-import { ThemeText as Text } from '../theme.js';
-import { getTerminalCellWidth } from '../../utils/display-text/width.js';
-import { stripTerminalControls } from '../../utils/display-text/sanitize.js';
+import { ThemeText as Text } from '../../theme.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
 
 export interface AlignedOptionLabelWidthOptions {
   maxWidth?: number | undefined;

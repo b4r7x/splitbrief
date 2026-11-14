@@ -26,7 +26,7 @@ import {
 } from '../../../src/features/workflow/hooks/use-input-mode.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import { configStore } from '../../../src/stores/project/config.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';

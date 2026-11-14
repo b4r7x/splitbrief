@@ -1,8 +1,8 @@
 import { stopStore } from '../stop.js';
-import { closeApprovalPrompt } from '../../approval-prompt/prompt.js';
-import { eventsStore } from '../events.js';
-import { tokensStore } from '../tokens.js';
-import { lifecycleStore } from '../lifecycle.js';
+import { closeApprovalPrompt } from '../../prompts/approval.js';
+import { eventsStore } from '../events/state.js';
+import { tokensStore } from '../tokens/state.js';
+import { lifecycleStore } from '../lifecycle/state.js';
 import { operationsStore } from '../operations/state.js';
 import { runViewStore } from '../run-view.js';
 import { recoveryNoticeStore } from '../recovery-notice.js';

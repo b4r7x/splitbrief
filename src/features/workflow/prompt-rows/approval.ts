@@ -2,9 +2,9 @@ import { truncateTerminalDisplayText } from '../../../utils/display-text/truncat
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { fitKeyLegend } from '../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../components/key-legend.js';
 import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
-import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
+import type { ApprovalPromptState } from '../../../stores/prompts/approval.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
 import { wrapHard } from '../../../utils/display-text/wrap.js';

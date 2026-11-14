@@ -1,4 +1,4 @@
-import { listRowLead } from '../../../components/list-row.js';
+import { listRowLead } from '../../../components/list-row/lead.js';
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';

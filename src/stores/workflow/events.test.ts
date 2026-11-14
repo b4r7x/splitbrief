@@ -1,12 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  eventsStore,
-  MAX_EVENTS,
-  MAX_MERGED_TEXT_LENGTH,
-  mergeEvent,
-  mergeEventLog,
-  projectEventForTuiEventLog,
-} from './events.js';
+import { MAX_EVENTS, MAX_MERGED_TEXT_LENGTH, mergeEvent, mergeEventLog } from './events/merge.js';
+import { projectEventForTuiEventLog } from './events/project.js';
+import { eventsStore } from './events/state.js';
 import { addEvent } from './actions/event.js';
 import { resetWorkflow } from './actions/reset.js';
 import { markCancellationRequested } from './actions/interrupt.js';

@@ -3,7 +3,7 @@ import { flushEffects } from '#testing/helpers/ink.js';
 import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { Composer } from './composer.js';
+import { Composer } from './view.js';
 
 let unmount: (() => void) | undefined;
 

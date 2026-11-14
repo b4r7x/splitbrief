@@ -30,13 +30,13 @@ import type { DiscoveryRefreshSummary } from '../../core/runtime/commands/types.
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { type ConfigSaveResult, configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { listRowLead } from '../../components/list-row.js';
+import { listRowLead } from '../../components/list-row/lead.js';
 import { glyph } from '../../lib/glyphs.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { hydrateDetectionIntoStores } from '../../stores/discovery/detection-adapter.js';

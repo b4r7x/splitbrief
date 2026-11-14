@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { collectRunnerCallResult } from '../../../src/engine/calls/collector.js';

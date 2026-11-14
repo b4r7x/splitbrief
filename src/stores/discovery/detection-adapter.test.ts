@@ -5,7 +5,7 @@ import {
   hydrateModelsDevCatalogIntoStores,
 } from './detection-adapter.js';
 import { modelCacheStore } from './model-cache/state.js';
-import { detectionStore } from '../project/detection.js';
+import { detectionStore } from './detection.js';
 import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
 
 // Persisted context keys are `<source>|<percent-encoded context>`; ':' is not

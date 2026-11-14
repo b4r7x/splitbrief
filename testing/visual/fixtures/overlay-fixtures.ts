@@ -53,7 +53,7 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { editorStore } from '../../../src/stores/ui/editor.js';
 import { pickerViewStore } from '../../../src/stores/ui/picker-view.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
@@ -82,7 +82,7 @@ import {
   reportConfigSaveFailure,
 } from '../../../src/stores/project/save-feedback.js';
 import { configError } from '../../../src/core/config/errors.js';
-import { tokensStore } from '../../../src/stores/workflow/tokens.js';
+import { tokensStore } from '../../../src/stores/workflow/tokens/state.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { saveSessionDraft } from '../../../src/stores/ui/session-drafts.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';

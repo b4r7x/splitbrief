@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Box } from 'ink';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
-import { ListRow } from '../../components/list-row.js';
+import { ListRow } from '../../components/list-row/row.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

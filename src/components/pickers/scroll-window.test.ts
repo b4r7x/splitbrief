@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  availableRows,
-  computeListDisplayWindow,
-  isItemIndexVisible,
-  keepInViewOffset,
-  windowSlice,
-} from './scroll-window.js';
+import { computeListDisplayWindow, isItemIndexVisible } from './scroll-window.js';
+import { availableRows, keepInViewOffset, windowSlice } from './scroll-offset.js';
 
 const items = Array.from({ length: 30 }, (_, index) => index);
 

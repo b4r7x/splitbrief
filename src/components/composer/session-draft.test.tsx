@@ -17,7 +17,7 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { draftRefusalStore, flushSessionDrafts } from '../../stores/ui/session-drafts.js';
 import { sessionDir } from '../../core/paths.js';
-import { Composer } from './composer.js';
+import { Composer } from './view.js';
 
 const document: DraftDocument = {
   version: 1,

@@ -19,10 +19,7 @@ import {
 } from '../../../core/sessions/active-pointer.js';
 import type { PreparationOutcome } from '../../../engine/runners/prepared-execution.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
-import {
-  approvalPromptStore,
-  closeApprovalPrompt,
-} from '../../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore, closeApprovalPrompt } from '../../../stores/prompts/approval.js';
 import type {
   TieredApprovalRequest,
   TieredApprovalResponse,

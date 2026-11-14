@@ -13,7 +13,7 @@ import {
 } from '../../features/workflow/prompt-rows/approval.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
-import { Composer } from './composer.js';
+import { Composer } from './view.js';
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 

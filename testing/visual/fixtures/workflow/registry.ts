@@ -46,7 +46,7 @@ import {
 } from '../common.js';
 import { VISUAL_FIXTURE_PROJECT_DIR } from '../screen-fixtures.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
-import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle/state.js';
 import { glyph, type GlyphName } from '../../../../src/lib/glyphs.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
@@ -54,7 +54,7 @@ import { composerLiveStore } from '../../../../src/stores/ui/composer-live.js';
 import { saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
 import { createDraftDocument } from '../../../../src/core/composer/document.js';
-import { listRowLead } from '../../../../src/components/list-row.js';
+import { listRowLead } from '../../../../src/components/list-row/lead.js';
 import { reviewKeysStore } from '../../../../src/stores/ui/review-keys.js';
 import { REVIEW_COMMENT_HINTS } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
@@ -65,7 +65,7 @@ import {
   trackActiveApply,
 } from '../../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { overlayStore } from '../../../../src/stores/ui/overlay.js';
-import { openApprovalPrompt } from '../../../../src/stores/approval-prompt/prompt.js';
+import { openApprovalPrompt } from '../../../../src/stores/prompts/approval.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../src/lib/terminal/typeahead-grace.js';
 import {
   MOVED_PROJECT_MESSAGE,

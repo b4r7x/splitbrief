@@ -9,7 +9,8 @@ import {
 import { getChromeContentWidth, buildProgressRowCount } from '../layout/chrome-rows.js';
 import { EMPTY_RUN_VIEW, type RunView } from '../../../core/run-view/reduce.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
+import type { LifecycleState } from '../../../stores/workflow/lifecycle/types.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import type {
   OperationsState,

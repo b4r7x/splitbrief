@@ -22,7 +22,7 @@ import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
-import { tokensStore } from '../stores/workflow/tokens.js';
+import { tokensStore } from '../stores/workflow/tokens/state.js';
 import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 import { Router } from './router.js';
 

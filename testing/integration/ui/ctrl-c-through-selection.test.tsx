@@ -14,7 +14,7 @@ import type { CopyOutcome } from '../../../src/lib/clipboard/clipboard.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 

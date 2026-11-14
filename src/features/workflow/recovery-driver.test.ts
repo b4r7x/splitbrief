@@ -25,14 +25,14 @@ import { createDraftDocument } from '../../core/composer/document.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../../stores/prompts/question.js';
 import {
   recoveryNoticeStore,
   type RecoveryNoticeState,
 } from '../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { afterLastBrief, resumeStep } from '../../core/sessions/run/status.js';
 import {
   plainAnswer,
@@ -50,7 +50,7 @@ import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recove
 import { addTuiEvent } from './tui-sink.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
 import { attachedMessage, expectCompactMessage } from '#testing/helpers/user-message.js';
-import { eventsStore } from '../../stores/workflow/events.js';
+import { eventsStore } from '../../stores/workflow/events/state.js';
 import { readMessages } from '../../core/sessions/log/reader.js';
 
 let dirs: string[] = [];

@@ -5,7 +5,7 @@ import {
   cleanOperationText,
   cleanOptionalOperationText,
   durationBetween,
-} from './operation-text.js';
+} from './text.js';
 import { compactOperationsState } from './retention.js';
 import type {
   ActiveOperation,

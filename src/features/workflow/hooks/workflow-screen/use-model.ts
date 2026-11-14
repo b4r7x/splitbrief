@@ -35,7 +35,7 @@ import {
   continueRunInPlace,
   type SessionSelectDeps,
 } from '../../../../stores/navigation/session-select.js';
-import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../../stores/workflow/lifecycle/state.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
@@ -43,7 +43,7 @@ import { stopStore } from '../../../../stores/workflow/stop.js';
 import { departureStore } from '../../../../stores/workflow/departure.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
-import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore } from '../../../../stores/prompts/approval.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import {
   applyComposer,

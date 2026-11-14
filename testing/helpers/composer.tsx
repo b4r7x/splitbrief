@@ -1,6 +1,6 @@
 import { Box } from 'ink';
 import type { ComponentProps } from 'react';
-import { Composer } from '../../src/components/composer/composer.js';
+import { Composer } from '../../src/components/composer/view.js';
 import type { RuntimeCommandDef } from '../../src/core/runtime/commands/types.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 

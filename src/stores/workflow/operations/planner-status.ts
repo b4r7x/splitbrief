@@ -1,10 +1,6 @@
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { isLivePhase } from '../../../core/phases/roles.js';
-import {
-  cleanOperationText,
-  cleanOptionalOperationText,
-  durationBetween,
-} from './operation-text.js';
+import { cleanOperationText, cleanOptionalOperationText, durationBetween } from './text.js';
 import { compactOperationsState } from './retention.js';
 import { replaceOperation, terminalizeRunningOperation } from './runner.js';
 import type { ActiveOperation, OperationsState, RunningOperation } from './state.js';

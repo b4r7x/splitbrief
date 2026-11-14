@@ -6,9 +6,9 @@ import { isItemIndexVisible } from '../../../../components/pickers/scroll-window
 import { RuleHeader } from '../../../../components/rule-header.js';
 import { OverlayPanel } from '../../../../components/overlays/overlay-panel.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
-import { listRowLead } from '../../../../components/list-row.js';
+import { listRowLead } from '../../../../components/list-row/lead.js';
 import { withMark } from '../prompt-body.js';
-import { closeApprovalPrompt } from '../../../../stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt } from '../../../../stores/prompts/approval.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
   CONFIRM_NUDGE,
@@ -33,7 +33,7 @@ import {
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 import { navigateIndex } from '../../../../utils/indexing.js';
-import { fitKeyLegend } from '../../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { isCommandDraft } from '../../../../core/composer/submission.js';
 import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.js';

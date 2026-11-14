@@ -10,7 +10,7 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows.js';
 import { resetConversationRowsProjectionCache } from '../conversation-rows/projection-cache.js';
@@ -67,7 +67,7 @@ import {
   runInProcessScope,
   type ProcessScope,
 } from '../../../lib/process/registry.js';
-import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
+import { closeApprovalPrompt } from '../../../stores/prompts/approval.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import { error } from '../../../utils/error.js';
 import type { UseInputModeResult } from './use-input-mode.js';

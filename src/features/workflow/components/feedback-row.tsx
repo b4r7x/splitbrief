@@ -3,18 +3,18 @@ import { glyph } from '../../../lib/glyphs.js';
 import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { approvalPromptStore } from '../../../stores/prompts/approval.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { fitKeyLegend, KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
+import { fitKeyLegend, KEY_LEGEND_LEADING } from '../../../components/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { fitFeedbackMessage } from '../../../components/composer/feedback-fit.js';
 import { hintStateSeverity, resolveInputHint } from '../input-hints.js';
-import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../../../stores/prompts/question.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 
 // The keys a run answers to while it is working. `esc` opens the stop sheet rather than stopping,

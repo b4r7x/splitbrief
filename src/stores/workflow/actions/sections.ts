@@ -1,7 +1,7 @@
 import { groupEventsIntoSections } from '../../../core/sections/group.js';
 import type { Section } from '../../../core/sections/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { eventsStore } from '../events.js';
+import { eventsStore } from '../events/state.js';
 
 let cachedEvents: EngineEvent[] | null = null;
 let cachedSections: Section<EngineEvent>[] = [];

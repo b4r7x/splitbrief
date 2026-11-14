@@ -49,10 +49,10 @@ import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import {
   clearAllHandlers,
   requestEndRun,

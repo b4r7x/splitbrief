@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import {

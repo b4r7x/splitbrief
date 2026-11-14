@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
-import { listRowLead } from '../../components/list-row.js';
+import { listRowLead } from '../../components/list-row/lead.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
@@ -42,7 +42,7 @@ import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
 import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
-import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { readRunRecord } from '../../core/sessions/run/record-io.js';
@@ -54,7 +54,7 @@ import {
   formatConfigSaveSuccess,
   reportConfigSaveFailure,
 } from '../../stores/project/save-feedback.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

@@ -7,7 +7,7 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { recoveryHeadlineParts, recoveryMenuActionLabel } from '../recovery-prompt.js';
 import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import type { ViewSeatWait } from '../../../core/run-view/reduce.js';
-import { fitKeyLegend } from '../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { segmentsForRowText } from '../../../utils/display-text/width.js';

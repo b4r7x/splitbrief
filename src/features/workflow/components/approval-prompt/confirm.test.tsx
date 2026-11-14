@@ -2,13 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'ink-testing-library';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { listRowLead } from '../../../../components/list-row.js';
+import { listRowLead } from '../../../../components/list-row/lead.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { ApprovalPrompt } from '../approval-prompt.js';
-import {
-  openApprovalPrompt,
-  approvalPromptStore,
-} from '../../../../stores/approval-prompt/prompt.js';
+import { openApprovalPrompt, approvalPromptStore } from '../../../../stores/prompts/approval.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../lib/terminal/typeahead-grace.js';
 import {
@@ -26,7 +23,7 @@ import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../../core/composer/document.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
-import { fitKeyLegend } from '../../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../../components/key-legend.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 

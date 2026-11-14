@@ -1,4 +1,5 @@
-import { ListRow, wholeWordLabelForms } from '../../components/list-row.js';
+import { ListRow } from '../../components/list-row/row.js';
+import { wholeWordLabelForms } from '../../components/list-row/fit.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';

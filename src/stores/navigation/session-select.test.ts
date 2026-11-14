@@ -27,11 +27,11 @@ import { overlayStore } from '../ui/overlay.js';
 import { hydrateFromState } from '../workflow/actions/hydrate.js';
 import { loadEvents } from '../workflow/actions/load.js';
 import { resetWorkflow } from '../workflow/actions/reset.js';
-import { eventsStore } from '../workflow/events.js';
-import { lifecycleStore } from '../workflow/lifecycle.js';
+import { eventsStore } from '../workflow/events/state.js';
+import { lifecycleStore } from '../workflow/lifecycle/state.js';
 import { runViewStore } from '../workflow/run-view.js';
 import { operationsStore } from '../workflow/operations/state.js';
-import { tokensStore } from '../workflow/tokens.js';
+import { tokensStore } from '../workflow/tokens/state.js';
 import { routerStore } from './router.js';
 import { preparationStore } from './preparation.js';
 import {

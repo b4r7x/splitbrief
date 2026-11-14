@@ -37,7 +37,7 @@ import { Divider } from '../../../components/divider.js';
 import { passedCountSpans, taskOutcomeCountsSpans } from '../display/build-progress.js';
 import { useRunningSeats } from '../hooks/use-running-seats.js';
 import { resolvedSeatModel } from '../display/running-seats.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import { wrapHard } from '../../../utils/display-text/wrap.js';
 

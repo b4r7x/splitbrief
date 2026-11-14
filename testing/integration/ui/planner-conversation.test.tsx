@@ -23,7 +23,7 @@ import type { Summary } from '../../../src/core/schemas/summary.js';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
-import { questionPromptStore } from '../../../src/stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../../../src/stores/prompts/question.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
@@ -37,7 +37,7 @@ import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { eventRowBlock } from '../../../src/features/workflow/conversation-rows/event-rows/dispatch.js';
 import { runPlanningSession } from '../../../src/engine/orchestrator/planning/session.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 
 let projectDir = '';

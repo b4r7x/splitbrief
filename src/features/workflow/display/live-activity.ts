@@ -10,7 +10,7 @@ import {
   reviewActivitySpans,
 } from './phase-verb.js';
 import { formatRecordedSeatIdentity } from './recorded-seat-identity.js';
-import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
+import type { LifecycleState } from '../../../stores/workflow/lifecycle/types.js';
 import type {
   ActiveOperation,
   RunningSuiteStage,

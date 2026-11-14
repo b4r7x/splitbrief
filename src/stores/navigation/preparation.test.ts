@@ -5,7 +5,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { Composer } from '../../components/composer/composer.js';
+import { Composer } from '../../components/composer/view.js';
 import {
   readActive,
   readActiveRecord,

@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { listRowLead } from '../../../components/list-row.js';
+import { listRowLead } from '../../../components/list-row/lead.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
@@ -11,7 +11,7 @@ import type { EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { ApprovalPrompt } from './approval-prompt.js';
-import { approvalPromptStore, openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore, openApprovalPrompt } from '../../../stores/prompts/approval.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 
 // Stripping every ANSI style sequence reproduces exactly what a NO_COLOR / FORCE_COLOR=0 terminal

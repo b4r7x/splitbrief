@@ -11,7 +11,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
 import { formatElapsedClock, formatTime } from '../../../utils/format/time.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
+import type { LifecycleState } from '../../../stores/workflow/lifecycle/types.js';
 import {
   selectRunningSuite,
   type ActiveOperation,

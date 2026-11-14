@@ -18,12 +18,12 @@ import {
 import type { SeatIdentity } from '../../../core/providers/seat-identity.js';
 import { recordedSeatIdentityInput } from './recorded-seat-identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
-import type { SeatResolvedModel } from '../../../stores/workflow/tokens.js';
+import type { SeatResolvedModel } from '../../../stores/workflow/tokens/state.js';
 import { resolveCliModel } from '../../../core/providers/automatic-model.js';
 import { recordedSeatTool } from '../../../engine/providers/model/display-names.js';
 import type { ActiveOperation } from '../../../stores/workflow/operations/state.js';
 import { isStatusFallback } from '../../../stores/workflow/operations/planner-status.js';
-import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
+import type { LifecycleState } from '../../../stores/workflow/lifecycle/types.js';
 import { selectRunningBrief, type RunBriefs } from '../../../core/run-view/briefs.js';
 import { assertNever } from '../../../utils/type-guards.js';
 

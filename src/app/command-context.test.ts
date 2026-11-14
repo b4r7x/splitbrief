@@ -49,19 +49,19 @@ import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
 import { inputHistoryStore } from '../stores/ui/input-history.js';
 import { WorkflowFooter } from '../features/workflow/components/chrome.js';
-import { Composer } from '../components/composer/composer.js';
+import { Composer } from '../components/composer/view.js';
 import { createDraftDocument } from '../core/composer/document.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { skillsStore } from '../stores/project/skills.js';
 import type { SkillMeta } from '../core/skills/types.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
-import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../stores/workflow/run-view.js';
 import { queueCopy } from '../features/workflow/queue-copy.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
-import { questionPromptStore } from '../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../stores/prompts/question.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
@@ -71,7 +71,7 @@ import {
   useRuntimeCommands,
   type WorkflowCommandPorts,
 } from './command-context.js';
-import { detectionStore } from '../stores/project/detection.js';
+import { detectionStore } from '../stores/discovery/detection.js';
 import { getDefaultDetectionService, type DetectionDeps } from '../engine/detection/service.js';
 import * as clipboard from '../lib/clipboard/clipboard.js';
 

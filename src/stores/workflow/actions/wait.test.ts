@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { addEvent } from './event.js';
 import { resetWorkflow } from './reset.js';
 import { markWaitEnded, markWaitStarted } from './wait.js';
-import { lifecycleStore } from '../lifecycle.js';
+import { lifecycleStore } from '../lifecycle/state.js';
 
 describe('markWaitStarted / markWaitEnded', () => {
   beforeEach(() => resetWorkflow());

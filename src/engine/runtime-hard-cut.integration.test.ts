@@ -13,7 +13,7 @@ import {
   suspendTerminalForEditor,
   type TerminalHandoverConfig,
 } from '../lib/terminal/editor-handover.js';
-import { eventsStore } from '../stores/workflow/events.js';
+import { eventsStore } from '../stores/workflow/events/state.js';
 import { runViewStore } from '../stores/workflow/run-view.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../stores/workflow/actions/reset.js';

@@ -9,12 +9,10 @@ import {
 } from '../../core/composer/document.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
-import {
-  expandEditOverAtoms,
-  resolveInputEdit,
-  type InputAtom,
-  type InputRange,
-} from '../input/multiline-input.js';
+import { expandEditOverAtoms } from '../input/atoms.js';
+import { resolveInputEdit } from '../input/atoms.js';
+import type { InputRange } from '../input/atoms.js';
+import type { InputAtom } from '../input/atoms.js';
 
 const PASTE_LINE_THRESHOLD = 4;
 

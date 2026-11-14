@@ -1,4 +1,4 @@
-import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { openApprovalPrompt } from '../../stores/prompts/approval.js';
 import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
@@ -8,7 +8,7 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import { setWaitingPromptHandler } from './handlers.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
 import type { PlannerConversation } from '../../core/schemas/workflow/state.js';
-import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../../stores/prompts/question.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
 

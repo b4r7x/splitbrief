@@ -29,7 +29,7 @@ import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
-import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../src/stores/workflow/lifecycle/state.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRunnerCallStarted } from '#testing/helpers/events/runner-call.js';

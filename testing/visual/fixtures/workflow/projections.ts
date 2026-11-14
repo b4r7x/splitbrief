@@ -90,7 +90,7 @@ import { claudeCodePlannerAdapter } from '../../../../src/engine/runners/cli-too
 import { commandCodeProtocolEvents } from '../../../../src/engine/runners/cli-tools/command-code.js';
 import { recordCliProtocolEvent } from '../../../../src/engine/runners/cli-tools/process-invoke.js';
 import { createCliTextForwarder } from '../../../../src/engine/runners/invoke-cli-adapter.js';
-import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
+import type { ApprovalPromptState } from '../../../../src/stores/prompts/approval.js';
 import type { TieredApprovalRequest } from '../../../../src/core/approval/types.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import { type ScenarioId, scenarioId } from '../../contracts/identifiers.js';

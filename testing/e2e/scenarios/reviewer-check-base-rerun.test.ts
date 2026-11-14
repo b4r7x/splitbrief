@@ -21,7 +21,7 @@ import { factSpans, runRows } from '../../../src/features/workflow/closed/copy.j
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
-import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';

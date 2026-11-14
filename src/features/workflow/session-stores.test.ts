@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clearSessionScopedStores } from './session-stores.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
 import { reviewStore } from '../../stores/workflow/review.js';

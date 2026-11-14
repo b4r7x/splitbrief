@@ -1,5 +1,5 @@
 import { useInput, type Key } from 'ink';
-import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { questionPromptStore } from '../../../stores/prompts/question.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { completionStore } from '../../../stores/ui/completion.js';
 import { controlsStore } from '../../../stores/ui/controls.js';

@@ -3,10 +3,8 @@ import { Box, useInput } from 'ink';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { RuleHeader } from '../../components/rule-header.js';
 import { getScrollViewportContentWidth } from '../../components/scrollbar.js';
-import {
-  ScrollableDocument,
-  type ScrollableDocumentRow,
-} from '../../components/scrollable-document.js';
+import { ScrollableDocument } from '../../components/scrollable-document/document.js';
+import type { ScrollableDocumentRow } from '../../components/scrollable-document/window.js';
 import type { Theme } from '../../core/theme/palette.js';
 import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
 import { SOFT_SEP } from '../../core/separators.js';

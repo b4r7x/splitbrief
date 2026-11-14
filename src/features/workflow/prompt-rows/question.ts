@@ -1,6 +1,6 @@
 import { countPromptBodyRows } from '../prompt-body-rows.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { questionDefault, questionOptions } from '../../../stores/question-prompt/prompt.js';
+import { questionDefault, questionOptions } from '../../../stores/prompts/question.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { wrapHard } from '../../../utils/display-text/wrap.js';

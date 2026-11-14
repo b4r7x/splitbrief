@@ -15,7 +15,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import { isNodeError } from '../../../src/utils/errno.js';
 import { killAllProcesses, registeredProcessCount } from '../../../src/lib/process/registry.js';
 import { configStore } from '../../../src/stores/project/config.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 
 setupFetchMock();
 

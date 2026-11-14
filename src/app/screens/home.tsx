@@ -16,7 +16,7 @@ import { resolveImplementerProfiles } from '../../core/config/accessors/implemen
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbeat.js';
-import { Composer, type HomeNotice } from '../../components/composer/composer.js';
+import { Composer, type HomeNotice } from '../../components/composer/view.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -27,7 +27,7 @@ import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
@@ -60,7 +60,7 @@ import { StartPreparationPanel } from '../../features/start-preparation/panel.js
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { fitCheckingRow } from '../../features/workflow/input-footer-byline.js';
-import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/fs/listing.js';
 

@@ -2,11 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
-import {
-  eventsStore,
-  MAX_EVENTS,
-  MAX_MERGED_TEXT_LENGTH,
-} from '../../../src/stores/workflow/events.js';
+import { MAX_EVENTS, MAX_MERGED_TEXT_LENGTH } from '../../../src/stores/workflow/events/merge.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 
 function forceGc(): void {
   globalThis.gc?.();

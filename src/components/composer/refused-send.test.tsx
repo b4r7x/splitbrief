@@ -15,7 +15,7 @@ import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
-import { Composer } from './composer.js';
+import { Composer } from './view.js';
 
 const DRAFT = 'keep this draft';
 const REFUSED: QueueSubmissionResult = {

@@ -5,7 +5,7 @@ import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import { servedProviders } from '../../core/runners/route-auth.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { crewVerdict } from './rows.js';
 

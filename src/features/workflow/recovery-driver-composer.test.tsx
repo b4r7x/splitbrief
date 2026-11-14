@@ -9,7 +9,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { Composer } from '../../components/composer/composer.js';
+import { Composer } from '../../components/composer/view.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { configStore } from '../../stores/project/config.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';

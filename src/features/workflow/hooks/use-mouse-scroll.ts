@@ -1,7 +1,7 @@
 import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { completionStore } from '../../../stores/ui/completion.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';

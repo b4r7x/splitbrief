@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import chalk from 'chalk';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
-import { listRowLead } from '../../components/list-row.js';
+import { listRowLead } from '../../components/list-row/lead.js';
 import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import type { CrewPreset } from '../../core/crew/presets.js';

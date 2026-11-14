@@ -1,14 +1,12 @@
 import type { EngineEvent } from '../../../engine/events/types.js';
-import {
-  lifecycleStore,
-  _lifecycleInternal,
-  updatePhase,
-  updateQueueDepth,
-  updateStall,
-  type LifecycleState,
-} from '../lifecycle.js';
-import { _eventsInternal, mergeEvent, projectEventForTuiEventLog } from '../events.js';
-import { _tokensInternal, updateTokens } from '../tokens.js';
+import { lifecycleStore, _lifecycleInternal } from '../lifecycle/state.js';
+import { updatePhase, updateQueueDepth, updateStall } from '../lifecycle/phase.js';
+import type { LifecycleState } from '../lifecycle/types.js';
+import { mergeEvent } from '../events/merge.js';
+import { projectEventForTuiEventLog } from '../events/project.js';
+import { _eventsInternal } from '../events/state.js';
+import { updateTokens } from '../tokens/update.js';
+import { _tokensInternal } from '../tokens/state.js';
 import { _operationsInternal } from '../operations/state.js';
 import { updateOperations } from '../operations/reducer.js';
 import { _runViewInternal, runViewStore } from '../run-view.js';

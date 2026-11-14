@@ -7,7 +7,7 @@ import { createDetectionService } from '../../../src/engine/detection/service.js
 import { refreshDetectionForCurrentConfig } from '../../../src/engine/detection/store-publication.js';
 import { refreshPickerDetection } from '../../../src/features/runners/refresh-detection.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
-import { detectionStore } from '../../../src/stores/project/detection.js';
+import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { shellQuoteArg } from '../../../src/utils/shell-quote.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';

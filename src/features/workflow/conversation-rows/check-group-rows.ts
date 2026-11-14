@@ -1,4 +1,4 @@
-import { fitKeyLegend } from '../../../core/key-legend.js';
+import { fitKeyLegend } from '../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { stateTone, type StateMeaning } from '../../../core/theme/state-tone.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';

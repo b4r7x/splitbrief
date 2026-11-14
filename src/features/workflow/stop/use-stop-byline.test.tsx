@@ -10,7 +10,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { requestBoundaryPause, requestSeatChangeAtBoundary, spendSeatChange } from '../handlers.js';

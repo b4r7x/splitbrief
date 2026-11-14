@@ -17,7 +17,7 @@ import {
 } from '../../../stores/navigation/preparation.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { markCancellationRequested } from '../../../stores/workflow/actions/interrupt.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import type { Config } from '../../../core/schemas/config.js';

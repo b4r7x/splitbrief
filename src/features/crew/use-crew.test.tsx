@@ -5,7 +5,7 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { useCrew } from './use-crew.js';
 
 function CrewProbe() {

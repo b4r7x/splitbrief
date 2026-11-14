@@ -5,7 +5,7 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { configStore } from '../../stores/project/config.js';
-import { detectionStore } from '../../stores/project/detection.js';
+import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { FIRST_RUN_NOTE } from '../../core/discovery/copy.js';

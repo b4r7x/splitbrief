@@ -9,7 +9,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { listRowLead } from '../../../components/list-row.js';
+import { listRowLead } from '../../../components/list-row/lead.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';

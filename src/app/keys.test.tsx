@@ -16,7 +16,7 @@ import {
 } from '../engine/runners/prepared-execution.js';
 import { createInitialState } from '../core/state/machine.js';
 import { routerStore } from '../stores/navigation/router.js';
-import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../stores/workflow/run-view.js';
 import { stopStore } from '../stores/workflow/stop.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
@@ -31,12 +31,12 @@ import {
   activeApply,
   trackActiveApply,
 } from '../engine/orchestrator/session-lifecycle/shutdown.js';
-import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
+import { approvalPromptStore, openApprovalPrompt } from '../stores/prompts/approval.js';
 import { continueRunInPlace, sessionSelectStore } from '../stores/navigation/session-select.js';
 import { configStore } from '../stores/project/config.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { SessionPreparation } from './session-preparation.js';
-import { Composer } from '../components/composer/composer.js';
+import { Composer } from '../components/composer/view.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { reviewKeysStore } from '../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../stores/workflow/recovery-notice.js';
