@@ -8,7 +8,7 @@ import { CLOSE_HINT, formatKeyHints, SCROLL_HINT } from '../../components/key-le
 import { buildCommandItems } from '../../features/palette/sources.js';
 import { readLatestDiffKey } from '../../features/workflow/conversation-rows/row-actions/read.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
-import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
+import { resolveScrollKey, stepForScrollAction } from '../../core/keybindings/scroll.js';
 import {
   OVERLAY_FRAME_ROWS,
   overlayRect,
@@ -30,8 +30,6 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../stores/workflow/events/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
-import { clamp } from '../../utils/math.js';
-import { assertNever } from '../../utils/type-guards.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 
 const PANEL_DENSITY: OverlayDensity = 'roomy';
@@ -51,30 +49,6 @@ interface HelpRow {
   hint: string | null;
   shortcut: string | null;
   section: string;
-}
-
-function cursorForScrollAction(input: {
-  action: ScrollKeyAction;
-  cursor: number;
-  page: number;
-  lastIndex: number;
-}): number {
-  switch (input.action) {
-    case 'line-up':
-      return input.cursor - 1;
-    case 'line-down':
-      return input.cursor + 1;
-    case 'page-up':
-      return input.cursor - input.page;
-    case 'page-down':
-      return input.cursor + input.page;
-    case 'top':
-      return 0;
-    case 'bottom':
-      return input.lastIndex;
-    default:
-      return assertNever(input.action);
-  }
 }
 
 interface HelpOverlayProps {
@@ -149,9 +123,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     const action = resolveScrollKey({ input, key, lineKeys: 'plain' });
     if (action === null) return;
     const lastIndex = Math.max(0, helpRows.length - 1);
-    setCursor((c) =>
-      clamp(cursorForScrollAction({ action, cursor: c, page: pageStep, lastIndex }), 0, lastIndex),
-    );
+    setCursor((c) => stepForScrollAction({ action, position: c, page: pageStep, last: lastIndex }));
   });
 
   return (
