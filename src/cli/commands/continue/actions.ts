@@ -1,39 +1,42 @@
 import { CONFIG_RELATIVE_PATH } from '../../../core/config/load/document.js';
 import { recordSeatOfRecord } from '../../../core/config/load/record-seat.js';
-import { type CrewSeatId, CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
+import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
+import { acceptedSentence } from '../../../core/review/accepted.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { WorkflowOpts } from '../../../core/types/config-options.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { seatRunnerValue } from '../../../engine/orchestrator/recovery/seat/switch/plan.js';
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
+import { endRunError } from '../../../engine/orchestrator/run/close.js';
+import { endRunAtRest } from '../../../engine/orchestrator/run/end.js';
+import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import { cliError } from '../../errors.js';
-import type { ContinueActionOption, RecoveryActionOption } from '../../options/continue-action.js';
+import { emitReadyToApply, recordWriterFor } from '../../headless/outcome.js';
+import type { RecoveryActionOption } from '../../options/continue-action.js';
+import { assertResumeTerminal } from './resume.js';
+import { settleReadyRun } from './settle.js';
+import type { ContinueOpts, Resumed, SwitchedSeat } from './types.js';
 
-export type ContinueOpts = { projectDir: string } & WorkflowOpts & {
-    action?: ContinueActionOption | undefined;
-  };
-
-export type SwitchedSeat = Readonly<{
-  seat: CrewSeatId;
-  profile?: string | undefined;
-  config: Config;
-}>;
+type RecoveryActionInput = {
+  sessionId: string;
+  state: WorkflowState;
+  action: RecoveryActionOption;
+  opts: ContinueOpts;
+};
 
 /**
  * A recovery action answers the pending recovery before the run re-enters: the same
  * transition the TUI panel applies, taken from the resume line an earlier halt
  * printed. A blocked action is the operator's error, not the run's.
  */
-export async function applyPendingRecoveryAction(args: {
-  sessionId: string;
-  state: WorkflowState;
-  action: RecoveryActionOption;
-  opts: ContinueOpts;
-}): Promise<{ state: WorkflowState; config: Config; seatSwitch?: SwitchedSeat }> {
+export async function applyPendingRecoveryAction(
+  args: RecoveryActionInput,
+): Promise<{ state: WorkflowState; config: Config; seatSwitch?: SwitchedSeat }> {
   const projectDir = args.opts.projectDir;
   if (args.action.action === 'switch-seat') await loadRememberedCatalog(projectDir);
   const { config } = resolveRunConfig({ projectDir, opts: args.opts });
@@ -66,6 +69,65 @@ export async function applyPendingRecoveryAction(args: {
         },
       }),
   };
+}
+
+export async function endRunAction(args: Omit<RecoveryActionInput, 'action'>): Promise<Resumed> {
+  const { projectDir } = args.opts;
+  const bus = createRecoveryBus({
+    projectDir,
+    sessionId: args.sessionId,
+    sink: (event) => {
+      if (event.type === 'warning') process.stderr.write(`${event.message}\n`);
+    },
+  });
+  const closure = await endRunAtRest(
+    { projectDir, sessionId: args.sessionId, bus },
+    args.state,
+  ).catch((err: unknown) => {
+    if (!endRunError.isApplying(err)) throw err;
+    recordWriterFor(args.opts.json !== true)({ type: 'error', message: err.message });
+    throw cliError(err.message, 1);
+  });
+  return { state: closure.state };
+}
+
+export async function acceptAsIsAction(args: RecoveryActionInput): Promise<Resumed | undefined> {
+  // Only the accept of a task review leaves the run open. That run goes on, so it needs the
+  // terminal every continue that goes on needs, asked before the accept writes.
+  if (args.state.phase === 'implementing') assertResumeTerminal(args.opts);
+  const resumed = await applyPendingRecoveryAction(args);
+  const accepted = resumed.state.acceptedAsIs;
+  if (
+    accepted !== undefined &&
+    deriveRunStatus({ state: resumed.state, liveness: 'not-alive', reviewNone: false }).kind !==
+      'open'
+  ) {
+    // The accept settled the run, so it gets the record every other ending gets.
+    finalizeRunAtRest({
+      ref: { projectDir: args.opts.projectDir, sessionId: args.sessionId },
+      state: resumed.state,
+    });
+    process.stderr.write(`${acceptedSentence(accepted)}\n`);
+    const writeRecord = recordWriterFor(args.opts.json !== true);
+    if (emitReadyToApply(resumed.state, args.sessionId, writeRecord)) return undefined;
+  }
+  return resumed;
+}
+
+export async function restoreBackupAction(args: RecoveryActionInput): Promise<Resumed | undefined> {
+  // The answered restore is finished by Apply at rest, so it reports what it put back the way
+  // Apply reports what it wrote, and the run is then ready to apply.
+  const answered = await applyPendingRecoveryAction(args);
+  const next = await settleReadyRun({
+    projectDir: args.opts.projectDir,
+    sessionId: args.sessionId,
+    state: answered.state,
+    action: 'apply',
+    reviewNone: resolveReviewCadence(answered.config) === 'none',
+    json: args.opts.json === true,
+  });
+  if (next === undefined) return undefined;
+  return { state: next, config: answered.config };
 }
 
 /**

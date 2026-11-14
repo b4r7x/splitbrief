@@ -6,30 +6,25 @@ import { sessionError } from '../../../core/sessions/errors.js';
 import { loadRunRecord } from '../../../core/sessions/run/record.js';
 import { defaultRunRecordDeps } from '../../../core/sessions/run/record-io.js';
 import { runHeadless } from '../../headless/run.js';
-import { emitReadyToApply, recordWriterFor } from '../../headless/outcome.js';
+import { recordWriterFor } from '../../headless/outcome.js';
 import { resolveSessionAlias } from '../../sessions/aliases.js';
-import { applyCommand, assertSessionExists } from '../../sessions/resolve.js';
+import { assertSessionExists } from '../../sessions/resolve.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
-import { deriveRunStatus } from '../../../core/sessions/run/status.js';
-import { acceptedCounts, acceptedSentence } from '../../../core/review/accepted.js';
-import type { Config } from '../../../core/schemas/config.js';
+import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run/status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { resolveRunConfig } from '../../build-overrides.js';
-import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
-import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { assertResumeTerminal, resumeSavedSession } from './resume.js';
-import { settleReadyRun } from './settle.js';
+import { settleRequestedApply } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
-import { endRunError, closedChangesSuffix } from '../../../engine/orchestrator/run/close.js';
-import { endRunAtRest } from '../../../engine/orchestrator/run/end.js';
-import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
+import { closedChangesSuffix } from '../../../engine/orchestrator/run/close.js';
 import {
-  type ContinueOpts,
-  type SwitchedSeat,
+  acceptAsIsAction,
   applyPendingRecoveryAction,
+  endRunAction,
   recordSwitchedSeat,
+  restoreBackupAction,
 } from './actions.js';
+import type { ContinueOpts, Resumed } from './types.js';
 
 export interface ContinueDeps {
   initStores: typeof initStores;
@@ -63,13 +58,10 @@ async function resolveTargetSession(
   throw cliError('no session to continue; start one with `splitbrief start`.', 1);
 }
 
-export async function continueCommand(
-  sessionInput: string | undefined,
+function loadContinuableRecord(
+  sessionId: string,
   opts: ContinueOpts,
-  deps: ContinueDeps = defaultContinueDeps,
-): Promise<void> {
-  const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
-
+): { state: WorkflowState; status: RunStatus } {
   const record = loadRunRecord(
     { projectDir: opts.projectDir, sessionId },
     defaultRunRecordDeps(),
@@ -95,134 +87,54 @@ export async function continueCommand(
     throw cliError(sessionError.stillActive(sessionId).message, 1);
   }
 
-  let resumed: { state: WorkflowState; config?: Config; seatSwitch?: SwitchedSeat };
-  const action = opts.action;
-  const writeRecord = recordWriterFor(opts.json !== true);
   if (record.status.kind === 'closed') {
-    const message = `Run ${sessionId} is closed (${record.status.as}); nothing to ${action?.action === 'end-run' ? 'end' : 'resume'}.`;
-    writeRecord({ type: 'error', message });
+    const message = `Run ${sessionId} is closed (${record.status.as}); nothing to ${opts.action?.action === 'end-run' ? 'end' : 'resume'}.`;
+    recordWriterFor(opts.json !== true)({ type: 'error', message });
     throw cliError(message, 1);
   }
+  return { state: hydrated.state, status: record.status };
+}
+
+async function runAction(
+  sessionId: string,
+  { state, status }: { state: WorkflowState; status: RunStatus },
+  opts: ContinueOpts,
+): Promise<Resumed | undefined> {
+  const action = opts.action;
+  switch (action?.action) {
+    case 'end-run':
+      return endRunAction({ sessionId, state, opts });
+    case 'apply':
+    case 'apply-as-is':
+    case 'discard':
+      return settleRequestedApply({ sessionId, state, status, action: action.action, opts });
+    case 'accept-as-is':
+      return acceptAsIsAction({ sessionId, state, action, opts });
+    case 'restore-backup':
+      return restoreBackupAction({ sessionId, state, action, opts });
+    default:
+      assertResumeTerminal(opts);
+      return action === undefined
+        ? { state }
+        : applyPendingRecoveryAction({ sessionId, state, action, opts });
+  }
+}
+
+export async function continueCommand(
+  sessionInput: string | undefined,
+  opts: ContinueOpts,
+  deps: ContinueDeps = defaultContinueDeps,
+): Promise<void> {
+  const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
+  const record = loadContinuableRecord(sessionId, opts);
   // The revision the operator answered the halt on, read before the switch is applied, so a
   // config that changed underneath the halt is not overwritten by the write that follows.
   const expectedRevision =
-    action?.action === 'switch-seat'
+    opts.action?.action === 'switch-seat'
       ? readConfigDocument(opts.projectDir).revision?.rawSha256
       : undefined;
-  if (action?.action === 'end-run') {
-    const bus = createRecoveryBus({
-      projectDir: opts.projectDir,
-      sessionId,
-      sink: (event) => {
-        if (event.type === 'warning') process.stderr.write(`${event.message}\n`);
-      },
-    });
-    const closure = await endRunAtRest(
-      { projectDir: opts.projectDir, sessionId, bus },
-      hydrated.state,
-    ).catch((err: unknown) => {
-      if (!endRunError.isApplying(err)) throw err;
-      writeRecord({ type: 'error', message: err.message });
-      throw cliError(err.message, 1);
-    });
-    resumed = { state: closure.state };
-  } else if (
-    action?.action === 'apply' ||
-    action?.action === 'apply-as-is' ||
-    action?.action === 'discard'
-  ) {
-    if (record.status.kind !== 'ready-to-apply') {
-      throw cliError(
-        `Run ${sessionId} is not ready to apply; --action ${action.action} settles a run ${action.action === 'apply-as-is' ? 'that was accepted as is' : 'whose review passed'} in its workspace.`,
-        1,
-      );
-    }
-    const settled = {
-      projectDir: opts.projectDir,
-      sessionId,
-      state: hydrated.state,
-      json: opts.json === true,
-    };
-    if (action.action === 'discard') {
-      await settleReadyRun({ ...settled, action: 'discard' });
-      return;
-    }
-    // `apply-as-is` is the confirmation of a run accepted as is, so each word applies only its own
-    // run: the other word is refused here, before Apply is asked.
-    const accepted = hydrated.state.acceptedAsIs;
-    if (action.action === 'apply' && accepted !== undefined) {
-      throw cliError(
-        `Run ${sessionId} was accepted as is with ${acceptedCounts(accepted).phrase}; apply it as is with: ${applyCommand(sessionId, hydrated.state)}`,
-        1,
-      );
-    }
-    if (action.action === 'apply-as-is' && accepted === undefined) {
-      throw cliError(
-        `Run ${sessionId} was not accepted as is; apply it with: ${applyCommand(sessionId, hydrated.state)}`,
-        1,
-      );
-    }
-    const { config } = resolveRunConfig({ projectDir: opts.projectDir, opts });
-    if (accepted !== undefined) process.stderr.write(`${acceptedSentence(accepted)}\n`);
-    const next = await settleReadyRun({
-      ...settled,
-      action: action.action,
-      reviewNone: resolveReviewCadence(config) === 'none',
-    });
-    if (next === undefined) return;
-    resumed = { state: next, config };
-  } else if (action?.action === 'accept-as-is') {
-    // Only the accept of a task review leaves the run open. That run goes on, so it needs the
-    // terminal every continue that goes on needs, asked before the accept writes.
-    if (hydrated.state.phase === 'implementing') assertResumeTerminal(opts);
-    resumed = await applyPendingRecoveryAction({
-      sessionId,
-      state: hydrated.state,
-      action,
-      opts,
-    });
-    const accepted = resumed.state.acceptedAsIs;
-    if (
-      accepted !== undefined &&
-      deriveRunStatus({ state: resumed.state, liveness: 'not-alive', reviewNone: false }).kind !==
-        'open'
-    ) {
-      // The accept settled the run, so it gets the record every other ending gets.
-      finalizeRunAtRest({ ref: { projectDir: opts.projectDir, sessionId }, state: resumed.state });
-      process.stderr.write(`${acceptedSentence(accepted)}\n`);
-      if (emitReadyToApply(resumed.state, sessionId, writeRecord)) return;
-    }
-  } else if (action?.action === 'restore-backup') {
-    // The answered restore is finished by Apply at rest, so it reports what it put back the way
-    // Apply reports what it wrote, and the run is then ready to apply.
-    const answered = await applyPendingRecoveryAction({
-      sessionId,
-      state: hydrated.state,
-      action,
-      opts,
-    });
-    const next = await settleReadyRun({
-      projectDir: opts.projectDir,
-      sessionId,
-      state: answered.state,
-      action: 'apply',
-      reviewNone: resolveReviewCadence(answered.config) === 'none',
-      json: opts.json === true,
-    });
-    if (next === undefined) return;
-    resumed = { state: next, config: answered.config };
-  } else {
-    assertResumeTerminal(opts);
-    resumed =
-      action === undefined
-        ? { state: hydrated.state }
-        : await applyPendingRecoveryAction({
-            sessionId,
-            state: hydrated.state,
-            action,
-            opts,
-          });
-  }
+  const resumed = await runAction(sessionId, record, opts);
+  if (resumed === undefined) return;
 
   // A closed run has nothing left to re-enter: `end-run` recorded the close, or `accept-as-is`
   // settled a run with no workspace.

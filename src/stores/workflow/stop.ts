@@ -103,6 +103,13 @@ export function stopInProgress({ intent, phase }: StopState): boolean {
   return phase !== 'parked' && phase !== 'ended' && phase !== 'failed';
 }
 
+export function stoppedOrStopping(): boolean {
+  const { phase, intent } = store.get();
+  return (
+    phase === 'parked' || phase === 'ended' || (intent !== 'none' && intent !== 'pause-after-brief')
+  );
+}
+
 function markSeatChange(pending: boolean): void {
   store.set((s) => ({ ...s, seatChange: pending }));
 }

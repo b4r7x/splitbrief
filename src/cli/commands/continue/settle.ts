@@ -1,10 +1,14 @@
+import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
+import { acceptedCounts, acceptedSentence } from '../../../core/review/accepted.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { RunStatus } from '../../../core/sessions/run/status.js';
 import { runApplyAtRest } from '../../../engine/orchestrator/apply/at-rest.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { closedChangesSuffix, closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { resolveRunConfig } from '../../build-overrides.js';
 import { cliError } from '../../errors.js';
 import { withHeadlessStop, writeRunStopped } from '../../headless/stop.js';
 import {
@@ -12,6 +16,53 @@ import {
   emitRecoveryAndFailIfPending,
   recordWriterFor,
 } from '../../headless/outcome.js';
+import { applyCommand } from '../../sessions/resolve.js';
+import type { ContinueOpts, Resumed } from './types.js';
+
+export async function settleRequestedApply(args: {
+  sessionId: string;
+  state: WorkflowState;
+  status: RunStatus;
+  action: 'apply' | 'apply-as-is' | 'discard';
+  opts: ContinueOpts;
+}): Promise<Resumed | undefined> {
+  const { sessionId, state, action, opts } = args;
+  if (args.status.kind !== 'ready-to-apply') {
+    throw cliError(
+      `Run ${sessionId} is not ready to apply; --action ${action} settles a run ${action === 'apply-as-is' ? 'that was accepted as is' : 'whose review passed'} in its workspace.`,
+      1,
+    );
+  }
+  const settled = { projectDir: opts.projectDir, sessionId, state, json: opts.json === true };
+  if (action === 'discard') {
+    await settleReadyRun({ ...settled, action: 'discard' });
+    return undefined;
+  }
+  // `apply-as-is` is the confirmation of a run accepted as is, so each word applies only its own
+  // run: the other word is refused here, before Apply is asked.
+  const accepted = state.acceptedAsIs;
+  if (action === 'apply' && accepted !== undefined) {
+    throw cliError(
+      `Run ${sessionId} was accepted as is with ${acceptedCounts(accepted).phrase}; apply it as is with: ${applyCommand(sessionId, state)}`,
+      1,
+    );
+  }
+  if (action === 'apply-as-is' && accepted === undefined) {
+    throw cliError(
+      `Run ${sessionId} was not accepted as is; apply it with: ${applyCommand(sessionId, state)}`,
+      1,
+    );
+  }
+  const { config } = resolveRunConfig({ projectDir: opts.projectDir, opts });
+  if (accepted !== undefined) process.stderr.write(`${acceptedSentence(accepted)}\n`);
+  const next = await settleReadyRun({
+    ...settled,
+    action,
+    reviewNone: resolveReviewCadence(config) === 'none',
+  });
+  if (next === undefined) return undefined;
+  return { state: next, config };
+}
 
 export async function settleReadyRun(
   input: {
@@ -69,7 +120,7 @@ export async function settleReadyRun(
         return undefined;
       }
       return result.state;
-    // `continueCommand` refuses the plain word on a run accepted as is before Apply is asked, and
+    // `settleRequestedApply` refuses the plain word on a run accepted as is before Apply is asked, and
     // `apply-as-is` is the confirmation, so Apply does not come back to ask for one.
     case 'needs-confirmation':
     case 'halted':

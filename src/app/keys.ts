@@ -1,11 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { stopStore } from '../stores/workflow/stop.js';
 import { useInput, type Key } from 'ink';
-import { feedbackStore } from '../stores/ui/feedback.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle/state.js';
 import { recoveryNoticeStore } from '../stores/workflow/recovery-notice.js';
+import { stoppedOrStopping } from '../stores/workflow/stop.js';
 import { approvalPromptStore } from '../stores/prompts/approval.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { reviewKeysStore } from '../stores/ui/review-keys.js';
@@ -28,9 +26,8 @@ import {
 } from '../features/workflow/run-requests/handlers.js';
 import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
-import type { CopyOutcome } from '../lib/clipboard/clipboard.js';
-import { formatCopyResult } from '../core/runtime/commands/types.js';
 import { refreshSkills } from './refresh-skills.js';
+import { useCtrlCKeys } from './use-ctrl-c-keys.js';
 
 type AppKeyAction =
   | { type: 'none' }
@@ -121,26 +118,11 @@ function cancelReviewComment(): void {
   reviewKeysStore.endComment();
 }
 
-function stoppedOrStopping(): boolean {
-  const { phase, intent } = stopStore.get();
-  return (
-    phase === 'parked' || phase === 'ended' || (intent !== 'none' && intent !== 'pause-after-brief')
-  );
-}
-
 function isSecondEscapePress(input: string): boolean {
   return (
     (input.length > 0 && input.split('').every((char) => char === '\x1b')) ||
     isEscapeActionPending()
   );
-}
-
-// A late read hands Ink every byte it collected as one input, so two Ctrl+C presses arrive as
-// `\x03\x03` with no ctrl flag, and text typed around them shares the chunk (`fix\x03\x03`). Each
-// `\x03` is still one press, and every other byte is other input, in the order it was typed.
-function ctrlCKeys(input: string, key: Key): ('press' | 'other')[] {
-  if (key.ctrl && input === 'c') return ['press'];
-  return Array.from(input, (char) => (char === '\x03' ? 'press' : 'other'));
 }
 
 function runDeferredEscape(input: string, immediate: () => void, deferred: () => void): void {
@@ -153,29 +135,6 @@ function runDeferredEscape(input: string, immediate: () => void, deferred: () =>
 }
 
 export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions) {
-  const quitUntil = useRef(0);
-  const copyRevision = useRef(0);
-  const quitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const exited = useRef(false);
-  const exitOnce = () => {
-    if (!exited.current) {
-      exited.current = true;
-      exit();
-    }
-  };
-  const clearQuitHint = () => {
-    copyRevision.current++;
-    quitUntil.current = 0;
-    clearTimeout(quitTimer.current);
-    if (feedbackStore.get().message === 'Press ctrl+c again to quit')
-      feedbackStore.setMessage(null);
-  };
-  const armQuit = () => {
-    clearTimeout(quitTimer.current);
-    quitUntil.current = Date.now() + 2000;
-    feedbackStore.setMessage('Press ctrl+c again to quit');
-    quitTimer.current = setTimeout(clearQuitHint, 2000);
-  };
   const [route, overlay, approval, completion, sessionSelection, reviewKeys] = useStores(
     routerStore,
     overlayStore,
@@ -196,85 +155,7 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
   const reviewCommenting = reviewKeys.commenting;
   const sessionPreparationActive = sessionSelection.preparation.kind !== 'idle';
 
-  const sessionProject = route.screen === 'workflow' ? route.run.ref.projectDir : null;
-  const sessionId = route.screen === 'workflow' ? route.run.ref.sessionId : null;
-  const localExecution =
-    route.screen === 'workflow' && route.execution.kind === 'local'
-      ? route.execution.prepared
-      : null;
-  useEffect(() => {
-    clearQuitHint();
-    return clearQuitHint;
-  }, [route.screen, sessionProject, sessionId]);
-  useEffect(() => {
-    if (localExecution !== null) clearQuitHint();
-  }, [localExecution]);
-  useEffect(
-    () =>
-      stopStore.subscribe(() => {
-        if (stopStore.get().intent === 'none') clearQuitHint();
-      }),
-    [],
-  );
-
-  useEffect(() => {
-    const stdin = getActiveFilteredStdin()?.stdin;
-    if (!stdin) return;
-    const onCopyKey = (result: Promise<CopyOutcome | undefined>) => {
-      clearQuitHint();
-      const revision = copyRevision.current;
-      const feedback = feedbackStore.get();
-      void result.then((outcome) => {
-        if (
-          outcome === undefined ||
-          copyRevision.current !== revision ||
-          feedbackStore.get() !== feedback
-        )
-          return;
-        if (outcome === 'unavailable') feedbackStore.setError(formatCopyResult(outcome));
-        else feedbackStore.setMessage(formatCopyResult(outcome));
-      });
-    };
-    stdin.on('selection-copy', onCopyKey);
-    return () => {
-      copyRevision.current++;
-      stdin.off('selection-copy', onCopyKey);
-    };
-  }, []);
-
-  useInput((input, key) => {
-    copyRevision.current++;
-    const keys = ctrlCKeys(input, key);
-    if (!keys.includes('press')) {
-      clearQuitHint();
-      return;
-    }
-    if (getActiveFilteredStdin()?.isPasteActive()) return;
-    for (const pressed of keys) {
-      if (pressed === 'other') {
-        clearQuitHint();
-        continue;
-      }
-      const phase = stopStore.get().phase;
-      const stopping =
-        stoppedOrStopping() && phase !== 'parked' && phase !== 'ended' && phase !== 'failed';
-      // An Apply cannot be cut: the first press queues the quit behind it, and the byline says so.
-      if (quitUntil.current > Date.now() || stopping || activeApply() !== undefined) {
-        clearQuitHint();
-        deps.requestQuit(exitOnce);
-        return;
-      }
-      armQuit();
-      if (
-        route.screen === 'workflow' &&
-        route.execution.kind !== 'at-rest' &&
-        !stoppedOrStopping()
-      ) {
-        if (overlayStore.get().active === 'stop-sheet') overlayStore.close();
-        deps.requestStopNow();
-      }
-    }
-  });
+  const exitOnce = useCtrlCKeys({ route, exit, deps });
 
   const escapePress = (input: string): { immediate: () => void; deferred: () => void } | null => {
     // An Apply cannot be cut, live or at rest: Escape queues home behind it, never a stop.

@@ -10,7 +10,10 @@ import {
   resolveReviewerRunner,
 } from '../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
-import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
+import {
+  resolveEffectiveConfig,
+  type EffectiveConfigResult,
+} from '../../core/config/runtime/effective-config.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import {
   REVIEWS_DIR,
@@ -31,10 +34,13 @@ import { renderReviewMarkdown } from '../../core/review/render.js';
 import {
   REVIEW_VERDICT_JSON_SCHEMA,
   ReviewVerdictSchema,
+  type ReviewVerdict,
 } from '../../core/schemas/review/verdict.js';
 import type { ReviewRecord } from '../../core/schemas/workflow/review-record.js';
+import type { Reviewer } from '../../engine/reviewers/types.js';
 import { createReviewer } from '../../engine/runners/factory.js';
 import { prepareReviewExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
+import type { PreparedReviewExecution } from '../../engine/runners/prepared-execution.js';
 import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
 import { requestTyped } from '../../engine/runners/typed-output.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
@@ -70,6 +76,9 @@ const NO_SPECIFICATION =
   'none — review for correctness, scope creep, and test coverage of the diff';
 const NO_TASK_BRIEFS = 'none — this review has no briefs; the change below is the whole subject';
 const NOTHING_TO_REVIEW = 'nothing to review';
+// The same typed contract the run's final review uses; a one-shot review
+// has no plan, so the required-results ids are empty.
+const ONE_SHOT_SCOPE: ReviewScope = { kind: 'final', taskIds: [], criterionIds: [] };
 
 type ReviewOpts = {
   project?: string;
@@ -78,6 +87,14 @@ type ReviewOpts = {
   allowRepoRunners: boolean;
   allowUnverifiedAuth: boolean;
 };
+
+/** One review call; its stamp names both its runner session and its review folder. */
+type ReviewRun = Readonly<{
+  projectDir: string;
+  opts: ReviewOpts;
+  stamp: string;
+  relativeDir: string;
+}>;
 
 interface ReviewCommandDeps {
   createReviewer?: typeof createReviewer | undefined;
@@ -112,11 +129,201 @@ function printReview(outcome: ReviewOutcome, relativePath: string, theme: Theme)
   console.log(paint(theme.textDim, relativePath));
 }
 
-export function registerReviewCommand(program: Command, deps: ReviewCommandDeps = {}): void {
-  const createReviewerForCommand = deps.createReviewer ?? createReviewer;
-  const prepareForCommand = deps.prepareReviewExecution ?? prepareReviewExecution;
+async function readReviewDiff(projectDir: string, baseRef: string | undefined): Promise<string> {
+  const untracked = (await withCliErrors(() => getGitStatus(projectDir))).not_added.filter(
+    (file) => !isInternalGitStatusPath(file),
+  );
+  return baseRef === undefined
+    ? withCliErrors(() => getCurrentDiff(projectDir, untracked))
+    : withCliErrors(() => getDiffSince(projectDir, baseRef, untracked));
+}
+
+function resolveReviewSeat(
+  projectDir: string,
+  opts: ReviewOpts,
+  initialInvocation: EffectiveConfigResult | undefined,
+) {
+  const loaded = loadConfigOrExit(projectDir);
+  // The review seat is named explicitly for this call: `readActiveRunner`
+  // decides it once — the configured block, or the planner holding the seat —
+  // and preparation then admits it as the reviewer slot, so the factory has
+  // one path to take and no second reading of `config.reviewer` exists.
+  const base = initialInvocation?.config ?? loaded.config;
+  const reviewSource = resolveReviewerRunner(base).source;
+  if (reviewSource === 'none' && opts.reviewer === undefined) {
+    throw cliError('REVIEW is set to None; pass --reviewer to name a seat for this review.', 1);
+  }
+  // A REVIEW that inherits PLAN holds PLAN's settings, under the planner key.
+  const reviewSettingsSeat: 'planner' | 'reviewer' =
+    reviewSource === 'planner' && opts.reviewer === undefined ? 'planner' : 'reviewer';
+  const declared = {
+    ...base,
+    reviewer: readActiveRunner({ config: base, role: 'reviewer' }),
+  };
+  const { config, warnings } = resolveEffectiveConfig({
+    base: declared,
+    ...(initialInvocation === undefined && { overrides: seatOverrides(opts.reviewer) }),
+    loaderDiagnostics: loaded.loaderDiagnostics,
+  });
+  return {
+    config,
+    // A first run applied the seat flags when it chose the crew, so it holds their notices.
+    configWarnings: [...(initialInvocation?.warnings ?? []), ...warnings],
+    reviewSettingsSeat,
+  };
+}
+
+async function prepareReviewer(
+  run: ReviewRun,
+  deps: ReviewCommandDeps,
+  seat: ReturnType<typeof resolveReviewSeat>,
+): Promise<{ execution: PreparedReviewExecution; reviewer: Reviewer }> {
+  const { projectDir, opts } = run;
+  const prepare = deps.prepareReviewExecution ?? prepareReviewExecution;
+  const create = deps.createReviewer ?? createReviewer;
   const promptForArtifactApproval =
     deps.promptCustomRunnerArtifactApproval ?? promptCustomRunnerArtifactApproval;
+  const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
+  const policy = cliPreparationPolicy({
+    purpose: 'review',
+    interaction,
+    opts: {
+      allowRepoRunners: opts.allowRepoRunners,
+      allowUnverifiedAuth: opts.allowUnverifiedAuth,
+    },
+    onTieredApproval: (request) => promptCustomRunnerDisclosure({ request }),
+  });
+  const execution = preparedExecutionOrThrow(
+    await prepare({
+      projectDir,
+      effectiveConfig: seat.config,
+      configWarnings: seat.configWarnings,
+      policy,
+      signal: new AbortController().signal,
+      reviewSettingsSeat: seat.reviewSettingsSeat,
+    }),
+    'prose',
+    seat.reviewSettingsSeat,
+  );
+
+  const reviewer = await create(execution.config, {
+    preparedConfig: execution.config,
+    preparationId: execution.preparationId,
+    gates: execution.gates,
+    cliSeats: execution.cliSeats,
+    slot: { role: 'reviewer' },
+    customRuntime: createCustomRunnerRuntime({
+      projectDir,
+      sessionId: `review-${run.stamp}`,
+      sweepStaleReviews: false,
+      admission: policy,
+      // A headless review reaches this gate only for a runner
+      // `prepareCustomRunnerAdmission` already admitted, which headless
+      // requires an explicit grant for — `--allow-repo-runners`, or the
+      // owner-only trust receipt an earlier interactive confirmation wrote.
+      // That consent covers the artifact this runner declares, so there is
+      // no second prompt to give.
+      onArtifactApproval: (_type: 'artifact', review: ArtifactApprovalReview) =>
+        interaction === 'interactive'
+          ? promptForArtifactApproval(review)
+          : Promise.resolve({ approved: true as const }),
+    }),
+  });
+  return { execution, reviewer };
+}
+
+async function requestVerdict(
+  run: ReviewRun,
+  diff: string,
+  { execution, reviewer }: { execution: PreparedReviewExecution; reviewer: Reviewer },
+): Promise<ReviewVerdict> {
+  const { projectDir } = run;
+  const baseRef = run.opts.base;
+  const seat = requireReviewSeat(execution.config);
+  const subject =
+    baseRef === undefined ? 'the working tree' : `changes since ${stripTerminalControls(baseRef)}`;
+  console.log(`Reviewing ${subject} (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})\n`);
+
+  const verdictSchema = ReviewVerdictSchema.superRefine((candidate, ctx) => {
+    for (const message of verdictCoverageErrors(candidate, ONE_SHOT_SCOPE)) {
+      ctx.addIssue({ code: 'custom', message });
+    }
+  });
+  const changeFile = join(run.relativeDir, REVIEW_CHANGE_FILE);
+  const readsChangeFile = seatReadsChangeFile(seat.runner);
+  if (readsChangeFile) {
+    await writeConfinedSecureFileAsync(projectDir, changeFile, reviewChangeText({ diff }));
+  }
+  return withCliErrors(async () => {
+    const prompt = buildFinalReviewPrompt({
+      spec: NO_SPECIFICATION,
+      taskBriefs: NO_TASK_BRIEFS,
+      ...(readsChangeFile
+        ? { changeFile: { path: join(projectDir, changeFile), provenance: false } }
+        : { diff }),
+    });
+    const typed = await runCommandSeatCall(
+      { tool: getRunnerCatalogDisplayName(seat.runner), write: (line) => console.log(line) },
+      (signal) =>
+        requestTyped({
+          prompt,
+          schema: verdictSchema,
+          jsonSchema: REVIEW_VERDICT_JSON_SCHEMA,
+          schemaName: 'review_verdict',
+          call: reviewer.typedCall({
+            projectDir,
+            seat: 'reviewer',
+            callbacks: { onOutput: () => {}, signal },
+          }),
+        }),
+    );
+    if ('error' in typed) throw typed.error;
+    return typed.value;
+  });
+}
+
+function writeReviewRecord(run: ReviewRun, verdict: ReviewVerdict): void {
+  const outcome = deriveReviewOutcome(verdict, ONE_SHOT_SCOPE, new Map());
+  const record: ReviewRecord = {
+    cycle: 0,
+    verdict,
+    outcome: outcome.kind,
+    verification: [],
+    at: nowIso(),
+  };
+  confinedWriteFile(
+    run.projectDir,
+    join(run.relativeDir, REVIEW_JSON_FILE),
+    `${JSON.stringify(record)}\n`,
+  );
+  const markdown = renderReviewMarkdown(verdict, [], outcome, [], []);
+  const relativePath = join(run.relativeDir, REVIEW_FILE);
+  confinedWriteFile(run.projectDir, relativePath, markdown);
+  process.stdout.write(sanitizeTerminalDisplayText(markdown, { preserveLineBreaks: true }));
+  printReview(outcome, relativePath, plainTheme());
+}
+
+async function runReview(opts: ReviewOpts, deps: ReviewCommandDeps): Promise<void> {
+  const projectDir = await canonicalizeProjectDir(opts);
+  await assertGitRepo(projectDir);
+  const initialInvocation = await ensureHeadlessConfig({
+    projectDir,
+    overrides: seatOverrides(opts.reviewer),
+  });
+  const diff = await readReviewDiff(projectDir, opts.base);
+  if (diff.trim() === '') {
+    console.log(NOTHING_TO_REVIEW);
+    return;
+  }
+  const seat = resolveReviewSeat(projectDir, opts, initialInvocation);
+  const stamp = reviewStamp(new Date());
+  const run = { projectDir, opts, stamp, relativeDir: join(SPLITBRIEF_DIR, REVIEWS_DIR, stamp) };
+  const prepared = await prepareReviewer(run, deps, seat);
+  const verdict = await requestVerdict(run, diff, prepared);
+  writeReviewRecord(run, verdict);
+}
+
+export function registerReviewCommand(program: Command, deps: ReviewCommandDeps = {}): void {
   program
     .command('review')
     .description('Review the working-tree diff in one reviewer call (no session, no planning)')
@@ -137,164 +344,5 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
       'Allow a headless review when compatible CLI authentication is unverified',
       false,
     )
-    .action(async (opts: ReviewOpts) => {
-      const projectDir = await canonicalizeProjectDir(opts);
-      await assertGitRepo(projectDir);
-      const initialInvocation = await ensureHeadlessConfig({
-        projectDir,
-        overrides: seatOverrides(opts.reviewer),
-      });
-
-      const baseRef = opts.base;
-      const untracked = (await withCliErrors(() => getGitStatus(projectDir))).not_added.filter(
-        (file) => !isInternalGitStatusPath(file),
-      );
-      const diff =
-        baseRef === undefined
-          ? await withCliErrors(() => getCurrentDiff(projectDir, untracked))
-          : await withCliErrors(() => getDiffSince(projectDir, baseRef, untracked));
-      if (diff.trim() === '') {
-        console.log(NOTHING_TO_REVIEW);
-        return;
-      }
-
-      const loaded = loadConfigOrExit(projectDir);
-      // The review seat is named explicitly for this call: `readActiveRunner`
-      // decides it once — the configured block, or the planner holding the seat —
-      // and preparation then admits it as the reviewer slot, so the factory has
-      // one path to take and no second reading of `config.reviewer` exists.
-      const base = initialInvocation?.config ?? loaded.config;
-      const reviewSource = resolveReviewerRunner(base).source;
-      if (reviewSource === 'none' && opts.reviewer === undefined) {
-        throw cliError('REVIEW is set to None; pass --reviewer to name a seat for this review.', 1);
-      }
-      // A REVIEW that inherits PLAN holds PLAN's settings, under the planner key.
-      const reviewSettingsSeat =
-        reviewSource === 'planner' && opts.reviewer === undefined ? 'planner' : 'reviewer';
-      const declared = {
-        ...base,
-        reviewer: readActiveRunner({ config: base, role: 'reviewer' }),
-      };
-      const { config, warnings } = resolveEffectiveConfig({
-        base: declared,
-        ...(initialInvocation === undefined && { overrides: seatOverrides(opts.reviewer) }),
-        loaderDiagnostics: loaded.loaderDiagnostics,
-      });
-
-      const stamp = reviewStamp(new Date());
-      const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
-      const policy = cliPreparationPolicy({
-        purpose: 'review',
-        interaction,
-        opts: {
-          allowRepoRunners: opts.allowRepoRunners,
-          allowUnverifiedAuth: opts.allowUnverifiedAuth,
-        },
-        onTieredApproval: (request) => promptCustomRunnerDisclosure({ request }),
-      });
-      const execution = preparedExecutionOrThrow(
-        await prepareForCommand({
-          projectDir,
-          effectiveConfig: config,
-          // A first run applied the seat flags when it chose the crew, so it holds their notices.
-          configWarnings: [...(initialInvocation?.warnings ?? []), ...warnings],
-          policy,
-          signal: new AbortController().signal,
-          reviewSettingsSeat,
-        }),
-        'prose',
-        reviewSettingsSeat,
-      );
-
-      const reviewer = await createReviewerForCommand(execution.config, {
-        preparedConfig: execution.config,
-        preparationId: execution.preparationId,
-        gates: execution.gates,
-        cliSeats: execution.cliSeats,
-        slot: { role: 'reviewer' },
-        customRuntime: createCustomRunnerRuntime({
-          projectDir,
-          sessionId: `review-${stamp}`,
-          sweepStaleReviews: false,
-          admission: policy,
-          // A headless review reaches this gate only for a runner
-          // `prepareCustomRunnerAdmission` already admitted, which headless
-          // requires an explicit grant for — `--allow-repo-runners`, or the
-          // owner-only trust receipt an earlier interactive confirmation wrote.
-          // That consent covers the artifact this runner declares, so there is
-          // no second prompt to give.
-          onArtifactApproval: (_type: 'artifact', review: ArtifactApprovalReview) =>
-            interaction === 'interactive'
-              ? promptForArtifactApproval(review)
-              : Promise.resolve({ approved: true as const }),
-        }),
-      });
-
-      const seat = requireReviewSeat(execution.config);
-      const subject =
-        baseRef === undefined
-          ? 'the working tree'
-          : `changes since ${stripTerminalControls(baseRef)}`;
-      console.log(`Reviewing ${subject} (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})\n`);
-
-      // The same typed contract the run's final review uses; a one-shot review
-      // has no plan, so the required-results ids are empty.
-      const scope: ReviewScope = { kind: 'final', taskIds: [], criterionIds: [] };
-      const verdictSchema = ReviewVerdictSchema.superRefine((candidate, ctx) => {
-        for (const message of verdictCoverageErrors(candidate, scope)) {
-          ctx.addIssue({ code: 'custom', message });
-        }
-      });
-      const relativeDir = join(SPLITBRIEF_DIR, REVIEWS_DIR, stamp);
-      const changeFile = join(relativeDir, REVIEW_CHANGE_FILE);
-      const readsChangeFile = seatReadsChangeFile(seat.runner);
-      if (readsChangeFile) {
-        await writeConfinedSecureFileAsync(projectDir, changeFile, reviewChangeText({ diff }));
-      }
-      const verdict = await withCliErrors(async () => {
-        const prompt = buildFinalReviewPrompt({
-          spec: NO_SPECIFICATION,
-          taskBriefs: NO_TASK_BRIEFS,
-          ...(readsChangeFile
-            ? { changeFile: { path: join(projectDir, changeFile), provenance: false } }
-            : { diff }),
-        });
-        const typed = await runCommandSeatCall(
-          { tool: getRunnerCatalogDisplayName(seat.runner), write: (line) => console.log(line) },
-          (signal) =>
-            requestTyped({
-              prompt,
-              schema: verdictSchema,
-              jsonSchema: REVIEW_VERDICT_JSON_SCHEMA,
-              schemaName: 'review_verdict',
-              call: reviewer.typedCall({
-                projectDir,
-                seat: 'reviewer',
-                callbacks: { onOutput: () => {}, signal },
-              }),
-            }),
-        );
-        if ('error' in typed) throw typed.error;
-        return typed.value;
-      });
-
-      const outcome = deriveReviewOutcome(verdict, scope, new Map());
-      const record: ReviewRecord = {
-        cycle: 0,
-        verdict,
-        outcome: outcome.kind,
-        verification: [],
-        at: nowIso(),
-      };
-      confinedWriteFile(
-        projectDir,
-        join(relativeDir, REVIEW_JSON_FILE),
-        `${JSON.stringify(record)}\n`,
-      );
-      const markdown = renderReviewMarkdown(verdict, [], outcome, [], []);
-      const relativePath = join(relativeDir, REVIEW_FILE);
-      confinedWriteFile(projectDir, relativePath, markdown);
-      process.stdout.write(sanitizeTerminalDisplayText(markdown, { preserveLineBreaks: true }));
-      printReview(outcome, relativePath, plainTheme());
-    });
+    .action((opts: ReviewOpts) => runReview(opts, deps));
 }
