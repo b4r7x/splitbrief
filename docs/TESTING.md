@@ -121,7 +121,7 @@ SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/
 
 **Default-strategy worktree coverage.** The two isolation strategies are not substitutable — a staged copy is one copy per run with no git metadata, restored per attempt by hash; a worktree is a linked checkout with its own detached `HEAD`, index and `.git` file — so the default strategy needs its own orchestrator-level coverage rather than the `makeCopyingIsolation` context every other test installs. `makeWorktreeIsolation` (`testing/helpers/orchestrator-factories.ts`) builds a real `createRunIsolation` handle over a real git fixture. `testing/integration/orchestrator/direct-writer-change-proof.test.ts` uses it to pin that a direct write in the run worktree stays in the run worktree and leaves the checkout alone, and that a rewrite of a file the worktree was *already* dirty in counts as a change; `src/engine/orchestrator/escalation/step.integration.test.ts` pins that a retry runs in the same worktree as the task it is retrying and that the shared worktree survives that task's `cleanup()`.
 
-**Zod schemas do not get shape tests.** TS strict + Zod `.parse()` is first-class correctness — no runtime tests for schema shape. One repo-wide `.strict()` rejection test lives in `src/core/schemas/runner-fields.test.ts`; do not duplicate per schema.
+**Zod schemas do not get shape tests.** TS strict + Zod `.parse()` is first-class correctness — no runtime tests for schema shape. One repo-wide `.strict()` rejection test lives in `src/core/schemas/runner/fields.test.ts`; do not duplicate per schema.
 
 Colocated support files under `src/**` that import `vitest` or another dev-only dependency must use the `*.test.ts` / `*.test.tsx` pattern so production builds exclude them. Shared support belongs under `testing/helpers/**`, which is already outside the production type-check graph.
 
@@ -151,7 +151,7 @@ Cost-aware implementer routing, Apply, and the plan card follow the same rule: t
 
 ```bash
 npm test -- src/core/schemas/recovery.test.ts
-npm test -- src/core/schemas/workflow.test.ts
+npm test -- src/core/schemas/workflow/state.test.ts
 npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
 npm test -- src/core/state/persistence.test.ts src/core/sessions/log/writer.test.ts src/core/payload-bounds.test.ts
@@ -593,7 +593,7 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Pure `useState` / composition-only hook — covered by the consumer that uses it.
 - Re-exports (we have zero barrels anyway; see [`NO-BARRELS.md`](./NO-BARRELS.md)).
 - Thin wrappers that only delegate to an already-tested function.
-- Zod schema literal accept/reject — covered once in `src/core/schemas/runner-fields.test.ts`; do not duplicate.
+- Zod schema literal accept/reject — covered once in `src/core/schemas/runner/fields.test.ts`; do not duplicate.
 - Discriminated-union accessors enforced by `assertNever` — `tsc` already enforces exhaustiveness.
 - Styling-only components with no conditional logic.
 - Library internals (`Array.prototype.filter`, `fzf.find`, Zod `.strict()`).
