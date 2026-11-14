@@ -4,6 +4,7 @@ import type { EffectiveConfigWarning } from '../../../core/config/runtime/effect
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../../core/readiness/collect.js';
 import { exemptLiveSessionBlocker } from '../../../core/readiness/checks/repo.js';
+import { variantWithoutModelChecks } from '../../../core/readiness/checks/runners.js';
 import {
   aggregateReadinessStatus,
   countReadinessChecks,
@@ -101,6 +102,8 @@ export type PrepareReviewExecutionInput = Readonly<{
   configWarnings: readonly EffectiveConfigWarning[];
   policy: Extract<PreparationPolicy, { purpose: 'review' }>;
   signal: AbortSignal;
+  /** The seat whose settings the review seat holds: PLAN's for a REVIEW that follows PLAN. */
+  reviewSettingsSeat: 'planner' | 'reviewer';
   deps?: Partial<PrepareExecutionDependencies> | undefined;
 }>;
 
@@ -294,6 +297,7 @@ type AdmissionInput = Readonly<{
   signal: AbortSignal;
   deps?: Partial<PrepareExecutionDependencies> | undefined;
   resumeSession?: SessionRef | undefined;
+  reviewSettingsSeat?: 'planner' | 'reviewer' | undefined;
 }>;
 
 type AdmittedRunners = Readonly<{
@@ -385,7 +389,25 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     }
     throwIfPreparationAborted(input.signal, trustPersisted);
   }
-  const slotChecks = buildRunnerAdmissionChecks(evaluated.map((slot) => slot.evaluation.check));
+  // The run's readiness reads no tool release and no host model, so the
+  // variant rule waits for the gates that carry both.
+  const slotChecks = [
+    ...buildRunnerAdmissionChecks(evaluated.map((slot) => slot.evaluation.check)),
+    ...evaluated.flatMap(({ candidate, evaluation }) =>
+      evaluation.kind === 'admitted' && evaluation.gate.kind === 'cli'
+        ? variantWithoutModelChecks(
+            candidate.slot.role === 'reviewer' && input.reviewSettingsSeat === 'planner'
+              ? { role: 'planner' }
+              : candidate.slot,
+            candidate.runner,
+            {
+              installedVersion: evaluation.gate.installedVersion,
+              model: evaluation.gate.effectiveModel ?? candidate.runner.model,
+            },
+          )
+        : [],
+    ),
+  ];
   report = applyRunnerPreparationChecks(report, slotChecks);
   sink.report = report;
   if (evaluated.some((slot) => slot.evaluation.kind === 'blocked')) {
@@ -564,6 +586,7 @@ export async function prepareReviewExecution(
         configWarnings: input.configWarnings,
         policy: input.policy,
         signal: input.signal,
+        reviewSettingsSeat: input.reviewSettingsSeat,
         ...(input.deps !== undefined && { deps: input.deps }),
       },
       sink,

@@ -97,6 +97,29 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
 writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
 `;
 
+/** A fake OpenCode at its tested release that records the argv of its `run` call and passes a review. */
+function writeFakeOpencode(bin: string, argsLog: string): void {
+  const verdict = JSON.stringify({ tasks: [], criteria: [], findings: [] });
+  writeFakeNodeCli(
+    bin,
+    'opencode',
+    `const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log('${CLI_TOOL_CATALOG.opencode.compatibility.testedVersion}');
+  process.exit(0);
+}
+if (args[0] === 'auth' && args[1] === 'list') {
+  console.log(${JSON.stringify(JSON.stringify([{ id: 'opencode-go', name: 'OpenCode Go', connections: [{ type: 'credential' }] }]))});
+  process.exit(0);
+}
+if (args[0] !== 'run') process.exit(1);
+require('node:fs').writeFileSync(${JSON.stringify(argsLog)}, JSON.stringify(args));
+require('node:fs').readFileSync(0, 'utf8');
+console.log(JSON.stringify({ type: 'text', part: { type: 'text', text: ${JSON.stringify(verdict)} } }));
+console.log(JSON.stringify({ type: 'step_finish', part: { type: 'step-finish', tokens: { input: 40, output: 20 } } }));`,
+  );
+}
+
 describe('e2e: a flag the seat does not use is told once', () => {
   it('shows no notice row on an interactive first run and prints none after the quit', async () => {
     fixture = createStopContinueFixture(() => '');
@@ -507,25 +530,7 @@ child.on('exit', code => process.exit(code ?? 1));
     const bin = join(fixture.tmpDir, 'bin');
     mkdirSync(bin);
     const argsLog = join(fixture.tmpDir, 'opencode-args.json');
-    const verdict = JSON.stringify({ tasks: [], criteria: [], findings: [] });
-    writeFakeNodeCli(
-      bin,
-      'opencode',
-      `const args = process.argv.slice(2);
-if (args[0] === '--version') {
-  console.log('${CLI_TOOL_CATALOG.opencode.compatibility.testedVersion}');
-  process.exit(0);
-}
-if (args[0] === 'auth' && args[1] === 'list') {
-  console.log(${JSON.stringify(JSON.stringify([{ id: 'opencode-go', name: 'OpenCode Go', connections: [{ type: 'credential' }] }]))});
-  process.exit(0);
-}
-if (args[0] !== 'run') process.exit(1);
-require('node:fs').writeFileSync(${JSON.stringify(argsLog)}, JSON.stringify(args));
-require('node:fs').readFileSync(0, 'utf8');
-console.log(JSON.stringify({ type: 'text', part: { type: 'text', text: ${JSON.stringify(verdict)} } }));
-console.log(JSON.stringify({ type: 'step_finish', part: { type: 'step-finish', tokens: { input: 40, output: 20 } } }));`,
-    );
+    writeFakeOpencode(bin, argsLog);
     writeFileSync(join(fixture.projectDir, 'notes.txt'), 'a change to review\n');
     const restorePath = activateSafeCliShimPath(bin);
     try {
@@ -542,6 +547,71 @@ console.log(JSON.stringify({ type: 'step_finish', part: { type: 'step-finish', t
       expect(linesWith(review.stderr, 'Fix:')).toEqual([]);
       const args: string[] = JSON.parse(readFileSync(argsLog, 'utf8'));
       expect(args[args.indexOf('--model') + 1]).toBe('opencode-go/kimi-k3#high');
+    } finally {
+      restorePath();
+    }
+  });
+
+  it('tells once that OpenCode 2 sends no variant for a --reviewer that names no model', async () => {
+    fixture = createStopContinueFixture(() => '', { isolation: 'none' });
+    const bin = join(fixture.tmpDir, 'bin');
+    mkdirSync(bin);
+    const argsLog = join(fixture.tmpDir, 'opencode-args.json');
+    writeFakeOpencode(bin, argsLog);
+    writeFileSync(join(fixture.projectDir, 'notes.txt'), 'a change to review\n');
+    const restorePath = activateSafeCliShimPath(bin);
+    try {
+      // A HOME with no OpenCode model selection: the seat calls no model.
+      vi.stubEnv('HOME', join(fixture.tmpDir, 'home'));
+
+      const review = await cli(fixture, ['review', '--reviewer', 'opencode@high']);
+
+      expect(review.exitCode, review.stderr).toBe(0);
+      const version = CLI_TOOL_CATALOG.opencode.compatibility.testedVersion;
+      expect(linesWith(review.stderr, 'the variant setting is not applied')).toEqual([
+        `REVIEW: the variant setting is not applied: OpenCode CLI ${version} takes a variant only with a model.`,
+      ]);
+      expect(linesWith(review.stderr, 'Fix:')).toEqual([
+        'Fix: Choose a model for REVIEW in Settings > Crew > REVIEW, or set a default model in OpenCode CLI.',
+      ]);
+      const args: string[] = JSON.parse(readFileSync(argsLog, 'utf8'));
+      expect(args).not.toContain('--model');
+      expect(args).not.toContain('--variant');
+    } finally {
+      restorePath();
+    }
+  });
+
+  it('tells once, under PLAN, that OpenCode 2 sends no variant for a REVIEW that follows PLAN', async () => {
+    fixture = createStopContinueFixture(() => '', { isolation: 'none' });
+    const config = loadConfig(fixture.projectDir).config;
+    writeConfig(fixture.projectDir, {
+      ...config,
+      planner: makeConfig({ planner: { kind: 'cli', tool: 'opencode', variant: 'high' } }).planner,
+    });
+    const bin = join(fixture.tmpDir, 'bin');
+    mkdirSync(bin);
+    const argsLog = join(fixture.tmpDir, 'opencode-args.json');
+    writeFakeOpencode(bin, argsLog);
+    writeFileSync(join(fixture.projectDir, 'notes.txt'), 'a change to review\n');
+    const restorePath = activateSafeCliShimPath(bin);
+    try {
+      // A HOME with no OpenCode model selection: the seat calls no model.
+      vi.stubEnv('HOME', join(fixture.tmpDir, 'home'));
+
+      const review = await cli(fixture, ['review']);
+
+      expect(review.exitCode, review.stderr).toBe(0);
+      const version = CLI_TOOL_CATALOG.opencode.compatibility.testedVersion;
+      expect(linesWith(review.stderr, 'the variant setting is not applied')).toEqual([
+        `PLAN: the variant setting is not applied: OpenCode CLI ${version} takes a variant only with a model.`,
+      ]);
+      expect(linesWith(review.stderr, 'Fix:')).toEqual([
+        'Fix: Choose a model for PLAN in Settings > Crew > PLAN, or set a default model in OpenCode CLI.',
+      ]);
+      const args: string[] = JSON.parse(readFileSync(argsLog, 'utf8'));
+      expect(args).not.toContain('--model');
+      expect(args).not.toContain('--variant');
     } finally {
       restorePath();
     }

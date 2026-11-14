@@ -397,8 +397,8 @@ describe('buildConsultPrompt', () => {
       const prompt = buildConsultPrompt(consultInput({ resumed }));
 
       expect(prompt).toContain('Offer only choices that the next attempt can carry out.');
-      expect(prompt).toContain('answer `cannot`');
       if (!resumed) {
+        expect(prompt).toContain('answer `cannot`');
         expect(prompt).toContain(
           "SPLITBRIEF gives the user's answer to an `ask-user` question to the same implementer, as an instruction for its next attempt.",
         );
@@ -469,6 +469,24 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain("You are the run's planner. SPLITBRIEF asks you");
     expect(prompt).not.toContain('### Fix findings');
   });
+
+  it.each([false, true])(
+    'states the limit on cannot, the ask-user route and the meaning of next (resumed=%s)',
+    (resumed) => {
+      const prompt = buildConsultPrompt(consultInput({ resumed }));
+
+      expect(prompt).toContain(
+        '- `ask-user` — `question`, `whyOnlyUserCanAnswer`, `choices` (or null) and `default` (or null): only when no other action can unblock the task and the user alone holds the missing decision.',
+      );
+      expect(prompt).toContain(
+        '- `cannot` — `reason` and `next`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that.',
+      );
+      expect(prompt).toContain(
+        '`next` is the step for a user who chose Decide for me: `skip-brief` when the run can go on without this task, `end-run` when the rest of the run depends on it; null on a stuck review. SPLITBRIEF stops the brief and asks the user, or takes `next` after Decide for me.',
+      );
+      expect(prompt).not.toContain('When the task cannot be done as asked, answer `cannot`.');
+    },
+  );
 
   it("tells the planner to name the next step of a cannot and that a request to decide is the user's consent", () => {
     const prompt = buildConsultPrompt(consultInput());

@@ -165,6 +165,9 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
       if (reviewSource === 'none' && opts.reviewer === undefined) {
         throw cliError('REVIEW is set to None; pass --reviewer to name a seat for this review.', 1);
       }
+      // A REVIEW that inherits PLAN holds PLAN's settings, under the planner key.
+      const reviewSettingsSeat =
+        reviewSource === 'planner' && opts.reviewer === undefined ? 'planner' : 'reviewer';
       const declared = {
         ...base,
         reviewer: readActiveRunner({ config: base, role: 'reviewer' }),
@@ -194,10 +197,10 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
           configWarnings: [...(initialInvocation?.warnings ?? []), ...warnings],
           policy,
           signal: new AbortController().signal,
+          reviewSettingsSeat,
         }),
         'prose',
-        // A REVIEW that inherits PLAN holds PLAN's settings, under the planner key.
-        reviewSource === 'planner' && opts.reviewer === undefined ? 'planner' : 'reviewer',
+        reviewSettingsSeat,
       );
 
       const reviewer = await createReviewerForCommand(execution.config, {

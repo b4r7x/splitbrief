@@ -1,6 +1,7 @@
 import type { EffortLevel } from '../schemas/enums.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from './cli-tool-catalog.js';
+import { classifyCliAdmittedVersion } from './cli-version.js';
 import {
   getRunnerCatalogDisplayName,
   type RunnerConfig,
@@ -120,6 +121,18 @@ export function runnerEffortChannel(runner: RunnerConfig): CliEffortChannel {
     default:
       return assertNever(runner);
   }
+}
+
+/**
+ * OpenCode 2 runs a one-off call on a private server and takes a variant only on
+ * the model, as `provider/model#variant`. An unknown release reads as 1.x.
+ */
+export function isOpencode2(installedVersion: string | undefined): boolean {
+  return (
+    installedVersion !== undefined &&
+    classifyCliAdmittedVersion({ installedVersion, minimumAdmittedVersion: '2.0.0' }) ===
+      'compatible'
+  );
 }
 
 /** Why a seat does not spend its effort setting: what sets its effort instead, or that nothing does. */

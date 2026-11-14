@@ -266,7 +266,7 @@ describe('e2e: a halt panel too short for its text', () => {
 
       expect(frame, `140x${rows}`).toContain('Needs you');
       expect(frame, `140x${rows}`).toMatch(/… \d+ more lines/);
-      expect(frame, `140x${rows}`).toContain('Try again recommended');
+      expect(frame, `140x${rows}`).toContain('Try again · recommended');
       expectHiddenActionsMarked(frame, `140x${rows}`);
       expect(frame, `140x${rows}`).toContain('↑↓ select · ⏎ confirm');
     }

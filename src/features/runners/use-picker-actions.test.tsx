@@ -27,6 +27,7 @@ import {
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
+import { stopStore } from '../../stores/workflow/stop.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import type { PickerSlot, SeatPickerRole } from '../../core/runners/seat-roles.js';
@@ -250,6 +251,7 @@ describe('usePickerActions fallback slot', () => {
     pickerViewStore.reset();
     routerStore.reset();
     lifecycleStore.__testReset();
+    stopStore.reset();
     detectionStore.setDetection({
       cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
       providers: [],
@@ -313,6 +315,46 @@ describe('usePickerActions fallback slot', () => {
 
     expect(feedbackStore.get().message).toBe(
       'Saved BUILD fallback · OpenAI Codex CLI · GPT-6-Luna to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
+    );
+    ui.unmount();
+  });
+
+  it('keeps the save line of a fallback saved under a run while a seat change waits', async () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+    });
+    configStore.__testReset({ projectDir, config });
+    const prepared = makePreparedExecution({
+      projectDir,
+      sessionId: 'sess-live',
+      feature: 'live run',
+      config,
+    });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: prepared.session.ref }),
+      execution: { kind: 'local', prepared },
+    });
+    runViewStore.__testReset({
+      phase: 'implementing',
+      briefs: {
+        tasks: [
+          { id: 'T001', title: 'first', status: 'in_progress' },
+          { id: 'T002', title: 'second', status: 'pending' },
+        ],
+        currentTask: 1,
+        totalTasks: 2,
+      },
+    });
+    lifecycleStore.__testReset({ status: 'running' });
+    stopStore.markSeatChange(true);
+    const ui = renderFeature(<FallbackProbe />);
+    await flushEffects();
+
+    await currentActions().confirm(realPickerOption('implementer', 'codex'), { id: 'gpt-5-codex' });
+
+    expect(feedbackStore.get().message).toBe(
+      'Saved BUILD fallback · OpenAI Codex CLI · GPT-5 Codex to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
     );
     ui.unmount();
   });
@@ -454,6 +496,7 @@ describe('usePickerActions', () => {
     pickerViewStore.reset();
     routerStore.reset();
     lifecycleStore.__testReset();
+    stopStore.reset();
     preparationStore.reset();
   });
 
@@ -620,6 +663,7 @@ describe('usePickerActions', () => {
     phase: Phase,
     briefs: Partial<RunBriefs> = {},
     status: 'running' | 'paused' = 'running',
+    seatWaitsAfterSave = true,
   ): Promise<string> => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
     seed(config);
@@ -636,6 +680,10 @@ describe('usePickerActions', () => {
     });
     runViewStore.__testReset({ phase, briefs });
     lifecycleStore.__testReset({ status });
+    // The run loop answers a save in the config store's notification, before the save returns: it
+    // marks whether a saved seat now waits for the boundary. The probe has no loop, so the save
+    // gets that answer here.
+    const offLoop = configStore.subscribe(() => stopStore.markSeatChange(seatWaitsAfterSave));
 
     const ui = renderFeature(
       <ConfirmOnKeyProbe role="implementer" selection={realPickerOption('implementer', 'codex')} />,
@@ -647,6 +695,7 @@ describe('usePickerActions', () => {
       expect(feedbackStore.get().message).not.toBeNull();
     });
     expect(configStore.get().config?.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+    offLoop();
     ui.unmount();
     return feedbackStore.get().message ?? '';
   };
@@ -663,6 +712,23 @@ describe('usePickerActions', () => {
 
     expect(await saveBuildSeatUnderRun('implementing', briefs)).toBe(
       `${CREW_SEAT_LABELS.build} seat changes after T001`,
+    );
+  });
+
+  it('says a seat saved back to the seat of the run is saved', async () => {
+    const briefs: Partial<RunBriefs> = {
+      tasks: [
+        { id: 'T001', title: 'first', status: 'in_progress' },
+        { id: 'T002', title: 'second', status: 'pending' },
+      ],
+      currentTask: 1,
+      totalTasks: 2,
+    };
+    // An earlier save left another BUILD seat waiting; this save puts back the seat the run holds.
+    stopStore.markSeatChange(true);
+
+    expect(await saveBuildSeatUnderRun('implementing', briefs, 'running', false)).toMatch(
+      new RegExp(`^Saved ${CREW_SEAT_LABELS.build} · `),
     );
   });
 

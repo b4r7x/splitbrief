@@ -284,6 +284,45 @@ describe('closedTranscriptBlock', () => {
     ).toMatch(/^Crew /u);
   });
 
+  it('names the accept as is on the Review row of a view shorter than the summary, and keeps the crew', () => {
+    const review = rich.review;
+    if (review.kind !== 'written') throw new Error('fixture review is not written');
+    const accepted = makeView({
+      ...rich,
+      outcome: { kind: 'complete' },
+      review: { ...review, verdict: 'fail', counts: { critical: 3, warning: 0, note: 1 } },
+      accepted: { redChecks: '1 red check: V1', note: 'Your note: The suite is red at the base' },
+    });
+    const rows = blockRows(accepted, { viewportRows: 8, crewNamed: false }).map(rowText);
+
+    expect(rows[1]).toMatch(/^Crew /u);
+    expect(rows).toContain(
+      'Review   failed · accepted as is · 3 blocking · 1 note · 3/3 criteria · 1m 5s',
+    );
+    expect(rows.join('\n')).not.toContain('Your note');
+    const narrow = blockRows(accepted, { viewportRows: 8, crewNamed: false, width: 56 }).map(
+      rowText,
+    );
+    expect(narrow.find((text) => text.startsWith('Review '))).toMatch(
+      /^Review {3}failed · accepted as is · .*1m 5s$/u,
+    );
+  });
+
+  it('keeps the accept as is and drops the time on a 60-column Review row of a review with no verdict', () => {
+    const accepted = makeView({
+      ...rich,
+      outcome: { kind: 'complete' },
+      review: { kind: 'failed' },
+      accepted: { redChecks: null, note: 'Your note: Fixtures too big.' },
+    });
+    // The content width of a 60-column terminal.
+    const rows = blockRows(accepted, { viewportRows: 8, crewNamed: false, width: 59 }).map(rowText);
+
+    expect(rows.find((text) => text.startsWith('Review '))).toBe(
+      'Review   final review no verdict · accepted as is',
+    );
+  });
+
   it('keeps the outcome and the fold alone in a view of two rows, and the fold closes the tree', () => {
     const rows = blockRows(rich, { viewportRows: 2 });
 

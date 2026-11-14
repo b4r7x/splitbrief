@@ -12,15 +12,25 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { openClosedRun } from '../helpers/closed-run-screen.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
-import { cli, createStopContinueFixture, readState } from '../helpers/stop-continue-fixture.js';
+import { openHaltedRun, settleOpenedRuns } from '../helpers/halted-run-screen.js';
+import {
+  cli,
+  createStopContinueFixture,
+  readState,
+  type StopContinueFixture,
+} from '../helpers/stop-continue-fixture.js';
 import { wholeFrames } from '../helpers/whole-frames.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
+/** A terminal shorter than the whole summary of this run's closed screen. */
+const SHORT_VIEWPORT = { cols: 80, rows: 16 };
 
 /**
  * The project gate: red in the run and at the run base, with one output line that names no failing
@@ -80,12 +90,74 @@ if (prompt.includes('# Final Implementation Review')) {
 }
 `;
 
+const FIX_TEST_FILE = 'src/total-again.test.mjs';
+const fixBriefs = ['T002', 'T003'].map((id) =>
+  makeTaskSpec({
+    id,
+    title: `Test the total again ${id}`,
+    intent: 'Test the total helper once more.',
+    criteria: ['C1'],
+    suggestedFiles: [FIX_TEST_FILE],
+    contextFiles: [TOTAL_FILE],
+    checks: [{ id: `${id}-K1`, kind: 'test', value: FIX_TEST_FILE }],
+  }),
+);
+const CANNOT = 'The two specs pin the old signup rules.';
+
+/**
+ * Each final review sends the red gate input `V1.1` to a new fix brief. The planner answers cannot
+ * on each consult: on the fix brief that the red gate fails, and on the review after the fix cycle.
+ */
+function noProgressPlannerScript(reviewsPath: string): string {
+  return `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const prompt = Buffer.concat(chunks).toString('utf8');
+let answer;
+if (prompt.includes('# Final Implementation Review')) {
+  const seen = existsSync(${JSON.stringify(reviewsPath)})
+    ? readFileSync(${JSON.stringify(reviewsPath)}, 'utf8').length
+    : 0;
+  appendFileSync(${JSON.stringify(reviewsPath)}, 'r');
+  const ids = (label) => prompt.match(new RegExp('^' + label + ' (.+)$', 'm'))[1].split(',').map((id) => id.trim());
+  answer = {
+    ...${JSON.stringify(passingVerdict({ kind: 'final', taskIds: [], criterionIds: [] }))},
+    tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })),
+    criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })),
+    fixTasks: [{ ...${JSON.stringify(fixBriefs)}[seen], findingIds: ['V1.1'] }],
+  };
+} else if (/^# Consult on a failing task$/m.test(prompt)) {
+  answer = { answer: { diagnosis: 'The specs disagree.', action: 'cannot', reason: ${JSON.stringify(CANNOT)}, next: null } };
+} else if (prompt.includes('# Plan the change')) {
+  answer = ${JSON.stringify({ result: plan })};
+} else {
+  throw new Error('Unexpected prompt: ' + prompt);
+}
+process.stdout.write(JSON.stringify(answer));
+`;
+}
+
 const IMPLEMENTER_SCRIPT = `import { mkdirSync, writeFileSync } from 'node:fs';
 for await (const chunk of process.stdin) void chunk;
 mkdirSync('src', { recursive: true });
 writeFileSync(${JSON.stringify(TOTAL_FILE)}, ${JSON.stringify(TOTAL_SOURCE)});
 writeFileSync(${JSON.stringify(TOTAL_TEST_FILE)}, ${JSON.stringify(TOTAL_TEST_SOURCE)});
 console.log('Implemented ${brief.id}');
+`;
+
+/** Writes the total helper for T001 and one more test of it for each fix brief. */
+const FIX_IMPLEMENTER_SCRIPT = `import { mkdirSync, writeFileSync } from 'node:fs';
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const prompt = Buffer.concat(chunks).toString('utf8');
+mkdirSync('src', { recursive: true });
+if (prompt.includes('## Task: Test the total again')) {
+  writeFileSync(${JSON.stringify(FIX_TEST_FILE)}, ${JSON.stringify(TOTAL_TEST_SOURCE)});
+} else {
+  writeFileSync(${JSON.stringify(TOTAL_FILE)}, ${JSON.stringify(TOTAL_SOURCE)});
+  writeFileSync(${JSON.stringify(TOTAL_TEST_FILE)}, ${JSON.stringify(TOTAL_TEST_SOURCE)});
+}
+console.log('Implemented');
 `;
 
 /** Rewrites the fixture's one commit so the run base also holds the red script. */
@@ -98,18 +170,19 @@ function commitRedOnBase(projectDir: string): void {
   createTestGitRepo(projectDir, { ...files, [RED_FILE]: RED_SOURCE });
 }
 
-it('e2e: Accept as is at a final review that a red check blocks records the red check, and Apply as is names it before it writes the changes', {
-  timeout: 300_000,
-}, async () => {
-  const target = createStopContinueFixture(() => '');
-  const trustHome = useTrustHome('accept-as-is-red-check');
+/** Sets up a run whose gate is red at its base, with the given planner and implementer scripts. */
+function prepareRedRun(
+  target: StopContinueFixture,
+  planner: string,
+  implementer: string,
+): { offlinePath: string; restorePath: () => void } {
   commitRedOnBase(target.projectDir);
   const restorePath = activateSafeCliShimPath(target.tmpDir);
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const offlinePath = join(target.tmpDir, 'offline.mjs');
-  writeFileSync(plannerPath, PLANNER_SCRIPT);
-  writeFileSync(implementerPath, IMPLEMENTER_SCRIPT);
+  writeFileSync(plannerPath, planner);
+  writeFileSync(implementerPath, implementer);
   writeFileSync(
     offlinePath,
     "globalThis.fetch = async () => { throw new Error('E2E network disabled'); };\n",
@@ -126,6 +199,54 @@ it('e2e: Accept as is at a final review that a red check blocks records the red 
     workflow: { ...config.workflow, approve: 'none' },
     validation: { ...config.validation, endChecks: true, testCommand: 'node --test' },
   });
+  return { offlinePath, restorePath };
+}
+
+it('e2e: the halt after a fix cycle that left a red check names the check as its red check line does', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const { restorePath } = prepareRedRun(
+    target,
+    noProgressPlannerScript(join(target.tmpDir, 'final-reviews')),
+    FIX_IMPLEMENTER_SCRIPT,
+  );
+  try {
+    const run = await cli(target, ['start', 'total'], { timeoutMs: 150_000 });
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
+    expect(run.stderr).toContain(
+      'Needs you (retry-exhausted): T002: the planner says it cannot be done',
+    );
+    const [sessionId] = readdirSync(sessionsRoot(target.projectDir));
+    if (sessionId === undefined) throw new Error('Missing session');
+    const skipped = await cli(target, ['continue', sessionId, '--action', 'skip'], {
+      timeoutMs: 150_000,
+    });
+    expect(skipped.exitCode, `${skipped.stdout}\n${skipped.stderr}`).toBe(1);
+    expect(skipped.stderr).toMatch(
+      /Needs you \(review-failed\): Final review made no progress on V1 after fix cycle 1$/m,
+    );
+
+    const opened = await openHaltedRun(target, { heading: 'Needs you' });
+    const frame = stripAnsiStyles(opened.screen.lastFrame());
+    opened.screen.unmount();
+    await settleOpenedRuns();
+    expect(frame).toContain('Needs you · Final review made no progress on V1 after fix cycle 1');
+    expect(frame).toContain(`Planner said: ${CANNOT}`);
+    expect(frame).toContain(RED_CHECK);
+  } finally {
+    vi.unstubAllEnvs();
+    restorePath();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('e2e: Accept as is at a final review that a red check blocks records the red check, and Apply as is names it before it writes the changes', {
+  timeout: 300_000,
+}, async () => {
+  const target = createStopContinueFixture(() => '');
+  const trustHome = useTrustHome('accept-as-is-red-check');
+  const { offlinePath, restorePath } = prepareRedRun(target, PLANNER_SCRIPT, IMPLEMENTER_SCRIPT);
   let halted = '';
   let ready = '';
   let confirm: string[] = [];
@@ -205,7 +326,7 @@ it('e2e: Accept as is at a final review that a red check blocks records the red 
           await expect.poll(screen, { timeout: 60_000 }).toContain(`Question: ${QUESTION}`);
           await expect.poll(screen).toMatch(/▌.*Review again/);
           halted = screen();
-          expect(halted).toContain('Accept as is');
+          expect(halted).toContain('Accept as is · records the blockers');
           expect(halted).toContain(RED_CHECK);
 
           await moveCursorTo(screen, write, '\x1b[B', /▌.*Accept as is/);
@@ -237,7 +358,7 @@ it('e2e: Accept as is at a final review that a red check blocks records the red 
       },
     );
 
-    expect(halted).toContain('Decide for me');
+    expect(halted).toContain('Decide for me · lets the next review decide');
     expect(halted).toContain('End run');
     expect(ready).toContain('write the changes with the red checks; asks once');
     expect(ready).not.toContain('open finding');
@@ -267,6 +388,32 @@ it('e2e: Accept as is at a final review that a red check blocks records the red 
         `- ${RED_CHECK}`,
       ].join('\n'),
     );
+
+    // The closed run on a short terminal, opened from the sessions list: the summary keeps one
+    // row per label and the crew.
+    const summary = await openClosedRun(
+      {
+        argv: [
+          '--import',
+          'tsx',
+          '--import',
+          offlinePath,
+          'src/cli.ts',
+          '--project',
+          target.projectDir,
+        ],
+        env,
+        viewport: SHORT_VIEWPORT,
+      },
+      async ({ screen }) => {
+        await vi.waitFor(() => expect(screen()).toMatch(/ Review {3}failed · accepted as is · /u), {
+          timeout: 30_000,
+        });
+        return screen();
+      },
+    );
+    expect(summary).toMatch(/ Crew {5}PLAN /u);
+    expect(summary).not.toContain('Accepted as is · 1 red check');
   } finally {
     vi.unstubAllEnvs();
     restorePath();

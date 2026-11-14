@@ -96,14 +96,24 @@ export type SummaryForm = 'whole' | 'labelled';
  */
 export function runRows(view: SummaryView, form: SummaryForm = 'whole'): RunRow[] {
   const times = phaseTimes(view.phases, view.ran);
+  const review = [...reviewSegments(view.review, { evidence: false }), ...criteriaSegments(view)];
+  const [first, ...rest] = review;
+  // The short form drops the accept row, so the Review row names the accept in its first fact,
+  // which a row too narrow for every fact keeps longest.
+  const accepted: CopySegment = { text: 'accepted as is', tone: 'text' };
+  const reviewFacts: CopyFact[] =
+    form !== 'labelled' || view.accepted === null
+      ? review
+      : first === undefined
+        ? [accepted]
+        : [
+            { spans: [...factSpans(first), { text: SOFT_SEP, tone: 'textDim' }, accepted] },
+            ...rest,
+          ];
   const rows: RunRow[] = [
     ...stageRow('plan', planSegments(view), times.get('planning')),
     ...stageRow('build', buildSegments(view), times.get('implementing')),
-    ...stageRow(
-      'review',
-      [...reviewSegments(view.review, { evidence: false }), ...criteriaSegments(view)],
-      times.get('review'),
-    ),
+    ...stageRow('review', reviewFacts, times.get('review')),
     ...(view.review.kind === 'written' ? setAsideRows(view.review.setAside, '') : []),
     ...acceptedRows(view.accepted),
     ...preExistingRows(view.review),

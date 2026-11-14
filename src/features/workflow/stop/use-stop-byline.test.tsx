@@ -13,7 +13,7 @@ import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
-import { requestBoundaryPause, requestSeatChangeAtBoundary } from '../handlers.js';
+import { requestBoundaryPause, requestSeatChangeAtBoundary, spendSeatChange } from '../handlers.js';
 import { useStopByline } from './use-stop-byline.js';
 
 function Lead() {
@@ -184,6 +184,27 @@ describe('useStopByline', () => {
     const ui = renderFeature(<LeadAndHint />);
 
     expect(ui.lastFrame().trim()).toBe('|Seat changes after T001');
+    ui.unmount();
+  });
+
+  it('drops the legend when the saved seats are the seats of the run again', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    seedBriefs({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'in_progress' },
+        { id: 'T002', title: 'second', status: 'pending' },
+      ],
+      currentTask: 1,
+      totalTasks: 2,
+    });
+    requestSeatChangeAtBoundary();
+    const ui = renderFeature(<LeadAndHint />);
+    expect(ui.lastFrame().trim()).toBe('|Seat changes after T001');
+
+    spendSeatChange();
+
+    await vi.waitFor(() => expect(ui.lastFrame().trim()).toBe('none'));
     ui.unmount();
   });
 

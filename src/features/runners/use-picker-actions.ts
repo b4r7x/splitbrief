@@ -8,7 +8,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { selectSeatChangePoint } from '../../core/run-view/briefs.js';
-import { takesSeatAtBoundary } from '../../stores/workflow/stop.js';
+import { stopStore, takesSeatAtBoundary } from '../../stores/workflow/stop.js';
 import { usePickerProfile } from './picker-profile.js';
 import {
   formatConfigSaveSuccess,
@@ -175,8 +175,10 @@ function dropClearedImplementerToken(
 
 /**
  * Where a seat saved under a run this process drives takes over: at a brief or review boundary,
- * where the run re-prepares from the saved config. A start still checking its tools runs on the
- * config it read first, so its first boundary takes the seat.
+ * where the run re-prepares from the saved config. The run loop marks in its config subscription,
+ * before the save returns, whether a saved seat still waits; a save back to the seat of the run
+ * leaves none. A start still checking its tools runs on the config it read first, so its first
+ * boundary takes the seat.
  */
 function runningSeatChangePoint(before: Config, after: Config): SeatChangePoint | undefined {
   if (
@@ -191,7 +193,10 @@ function runningSeatChangePoint(before: Config, after: Config): SeatChangePoint 
   }
   const route = routerStore.get();
   const view = runViewStore.get();
-  return route.screen === 'workflow' && route.execution.kind === 'local' && takesSeatAtBoundary()
+  return route.screen === 'workflow' &&
+    route.execution.kind === 'local' &&
+    takesSeatAtBoundary() &&
+    stopStore.get().seatChange
     ? selectSeatChangePoint(view.briefs, view.phase)
     : undefined;
 }

@@ -292,7 +292,7 @@ export function useRunLoop({
     // read a hand edit of the file first, so a seat written there counts as saved. The saved
     // seats are compared with the config the preparation read, not with the prepared one:
     // preparation names the model a seat leaves to its tool. A seat saved while the preparation ran
-    // is then a change too.
+    // is then a change too. A seat saved back to the seat of the run takes the change back.
     let configOfRun = prepared.sourceConfig;
     const requestSeatChanges = (): void => {
       const config = configStore.get().config;
@@ -302,6 +302,7 @@ export function useRunLoop({
         seatIdentitiesFromConfig(config),
       );
       if (changed.length > 0) requestSeatChangeAtBoundary();
+      else spendSeatChange();
     };
     const offConfig = configStore.subscribe(() => {
       if (takesSeatAtBoundary()) requestSeatChanges();
@@ -483,11 +484,8 @@ export function useRunLoop({
             return;
           }
           preparedForRun = reprepared.execution;
-          // The saved seats are taken now, so a change requested for them is spent.
-          if (entry.seatsSaved) {
-            configOfRun = reprepared.execution.sourceConfig;
-            spendSeatChange();
-          }
+          // The saved seats are taken now, so the compare before the engine entry spends the change.
+          if (entry.seatsSaved) configOfRun = reprepared.execution.sourceConfig;
         }
 
         const storeStreamingSink: StreamingSink = {

@@ -95,6 +95,7 @@ function fitWholeWords(
     label: string;
     metadata: string | undefined;
     room: number;
+    gap: number;
     spares: readonly number[];
     keep: 'label' | 'metadata';
   }>,
@@ -108,7 +109,8 @@ function fitWholeWords(
   for (const spent of input.spares) {
     const pair = pairs.find(
       ({ label, metadata }) =>
-        getTerminalCellWidth(label) + 1 + getTerminalCellWidth(metadata) <= input.room + spent,
+        getTerminalCellWidth(label) + input.gap + getTerminalCellWidth(metadata) <=
+        input.room + spent,
     );
     if (pair !== undefined) return { ...pair, spent };
   }
@@ -177,6 +179,8 @@ export function ListRow({
   const treeW = hasTree ? getTerminalCellWidth(cleanTree) : 0;
   const trailSpare = hasTrailing && cleanTrailing.trim() === '' ? trailW : 0;
   const checkSpare = selected === false ? checkW : 0;
+  const metaGap = metadataAfterLabel === true ? SOFT_SEP : ' ';
+  const metaGapW = getTerminalCellWidth(metaGap);
   const whole =
     keepWhole === undefined || width === undefined
       ? undefined
@@ -184,6 +188,7 @@ export function ListRow({
           label: cleanLabel,
           metadata: hasMetadata ? cleanMeta : undefined,
           room: width - leadW - accelW - treeW - checkW - trailW,
+          gap: metaGapW,
           spares: [...new Set([0, trailSpare, trailSpare + checkSpare])],
           keep: keepWhole,
         });
@@ -206,11 +211,11 @@ export function ListRow({
     whole !== undefined
       ? whole.metadata === undefined
         ? 0
-        : getTerminalCellWidth(whole.metadata) + 1
+        : getTerminalCellWidth(whole.metadata) + metaGapW
       : metaRoom === undefined
         ? undefined
         : hasMetadata
-          ? Math.min(getTerminalCellWidth(cleanMeta) + 1, Math.max(metaRoom, metaFloor))
+          ? Math.min(getTerminalCellWidth(cleanMeta) + metaGapW, Math.max(metaRoom, metaFloor))
           : 0;
   const displayMeta =
     whole !== undefined
@@ -219,7 +224,7 @@ export function ListRow({
         ? undefined
         : metaW === undefined
           ? cleanMeta
-          : truncateTerminalDisplayText(cleanMeta, Math.max(0, metaW - 1));
+          : truncateTerminalDisplayText(cleanMeta, Math.max(0, metaW - metaGapW));
   const showMetadata = whole === undefined ? hasMetadata : whole.metadata !== undefined;
   const labelW =
     width === undefined
@@ -297,7 +302,7 @@ export function ListRow({
           backgroundColor={backgroundColor}
         >
           <Text color={metadataColor} wrap="truncate-end">
-            {' '}
+            {metaGap}
             {displayMeta}
           </Text>
         </Box>

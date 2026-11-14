@@ -98,7 +98,7 @@ function jsonRecords(stdout: string) {
     .map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
 }
 
-it('e2e: --action accept-as-is accepts a final review that a red check blocks, --action apply refuses the accepted run, and --action apply-as-is names the red check before it writes the changes', {
+it('e2e: the halt names --action accept-as-is, which accepts a final review that a red check blocks, --action apply refuses the accepted run, and --action apply-as-is names the red check before it writes the changes', {
   timeout: 300_000,
 }, async () => {
   const target = createStopContinueFixture(() => '');
@@ -144,11 +144,16 @@ it('e2e: --action accept-as-is accepts a final review that a red check blocks, -
       },
     ]);
     const applyAsIs = `splitbrief continue ${sessionId} --action apply-as-is`;
+    const acceptLine = run.stderr.split('\n').find((line) => line.startsWith('Accept as is: '));
+    expect(acceptLine, run.stderr).toBe(
+      `Accept as is: splitbrief continue ${sessionId} --action accept-as-is [--plain|--json]`,
+    );
+    const acceptArgs = (acceptLine ?? '')
+      .replace(/^Accept as is: splitbrief /, '')
+      .replace(/ \[--plain\|--json\]$/, '')
+      .split(' ');
 
-    const accepted = await cli(target, ['continue', sessionId, '--action', 'accept-as-is'], {
-      json: true,
-      timeoutMs: 60_000,
-    });
+    const accepted = await cli(target, acceptArgs, { json: true, timeoutMs: 60_000 });
     expect(accepted.exitCode, `${accepted.stdout}\n${accepted.stderr}`).toBe(0);
     expect(
       jsonRecords(accepted.stdout).filter((record) => record.type === 'ready_to_apply'),

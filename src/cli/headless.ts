@@ -33,6 +33,7 @@ import {
   continuesHeadless,
   formatResumeCommand,
 } from '../core/recovery/resume-command.js';
+import { recoveryActionLabel } from '../core/recovery/action-label.js';
 import { cannotDetail, reviewFailedCause, reviewName } from '../core/recovery/headline.js';
 import { haltOf, recoveryHaltLabel } from '../core/recovery/halt.js';
 import { formatResetAt } from '../core/recovery/reset-clock.js';
@@ -144,8 +145,12 @@ export function emitRecoveryAndFailIfPending({
   );
   // The stored message names no clock; a quota halt's reset is spelled when the line is printed.
   const reset = formatResetAt(issue.resetAt);
+  // Accept as is also runs with no panel, so a halt that offers it names that command too.
+  const accept = issue.availableActions.includes('accept-as-is')
+    ? `\n${recoveryActionLabel('accept-as-is', issue)}: ${continueRunCommand(sessionId)} --action accept-as-is [--plain|--json]`
+    : '';
   throw cliError(
-    `${recoveryHaltLabel(haltOf(issue.reason))} (${issue.reason}): ${issue.message}${reset === undefined ? '' : ` (${reset})`}${question === undefined ? '' : `\nQuestion: ${question}`}${cannot === undefined || cannotBy === undefined ? '' : `\n${cannotDetail(cannotBy, cannot)}`}\nRecommended: ${issue.recommendedAction}\nContinue with: ${resumeCommand}${continuesHeadless(issue) ? ' [--plain|--json]' : ''}`,
+    `${recoveryHaltLabel(haltOf(issue.reason))} (${issue.reason}): ${issue.message}${reset === undefined ? '' : ` (${reset})`}${question === undefined ? '' : `\nQuestion: ${question}`}${cannot === undefined || cannotBy === undefined ? '' : `\n${cannotDetail(cannotBy, cannot)}`}\nRecommended: ${issue.recommendedAction}\nContinue with: ${resumeCommand}${continuesHeadless(issue) ? ' [--plain|--json]' : ''}${accept}`,
     1,
   );
 }

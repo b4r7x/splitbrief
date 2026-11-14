@@ -33,6 +33,7 @@ import {
 } from './usage-details-model.js';
 
 import { haltOf, recoveryHaltLabel } from '../../core/recovery/halt.js';
+import { decidedRecovery } from '../../core/recovery/decide.js';
 import { stateTone } from '../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
 import { separatedSpans } from './conversation-rows/row-format/text.js';
@@ -212,11 +213,26 @@ export function recoveryMenuParts(
     : [...label, { text: SOFT_SEP, tone: 'textDim' }, { text: consequence, tone: 'textDim' }];
 }
 
+const DECIDED_STEP_CONSEQUENCE: Partial<Record<RecoveryAction, string>> = {
+  'skip-current-task': 'skips this brief',
+  'end-run': 'closes this run',
+  'retry-same-worker': 'lets the implementer decide',
+  revise: 'lets the next review decide',
+};
+
 function recoveryMenuConsequence(
   action: RecoveryAction,
   issue: RecoveryIssue,
   reviewNone: boolean,
 ): string | undefined {
+  if (action === 'accept-as-is')
+    return issue.reason === 'review-input-too-large'
+      ? 'accepts the result'
+      : 'records the blockers';
+  if (action === 'decide-for-me') {
+    const decided = decidedRecovery(issue);
+    return decided === undefined ? undefined : DECIDED_STEP_CONSEQUENCE[decided.action];
+  }
   if (action === 'retry-same-worker' || action === 'restore-backup') {
     const apply = applyRecoveryConsequence(action, issue.reason);
     if (apply !== undefined) return apply;

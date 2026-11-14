@@ -32,6 +32,7 @@ import { emitRecoveryAndFailIfPending, runHeadless } from './headless.js';
 import { saveSummary } from '../core/sessions/io.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { RecoveryIssue } from '../core/schemas/recovery/schemas.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
 import {
@@ -294,6 +295,73 @@ describe('emitRecoveryAndFailIfPending — a usage-limit halt', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('emitRecoveryAndFailIfPending — a halt that offers Accept as is', () => {
+  function haltLine(issue: Partial<RecoveryIssue>): string {
+    const state = { ...createInitialState('accept me'), pendingRecovery: makeRecoveryIssue(issue) };
+    try {
+      emitRecoveryAndFailIfPending({
+        reviewNone: false,
+        state,
+        sessionId: 'sess-accept',
+        writeRecord: vi.fn(),
+      });
+    } catch (thrown) {
+      if (thrown instanceof Error) return thrown.message;
+    }
+    throw new Error('the halt did not fail the run');
+  }
+
+  it('names the accept command after the continue line', () => {
+    expect(
+      haltLine({
+        reason: 'review-failed',
+        phase: 'final-review',
+        message: 'Final review failed with 1 blocking finding',
+        availableActions: ['revise', 'accept-as-is', 'end-run'],
+        recommendedAction: 'revise',
+      }),
+    ).toBe(
+      [
+        'Needs you (review-failed): Final review failed with 1 blocking finding',
+        'Recommended: revise',
+        'Continue with: splitbrief continue sess-accept, then choose Review again in the recovery panel',
+        'Accept as is: splitbrief continue sess-accept --action accept-as-is [--plain|--json]',
+      ].join('\n'),
+    );
+  });
+
+  it('names the accept of a review input that is too large by its own row', () => {
+    expect(
+      haltLine({
+        reason: 'review-input-too-large',
+        phase: 'final-review',
+        message: 'The change is too large for the REVIEW seat',
+        availableActions: ['accept-as-is', 'end-run'],
+        recommendedAction: 'end-run',
+      }),
+    ).toBe(
+      [
+        'Seat down (review-input-too-large): The change is too large for the REVIEW seat',
+        'Recommended: end-run',
+        'Continue with: splitbrief continue sess-accept --action end-run [--plain|--json]',
+        'Skip review with a note: splitbrief continue sess-accept --action accept-as-is [--plain|--json]',
+      ].join('\n'),
+    );
+  });
+
+  it('names no accept command on a halt that does not offer it', () => {
+    expect(
+      haltLine({
+        reason: 'review-failed',
+        phase: 'final-review',
+        message: 'Final review failed with 1 blocking finding',
+        availableActions: ['revise', 'end-run'],
+        recommendedAction: 'revise',
+      }),
+    ).not.toContain('--action accept-as-is');
   });
 });
 

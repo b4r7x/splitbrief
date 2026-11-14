@@ -81,7 +81,7 @@ console.log(JSON.stringify({
 }
 
 describe('e2e: the resumed consult names the decision ledger', { timeout: 240_000 }, () => {
-  it('sends the plan decisions under Decisions when the consult resumes the planning session', async () => {
+  it('sends the plan decisions under Decisions and the limits of ask-user and cannot when the consult resumes the planning session', async () => {
     fixture = createStopContinueFixture(
       (projectDir) => implementerScript(join(projectDir, '..', 'attempts')),
       { isolation: 'worktree' },
@@ -149,5 +149,14 @@ describe('e2e: the resumed consult names the decision ledger', { timeout: 240_00
       `- ${DECISION}\n- ${REPORTED.what} — ${REPORTED.why} (${greeting.id})\n`,
     );
     expect(prompt).not.toContain('Confirmed Decisions');
+    expect(prompt).toContain(
+      '- `ask-user` — `question`, `whyOnlyUserCanAnswer`, `choices` (or null) and `default` (or null): only when no other action can unblock the task and the user alone holds the missing decision.',
+    );
+    expect(prompt).toContain(
+      '- `cannot` — `reason` and `next`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that.',
+    );
+    expect(prompt).toContain(
+      '`next` is the step for a user who chose Decide for me: `skip-brief` when the run can go on without this task, `end-run` when the rest of the run depends on it; null on a stuck review.',
+    );
   });
 });

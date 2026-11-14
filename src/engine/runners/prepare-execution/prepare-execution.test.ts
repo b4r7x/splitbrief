@@ -138,6 +138,37 @@ function freshCliEvidence(
   };
 }
 
+const OPENCODE_VERSION = CLI_TOOL_CATALOG.opencode.compatibility.testedVersion;
+
+/** OpenCode at its tested release, admitted on a host that holds no OpenCode model selection. */
+function opencodeAdmission(project: string): Partial<PrepareExecutionDependencies> {
+  vi.stubEnv('XDG_STATE_HOME', join(project, '.state'));
+  return {
+    collectArgVectorPreflightChecks: async () => [],
+    detectRunnerEvidence: async ({ context }) => ({
+      ...freshCliEvidence(context),
+      runner: { id: 'opencode', kind: 'cli', locality: 'local', enabled: 'enabled' },
+      compatibility: {
+        kind: 'compatible',
+        installedVersion: OPENCODE_VERSION,
+        testedVersion: OPENCODE_VERSION,
+      },
+    }),
+    resolveCliExecutableAliases: async () => ({
+      command: 'opencode',
+      executable,
+      usedFallback: false,
+    }),
+  };
+}
+
+function variantWarningSummaries(report: ReadinessReport): string[] {
+  return report.sections
+    .flatMap((section) => section.checks)
+    .filter((check) => check.id.endsWith('variant-not-applied'))
+    .map((check) => check.summary);
+}
+
 function policy(
   purpose: 'new-workflow' | 'spec' = 'new-workflow',
 ): Extract<PreparationPolicy, { purpose: 'new-workflow' | 'spec' }> {
@@ -1884,6 +1915,36 @@ describe('prepareExecution availability probe scope', () => {
   });
 });
 
+describe('prepareExecution with a variant that OpenCode 2 cannot send', () => {
+  it('warns for the PLAN and BUILD seats of a workflow start that name no model', async () => {
+    const project = projectDir();
+    const seat = { kind: 'cli', tool: 'opencode', variant: 'high' } as const;
+    const config = makeConfig({ planner: seat, implementer: seat });
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'variant on the run path',
+      effectiveConfig: config,
+      configWarnings: [],
+      signal: new AbortController().signal,
+      policy: policy('new-workflow'),
+      deps: {
+        ...opencodeAdmission(project),
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        prepareNewSession: () => preparedSession(project, 'variant-run-path'),
+      },
+    });
+
+    if (outcome.kind !== 'prepared') throw new Error(`Preparation ended ${outcome.kind}`);
+    expect(variantWarningSummaries(outcome.execution.report)).toEqual(
+      ['PLAN', 'BUILD'].map(
+        (seat) =>
+          `${seat}: the variant setting is not applied: OpenCode CLI ${OPENCODE_VERSION} takes a variant only with a model.`,
+      ),
+    );
+  });
+});
+
 describe('prepareReviewExecution', () => {
   const reviewPolicy = (): Extract<PreparationPolicy, { purpose: 'review' }> => ({
     purpose: 'review',
@@ -1965,6 +2026,7 @@ describe('prepareReviewExecution', () => {
       configWarnings: [],
       signal: new AbortController().signal,
       policy: reviewPolicy(),
+      reviewSettingsSeat: 'reviewer',
       deps: { ...reviewDeps(readyReport(project)), prepareNewSession: prepareSession },
     });
 
@@ -1977,6 +2039,49 @@ describe('prepareReviewExecution', () => {
     for (const path of noArtifactPaths(project)) expect(existsSync(path)).toBe(false);
   });
 
+  describe('a variant that OpenCode 2 cannot send', () => {
+    async function variantWarnings(
+      config: Parameters<typeof makeConfig>[0],
+      reviewSettingsSeat: 'planner' | 'reviewer',
+    ): Promise<string[]> {
+      const project = projectDir();
+      const outcome = await prepareReviewExecution({
+        projectDir: project,
+        effectiveConfig: makeConfig(config),
+        configWarnings: [],
+        signal: new AbortController().signal,
+        policy: reviewPolicy(),
+        reviewSettingsSeat,
+        deps: { ...reviewDeps(readyReport(project)), ...opencodeAdmission(project) },
+      });
+      if (outcome.kind !== 'prepared') throw new Error(`Preparation ended ${outcome.kind}`);
+      return variantWarningSummaries(outcome.execution.report);
+    }
+
+    it('warns for a REVIEW seat that names no model, from the release the gate admitted', async () => {
+      expect(
+        await variantWarnings(
+          {
+            planner: { kind: 'cli', tool: 'codex' },
+            reviewer: { kind: 'cli', tool: 'opencode', variant: 'high' },
+          },
+          'reviewer',
+        ),
+      ).toEqual([
+        `REVIEW: the variant setting is not applied: OpenCode CLI ${OPENCODE_VERSION} takes a variant only with a model.`,
+      ]);
+    });
+
+    it('names PLAN, not REVIEW, for a REVIEW that follows PLAN, as the review command sends it', async () => {
+      // The command hands the seat of PLAN in the reviewer block, and names PLAN as the seat that holds its settings.
+      const plan = { kind: 'cli', tool: 'opencode', variant: 'high' } as const;
+
+      expect(await variantWarnings({ planner: plan, reviewer: plan }, 'planner')).toEqual([
+        `PLAN: the variant setting is not applied: OpenCode CLI ${OPENCODE_VERSION} takes a variant only with a model.`,
+      ]);
+    });
+  });
+
   it('reports a live session instead of refusing a read-only review', async () => {
     const project = projectDir();
 
@@ -1986,6 +2091,7 @@ describe('prepareReviewExecution', () => {
       configWarnings: [],
       signal: new AbortController().signal,
       policy: reviewPolicy(),
+      reviewSettingsSeat: 'reviewer',
       deps: reviewDeps(liveSessionReport(project)),
     });
 

@@ -68,6 +68,12 @@ const REASON_TEXT: Record<ConsultReason, string> = {
     "The review made no progress: its blockers did not move after a fix cycle, its answer fixes none of them, or it failed with no blocker on criteria no check verified. The failing output lists your earlier answers on reviews without progress; choose again with them in view. guidance goes with the reviewer's next fix briefs, and needs at least one. A rewrite or a split replaces them. verify re-runs the named checks on the same tree, for a red that may be a flake, and the review runs again. accept leaves every remaining blocker open with your note and keeps the failed verdict; the user reads the note before Apply. A red check or an Apply conflict that blocks cannot be accepted: verify the red check or fix it. ask-user asks the user. cannot stops the run and asks the user.",
 };
 
+const ASK_USER_ACTION =
+  '`ask-user` — `question`, `whyOnlyUserCanAnswer`, `choices` (or null) and `default` (or null): only when no other action can unblock the task and the user alone holds the missing decision.';
+
+const CANNOT_ACTION =
+  '`cannot` — `reason` and `next`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. `next` is the step for a user who chose Decide for me: `skip-brief` when the run can go on without this task, `end-run` when the rest of the run depends on it; null on a stuck review. SPLITBRIEF stops the brief and asks the user, or takes `next` after Decide for me.';
+
 const CONSULT_CONTRACT_BODY = `SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project. ${GIT_READ_ONLY_RULE}.
 
 Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states what actually went wrong, in one or two sentences, and is always present. Exactly one action follows it:
@@ -75,8 +81,8 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 - \`rewrite-task\` — \`task\`: one complete replacement TaskSpec that fixes the brief itself.
 - \`split-task\` — \`tasks\`: 2 or more complete TaskSpecs that together replace the task.
 - \`verify\` — \`checkIds\` and \`reason\`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
-- \`ask-user\` — \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
-- \`cannot\` — \`reason\` and \`next\`: the task cannot be done as asked, and no guidance, rewrite, split or answer of the user can change that. \`next\` is the step for a user who chose Decide for me: \`skip-brief\` when the run can go on without this task, \`end-run\` when the rest of the run depends on it; null on a stuck review. SPLITBRIEF stops the brief and asks the user, or takes \`next\` after Decide for me.
+- ${ASK_USER_ACTION}
+- ${CANNOT_ACTION}
 - \`accept\` — \`note\`: a stuck review only. The remaining blockers need no more work; the note says why, and the user reads it before Apply.
 
 The workspace rule: \`guidance\`, \`rewrite-task\` and \`split-task\` continue on the workspace as the failed attempt left it. The edits of the attempt stay, also its edits to files of earlier done tasks. A rewrite or a split names in its brief what to keep, change or remove of these edits.
@@ -96,7 +102,9 @@ function consultContract(task: Task, writesFiles: ImplementerWriteMode): string 
   return `${role} ${CONSULT_CONTRACT_BODY}${sizing}`;
 }
 
-const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. ${GIT_READ_ONLY_RULE}. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. When the task cannot be done as asked, answer \`cannot\`. The workspace rule still holds: guidance, a rewrite and a split continue on the files the failed attempt left. A rewrite or a split names in its brief what to keep, change or remove of these edits. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
+const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. ${GIT_READ_ONLY_RULE}. The operator rule still holds: no action undoes an operator instruction. The answer rule still holds: an answer only instructs the next attempt. Offer only choices that the next attempt can carry out. The workspace rule still holds: guidance, a rewrite and a split continue on the files the failed attempt left. A rewrite or a split names in its brief what to keep, change or remove of these edits. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`. The two actions that go to the user keep their limits:
+- ${ASK_USER_ACTION}
+- ${CANNOT_ACTION}`;
 
 function checkLine(check: Check): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`)`;

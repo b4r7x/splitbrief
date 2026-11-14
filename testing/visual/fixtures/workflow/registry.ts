@@ -1005,6 +1005,7 @@ const checkpointPredicates = [
     checkpointId('start-readiness-warning'),
     includesAll('Warning', 'Examples: README.md', 'reverted/', 'Planning…'),
   ],
+  [checkpointId('start-variant-not-applied'), includesAll('Warning', 'variant', 'Planning…')],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [
     checkpointId('first-brief-after-plan'),
@@ -2049,13 +2050,18 @@ const checkpointPredicates = [
   [checkpointId('closed-discarded'), includesAll()],
   [checkpointId('closed-rejected'), includesAll()],
   [checkpointId('closed-needs-attention'), includesAll()],
+  // A view shorter than the whole summary names the accept on the Review row.
   [
     checkpointId('closed-planner-accept'),
-    aboveSummaryFold(40, 'Accepted as is', "Planner's note:"),
+    (context) =>
+      aboveSummaryFold(40, 'Accepted as is', "Planner's note:")(context) &&
+      (context.viewport.rows >= 40 || includesAll('failed · accepted as is')(context)),
   ],
   [
     checkpointId('closed-red-check-accept'),
-    aboveSummaryFold(40, 'Accepted as is · 1 red check: V1'),
+    (context) =>
+      aboveSummaryFold(40, 'Accepted as is · 1 red check: V1')(context) &&
+      (context.viewport.rows >= 40 || includesAll('failed · accepted as is')(context)),
   ],
   [checkpointId('closed-decided-skip'), aboveSummaryFold(0, '1 skipped')],
   [checkpointId('closed-ended'), includesAll()],
@@ -2298,14 +2304,15 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('review-red-check'),
-    // The headline names the red input; the red check has one row, in the words of the next screens.
+    // The headline names the red check as its one row does, in the words of the next screens.
     (context) =>
       includesAll(
-        'found no fix for V1.1',
+        'found no fix for V1',
         WORKFLOW_FIXTURE_TEXT.reviewFailed,
         'Decide for me',
         'End run',
       )(context) &&
+      !stripAnsiStyles(context.output).includes('found no fix for V1.1') &&
       stripAnsiStyles(context.output).includes('V1 failed · npm test · Error: 2 specs failed') &&
       !panelText(context.output).includes('Output tail:'),
   ],

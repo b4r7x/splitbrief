@@ -824,6 +824,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-start-variant-not-applied',
+      title: 'Workflow · start with a variant OpenCode does not send',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'start-variant-not-applied',
+        title: 'The REVIEW variant warning under the request',
+        kind: 'planning',
+        marker: 'variant',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Request and its variant warning' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-plan-compiled',
       title: 'Workflow · plan compiled',
       surface: screenSurface('workflow'),
@@ -5467,7 +5483,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-no-image',
         title: 'Review-seat-without-images recovery menu',
         kind: 'question',
-        marker: 'Try again recommended',
+        marker: 'Try again · recommended',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

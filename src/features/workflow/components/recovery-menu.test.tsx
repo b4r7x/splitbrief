@@ -262,7 +262,7 @@ it('shows each row its key beside its label', async () => {
   ui.unmount();
 });
 
-it('stands the recommended marker one cell after the label and highlights that row', async () => {
+it('stands the recommended marker after the label behind a separator and highlights that row', async () => {
   const issue = makeRecoveryIssue({
     reason: 'dependency-blocked',
     availableActions: ['skip-current-task', 'end-run'],
@@ -273,7 +273,24 @@ it('stands the recommended marker one cell after the label and highlights that r
   const row = stripAnsiStyles(ui.lastFrame())
     .split('\n')
     .find((line) => line.includes('End run'));
-  expect(row).toContain(`${listRowLead('active')}a   End run recommended`);
+  expect(row).toContain(`${listRowLead('active')}a   End run · recommended`);
+  ui.unmount();
+});
+
+it('stands the recommended marker after the consequence of its row behind a separator', async () => {
+  const issue = makeRecoveryIssue({
+    reason: 'review-failed',
+    availableActions: ['revise', 'end-run'],
+    recommendedAction: 'revise',
+  });
+  const ui = mount(vi.fn(), 80, issue);
+  await flushEffects();
+  const row = stripAnsiStyles(ui.lastFrame())
+    .split('\n')
+    .find((line) => line.includes('Review again'));
+  expect(row).toContain(
+    `${listRowLead('active')}v   Review again · sends your note to the reviewer · recommended`,
+  );
   ui.unmount();
 });
 
@@ -920,6 +937,27 @@ function frameRows(ui: ReturnType<typeof renderFeature>): string[] {
   return stripAnsiStyles(ui.lastFrame()).split('\n');
 }
 
+it('says what Accept as is and Decide for me do on a failed review the planner cannot fix, whole at 60x18', async () => {
+  const issue = buildReviewFailedRecoveryIssue({
+    createdAt: '2026-09-24T00:00:00.000Z',
+    blocking: 1,
+    noProgress: ['V1'],
+    cannot: 'The two specs pin the old signup rules.',
+    acceptAsIs: true,
+  });
+  const ui = await mountPanel(issue, 18, 60);
+  const rows = frameRows(ui);
+  for (const row of [
+    'v   Review again · sends your note to the reviewer',
+    'k   Accept as is · records the blockers',
+    'd   Decide for me · closes this run',
+    'a   End run',
+  ]) {
+    expect(rows.join('\n')).toContain(row);
+  }
+  ui.unmount();
+});
+
 /** The panel's words with its border and indent gone, one space between rows. */
 function panelText(rows: readonly string[]): string {
   return rows.map((row) => row.replace(/^[│|] */, '').replace(/ *[│|]$/, '')).join(' ');
@@ -1193,7 +1231,7 @@ it.each([12, 13, 14, 15, 16])(
     expect(rows).toHaveLength(panelBoxRows(terminalRows));
     expect(rows.some((row) => row.includes('T901 failed'))).toBe(true);
     expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
-    expect(rows.some((row) => row.includes('Try again recommended'))).toBe(true);
+    expect(rows.some((row) => row.includes('Try again · recommended'))).toBe(true);
     expectHiddenActionsMarked(rows, issue);
     expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
     ui.unmount();

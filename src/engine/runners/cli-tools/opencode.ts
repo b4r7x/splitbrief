@@ -1,5 +1,5 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
-import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
+import { isOpencode2 } from '../../../core/runners/effort-channel.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
@@ -125,10 +125,7 @@ function runArgs(
   >,
 ): string[] {
   const { installedVersion, model, variant } = input;
-  const standalone =
-    installedVersion !== undefined &&
-    classifyCliAdmittedVersion({ installedVersion, minimumAdmittedVersion: '2.0.0' }) ===
-      'compatible';
+  const standalone = isOpencode2(installedVersion);
   const args = standalone ? ['run', '--standalone'] : ['run'];
   if (model !== undefined) {
     args.push('--model', standalone && variant !== undefined ? `${model}#${variant}` : model);

@@ -181,7 +181,10 @@ export function requestSeatChangeAtBoundary(): void {
   stopStore.markSeatChange(true);
 }
 
-/** A re-preparation or a seat swap took every saved seat, so the seat change is spent. */
+/**
+ * No saved seat waits any more: a re-preparation or a seat swap took every saved seat, or the saved
+ * seats are the seats of the run again.
+ */
 export function spendSeatChange() {
   stopStore.markSeatChange(false);
 }

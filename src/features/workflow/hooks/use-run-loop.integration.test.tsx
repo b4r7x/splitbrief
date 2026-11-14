@@ -1500,6 +1500,52 @@ describe('useRunLoop', () => {
     },
   );
 
+  it('takes no seat change at the brief boundary when the seat saved under the run is saved back', async () => {
+    const sessionId = '2026-11-14-seat-saved-back';
+    ensureSessionDir(projectDir, sessionId);
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('add auth'), ...RUN_CREW, phase: 'implementing' },
+    );
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+    configStore.__testReset({ projectDir, config: prepared.config });
+    const continueAtRest = vi.fn();
+    const { promise: boundary, resolve: reachBoundary } = Promise.withResolvers<void>();
+    const parks: (BoundaryPark | undefined)[] = [];
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      await boundary;
+      const park = options.sinks.consumeBoundaryPause?.();
+      parks.push(park);
+      if (park !== undefined) await options.callbacks.onContinuationNeeded?.('', 'boundary', []);
+      return makeSummary();
+    });
+
+    const inst = renderHarness({ prepared, continueAtRest, runWorkflow: runWorkflowStub });
+    // A failed assertion must not leave the loop waiting at the boundary with its config
+    // subscription live: it would mark a seat change in the tests after this one.
+    onTestFinished(() => {
+      inst.unmount();
+      reachBoundary();
+    });
+    await vi.waitFor(() => {
+      expect(runWorkflowStub).toHaveBeenCalledTimes(1);
+    });
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
+    });
+    expect(stopStore.get().seatChange).toBe(true);
+    configStore.__testReset({ projectDir, config: prepared.config });
+    expect(stopStore.get().seatChange).toBe(false);
+
+    reachBoundary();
+    await vi.waitFor(() => expect(settledRun()).not.toBeNull());
+    expect(parks).toEqual([undefined]);
+    expect(continueAtRest).not.toHaveBeenCalled();
+  });
+
   it('stops at the brief boundary and continues at rest when a seat changed under the run', async () => {
     const sessionId = '2026-09-21-seat-change';
     ensureSessionDir(projectDir, sessionId);

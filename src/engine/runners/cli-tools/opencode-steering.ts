@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
-import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
+import { isOpencode2 } from '../../../core/runners/effort-channel.js';
 import { createLineBuffer } from '../../../lib/process/line-buffer.js';
 import { spawnPipe, type SpawnPipeFatalSignal } from '../../../lib/process/spawn/lifecycle.js';
 import { error } from '../../../utils/error.js';
@@ -42,10 +42,7 @@ export function createOpencodeSteering(
   parse: (line: string) => readonly CliProtocolEvent[],
 ): CliSteeringTransport {
   return {
-    supportsVersion: (installedVersion) =>
-      installedVersion !== undefined &&
-      classifyCliAdmittedVersion({ installedVersion, minimumAdmittedVersion: '2.0.0' }) ===
-        'compatible',
+    supportsVersion: isOpencode2,
     open: async (input) => {
       if ((await revalidateCliExecutableIdentity(input.invocation.executable)) !== 'match') {
         throw error(

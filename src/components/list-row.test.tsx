@@ -244,7 +244,7 @@ describe('ListRow', () => {
     expect(frame).toContain('200k');
   });
 
-  it('stands the metadata one cell after the label when metadataAfterLabel is set', () => {
+  it('stands the metadata after the label behind a separator when metadataAfterLabel is set', () => {
     const after = stripAnsiStyles(
       frameOf(
         <ListRow label="auto" metadata="recommended" metadataAfterLabel width={40} />,
@@ -255,10 +255,33 @@ describe('ListRow', () => {
       frameOf(<ListRow label="auto" metadata="recommended" width={40} />, 40).split('\n')[0] ?? '',
     );
 
-    expect(after.startsWith('  auto recommended')).toBe(true);
-    expect(right).not.toContain('auto recommended');
-    expect(right.trimEnd().endsWith('recommended')).toBe(true);
+    expect(after.startsWith('  auto · recommended')).toBe(true);
+    expect(right).not.toContain('auto · recommended');
+    expect(right.trimEnd()).toMatch(/^ {2}auto {2,}recommended$/);
   });
+
+  it.each([
+    [20, '  auto · recommended'],
+    [19, '  auto'],
+  ])(
+    'counts the separator before a tag after the label, and drops both together at width %s',
+    (width, expected) => {
+      const line = stripAnsiStyles(
+        frameOf(
+          <ListRow
+            label="auto"
+            metadata="recommended"
+            metadataAfterLabel
+            keepWhole="label"
+            width={width}
+          />,
+          width,
+        ).split('\n')[0] ?? '',
+      );
+
+      expect(line.trimEnd()).toBe(expected);
+    },
+  );
 
   it('reserves a blank 2-cell check column when selected is false', () => {
     const withoutCheckColumn = stripAnsiStyles(

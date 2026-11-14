@@ -95,8 +95,16 @@ if (call === 1) {
 `;
 }
 
-/** The REVIEW seat the user saves: a codex that counts its calls, keeps its prompt and passes. */
-function installCodex(binDir: string, files: ReviewFiles): void {
+/**
+ * A codex REVIEW seat that counts its calls, keeps its prompt and gives `verdict`. With `hold`, its
+ * first call writes `files.started` and holds its verdict until `files.release` exists.
+ */
+function installCodex(
+  binDir: string,
+  files: ReviewFiles,
+  verdict: string,
+  hold: 'hold-first-call' | 'no-hold',
+): void {
   writeFakeNodeCli(
     binDir,
     'codex',
@@ -116,9 +124,14 @@ const countPath = ${JSON.stringify(files.codexCalls)};
 const call = existsSync(countPath) ? Number(readFileSync(countPath, 'utf8')) + 1 : 1;
 writeFileSync(countPath, String(call));
 writeFileSync(${JSON.stringify(files.codexPrompt)}, prompt);
+if (${JSON.stringify(hold === 'hold-first-call')} && call === 1) {
+  writeFileSync(${JSON.stringify(files.started)}, '');
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  while (!existsSync(${JSON.stringify(files.release)})) Atomics.wait(pause, 0, 0, 25);
+}
 const emit = (entry) => console.log(JSON.stringify(entry));
 emit({ type: 'thread.started', thread_id: 'review-seat-change-' + call });
-emit({ type: 'item.completed', item: { type: 'agent_message', text: ${JSON.stringify(ANSWERED_VERDICT)} } });
+emit({ type: 'item.completed', item: { type: 'agent_message', text: ${JSON.stringify(verdict)} } });
 emit({ type: 'turn.completed', usage: { input_tokens: 100, output_tokens: 40 } });`,
   );
 }
@@ -151,7 +164,7 @@ it('runs the review again on the REVIEW seat that the user saved while the first
     );
     const binDir = join(target.tmpDir, 'bin');
     mkdirSync(binDir);
-    installCodex(binDir, files);
+    installCodex(binDir, files, ANSWERED_VERDICT, 'no-hold');
     restorePath = activateSafeCliShimPath(binDir);
     const reviewer = join(target.tmpDir, 'reviewer.mjs');
     writeFileSync(reviewer, shellReviewerScript(files));
@@ -318,6 +331,191 @@ it('runs the review again on the REVIEW seat that the user saved while the first
     expect(prompt).toContain(QUESTION);
     expect(prompt).toContain(ANSWER);
     expect(prompt).toContain(GREET_FILE);
+  } finally {
+    restorePath?.();
+    trustHome.restore();
+    cleanupTempDir(target.tmpDir);
+  }
+});
+
+it('keeps the review on the REVIEW seat of the run when the user saves another seat and then saves it back', {
+  timeout: 240_000,
+}, async () => {
+  const target = createStopContinueFixture(() => IMPLEMENTER_SCRIPT, { isolation: 'none' });
+  const trustHome = createTrustHome('e2e-review-seat-saved-back-home');
+  const files: ReviewFiles = {
+    shellCalls: join(target.tmpDir, 'shell-review-calls'),
+    started: join(target.tmpDir, 'review-1-started'),
+    release: join(target.tmpDir, 'release-1'),
+    codexCalls: join(target.tmpDir, 'codex-calls'),
+    codexPrompt: join(target.tmpDir, 'codex-prompt'),
+  };
+  let restorePath: (() => void) | undefined;
+  try {
+    const hostCodex = join(trustHome.home, '.codex');
+    mkdirSync(join(hostCodex, 'sessions'), { recursive: true });
+    writeFileSync(
+      join(hostCodex, 'auth.json'),
+      '{"auth_mode":"chatgpt","tokens":{"refresh_token":"fixture"}}\n',
+    );
+    const binDir = join(target.tmpDir, 'bin');
+    mkdirSync(binDir);
+    installCodex(binDir, files, JSON.stringify(VERDICT), 'hold-first-call');
+    restorePath = activateSafeCliShimPath(binDir);
+    const config = loadConfig(target.projectDir).config;
+    writeConfig(target.projectDir, {
+      ...config,
+      validation: { ...config.validation, endChecks: true },
+      reviewer: { kind: 'cli', tool: 'codex' },
+    });
+    const env: Readonly<Record<string, string>> = {
+      ...safeChildEnvironment(trustHome.home, [binDir]),
+      XDG_STATE_HOME: target.stateHome,
+    };
+    await trustDeclaredRunners({
+      projectDir: target.projectDir,
+      config: loadConfig(target.projectDir).config,
+      pathEnv: env.PATH ?? '',
+    });
+    const tools = await detectAvailableCliTools({
+      projectDir: target.projectDir,
+      tools: ['codex'],
+      role: 'planner',
+    });
+    expect(tools[0]?.diagnostic.state).toBe('ready');
+    await rememberDetectedTools(target.projectDir, tools);
+    const offline = join(target.tmpDir, 'offline.mjs');
+    writeFileSync(
+      offline,
+      "globalThis.fetch = async () => { throw new Error('Network disabled in review seat change E2E'); };\n",
+    );
+
+    let sessionId = '';
+    await runWithPtyChild(
+      {
+        requirement: 'required',
+        argv: [
+          '--import',
+          offline,
+          'dist/cli.js',
+          'start',
+          'smoke',
+          '--allow-repo-runners',
+          '--project',
+          target.projectDir,
+        ],
+        spawnOptions: { name: 'xterm-256color', cols: COLS, rows: ROWS, cwd: REPO_ROOT, env },
+      },
+      async (child) => {
+        const exit = Promise.withResolvers<PtyExitEvent>();
+        let outcome: PtyExitEvent | undefined;
+        const terminal = new XtermHeadless.Terminal({
+          cols: COLS,
+          rows: ROWS,
+          allowProposedApi: true,
+          convertEol: true,
+          scrollback: 0,
+          logLevel: 'off',
+        });
+        const screen = () =>
+          Array.from(
+            { length: ROWS },
+            (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? '',
+          ).join('\n');
+        const write = (keys: string) => child.write(keys);
+        const shows = (expected: string | RegExp) =>
+          vi.waitFor(
+            () =>
+              typeof expected === 'string'
+                ? expect(screen()).toContain(expected)
+                : expect(screen()).toMatch(expected),
+            WAIT,
+          );
+        /**
+         * Waits for a seat change text. The row stays in `seen` after the screen drops it, so a
+         * failure names the words that the screen showed in place of the expected ones.
+         */
+        const showsSeatChange = (subject: string, expected: string) => {
+          let seen: string | undefined;
+          return vi.waitFor(() => {
+            const row = screen()
+              .split('\n')
+              .find((line) => line.includes(`${subject} changes `));
+            seen = row?.trim() ?? seen;
+            expect(seen ?? screen()).toContain(expected);
+          }, WAIT);
+        };
+        const dataListener = child.onData((data) => terminal.write(data));
+        const exitListener = child.onExit((event) => {
+          outcome = event;
+          exit.resolve(event);
+        });
+        try {
+          await expect.poll(() => existsSync(files.started), WAIT).toBe(true);
+          await shows('reviewing changes');
+
+          write('/crew review');
+          await shows('/crew review');
+          write('\r');
+          await shows('REVIEW · tool, model, effort');
+          await moveCursorTo(screen, write, '\x1b[B', /▌ = PLAN/);
+          write('\r');
+          await showsSeatChange('REVIEW seat', SAVE_TEXT);
+          await showsSeatChange('Seat', LEGEND_TEXT);
+
+          write('/crew review');
+          await shows('/crew review');
+          write('\r');
+          await shows('REVIEW · tool, model, effort');
+          await moveCursorTo(screen, write, '\x1b[A', /▌ OpenAI Codex CLI/);
+          write('\r');
+          await shows(/▌ auto +tool decides/);
+          write('\r');
+          await shows(/Saved REVIEW · OpenAI Codex CLI/);
+          await vi.waitFor(() => expect(screen()).not.toContain(LEGEND_TEXT), WAIT);
+
+          writeFileSync(files.release, '');
+          const runSession = readdirSync(sessionsRoot(target.projectDir))[0];
+          if (runSession === undefined) throw new Error('CLI started without a run');
+          sessionId = runSession;
+          await expect
+            .poll(
+              async () =>
+                (await readRunEvents({ projectDir: target.projectDir, sessionId })).events.some(
+                  (event) => event.type === 'workflow_complete',
+                ),
+              WAIT,
+            )
+            .toBe(true);
+          expect(screen()).toContain(HEADER_REVIEW_SEAT);
+
+          write('\x11');
+          await expect.poll(() => outcome, WAIT).toBeDefined();
+          expect(outcome?.exitCode, screen()).toBe(0);
+        } finally {
+          writeFileSync(files.release, '');
+          if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
+          await reapOrphanRunners(target.projectDir);
+          dataListener.dispose();
+          exitListener.dispose();
+          terminal.dispose();
+        }
+      },
+    );
+
+    const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    expect(callCount(files.codexCalls)).toBe(1);
+    expect(
+      events.filter(
+        (event) =>
+          (event.type === 'turn_interrupted' || event.type === 'workflow_resumed') &&
+          event.cause === 'seat-change',
+      ),
+    ).toEqual([]);
+    expect(events.filter((event) => event.type === 'seat_switched')).toEqual([]);
+    expect(
+      events.filter((event) => event.type === 'review_started').map((event) => event.tool),
+    ).toEqual(['codex']);
   } finally {
     restorePath?.();
     trustHome.restore();

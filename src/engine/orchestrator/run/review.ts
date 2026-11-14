@@ -433,7 +433,14 @@ export async function followReviewAnswer(args: {
           cannot: asked.reason,
           ...(blocking > 0
             ? {
-                noProgress: blockers,
+                noProgress: [
+                  ...new Set(
+                    blockers.map(
+                      (id) =>
+                        redChecksOf(redInputs.filter((input) => input.id === id))[0]?.id ?? id,
+                    ),
+                  ),
+                ],
                 fixCycle: started === undefined || briefed === 0 ? undefined : briefed,
               }
             : unverified.length > 0 && {

@@ -1,23 +1,19 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
-import XtermHeadless from '@xterm/headless';
-import { afterEach, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
+import { afterEach, expect, it } from 'vitest';
 import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
 import { toEngineEventEntry } from '../../../src/core/sessions/log-writer.js';
 import { saveState } from '../../../src/core/state/persistence.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
-import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
-import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
-import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import {
   FIX_CYCLE_RUN_FEATURE,
   fixCycleRun,
   fixCycleRunLog,
 } from '#testing/helpers/factories/fix-cycle-run.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { openClosedRun, type ClosedRunScreen } from '../helpers/closed-run-screen.js';
 import {
   createStopContinueFixture,
   type StopContinueFixture,
@@ -57,15 +53,8 @@ function seedAppliedRun(target: StopContinueFixture): void {
   );
 }
 
-interface ClosedRunScreen {
-  screen: () => string;
-  write: (keys: string) => void;
-  waitForText: (...texts: string[]) => Promise<void>;
-  waitForNoText: (text: string) => Promise<void>;
-}
-
 /** Opens the seeded run from the sessions list, as a user does, and hands its screen to `read`. */
-async function openClosedRun<T>(
+async function openAppliedRun<T>(
   viewport: { cols: number; rows: number },
   read: (run: ClosedRunScreen) => Promise<T>,
 ): Promise<T> {
@@ -74,79 +63,21 @@ async function openClosedRun<T>(
   seedAppliedRun(target);
   const home = join(target.tmpDir, 'home');
   mkdirSync(home);
-  const result = await runWithPtyChild(
+  return openClosedRun(
     {
-      requirement: 'required',
       argv: ['dist/cli.js', '--project', target.projectDir],
-      spawnOptions: {
-        name: 'xterm-256color',
-        ...viewport,
-        cwd: resolve(import.meta.dirname, '../../..'),
-        env: { ...safeChildEnvironment(home), XDG_STATE_HOME: target.stateHome },
-      },
+      env: { ...safeChildEnvironment(home), XDG_STATE_HOME: target.stateHome },
+      viewport,
     },
-    async (child) => {
-      const terminal = new XtermHeadless.Terminal({
-        ...viewport,
-        allowProposedApi: true,
-        logLevel: 'off',
-      });
-      const exited = Promise.withResolvers<PtyExitEvent>();
-      const screen = () =>
-        Array.from(
-          { length: viewport.rows },
-          (_, row) =>
-            terminal.buffer.active
-              .getLine(terminal.buffer.active.viewportY + row)
-              ?.translateToString(true) ?? '',
-        ).join('\n');
-      const data = child.onData((chunk) => terminal.write(chunk));
-      const exit = child.onExit((event) => exited.resolve(event));
-      const waitForText = async (...texts: string[]) => {
-        await vi.waitFor(
-          () => {
-            for (const text of texts) expect(screen()).toContain(text);
-          },
-          { timeout: 30_000 },
-        );
-      };
-      const waitForNoText = async (text: string) => {
-        await vi.waitFor(() => expect(screen()).not.toContain(text), { timeout: 30_000 });
-      };
-      try {
-        await waitForText('Describe your feature');
-        child.write('/sessions');
-        await waitForText('/sessions');
-        await delay(PROMPT_TYPEAHEAD_GRACE_MS);
-        child.write('\r');
-        await waitForText('Sessions · 1');
-        await delay(PROMPT_TYPEAHEAD_GRACE_MS);
-        child.write('\r');
-        // The first frame comes before the run's history: the summary settles once the transcript
-        // holds the lines above it.
-        await waitForText('● Applied to your checkout', 'Run closed', 'lines above');
-        return {
-          value: await read({
-            screen,
-            write: (keys) => child.write(keys),
-            waitForText,
-            waitForNoText,
-          }),
-        };
-      } finally {
-        await terminatePtyProcessGroup(child, exited.promise);
-        data.dispose();
-        exit.dispose();
-        terminal.dispose();
-      }
+    async (run) => {
+      await run.waitForText('● Applied to your checkout');
+      return read(run);
     },
   );
-  if (!('value' in result)) throw new Error(result.reason);
-  return result.value;
 }
 
 it('closes the transcript of a long applied run with its summary, and opens the whole record on ctrl+a', async () => {
-  const { folded, opened, foldedAgain } = await openClosedRun(
+  const { folded, opened, foldedAgain } = await openAppliedRun(
     { cols: 160, rows: 45 },
     async ({ screen, write, waitForText, waitForNoText }) => {
       await waitForText('Final review after 3 fix cycles passed');
@@ -199,7 +130,7 @@ it('closes the transcript of a long applied run with its summary, and opens the 
 });
 
 it('keeps the outcome of a long applied run on a short terminal, with one row per label', async () => {
-  const short = await openClosedRun({ cols: 60, rows: 18 }, async ({ screen }) => screen());
+  const short = await openAppliedRun({ cols: 60, rows: 18 }, async ({ screen }) => screen());
 
   expect(short).toContain('● Applied to your checkout  65 files · 7h 12m 17s');
   expect(short).toContain('├ Review   pass with notes · 1 note · 2h 43m 44s');
@@ -212,7 +143,7 @@ it('keeps the outcome of a long applied run on a short terminal, with one row pe
 });
 
 it('keeps the outcome and the fold of a long applied run on a very short terminal, and opens the record on ctrl+a', async () => {
-  const { folded, opened } = await openClosedRun(
+  const { folded, opened } = await openAppliedRun(
     { cols: 60, rows: 14 },
     async ({ screen, write, waitForText }) => {
       const folded = screen();

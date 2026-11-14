@@ -8,6 +8,7 @@ import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../engine/orchest
 import {
   buildCheckoutChangedRecoveryIssue,
   buildLeftIsolationRecoveryIssue,
+  buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
   buildRunnerCheckFailedRecoveryIssue,
   buildSeatDownIssue,
@@ -370,6 +371,64 @@ it('keeps the Review again hint dim', () => {
     { text: ' · ', tone: 'textDim' },
     { text: 'sends your note to the reviewer', tone: 'textDim' },
   ]);
+});
+
+it.each([
+  ['review-failed', 'Accept as is · records the blockers'],
+  ['review-input-too-large', 'Skip review with a note · accepts the result'],
+] as const)('says what Accept as is does on a %s halt', (reason, expected) => {
+  const issue = makeRecoveryIssue({ reason, availableActions: ['accept-as-is', 'end-run'] });
+  expect(recoveryMenuText('accept-as-is', issue)).toBe(expected);
+});
+
+describe('the words of Decide for me: the step the run takes for this halt', () => {
+  const briefHalt = (opts: Partial<Parameters<typeof buildRetryExhaustedRecoveryIssue>[0]>) =>
+    buildRetryExhaustedRecoveryIssue({
+      task: makeTask({ id: 'T901', suggestedFiles: ['src/a.ts'] }),
+      validationSummary: 'npm test failed',
+      attempts: 3,
+      allowRetryOverride: true,
+      createdAt: '2026-04-29T12:00:00.000Z',
+      ...opts,
+    });
+  const reviewHalt = (opts: Partial<Parameters<typeof buildReviewFailedRecoveryIssue>[0]>) =>
+    buildReviewFailedRecoveryIssue({
+      createdAt: '2026-04-29T12:00:00.000Z',
+      blocking: 1,
+      acceptAsIs: true,
+      ...opts,
+    });
+
+  it.each([
+    [
+      'a brief the planner cannot do, with skip-brief next',
+      briefHalt({ cannot: 'No locale service', cannotNext: 'skip-brief' }),
+      'Decide for me · skips this brief',
+    ],
+    [
+      'a brief the planner cannot do, with end-run next',
+      briefHalt({ cannot: 'No locale service', cannotNext: 'end-run' }),
+      'Decide for me · closes this run',
+    ],
+    [
+      'a brief question nobody answered',
+      briefHalt({ question: 'Which locale service?' }),
+      'Decide for me · lets the implementer decide',
+    ],
+    [
+      'a failed review the planner cannot fix',
+      reviewHalt({ noProgress: ['F1'], cannot: 'The plan keeps the old error type' }),
+      'Decide for me · closes this run',
+    ],
+    [
+      'a review question nobody answered',
+      reviewHalt({ question: 'Change the API?' }),
+      'Decide for me · lets the next review decide',
+    ],
+  ])('names the step on %s', (_kind, issue, expected) => {
+    expect(issue.availableActions).toContain('decide-for-me');
+    expect(recoveryMenuText('decide-for-me', issue)).toBe(expected);
+  });
 });
 
 it.each([

@@ -17,7 +17,12 @@ import {
   type SeatDisplayName,
 } from '../../crew/identity.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog.js';
-import { runnerEffortChannel, unusedEffortReason } from '../../runners/effort-channel.js';
+import {
+  isOpencode2,
+  runnerEffortChannel,
+  unusedEffortReason,
+} from '../../runners/effort-channel.js';
+import { resolveCliModel } from '../../providers/automatic-model.js';
 import { getIsolationStrategy } from '../../config/accessors/values.js';
 import type { Config } from '../../schemas/config.js';
 import {
@@ -67,19 +72,33 @@ export function buildRunnerChecks({
     formatSeatIdentity({ seat: runner, displayName: seatDisplayName?.(runner, role) });
   const checks: ReadinessCheck[] = [];
   const configuredCliTools = new Map<CliToolId, ConfiguredCliSeat[]>();
+  const cliRoute = (slot: RunnerConfigSlot, runner: RunnerConfig): CliSeatRoute =>
+    runner.kind === 'cli'
+      ? {
+          installedVersion:
+            cliReadiness.find((result) => result.tool === runner.tool)?.installedVersion ??
+            undefined,
+          model: cliSeatModels?.get(runnerSlotId(slot)) ?? runner.model,
+        }
+      : { installedVersion: undefined, model: undefined };
   const addCliSeat = (slot: RunnerConfigSlot, runner: RunnerConfig): void => {
     if (runner.kind !== 'cli') return;
     const seats = configuredCliTools.get(runner.tool) ?? [];
-    seats.push({
-      slot,
-      model: cliSeatModels?.get(runnerSlotId(slot)) ?? runner.model,
-    });
+    seats.push({ slot, model: cliRoute(slot, runner).model });
     configuredCliTools.set(runner.tool, seats);
   };
-  addCliSeat({ role: 'planner' }, config.planner);
+  const plannerSlot = { role: 'planner' } as const;
+  addCliSeat(plannerSlot, config.planner);
   checks.push(seatConfiguredCheck('planner', config.planner, nameSeat, []));
   checks.push(...typedOutputFallbackCheck('planner', config.planner));
-  checks.push(...droppedRunnerFieldChecks(config, { role: 'planner' }, config.planner));
+  checks.push(
+    ...droppedRunnerFieldChecks(
+      config,
+      plannerSlot,
+      config.planner,
+      cliRoute(plannerSlot, config.planner),
+    ),
+  );
 
   let resolved: ReturnType<typeof resolveImplementerProfiles> | null = null;
   try {
@@ -125,7 +144,9 @@ export function buildRunnerChecks({
     for (const profile of resolved.profiles) {
       const slot = { role: 'implementer', profile: profile.name } as const;
       addCliSeat(slot, profile.config);
-      checks.push(...droppedRunnerFieldChecks(config, slot, profile.config));
+      checks.push(
+        ...droppedRunnerFieldChecks(config, slot, profile.config, cliRoute(slot, profile.config)),
+      );
     }
   }
 
@@ -135,10 +156,18 @@ export function buildRunnerChecks({
   } else {
     const renderDetails = reviewSeatRenderCheckDetail(config, reviewer.runner, seatImageFact);
     if (reviewer.source === 'configured') {
-      addCliSeat({ role: 'reviewer' }, reviewer.runner);
+      const reviewerSlot = { role: 'reviewer' } as const;
+      addCliSeat(reviewerSlot, reviewer.runner);
       checks.push(seatConfiguredCheck('reviewer', reviewer.runner, nameSeat, renderDetails));
       checks.push(...typedOutputFallbackCheck('reviewer', reviewer.runner));
-      checks.push(...droppedRunnerFieldChecks(config, { role: 'reviewer' }, reviewer.runner));
+      checks.push(
+        ...droppedRunnerFieldChecks(
+          config,
+          reviewerSlot,
+          reviewer.runner,
+          cliRoute(reviewerSlot, reviewer.runner),
+        ),
+      );
     } else {
       checks.push(inheritedReviewerCheck(reviewer.runner, nameSeat, renderDetails));
     }
@@ -205,11 +234,60 @@ export function isSettingNotAppliedCheck(
   );
 }
 
+function notAppliedCheck(
+  slot: RunnerConfigSlot,
+  setting: string,
+  summary: string,
+  fix: string,
+): ReadinessCheck {
+  return {
+    id: `runners.${slot.role}.${setting}${NOT_APPLIED_SUFFIX}`,
+    severity: 'warning',
+    summary: `${formatSlotLabel(slot)}: ${summary}.`,
+    fix,
+    metadata: { ...slot },
+  };
+}
+
+/** The route a CLI seat calls: its tool's installed release and the model the seat sends. */
+type CliSeatRoute = Readonly<{ installedVersion: string | undefined; model: string | undefined }>;
+
+/**
+ * OpenCode 2 takes a variant only on the model, so a seat that sends no model
+ * sends no variant, and OpenCode runs its own default.
+ */
+export function variantWithoutModelChecks(
+  slot: RunnerConfigSlot,
+  runner: RunnerConfig,
+  route: CliSeatRoute,
+): ReadinessCheck[] {
+  if (
+    runner.kind !== 'cli' ||
+    runner.tool !== 'opencode' ||
+    runner.variant === undefined ||
+    !isOpencode2(route.installedVersion) ||
+    resolveCliModel(route.model, runner.tool) !== undefined
+  ) {
+    return [];
+  }
+  const seat = formatSlotLabel(slot);
+  const tool = getRunnerCatalogDisplayName(runner);
+  return [
+    notAppliedCheck(
+      slot,
+      'variant',
+      `the variant setting is not applied: ${tool} ${route.installedVersion} takes a variant only with a model`,
+      `Choose a model for ${seat} in Settings > Crew > ${seat}, or set a default model in ${tool}.`,
+    ),
+  ];
+}
+
 /** One warning for each generation setting the seat's tool does not apply. BUILD gets no effort warning. */
 function droppedRunnerFieldChecks(
   config: Config,
   slot: RunnerConfigSlot,
   runner: RunnerConfig,
+  route: CliSeatRoute,
 ): ReadinessCheck[] {
   const seat = formatSlotLabel(slot);
   const key =
@@ -219,13 +297,7 @@ function droppedRunnerFieldChecks(
   const tool = getRunnerCatalogDisplayName(runner);
   const checks: ReadinessCheck[] = [];
   const notApplied = (setting: string, summary: string, fix: string): void => {
-    checks.push({
-      id: `runners.${slot.role}.${setting}${NOT_APPLIED_SUFFIX}`,
-      severity: 'warning',
-      summary: `${seat}: ${summary}.`,
-      fix,
-      metadata: { ...slot },
-    });
+    checks.push(notAppliedCheck(slot, setting, summary, fix));
   };
 
   if (
@@ -246,6 +318,7 @@ function droppedRunnerFieldChecks(
       `Delete variant from ${key} in .splitbrief/config.yaml.`,
     );
   }
+  checks.push(...variantWithoutModelChecks(slot, runner, route));
   if (runner.temperature !== undefined && runner.kind !== 'api') {
     notApplied(
       'temperature',

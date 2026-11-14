@@ -1146,7 +1146,7 @@ it('e2e: a correction typed on a failed task review after a move to REVIEW None 
 });
 
 const NO_CORRECTION = 'This halt takes no typed correction. Choose an action.';
-const CONTINUE_ROW = 'Continue recommended';
+const CONTINUE_ROW = 'Continue · recommended';
 const NOTE_WORDS = 'mind the lockfile';
 
 /** A run whose review fails with no progress, so it halts on the failed-review panel. */

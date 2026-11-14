@@ -105,8 +105,9 @@ describe('e2e: the planner says a brief cannot be done', () => {
     const stderr = halted.stderr.split('\n');
     const haltLine = stderr.findIndex((line) => line.startsWith('Error: Needs you'));
     expect(stderr[haltLine + 1]).toBe(`Planner said: ${REASON}`);
-    expect(frame).toMatch(/Skip task\s+recommended/);
-    expect(frame).not.toMatch(/Try again\s+recommended/);
+    expect(frame).toContain('Skip task · recommended');
+    expect(frame).toContain('Decide for me · skips this brief');
+    expect(frame).not.toContain('Try again · recommended');
     expect(stderr).toContain('Recommended: skip-current-task');
     expect(halted.stderr).toContain(' --action skip');
     expect(halted.stderr).not.toContain('--action retry');

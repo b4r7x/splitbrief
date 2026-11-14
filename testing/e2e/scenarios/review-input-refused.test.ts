@@ -18,6 +18,8 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
+import { safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { openClosedRun } from '../helpers/closed-run-screen.js';
 import {
   cli,
   createStopContinueFixture,
@@ -28,6 +30,9 @@ import {
   readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+
+/** The content of a 56-column view is too narrow for the no-verdict words, the accept and a time. */
+const NARROW_VIEWPORT = { cols: 56, rows: 16 };
 
 let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
@@ -173,5 +178,27 @@ describe('e2e: the review tool refuses its input as too long', { timeout: 240_00
       'final review no verdict',
       expect.stringMatching(/^(\d+h )?(\d+m )?\d+s$/),
     ]);
+
+    // On a narrow, short terminal the Review row is too wide for all its facts: it drops the time
+    // and keeps the accept as is.
+    const closed = await openClosedRun(
+      {
+        argv: ['--import', 'tsx', '--import', offline, 'src/cli.ts', '--project', projectDir],
+        env: {
+          ...safeChildEnvironment(trustHome.home, [binDir]),
+          XDG_STATE_HOME: target.stateHome,
+        },
+        viewport: NARROW_VIEWPORT,
+      },
+      async ({ screen }) => {
+        await vi.waitFor(
+          () =>
+            expect(screen()).toMatch(/├ Review {3}final review no verdict · accepted as is *$/mu),
+          { timeout: 30_000 },
+        );
+        return screen();
+      },
+    );
+    expect(closed).not.toContain('Accepted as is · ');
   });
 });

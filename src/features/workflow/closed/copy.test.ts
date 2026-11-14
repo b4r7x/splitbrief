@@ -103,6 +103,66 @@ describe('runRows and recordRows', () => {
     expect(record[record.findIndex((row) => row.label === 'Review') + 1]).toEqual(accepted);
   });
 
+  describe('the accept as is in the labelled form', () => {
+    const failed = (): SummaryView['review'] => {
+      const review = makeView().review;
+      if (review.kind !== 'written') throw new Error('fixture review is not written');
+      return { ...review, verdict: 'fail', counts: { critical: 3, warning: 0, note: 1 } };
+    };
+    const reviewTexts = (view: SummaryView) =>
+      runRows(view, 'labelled')
+        .find((row) => row.label === 'Review')
+        ?.segments.flatMap(factSpans)
+        .map((segment) => segment.text);
+
+    it.each([
+      [
+        'your accept',
+        { redChecks: '1 red check: V1', note: 'Your note: The suite is red at the base' },
+      ],
+      [
+        "the planner's accept",
+        { redChecks: null, note: "Planner's note: The old error type is public API" },
+      ],
+    ])(
+      'names %s on the Review row after the verdict, with no note and no red check',
+      (_name, accepted) => {
+        const view = makeView({ review: failed(), accepted });
+
+        expect(reviewTexts(view)).toEqual([
+          'failed',
+          ' · ',
+          'accepted as is',
+          '3 blocking',
+          '1 note',
+          '1m 5s',
+        ]);
+        const texts = runRows(view, 'labelled').flatMap((row) =>
+          row.segments.flatMap(factSpans).map((segment) => segment.text),
+        );
+        expect(texts.some((text) => text.includes('note:') || text.includes('red check'))).toBe(
+          false,
+        );
+      },
+    );
+
+    it('names the accept after the words of a review with no verdict', () => {
+      expect(
+        reviewTexts(
+          makeView({ review: { kind: 'failed' }, accepted: { redChecks: null, note: null } }),
+        ),
+      ).toEqual(['final review no verdict', ' · ', 'accepted as is', '1m 5s']);
+    });
+
+    it('names no accept on the Review row of a run nobody accepted, or of the whole form', () => {
+      expect(reviewTexts(makeView({ review: failed() }))).not.toContain('accepted as is');
+      const view = makeView({ review: failed(), accepted: { redChecks: null, note: null } });
+      expect(segmentsFor(view, 'Review')?.map((segment) => segment.text)).not.toContain(
+        'accepted as is',
+      );
+    });
+  });
+
   it('states each kind of finding as its own fact, and no fact for a kind with none', () => {
     const base = makeView();
     const written = base.review;

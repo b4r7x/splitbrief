@@ -1250,3 +1250,70 @@ describe('buildRunnerChecks settings that a seat does not apply', () => {
     ).toEqual(['runners.planner.effort-not-applied', 'runners.reviewer.effort-not-applied']);
   });
 });
+
+describe('buildRunnerChecks a variant that OpenCode 2 cannot send', () => {
+  const seat = { kind: 'cli', tool: 'opencode', variant: 'high' } as const;
+  const opencode = (installedVersion: string | null) =>
+    cliReadiness({
+      tool: 'opencode',
+      executable: {
+        path: '/usr/local/bin/opencode',
+        fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+      },
+      installedVersion,
+      testedVersion: '2.0.14',
+      auth: 'not-required',
+    });
+  const variantChecks = (
+    config: ReturnType<typeof makeConfig>,
+    options: {
+      installedVersion?: string | null;
+      cliSeatModels?: ReadonlyMap<string, string | undefined>;
+    } = {},
+  ) =>
+    buildRunnerChecks({
+      seatImageFact: NO_IMAGE_FACT,
+      config,
+      cliReadiness: [
+        opencode(options.installedVersion === undefined ? '2.0.14' : options.installedVersion),
+      ],
+      cliSeatModels: options.cliSeatModels,
+    }).filter((check) => check.id.endsWith('.variant-not-applied'));
+
+  it.each([
+    ['PLAN', 'planner', makeConfig({ planner: seat })],
+    ['BUILD', 'implementer', makeConfig({ implementer: seat })],
+    ['REVIEW', 'reviewer', makeConfig({ reviewer: seat })],
+  ] as const)('warns that %s sends no variant when it names no model', (label, role, config) => {
+    expect(variantChecks(config)).toEqual([
+      expect.objectContaining({
+        id: `runners.${role}.variant-not-applied`,
+        severity: 'warning',
+        summary: `${label}: the variant setting is not applied: OpenCode CLI 2.0.14 takes a variant only with a model.`,
+        fix: `Choose a model for ${label} in Settings > Crew > ${label}, or set a default model in OpenCode CLI.`,
+        metadata: expect.objectContaining({ role }),
+      }),
+    ]);
+  });
+
+  it('warns for a seat on auto when OpenCode holds no model selection', () => {
+    expect(
+      variantChecks(makeConfig({ planner: { ...seat, model: 'auto' } }), {
+        cliSeatModels: new Map([['planner', 'auto']]),
+      }).map((check) => check.id),
+    ).toEqual(['runners.planner.variant-not-applied']);
+  });
+
+  it('gives no warning with a model, a host model, a release below 2.0.0 or a release it could not read', () => {
+    expect(
+      variantChecks(makeConfig({ planner: { ...seat, model: 'opencode-go/kimi-k3' } })),
+    ).toEqual([]);
+    expect(
+      variantChecks(makeConfig({ planner: { ...seat, model: 'auto' } }), {
+        cliSeatModels: new Map([['planner', 'opencode-go/kimi-k3']]),
+      }),
+    ).toEqual([]);
+    expect(variantChecks(makeConfig({ planner: seat }), { installedVersion: '1.4.0' })).toEqual([]);
+    expect(variantChecks(makeConfig({ planner: seat }), { installedVersion: null })).toEqual([]);
+  });
+});

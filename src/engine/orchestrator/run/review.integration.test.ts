@@ -849,6 +849,100 @@ describe('review answer follower', () => {
   });
 });
 
+describe('the cannot title names each blocker as its detail line does', () => {
+  const reviewerCheck: TriageInput = {
+    id: 'V1.1',
+    kind: 'defect',
+    source: 'check',
+    file: 'src/a.test.ts',
+    text: 'Reviewer check V1 (npm test) failed with new failures.',
+    checkIds: ['V1'],
+    command: 'npm test',
+    output: 'Error: 2 specs failed\n',
+  };
+  const planCheck: TriageInput = {
+    id: 'P1',
+    kind: 'defect',
+    source: 'check',
+    file: 'src/total.test.mjs',
+    text: 'Check T001-K1 did not pass (fail): exited with code 1',
+    checkIds: ['T001-K1'],
+    command: 'node --test',
+    output: 'not ok 1 - total adds two numbers\n',
+  };
+  const applyConflict: TriageInput = {
+    id: 'A1',
+    kind: 'defect',
+    source: 'apply',
+    file: 'src/form.ts',
+    text: 'Apply merge conflict in src/form.ts',
+  };
+  const finding = (id: string, text: string) => ({
+    id,
+    kind: 'defect' as const,
+    severity: 'blocking' as const,
+    taskId: 'T001',
+    file: null,
+    line: null,
+    text,
+    acceptance: null,
+    checkIds: null,
+    criterionId: null,
+  });
+
+  it.each([
+    [
+      'two inputs of one reviewer check',
+      [],
+      [reviewerCheck, { ...reviewerCheck, id: 'V1.2', file: 'src/b.test.ts' }],
+      'V1',
+    ],
+    [
+      'a finding and a red reviewer check',
+      [finding('F1', 'Preserve the error')],
+      [reviewerCheck],
+      'F1,V1',
+    ],
+    [
+      "a finding under a red input's id",
+      [finding('V1.1', `${reviewerCheck.text} The fix must keep the old error type.`)],
+      [reviewerCheck],
+      'V1',
+    ],
+    ['a red plan check', [], [planCheck], 'T001-K1'],
+    ['an Apply input', [], [applyConflict], 'A1'],
+  ])('names %s', async (_kind, findings, inputs, names) => {
+    const ref = setupProject();
+    const base = pendingReview();
+    const review = base.review;
+    if (review === undefined) throw new Error('pendingReview holds a review');
+    const state: WorkflowState = {
+      ...base,
+      review: {
+        ...review,
+        verdict: { ...review.verdict, findings },
+        redInputs: inputs.map(({ id, text }) => ({ id, text })),
+      },
+      phase: 'final-review',
+      pendingTriage: { inputs },
+    };
+    saveState(ref, state);
+    const callbacks = makeCallbacks().callbacks;
+    const { planner } = consultPlanner([cannotFix]);
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, callbacks, planner }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      fixWork: { fixTasks: [], rejected: [], ask: null },
+    });
+    const issue = result.state.pendingRecovery;
+    expect(issue?.message).toBe(`Final review found no fix for ${names.split(',').join(', ')}`);
+    expect(issue?.facts).toMatchObject({ noProgress: names });
+  });
+});
+
 describe('the review that judges a fix cycle', () => {
   const F1 = {
     id: 'F1',

@@ -37,6 +37,7 @@ import { approvalDraftDeletedProjection } from './approval-draft-deleted-project
 import { approvalWordsStayProjection } from './approval-words-stay-projection.js';
 import { taskId, type Check, type Task } from '../../../../src/core/schemas/task.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
+import { variantWithoutModelChecks } from '../../../../src/core/readiness/checks/runners.js';
 import {
   createStartReadinessRecord,
   startReadinessWarnings,
@@ -565,6 +566,57 @@ const startReadinessWarningProjection: WorkflowFixtureProjection = {
       ),
     { type: 'user_message', ts: FIXED_TS + 20, phase: 'planning', text: START_READINESS_FEATURE },
     ...startReadinessWarningText.map(
+      (message): EngineEvent => ({
+        type: 'warning',
+        ts: FIXED_TS + 21,
+        phase: 'planning',
+        message,
+      }),
+    ),
+  ],
+};
+
+const START_VARIANT_FEATURE = 'Review the greeting change';
+const VARIANT_REVIEW_SEAT = { kind: 'cli', tool: 'opencode', variant: 'high' } as const;
+
+/** The warning a start states when OpenCode 2 cannot send the REVIEW variant, worded by readiness itself. */
+const startVariantWarningText = startReadinessWarnings(
+  createStartReadinessRecord(
+    {
+      generatedAt: new Date(FIXED_TS).toISOString(),
+      projectDir: '/Users/dev/app',
+      status: 'ready-with-warnings',
+      counts: { ok: 0, info: 0, warning: 1, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'warnings' },
+      sections: [
+        {
+          id: 'runners',
+          title: 'Runners',
+          checks: variantWithoutModelChecks({ role: 'reviewer' }, VARIANT_REVIEW_SEAT, {
+            installedVersion: CLI_TOOL_CATALOG.opencode.compatibility.testedVersion,
+            model: undefined,
+          }),
+        },
+      ],
+      metadata: {},
+    },
+    { projectDir: '/Users/dev/app', sessionId: VISUAL_WORKFLOW_SESSION_ID },
+  ),
+);
+
+const startVariantWarningProjection: WorkflowFixtureProjection = {
+  ...startReadinessWarningProjection,
+  scenarioId: scenarioId('workflow-start-variant-not-applied'),
+  feature: START_VARIANT_FEATURE,
+  config: { reviewer: VARIANT_REVIEW_SEAT },
+  events: [
+    ...planningProjection.events
+      .filter((event) => event.type === 'workflow_started' || event.type === 'planner_status')
+      .map((event) =>
+        event.type === 'workflow_started' ? { ...event, feature: START_VARIANT_FEATURE } : event,
+      ),
+    { type: 'user_message', ts: FIXED_TS + 20, phase: 'planning', text: START_VARIANT_FEATURE },
+    ...startVariantWarningText.map(
       (message): EngineEvent => ({
         type: 'warning',
         ts: FIXED_TS + 21,
@@ -4410,7 +4462,7 @@ const reviewQuestionRecoveryProjection: WorkflowFixtureProjection = {
 const reviewRedCheckRecoveryIssue = buildReviewFailedRecoveryIssue({
   id: 'rec_visual_review_red_check',
   blocking: 1,
-  noProgress: [RED_CHECK_INPUT.id],
+  noProgress: redChecksOf([RED_CHECK_INPUT]).map((check) => check.id),
   cannot: 'The two specs pin the old signup rules; the plan does not say which rule is right.',
   details: redChecksOf([RED_CHECK_INPUT]).map(redCheckLine),
   phase: 'complete',
@@ -9476,6 +9528,7 @@ const projections = [
   questionOutsideFileProjection,
   planningPathNoticeProjection,
   startReadinessWarningProjection,
+  startVariantWarningProjection,
   planCompiledProjection,
   planCardEditedProjection,
   firstBriefAfterPlanProjection,
@@ -10188,6 +10241,7 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       !startReadinessWarningText.includes(value) &&
+      !startVariantWarningText.includes(value) &&
       measuredProjectionString(projection, value).length >
         WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(
