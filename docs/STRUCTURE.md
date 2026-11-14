@@ -73,7 +73,7 @@ Rules:
 
 ### Example: the inline editor feature
 
-The `editor` surface is a headless pure editing kernel feeding one thin Ink surface: a full-surface editor for the plan card's `plan.json`, whose save runs the plan checks (`plan-save.ts`). Its decision logic lives in pure `src/core/` modules so the Ink glue carries no branch logic.
+The `editor` surface is a headless pure editing kernel feeding one thin Ink surface: a full-surface editor for the plan card's `plan.json`, whose save runs the plan checks (`use-plan-editor-session.ts`). Its decision logic lives in pure `src/core/` modules so the Ink glue carries no branch logic.
 
 The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`). It draws its top rule with the shared `Divider` from `src/components/`, a features→components import that the boundaries allow. The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
 
