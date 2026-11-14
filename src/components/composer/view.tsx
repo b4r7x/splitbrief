@@ -1,14 +1,11 @@
 import { ThemeText as Text, useTheme } from '../theme.js';
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, type Key } from 'ink';
 import { MultilineInput } from '../input/multiline-input.js';
 import type { InputEdit } from '../input/atoms.js';
-import { CommandCompletionMenu } from './completion/command/menu.js';
-import { ReferenceCompletionMenu } from './completion/reference/menu.js';
 import { useCommandCompletion } from './completion/command/hook.js';
 import { useReferenceCompletion } from './completion/reference/hook.js';
-import type { Theme } from '../../core/theme/palette.js';
-import { colorForTone } from '../../core/theme/tone-color.js';
+import { CompletionOverlay } from './completion/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
@@ -16,36 +13,19 @@ import { completionStore } from '../../stores/ui/completion.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
-import { isTextEntryInput } from '../../lib/terminal/text-entry.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useHistory } from './use-history.js';
-import { attachmentsStore } from '../../stores/workflow/attachments.js';
-import { attachmentShortName, resolveAttachment } from '../../core/attachments/resolve.js';
-import { formatAttachmentFailure } from '../../core/attachments/failure.js';
 import { createDraftDocument, draftLength } from '../../core/composer/document.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import type { DraftDocument } from '../../core/schemas/draft-document.js';
-import {
-  type DraftSubmission,
-  isCommandDraft,
-  prepareDraftSubmission,
-} from '../../core/composer/submission.js';
-import { draftDocumentText, getInputHistoryDocuments } from '../../stores/ui/input-history.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { formatSeatIdentity } from '../../core/crew/identity.js';
-import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
-import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
-import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
+import type { DraftSubmission } from '../../core/composer/submission.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
-import {
-  deriveHomeHintLines,
-  formatSubmissionFailure,
-  noVisionFeedbackMessage,
-} from './home-hint.js';
+import { deriveHomeHintLines } from './home-hint.js';
+import { placeholderForMode, promptColorForMode } from './prompt-mode.js';
+import { HomeHintRow } from './home-hint-row.js';
 import { useProjectFiles } from './use-project-files.js';
-import { isBlankDraft, trimDraftDocument, usePasteDrafts } from './use-paste-drafts.js';
+import { usePasteDrafts } from './use-paste-drafts.js';
 import {
   computeComposerHintBudget,
   computeComposerInputColumns,
@@ -53,73 +33,18 @@ import {
 } from './hint-zones.js';
 import { useReviewKeys } from './use-review-keys.js';
 import { useDraftSync } from './use-draft-sync.js';
+import { useRestoredDraft } from './use-restored-draft.js';
+import { useAttachImage } from './use-attach-image.js';
+import { useImagePaste } from './use-image-paste.js';
+import { useSend } from './use-send.js';
+import { COMMANDS_ONLY_NOTICE, gateComposerKey } from './key-gate.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import {
-  readClipboardImage as readSystemClipboardImage,
-  type ClipboardImageResult,
-} from '../../core/attachments/clipboard-image.js';
+import { readClipboardImage as readSystemClipboardImage } from '../../core/attachments/clipboard-image.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
-import {
-  loadHomeDraft,
-  loadSessionDraft,
-  saveHomeDraft,
-  saveSessionDraft,
-  flushSessionDrafts,
-  nameDraftsNotRemoved,
-  reportDraftNotSaved,
-} from '../../stores/ui/session-drafts.js';
-import { toErrorMessage } from '../../utils/format/errors.js';
 import type { listProjectFiles } from '../../lib/fs/listing.js';
-
-const MAX_REFERENCE_SUGGESTIONS = 8;
-
-export const COMMANDS_ONLY_NOTICE = 'Only /commands here';
-
-interface ImagePaste {
-  controller: AbortController;
-  epoch: number;
-  mode: InputMode;
-  questionEpoch: number | undefined;
-  matchingText?: string | undefined;
-}
-
-const CLIPBOARD_IMAGE_ERRORS = {
-  'no-image': 'Clipboard has no image',
-  'too-large': 'Cannot paste image: larger than 10 MiB',
-  'unsupported-platform': 'Clipboard image paste requires macOS',
-  unavailable: 'Cannot read clipboard image',
-} as const;
-
-// The prompt glyph is structure: it marks where typing goes, it does not name a category. Weight
-// and position carry it, never hue — so normal and review draw the same mark. Question mode keeps
-// its tone for now because the answer gate has no other cue at the caret; if that becomes a
-// different glyph, this whole function goes.
-function promptColorForMode(
-  mode: InputMode,
-  theme: Pick<Theme, 'text' | 'textDim' | 'warning'>,
-): string | undefined {
-  if (mode === 'review') return theme.textDim;
-  if (mode === 'question') return theme.warning;
-  return theme.text;
-}
-
-function placeholderForMode(input: {
-  mode: InputMode;
-  stopping: boolean;
-  hint?: string | undefined;
-}): string {
-  if (input.hint) return input.hint;
-  // The gate panel above owns approve, edit and reject; the composer only ever takes the comment.
-  if (input.mode === 'review') return 'Type a comment…';
-  if (input.mode === 'question') return 'Type your answer…';
-  // A run being torn down takes no new work, and the legend row above already says so; repeating
-  // an invitation to queue here would contradict it.
-  if (input.stopping) return '';
-  return 'Describe a change…';
-}
 
 export interface ComposerBoxHints {
   keys: string;
@@ -225,55 +150,13 @@ function ComposerInput({
   const [caretSeed, setCaretSeed] = useState<{ epoch: number; index: number } | null>(null);
   const caretRef = useRef(0);
   const [visibleRows, setVisibleRows] = useState(1);
-  const [imagePaste, setImagePaste] = useState<ImagePaste | null>(null);
-  const [imagePasteResult, setImagePasteResult] = useState<{
-    request: ImagePaste;
-    result: ClipboardImageResult;
-  } | null>(null);
-  const pasteQueueRef = useRef<Array<{ request: ImagePaste; at: number }>>([]);
-  const submittedImageIdsRef = useRef<readonly string[]>([]);
 
-  const [restoredDraft] = useState(() => {
-    try {
-      return {
-        document:
-          sessionRef !== null
-            ? loadSessionDraft(sessionRef)
-            : currentScreen === 'home'
-              ? loadHomeDraft(projectDir)
-              : createDraftDocument(''),
-        error: null,
-      };
-    } catch (error) {
-      return {
-        document: createDraftDocument(''),
-        error: `Could not restore session draft: ${toErrorMessage(error)}`,
-      };
-    }
-  });
-  useEffect(() => {
-    if (restoredDraft.error !== null) feedbackStore.setError(restoredDraft.error);
-  }, [restoredDraft]);
+  const restoredDraft = useRestoredDraft({ sessionRef, currentScreen, projectDir });
   const draft = usePasteDrafts({
     initialDocument: () => restoredDraft.document,
-    onDocumentChange: (document) => {
-      if (sessionRef !== null) saveSessionDraft(sessionRef, document);
-      else if (currentScreen === 'home') saveHomeDraft(projectDir, document);
-    },
+    onDocumentChange: restoredDraft.save,
     onDraftBack: () => holdMenus(),
   });
-  useEffect(
-    () => () => {
-      if (sessionRef === null) return;
-      try {
-        flushSessionDrafts();
-      } catch (error) {
-        reportDraftNotSaved(error, false);
-      }
-      nameDraftsNotRemoved('screen');
-    },
-    [sessionRef?.projectDir, sessionRef?.sessionId],
-  );
   const document = draft.document;
   const view = draft.view;
   const {
@@ -300,12 +183,7 @@ function ComposerInput({
 
   const handleChange = (_value: string, edit: InputEdit) => {
     onReviewInteraction?.();
-    for (const paste of pasteQueueRef.current) {
-      if (edit.start < paste.at) {
-        paste.at =
-          edit.end <= paste.at ? paste.at + edit.text.length - (edit.end - edit.start) : edit.start;
-      }
-    }
+    imagePaste.followEdit(edit);
     // The draft a command stood over is back. The caret goes to the side the delete moves away
     // from, so a held Backspace or Delete stops at the draft's edge instead of eating into it.
     if (draft.applyEdit(edit)) {
@@ -316,9 +194,7 @@ function ComposerInput({
     noteEdit();
   };
   const setText = (next: string) => {
-    for (const paste of pasteQueueRef.current) paste.request.controller.abort();
-    pasteQueueRef.current = [];
-    setImagePaste(null);
+    imagePaste.cancel();
     noteEdit();
     if (draft.setText(next)) bumpEpoch();
   };
@@ -364,247 +240,61 @@ function ComposerInput({
 
   const showCommandSuggestions = command.showSuggestions;
   const showReferenceSuggestions = reference.showSuggestions && !showCommandSuggestions;
+  const completionOpen = showCommandSuggestions || showReferenceSuggestions;
 
-  modelCacheStore.use((cache) => cache.refresh.generation);
-  const supportsImages = plannerSupportsImages(config, modelCacheStore);
-
-  const canAttachImage = (): boolean => {
-    if (!supportsImages) {
-      if (config === null) {
-        feedbackStore.setMessage(
-          'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.',
-        );
-        return false;
-      }
-      const displayName = resolveSeatDisplayName(config.planner, 'planner', modelCacheStore);
-      feedbackStore.setMessage(
-        noVisionFeedbackMessage(formatSeatIdentity({ seat: config.planner, displayName })),
-      );
-      return false;
-    }
-    return true;
-  };
-
-  const handleFileDrop = (path: string, at = caretRef.current) => {
-    if (!canAttachImage()) return null;
-    const result = resolveAttachment({ path, projectDir });
-    if (!result.ok) {
-      feedbackStore.setError(
-        formatAttachmentFailure({ action: 'attach-image', reason: result.reason }),
-      );
-      return null;
-    }
-    onReviewInteraction?.();
-    // The image is a part of the draft at the caret, so the caret has to land after it on remount.
-    // The seed is spent by the epoch it was made for; a later remount starts at the end as usual.
-    noteEdit();
-    const inserted = insertDraftImage(result.attachment, at);
-    bumpEpoch();
-    // The box already says where the image went; this row says which file it was, in a name that
-    // survives the narrow widths an absolute path is truncated to nothing at.
-    feedbackStore.setMessage(`Attached: ${attachmentShortName(result.attachment.path)}`);
-    return inserted;
-  };
-
-  const finishImagePaste = useEffectEvent((request: ImagePaste, result: ClipboardImageResult) => {
-    if (
-      request.controller.signal.aborted ||
-      request !== imagePaste ||
-      request.epoch !== inputEpoch ||
-      request.mode !== mode ||
-      request.questionEpoch !== questionEpoch ||
-      disabled ||
-      commandsOnly === true
-    )
-      return;
-    const paste = pasteQueueRef.current.shift();
-    if (paste === undefined || paste.request !== request) return;
-    let inserted = result.ok ? handleFileDrop(result.path, paste.at) : null;
-    if (inserted === null && request.matchingText !== undefined) {
-      const text = request.matchingText.normalize('NFC');
-      noteEdit();
-      draft.applyEdit({ start: paste.at, end: paste.at, text });
-      inserted = text.length;
-      setCaretSeed({
-        epoch: inputEpoch + 1,
-        index: caretRef.current < paste.at ? caretRef.current : caretRef.current + inserted,
-      });
-      bumpEpoch();
-      if (!result.ok && result.reason !== 'too-large') feedbackStore.setMessage(null);
-    }
-    if (
-      !result.ok &&
-      result.reason !== 'cancelled' &&
-      (request.matchingText === undefined || result.reason === 'too-large')
-    ) {
-      feedbackStore.setError(CLIPBOARD_IMAGE_ERRORS[result.reason]);
-    }
-    if (inserted !== null) {
-      const delta = inserted;
-      pasteQueueRef.current = pasteQueueRef.current.map((pending) => ({
-        request: { ...pending.request, epoch: inputEpoch + 1 },
-        at: pending.at < paste.at ? pending.at : pending.at + delta,
-      }));
-    }
-    setImagePaste(pasteQueueRef.current[0]?.request ?? null);
+  const { supportsImages, canAttachImage, handleFileDrop } = useAttachImage({
+    config,
+    projectDir,
+    caretRef,
+    onReviewInteraction,
+    noteEdit,
+    insertImage: insertDraftImage,
+    bumpEpoch,
   });
 
-  useEffect(() => {
-    if (imagePaste === null) return;
-    if (
-      imagePaste.controller.signal.aborted ||
-      imagePaste.epoch !== inputEpoch ||
-      imagePaste.mode !== mode ||
-      imagePaste.questionEpoch !== questionEpoch ||
-      disabled ||
-      commandsOnly === true
-    ) {
-      for (const paste of pasteQueueRef.current) paste.request.controller.abort();
-      pasteQueueRef.current = [];
-      setImagePaste(null);
-      return;
-    }
-    void readClipboardImage({
-      signal: imagePaste.controller.signal,
-      matchingText: imagePaste.matchingText,
-    }).then(
-      (result) => {
-        if (!imagePaste.controller.signal.aborted)
-          setImagePasteResult({ request: imagePaste, result });
-      },
-      () => {
-        if (!imagePaste.controller.signal.aborted) {
-          setImagePasteResult({
-            request: imagePaste,
-            result: { ok: false, reason: 'unavailable' },
-          });
-        }
-      },
-    );
-    return () => imagePaste.controller.abort();
-  }, [imagePaste, inputEpoch, disabled, commandsOnly, mode, questionEpoch, readClipboardImage]);
-
-  useEffect(() => {
-    if (imagePasteResult === null) return;
-    // Commit concurrent keystrokes before inserting, so a read finishing in the same turn
-    // cannot overwrite text that React has not rendered yet.
-    finishImagePaste(imagePasteResult.request, imagePasteResult.result);
-    setImagePasteResult(null);
-  }, [imagePasteResult]);
-
-  const enqueueImagePaste = (at: number, matchingText?: string): void => {
-    const request = {
-      controller: new AbortController(),
-      epoch: inputEpoch,
-      mode,
-      questionEpoch,
-      matchingText,
-    };
-    pasteQueueRef.current.push({ request, at });
-    if (pasteQueueRef.current.length === 1) setImagePaste(request);
-    feedbackStore.setMessage(matchingText === undefined ? 'Pasting image…' : 'Pasting…');
-  };
-
-  const handleImagePaste = (): void => {
-    if (commandsOnly === true) {
-      feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
-      return;
-    }
-    if (!canAttachImage()) return;
-    enqueueImagePaste(caretRef.current);
-  };
-
-  // One send path for every mode: the serializer decides what the runner reads, and the images it
-  // validated are the ones parked for the call. Only the gates in front of it differ.
-  const send = (candidate: DraftDocument, deliverNow?: ComposerProps['onSendNow']): boolean => {
-    // Submitted text crosses this boundary exactly once, so this is where typing residue comes
-    // off; the draft itself keeps what was typed, whitespace included.
-    const submission = prepareDraftSubmission(trimDraftDocument(candidate), {
-      projectDir,
-      supportsImages,
+  const insertPastedText = (text: string, at: number): number => {
+    noteEdit();
+    draft.applyEdit({ start: at, end: at, text });
+    setCaretSeed({
+      epoch: inputEpoch + 1,
+      index: caretRef.current < at ? caretRef.current : caretRef.current + text.length,
     });
-    if (!submission.ok) {
-      // The draft outlives the refusal: the operator still has every word and every image.
-      feedbackStore.setError(formatSubmissionFailure(submission));
-      return false;
-    }
-    if (deliverNow?.(submission) === false) return false;
-    const currentImageIds = new Set(submission.message.images.map((image) => image.id));
-    const historicalImageIds = new Set(
-      getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen }).flatMap((entry) =>
-        entry.parts.flatMap((part) => (part.kind === 'image' ? [part.attachment.id] : [])),
-      ),
-    );
-    if (submission.message.images.length > 0) {
-      attachmentsStore.replacePendingImages(submission.message.images);
-    } else {
-      const staleSubmittedIds = new Set([...submittedImageIdsRef.current, ...historicalImageIds]);
-      for (const id of staleSubmittedIds) {
-        if (!currentImageIds.has(id)) attachmentsStore.remove(id);
-      }
-    }
-    submittedImageIdsRef.current = submission.message.images.map((image) => image.id);
-    inputHistoryStore.pushDocumentSubmission(submission.document, { currentScreen });
-    if (deliverNow === undefined) onSubmit?.(submission);
-    return true;
+    bumpEpoch();
+    return text.length;
   };
 
-  const handleSubmit = (deliverNow?: ComposerProps['onSendNow']) => {
-    if (pasteQueueRef.current.length > 0) {
-      feedbackStore.setMessage(
-        imagePaste?.matchingText === undefined ? 'Pasting image…' : 'Pasting…',
-      );
-      return;
-    }
-    if (showCommandSuggestions || showReferenceSuggestions) return;
-    const trimmed = trimDraftDocument(document);
-    // A command runs in every mode: typed under a question or a recovery menu, it is never the answer.
-    if (isCommandDraft(trimmed)) {
-      if (trimmed.parts.some((part) => part.kind === 'image')) {
-        feedbackStore.setMessage(
-          onSendNow === undefined
-            ? 'A command sends no image. Remove the image.'
-            : 'A command sends no image. Remove the command, then press ctrl+⏎.',
-        );
-        return;
-      }
-      clearDraft();
-      runCommand(draftDocumentText(trimmed));
-      return;
-    }
+  const imagePaste = useImagePaste({
+    readClipboardImage,
+    inputEpoch,
+    mode,
+    questionEpoch,
+    disabled,
+    commandsOnly,
+    caretRef,
+    canAttachImage,
+    attachImage: handleFileDrop,
+    insertText: insertPastedText,
+  });
 
-    if (mode !== 'normal') {
-      if (emptyAnswerNotice !== undefined && isBlankDraft(document)) {
-        feedbackStore.setMessage(emptyAnswerNotice);
-        return;
-      }
-      if (send(document) && !submitKeepsDraft) clearDraft();
-      return;
-    }
-
-    if (isBlankDraft(document)) {
-      if (deliverNow === undefined) onEmptySubmit?.();
-      return;
-    }
-
-    if (commandsOnly === true) {
-      feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
-      return;
-    }
-
-    if (send(document, deliverNow) && !submitKeepsDraft) clearDraft();
-  };
+  const { submit, sendNow } = useSend({
+    projectDir,
+    supportsImages,
+    currentScreen,
+    mode,
+    document,
+    commandsOnly,
+    submitKeepsDraft,
+    emptyAnswerNotice,
+    completionOpen,
+    onSubmit,
+    onSendNow,
+    onEmptySubmit,
+    refuseSubmit: imagePaste.refuseSubmit,
+    clearDraft,
+    runCommand,
+  });
 
   const textDraftEmpty = draftLength(document) === 0;
-
-  // Only the first character of a draft decides this: once a line is under way the keys are text
-  // again, so editing a command never has to pass the gate a second time.
-  const commandsOnlyGate = (input: string, key: Key): boolean => {
-    if (commandsOnly !== true || !textDraftEmpty) return true;
-    if (!isTextEntryInput(input, key) || input.startsWith('/')) return true;
-    feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
-    return false;
-  };
 
   const reviewCommenting = useReviewKeys({ mode, disabled, draftEmpty: textDraftEmpty });
 
@@ -631,22 +321,6 @@ function ComposerInput({
     hintKeys,
   });
 
-  const completionCap = computeCompletionCap(rows, visibleRows);
-  const referenceSuggestionsCap = Math.min(MAX_REFERENCE_SUGGESTIONS, completionCap);
-  const commandOverlayRows = showCommandSuggestions
-    ? computeCompletionOverlayRows({
-        itemCount: command.filtered.length,
-        maxVisible: completionCap,
-        hasFuzzyMatch: command.fuzzyMatch !== null,
-        hasEmptyMessage: command.filtered.length === 0 && command.fuzzyMatch === null,
-      })
-    : 0;
-  const referenceOverlayRows = showReferenceSuggestions
-    ? computeCompletionOverlayRows({
-        itemCount: reference.filtered.length,
-        maxVisible: referenceSuggestionsCap,
-      })
-    : 0;
   const lifecycleRunning = lifecycleStore.use((state) => state.status === 'running');
   const parked = stopStore.use((state) => state.phase === 'parked');
   const stopping = stopStore.use((state) => state.intent !== 'none');
@@ -684,7 +358,6 @@ function ComposerInput({
     composerLiveStore.setDraft(document);
   }, [document]);
 
-  const completionOpen = showCommandSuggestions || showReferenceSuggestions;
   useEffect(() => {
     completionStore.setOpen(completionOpen);
     return () => completionStore.setOpen(false);
@@ -693,24 +366,13 @@ function ComposerInput({
   return (
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
       {reserveHomeHint && (
-        <Box flexDirection="column" alignItems="center" height={hintRows}>
-          {feedbackRows.map((row, index) => (
-            <Text
-              key={`${index}:${row}`}
-              color={feedbackIsError ? theme.error : theme.textDim}
-              wrap="truncate-end"
-            >
-              {row}
-            </Text>
-          ))}
-          {homeHintLine !== null ? (
-            <Text color={colorForTone(noticeTone, theme)} wrap="truncate-end">
-              {homeHintLine}
-            </Text>
-          ) : (
-            feedbackLine === null && <Text> </Text>
-          )}
-        </Box>
+        <HomeHintRow
+          height={hintRows}
+          feedbackRows={feedbackRows}
+          feedbackIsError={feedbackIsError}
+          hintLine={homeHintLine}
+          hintTone={noticeTone}
+        />
       )}
       <Box flexDirection="column" width="100%" overflow="visible">
         <Box
@@ -734,36 +396,30 @@ function ComposerInput({
                 caretRef.current = index;
               }}
               onChange={handleChange}
-              onSubmit={() => handleSubmit()}
+              onSubmit={submit}
               onPaste={(text, at) => {
                 if (!supportsImages || commandsOnly === true) return false;
-                enqueueImagePaste(at, text);
+                imagePaste.enqueue(at, text);
                 return true;
               }}
               {...(commandsOnly === true ? {} : { onFileDrop: handleFileDrop })}
               columns={inputColumns}
               focus={!disabled}
               shouldHandleInput={(input, key) => {
-                if (
-                  key.return &&
-                  key.ctrl &&
-                  onSendNow !== undefined &&
-                  mode === 'normal' &&
-                  (lifecycleRunning || parked)
-                ) {
-                  handleSubmit(onSendNow);
-                  return false;
-                }
-                // An open list owns Tab: it completes the row, and focus stays in the box.
-                if (onTab !== undefined && !completionOpen && (key.tab || (key.shift && key.tab))) {
-                  onTab();
-                  return false;
-                }
-                if (key.ctrl && input === 'v') {
-                  handleImagePaste();
-                  return false;
-                }
-                return commandsOnlyGate(input, key);
+                const action = gateComposerKey(input, key, {
+                  mode,
+                  hasSendNow: onSendNow !== undefined,
+                  runActive: lifecycleRunning || parked,
+                  hasTab: onTab !== undefined,
+                  completionOpen,
+                  commandsOnly: commandsOnly === true,
+                  draftEmpty: textDraftEmpty,
+                });
+                if (action === 'send-now') sendNow();
+                else if (action === 'tab') onTab?.();
+                else if (action === 'paste-image') imagePaste.pasteImage();
+                else if (action === 'commands-only') feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
+                return action === 'input';
               }}
               placeholder={placeholderForMode({
                 mode,
@@ -789,25 +445,14 @@ function ComposerInput({
             </Box>
           )}
         </Box>
-        {showCommandSuggestions && (
-          <Box position="absolute" width="100%" marginTop={-commandOverlayRows}>
-            <CommandCompletionMenu
-              filtered={command.filtered}
-              selectedIndex={command.selectedIndex}
-              fuzzyMatch={command.fuzzyMatch}
-              maxVisible={completionCap}
-            />
-          </Box>
-        )}
-        {showReferenceSuggestions && (
-          <Box position="absolute" width="100%" marginTop={-referenceOverlayRows}>
-            <ReferenceCompletionMenu
-              filtered={reference.filtered}
-              selectedIndex={reference.selectedIndex}
-              maxVisible={referenceSuggestionsCap}
-            />
-          </Box>
-        )}
+        <CompletionOverlay
+          command={command}
+          reference={reference}
+          showCommand={showCommandSuggestions}
+          showReference={showReferenceSuggestions}
+          rows={rows}
+          visibleRows={visibleRows}
+        />
       </Box>
     </Box>
   );

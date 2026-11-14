@@ -33,7 +33,8 @@ import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { completionStore } from '../../stores/ui/completion.js';
 import { MAX_ATTACHMENT_BYTES } from '../../core/schemas/attachment.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
-import { COMMANDS_ONLY_NOTICE, Composer } from './view.js';
+import { COMMANDS_ONLY_NOTICE } from './key-gate.js';
+import { Composer } from './view.js';
 
 vi.mock('node:fs', async (original) => ({
   ...(await original<typeof import('node:fs')>()),
@@ -1337,6 +1338,38 @@ describe('Composer image attach gate', () => {
     expect(remedyRow).toBeDefined();
     expect(getTerminalCellWidth(remedyRow ?? '')).toBeLessThanOrEqual(60);
     expect(attachmentsStore.peek()).toEqual([]);
+  });
+
+  it('puts a pasted text where it was pasted when the clipboard holds no image', async () => {
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    const submitted: string[] = [];
+    const ui = mountThroughFilteredStdin(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        homeHint={HOME_HINT}
+        onSubmit={(submission) => submitted.push(submission.message.text)}
+        onRuntimeCommand={() => {}}
+        readClipboardImage={async () => ({ ok: false, reason: 'no-image' })}
+      />,
+      { cols: 120, rows: 40 },
+    );
+    await flushEffects();
+    ui.pressBytes('left right');
+    await flushEffects();
+    for (let index = 0; index < 5; index += 1) {
+      ui.pressBytes('\u001b[D');
+      await flushEffects();
+    }
+    ui.pressBytes('\u001b[200~pasted \u001b[201~');
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('pasted'));
+    expect(feedbackStore.get().message).toBeNull();
+
+    ui.pressBytes('\r');
+    await flushEffects();
+    expect(submitted).toEqual(['left pasted right']);
   });
 
   it('puts the dropped image in the draft as an atom the plan seat can see', async () => {

@@ -24,7 +24,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { eventsStore } from '../../stores/workflow/events/state.js';
 import { readLatestDiffKey } from '../../features/workflow/conversation-rows/row-actions/read.js';
-import { COMMANDS_ONLY_NOTICE } from '../../components/composer/view.js';
+import { COMMANDS_ONLY_NOTICE } from '../../components/composer/key-gate.js';
 import { WORKFLOW_GUTTER_X } from '../../features/workflow/layout/chrome-rows.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { buildApplyConflictRecoveryIssue } from '../../engine/orchestrator/recovery/builders/apply.js';
