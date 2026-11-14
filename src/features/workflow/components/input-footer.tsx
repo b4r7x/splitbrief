@@ -5,31 +5,15 @@ import { useStores } from '../../../stores/use-stores.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import {
-  CHECKING_TOOLS_STAGE,
-  preparationStore,
-  selectCheckingStage,
-} from '../../../stores/navigation/preparation.js';
-import {
-  getActiveRailStage,
-  railStageSeat,
-  type RailStageState,
-} from '../../../core/phases/rail.js';
-import { stepWord } from '../display/step-words.js';
+import { preparationStore, selectCheckingStage } from '../../../stores/navigation/preparation.js';
 import { deriveLiveStatus } from '../display/live-activity.js';
-import { seatRetrySentence, seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
+import { deriveBylineLead } from '../display/byline-lead.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
-import { CREW_SEAT_ROLES, collapsedReviewSeat } from '../../../core/crew/seats.js';
+import { collapsedReviewSeat } from '../../../core/crew/seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
-import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress/derive.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { formatElapsedClock } from '../../../utils/format/time.js';
-import {
-  selectBuildMessageBrief,
-  selectRunningBrief,
-  selectTaskListView,
-} from '../../../core/run-view/briefs.js';
+import { selectBuildMessageBrief } from '../../../core/run-view/briefs.js';
 import {
   operationsStore,
   selectRunningSuite,
@@ -42,15 +26,8 @@ import { truncateTerminalDisplayText } from '../../../utils/display-text/truncat
 import { segmentsForRowText } from '../../../utils/display-text/width.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
-import { glyph } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
-import { WORKFLOW_CANCEL_REASON_USER } from '../../../engine/events/workflow-cancel.js';
-import { formatStageLabel } from '../../../core/phases/labels.js';
-import {
-  buildInputFooterByline,
-  fitCheckingRow,
-  stageFractionText,
-} from '../input-footer-byline.js';
+import { buildInputFooterByline, fitCheckingRow } from '../input-footer-byline.js';
 import { formatSeatIdentity, isReviewNone } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -93,7 +70,6 @@ export function InputFooter({
   const atRestStatus = routerStore.use((s) =>
     s.screen === 'workflow' && s.execution.kind === 'at-rest' ? s.run.status.kind : null,
   );
-  const taskListView = selectTaskListView(runView.briefs);
   const stopByline = useStopByline();
   // A seat change has no lead of its own: the run it waits beside keeps the byline.
   const stopped = stopByline !== null && stopByline.parts.length > 0 ? stopByline : null;
@@ -108,13 +84,6 @@ export function InputFooter({
           displayName: displayNames.review ?? displayNames.plan,
         })
       : '';
-  // With REVIEW None the final-review phase of a workspace run only rechecks the merged result for Apply.
-  const activeStage: RailStageState | null =
-    runView.phase === 'final-review' && runView.afterLastBrief.kind === 'apply'
-      ? { stage: 'apply', status: 'active' }
-      : getActiveRailStage(runView.phase);
-  const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
-  const fractionText = stageFractionText(taskListView);
 
   // Re-entering a run at rest checks its tools first. That wait belongs on this row — the run
   // itself stays on screen, the composer beside it stays live, and the word is the request's own.
@@ -127,9 +96,7 @@ export function InputFooter({
     pendingRecovery: runView.halt !== null,
     pendingApproval: approval.status === 'pending',
   });
-  const recoveryWaiting = runView.halt !== null && controls.inputMode === 'question';
-  // A halt the panel has not opened on yet is a run still going to it, not a stopped run.
-  const recoveryStopped = recovery.open && !recoveryWaiting;
+  const now = Date.now();
   const liveStatus =
     waiting || !display.animate
       ? null
@@ -148,7 +115,7 @@ export function InputFooter({
           suiteStage: selectRunningSuite(operations),
           activeOperation: operations.active,
           briefClock: lifecycle.briefClock ?? null,
-          now: Date.now(),
+          now,
         });
   // A run on screen that is paused with no stop of its own and no record byline has been
   // continued: the engine is reaping, restoring and re-entering before its first event.
@@ -161,185 +128,23 @@ export function InputFooter({
     display.animate || checkingStage !== null || resuming || runChecking,
   );
 
-  const stageSeat = activeStage === null ? null : railStageSeat(activeStage.stage);
-  const stageParts: ConversationRowSegment[] = [
-    ...(stageText === ''
-      ? []
-      : ([
-          { text: stageText, tone: stageSeat === null ? 'text' : CREW_SEAT_ROLES[stageSeat] },
-        ] satisfies ConversationRowSegment[])),
-    ...(fractionText === ''
-      ? []
-      : ([
-          { text: `${stageText === '' ? '' : ' '}${fractionText}`, tone: 'textDim' },
-        ] satisfies ConversationRowSegment[])),
-  ];
-  const stageLead: ConversationRowSegment[] =
-    stageParts.length === 0
-      ? []
-      : [{ text: `${glyph('stageDone')} `, tone: stateTone('passed') }, ...stageParts];
-  const stageTail: ConversationRowSegment[] =
-    stageParts.length === 0 ? [] : [{ text: SOFT_SEP, tone: 'textDim' }, ...stageParts];
-  const waitingLead: ConversationRowSegment[] = [
-    { text: `${glyph('statusPending')} Waiting for your answer`, tone: stateTone('attention') },
-    ...stageTail,
-  ];
-  const elapsed =
-    liveStatus !== null && liveStatus.stageStart > 0
-      ? formatElapsedClock(Date.now() - liveStatus.stageStart - liveStatus.waitedMs)
-      : '';
-  const liveLead: ConversationRowSegment[] =
-    liveStatus === null
-      ? []
-      : [
-          { text: `${frame} `, tone: stateTone('running') },
-          ...(operations.active?.apiRuntimeStatus?.phase === 'waiting-first-response'
-            ? ([
-                { text: 'Waiting for response', tone: 'textDim' },
-              ] satisfies ConversationRowSegment[])
-            : liveStatus.parts),
-        ];
-
-  const interrupted = lifecycle.status === 'interrupted';
-  const interruptedLead: ConversationRowSegment[] = [
-    { text: `${glyph('statusPending')} Interrupted`, tone: stateTone('attention') },
-    { text: ' — finishing current step…', tone: 'textDim' },
-  ];
-  const runningBriefId = selectRunningBrief(runView.briefs, runView.phase).current?.id ?? null;
-  const resumingLead: ConversationRowSegment[] = [
-    { text: `${frame} `, tone: stateTone('running') },
-    { text: 'Resuming ', tone: 'text' },
-    {
-      text:
-        runningBriefId ??
-        (activeStage === null
-          ? 'the run'
-          : activeStage.stage === 'apply'
-            ? stepWord({ kind: 'apply' })
-            : `the ${activeStage.stage}`),
-      tone: stageSeat === null ? 'text' : CREW_SEAT_ROLES[stageSeat],
-    },
-  ];
-  // A run that ended without finishing must not reach the stageLead fallback: the pip there is
-  // `stageDone`, so the one line that survives at every width would report a completed-looking
-  // stage for a run that stopped. `user_cancelled` is the only reason the engine names.
-  const userCancelled = lifecycle.reason === WORKFLOW_CANCEL_REASON_USER;
-  const stoppedGlyph = glyph(userCancelled ? 'statusCancelled' : 'statusFailed');
-  const stoppedLead: ConversationRowSegment[] = [
-    ...((userCancelled
-      ? [{ text: `${stoppedGlyph} Stopped by you`, tone: stateTone('attention') }]
-      : [
-          { text: `${stoppedGlyph} `, tone: stateTone('failed') },
-          { text: 'Build', tone: CREW_SEAT_ROLES.build },
-          { text: ' failed', tone: stateTone('failed') },
-        ]) satisfies ConversationRowSegment[]),
-    ...stageTail,
-  ];
-  const recoveryStoppedLead: ConversationRowSegment[] = [
-    { text: `${glyph('statusFailed')} Run stopped`, tone: stateTone('attention') },
-  ];
-  // The silence span and what the seat does through it come from the derivation the block's
-  // freshness line reads, so the two surfaces state one fact in one wording; the block prints it
-  // while it is on screen, this lead otherwise.
-  const stall = lifecycle.status === 'running' && !buildBlockShown ? lifecycle.stall : null;
-  const stalledLead: ConversationRowSegment[] =
-    stall === null
-      ? []
-      : [
-          {
-            text: `${glyph('statusWarning')} ${silenceText(runnerSilenceMs(lifecycle, Date.now()) ?? 0, null)}`,
-            tone: stateTone('attention'),
-          },
-        ];
-  const stalledHint = stall === null ? null : silenceTail(operations.active, stall);
-  // The legend row already offers the run's stop, so the row names only the check and its wait.
-  const runCheckingLead: ConversationRowSegment[] =
-    slowProbe === null
-      ? []
-      : [
-          { text: `${frame} `, tone: stateTone('running') },
-          {
-            text: fitCheckingRow({
-              frame,
-              stage: CHECKING_TOOLS_STAGE,
-              slowProbe,
-              cancellable: false,
-              width: getChromeContentWidth(Math.max(1, width ?? cols)),
-            }),
-            tone: 'textDim',
-          },
-        ];
-  const wait = runView.seatWait;
-  const seatWait = wait?.live ? seatWaitSentence(wait.tool, wait.wait.resetAt) : null;
-  const seatWaitLead: ConversationRowSegment[] =
-    seatWait === null
-      ? []
-      : [
-          {
-            text: `${glyph('statusPending')} ${seatWait}`,
-            tone: stateTone('attention'),
-          },
-        ];
-  const retrySentence = lifecycle.retry === null ? null : seatRetrySentence(lifecycle.retry);
-  const retryLead: ConversationRowSegment[] =
-    retrySentence === null
-      ? []
-      : [
-          { text: `${frame} `, tone: stateTone('running') },
-          { text: retrySentence, tone: 'textDim' },
-        ];
-
-  // An actionable prompt takes precedence over the lifecycle state it interrupted.
-  // The stop's own keys are the legend row's job: crowding them onto this row would cost the
-  // state its words at 80 columns and print half a key at 60.
-  // A lead's clock is kept apart from its words, so a byline too narrow for both cuts the words.
-  const { lead, leadClock, hintText } = recoveryWaiting
-    ? {
-        lead: [
-          {
-            text: `${glyph('statusPending')} Choose how to continue`,
-            tone: stateTone('attention'),
-          },
-        ] satisfies ConversationRowSegment[],
-        hintText: null,
-      }
-    : stopped
-      ? {
-          lead: [{ text: `${glyph('statusPending')} `, tone: stopped.tone }, ...stopped.parts],
-          leadClock: stopped.clock,
-          hintText: null,
-        }
-      : recoveryStopped
-        ? { lead: recoveryStoppedLead, hintText: null }
-        : waiting || approval.status === 'pending'
-          ? { lead: waitingLead, hintText: null }
-          : lifecycle.status === 'cancelled'
-            ? {
-                lead: stoppedLead,
-                hintText: null,
-              }
-            : interrupted
-              ? { lead: interruptedLead, hintText: null }
-              : seatWait !== null
-                ? { lead: seatWaitLead, hintText: null }
-                : retrySentence !== null
-                  ? { lead: retryLead, hintText: null }
-                  : runChecking
-                    ? { lead: runCheckingLead, hintText: null }
-                    : resuming
-                      ? { lead: resumingLead, hintText: null }
-                      : stall !== null
-                        ? {
-                            lead: stalledLead,
-                            hintText: stalledHint,
-                          }
-                        : liveStatus !== null
-                          ? {
-                              lead: liveLead,
-                              leadClock: elapsed,
-                              hintText: null,
-                            }
-                          : { lead: stageLead, hintText: null };
+  const { lead, leadClock, hintText } = deriveBylineLead({
+    lifecycle,
+    runView,
+    activeOperation: operations.active,
+    inputMode: controls.inputMode,
+    recoveryOpen: recovery.open,
+    stopped,
+    waiting: waiting || approval.status === 'pending',
+    liveStatus,
+    resuming,
+    runChecking,
+    slowProbe,
+    buildBlockShown,
+    frame,
+    cols: Math.max(1, width ?? cols),
+    now,
+  });
 
   const buildBrief = selectBuildMessageBrief(runView.briefs);
   const queuedCopy =
