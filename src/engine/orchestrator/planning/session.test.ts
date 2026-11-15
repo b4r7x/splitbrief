@@ -15,7 +15,7 @@ import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { debugLogEntries, enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
-import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
+import { scriptedTypedCall, typedCallAnswering } from '#testing/helpers/typed-planner.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import {
   PLAN_FILE,
@@ -27,6 +27,7 @@ import {
 import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import type { PlanResult } from '../../../core/schemas/plan.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -44,6 +45,8 @@ import { measureApiBudget } from '../../providers/api/budget.js';
 import { runPlanningPhase } from './run.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { readRunEvents } from '../../events/replay.js';
+import type { EngineEvent } from '../../events/types.js';
+import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
 import {
   attachedMessage,
   expectCompactMessage,
@@ -108,6 +111,8 @@ async function plan(opts: {
   resumeHolder?: ResumeContextHolder;
   feature?: string;
   steering?: SteeringPort;
+  onEvent?: (event: EngineEvent) => void;
+  attachments?: Attachment[];
 }) {
   const { projectDir, sessionId } = setupProject(dirs);
   enableDebugLog(projectDir);
@@ -117,9 +122,11 @@ async function plan(opts: {
   const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
   const { bus, events } = makeBusRecorder();
   bus.subscribe(createJsonlSink({ projectDir, sessionId }));
+  if (opts.onEvent !== undefined) bus.subscribe(opts.onEvent);
   const started = transition(createInitialState('greet people'), { type: 'START' });
   const state = opts.state?.(started) ?? started;
   saveState({ projectDir, sessionId }, state);
+  const { attachments } = opts;
   const result = await runPlanningPhase({
     wctx: {
       projectDir,
@@ -131,6 +138,7 @@ async function plan(opts: {
       sinks: TEST_SINKS,
       ...(opts.steering !== undefined && { steering: opts.steering }),
       ...(opts.resumeHolder !== undefined && { resumeHolder: opts.resumeHolder }),
+      ...(attachments !== undefined && { drainPendingAttachments: () => attachments }),
     },
     planner,
     state,
@@ -1825,6 +1833,267 @@ describe('a question round the user answers in their own words', () => {
       expect(loggedDiagnostics(run.projectDir).join('\n')).toContain(SESSION_LOG_FILE);
     } finally {
       stderr.mockRestore();
+    }
+  });
+});
+
+describe('the order of the turns of one planning session', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const shot = (id: string) => ({
+    id,
+    kind: 'image' as const,
+    path: `/outside/${id}.png`,
+    mimeType: 'image/png',
+    sizeBytes: 5,
+  });
+  const withShot = (text: string, id: string) => ({
+    ...plainUserMessage(text),
+    images: [shot(id)],
+    attachedInputs: [{ kind: 'image' as const, path: `/outside/${id}.png` }],
+  });
+
+  it('carries the attachments to the first turn and the queued text and images of a turn to that turn only, records an answer before the next drain, and saves the usage of each turn', async () => {
+    const ref = { projectDir: '', sessionId: 'sess-planning' };
+    const calls: { prompt: string; images: string[] }[] = [];
+    const order: string[] = [];
+    let queuedTwo: string | undefined;
+    const typedCall = typedCallAnswering(
+      (prompt, ctx) => {
+        calls.push({ prompt, images: (ctx.images ?? []).map((image) => image.id) });
+        if (calls.length > 1) return makePlanProposal();
+        const state = loadState(ref);
+        if (state === null) throw new Error('state not saved');
+        queuedTwo = enqueueUserMessage({
+          ...ref,
+          state,
+          bus: makeBusRecorder().bus,
+          phase: 'planning',
+          message: withShot('QUEUED-TWO', 'shot-two'),
+          reviewNone: false,
+        }).message?.id;
+        return questions(1);
+      },
+      { inputTokens: 100, outputTokens: 10 },
+    );
+    const drainedName = (id: string) =>
+      id === 'queued-one' ? 'one' : id === queuedTwo ? 'two' : id;
+
+    const run = await plan({
+      script: [],
+      planner: {
+        typedCall,
+        capabilities: { ...makePlanner().capabilities, supportsImages: true },
+      },
+      attachments: [shot('shot-attached')],
+      setup: (projectDir) => {
+        ref.projectDir = projectDir;
+      },
+      state: (state) => ({
+        ...state,
+        messageQueue: [
+          {
+            ...withShot('QUEUED-ONE', 'shot-one'),
+            id: 'queued-one',
+            queuedAt: '2026-10-10T00:00:00Z',
+            phase: 'planning',
+            deliveredViaNative: false,
+            nativeDeliveryState: 'pending',
+          },
+        ],
+      }),
+      callbacks: { onPlannerReply: async () => withShot('ANSWER-ONE', 'shot-answer') },
+      onEvent: (event) => {
+        if (event.type === 'user_message') order.push(`answer ${event.text}`);
+        if (event.type === 'queue_drained') {
+          order.push(`drained ${(event.ids ?? []).map(drainedName).join(', ')}`);
+        }
+      },
+    });
+
+    expect(calls.map((call) => call.images)).toEqual([
+      ['shot-attached', 'shot-one'],
+      ['shot-two', 'shot-answer'],
+    ]);
+    expect(calls[0]?.prompt).toContain('QUEUED-ONE');
+    expect(calls[1]?.prompt).toContain('QUEUED-TWO');
+    expect(calls[1]?.prompt).toContain('ANSWER-ONE');
+    expect(calls[1]?.prompt).not.toContain('QUEUED-ONE');
+    expect(order).toEqual(['drained one', 'answer ANSWER-ONE', 'drained two']);
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    for (const saved of [run.result.state, loadState(run)]) {
+      expect(saved?.tokenUsage).toMatchObject({ plannerInput: 200, plannerOutput: 20 });
+    }
+  });
+
+  it('says a correction once to a planner on its own session, on the turn that opens the session', async () => {
+    const rewindPending = { target: 'plan' as const, comment: 'Split the greeting module' };
+    const run = await plan({
+      script: [questions(1), makePlanProposal()],
+      state: (state) => ({ ...state, rewindPending, plannerSessionId: 'native-1' }),
+      rewindPending,
+      planner: {
+        capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+      },
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('use src/b.ts')) },
+    });
+
+    expect(run.prompts[0]).toContain('Split the greeting module');
+    expect(run.prompts[1]).toContain('use src/b.ts');
+    expect(run.prompts[1]).not.toContain('Split the greeting module');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('answers only the open round with the steer a stopped run continued with, and asks the user the next round', async () => {
+    const first = await plan({ script: [questions(1)] });
+    const saved = loadState(first);
+    if (saved === null) throw new Error('state not saved');
+    const holder = await resumeContinuation({
+      reviewNone: false,
+      ref: first,
+      state: saved,
+      steer: plainUserMessage('STEER-ANSWER use src/b.ts'),
+    });
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage('ROUND-TWO use terse'));
+    const { bus, events } = makeBusRecorder();
+    const typed = scriptedTypedCall([questions(2), makePlanProposal()]);
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir: first.projectDir,
+        sessionId: first.sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+        bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        continuation: holder,
+      },
+      planner: makePlanner({ typedCall: typed.typedCall }),
+      state: saved,
+      feature: 'greet people',
+    });
+
+    expect(
+      onPlannerReply.mock.calls.map(([asked]) =>
+        asked.questions.map((question: { id: string }) => question.id),
+      ),
+    ).toEqual([['q2a', 'q2b']]);
+    expect(events.flatMap((event) => (event.type === 'user_message' ? [event.text] : []))).toEqual([
+      'STEER-ANSWER use src/b.ts',
+      'ROUND-TWO use terse',
+    ]);
+    expect(typed.prompts[0]).toContain('STEER-ANSWER use src/b.ts');
+    expect(typed.prompts[1]).toContain('ROUND-TWO use terse');
+    expect(result.disposition).toBe('ready-for-tasks');
+  });
+
+  async function heartbeatLog(end: 'plan' | 'throw'): Promise<string[]> {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    const log: string[] = [];
+    let calls = 0;
+    const typedCall = typedCallAnswering(async () => {
+      calls += 1;
+      log.push(`call ${calls}`);
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_THRESHOLD_MS);
+      if (calls === 1) return questions(1);
+      if (end === 'throw') throw new Error('The planner process exited');
+      return makePlanProposal();
+    });
+    const run = await plan({
+      script: [],
+      planner: { typedCall },
+      callbacks: {
+        onPlannerReply: async () => {
+          log.push('reply');
+          await vi.advanceTimersByTimeAsync(HEARTBEAT_THRESHOLD_MS);
+          return plainUserMessage('');
+        },
+      },
+      onEvent: (event) => {
+        if (event.type === 'planner_heartbeat') log.push('heartbeat');
+        if (event.type === 'error') log.push('error');
+      },
+    });
+    log.push(`returned ${run.result.disposition}`);
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_THRESHOLD_MS * 2);
+    return log;
+  }
+
+  it('stops the heartbeat of each planner call once the call answers', async () => {
+    expect(await heartbeatLog('plan')).toEqual([
+      'call 1',
+      'heartbeat',
+      'reply',
+      'call 2',
+      'heartbeat',
+      'returned ready-for-tasks',
+    ]);
+  });
+
+  it('stops the heartbeat of a planner call that throws, and then reports the failure', async () => {
+    expect(await heartbeatLog('throw')).toEqual([
+      'call 1',
+      'heartbeat',
+      'reply',
+      'call 2',
+      'heartbeat',
+      'error',
+      'returned terminal',
+    ]);
+  });
+
+  it('clears an earlier failure once a stop cut a call mid-step and the run continues the call', async () => {
+    const abort: { call: (() => void) | null } = { call: null };
+    let calls = 0;
+    const typedCall = typedCallAnswering(async () => {
+      calls += 1;
+      if (calls > 1) return makePlanProposal();
+      abort.call?.();
+      throw new DOMException('The operation was aborted', 'AbortError');
+    });
+    const { projectDir, sessionId } = setupProject(dirs);
+    const state: WorkflowState = {
+      ...transition(createInitialState('greet people'), { type: 'START' }),
+      lastFailure: {
+        step: { kind: 'planner', call: 'plan' },
+        message: 'An earlier plan call failed',
+        at: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    saveState({ projectDir, sessionId }, state);
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks({
+          onContinuationNeeded: async () => plainUserMessage('keep it small'),
+        }).callbacks,
+        bus,
+        metadata: TEST_METADATA,
+        sinks: {
+          setAbortHandler: (handler) => {
+            abort.call = handler;
+          },
+          setQueueHandler: () => {},
+        },
+      },
+      planner: makePlanner({ typedCall }),
+      state,
+      feature: 'greet people',
+    });
+
+    expect(events.filter((event) => event.type === 'turn_interrupted')).toHaveLength(1);
+    expect(calls).toBe(2);
+    expect(result.disposition).toBe('ready-for-tasks');
+    for (const saved of [result.state, loadState({ projectDir, sessionId })]) {
+      expect(saved?.lastFailure).toBeUndefined();
+      expect(saved?.interruptedStep).toBeUndefined();
     }
   });
 });
