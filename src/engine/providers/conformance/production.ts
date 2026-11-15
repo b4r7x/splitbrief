@@ -1,5 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   CONFORMANCE_PROMPT,
@@ -7,7 +6,13 @@ import {
   contractSha256,
 } from '../candidate/contract.js';
 import { normalizeCandidateEvidence } from '../candidate/evidence.js';
-import { CandidateEvidence } from '../candidate/evidence.js';
+import {
+  hasConformanceCode,
+  readRawCaptureRecord,
+  redactCredentialOutput,
+  throwConformance,
+  writeEvidenceFile,
+} from '../candidate/harness.js';
 import { streamCompletion } from '../openai-stream/completion.js';
 import type { RunnerCallResult } from '../../calls/types.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -21,11 +26,8 @@ import {
   type RawCapture,
   type UnregisteredProviderCandidateValue,
   chooseModel,
-  hasConformanceCode,
-  redactWithCredentials,
   roleForContract,
   safeDiagnostic,
-  throwConformance,
 } from './shared.js';
 import {
   type UnregisteredOpenAICompatProvider,
@@ -48,11 +50,7 @@ async function writeProductionRecord(
     productionConformance: production,
     verdict,
   });
-  await mkdir(dirname(resolve(recordPath)), { recursive: true });
-  await writeFile(recordPath, `${JSON.stringify(evidence, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
+  await writeEvidenceFile(recordPath, JSON.stringify(evidence, null, 2));
 }
 
 function candidateFromModule(
@@ -173,32 +171,15 @@ function productionOutput(
   );
 }
 
-async function readRawRecord(recordPath: string): Promise<RawCapture> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(recordPath, 'utf8'));
-  } catch {
-    throwConformance('harness-failure', 'provider evidence record is missing or invalid JSON');
-  }
-  if (!isRecord(parsed) || !('rawCapture' in parsed)) {
-    throwConformance('harness-failure', 'provider evidence record has no rawCapture');
-  }
-  const candidateEvidence = CandidateEvidence.safeParse({
-    rawCapture: parsed.rawCapture,
-    productionConformance: null,
-    verdict: 'OMIT',
-  });
-  if (!candidateEvidence.success)
-    throwConformance('harness-failure', 'provider rawCapture is invalid');
-  return candidateEvidence.data.rawCapture;
-}
-
 export async function runProductionProviderConformance(
   options: ProductionProviderConformanceOptions,
 ): Promise<ProviderConformanceOutcome> {
   let rawCapture: RawCapture;
   try {
-    rawCapture = await readRawRecord(options.recordPath);
+    rawCapture = await readRawCaptureRecord(options.recordPath, {
+      label: 'provider',
+      standalone: false,
+    });
   } catch (error) {
     return {
       exitCode: PROVIDER_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE,
@@ -245,7 +226,7 @@ export async function runProductionProviderConformance(
       candidateId: candidate.rawContract.id,
       role: roleForContract(candidate.rawContract),
       contractSha256: expectedHash,
-      stdout: redactWithCredentials(productionOutput(candidate, model, result), credentials),
+      stdout: redactCredentialOutput(productionOutput(candidate, model, result), credentials),
       stderr: '',
     };
     await writeProductionRecord(options.recordPath, rawCapture, productionCapture, 'PASS');

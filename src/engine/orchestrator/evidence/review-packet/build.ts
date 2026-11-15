@@ -9,6 +9,7 @@ import {
   reviewPacketJsonPath,
   reviewPacketMarkdownPath,
 } from '../../../../core/paths.js';
+import { uniquePush } from '../../../../utils/collections.js';
 import { nowIso } from '../../../../utils/format/time.js';
 import { readEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
 import { readDriftReport } from '../../drift/io.js';
@@ -23,7 +24,6 @@ import {
 import { buildCost, buildRun } from './run-and-cost.js';
 import { buildFinalReview, resolveChangedFiles, sourceArtifactMissing } from './sections-io.js';
 import { readBriefQuality, readCheckpoints, readPacketEvents, readReadiness } from './artifacts.js';
-import { addMissing } from './missing-artifacts.js';
 import type { BuildReviewPacketOptions } from './types.js';
 import { makeRecoveryWithSources } from './recovery.js';
 import { runBaseOf } from '../../isolation/run-base/tree.js';
@@ -48,10 +48,10 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
   sourceArtifactMissing(opts.projectDir, opts.sessionId, missing);
 
   const ledger = readEvidenceLedger(opts);
-  if (!ledger) addMissing(missing, EVIDENCE_FILE);
+  if (!ledger) uniquePush(missing, EVIDENCE_FILE);
 
   const drift = readDriftReport(opts);
-  if (!drift) addMissing(missing, DRIFT_REPORT_FILE);
+  if (!drift) uniquePush(missing, DRIFT_REPORT_FILE);
 
   const briefQuality = readBriefQuality(opts.projectDir, opts.sessionId, missing);
   const readiness = readReadiness(opts.projectDir, opts.sessionId, missing);

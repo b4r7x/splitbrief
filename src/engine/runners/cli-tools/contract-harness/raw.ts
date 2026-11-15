@@ -4,19 +4,21 @@ import { resolveCliExecutable } from '../../cli-executable/resolve.js';
 import { RawCliCandidateContract, replaceProjectDirSentinel } from '../candidate-contract.js';
 import { CONFORMANCE_PROMPT } from '../../../providers/candidate/contract.js';
 import {
+  hasConformanceCode,
+  throwConformance,
+  writeEvidenceFile,
+} from '../../../providers/candidate/harness.js';
+import {
   CLI_CONFORMANCE_EXIT_CODES,
   INVOCATION_TIMEOUT_MS,
   MAX_PROCESS_OUTPUT_BYTES,
   captureFor,
   createProject,
   credentialsForContract,
-  hasConformanceCode,
   hasRequiredCredential,
   processRunnerOf,
   safeReason,
   sandboxEnvironment,
-  throwConformance,
-  writeEvidenceFile,
   type CliConformanceOutcome,
   type CliProcessResult,
   type CliProcessRunner,

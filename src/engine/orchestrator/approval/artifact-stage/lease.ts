@@ -1,10 +1,9 @@
-import type { BigIntStats } from 'node:fs';
+import { constants, type BigIntStats } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { SECURE_FILE_MODE } from '../../../../lib/fs/secure.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { isRecord } from '../../../../utils/type-guards.js';
-import { artifactOpenFlags, writeAll, readHandleStat } from './handles.js';
 import {
   rejectDeclaredValues,
   decodeCanonicalUtf8,
@@ -273,5 +272,29 @@ function assertLeasedHandleStat(
     !sameInode(stat, leaseIdentity)
   ) {
     throw artifactStageError.invalid('declared artifact is not the leased bounded regular file');
+  }
+}
+
+async function readHandleStat(handle: ArtifactFileHandle): Promise<BigIntStats> {
+  return handle.stat({ bigint: true });
+}
+
+function artifactOpenFlags(): number {
+  return (
+    constants.O_RDWR |
+    constants.O_CREAT |
+    constants.O_EXCL |
+    (process.platform === 'win32' ? 0 : constants.O_NOFOLLOW)
+  );
+}
+
+async function writeAll(handle: ArtifactFileHandle, bytes: Buffer): Promise<void> {
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const { bytesWritten } = await handle.write(bytes, offset, bytes.byteLength - offset, offset);
+    if (bytesWritten <= 0 || bytesWritten > bytes.byteLength - offset) {
+      throw artifactStageError.invalid('declared artifact lease could not be created safely');
+    }
+    offset += bytesWritten;
   }
 }

@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { z } from 'zod';
 import type { CliExecutableResolver } from '../../cli-executable/types.js';
 import { gitBinary } from '../../../../lib/git/client.js';
@@ -13,12 +13,12 @@ import { createSandboxEnv } from '../../sandbox/env.js';
 import { removeSandboxTempDirs } from '../../sandbox/state/paths.js';
 import type { RawCliCandidateContract } from '../candidate-contract.js';
 import { contractSha256 } from '../../../providers/candidate/contract.js';
+import { redactCredentialOutput, throwConformance } from '../../../providers/candidate/harness.js';
 import { sanitizeCandidateOutput } from '../../../providers/candidate/evidence.js';
 import type { CandidateEvidence } from '../../../providers/candidate/evidence.js';
 import { CONFORMANCE_EXIT_CODES } from '../../../providers/candidate/evidence.js';
 import { MAX_EVIDENCE_OUTPUT_BYTES } from '../../../providers/candidate/evidence.js';
 import { isRecord } from '../../../../utils/type-guards.js';
-import { error as createError } from '../../../../utils/error.js';
 
 const execFileAsync = promisify(execFile);
 export const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
@@ -83,36 +83,14 @@ export type CliConformanceOutcome = Readonly<{
 
 export type RawCapture = z.infer<typeof CandidateEvidence>['rawCapture'];
 
-type ConformanceErrorCode = 'credentialed-omit' | 'harness-failure';
-
 type ConformanceProject = Readonly<{
   path: string;
   cleanup: () => Promise<void>;
 }>;
 
-function conformanceError(code: ConformanceErrorCode, message: string): Error & { kind: string } {
-  return createError(code, message);
-}
-
-export function hasConformanceCode(value: unknown, code: ConformanceErrorCode): boolean {
-  return isRecord(value) && value.kind === code;
-}
-
-export function throwConformance(code: ConformanceErrorCode, message: string): never {
-  throw conformanceError(code, message);
-}
-
 export function safeReason(value: unknown): string {
   const message = value instanceof Error ? value.message : 'CLI conformance failed';
   return sanitizeCandidateOutput(message, MAX_EVIDENCE_OUTPUT_BYTES);
-}
-
-function redactOutput(value: string, credentials: readonly string[]): string {
-  let redacted = value;
-  for (const credential of credentials) {
-    if (credential.length > 0) redacted = redacted.replaceAll(credential, '[REDACTED]');
-  }
-  return sanitizeCandidateOutput(redacted, MAX_EVIDENCE_OUTPUT_BYTES);
 }
 
 function environmentValue(
@@ -272,13 +250,7 @@ export function captureFor(opts: {
     candidateId: opts.contract.id,
     role: opts.contract.role,
     contractSha256: contractSha256(opts.contract),
-    stdout: redactOutput(opts.stdout, opts.credentials),
-    stderr: redactOutput(opts.stderr, opts.credentials),
+    stdout: redactCredentialOutput(opts.stdout, opts.credentials),
+    stderr: redactCredentialOutput(opts.stderr, opts.credentials),
   };
-}
-export async function writeEvidenceFile(recordPath: string, content: string): Promise<void> {
-  const path = resolve(recordPath);
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${content}\n`, { encoding: 'utf8', mode: 0o600 });
-  await chmod(path, 0o600);
 }

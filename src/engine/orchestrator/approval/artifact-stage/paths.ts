@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, win32 } from 'node:path';
 import type { PlannerArtifactAttemptId } from '../../../../core/schemas/planner-artifact.js';
 import { SECURE_DIR_MODE } from '../../../../lib/fs/secure.js';
-import { isAlreadyExists } from './handles.js';
+import { hasErrnoCode } from '../../../../utils/errno.js';
 import type { LeasePreparation, ArtifactLeaseAncestryEntry } from './types.js';
 import {
   artifactStageError,
@@ -90,7 +90,7 @@ async function createDirectory(path: string, exclusive: boolean): Promise<void> 
         'declared artifact parent already exists or could not be created',
       );
     }
-    if (!isAlreadyExists(cause)) {
+    if (!hasErrnoCode(cause, 'EEXIST')) {
       throw artifactStageError.invalid('declared artifact parent could not be created');
     }
   }

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -134,6 +134,10 @@ async function writeCandidateModule(directory: string, value: unknown): Promise<
     mode: 0o600,
   });
   return path;
+}
+
+async function permissions(path: string): Promise<number> {
+  return (await stat(path)).mode & 0o777;
 }
 
 afterEach(async () => {
@@ -297,6 +301,42 @@ describe('provider conformance harness', () => {
     expect(outcome.exitCode).toBe(PROVIDER_CONFORMANCE_EXIT_CODES.OMIT);
     expect(evidence).toHaveProperty('verdict', 'OMIT');
     expect(JSON.stringify(evidence)).not.toContain(credential);
+  });
+
+  it('writes the raw evidence record owner-only in an owner-only directory', async () => {
+    const directory = await temporaryDirectory();
+    const recordPath = join(directory, 'records', 'evidence.json');
+    const outcome = await runRawProviderConformance({
+      contractJson: JSON.stringify(contract),
+      recordPath,
+      environment: { EXAMPLE_API_KEY: credential },
+      fetchImplementation: fakeFetch().fetchImplementation,
+    });
+
+    expect(outcome.exitCode).toBe(PROVIDER_CONFORMANCE_EXIT_CODES.PASS);
+    expect(await permissions(join(directory, 'records'))).toBe(0o700);
+    expect(await permissions(recordPath)).toBe(0o600);
+  });
+
+  it('narrows a raw evidence record that others can read on the production run', async () => {
+    const directory = await temporaryDirectory();
+    const recordPath = join(directory, 'evidence.json');
+    await runRawProviderConformance({
+      contractJson: JSON.stringify(contract),
+      recordPath,
+      environment: { EXAMPLE_API_KEY: credential },
+      fetchImplementation: fakeFetch().fetchImplementation,
+    });
+    await chmod(recordPath, 0o644);
+    const outcome = await runProductionProviderConformance({
+      modulePath: await writeCandidateModule(directory, candidate),
+      recordPath,
+      environment: { EXAMPLE_API_KEY: credential },
+      fetchImplementation: fakeFetch().fetchImplementation,
+    });
+
+    expect(outcome.exitCode).toBe(PROVIDER_CONFORMANCE_EXIT_CODES.PASS);
+    expect(await permissions(recordPath)).toBe(0o600);
   });
 
   it('rejects raw/production identity mismatches as harness failures', async () => {

@@ -1,11 +1,10 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
+import { join, relative } from 'node:path';
 import type { CliExecutableIdentity } from '../../../../core/discovery/detection/executable.js';
 import { INTERNAL_SKIP_DIRS } from '../../../../core/paths.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
-import { isRecord } from '../../../../utils/type-guards.js';
 import type { RunnerCallResult } from '../../../calls/types.js';
-import { CandidateEvidence } from '../../../providers/candidate/evidence.js';
+import { readRawCaptureRecord, writeEvidenceFile } from '../../../providers/candidate/harness.js';
 import { resolveCliExecutable } from '../../cli-executable/resolve.js';
 import { candidateEvidenceWithCliCapture } from '../candidate-contract.js';
 import {
@@ -17,8 +16,6 @@ import {
 import {
   type RawCapture,
   type CliConformanceVerdict,
-  writeEvidenceFile,
-  throwConformance,
   type ProductionCliConformanceOptions,
   type CliConformanceOutcome,
   captureFor,
@@ -44,25 +41,6 @@ async function writeProductionRecord(opts: {
     opts.verdict,
   );
   await writeEvidenceFile(opts.recordPath, JSON.stringify(evidence, null, 2));
-}
-
-async function readRawRecord(recordPath: string): Promise<RawCapture> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(resolve(recordPath), 'utf8'));
-  } catch {
-    throwConformance('harness-failure', 'CLI evidence record is missing or invalid JSON');
-  }
-  if (!isRecord(parsed) || Object.keys(parsed).length !== 1 || !('rawCapture' in parsed)) {
-    throwConformance('harness-failure', 'CLI evidence record has no standalone rawCapture');
-  }
-  const evidence = CandidateEvidence.safeParse({
-    rawCapture: parsed.rawCapture,
-    productionConformance: null,
-    verdict: 'OMIT',
-  });
-  if (!evidence.success) throwConformance('harness-failure', 'CLI rawCapture is invalid');
-  return evidence.data.rawCapture;
 }
 
 async function projectFingerprint(projectDir: string): Promise<string> {
@@ -125,7 +103,10 @@ export async function runProductionCliConformance(
 ): Promise<CliConformanceOutcome> {
   let rawCapture: RawCapture;
   try {
-    rawCapture = await readRawRecord(options.recordPath);
+    rawCapture = await readRawCaptureRecord(options.recordPath, {
+      label: 'CLI',
+      standalone: true,
+    });
   } catch (cause) {
     return {
       exitCode: CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE,

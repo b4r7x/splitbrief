@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
 import { endpointPolicyError } from '../../../core/providers/endpoint-policy.js';
 import {
   createEndpointPolicyFetch,
@@ -10,6 +8,12 @@ import {
   RawProviderCandidateContract,
   contractSha256,
 } from '../candidate/contract.js';
+import {
+  hasConformanceCode,
+  redactCredentialOutput,
+  throwConformance,
+  writeEvidenceFile,
+} from '../candidate/harness.js';
 import { extractOpenAIModelList, isOpenAIModelList } from '../client/request.js';
 import {
   COMPLETION_TIMEOUT_MS,
@@ -24,11 +28,8 @@ import {
   credentialForContract,
   endpointForContract,
   environmentOf,
-  hasConformanceCode,
-  redactWithCredentials,
   roleForContract,
   safeDiagnostic,
-  throwConformance,
 } from './shared.js';
 
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -98,7 +99,7 @@ async function captureRequest(
   return {
     status: response.status,
     text,
-    evidence: redactWithCredentials(text, credentials),
+    evidence: redactCredentialOutput(text, credentials),
     body: parseJsonBody(text),
   };
 }
@@ -158,9 +159,7 @@ function evidenceCapture(
 }
 
 async function writeRawRecord(recordPath: string, rawCapture: RawCapture): Promise<void> {
-  const record = JSON.stringify({ rawCapture }, null, 2);
-  await mkdir(dirname(resolve(recordPath)), { recursive: true });
-  await writeFile(recordPath, `${record}\n`, { encoding: 'utf8', mode: 0o600 });
+  await writeEvidenceFile(recordPath, JSON.stringify({ rawCapture }, null, 2));
 }
 
 export async function runRawProviderConformance(

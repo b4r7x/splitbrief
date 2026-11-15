@@ -10,9 +10,8 @@ import { sanitizeCandidateOutput } from '../candidate/evidence.js';
 import type { CandidateEvidence } from '../candidate/evidence.js';
 import { CONFORMANCE_EXIT_CODES } from '../candidate/evidence.js';
 import { MAX_EVIDENCE_OUTPUT_BYTES } from '../candidate/evidence.js';
+import { redactCredentialOutput, throwConformance } from '../candidate/harness.js';
 import { sanitizeProviderDiagnostic, type ProviderDiagnosticOptions } from '../client/request.js';
-import { isRecord } from '../../../utils/type-guards.js';
-import { error as createError } from '../../../utils/error.js';
 
 export const COMPLETION_TIMEOUT_MS = 30_000;
 export const MODEL_LIST_TIMEOUT_MS = 5_000;
@@ -45,20 +44,6 @@ export type UnregisteredProviderCandidateValue = z.infer<typeof UnregisteredProv
 export type CandidateKnownModel = UnregisteredProviderCandidateValue['knownModels'][number];
 export type RawCapture = z.infer<typeof CandidateEvidence>['rawCapture'];
 
-type ConformanceErrorCode = 'credentialed-omit' | 'harness-failure';
-
-function conformanceError(code: ConformanceErrorCode, message: string): Error {
-  return createError(code, message);
-}
-
-export function hasConformanceCode(value: unknown, code: ConformanceErrorCode): boolean {
-  return isRecord(value) && value.kind === code;
-}
-
-export function throwConformance(code: ConformanceErrorCode, message: string): never {
-  throw conformanceError(code, message);
-}
-
 export function environmentOf(
   options: ProviderConformanceFetchOptions,
 ): ProviderConformanceEnvironment {
@@ -69,21 +54,12 @@ export function boundedCandidateOutput(value: string): string {
   return sanitizeCandidateOutput(value, MAX_EVIDENCE_OUTPUT_BYTES);
 }
 
-export function redactWithCredentials(value: string, credentialValues: readonly string[]): string {
-  let sanitized = value;
-  for (const credential of credentialValues) {
-    if (credential.length === 0) continue;
-    sanitized = sanitized.replaceAll(credential, '[REDACTED]');
-  }
-  return boundedCandidateOutput(sanitized);
-}
-
 function diagnosticOptions(credentials: readonly string[]): ProviderDiagnosticOptions {
   return credentials.length === 0 ? {} : { credentialValues: credentials };
 }
 
 export function safeDiagnostic(error: unknown, credentials: readonly string[]): string {
-  return redactWithCredentials(
+  return redactCredentialOutput(
     sanitizeProviderDiagnostic(error, diagnosticOptions(credentials)),
     credentials,
   );

@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import type { z } from 'zod';
 import { isRecord } from '../../../../utils/type-guards.js';
 import { CONFORMANCE_PROMPT, contractSha256 } from '../../../providers/candidate/contract.js';
+import { throwConformance } from '../../../providers/candidate/harness.js';
 import {
   parseCliConformanceCandidates,
   type RawCliCandidateContract,
@@ -10,12 +11,7 @@ import {
   type UnregisteredCliCandidate,
 } from '../candidate-contract.js';
 import type { CliProcessAdapter } from '../contract.js';
-import {
-  throwConformance,
-  type RawCapture,
-  type CliConformanceRole,
-  INVOCATION_TIMEOUT_MS,
-} from './harness.js';
+import { type RawCapture, type CliConformanceRole, INVOCATION_TIMEOUT_MS } from './harness.js';
 import type { CliExecutableIdentity } from '../../../../core/discovery/detection/executable.js';
 import { createRunnerCallId } from '../../../calls/call-id.js';
 import { RunnerCallResultSchema } from '../../../calls/schema.js';

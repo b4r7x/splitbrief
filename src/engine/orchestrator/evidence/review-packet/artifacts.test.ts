@@ -46,6 +46,15 @@ describe('readBriefQuality', () => {
   });
 });
 
+describe('readReadiness', () => {
+  it('names a missing readiness.json once in a list that already names it', () => {
+    const missing = ['readiness.json'];
+
+    expect(readReadiness(tmp, 'sess-01', missing).present).toBe(false);
+    expect(missing).toEqual(['readiness.json']);
+  });
+});
+
 describe('packet recovery artifacts', () => {
   it('preserves the recovery headline and automatic switch evidence', async () => {
     const dir = join(tmp, '.splitbrief', 'sessions', 'sess-01');

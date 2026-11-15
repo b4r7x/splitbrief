@@ -10,6 +10,7 @@ import {
 import { CallIdSchema } from '../../calls/schema.js';
 import { confinedEnsureDir } from '../../../lib/fs/confined.js';
 import { assertPathConfined } from '../../../lib/fs/confinement.js';
+import { isENOENT } from '../../../utils/errno.js';
 import { error } from '../../../utils/error.js';
 import { validateSafeIdentifier } from '../../../utils/validate-identifier.js';
 import type {
@@ -173,7 +174,7 @@ async function clearReviewRoot({
   try {
     rootStat = await lstat(reviewRoot);
   } catch (err) {
-    if (isNoEntry(err)) return;
+    if (isENOENT(err)) return;
     throw err;
   }
   if (!rootStat.isDirectory()) {
@@ -183,8 +184,4 @@ async function clearReviewRoot({
   // This deletes only stale legacy candidates. Fresh artifact review content is
   // carried in memory and never written beneath this directory.
   await rm(reviewRoot, { recursive: true, force: false });
-}
-
-function isNoEntry(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
 }

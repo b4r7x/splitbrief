@@ -222,6 +222,19 @@ describe('declared artifact review lease', () => {
     }
   });
 
+  it('finds no stale candidates to clean in a session that never wrote a review root', async () => {
+    const projectDir = createTempDir('planner-artifact');
+    try {
+      await expect(
+        cleanupStaleArtifactReviews({ projectDir, sessionId: SESSION_ID }),
+      ).resolves.toBeUndefined();
+      expect(existsSync(sessionRoot(projectDir))).toBe(true);
+      expect(existsSync(candidateRoot(projectDir))).toBe(false);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
   it('rejects an exact raw declared value before candidate or approval exposure', async () => {
     const secret = 'planner-secret-value';
     await assertSecretIsNeverPresented({

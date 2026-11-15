@@ -15,10 +15,10 @@ import { createImplementer, createPlanner } from '../../factory.js';
 import type { RunnerGate } from '../../prepare-execution/prepared.js';
 import { executableChangedMessage } from '../../cli-executable/identity.js';
 import { createCliSeatGates, type RecheckCliTool } from '../../seat-gates.js';
+import { writeEvidenceFile } from '../../../providers/candidate/harness.js';
 import {
   CLI_CONFORMANCE_EXIT_CODES,
   safeReason,
-  writeEvidenceFile,
   type CliConformanceExitCode,
   type CliConformanceOutcome,
   type CliConformanceRole,

@@ -9,6 +9,7 @@ import { ImplementerConfigSchema } from '../../../../core/schemas/runner/impleme
 import { createRunnerCallId } from '../../../calls/call-id.js';
 import type { RunnerCallResult } from '../../../calls/types.js';
 import { sanitizeCandidateOutput } from '../../../providers/candidate/evidence.js';
+import { writeEvidenceFile } from '../../../providers/candidate/harness.js';
 import { invokeCliAdapter, toCliEnvironment } from '../../invoke-cli-adapter.js';
 import { resolveCliExecutableAliases } from '../../cli-executable/resolve.js';
 import { createRunnerSandboxEnv } from '../../sandbox/env.js';
@@ -18,7 +19,6 @@ import {
   CLI_CONFORMANCE_EXIT_CODES,
   createProject,
   safeReason,
-  writeEvidenceFile,
   type CliConformanceOutcome,
 } from './harness.js';
 import { probeCliReadiness } from '../probe/readiness.js';

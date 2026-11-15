@@ -23,11 +23,10 @@ import { createRunBaseReader, type RunBaseFile } from '../../isolation/run-base/
 import type { RunBase } from '../../isolation/run-base/tree.js';
 import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from '../../../../core/gitignore-bookkeeping.js';
 import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
-import { uniqueSorted } from '../../../../utils/collections.js';
+import { uniquePush, uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
 import { readFinalReviewRecord } from '../../../../core/review/store.js';
-import { addMissing } from './missing-artifacts.js';
 
 const REVIEW_EXCERPT_MAX = 500;
 
@@ -179,15 +178,15 @@ export async function resolveChangedFiles(opts: {
   const { workspaceDir, drift, missing, baseline } = opts;
   if (drift) return uniqueSorted(drift.changedFiles);
   if (!baseline) {
-    addMissing(missing, 'run-start baseline');
+    uniquePush(missing, 'run-start baseline');
     return [];
   }
   try {
     const { changedFiles: files } = await readRunWorkingTree(workspaceDir, baseline, opts.runBase);
-    if (files.length === 0) addMissing(missing, 'changed files');
+    if (files.length === 0) uniquePush(missing, 'changed files');
     return files;
   } catch {
-    addMissing(missing, 'git status');
+    uniquePush(missing, 'git status');
     return [];
   }
 }
@@ -217,7 +216,7 @@ export async function buildFinalReview(opts: {
   const { projectDir, sessionId, requestedStatus, ledger, missing } = opts;
   const target = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
   const exists = existsSync(target);
-  if (!exists) addMissing(missing, REVIEW_FILE);
+  if (!exists) uniquePush(missing, REVIEW_FILE);
   const status: ReviewPacketFinalReviewStatus =
     requestedStatus === 'failed' ? 'failed' : exists ? 'written' : 'missing';
   const statusText =
@@ -251,5 +250,5 @@ export function sourceArtifactMissing(
   missing: string[],
 ): void {
   if (!existsSync(join(sessionDir(projectDir, sessionId), STATE_FILE)))
-    addMissing(missing, STATE_FILE);
+    uniquePush(missing, STATE_FILE);
 }

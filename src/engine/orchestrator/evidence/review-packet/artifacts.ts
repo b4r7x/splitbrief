@@ -25,6 +25,7 @@ import {
 } from '../../../../core/paths.js';
 import { readEvents } from '../../../../core/sessions/log/reader.js';
 import { readJsonSafe } from '../../../../lib/fs/read.js';
+import { uniquePush } from '../../../../utils/collections.js';
 import { includes, narrowRecord, optionalString } from '../../../../utils/type-guards.js';
 import {
   CHECKPOINT_RESTORE_SAFETY,
@@ -32,7 +33,6 @@ import {
   type CheckpointSummary,
 } from '../../../snapshots/checkpoint-summary.js';
 import { readRunSnapshotLedger } from '../../../snapshots/run/ledger.js';
-import { addMissing } from './missing-artifacts.js';
 import type { BriefQualityArtifact, PacketEvent } from './types.js';
 
 const RUN_LEDGER_PATH = `${SNAPSHOTS_DIR}/run-ledger.json`;
@@ -85,7 +85,7 @@ export function readBriefQuality(
     typeof record.passed !== 'boolean' ||
     typeof record.score !== 'number'
   ) {
-    addMissing(missing, BRIEF_QUALITY_FILE);
+    uniquePush(missing, BRIEF_QUALITY_FILE);
     return null;
   }
 
@@ -126,7 +126,7 @@ export function readReadiness(
 ): ReviewPacket['readiness'] {
   const record = readReadinessArtifact(projectDir, sessionId);
   if (!record) {
-    addMissing(missing, READINESS_FILE);
+    uniquePush(missing, READINESS_FILE);
     return {
       path: READINESS_FILE,
       present: false,
@@ -157,7 +157,7 @@ export async function readPacketEvents(
 ): Promise<PacketEvent[]> {
   const target = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
   if (!existsSync(target)) {
-    addMissing(missing, SESSION_LOG_FILE);
+    uniquePush(missing, SESSION_LOG_FILE);
     return [];
   }
 
@@ -226,11 +226,11 @@ export async function readCheckpoints(
   try {
     items = (await listCheckpointSummaries(projectDir, sessionId)).map(toReviewPacketCheckpoint);
   } catch {
-    addMissing(missing, SNAPSHOTS_DIR);
+    uniquePush(missing, SNAPSHOTS_DIR);
   }
 
   const ledger = await readRunSnapshotLedger(projectDir, sessionId);
-  if (!ledger) addMissing(missing, RUN_LEDGER_PATH);
+  if (!ledger) uniquePush(missing, RUN_LEDGER_PATH);
 
   const latestRunCheckpointId = ledger?.runSnapshotIds.at(-1) ?? null;
   const latestRunCheckpoint = latestRunCheckpointId
