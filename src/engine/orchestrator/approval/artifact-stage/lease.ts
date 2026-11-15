@@ -2,8 +2,9 @@ import type { BigIntStats } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { SECURE_FILE_MODE } from '../../../../lib/fs/secure.js';
+import { sha256Hex } from '../../../../utils/sha256.js';
 import { isRecord } from '../../../../utils/type-guards.js';
-import { artifactOpenFlags, writeAll, readHandleStat, digest } from './handles.js';
+import { artifactOpenFlags, writeAll, readHandleStat } from './handles.js';
 import {
   rejectDeclaredValues,
   decodeCanonicalUtf8,
@@ -151,7 +152,7 @@ function createArtifactStageLease(input: {
     rejectDeclaredValues(bytes, declaredRedactionValues);
     const text = decodeCanonicalUtf8(bytes);
     const receipt = createArtifactLeaseReceipt({ provenance, leaseIdentity, ancestry, bytes });
-    reviewed = { text, digest: digest(bytes), receipt };
+    reviewed = { text, digest: sha256Hex(bytes), receipt };
     return Object.freeze({ text, receipt });
   };
 
@@ -165,7 +166,7 @@ function createArtifactStageLease(input: {
       await validateCurrentStage();
       const bytes = await readLeasedArtifact(handle, leaseIdentity, maxBytes);
       const text = decodeCanonicalUtf8(bytes);
-      if (digest(bytes) !== reviewed.digest || text !== reviewed.text) {
+      if (sha256Hex(bytes) !== reviewed.digest || text !== reviewed.text) {
         throw artifactStageError.invalid('declared artifact changed after review');
       }
       const currentReceipt = createArtifactLeaseReceipt({

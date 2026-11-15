@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   closeSync,
   constants,
@@ -16,6 +15,7 @@ import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/fs/atomic-write/types.js';
 import { assertWritablePathConfined, pathConfinementError } from '../../../lib/fs/confinement.js';
 import { hasErrnoCode, isENOENT } from '../../../utils/errno.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { configError } from '../errors.js';
 import { loadedKey } from './transform.js';
 
@@ -55,7 +55,7 @@ export const IGNORE_RULE_ADDED = `Added ${SPLITBRIEF_DIR}/ to .gitignore`;
 
 function configRevision(rawBytes: Uint8Array, stat: BigIntStats): ConfigRevision {
   return {
-    rawSha256: createHash('sha256').update(rawBytes).digest('hex'),
+    rawSha256: sha256Hex(rawBytes),
     fileIdentity: {
       dev: stat.dev,
       ino: stat.ino,

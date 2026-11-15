@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { RunnerBillingPostureSchema } from '../../../core/runners/runner-billing.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import {
   OPENAI_COMPAT_STANDARD_FINISH_REASONS,
@@ -378,7 +378,7 @@ export function canonicalJson(value: unknown): string {
 }
 
 export function contractSha256(contract: unknown): string {
-  return createHash('sha256').update(canonicalJson(contract), 'utf8').digest('hex');
+  return sha256Hex(canonicalJson(contract));
 }
 
 export function baseUrlEnvironmentName(id: string): string {

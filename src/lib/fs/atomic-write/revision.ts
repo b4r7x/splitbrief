@@ -44,10 +44,6 @@ export function revisionsMatch(left: ConfigRevision, right: ConfigRevision): boo
   );
 }
 
-export function sha256(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
 export function assertAtomicMode(mode: number): asserts mode is typeof SECURE_FILE_MODE {
   if (mode !== SECURE_FILE_MODE) {
     throw fsError.invalidId('atomic file mode', mode.toString(8), 'must be owner-only (0600)');

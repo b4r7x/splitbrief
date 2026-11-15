@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { mkdir, open, readFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -10,6 +9,7 @@ import {
 import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../lib/fs/secure.js';
 import { assertWritablePathConfined } from '../../lib/fs/confinement.js';
 import { hasErrnoCode } from '../../utils/errno.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { SPLITBRIEF_DIR } from '../paths.js';
 import { MAX_ATTACHMENT_BYTES } from '../schemas/attachment.js';
 
@@ -19,7 +19,7 @@ export type ClipboardImageResult =
 
 async function saveImage(bytes: Buffer, signal: AbortSignal): Promise<string> {
   const root = homedir();
-  const digest = createHash('sha256').update(bytes).digest('hex');
+  const digest = sha256Hex(bytes);
   const relativePath = join(SPLITBRIEF_DIR, 'clipboard', `${digest}.png`);
   const path = join(root, relativePath);
   assertWritablePathConfined(relativePath, root);

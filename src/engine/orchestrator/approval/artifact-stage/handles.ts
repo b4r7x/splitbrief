@@ -1,15 +1,6 @@
-import { createHash } from 'node:crypto';
 import { constants, type BigIntStats } from 'node:fs';
 import { artifactStageError } from './capture.js';
 import type { ArtifactFileHandle } from './types.js';
-
-export function digest(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
-export function digestText(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
-}
 
 export async function readHandleStat(handle: ArtifactFileHandle): Promise<BigIntStats> {
   return handle.stat({ bigint: true });

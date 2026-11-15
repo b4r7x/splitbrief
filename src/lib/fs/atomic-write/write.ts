@@ -1,4 +1,5 @@
 import { constants } from 'node:fs';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { releaseAtomicLock } from './lock/acquire.js';
 import { acquireAtomicLock } from './lock/acquire.js';
 import { fsError, nameWriteTarget } from '../secure.js';
@@ -11,7 +12,6 @@ import {
   assertAtomicMode,
   assertRegularOwnerOnly,
   revisionFromStat,
-  sha256,
   readTargetRevision,
   revisionsMatch,
 } from './revision.js';
@@ -114,7 +114,7 @@ async function confinedAtomicWriteFileWithOperations(
         await operations.fsync(temporary, 'file');
         const temporaryStat = await operations.stat(temporary, 'temporary');
         assertRegularOwnerOnly(tempPath, temporaryStat);
-        replacementRevision = revisionFromStat(sha256(bytes), temporaryStat);
+        replacementRevision = revisionFromStat(sha256Hex(bytes), temporaryStat);
       } finally {
         await temporary.close();
       }

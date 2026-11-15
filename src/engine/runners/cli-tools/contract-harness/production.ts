@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { CliExecutableIdentity } from '../../../../core/discovery/detection/executable.js';
 import { INTERNAL_SKIP_DIRS } from '../../../../core/paths.js';
+import { sha256Hex } from '../../../../utils/sha256.js';
 import { isRecord } from '../../../../utils/type-guards.js';
 import type { RunnerCallResult } from '../../../calls/types.js';
 import { CandidateEvidence } from '../../../providers/candidate/evidence.js';
@@ -75,14 +75,12 @@ async function projectFingerprint(projectDir: string): Promise<string> {
       if (entry.isDirectory()) await visit(path);
       else if (entry.isFile()) {
         const bytes = await readFile(path);
-        files.push(
-          `${relative(projectDir, path)}:${createHash('sha256').update(bytes).digest('hex')}`,
-        );
+        files.push(`${relative(projectDir, path)}:${sha256Hex(bytes)}`);
       }
     }
   }
   await visit(projectDir);
-  return createHash('sha256').update(files.sort().join('\n'), 'utf8').digest('hex');
+  return sha256Hex(files.sort().join('\n'));
 }
 
 function productionFailureIsHarness(result: RunnerCallResult): boolean {

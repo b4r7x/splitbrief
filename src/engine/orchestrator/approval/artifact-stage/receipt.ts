@@ -1,6 +1,6 @@
 import { isUtf8 } from 'node:buffer';
 import type { BigIntStats } from 'node:fs';
-import { digestText, digest } from './handles.js';
+import { sha256Hex } from '../../../../utils/sha256.js';
 import { artifactStageError } from './capture.js';
 import type {
   ArtifactLeaseProvenance,
@@ -32,7 +32,7 @@ export function createArtifactLeaseReceipt(input: {
   bytes: Buffer;
 }): ArtifactLeaseReceipt {
   const { provenance, leaseIdentity, ancestry, bytes } = input;
-  const ancestryDigest = digestText(
+  const ancestryDigest = sha256Hex(
     ['splitbrief-artifact-ancestry-v1', ...ancestry.map(ancestryFingerprint)].join('\0'),
   );
   const receiptBase = {
@@ -44,12 +44,12 @@ export function createArtifactLeaseReceipt(input: {
     relativePath: provenance.relativePath,
     inodeIdentity: inodeIdentity(leaseIdentity),
     ancestryDigest,
-    sha256: digest(bytes),
+    sha256: sha256Hex(bytes),
     byteLength: bytes.byteLength,
   } satisfies Omit<ArtifactLeaseReceipt, 'leaseReceiptDigest'>;
   return Object.freeze({
     ...receiptBase,
-    leaseReceiptDigest: digestText(
+    leaseReceiptDigest: sha256Hex(
       ['splitbrief-artifact-receipt-v1', JSON.stringify(receiptBase)].join('\0'),
     ),
   });

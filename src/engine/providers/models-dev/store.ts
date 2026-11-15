@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
 import { lstat, open, readdir, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -8,6 +7,7 @@ import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { writeSecureFileAsync } from '../../../lib/fs/secure.js';
 import { deepFreeze } from '../../../utils/deep-freeze.js';
 import { error } from '../../../utils/error.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import type { ModelsDevCatalogCacheOptions, ModelsDevCatalogSnapshot } from './cache.js';
 import { parseModelsDevPayload } from './parse.js';
 import {
@@ -77,7 +77,7 @@ function normalizeSourceUrl(sourceUrl: string): string {
 }
 
 function cacheFileName(cacheKey: string): string {
-  const digest = createHash('sha256').update(cacheKey).digest('hex');
+  const digest = sha256Hex(cacheKey);
   return `${MODELS_DEV_CACHE_FILE_PREFIX}-${digest}.json`;
 }
 
