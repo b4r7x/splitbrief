@@ -1464,6 +1464,32 @@ describe('one workspace per run', () => {
     }
   });
 
+  it('gives the first implementer acquisition of a staged copy the env built at open', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-staged-open-env');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n' });
+      const handle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'staged-copy',
+        onFallback: () => {},
+      });
+
+      vi.stubEnv('LANG', 'en_US.UTF-8');
+      await handle.open({ config });
+      vi.stubEnv('LANG', 'C');
+      const implementer = await acquireDirect(handle);
+
+      expect(implementer.sandboxEnv.LANG).toBe('en_US.UTF-8');
+      await handle.dispose();
+    } finally {
+      vi.unstubAllEnvs();
+      cleanupTempDir(dir);
+    }
+  });
+
   it('a repository without commits falls back to one staged copy', {
     timeout: 60_000,
   }, async () => {
@@ -1658,6 +1684,37 @@ describe('run workspace attempts', () => {
       }
     },
   );
+
+  it('removes the env root of a resumed attempt when the isolation is disposed', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('run-workspace-resume-env');
+    try {
+      createTestGitRepo(dir, { 'src.txt': 'base\n' });
+      const first = isolation(dir, 'worktree');
+      const workspace = await acquireDirect(first);
+      writeFileSync(join(workspace.projectDir, 'src.txt'), 'partial\n');
+      await workspace.retain?.();
+      await first.dispose();
+      const next = isolation(dir, 'worktree');
+      await next.open({ config });
+      const resumed = await next.acquire({
+        role: 'implementer',
+        config,
+        resume: true,
+        brief: makeAttemptBrief(),
+      });
+      const cache = String(resumed.sandboxEnv.XDG_CACHE_HOME);
+      expect(cache).toContain('splitbrief-resume-env-');
+      expect(existsSync(cache)).toBe(true);
+
+      await next.dispose();
+
+      expect(existsSync(cache)).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
 
   it.each(['worktree', 'staged-copy'] as const)(
     'reverts only the retained cut in %s when a new attempt starts',

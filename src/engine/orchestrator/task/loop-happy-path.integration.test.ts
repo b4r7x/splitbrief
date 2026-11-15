@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -161,6 +162,37 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
 
     expect(reentry.state.taskBreakdowns?.map((b) => b.taskId)).toEqual(['T001', 'T002']);
+  });
+
+  it('saves the file a passed brief wrote into the changed-files baseline', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, task.suggestedFiles[0]), 'implementation');
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+
+    await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        bus: makeBusRecorder().bus,
+      }),
+      initialState: makeImplState([task]),
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const fingerprints = loadState({ projectDir, sessionId })?.changedFilesBaseline?.fingerprints;
+    expect(fingerprints?.['src/hello.ts']).toBe(
+      createHash('sha256').update('implementation').digest('hex'),
+    );
   });
 
   it('dispatches each task as a separate implementer call without prior task continuation text', async () => {

@@ -3,38 +3,21 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { BoundaryPark, WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
-import { raisePendingRecovery } from '../state-ops/halts.js';
-import { commitWorkflowState } from '../state-ops/commit.js';
-import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
-import { stateOpsError } from '../state-ops/errors.js';
 import { refreshAndPersistCode } from './refresh-code.js';
-import {
-  getRunnerCatalogDisplayName,
-  getRunnerDisplayName,
-  getRunnerModelName,
-} from '../../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import {
   captureChangedFilesBaseline,
   deserializeChangedFilesBaseline,
-  serializeChangedFilesBaseline,
   unreadableChangedFiles,
   withActiveTaskSnapshot,
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
-import { configForProfile, createTaskImplementer } from '../context-routing/profile.js';
 import { publishWarning } from '../publish/notice.js';
 import { publishTasksPlanned } from '../publish/task.js';
-import { publishError } from '../publish/notice.js';
 import { checkDependencyGate } from './gates/dependency.js';
-import { selectRoutingProfile } from '../context-routing/select.js';
-import { absorbAcceptedFiles } from './post-task.js';
-import { nowIso } from '../../../utils/format/time.js';
-import { toErrorMessage } from '../../../utils/format/errors.js';
-import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/brief-blocked.js';
+import { setupTaskImplementer } from './implementer-setup.js';
+import { commitOnHead, finishTask, withBaseline } from './post-task.js';
 import { runScheduledReview } from '../review/loop/scheduled.js';
-import { recordCheckoutRunSnapshot } from '../run/snapshots.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -50,46 +33,12 @@ export type TaskLoopResult = { state: WorkflowState } & (
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopResult> {
   const { wctx, setTrackedState, setCurrentTask } = opts;
-  const { projectDir, sessionId, config } = wctx;
+  const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
   let state = opts.initialState;
   // Seed from persisted breakdowns so re-entry (resume / rewind / detached retry)
   // keeps per-task cost identity for already-completed tasks (F-454).
   const taskBreakdowns: TaskTokenUsage[] = [...(state.taskBreakdowns ?? [])];
-
-  function syncBaselineIntoState(nextState: WorkflowState = state): WorkflowState {
-    state = {
-      ...nextState,
-      changedFilesBaseline: serializeChangedFilesBaseline(changedFilesBaseline),
-    };
-    return state;
-  }
-
-  // The loop holds its state across awaits; a head saved meanwhile (a queued message) wins
-  // and the loop's own fields go on top of it.
-  function commitTrackedState(
-    current: WorkflowState,
-    apply: (head: WorkflowState) => WorkflowState,
-  ): WorkflowState {
-    const ref = { projectDir, sessionId };
-    const head = rebaseOnPersistedWorkflowState(ref, current, { keepUnsaved: true });
-    const committed = commitWorkflowState({ ref, expected: head, next: apply(head) });
-    if (committed.kind === 'conflict') throw stateOpsError.changedOnDisk(sessionId);
-    if (committed.kind === 'durability-uncertain') {
-      throw stateOpsError.durabilityUncertain(sessionId);
-    }
-    state = committed.state;
-    setTrackedState(state);
-    return state;
-  }
-
-  function persistTaskBreakdowns(): void {
-    commitTrackedState(state, (head) =>
-      syncBaselineIntoState({ ...head, taskBreakdowns: [...taskBreakdowns] }),
-    );
-  }
-
-  const resolvedProfiles = resolveImplementerProfiles(config);
-  const singleImplementerMode = config.implementerProfiles === undefined;
+  const resolvedProfiles = resolveImplementerProfiles(wctx.config);
   if (state.pendingRecovery) {
     publishWarning({
       bus: wctx.bus,
@@ -145,7 +94,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     state = depGate.state;
     if (depGate.stopped) return { state, status: 'stopped' };
 
-    syncBaselineIntoState();
+    state = withBaseline(state, changedFilesBaseline);
     let refreshedTask = task;
     ({ task: refreshedTask, state } = await refreshAndPersistCode(
       task,
@@ -156,78 +105,24 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     ));
     setTrackedState(state);
 
-    const routing = await selectRoutingProfile({
+    const setup = await setupTaskImplementer({
       wctx,
       state,
       setTrackedState,
       task: refreshedTask,
-      resolvedProfiles: resolvedProfiles.profiles,
-      getRunnerModelName,
+      profiles: resolvedProfiles.profiles,
     });
-    state = routing.state;
-    if (!routing.ok) return { state, status: 'stopped' };
-    const { selectedProfile, selectedModel, routingDecision } = routing;
-    const selectedTaskConfig = configForProfile(config, selectedProfile);
-
-    const taskImplementer = await createTaskImplementer({
-      wctx,
-      profile: selectedProfile,
-      singleImplementerMode,
-    });
-    let isImplementerAvailable = false;
-    let availabilityError: string | undefined;
-    try {
-      isImplementerAvailable = await taskImplementer.isAvailable();
-    } catch (err) {
-      availabilityError = toErrorMessage(err);
-    }
-    // A stop during the gate is not a verdict on the implementer.
-    if (wctx.signal?.aborted) return { state, status: 'stopped' };
-    if (!isImplementerAvailable) {
-      const tool = getRunnerCatalogDisplayName(selectedProfile.config);
-      const reason =
-        availabilityError ??
-        taskImplementer.unavailabilityReason?.() ??
-        `Selected implementer profile ${selectedProfile.name} (${tool}) is unavailable. Check runner installation, API credentials, or endpoint reachability.`;
-      publishError({ bus: wctx.bus, phase: state.phase, message: reason });
-      state = raisePendingRecovery(
-        wctx,
-        state,
-        buildImplementerUnavailableRecoveryIssue({
-          task: refreshedTask,
-          phase: state.phase,
-          selectedImplementerProfile: selectedProfile.name,
-          tool,
-          ...(selectedModel !== undefined && { model: selectedModel }),
-          availabilityReason: reason,
-          createdAt: nowIso(),
-        }),
-        setTrackedState,
-      );
-      return { state, status: 'stopped' };
-    }
-    const { implementerModel: _previousImplementerModel, ...stateWithoutImplementerModel } = state;
-    const taskState: WorkflowState = {
-      ...stateWithoutImplementerModel,
-      implementerTool: getRunnerDisplayName(selectedProfile.config),
-      ...(selectedModel !== undefined && { implementerModel: selectedModel }),
-    };
-    const taskWorkflowContext: WorkflowContext = {
-      ...wctx,
-      config: selectedTaskConfig,
-      implementer: taskImplementer,
-      implementerProfile: selectedProfile.name,
-      routingDecision,
-    };
+    state = setup.state;
+    if (setup.status === 'stopped') return { state, status: 'stopped' };
 
     const taskAcceptedFiles = new Set<string>();
     state = await runSingleTask({
-      wctx: taskWorkflowContext,
+      wctx: setup.wctx,
       task: refreshedTask,
       taskCodeRefreshed: true,
       index: i,
       totalTasks: state.tasks.length,
-      state: taskState,
+      state,
       taskBreakdowns,
       setTrackedState,
       setCurrentTask,
@@ -235,57 +130,32 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
         // On disk, not only tracked: a crash or a park between here and the brief's end
         // reads this snapshot back, and a rebase from the persisted head would lose it.
         changedFilesBaseline = withActiveTaskSnapshot(changedFilesBaseline, taskStartSnapshot);
-        return commitTrackedState(snapshotState, syncBaselineIntoState);
+        return commitOnHead(
+          ref,
+          snapshotState,
+          (head) => withBaseline(head, changedFilesBaseline),
+          setTrackedState,
+        );
       },
       onTaskAcceptedFiles: (files) => {
         for (const file of files) taskAcceptedFiles.add(file);
       },
     });
-    const activeTaskSnapshot = state.changedFilesBaseline?.activeTaskSnapshot;
-    if (activeTaskSnapshot !== undefined) {
-      changedFilesBaseline = withActiveTaskSnapshot(changedFilesBaseline, activeTaskSnapshot);
-    }
-    const completedTask = state.tasks[i];
-    changedFilesBaseline = await absorbAcceptedFiles({
-      projectDir,
-      sessionId,
+    const finished = await finishTask({
+      wctx,
+      state,
+      setTrackedState,
       baseline: changedFilesBaseline,
-      completedTask,
+      taskIndex: i,
       refreshedTask,
       taskAcceptedFiles,
+      taskBreakdowns,
     });
-    // A stop at this boundary parks from the persisted head, which would otherwise lack this
-    // brief's files and usage.
-    persistTaskBreakdowns();
-    await recordCheckoutRunSnapshot({ projectDir, sessionId, bus: wctx.bus, state });
-
-    if (wctx.signal?.aborted || state.currentTaskIndex <= i) {
+    state = finished.state;
+    changedFilesBaseline = finished.baseline;
+    if (finished.exit !== undefined) {
       setCurrentTask(undefined);
-      return { state, status: 'stopped' };
-    }
-
-    // The configured cadence: with workflow.review 'task' every brief that passed its
-    // validation is reviewed before the loop moves on; a failing review's fix tasks are
-    // appended and the re-read bound runs them.
-    if (resolveReviewCadence(config) === 'task') {
-      const scheduled = await runScheduledReview({
-        wctx,
-        state,
-        setTrackedState,
-        callbacks: wctx.callbacks,
-        ...(completedTask !== undefined && { afterTaskId: completedTask.id }),
-      });
-      state = scheduled.state;
-      if (scheduled.status === 'stopped') {
-        setCurrentTask(undefined);
-        return { state, status: 'stopped' };
-      }
-    }
-
-    const park = wctx.sinks.consumeBoundaryPause?.();
-    if (park !== undefined) {
-      setCurrentTask(undefined);
-      return { state, status: 'paused', park };
+      return { state, ...finished.exit };
     }
   }
   setCurrentTask(undefined);

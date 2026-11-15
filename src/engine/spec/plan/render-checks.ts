@@ -6,13 +6,11 @@ import {
   REVIEW_SEAT_IMAGE_FIX,
 } from '../../../core/runners/capabilities.js';
 import type { Config } from '../../../core/schemas/config.js';
+import { readPackageScripts } from '../../../core/readiness/repo-posture.js';
 import type { TaskSpec, PlanProposal } from '../../../core/schemas/plan.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { pluralize } from '../../../utils/pluralize.js';
-import {
-  readPackageScripts,
-  missingNpmScript,
-} from '../../orchestrator/validation/plan-policy/npm-scripts.js';
+import { missingNpmScript } from '../../orchestrator/validation/plan-policy/npm-scripts.js';
 import { commandTextRefusal } from '../../orchestrator/validation/plan-policy/command.js';
 import { resolveSeatImageFact } from '../../providers/model/resolution.js';
 import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';

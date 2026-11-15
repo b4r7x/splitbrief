@@ -15,13 +15,10 @@ import type { ReviewRecord } from '../../../../core/schemas/workflow/review-reco
 import { type WorkflowState, fixCyclesOf } from '../../../../core/schemas/workflow/state.js';
 import { sameFailure } from '../../../../core/state/progress.js';
 import { error } from '../../../../utils/error.js';
-import { consultReplyAnswer } from '../../consult/ask-user.js';
-import { askOperator } from '../../planning/call-loop.js';
 import { transitionAndSave } from '../../state-ops/transition.js';
-import { rebaseOnPersistedWorkflowState } from '../../state-ops/head.js';
-import { recordUserMessage } from '../../transcript/user-message.js';
 import type { WorkflowContext, OrchestratorCallbacks } from '../../types.js';
 import { applyTriage, startFixCycle } from '../triage.js';
+import { followReviewQuestion } from './ask.js';
 import { haltFailedReview } from './halts.js';
 import { askPlannerOnStuckReview } from './stuck.js';
 
@@ -119,55 +116,17 @@ export async function followReviewAnswer(args: {
   const inputs = state.pendingTriage?.inputs ?? [];
   const redInputs = blockingRedInputs(inputs, fixWork);
   if (fixWork.ask !== null) {
-    state = transitionAndSave(wctx, state, {
-      type: 'QUEUE_TRIAGE',
-      inputs: [...inputs],
-      question: fixWork.ask,
+    return followReviewQuestion({
+      wctx,
+      state,
+      setTrackedState,
+      callbacks,
+      candidate: args.candidate,
+      ask: fixWork.ask,
+      inputs,
+      blocking,
+      redInputs,
     });
-    setTrackedState(state);
-    const question = fixWork.ask.question;
-    const asking = await askOperator({ ...wctx, callbacks }, state, {
-      call: 'plan',
-      text: question,
-      questions: [{ id: 'review-ask', type: 'input', text: question }],
-      answers: [],
-      answered: false,
-    });
-    state = asking.state;
-    const reply = asking.reply;
-    if (reply === undefined) {
-      state = await haltFailedReview({
-        wctx,
-        state,
-        setTrackedState,
-        candidate: args.candidate,
-        blocking,
-        redInputs,
-        question,
-      });
-      return { state, next: 'stop' };
-    }
-    const answered = consultReplyAnswer({ id: 'review-ask', type: 'input', text: question }, reply);
-    state = transitionAndSave(wctx, state, {
-      type: 'QUEUE_TRIAGE',
-      inputs: [
-        ...inputs,
-        {
-          id: `A${inputs.length + 1}`,
-          kind: 'answer',
-          source: 'user',
-          text: answered.message.text,
-          file: null,
-        },
-      ],
-    });
-    recordUserMessage({ ...wctx, phase: state.phase }, answered.message, {
-      qa: answered.qa,
-      answerIndex: (state.userAnswers?.length ?? 0) - 1,
-    });
-    state = rebaseOnPersistedWorkflowState(wctx, state);
-    setTrackedState(state);
-    return { state, next: 'review' };
   }
   // A round made no progress when the answer fixes nothing, also when the review failed
   // with no blocker (a criterion no check verified), or when the fix cycle it judges left the same

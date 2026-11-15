@@ -1,7 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative } from 'node:path';
+import { basename, dirname, relative } from 'node:path';
 import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -22,12 +20,7 @@ import {
 import { warnError } from '../../../lib/warn.js';
 import { addWorkspaceRoot, toErrorMessage } from '../../../utils/format/errors.js';
 import { countNoun } from '../../../utils/pluralize.js';
-import {
-  createRunnerSandboxEnv,
-  pruneSandboxNpmCache,
-  runnerSandboxIdentity,
-  withPrependedPathDirectory,
-} from '../../runners/sandbox/env.js';
+import { pruneSandboxNpmCache } from '../../runners/sandbox/env.js';
 import { clearBridgedCliState } from '../../runners/sandbox/state/bridge.js';
 import { removeSandboxTempDirs } from '../../runners/sandbox/state/paths.js';
 import { removeWorktree } from './worktree/remove.js';
@@ -42,7 +35,6 @@ import { briefKeptFiles } from '../kept-work.js';
 import type {
   AttemptBrief,
   AttemptWorkspace,
-  IsolationRole,
   IsolatedWorkspace,
   RunIsolation,
   RunWorkspace,
@@ -50,6 +42,7 @@ import type {
 import { removeNodeModulesExclude } from './worktree/node-modules.js';
 import { ensureIsolationWorktree } from './worktree/ensure.js';
 import { resolveConfinedIsolationWorktreePath } from './path.js';
+import { createWorkspaceSandboxEnvs } from './sandbox-env.js';
 import { prepareWorktreeAcquisition } from './acquisition.js';
 import { captureWorkspaceSnapshot, restoreWorkspaceFiles } from './entry-snapshot.js';
 import {
@@ -62,8 +55,6 @@ import {
   workspaceDirectoryIdentity,
   workspaceOwner,
 } from './retention.js';
-
-const NODE_MODULES = 'node_modules';
 
 export function createRunIsolation(opts: {
   projectDir: string;
@@ -100,10 +91,7 @@ export function createRunIsolation(opts: {
   let pendingCleanup: Promise<void> = Promise.resolve();
   // A discard that failed left an attempt's files in the workspace; every later read refuses them.
   let cleanupFailure: Error | undefined;
-  // createRunnerSandboxEnv re-bridges the runner's own host CLI state on every
-  // call, so an env is built once per runner and reused for the rest of the run.
-  const envMemo = new Map<string, Promise<NodeJS.ProcessEnv>>();
-  const resumedSandboxRoots: string[] = [];
+  const sandboxEnvs = createWorkspaceSandboxEnvs();
   // Disposal ends public acquisition authority: retain and acquire are refused
   // from here on, and public cleanup must not touch canonical metadata again.
   let disposed = false;
@@ -180,55 +168,6 @@ export function createRunIsolation(opts: {
       })();
     }
     return worktreePromise;
-  }
-
-  function sandboxEnvFor(
-    dir: string,
-    role: IsolationRole,
-    config: Config,
-  ): Promise<NodeJS.ProcessEnv> {
-    const runner = config[role];
-    // The role reaches createRunnerSandboxEnv so each one bridges into its own
-    // <worktree>/.splitbrief/sandbox/<role>: a role's acquisition clears only
-    // what it bridged, never the snapshot the other role's memoised env is still
-    // pointed at. envMemo is keyed on the runner too, so a task profile
-    // overriding config.implementer gets its own rather than the first runner's
-    // auth-key allowlist and bridged tool.
-    const key = `${dir}\u0000${role}\u0000${runnerSandboxIdentity(runner)}`;
-    let env = envMemo.get(key);
-    if (env === undefined) {
-      env = createRunnerSandboxEnv(dir, runner, role);
-      envMemo.set(key, env);
-    }
-    return env;
-  }
-
-  async function workspaceSandboxEnv(input: {
-    dir: string;
-    role: IsolationRole;
-    config: Config;
-    sandboxDir?: string | undefined;
-  }): Promise<NodeJS.ProcessEnv> {
-    const { dir, role, config, sandboxDir = dir } = input;
-    const env = await sandboxEnvFor(sandboxDir, role, config);
-    let binDir: string;
-    try {
-      binDir = await realpath(join(dir, NODE_MODULES, '.bin'));
-    } catch {
-      return env;
-    }
-    return withPrependedPathDirectory(env, binDir);
-  }
-
-  async function resumedSandboxEnv(
-    dir: string,
-    role: IsolationRole,
-    config: Config,
-  ): Promise<NodeJS.ProcessEnv> {
-    // Re-entry must never refresh credentials through a stopped workspace path.
-    const root = await mkdtemp(join(tmpdir(), 'splitbrief-resume-env-'));
-    resumedSandboxRoots.push(root);
-    return workspaceSandboxEnv({ dir, role, config, sandboxDir: root });
   }
 
   async function assertWorkspaceIdentity(dir: string): Promise<void> {
@@ -328,10 +267,7 @@ export function createRunIsolation(opts: {
       });
       dir = staged.projectDir;
       initialTargetBaseline = staged.targetBaseline;
-      envMemo.set(
-        `${dir}\u0000implementer\u0000${runnerSandboxIdentity(config.implementer)}`,
-        Promise.resolve(staged.sandboxEnv),
-      );
+      sandboxEnvs.seedImplementerEnv(dir, config, staged.sandboxEnv);
       const rootDirectory = await workspaceDirectoryIdentity(root);
       if (rootDirectory === null) throw retentionError.unavailable();
       location = { kind: 'staged-copy', leaf, rootDirectory };
@@ -468,8 +404,8 @@ export function createRunIsolation(opts: {
       ? retained.snapshot
       : await captureWorkspaceSnapshot(dir, { projectDir, sessionId });
     const sandboxEnv = resumed
-      ? await resumedSandboxEnv(dir, input.role, input.config)
-      : await workspaceSandboxEnv({ dir, role: input.role, config: input.config });
+      ? await sandboxEnvs.resumedEnv(dir, input.role, input.config)
+      : await sandboxEnvs.workspaceEnv(dir, input.role, input.config);
     await assertAttemptDir(dir);
     if (disposed) throw retentionError.unavailable();
     let preserved = false;
@@ -555,11 +491,7 @@ export function createRunIsolation(opts: {
     } finally {
       removeWorkspaceRoot?.();
       removeWorkspaceRoot = undefined;
-      for (const root of resumedSandboxRoots) {
-        await rm(root, { recursive: true, force: true });
-        removeSandboxTempDirs(root);
-      }
-      resumedSandboxRoots.length = 0;
+      await sandboxEnvs.removeResumedRoots();
       if (nodeModulesExcludeFile !== null)
         await removeNodeModulesExclude(nodeModulesExcludeFile, sessionId);
     }
