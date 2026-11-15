@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RUNNER_CALL_ARTIFACT_MAX_ITEMS,
   RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
@@ -664,7 +665,7 @@ describe('createRunnerCallRecorder', () => {
       recorder.toolUseDone({ toolUse: { id: `tool-${index}`, name: 'Read', input: {} } });
     }
 
-    const result = recorder.finishIncomplete({ endedAt: 20 });
+    const result = recorder.finalResult();
 
     expect(result.status).toBe('truncated');
     expect(result.error?.code).toBe('runner_call_tool_use_stop');
@@ -968,6 +969,24 @@ describe('runner-call output limits', () => {
       reach: (recorder) => {
         for (let index = 0; index <= RUNNER_CALL_WARNING_MAX_ITEMS; index += 1) {
           recorder.warning({ warning: { code: `provider_${index}`, message: 'slow stream' } });
+        }
+      },
+    },
+    {
+      name: 'the artifact count',
+      code: 'runner_call_artifact_count_limit',
+      reach: (recorder) => {
+        for (let index = 0; index <= RUNNER_CALL_ARTIFACT_MAX_ITEMS; index += 1) {
+          recorder.artifact({
+            artifact: {
+              id: `artifact-${index}`,
+              source: 'stream',
+              name: 'notes.txt',
+              path: null,
+              mimeType: null,
+              text: null,
+            },
+          });
         }
       },
     },

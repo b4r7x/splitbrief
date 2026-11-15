@@ -56,7 +56,7 @@ function stoppedCall(): RunnerCallResult {
       toolUse: { id: `tool-${index}`, name: 'read_file', input: { path: `file-${index}.ts` } },
     });
   }
-  return recorder.finishIncomplete({ endedAt: 20 });
+  return recorder.finalResult();
 }
 
 describe('implementer tool-use stop', () => {
