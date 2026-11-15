@@ -84,7 +84,7 @@ export async function continueLadder(
   opts: RetryAndRecordOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, taskStartSnapshot } = opts;
-  const retry = await escalateAndRecord(opts, opts.state);
+  const retry = await escalateAndRecord(opts);
   const recovery = retry.state.pendingRecovery;
   if (
     !retry.completed &&
@@ -103,10 +103,9 @@ export async function continueLadder(
 /** Runs the ladder from the counted first attempt and records how the brief ended. */
 async function escalateAndRecord(
   opts: RetryAndRecordOptions,
-  counted: WorkflowState,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, task, initialError, tokensBefore, taskBreakdowns, setTrackedState } = opts;
-  let state = counted;
+  let state = opts.state;
   let result: Awaited<ReturnType<typeof handleRetryAndEscalation>>['result'];
   let asked: ConsultQuestion | undefined;
   try {
@@ -128,7 +127,6 @@ async function escalateAndRecord(
   } catch (err) {
     const nextState = await handleTaskPlannerCallFailure({
       ...opts,
-      state,
       err,
       label: retryFailureLabel(err, task.id),
       consult: asked,
