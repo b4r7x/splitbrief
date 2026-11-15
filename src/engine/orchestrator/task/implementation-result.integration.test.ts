@@ -19,7 +19,7 @@ import type { ImplementerResult } from '../../implementers/types.js';
 import type { RunImplementationResult } from './run-implementation.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { extractedCodeApprovalRaceError } from '../../implementers/pipeline/extracted-code.js';
-import { handleFailedImplementation } from './implementation-failure.js';
+import { handleFailedImplementation } from './implementation-result.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';

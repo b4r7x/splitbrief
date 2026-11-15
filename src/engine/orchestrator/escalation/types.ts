@@ -3,6 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
+import type { ImplementerReport } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer, ImplementerOptions } from '../../implementers/types.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
@@ -79,6 +80,18 @@ export type RetryStepOutcome = {
    * verify runs the brief gate against it.
    */
   attemptSnapshot?: ChangedFilesSnapshot | undefined;
+};
+
+/** The direct writer's blocked report: the attempt stopped asking for a decision. */
+export type BlockedReport = Extract<ImplementerReport, { status: 'blocked' }>;
+
+/**
+ * A retry outcome, with the blocked report an attempt handed back when it
+ * stopped to ask, or the user's answer to the brief gate's question.
+ */
+export type RetryStepResult = RetryStepOutcome & {
+  blocked?: BlockedReport | undefined;
+  answer?: string | undefined;
 };
 
 export type SuccessMethod = Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;

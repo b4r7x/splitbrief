@@ -10,6 +10,7 @@ import {
   openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
 import {
@@ -865,4 +866,62 @@ describe('runSingleTask — a fix brief answers only its own failures', () => {
 
     expect(state.tasks[0]?.status).toBe('done');
   });
+});
+
+describe('runSingleTask — a brief the consult rewrites after its first attempt failed', () => {
+  it.each(['returned a failure', 'threw'] as const)(
+    'runs the rewritten brief in the same dispatch when the first call %s',
+    async (ending) => {
+      const { projectDir, sessionId } = setupProject();
+      const task = makeTask({ id: 'T001', title: 'Original brief', criteria: [], checks: [] });
+      const implement = vi.fn(async (opts: ImplementerOptions) => {
+        if (opts.task.title === 'Original brief') {
+          if (ending === 'threw') throw new Error('socket hang up');
+          return { success: false, output: '', error: 'The build broke.' };
+        }
+        return { success: true, output: 'done' };
+      });
+      const wctx = makeWorkflowContext({
+        projectDir,
+        sessionId,
+        implementer: makeImplementer({ implement, retry: vi.fn() }),
+        planner: makePlanner({
+          typedCall: consultCallAnswering(() => ({
+            answer: {
+              action: 'rewrite-task',
+              diagnosis: 'The brief names the wrong file.',
+              task: makeTaskSpec({
+                id: 'T001',
+                title: 'Rewritten brief',
+                criteria: [],
+                checks: [],
+              }),
+            },
+          })),
+        }),
+        config: makeConfig({ validation: { endChecks: false, testCommand: 'noop' } }),
+      });
+
+      const result = await runSingleTask({
+        wctx,
+        task,
+        index: 0,
+        totalTasks: 1,
+        state: implementingState([task]),
+        taskBreakdowns: [],
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
+
+      expect(implement.mock.calls.map(([opts]) => opts.task.title)).toEqual([
+        'Original brief',
+        'Rewritten brief',
+      ]);
+      expect(result.tasks[0]).toMatchObject({
+        title: 'Rewritten brief',
+        revision: 2,
+        status: 'done',
+      });
+    },
+  );
 });

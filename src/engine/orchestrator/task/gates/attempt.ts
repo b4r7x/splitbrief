@@ -1,6 +1,9 @@
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { Task } from '../../../../core/schemas/task.js';
+import { getRunnerDisplayName } from '../../../../core/config/accessors/runner-config.js';
+import { resolveReviewCadence } from '../../../../core/config/runtime/resolve.js';
 import { replacedFilesSavedIn } from '../../../../core/runtime/commands/messages.js';
+import { nowIso } from '../../../../utils/format/time.js';
 import {
   gateChangedFiles,
   type GateChangedFilesDecision,
@@ -12,7 +15,10 @@ import type { WorkflowContext } from '../../types.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { GateDecision } from '../../approval/types.js';
 import { publishError } from '../../publish/notice.js';
-import { persistRejectionEvidence } from '../../evidence/persistence.js';
+import { persistApprovalEvidence, persistRejectionEvidence } from '../../evidence/persistence.js';
+import { buildApprovalDeniedRecoveryIssue } from '../../recovery/builders/approval.js';
+import { parkStoppedRun, raisePendingRecovery } from '../../state-ops/halts.js';
+import { resolveDependsOnFiles } from '../resolve-deps.js';
 
 export type GateDenial = {
   decision: GateChangedFilesDenial;
@@ -107,6 +113,70 @@ export async function gateAttemptChanges(opts: {
   }
   if (filesNeedingApproval.length > 0) onApproved(decision);
   return { outcome: 'allow', approvedFiles, ...(denial === undefined ? {} : { denial }) };
+}
+
+/**
+ * The change gate of a brief's first attempt. The writes that need approval wait for it, and a
+ * denial is recorded. A denial that leaves no write halts the brief, and a cancelled confirmation
+ * parks the run as a stop does. Returns the state the brief stops at, or nothing when it goes on.
+ */
+export async function gateTaskAttempt(opts: {
+  wctx: WorkflowContext;
+  task: Task;
+  state: WorkflowState;
+  workspace: AttemptWorkspace;
+  preApprovedFiles: string[];
+  setTrackedState: (s: WorkflowState) => void;
+}): Promise<WorkflowState | undefined> {
+  const { wctx, task, state, setTrackedState } = opts;
+  const gate = await gateAttemptChanges({
+    wctx,
+    task,
+    phase: state.phase,
+    workspace: opts.workspace,
+    preApprovedFiles: opts.preApprovedFiles,
+    dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
+    onApproved: (decision) => persistApprovalEvidence({ wctx, state, decision, taskId: task.id }),
+  });
+  if (gate.outcome === 'aborted') return state;
+  if (gate.outcome === 'cancelled') {
+    const parked = await parkStoppedRun(
+      { projectDir: wctx.projectDir, sessionId: wctx.sessionId, bus: wctx.bus },
+      state,
+      resolveReviewCadence(wctx.config) === 'none',
+    );
+    setTrackedState(parked);
+    return parked;
+  }
+  if (gate.denial !== undefined) {
+    recordApprovalDenial({
+      wctx,
+      state,
+      task,
+      denials: gate.denial.decision.denials,
+      message: denialMessage({
+        subject: 'Task',
+        denial: gate.denial,
+        blocked: gate.outcome === 'denied',
+      }),
+      briefKept: gate.denial.briefKept,
+    });
+  }
+  if (gate.outcome === 'denied') {
+    const { decision } = gate.denial;
+    const issue = buildApprovalDeniedRecoveryIssue({
+      task,
+      phase: state.phase,
+      deniedFiles: decision.deniedFiles,
+      ...(decision.reason !== undefined && { denialReason: decision.reason }),
+      tool: getRunnerDisplayName(wctx.config.implementer),
+      createdAt: nowIso(),
+    });
+    const halted = raisePendingRecovery(wctx, state, issue);
+    setTrackedState(halted);
+    return halted;
+  }
+  return undefined;
 }
 
 export function recordApprovalDenial(opts: {

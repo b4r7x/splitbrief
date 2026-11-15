@@ -314,6 +314,7 @@ describe('handleRetryAndEscalation', () => {
     expect(retry.mock.calls[0]?.[0]).toMatchObject({ kind: 'consult' });
     expect(result.completed).toBe(false);
     expect(state.pendingRecovery).toMatchObject({ reason: 'runner-timeout-repeated' });
+    expect(state.pendingRecovery?.details).toContain('Attempts: 1');
   });
 
   it('delivers a held correction before any consult and completes with method=local', async () => {

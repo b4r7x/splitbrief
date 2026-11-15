@@ -3,37 +3,26 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { ConsultQuestion, ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
-import type { EngineEvent } from '../../events/types.js';
 import { isAbortedOutcome, recordNoProgressCut, runHeldCorrection } from './held-correction.js';
-import { runRetryStep, type BlockedReport } from './step.js';
+import { runRetryStep } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { publishWarning } from '../publish/notice.js';
 import { publishWarningFromError } from '../publish/notice.js';
-import { publishError } from '../publish/notice.js';
-import { raiseBriefHalt, raisePendingRecovery } from '../state-ops/halts.js';
+import { raisePendingRecovery } from '../state-ops/halts.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
-import { revertedDir } from '../../../core/paths.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { haltAttempts } from '../recovery/builders/details.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
-import { recoveryBuilderForRunnerOutcome } from '../recovery/builders/runner-outcome.js';
-import { runnerDefectRow, runnerHaltRow } from '../recovery/builders/runner-defect.js';
-import { buildSeatDownIssue } from '../recovery/builders/seat-down.js';
-import {
-  classifySeatFailure,
-  type SeatFailureClassification,
-} from '../../runners/seat-failure/classify.js';
-import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { loadSeatSwapContext } from '../recovery/seat/swap-context.js';
-import { runPreHooks } from '../../hooks/run-pre.js';
+import { buildSeatHalt, raiseSeatHalt } from './halts.js';
+import { preEscalationHalt } from './pre-hook.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
 import { consultAttemptError, guidanceInstructions } from './consult-guidance.js';
 import type {
+  BlockedReport,
   EscalationContext,
   RetryAttemptFailure,
   RetryResult,
@@ -70,133 +59,29 @@ function isUnfinishedCall(failure: RetryAttemptFailure | undefined): boolean {
 }
 
 /**
- * A seat that cannot work halts the ladder at once: a signed-out or
- * quota-exhausted runner reproduces the same failure on every further attempt,
- * and the next rung would spend a consult on a brief no retry can land.
- * The one seat-down halt is raised on the attempt that failed — no retry, no
- * consult — and carries the fallback the seat can move to automatically.
+ * A seat that cannot work and a runner defect halt the ladder at once: the same failure comes
+ * back on every further attempt, and the next rung would spend a consult on a brief no retry can
+ * land.
  */
-async function seatDownHalt(
-  ctx: EscalationContext,
-  task: Task,
-  stepOutcome: RetryStepOutcome,
-): Promise<{ state: WorkflowState; result: RetryResult } | null> {
-  const failure = stepOutcome.lastFailure;
-  if (failure?.outcome !== 'unauthenticated' && failure?.outcome !== 'usage-limit') return null;
-  const seatSwap = await loadSeatSwapContext({
-    projectDir: ctx.projectDir,
-    modelCache: ctx.modelCache,
-    signal: ctx.signal,
-    seat: 'build',
-    runner: failure.runner,
-    config: ctx.config,
-    implementerProfile: ctx.implementerProfile,
-  });
-  const classification: SeatFailureClassification =
-    failure.outcome === 'unauthenticated'
-      ? { class: 'account', cause: 'auth' }
-      : classifySeatFailure({
-          message: stepOutcome.lastError,
-          outcome: 'usage-limit',
-          source: 'result-error',
-        });
-  const issue = buildSeatDownIssue({
-    task,
-    phase: stepOutcome.state.phase,
-    seat: 'build',
-    runner: failure.runner,
-    classification,
-    words: stepOutcome.lastError,
-    ...haltAttempts(stepOutcome.state, task, { booked: false }),
-    ...(ctx.implementerProfile !== undefined && {
-      selectedImplementerProfile: ctx.implementerProfile,
-    }),
-    ...(seatSwap !== undefined && { seatSwap }),
-    seatSwitches: stepOutcome.state.seatSwitches,
-    createdAt: nowIso(),
-  });
-  publishError({
-    bus: ctx.bus,
-    phase: stepOutcome.state.phase,
-    message: runnerHaltRow(
-      issue,
-      getRunnerCatalogDisplayName(failure.runner),
-      stepOutcome.lastError,
-    ),
-    ...(issue.resetAt !== undefined && { resetAt: issue.resetAt }),
-  });
-  return {
-    state: raiseBriefHalt(ctx, stepOutcome.state, { taskId: task.id, issue }),
-    result: failedRetry(stepOutcome.attempts),
-  };
-}
-
-/**
- * An outcome the recovery builders recognise as a runner defect halts the
- * ladder for the same reason the seat-down halt does — the next rung would
- * pay a consult to hint around the same defect.
- */
-async function runnerDefectHalt(
+async function runnerHalt(
   ctx: EscalationContext,
   task: Task,
   stepOutcome: RetryStepOutcome,
 ): Promise<{ state: WorkflowState; result: RetryResult } | null> {
   const failure = stepOutcome.lastFailure;
   if (failure === undefined) return null;
-  const build = recoveryBuilderForRunnerOutcome(failure.outcome);
-  if (build === undefined) return null;
-  const seatSwap = await loadSeatSwapContext({
-    projectDir: ctx.projectDir,
-    modelCache: ctx.modelCache,
-    signal: ctx.signal,
-    seat: 'build',
-    runner: failure.runner,
-    config: ctx.config,
-    implementerProfile: ctx.implementerProfile,
-    refusal: stepOutcome.lastError,
-  });
-  const issue = build({
-    task,
-    phase: stepOutcome.state.phase,
+  const halt = await buildSeatHalt(ctx, stepOutcome.state, task, {
+    outcome: failure.outcome,
     runner: failure.runner,
     toolMessage: stepOutcome.lastError,
     // The ladder books a timeout before it names the second one in a row a defect.
-    ...haltAttempts(stepOutcome.state, task, {
-      booked: failure.outcome === 'runner-timeout-repeated',
-    }),
-    ...(ctx.implementerProfile !== undefined && {
-      selectedImplementerProfile: ctx.implementerProfile,
-    }),
-    ...(seatSwap !== undefined && { seatSwap }),
-    seatSwitches: stepOutcome.state.seatSwitches,
-    ...(stepOutcome.state.workspace?.kind === 'checkout' && {
-      inPlace: { revertedDir: revertedDir(ctx) },
-    }),
-    createdAt: nowIso(),
+    booked: failure.outcome === 'runner-timeout-repeated',
   });
-  publishError({
-    bus: ctx.bus,
-    phase: stepOutcome.state.phase,
-    message: runnerDefectRow(
-      issue,
-      getRunnerCatalogDisplayName(failure.runner),
-      stepOutcome.lastError,
-    ),
-  });
+  if (halt === undefined) return null;
   return {
-    state: raiseBriefHalt(ctx, stepOutcome.state, { taskId: task.id, issue }),
+    state: raiseSeatHalt(ctx, stepOutcome.state, task, halt),
     result: failedRetry(stepOutcome.attempts),
   };
-}
-
-async function runnerHalt(
-  ctx: EscalationContext,
-  task: Task,
-  stepOutcome: RetryStepOutcome,
-): Promise<{ state: WorkflowState; result: RetryResult } | null> {
-  const seatDown = await seatDownHalt(ctx, task, stepOutcome);
-  if (seatDown) return seatDown;
-  return runnerDefectHalt(ctx, task, stepOutcome);
 }
 
 /** The files this attempt changed since its snapshot; a diff the consult cannot render is empty. */
@@ -292,42 +177,8 @@ export async function handleRetryAndEscalation(
   if (state.phase === 'implementing') state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
   state = transitionAndSave(ctx, state, { type: 'VALIDATION_FAIL' });
 
-  if (ctx.config.hooks) {
-    const preEscalationPayload: EngineEvent = {
-      type: 'task_escalating',
-      ts: Date.now(),
-      phase: state.phase,
-      taskId: task.id,
-    };
-    const pre = await runPreHooks(ctx.config.hooks, 'pre_escalation', preEscalationPayload, {
-      projectDir: ctx.projectDir,
-      workspaceDir: ctx.workspaceDir,
-      sessionId: ctx.sessionId,
-      signal: ctx.signal,
-    });
-    if (!pre.allow) {
-      const reason = pre.reason ?? 'hook denied';
-      publishWarning({
-        bus: ctx.bus,
-        phase: state.phase,
-        message: `pre_escalation blocked: ${reason}`,
-      });
-      const issue = buildRetryExhaustedRecoveryIssue({
-        task,
-        phase: state.phase,
-        escalationBlockedBy: reason,
-        validationSummary: lastError,
-        ...haltAttempts(state, task, { booked: true }),
-        allowRetryOverride: true,
-        ...(ctx.implementerProfile !== undefined && {
-          selectedImplementerProfile: ctx.implementerProfile,
-        }),
-        createdAt: nowIso(),
-      });
-      const nextState = raisePendingRecovery(ctx, state, issue);
-      return { state: nextState, result: failedRetry(attempts) };
-    }
-  }
+  const hookHalt = await preEscalationHalt(ctx, state, task, lastError);
+  if (hookHalt !== undefined) return { state: hookHalt, result: failedRetry(attempts) };
 
   // Every answer from here is the consult seat's or the operator's.
   wctx.bus.publish({

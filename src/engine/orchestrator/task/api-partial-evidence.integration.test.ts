@@ -27,7 +27,7 @@ import type { ImplementerOptions, ImplementerResult } from '../../implementers/t
 import type { WorkflowContext } from '../types.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { validateCommitAndAdvance } from './commit.js';
-import { handleFailedImplementation } from './implementation-failure.js';
+import { handleFailedImplementation } from './implementation-result.js';
 import { runImplementation } from './run-implementation.js';
 import type { RunImplementationResult } from './run-implementation.js';
 

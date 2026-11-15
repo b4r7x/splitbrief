@@ -2,36 +2,19 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-
 import type { WorkflowContext } from '../types.js';
-import { recordTaskUsage } from './record-usage.js';
-import { toErrorMessage, labelError } from '../../../utils/format/errors.js';
-import { sessionError } from '../../../core/sessions/errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishTaskValidating } from '../publish/task.js';
-import { publishError } from '../publish/notice.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
-import { parkStoppedRun, raisePendingRecovery } from '../state-ops/halts.js';
 import { transitionAndSave } from '../state-ops/transition.js';
-import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { refreshAndPersistCode } from './refresh-code.js';
-import { validateCommitAndAdvance } from './commit.js';
-import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { persistTaskEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
+import { acceptLocalAttempt } from './commit.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
-import { denialMessage, recordApprovalDenial } from './gates/attempt.js';
-import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/approval.js';
-import { nowIso } from '../../../utils/format/time.js';
+import { gateTaskAttempt } from './gates/attempt.js';
 import { retryAndRecord, consultHandedBackToLoop, continueLadder } from './retry.js';
 import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
-import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
-import { runImplementation } from './run-implementation.js';
-import { gateAttemptChanges } from './gates/attempt.js';
-import { resolveDependsOnFiles } from './resolve-deps.js';
-import { handleFailedImplementation } from './implementation-failure.js';
+import { runImplementationStep } from './implementation-result.js';
 import { runBriefGate } from './gates/brief.js';
-import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 
 type RunSingleTaskOptions = {
   wctx: WorkflowContext;
@@ -76,7 +59,7 @@ async function rerunReplacedTask(
 
 export async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {
   const { wctx, index, totalTasks, taskBreakdowns, setTrackedState, setCurrentTask } = opts;
-  const { projectDir, sessionId, config } = wctx;
+  const { projectDir, sessionId } = wctx;
   let state = opts.state;
 
   if (state.pendingRecovery || wctx.signal?.aborted) return state;
@@ -145,128 +128,29 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return rerunReplacedTask(opts, retry.state, task);
   }
 
-  let implState: Awaited<ReturnType<typeof runImplementation>>;
-  try {
-    implState = await runImplementation({
-      wctx,
-      task,
-      state,
-      taskStartSnapshot,
-      setTrackedState,
-      recordApprovalDenial: (decision, message) =>
-        recordApprovalDenial({ wctx, state, task, denials: decision.denials, message }),
-      streamingSink: wctx.streamingSink,
-    });
-  } catch (err) {
-    if (
-      retentionError.isFailed(err) ||
-      retentionError.isMoved(err) ||
-      retentionError.isUnavailable(err) ||
-      sessionError.isLocalSaveFailure(err)
-    )
-      throw err;
-    state = rebaseOnPersistedWorkflowState(wctx, state);
-    setTrackedState(state);
-    if (isAbortError(err) || wctx.signal?.aborted) return state;
-    publishError({
-      bus: wctx.bus,
-      phase: state.phase,
-      message: labelError('Implementation failed', err),
-    });
-    const retry = await retryAndRecord({
-      wctx,
-      task,
-      initialError: toErrorMessage(err),
-      state,
-      taskStartSnapshot,
-      tokensBefore,
-      taskBreakdowns,
-      setTrackedState,
-    });
-    return rerunReplacedTask(opts, retry.state, task);
-  }
-
-  state = addUsageAndSave(wctx, implState.state, 'implementer', implState.implResult.usage);
-  setTrackedState(state);
-
-  // A stop keeps the attempt's output whole; a bundle left half-applied goes to its recovery.
-  const applyStatus = implState.implResult.applyResult?.status;
-  if (
-    implState.workspace !== undefined &&
-    wctx.signal?.aborted &&
-    (applyStatus === undefined || applyStatus === 'applied')
-  ) {
-    if (
-      isResumableWorkspaceStop(wctx.signal) &&
-      !implState.preApplyApprovalDenied &&
-      (implState.implResult.success || implState.implResult.outcome === 'user-abort')
-    ) {
-      await implState.workspace.retain?.();
-    } else implState.workspace.cleanup();
-    return state;
-  }
-
-  if (!implState.implResult.success) {
-    const failedState = await handleFailedImplementation({
-      wctx,
-      task,
-      state,
-      implState,
-      taskStartSnapshot,
-      tokensBefore,
-      taskBreakdowns,
-      setTrackedState,
-    });
-    return rerunReplacedTask(opts, failedState, task);
-  }
-
-  const gate = await gateAttemptChanges({
+  const implemented = await runImplementationStep({
     wctx,
     task,
-    phase: state.phase,
+    state,
+    taskStartSnapshot,
+    tokensBefore,
+    taskBreakdowns,
+    setTrackedState,
+  });
+  if (implemented.outcome === 'stopped') return implemented.state;
+  if (implemented.outcome === 'failed') return rerunReplacedTask(opts, implemented.state, task);
+  state = implemented.state;
+  const { implState } = implemented;
+
+  const gateStop = await gateTaskAttempt({
+    wctx,
+    task,
+    state,
     workspace: implState.workspace,
     preApprovedFiles: implState.preApplyApprovedFiles,
-    dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
-    onApproved: (decision) => persistApprovalEvidence({ wctx, state, decision, taskId: task.id }),
+    setTrackedState,
   });
-  if (gate.outcome === 'aborted') return state;
-  if (gate.outcome === 'cancelled') {
-    state = await parkStoppedRun(
-      { projectDir, sessionId, bus: wctx.bus },
-      state,
-      resolveReviewCadence(wctx.config) === 'none',
-    );
-    setTrackedState(state);
-    return state;
-  }
-  if (gate.denial !== undefined) {
-    recordApprovalDenial({
-      wctx,
-      state,
-      task,
-      denials: gate.denial.decision.denials,
-      message: denialMessage({
-        subject: 'Task',
-        denial: gate.denial,
-        blocked: gate.outcome === 'denied',
-      }),
-      briefKept: gate.denial.briefKept,
-    });
-  }
-  if (gate.outcome === 'denied') {
-    const { decision } = gate.denial;
-    const issue = buildApprovalDeniedRecoveryIssue({
-      task,
-      phase: state.phase,
-      deniedFiles: decision.deniedFiles,
-      ...(decision.reason !== undefined && { denialReason: decision.reason }),
-      tool: getRunnerDisplayName(config.implementer),
-      createdAt: nowIso(),
-    });
-    state = raisePendingRecovery(wctx, state, issue);
-    setTrackedState(state);
-    return state;
-  }
+  if (gateStop !== undefined) return gateStop;
 
   const taskChangedFiles = await getChangedFilesSinceSnapshot(wctx.workspaceDir, taskStartSnapshot);
 
@@ -306,56 +190,20 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   const { acceptance } = gated;
 
   if (!gated.correction) {
-    const commitResult = await validateCommitAndAdvance({
+    const accepted = await acceptLocalAttempt({
+      wctx,
       task,
-      projectDir,
-      workspaceDir: wctx.workspaceDir,
-      sessionId,
-      taskStartSnapshot,
-      config,
-      bus: wctx.bus,
       state,
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
+      taskStartSnapshot,
       acceptance,
-      implementerProfile: wctx.implementerProfile,
       taskChangedFiles,
       applyResult: implState.implResult.applyResult,
+      tokensBefore,
+      taskBreakdowns,
+      setTrackedState,
+      onTaskAcceptedFiles: opts.onTaskAcceptedFiles,
     });
-    if (commitResult.completed) {
-      state = commitResult.state;
-      setTrackedState(state);
-      opts.onTaskAcceptedFiles?.(commitResult.bookedFiles);
-      recordTaskUsage({
-        task,
-        method: 'local',
-        tokensBefore,
-        currentUsage: state.tokenUsage,
-        bus: wctx.bus,
-        state,
-        taskBreakdowns,
-        tool: getRunnerDisplayName(config.implementer),
-        ...(config.implementer.model !== undefined && { model: config.implementer.model }),
-        ...(wctx.implementerProfile !== undefined && {
-          implementerProfile: wctx.implementerProfile,
-        }),
-        ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
-      });
-      await persistTaskEvidence({
-        wctx,
-        state,
-        task,
-        recordKind: 'local',
-        details: {
-          status: 'done',
-          method: 'local',
-          retries: 0,
-          durationMs: commitResult.durationMs,
-          changedFiles: commitResult.bookedFiles,
-        },
-      });
-      return state;
-    }
+    if (accepted !== undefined) return accepted;
   }
 
   if (wctx.signal?.aborted) return state;

@@ -2,17 +2,22 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { ValidationAcceptance } from '../validation/types.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
+import type { WorkflowContext } from '../types.js';
+import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
+import { persistTaskEvidence } from '../evidence/persistence.js';
 import { publishTaskComplete } from '../publish/task.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { readBriefWorkedMs } from './worked-time.js';
 import { lineageRemainder } from './booking.js';
+import { recordTaskUsage } from './record-usage.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 
 type ValidateCommitOptions = {
@@ -139,4 +144,75 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
   }
 
   return { state: nextState, completed: true, durationMs, bookedFiles };
+}
+
+/**
+ * Accepts a brief whose first attempt passed its checks: the commit, then the brief's usage and
+ * its evidence. Returns the state of the accepted brief, or nothing when the commit did not
+ * complete it.
+ */
+export async function acceptLocalAttempt(opts: {
+  wctx: WorkflowContext;
+  task: Task;
+  state: WorkflowState;
+  taskStartSnapshot: ChangedFilesSnapshot;
+  acceptance: ValidationAcceptance;
+  taskChangedFiles: string[];
+  applyResult: BundleApplyResult | undefined;
+  tokensBefore: TokenUsage;
+  taskBreakdowns: TaskTokenUsage[];
+  setTrackedState: (s: WorkflowState) => void;
+  onTaskAcceptedFiles?: ((files: string[]) => void) | undefined;
+}): Promise<WorkflowState | undefined> {
+  const { wctx, task } = opts;
+  const { config } = wctx;
+  const commitResult = await validateCommitAndAdvance({
+    task,
+    projectDir: wctx.projectDir,
+    workspaceDir: wctx.workspaceDir,
+    sessionId: wctx.sessionId,
+    taskStartSnapshot: opts.taskStartSnapshot,
+    config,
+    bus: wctx.bus,
+    state: opts.state,
+    method: 'local',
+    transitionType: 'VALIDATION_PASS',
+    acceptance: opts.acceptance,
+    implementerProfile: wctx.implementerProfile,
+    taskChangedFiles: opts.taskChangedFiles,
+    applyResult: opts.applyResult,
+  });
+  if (!commitResult.completed) return undefined;
+  const { state } = commitResult;
+  opts.setTrackedState(state);
+  opts.onTaskAcceptedFiles?.(commitResult.bookedFiles);
+  recordTaskUsage({
+    task,
+    method: 'local',
+    tokensBefore: opts.tokensBefore,
+    currentUsage: state.tokenUsage,
+    bus: wctx.bus,
+    state,
+    taskBreakdowns: opts.taskBreakdowns,
+    tool: getRunnerDisplayName(config.implementer),
+    ...(config.implementer.model !== undefined && { model: config.implementer.model }),
+    ...(wctx.implementerProfile !== undefined && {
+      implementerProfile: wctx.implementerProfile,
+    }),
+    ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
+  });
+  await persistTaskEvidence({
+    wctx,
+    state,
+    task,
+    recordKind: 'local',
+    details: {
+      status: 'done',
+      method: 'local',
+      retries: 0,
+      durationMs: commitResult.durationMs,
+      changedFiles: commitResult.bookedFiles,
+    },
+  });
+  return state;
 }

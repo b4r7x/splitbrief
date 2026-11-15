@@ -5,38 +5,20 @@ import { transitionAndSave } from '../state-ops/transition.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/gates/attempt.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
-import { withContinuationLoop } from '../continuation/loop.js';
-import { briefContinuation, changedDeclaredFiles } from '../kept-work.js';
-import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
-import { validateAndCommit } from './validate-and-commit.js';
+import { validateAndCommitRetry } from './validate-and-commit.js';
+import { invokeRetryAttempt } from './invoke.js';
 import { boundedHandBack, failedRetry } from './types.js';
-import type { RetryInvokeResult, RetryStepOpts, RetryStepOutcome } from './types.js';
-import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { recordedApiCreatedPaths } from '../evidence/task.js';
+import type { BlockedReport, RetryInvokeResult, RetryStepOpts, RetryStepResult } from './types.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 import { isRecord } from '../../../utils/type-guards.js';
-import { isResumableWorkspaceStop, settleThrownCall } from '../isolation/retention.js';
+import { isResumableWorkspaceStop } from '../isolation/retention.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { commitWorkflowState } from '../state-ops/commit.js';
 import { stateOpsError } from '../state-ops/errors.js';
-import { withAttemptRestoreScope } from '../task/restore-scope.js';
-
-/** The direct writer's blocked report: the attempt stopped asking for a decision. */
-export type BlockedReport = Extract<ImplementerReport, { status: 'blocked' }>;
 
 /** The direct writer's done report: what it changed and the decisions it took. */
 type DoneReport = Extract<ImplementerReport, { status: 'done' }>;
-
-/**
- * A retry outcome, with the blocked report an attempt handed back when it
- * stopped to ask, or the user's answer to the brief gate's question.
- */
-export type RetryStepResult = RetryStepOutcome & {
-  blocked?: BlockedReport | undefined;
-  answer?: string | undefined;
-};
 
 /**
  * The blocked report behind a result, read from the pipeline's own verdict. A
@@ -98,86 +80,10 @@ async function runRetryStepAttempt(
   opts: RetryStepOpts,
   workspace: AttemptWorkspace,
 ): Promise<RetryStepResult> {
-  const {
-    ctx,
-    state: initialState,
-    task,
-    lastError,
-    attempts,
-    method,
-    transitionType,
-    commitSuffix,
-    usageCategory,
-    retryFailureFallback,
-    resultTool,
-    resultModel,
-    invokeRetry,
-    onValidationAfterRetryFail,
-  } = opts;
-  let state = initialState;
-  let loop: { state: WorkflowState; value: RetryInvokeResult };
-  try {
-    // A stop of this call parks the attempt; the steer continues it on the edits it already made.
-    loop = await withContinuationLoop<RetryInvokeResult>({
-      ctx: {
-        projectDir: workspace.projectDir,
-        sessionId: ctx.sessionId,
-        persistRef: { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
-        callbacks: ctx.callbacks,
-        bus: ctx.bus,
-        signal: ctx.signal,
-        sinks: ctx.sinks,
-      },
-      state,
-      step: { kind: 'brief', taskId: task.id, attempt: state.attempt },
-      onStateChange: (next) => {
-        state = next;
-      },
-      body: async ({ signal, partial, steerInput, recordOutput }) => {
-        if (steerInput !== undefined) {
-          state = recordSteerCorrection({ ...ctx, state, taskId: task.id, message: steerInput });
-        }
-        const changed = await changedDeclaredFiles(
-          workspace.projectDir,
-          task,
-          ctx.taskStartSnapshot,
-        );
-        const continuation = briefContinuation({ changed, partial });
-        return withAttemptRestoreScope({
-          ref: ctx,
-          dir: workspace.projectDir,
-          taskStartSnapshot: ctx.taskStartSnapshot,
-          attemptSnapshot: workspace.snapshot,
-          run: () =>
-            invokeRetry({
-              task,
-              lastError,
-              attempts: state.attempt,
-              projectDir: workspace.projectDir,
-              config: ctx.config,
-              implementer: ctx.implementer,
-              ...(ctx.implementerProfile !== undefined && {
-                implementerProfile: ctx.implementerProfile,
-              }),
-              signal,
-              sandboxEnv: workspace.sandboxEnv,
-              fileIgnoreProjectDir: ctx.projectDir,
-              changeDetection: workspace.changeDetection,
-              createdByThisTask: recordedApiCreatedPaths(ctx, task, workspace.projectDir),
-              deliversAnswer: opts.deliversAnswer,
-              ...(continuation !== undefined && { continuation }),
-              recordOutput,
-              seat: { ref: ctx, state, usageCategory },
-            }),
-        });
-      },
-    });
-  } catch (err) {
-    await settleThrownCall(workspace, ctx.signal, err);
-    throw err;
-  }
+  const { ctx, task, lastError, attempts, usageCategory, retryFailureFallback } = opts;
+  const loop = await invokeRetryAttempt(opts, workspace);
   const retryResult = loop.value;
-  state = rebaseOnPersistedWorkflowState(ctx, loop.state);
+  let state = rebaseOnPersistedWorkflowState(ctx, loop.state);
   state = addUsageAndSave(ctx, state, usageCategory, retryResult.usage);
 
   const applyResult = retryResult.applyResult;
@@ -280,64 +186,5 @@ async function runRetryStepAttempt(
       decisions: report.decisions,
     });
   }
-  const commitResult = await validateAndCommit({
-    ctx,
-    task,
-    state,
-    method,
-    transitionType,
-    retryCount: attempts,
-    commitSuffix,
-    preApprovedChangedFiles: await getChangedFilesSinceSnapshot(
-      ctx.workspaceDir,
-      ctx.taskStartSnapshot,
-    ),
-    attemptSnapshot: workspace.snapshot,
-  });
-  if ('answer' in commitResult) {
-    return {
-      state: commitResult.state,
-      task,
-      lastError: commitResult.answer,
-      attempts,
-      answer: commitResult.answer,
-    };
-  }
-  if ('blockedReason' in commitResult) {
-    return {
-      state: commitResult.state,
-      task,
-      lastError: commitResult.blockedReason,
-      attempts,
-      result:
-        commitResult.blockedReason === 'skipped'
-          ? { completed: false, method: 'skipped', attempts }
-          : failedRetry(attempts),
-    };
-  }
-  if (commitResult.completed) {
-    return {
-      state: commitResult.state,
-      task,
-      lastError,
-      attempts,
-      result: {
-        completed: true,
-        method,
-        attempts,
-        durationMs: commitResult.durationMs,
-        ...(commitResult.bookedFiles.length > 0 && { changedFiles: commitResult.bookedFiles }),
-        ...(resultTool !== undefined && { tool: resultTool }),
-        ...(resultModel !== undefined && { model: resultModel }),
-      },
-    };
-  }
-
-  onValidationAfterRetryFail?.(commitResult.error);
-  return {
-    state: commitResult.state,
-    task,
-    lastError: commitResult.error,
-    attempts,
-  };
+  return validateAndCommitRetry({ ...opts, state }, workspace.snapshot);
 }

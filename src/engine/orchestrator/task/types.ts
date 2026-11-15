@@ -2,8 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { BlockedReport } from '../escalation/step.js';
-import type { RetryAttemptFailure } from '../escalation/types.js';
+import type { BlockedReport, RetryAttemptFailure } from '../escalation/types.js';
 import type { WorkflowContext } from '../types.js';
 
 export type RetryAndRecordOptions = {
