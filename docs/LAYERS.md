@@ -170,7 +170,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 - skill source discovery over the scan roots in `core/skills/`
 - command availability probing
 - engine-scoped error diagnosis (provider hints, etc.)
-- `engine/events/` — event bus subsystem: the `EngineEventSchema` type-dispatched schema + `parseEngineEvent`, the `EngineEvent` alias inferred from that schema plus the `EventBus`/`EventSink` ports, the `createEventBus()` factory with crash isolation per sink, and `sinks/` holding headless/persistence/telemetry subscribers
+- `engine/events/` — event bus subsystem: the `EngineEventSchema` type-dispatched schema + `parseEngineEvent`, the `EngineEvent` alias inferred from that schema plus the `EventBus`/`EventSink` ports, the `createEventBus()` factory with crash isolation per sink, `payloads/` holding the member arrays of each event family that the schema spreads, and `sinks/` holding headless/persistence/telemetry subscribers
 - `engine/hooks/` — workflow hook runtime: the subprocess `command` hook dispatch (inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), the safe `${event.*}` regex substitution (values are emitted verbatim as distinct argv elements, never shell-evaluated), the sequential `pre_*` runner with deny short-circuit, and the bus sink for `post_*`/`on_*` fire-and-forget
 - `engine/codebase/` — repo-map pipeline — produces the token-budgeted codebase summary injected into the planner prompt. See [SUBSYSTEMS.md §Repo-map](./SUBSYSTEMS.md#3-repo-map).
 

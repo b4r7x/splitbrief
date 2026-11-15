@@ -1,4 +1,4 @@
-import { appendFileSync, copyFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../core/schemas/session-log.js';
@@ -492,7 +492,11 @@ const EXTRA_SHAPES: Record<string, unknown>[] = [
 ];
 
 function schemaEventTypes(): string[] {
-  const schemaSource = readFileSync(join(import.meta.dirname, 'schema.ts'), 'utf8');
+  const payloadsDir = join(import.meta.dirname, 'payloads');
+  const schemaSources = [
+    join(import.meta.dirname, 'schema.ts'),
+    ...readdirSync(payloadsDir).map((name) => join(payloadsDir, name)),
+  ].map((path) => readFileSync(path, 'utf8'));
   const rewindSource = readFileSync(
     join(import.meta.dirname, '../../core/state/rewind-event.ts'),
     'utf8',
@@ -500,7 +504,7 @@ function schemaEventTypes(): string[] {
   const builders = /(?:phase|noPhase|strictCallPhase|operationalMessage)Event\('([a-z_]+)'\)/g;
   const literals = /z\.literal\('([a-z_]+)'\)/g;
   const found = [
-    ...[...schemaSource.matchAll(builders)].map((match) => match[1]),
+    ...schemaSources.flatMap((source) => [...source.matchAll(builders)].map((match) => match[1])),
     ...[...rewindSource.matchAll(literals)].map((match) => match[1]),
   ];
   return [...new Set(found.filter((type): type is string => type !== undefined))];

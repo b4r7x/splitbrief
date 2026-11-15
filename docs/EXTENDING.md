@@ -37,8 +37,8 @@ Existing example to follow: `registerStartCommand`.
 
 ## 3. New EngineEvent type
 
-1. Add a Zod member to the type-dispatched `EngineEventSchema` contract
-   - Use the `phaseEvent('my_event')` helper (a `z.looseObject` that supplies `type`, `ts: number`, and `phase: Phase`) and chain `.extend({ … })` for variant fields; use `noPhaseEvent('my_event')` for intentionally global or snapshot-resolution metadata. Current phase-less events are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`
+1. Add a Zod member to the member array of its event family in `src/engine/events/payloads/<family>.ts`. `EngineEventSchema` spreads each family array into its type-dispatched union, so a new family file also needs its spread in `src/engine/events/schema.ts`
+   - Use the `phaseEvent('my_event')` helper (a `z.looseObject` that supplies `type`, `ts: number`, and `phase: Phase`) and chain `.extend({ … })` for variant fields; use `noPhaseEvent('my_event')` for intentionally global or snapshot-resolution metadata. Current phase-less events are `apply_started`, `apply_finished`, `run_rejected`, `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`
    - The `EngineEvent` TS alias is `z.infer<typeof EngineEventSchema>`, so the new variant flows into every consumer automatically — no separate type edit
 2. Add a typed publish helper to the orchestrator's `publish*` helpers
    - Pattern: `export function publishMyEvent(bus: EventBus, phase: Phase, payload): void { bus.publish({ type: 'my_event', ts: Date.now(), phase, ...payload }); }`
