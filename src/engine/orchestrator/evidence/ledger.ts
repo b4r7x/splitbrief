@@ -1,5 +1,5 @@
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { getOrCreateLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { EVIDENCE_FILE } from '../../../core/paths.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
@@ -27,17 +27,19 @@ export function warnEvidenceNotSaved(
   });
 }
 
-export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
+export function loadOrCreateLedger(opts: {
+  ref: SessionRef;
+  state: WorkflowState;
+}): EvidenceLedger {
   const { ref, state } = opts;
   const existing = readEvidenceLedger(ref);
-  const briefHash = hashTaskBrief(state.tasks);
-  return (
-    existing ??
-    createEvidenceLedger({
+  return getOrCreateLedger(
+    {
       sessionId: ref.sessionId,
       feature: state.feature,
       tasks: state.tasks,
-      briefHash,
-    })
+      briefHash: hashTaskBrief(state.tasks),
+    },
+    existing,
   );
 }

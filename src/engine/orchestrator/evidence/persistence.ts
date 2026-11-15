@@ -28,7 +28,7 @@ import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed
 import { briefInFlight } from '../../../core/state/selectors.js';
 import { changedSinceAtRest } from '../../snapshots/run/rest-changes.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
-import { getOrCreateLedger, warnEvidenceNotSaved } from './ledger.js';
+import { loadOrCreateLedger, warnEvidenceNotSaved } from './ledger.js';
 
 export async function persistTaskEvidence(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
@@ -48,7 +48,7 @@ export async function persistTaskEvidence(opts: {
   const { wctx, state, task, recordKind, details } = opts;
   try {
     mutateEvidenceLedger(wctx, (existing) => {
-      const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
+      const ledger = existing ?? loadOrCreateLedger({ ref: wctx, state });
       if (recordKind === 'local') {
         return recordLocalTaskEvidence({
           ledger,
@@ -100,7 +100,7 @@ export async function persistSkippedBriefFiles(opts: {
         : await getChangedFilesSinceSnapshot(wctx.workspaceDir, taskStartSnapshot));
     mutateEvidenceLedger(wctx, (existing) =>
       recordSkippedTaskEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref: wctx, state }),
+        ledger: existing ?? loadOrCreateLedger({ ref: wctx, state }),
         task,
         reason: opts.reason,
         keptFiles,
@@ -150,7 +150,7 @@ export async function persistStoppedBriefEvidence(
     const changedFiles = await changedSince(taskStart);
     mutateEvidenceLedger(ref, (existing) =>
       recordStoppedTaskEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref, state }),
+        ledger: existing ?? loadOrCreateLedger({ ref, state }),
         task: inFlight,
         changedFiles,
       }),
@@ -162,7 +162,7 @@ export async function persistStoppedBriefEvidence(
     const files = unbookedFiles(ref, owner, await changedSince(lineage.startSnapshot));
     mutateEvidenceLedger(ref, (existing) =>
       recordRemainderEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref, state }),
+        ledger: existing ?? loadOrCreateLedger({ ref, state }),
         task: owner,
         files,
       }),

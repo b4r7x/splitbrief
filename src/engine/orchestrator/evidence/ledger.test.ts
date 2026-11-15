@@ -5,9 +5,13 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { sessionDir } from '../../../core/paths.js';
 import { persistApiApplyEvidence } from './api-apply.js';
 import { persistReviewEvidence } from './decisions.js';
+import { loadOrCreateLedger } from './ledger.js';
 
 const directories: string[] = [];
 
@@ -59,5 +63,33 @@ describe('evidence a run cannot save', () => {
       line,
       line,
     ]);
+  });
+});
+
+describe('the ledger a write starts from', () => {
+  it('is the stored ledger when the run has one', () => {
+    const ref = setupProject(directories);
+    const task = makeTask();
+    writeEvidenceLedger(
+      ref,
+      createEvidenceLedger({ sessionId: ref.sessionId, feature: 'stored run', tasks: [task] }),
+    );
+
+    expect(
+      loadOrCreateLedger({ ref, state: makeImplState([task], { feature: 'add search' }) }),
+    ).toMatchObject({ feature: 'stored run', briefHash: null });
+  });
+
+  it('is a new ledger of the run, stamped with the hash of its briefs, when none is stored', () => {
+    const ref = setupProject(directories);
+    const task = makeTask();
+    const state = makeImplState([task], { feature: 'add search' });
+
+    expect(loadOrCreateLedger({ ref, state })).toMatchObject({
+      sessionId: ref.sessionId,
+      feature: 'add search',
+      tasks: [expect.objectContaining({ id: task.id })],
+      briefHash: hashTaskBrief([task]),
+    });
   });
 });

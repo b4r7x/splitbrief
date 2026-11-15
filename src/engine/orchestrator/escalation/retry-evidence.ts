@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { getOrCreateLedger } from '../evidence/ledger.js';
+import { loadOrCreateLedger } from '../evidence/ledger.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from '../evidence/approval.js';
 import type { GateDecision } from '../approval/types.js';
@@ -38,7 +38,7 @@ export function persistRetryApprovalEvidence(
 ): void {
   if (!decision.confirmApprovals || decision.confirmApprovals.length === 0) return;
   try {
-    let ledger = getOrCreateLedger({ ref: ctx, state });
+    let ledger = loadOrCreateLedger({ ref: ctx, state });
     for (const approval of decision.confirmApprovals) {
       ledger = recordApprovalEvidence({
         ledger,
@@ -70,7 +70,7 @@ export function persistRetryRejectionEvidence(
   )
     return;
   try {
-    const ledger = getOrCreateLedger({ ref: ctx, state });
+    const ledger = loadOrCreateLedger({ ref: ctx, state });
     const updated = recordRejectionEvidence({
       ledger,
       tier: rejectedTier,

@@ -1,10 +1,5 @@
 import { resolveReviewCadence } from '../../../../core/config/runtime/resolve.js';
-import { hashTaskBrief } from '../../../../core/evidence/brief-hash.js';
-import { getOrCreateLedger } from '../../../../core/evidence/ledger-state.js';
-import {
-  readEvidenceLedger,
-  writeEvidenceLedger,
-} from '../../../../core/evidence/ledger-storage.js';
+import { writeEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
 import { isRetiredRecoveryReason } from '../../../../core/recovery/halt.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import { type Task, isTaskCompleted } from '../../../../core/schemas/task.js';
@@ -14,6 +9,7 @@ import {
   publishRecoveryActionSelected,
   publishRecoveryActionFailed,
 } from '../../publish/recovery.js';
+import { loadOrCreateLedger } from '../../evidence/ledger.js';
 import { recordSkippedTaskEvidence } from '../../evidence/task.js';
 import { formatMessageInput } from '../../queue/prompt.js';
 import { briefCorrectionStep } from '../../state-ops/corrections.js';
@@ -151,16 +147,7 @@ export function recordRecoverySkipEvidence(opts: {
   task: Task;
   reason: string;
 }): void {
-  const existing = readEvidenceLedger(opts);
-  const ledger = getOrCreateLedger(
-    {
-      sessionId: opts.sessionId,
-      feature: opts.state.feature,
-      tasks: opts.state.tasks,
-      briefHash: hashTaskBrief(opts.state.tasks),
-    },
-    existing,
-  );
+  const ledger = loadOrCreateLedger({ ref: opts, state: opts.state });
   const updated = recordSkippedTaskEvidence({
     ledger,
     task: opts.task,

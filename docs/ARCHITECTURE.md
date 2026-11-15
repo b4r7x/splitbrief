@@ -451,7 +451,7 @@ export function buildRejectionContext(ledger): string
 export function buildEvidenceSummary(ledger): NonNullable<Summary['evidenceSummary']>
 
 // ledger.ts
-export function getOrCreateLedger(input): EvidenceLedger
+export function loadOrCreateLedger(input): EvidenceLedger
 
 // persistence.ts
 export async function persistTaskEvidence(input): Promise<void>

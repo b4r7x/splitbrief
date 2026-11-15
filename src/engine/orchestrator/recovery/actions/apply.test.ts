@@ -7,7 +7,11 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { readEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
+import {
+  readEvidenceLedger,
+  writeEvidenceLedger,
+} from '../../../../core/evidence/ledger-storage.js';
+import { createEvidenceLedger } from '../../../../core/evidence/ledger-state.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -1690,4 +1694,22 @@ it('records CLI recovery evidence with no workflow mode, even for a run that sav
   const result = await applyRecoveryAction({ ...ref, state, action: 'skip-current-task', bus });
   expect(result.ok).toBe(true);
   expect(readEvidenceLedger(ref)).not.toHaveProperty('mode');
+});
+
+it('records the recovery skip on the stored ledger of the run', async () => {
+  const ref = setupSession('skip-stored-ledger');
+  const task = makeTask({ status: 'failed' });
+  const state = makeImplState([task], { pendingRecovery: makeRecoveryIssue() });
+  saveState(ref, state);
+  writeEvidenceLedger(
+    ref,
+    createEvidenceLedger({ sessionId: ref.sessionId, feature: 'stored run', tasks: [task] }),
+  );
+  const { bus } = makeBusRecorder();
+  const result = await applyRecoveryAction({ ...ref, state, action: 'skip-current-task', bus });
+  expect(result.ok).toBe(true);
+  expect(readEvidenceLedger(ref)).toMatchObject({
+    feature: 'stored run',
+    tasks: [expect.objectContaining({ id: task.id, status: 'skipped' })],
+  });
 });

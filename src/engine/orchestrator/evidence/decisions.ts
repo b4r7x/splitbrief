@@ -7,7 +7,7 @@ import { nowIso } from '../../../utils/format/time.js';
 import type { GateDecision } from '../approval/types.js';
 import type { WorkflowContext } from '../types.js';
 import { recordRejectionEvidence, recordApprovalEvidence } from './approval.js';
-import { getOrCreateLedger, warnEvidenceNotSaved } from './ledger.js';
+import { loadOrCreateLedger, warnEvidenceNotSaved } from './ledger.js';
 
 export function persistRejectionEvidence(opts: {
   wctx: WorkflowContext;
@@ -21,7 +21,7 @@ export function persistRejectionEvidence(opts: {
   const { wctx, state, reason, actionClass, tier, actionDescription, taskId } = opts;
   try {
     mutateEvidenceLedger(wctx, (existing) => {
-      const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
+      const ledger = existing ?? loadOrCreateLedger({ ref: wctx, state });
       return recordRejectionEvidence({
         ledger,
         tier,
@@ -45,7 +45,7 @@ export function persistReviewEvidence(opts: {
   const { wctx, state, review } = opts;
   try {
     mutateEvidenceLedger(wctx, (existing) => {
-      const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
+      const ledger = existing ?? loadOrCreateLedger({ ref: wctx, state });
       return { ...ledger, reviews: [...(ledger.reviews ?? []), review], generatedAt: nowIso() };
     });
   } catch (err) {
@@ -64,7 +64,7 @@ export function persistApprovalEvidence(opts: {
   if (!confirmApprovals || confirmApprovals.length === 0) return;
   try {
     mutateEvidenceLedger(wctx, (existing) => {
-      let ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
+      let ledger = existing ?? loadOrCreateLedger({ ref: wctx, state });
       for (const approval of confirmApprovals) {
         ledger = recordApprovalEvidence({
           ledger,

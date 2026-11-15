@@ -37,7 +37,7 @@ import { applyConsultAnswer } from '../consult/apply.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
-import { getOrCreateLedger } from '../evidence/ledger.js';
+import { loadOrCreateLedger } from '../evidence/ledger.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { resolveRunReviewScope } from '../evidence/review-packet/run-scope.js';
 import { createSnapshot } from '../../snapshots/create.js';
@@ -92,7 +92,7 @@ async function completeTask(
     files: await getChangedFilesSinceSnapshot(p.projectDir, taskStartSnapshot),
   });
   // A passed task leaves its evidence ledger, which the review packet requires.
-  writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
+  writeEvidenceLedger(p.ref, loadOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
 }
 
 /** The change is in the prompt of an API reviewer and in the change file of a Claude Code one. */
@@ -307,7 +307,7 @@ describe('final review task completion provenance', () => {
       attempt,
     );
     expect(applied.action).toBe('completed');
-    writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
+    writeEvidenceLedger(p.ref, loadOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
 
     const { packet } = await review(p, false, [task]);
 

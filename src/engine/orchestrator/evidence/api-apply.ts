@@ -6,7 +6,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { uniquePush } from '../../../utils/collections.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import type { WorkflowContext } from '../types.js';
-import { getOrCreateLedger, warnEvidenceNotSaved } from './ledger.js';
+import { loadOrCreateLedger, warnEvidenceNotSaved } from './ledger.js';
 import { provenCreatedPaths, withTargetWrites } from './target-writes.js';
 
 /**
@@ -26,7 +26,7 @@ export function persistApiApplyEvidence(opts: {
   try {
     mutateEvidenceLedger(wctx, (existing) =>
       recordApiApplyEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref: wctx, state }),
+        ledger: existing ?? loadOrCreateLedger({ ref: wctx, state }),
         task,
         result,
         workspacePath: opts.workspacePath,

@@ -6,7 +6,7 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { deserializeChangedFilesBaseline } from '../changed-files-baseline.js';
-import { getOrCreateLedger } from '../evidence/ledger.js';
+import { loadOrCreateLedger } from '../evidence/ledger.js';
 import { currentCandidateId } from '../evidence/record-checks.js';
 import type { CheckRunResult } from './checks/types.js';
 
@@ -46,7 +46,7 @@ export async function runCommandOnce(opts: {
   if (entry !== null) {
     try {
       mutateEvidenceLedger(store.ref, (ledger) =>
-        withCommandRun(ledger ?? getOrCreateLedger({ ref: store.ref, state: store.state }), entry),
+        withCommandRun(ledger ?? loadOrCreateLedger({ ref: store.ref, state: store.state }), entry),
       );
     } catch (err) {
       warnError('Could not store the check result; the next check runs the command again', err);
