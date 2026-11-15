@@ -6,13 +6,11 @@ import { spawnPipeError } from '../../../../lib/process/spawn/fatal.js';
 import { spawnPipe } from '../../../../lib/process/spawn/lifecycle.js';
 import { isENOENT } from '../../../../utils/errno.js';
 import { matches, error } from '../../../../utils/error.js';
-import { isRecord } from '../../../../utils/type-guards.js';
 import {
   RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
   RUNNER_CALL_STDERR_MAX_BYTES,
 } from '../../../calls/output-limit.js';
 import { createRunnerCallRecorder } from '../../../calls/recorder/create.js';
-import type { RunnerCallRecorder } from '../../../calls/recorder/types.js';
 import {
   runnerCallErrorFromUnknown,
   runnerCallInterruptedStatus,
@@ -25,7 +23,6 @@ import {
   revalidateCliExecutableIdentity,
   executableChangedMessage,
 } from '../../cli-executable/identity.js';
-import { credentialValuesFromEnvironment } from '../../sandbox/credential-values.js';
 import type {
   CliProcessAdapter,
   CliInvocation,
@@ -48,6 +45,7 @@ import {
   fatalStateOf,
   errorMessage,
 } from './failures.js';
+import { prelaunchProcessCli } from './prelaunch.js';
 import { createProtocolEventLog, recordCliProtocolEvent } from './protocol-event.js';
 
 type CliAdapter = CliProcessAdapter;
@@ -103,25 +101,8 @@ export async function invokeProcessCli(
   adapter: CliAdapter,
   context: InvokeProcessCliContext,
 ): Promise<RunnerCallResult> {
-  let credentialValues: string[];
-  try {
-    credentialValues = credentialValuesFromEnvironment(
-      context.invocation.environment,
-      adapter.descriptor.auth.channels.flatMap((channel) => channel.env),
-    );
-  } catch {
-    const recorder = createRunnerCallRecorder({ context: context.callContext });
-    return finishFailureSafely({
-      recorder,
-      context: context.callContext,
-      credentialValues: [],
-      status: 'failed',
-      error: { code: 'callback-failure', message: 'Runner adapter setup failed' },
-    });
-  }
   let callbackFailed = false;
   const limitController = new AbortController();
-  let recorder: RunnerCallRecorder;
   const recordEvent = (event: RunnerCallEvent) => {
     try {
       context.onEvent?.(event);
@@ -130,69 +111,17 @@ export async function invokeProcessCli(
       throw cause;
     }
   };
-  try {
-    recorder = createRunnerCallRecorder({
-      context: context.callContext,
-      credentialValues,
-      stopAfterToolUses: context.maxToolCalls,
-      onLimit: () => limitController.abort(),
-      onEvent: recordEvent,
-    });
-  } catch {
-    recorder = createRunnerCallRecorder({ context: context.callContext, credentialValues });
-    return fail({
-      recorder,
-      status: 'failed',
-      error: { code: 'callback-failure', message: 'Runner event callback failed' },
-    });
-  }
-
-  const invocationArgs = [...context.invocation.args];
-
-  let validation: unknown;
-  try {
-    // An invocation that declares no adapter-owned prefix carries no configured
-    // arguments, so the whole argv is the prefix and nothing needs scrutiny.
-    validation = adapter.validateArgs({
-      invocationArgs,
-      baseArgs: context.invocation.baseArgs ?? invocationArgs,
-    });
-  } catch {
-    return finishFailureSafely({
-      recorder,
-      context: context.callContext,
-      credentialValues,
-      status: 'failed',
-      error: { code: 'callback-failure', message: 'CLI argument validation failed' },
-    });
-  }
-
-  const normalizedValidation = normalizeCliArgumentValidation(validation);
-  if (normalizedValidation === null) {
-    return finishFailureSafely({
-      recorder,
-      context: context.callContext,
-      credentialValues,
-      status: 'failed',
-      error: {
-        code: 'callback-failure',
-        message: 'CLI argument validation returned an invalid result',
-      },
-    });
-  }
-
-  if (!normalizedValidation.valid) {
-    return finishFailureSafely({
-      recorder,
-      context: context.callContext,
-      credentialValues,
-      status: 'failed',
-      error: {
-        code: 'argument-conflict',
-        message: `CLI arguments conflict with the adapter contract: ${formatArgumentConflicts(normalizedValidation.conflicts)}`,
-      },
-    });
-  }
+  const prelaunch = prelaunchProcessCli({
+    adapter,
+    invocation: context.invocation,
+    callContext: context.callContext,
+    maxToolCalls: context.maxToolCalls,
+    onLimit: () => limitController.abort(),
+    onEvent: recordEvent,
+  });
+  if (!prelaunch.ok) return prelaunch.result;
+  const { credentialValues } = prelaunch;
+  let recorder = prelaunch.recorder;
 
   let prepared: PreparedPrompt | undefined;
   let steeringSession: CliSteeringSession | undefined;
@@ -732,35 +661,4 @@ export async function invokeProcessCli(
     clearTimeout(graceTimer);
     onAbort();
   }
-}
-
-type CliArgumentValidation =
-  | Readonly<{ valid: true }>
-  | Readonly<{ valid: false; conflicts: readonly string[] }>;
-
-function normalizeCliArgumentValidation(value: unknown): CliArgumentValidation | null {
-  try {
-    if (!isRecord(value) || typeof value.valid !== 'boolean') return null;
-    if (value.valid) return { valid: true };
-    if (
-      !Array.isArray(value.conflicts) ||
-      !value.conflicts.every((conflict) => typeof conflict === 'string' && conflict.length > 0)
-    ) {
-      return null;
-    }
-    return { valid: false, conflicts: [...value.conflicts] };
-  } catch {
-    return null;
-  }
-}
-
-function formatArgumentConflicts(conflicts: readonly string[]): string {
-  return conflicts
-    .map((conflict) => {
-      // Protected flags are useful remediation; arbitrary values can contain credentials,
-      // account data, or absolute paths and therefore stay out of terminal diagnostics.
-      if (/^-{1,2}[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(conflict)) return conflict;
-      return '[redacted argument]';
-    })
-    .join(', ');
 }

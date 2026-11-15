@@ -597,6 +597,38 @@ describe('invokeProcessCli', () => {
     }
   });
 
+  it('fails before spawn when the environment read or the start callback throws', async () => {
+    const unreadable = new Proxy<Record<string, string>>(
+      {},
+      {
+        ownKeys() {
+          throw new Error('environment read failed');
+        },
+      },
+    );
+    const setup = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({ executable: missingExecutableIdentity(), environment: unreadable, script: '' }),
+    );
+    const start = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({ executable: missingExecutableIdentity(), script: '' }),
+      '',
+      (event) => {
+        if (event.type === 'call_started') throw new Error('consumer failed');
+      },
+    );
+
+    expect(setup).toMatchObject({
+      status: 'failed',
+      error: { code: 'callback-failure', message: 'Runner adapter setup failed' },
+    });
+    expect(start).toMatchObject({
+      status: 'failed',
+      error: { code: 'callback-failure', message: 'Runner event callback failed' },
+    });
+  });
+
   it('turns an onSpawned exception into a reaped callback-failure result', async () => {
     let spawned = false;
     const result = await run(

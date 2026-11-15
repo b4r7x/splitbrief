@@ -4,7 +4,12 @@ import {
   COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS,
 } from './command-code/adapter.js';
 import { CURSOR_PROTECTED_FLAGS, CURSOR_PROTECTED_SHORT_VALUE_FLAGS } from './cursor/adapter.js';
-import { parseCliSemanticVector, validateCliArgs } from './validate-args.js';
+import {
+  formatArgumentConflicts,
+  normalizeCliArgumentValidation,
+  parseCliSemanticVector,
+  validateCliArgs,
+} from './validate-args.js';
 
 const BASE_ARGS = ['run'];
 
@@ -228,5 +233,25 @@ describe('parseCliSemanticVector', () => {
       { token: '--', category: null },
       { token: 'plan', category: null },
     ]);
+  });
+});
+
+describe('normalizeCliArgumentValidation', () => {
+  it('rejects a result of the wrong shape and keeps a well-formed one', () => {
+    expect(normalizeCliArgumentValidation(null)).toBeNull();
+    expect(normalizeCliArgumentValidation({ valid: 'yes' })).toBeNull();
+    expect(normalizeCliArgumentValidation({ valid: false, conflicts: [''] })).toBeNull();
+    expect(normalizeCliArgumentValidation({ valid: false, conflicts: ['--model'] })).toEqual({
+      valid: false,
+      conflicts: ['--model'],
+    });
+  });
+});
+
+describe('formatArgumentConflicts', () => {
+  it('keeps a flag and redacts any other value', () => {
+    expect(formatArgumentConflicts(['--model', '-m', 'sk-secret-value', '/home/user/key'])).toBe(
+      '--model, -m, [redacted argument], [redacted argument]',
+    );
   });
 });

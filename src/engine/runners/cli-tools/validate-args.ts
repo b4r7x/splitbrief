@@ -1,4 +1,4 @@
-import { typedEntries } from '../../../utils/type-guards.js';
+import { isRecord, typedEntries } from '../../../utils/type-guards.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 
 export type CliArgumentValidation =
@@ -204,4 +204,31 @@ export function validateCliArgs(input: {
   return uniqueConflicts.length === 0
     ? { valid: true }
     : { valid: false, conflicts: uniqueConflicts };
+}
+
+export function normalizeCliArgumentValidation(value: unknown): CliArgumentValidation | null {
+  try {
+    if (!isRecord(value) || typeof value.valid !== 'boolean') return null;
+    if (value.valid) return { valid: true };
+    if (
+      !Array.isArray(value.conflicts) ||
+      !value.conflicts.every((conflict) => typeof conflict === 'string' && conflict.length > 0)
+    ) {
+      return null;
+    }
+    return { valid: false, conflicts: [...value.conflicts] };
+  } catch {
+    return null;
+  }
+}
+
+export function formatArgumentConflicts(conflicts: readonly string[]): string {
+  return conflicts
+    .map((conflict) => {
+      // Protected flags are useful remediation; arbitrary values can contain credentials,
+      // account data, or absolute paths and therefore stay out of terminal diagnostics.
+      if (/^-{1,2}[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(conflict)) return conflict;
+      return '[redacted argument]';
+    })
+    .join(', ');
 }

@@ -9,6 +9,7 @@ import type {
   CliTerminalInput,
 } from './contract.js';
 import type { CliProbeContract } from './probe/contract.js';
+import type { CliArgumentValidation } from './validate-args.js';
 import { contractSha256 } from '../../providers/candidate/contract.js';
 import { CandidateEvidence } from '../../providers/candidate/evidence.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -71,10 +72,6 @@ export const RawCliCandidateContract = z
     }
   });
 export type RawCliCandidateContract = z.infer<typeof RawCliCandidateContract>;
-
-type CliArgumentValidation =
-  | Readonly<{ valid: true }>
-  | Readonly<{ valid: false; conflicts: readonly string[] }>;
 
 type UnregisteredCliAdapterCommon = Readonly<{
   descriptor: Readonly<{ id: string }>;
