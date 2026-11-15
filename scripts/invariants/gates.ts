@@ -273,7 +273,7 @@ export const gates: readonly Gate[] = [
     id: '46',
     description: 'Pinned overlay widths are gone',
     command:
-      '{ rg -n "maxWidth=" src/app src/features src/components/overlays || true; rg -n "getResponsivePanelWidth|getClampedTerminalWidth|PICKER_WIDTHS|SUB_PANEL_MAX_WIDTH|MAX_PANEL_WIDTH|SETUP_PANEL_WIDTH|PALETTE_MAX_WIDTH" src || true; rg -n "isSmall" src/app/overlays src/app/screens/home.tsx src/app/screens/setup.tsx src/features/home/layout.ts src/features/runners src/features/start-preparation src/components/overlays src/components/pickers testing/visual/locators/registry.ts --glob \'!**/*.test.ts\' --glob \'!**/*.test.tsx\' || true; } | wc -l',
+      '{ rg -n "maxWidth=" src/app src/features src/components/overlays || true; rg -n "getResponsivePanelWidth|getClampedTerminalWidth|PICKER_WIDTHS|SUB_PANEL_MAX_WIDTH|MAX_PANEL_WIDTH|SETUP_PANEL_WIDTH|PALETTE_MAX_WIDTH" src || true; rg -n "isSmall" src/app/overlays src/app/screens/home.tsx src/app/screens/setup.tsx src/features/crew/setup/crew-step.tsx src/features/home/layout.ts src/features/runners src/features/start-preparation src/components/overlays src/components/pickers testing/visual/locators/registry.ts --glob \'!**/*.test.ts\' --glob \'!**/*.test.tsx\' || true; } | wc -l',
     expected: 0,
   },
   {

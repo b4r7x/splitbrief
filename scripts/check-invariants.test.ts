@@ -277,6 +277,16 @@ describe('check-invariants', () => {
     expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain('src/app/overlays/settings.tsx');
   });
 
+  it('guards the crew step of the setup page that now sizes the crew panel in gate 46', () => {
+    const [gate] = getInvariantGates('46');
+    if (gate === undefined) throw new Error('gate 46 is not registered');
+
+    expect(gate.command).toContain('src/features/crew/setup/crew-step.tsx');
+    expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain(
+      'src/features/crew/setup/crew-step.tsx',
+    );
+  });
+
   it('passes the responsive-width and capability-direction gates 46 and 47 on the maintained tree', () => {
     const gates = [...getInvariantGates('46'), ...getInvariantGates('47')];
     expect(gates).toHaveLength(2);
@@ -294,6 +304,7 @@ describe('check-invariants', () => {
       for (const dir of [
         'app/overlays',
         'app/screens',
+        'features/crew/setup',
         'features/home',
         'features/runners',
         'features/start-preparation',
@@ -304,6 +315,10 @@ describe('check-invariants', () => {
       }
       writeFileSync(join(root, 'app/screens/home.tsx'), 'export const Home = () => null;\n');
       writeFileSync(join(root, 'app/screens/setup.tsx'), 'export const Setup = () => null;\n');
+      writeFileSync(
+        join(root, 'features/crew/setup/crew-step.tsx'),
+        'export const CrewStep = () => null;\n',
+      );
       writeFileSync(
         join(root, 'app/overlays/pinned.tsx'),
         'export const P = <Box maxWidth={64} />;\n',

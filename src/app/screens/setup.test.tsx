@@ -538,6 +538,54 @@ describe('SetupScreen', () => {
     });
   });
 
+  it('keeps Continue closed until the check of the saved crew answers', async () => {
+    await withTempDir('setup-persisted-api-pending', async (projectDir) => {
+      configStore.load(projectDir);
+      await configStore.save(makeConfig());
+      configStore.load(projectDir, {
+        implementer: { apiBase: 'http://127.0.0.1:12434/v1' },
+      });
+      const effective = configStore.get().config;
+      if (effective === null) throw new Error('Expected a loaded config');
+      const { sourceContexts } = createProductionDetectionDeps({ config: effective, projectDir });
+      const releases: (() => void)[] = [];
+      let hold = true;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          if (hold) {
+            await new Promise<void>((resolve) => {
+              releases.push(resolve);
+            });
+          }
+          return Response.json({ models: [{ name: 'qwen2.5-coder:7b' }] });
+        }),
+      );
+      freshDiscovery(beginDiscovery(), 1);
+      detectionStore.setDetection({
+        ...INSTALLED_RUNNERS,
+        providerOutcomes: sourceContexts.configuredProviders?.map((connection) => ({
+          connection,
+          state: 'fresh',
+          catalog: 'populated',
+          models: [{ id: 'qwen2.5-coder:7b' }],
+          fetchedAt: 1,
+          validatedAt: 1,
+        })),
+      });
+      const ui = renderFeature(<SetupScreen />);
+      const continueRow = () => contentRows(ui).find((row) => row.includes('Continue')) ?? '';
+      await vi.waitFor(() => expect(releases.length).toBeGreaterThan(0));
+      await vi.waitFor(() => expect(continueRow()).toContain('Continue'));
+      expect(continueRow()).toContain('choose ready seats');
+      hold = false;
+      for (const release of releases) release();
+      await vi.waitFor(() => expect(continueRow()).not.toContain('choose ready seats'));
+      expect(continueRow()).toContain('Continue');
+      ui.unmount();
+    });
+  });
+
   it.each(['detection', 'unmount', 'exit'] as const)(
     'does not save when %s changes during a connection check',
     async (change) => {

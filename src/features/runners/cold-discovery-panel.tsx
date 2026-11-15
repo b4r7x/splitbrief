@@ -11,7 +11,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { BootManifest } from './boot-manifest.js';
 import { ToolRollCall } from './tool-roll-call.js';
 
-type DiscoveryPanelProps = Readonly<{
+type ColdDiscoveryPanelProps = Readonly<{
   state: 'initializing' | 'failed';
   noConfig: boolean;
   onBack: () => void;
@@ -19,13 +19,13 @@ type DiscoveryPanelProps = Readonly<{
   onOpenSettings: () => void;
 }>;
 
-export function DiscoveryPanel({
+export function ColdDiscoveryPanel({
   state,
   noConfig,
   onBack,
   onRetry,
   onOpenSettings,
-}: DiscoveryPanelProps) {
+}: ColdDiscoveryPanelProps) {
   const t = useTheme();
   const hasOverlay = overlayStore.use(selectHasOverlay);
   const feedback = feedbackStore.use((snapshot) => snapshot);

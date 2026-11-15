@@ -63,7 +63,7 @@ The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes
 
 **Dissolved (pure-entry) surfaces** (e.g. `setup`, `help`, `sessions`, `skills`):
 
-A dissolved surface has **no `features/` folder** — the page *is* the whole surface. It may still compose a context-free feature owned by another domain: the setup page renders the `crew` feature directly (`useCrew` + `CrewRowView` + `PresetRowView`) and reaches the runners picker through `crewActivate`, which owns the seat→overlay map and performs the `overlayStore.open`. The cross-surface hop is a **store-mediated overlay transition**, not a render prop. `runners` is the feature boundary; `ToolModelPicker` is a component name, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone.
+A dissolved surface has **no `features/` folder** — the page *is* the whole surface. It may still compose a context-free feature owned by another domain: the setup page renders the `crew` feature's setup step, `CrewStep` in `features/crew/setup/` (`useCrew` + `CrewRowView` + `PresetRowView`), and `CrewStep` reaches the runners picker through `crewActivate`, which owns the seat→overlay map and performs the `overlayStore.open`. The cross-surface hop is a **store-mediated overlay transition**, not a render prop. `runners` is the feature boundary; `ToolModelPicker` is a component name, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone.
 
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.
@@ -156,7 +156,7 @@ Why:
 
 If you need shared behavior across features, it belongs in `src/components/`, `src/hooks/`, `src/utils/`, `src/core/`, or `src/stores/`. Composition between features happens at the `app/` shell (the router dispatches the FLAT pages, the layout wraps).
 
-When one surface needs UI owned by another (e.g. the `setup` page reaching the `runners` picker), the page imports the other domain's context-free feature and coordinates the rest through stores: the setup page and the settings overlay page both render the `crew` feature, and each opens the picker by calling `crewActivate`, which performs the `overlayStore.open` for the selected seat. Keep the feature folder named for the domain (`runners`, `crew`); component names do not create folder names.
+When one surface needs UI owned by another (e.g. the `setup` page reaching the `runners` picker), the page imports the other domain's context-free feature and coordinates the rest through stores: the setup page and the settings overlay page both render the `crew` feature, and the picker opens through `crewActivate` (called by the settings overlay page and by the `CrewStep` that the setup page renders), which performs the `overlayStore.open` for the selected seat. Keep the feature folder named for the domain (`runners`, `crew`); component names do not create folder names.
 
 The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES-AND-UI.md`](./STORES-AND-UI.md#engine-to-ui----the-event-path).
 
