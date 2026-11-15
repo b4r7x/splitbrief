@@ -11,6 +11,13 @@ import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { escapeRegExp } from '../../../src/utils/regexp.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
 
+// The composer lists the project files with a git child. Each test deletes its project folder at
+// the end, and a git child that reads its working folder after that scans the whole temp folder.
+vi.mock('../../../src/lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/lib/git/files.js')>()),
+  listTrackedAndUntrackedFiles: async () => null,
+}));
+
 const DOWN = '\u001b[B';
 const TAB = '\t';
 const ENTER = '\r';

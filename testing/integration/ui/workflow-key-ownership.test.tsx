@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { waitPastGrace } from '#testing/helpers/typeahead-grace.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -82,6 +83,7 @@ describe('WorkflowScreen key ownership', () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
     resetAllStores();
@@ -95,8 +97,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(20);
 
     const decision = openApprovalPrompt(confirmRequest());
-    await tick(PAST_GRACE);
-    await tick(20);
+    await waitPastGrace(ui, 'Confirm with a reason');
 
     expect(ui.lastFrame() ?? '').toContain('Confirm with a reason');
 
@@ -121,8 +122,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(20);
 
     const decision = openApprovalPrompt(confirmRequest());
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, 'Waiting for your answer');
     let settled = false;
     void decision.then(() => {
       settled = true;

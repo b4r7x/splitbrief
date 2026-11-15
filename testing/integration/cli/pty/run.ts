@@ -171,6 +171,7 @@ export function safeChildEnvironment(
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_TERMINAL_PROMPT: '0',
     NODE_NO_WARNINGS: '1',
+    TSX_DISABLE_CACHE: '1',
     VISUAL: `${quoteCommandToken(process.execPath)} --import tsx ${quoteCommandToken(editorChildEntrypoint())}`,
     [PTY_CHILD_PROJECT_ENV]: join(environmentRoot, 'project'),
     [PTY_EDITOR_SENTINEL_ENV]: join(environmentRoot, 'editor-ran'),

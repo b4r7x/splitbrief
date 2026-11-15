@@ -120,6 +120,11 @@ export async function runPtyChild(
         model: 'pty-planner',
         outputFormat: 'text',
       },
+      implementer: {
+        kind: 'shell',
+        command: process.execPath,
+        model: 'pty-implementer',
+      },
       workflow: {
         ...defaults.workflow,
       },

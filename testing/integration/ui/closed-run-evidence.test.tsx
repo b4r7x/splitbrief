@@ -19,6 +19,13 @@ import { routerStore } from '../../../src/stores/navigation/router.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 
+// The composer lists the project files with a git child. Each test deletes its project folder at
+// the end, and a git child that reads its working folder after that scans the whole temp folder.
+vi.mock('../../../src/lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/lib/git/files.js')>()),
+  listTrackedAndUntrackedFiles: async () => null,
+}));
+
 const SESSION_ID = 'summary-evidence-session';
 const CTRL_A = '\u0001';
 

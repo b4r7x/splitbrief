@@ -20,6 +20,7 @@ import { configStore } from '../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
 import type { WorkflowScreenDeps } from '../../src/features/workflow/hooks/workflow-screen/use-model.js';
+import type { listProjectFiles as listFiles } from '../../src/lib/fs/listing.js';
 
 export function prepareWorkflowExecution({
   projectDir,
@@ -96,11 +97,13 @@ export function mountWorkflowScreen({
   projectDir,
   rows = 60,
   feature = 'screen test feature',
+  listProjectFiles,
 }: {
   deps: WorkflowScreenDeps;
   projectDir: string;
   rows?: number;
   feature?: string;
+  listProjectFiles?: typeof listFiles;
 }) {
   const config = makeConfig();
   const prepared = prepareWorkflowExecution({ projectDir, feature, config });
@@ -118,7 +121,12 @@ export function mountWorkflowScreen({
   // Ink drops every unpainted cell past its stdout's width, margins included, so the screen is
   // painted at the width the store lays it out at.
   return renderFeature(
-    <WorkflowScreen commands={[]} onRuntimeCommand={() => {}} deps={deps} />,
+    <WorkflowScreen
+      commands={[]}
+      onRuntimeCommand={() => {}}
+      deps={deps}
+      listProjectFiles={listProjectFiles}
+    />,
     viewport,
   );
 }

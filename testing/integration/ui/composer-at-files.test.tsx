@@ -20,6 +20,7 @@ import type { SessionLogEntry } from '../../../src/core/schemas/session-log.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { listProjectFiles } from '../../../src/lib/fs/listing.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init/options.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
@@ -37,6 +38,15 @@ describe('composer @ files', () => {
   let outsideDir = '';
   let ui: ReturnType<typeof renderFeature> | undefined;
   let running: Promise<Summary> | undefined;
+  // The composer lists the project with a git child and does not wait for it. A git child that
+  // reads its working folder after the test deleted it scans the whole temp folder, so each
+  // listing ends before the folders go.
+  const listings: Promise<string[]>[] = [];
+  const listFiles: typeof listProjectFiles = (dir, options) => {
+    const listing = listProjectFiles(dir, options);
+    listings.push(listing);
+    return listing;
+  };
 
   function engine(script: Parameters<typeof scriptedTypedCall>[0]) {
     const { typedCall, prompts } = scriptedTypedCall(script);
@@ -106,6 +116,7 @@ describe('composer @ files', () => {
     ui = undefined;
     await running;
     running = undefined;
+    await Promise.allSettled(listings.splice(0));
     resetAllStores();
     cleanupTempDir(projectDir);
     cleanupTempDir(outsideDir);
@@ -120,6 +131,7 @@ describe('composer @ files', () => {
       <HomeScreen
         commands={[]}
         onRuntimeCommand={() => {}}
+        listProjectFiles={listFiles}
         deps={{
           sessionSelect: sessionSelectDeps,
           prepareExecution: async (input) => {
@@ -152,7 +164,14 @@ describe('composer @ files', () => {
       await flushEffects();
 
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('workflow'));
-      ui.rerender(<WorkflowScreen commands={[]} onRuntimeCommand={() => {}} deps={deps} />);
+      ui.rerender(
+        <WorkflowScreen
+          commands={[]}
+          onRuntimeCommand={() => {}}
+          deps={deps}
+          listProjectFiles={listFiles}
+        />,
+      );
       await vi.waitFor(() => expect(reviewStore.get().source).not.toBeNull(), { timeout: 5000 });
       expect(prompts).toHaveLength(1);
       expect(prompts[0]).toContain(`--- @${path} ---\n${content}`);
@@ -179,7 +198,7 @@ describe('composer @ files', () => {
       },
       makePlanProposal(),
     ]);
-    ui = mountWorkflowScreen({ deps, projectDir, rows: 40 });
+    ui = mountWorkflowScreen({ deps, projectDir, rows: 40, listProjectFiles: listFiles });
     await vi.waitFor(
       () => expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Question 1 of 1'),
       { timeout: 5000 },
@@ -203,7 +222,7 @@ describe('composer @ files', () => {
     const path = join(outsideDir, 'revision.md');
     writeFileSync(path, 'PELICAN-42');
     const { prompts, deps } = engine([makePlanProposal(), makePlanProposal()]);
-    ui = mountWorkflowScreen({ deps, projectDir, rows: 40 });
+    ui = mountWorkflowScreen({ deps, projectDir, rows: 40, listProjectFiles: listFiles });
     await vi.waitFor(
       () => expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Type a comment…'),
       { timeout: 5000 },
@@ -240,6 +259,7 @@ describe('composer @ files', () => {
       width: 120,
       onSubmit: (submission) => submissions.push(submission),
       onRuntimeCommand: () => {},
+      listProjectFiles: listFiles,
     });
     try {
       await flushEffects();

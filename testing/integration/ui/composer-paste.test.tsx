@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
@@ -11,6 +11,13 @@ import { attachmentsStore } from '../../../src/stores/workflow/attachments.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import type { ClipboardImageResult } from '../../../src/core/attachments/clipboard-image.js';
+
+// The composer lists the project files with a git child. Each test deletes its project folder at
+// the end, and a git child that reads its working folder after that scans the whole temp folder.
+vi.mock('../../../src/lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/lib/git/files.js')>()),
+  listTrackedAndUntrackedFiles: async () => null,
+}));
 
 const ENTER = '\r';
 

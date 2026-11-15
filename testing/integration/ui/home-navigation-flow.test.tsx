@@ -21,6 +21,13 @@ import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { sessionSelectStore } from '../../../src/stores/navigation/session-select.js';
 import { App } from '../../../src/app/root.js';
 
+// The composer lists the project files with a git child. Each test deletes its project folder at
+// the end, and a git child that reads its working folder after that scans the whole temp folder.
+vi.mock('../../../src/lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/lib/git/files.js')>()),
+  listTrackedAndUntrackedFiles: async () => null,
+}));
+
 const CTRL_R = '\x12';
 const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';

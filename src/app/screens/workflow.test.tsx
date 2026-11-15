@@ -27,6 +27,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { waitPastGrace } from '#testing/helpers/typeahead-grace.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -4354,20 +4355,6 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
       ui.stdin.write(key);
       await flushEffects();
     }
-  }
-
-  // A prompt starts its typeahead grace when it is drawn or opened, later than a wait begun before
-  // it. The frame shows the prompt first; then a clock that starts at that moment passes the grace.
-  async function waitPastGrace(
-    ui: ReturnType<typeof renderFeature>,
-    shown: string | RegExp,
-  ): Promise<void> {
-    await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(shown);
-    });
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-    await flushEffects();
   }
 
   it('runs a slash command typed over the stop sheet and names the sheet in the placeholder', async () => {

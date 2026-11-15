@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { waitPastGrace } from '#testing/helpers/typeahead-grace.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { listRowLead } from '../../../../components/list-row/lead.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -63,6 +64,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   approvalPromptStore.__testReset();
   overlayStore.reset();
   composerLiveStore.reset();
@@ -101,7 +103,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('never asks the user to type a confirmation phrase', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config'));
-    await tick(PAST_GRACE);
+    await waitPastGrace(ui, '.git/config');
 
     const frame = stripColor(ui.lastFrame());
     expect(frame).not.toContain(CONFIRM_PHRASE);
@@ -124,8 +126,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('starts on Confirm and confirms an irreversible write on ⏎', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, '.git/config');
 
     expect(stripColor(ui.lastFrame())).toContain(`${bar}    Confirm`);
 
@@ -141,8 +142,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('moves the highlight with ↑↓, wraps it, and takes the highlighted row on ⏎', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, 'package.json');
 
     expect(stripColor(ui.lastFrame())).toContain(`${bar}y   Confirm`);
 
@@ -160,8 +160,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('takes the r row on ⏎ into the reason step, and that ⏎ does not also submit it', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, '.git/config');
 
     ui.stdin.write(DOWN);
     await tick(20);
@@ -180,8 +179,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('reads ↑↓ delivered in the same render as ⏎ through the mirrored index', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, 'package.json');
 
     ui.stdin.write(DOWN);
     ui.stdin.write(DOWN);
@@ -193,8 +191,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('answers a bare y on an irreversible write with the nudge and moves the highlight to Confirm', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, '.git/config');
 
     ui.stdin.write(DOWN);
     await tick(20);
@@ -223,7 +220,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('confirms a reversible write on y', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
-    await tick(PAST_GRACE);
+    await waitPastGrace(ui, 'package.json');
 
     expect(stripColor(ui.lastFrame())).toContain(`${bar}y   Confirm`);
     await flushEffects();
@@ -240,8 +237,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('takes an optional typed reason behind r', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, '.git/config');
 
     ui.stdin.write('r');
     await tick(20);
@@ -261,8 +257,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('handles queued pasted reason input with no delay', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, '.git/config');
 
     ui.stdin.write('r');
     ui.stdin.write('pasted reason');
@@ -279,8 +274,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('leaves the reason step alone for arrows', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, '.git/config');
 
     ui.stdin.write('r');
     await tick(20);
@@ -302,8 +296,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('denies on x', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, '.git/config');
 
     ui.stdin.write('x');
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
@@ -338,8 +331,7 @@ describe('ApprovalPrompt confirm tier', () => {
       terminalSizeStore.__testReset({ cols, rows: 40 });
       const ui = renderFeature(<ApprovalPrompt />, { cols, rows: 40 });
       const pending = openApprovalPrompt(makeConfirmRequest(description, actionClass));
-      await tick(PAST_GRACE);
-      await flushEffects();
+      await waitPastGrace(ui, approvalTitle(actionClass));
 
       const budget = getApprovalPromptRows(approvalPromptStore.get(), cols);
       expect(frameRows(ui.lastFrame())).toBe(budget);
@@ -373,8 +365,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it('resets confirmation progress when a pending request is superseded', async () => {
     const ui = render(<ApprovalPrompt />);
     const first = openApprovalPrompt(makeConfirmRequest('delete temp files'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, 'delete temp files');
 
     ui.stdin.write(DOWN);
     await tick(20);
@@ -387,7 +378,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     const second = openApprovalPrompt(makeConfirmRequest('reset repository'));
     await expect(first).resolves.toEqual({ decision: 'deny', reason: 'superseded' });
-    await tick(PAST_GRACE);
+    await waitPastGrace(ui, 'reset repository');
 
     const frame = stripColor(ui.lastFrame());
     expect(frame).toContain('reset repository');
@@ -405,8 +396,7 @@ describe('ApprovalPrompt confirm tier', () => {
     terminalSizeStore.__testReset({ cols: 34, rows: 40 });
     const ui = renderFeature(<ApprovalPrompt />, { cols: 34, rows: 40 });
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, '.git/config');
 
     const width = approvalTextWidth(34);
     const legend = fitKeyLegend(CHOOSE_HINTS, width);
@@ -580,7 +570,7 @@ describe('runner trust panel', () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     const ui = renderFeature(<ApprovalPrompt />, { cols: 60, rows: 18 });
     const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
-    await tick(PAST_GRACE);
+    await waitPastGrace(ui, approvalTitle('runner_trust'));
 
     const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
     expect(lines).toHaveLength(18);
@@ -610,7 +600,7 @@ describe('runner trust panel', () => {
       terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 120 });
       const ui = renderFeature(<ApprovalPrompt />, { cols, rows });
       const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
-      await tick(PAST_GRACE);
+      await waitPastGrace(ui, approvalTitle('runner_trust'));
 
       const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
       expect(lines.length).toBeLessThanOrEqual(rows);
@@ -638,7 +628,7 @@ describe('runner trust panel', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const ui = render(<ApprovalPrompt clampedBoxRows={12} />);
     const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
-    await tick(PAST_GRACE);
+    await waitPastGrace(ui, approvalTitle('runner_trust'));
 
     const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
     expect(lines).toHaveLength(12);
@@ -662,8 +652,7 @@ describe('runner trust panel', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
-    await tick(PAST_GRACE);
-    await flushEffects();
+    await waitPastGrace(ui, approvalTitle('runner_trust'));
 
     expect(stripColor(ui.lastFrame())).not.toContain('Confirm with a reason');
     ui.stdin.write('r');

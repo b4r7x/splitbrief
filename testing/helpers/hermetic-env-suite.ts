@@ -33,6 +33,7 @@ export function describeHermeticEnvironment(): void {
         expect(readdirSync(runtime).sort()).toEqual(['node', 'npm', 'npx']);
         expect(env.HOME).toBe(root);
         expect(env.TMPDIR).toBeDefined();
+        expect(env.TSX_DISABLE_CACHE).toBe('1');
         expect(safeChildEnvironment(root).PATH?.split(delimiter)).toEqual([
           runtime,
           ...systemPaths,

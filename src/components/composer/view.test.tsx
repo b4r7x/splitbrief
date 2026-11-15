@@ -36,6 +36,13 @@ import type { DraftSubmission } from '../../core/composer/submission.js';
 import { COMMANDS_ONLY_NOTICE } from './key-gate.js';
 import { Composer } from './view.js';
 
+// The composer lists the project files with a git child. Each test deletes its project folder at
+// the end, and a git child that reads its working folder after that scans the whole temp folder.
+vi.mock('../../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
+  listTrackedAndUntrackedFiles: async () => null,
+}));
+
 vi.mock('node:fs', async (original) => ({
   ...(await original<typeof import('node:fs')>()),
 }));

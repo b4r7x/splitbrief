@@ -99,6 +99,7 @@ function spawnChild(spawn: PtySpawn, mode: ChildMode, artifactDir: string): PtyP
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       NODE_NO_WARNINGS: '1',
+      TSX_DISABLE_CACHE: '1',
       FORCE_COLOR: '0',
       CI: 'false',
     }).filter((entry): entry is [string, string] => entry[1] !== undefined),

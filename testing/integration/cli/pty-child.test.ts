@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { ReactElement } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { hermeticPath } from '#testing/helpers/compatible-cli-shim.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { AppProps } from '../../../src/app/root.js';
 import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
@@ -40,10 +41,17 @@ import {
 } from './pty/contract.js';
 import { runEditorChild } from './pty/editor-child.js';
 
+// The PTY child runs on the hermetic PATH, so the preparation reads that PATH here too and not the
+// tools of the machine that runs the test.
+beforeEach(() => {
+  vi.stubEnv('PATH', hermeticPath([]));
+});
+
 afterEach(() => {
   clearAllHandlers();
   stopStore.__testReset();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 function renderedWorkflow(element: ReactElement<AppProps>) {

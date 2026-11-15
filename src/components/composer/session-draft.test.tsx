@@ -19,6 +19,13 @@ import { draftRefusalStore, flushSessionDrafts } from '../../stores/ui/session-d
 import { sessionDir } from '../../core/paths.js';
 import { Composer } from './view.js';
 
+// The composer lists the project files with a git child. Each test deletes its project folder at
+// the end, and a git child that reads its working folder after that scans the whole temp folder.
+vi.mock('../../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
+  listTrackedAndUntrackedFiles: async () => null,
+}));
+
 const document: DraftDocument = {
   version: 1,
   parts: [
