@@ -15,6 +15,7 @@ import {
   createSessionResumeState,
   isSessionExpiredError,
   sessionResumeMismatchError,
+  type SessionResumeState,
 } from '../../session-expiry.js';
 import type { RunnerCallContext } from '../../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../../calls/callback-buffer.js';
@@ -25,7 +26,7 @@ import type { CliSeat } from '../../runners/seat-gates.js';
 
 const CLAUDE_TOOL = 'claude-code' as const;
 
-export function createClaudeCodePlanner(opts: {
+interface ClaudeCodePlannerOptions {
   cliSeat?: CliSeat | undefined;
   model?: string | undefined;
   initialSessionId?: string | null | undefined;
@@ -37,19 +38,132 @@ export function createClaudeCodePlanner(opts: {
   maxToolCalls?: number | undefined;
   /** The run's global skills, which every call of this seat may read and never write. */
   skillRoots?: readonly string[] | undefined;
-}): Planner {
-  const {
+}
+
+/** One planner seat: its options, the model and runner they resolve to, and its resumable session. */
+interface ClaudeCodePlannerSeat {
+  options: ClaudeCodePlannerOptions;
+  resolvedModel: string | undefined;
+  runnerConfig: {
+    kind: 'cli';
+    tool: typeof CLAUDE_TOOL;
+    model: string | undefined;
+    effort: EffortLevel | undefined;
+  };
+  session: SessionResumeState;
+}
+
+function claudeRunnerPrep(
+  seat: ClaudeCodePlannerSeat,
+  input: { env: NodeJS.ProcessEnv; signal?: AbortSignal | undefined },
+) {
+  const { cliSeat, effort, args, skillRoots, timeout, idleWarnMs, idleKillMs, maxToolCalls } =
+    seat.options;
+  return {
+    model: seat.resolvedModel,
+    env: input.env,
     cliSeat,
-    model,
-    initialSessionId,
-    effort,
-    args,
-    timeout,
-    idleWarnMs,
-    idleKillMs,
-    maxToolCalls,
-    skillRoots,
-  } = opts;
+    ...(effort !== undefined && { effort }),
+    configuredArgs: args,
+    ...(skillRoots !== undefined && { skillRoots }),
+    ...(input.signal !== undefined && { signal: input.signal }),
+    ...(timeout !== undefined && { timeoutMs: timeout }),
+    ...(idleWarnMs !== undefined && { idleWarnMs }),
+    ...(idleKillMs !== undefined && { idleKillMs }),
+    ...(maxToolCalls !== undefined && { maxToolCalls }),
+  };
+}
+
+async function invokeOnSession(
+  seat: ClaudeCodePlannerSeat,
+  prompt: string,
+  projectDir: string,
+  callbacks: Pick<
+    PlannerCallbacks,
+    'onOutput' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent' | 'steering'
+  >,
+  callContext: RunnerCallContext,
+  images?: Attachment[] | undefined,
+  signal?: AbortSignal | undefined,
+  schema?: TypedSchemaInput | undefined,
+) {
+  const { session } = seat;
+  const resumeId = session.getResumeId() ?? undefined;
+  let resumeConfirmed = false;
+  let mismatchedId: string | undefined;
+  const callbackBuffer =
+    resumeId === undefined ? null : createRunnerAttemptCallbackBuffer(callbacks);
+  const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
+  try {
+    const env = await createRunnerSandboxEnv(projectDir, seat.runnerConfig, 'planner');
+    const result = await invokeClaudePlanner({
+      prompt,
+      projectDir,
+      sessionId: resumeId ?? null,
+      callbacks: {
+        ...attemptCallbacks,
+        steering: callbacks.steering,
+        onSessionInit: (id) => {
+          if (resumeId !== undefined && id !== resumeId) {
+            mismatchedId = id;
+            return;
+          }
+          if (id === resumeId && mismatchedId === undefined) {
+            resumeConfirmed = true;
+            callbackBuffer?.flush();
+          }
+        },
+        // The native id is captured as it streams, not after the call returns:
+        // the next phase resumes the same conversation even when this one is
+        // interrupted, and a run cut mid-call still has a thread to pick up.
+        onSessionId: (id: string) => {
+          if (resumeId !== undefined && id !== resumeId) {
+            mismatchedId = id;
+            return;
+          }
+          session.capture(id);
+          attemptCallbacks.onSessionId?.(id);
+        },
+      },
+      callContext,
+      ...claudeRunnerPrep(seat, { env, signal }),
+      ...(images && images.length > 0 ? { images } : {}),
+      ...(schema !== undefined && { schema: { json: schema.json } }),
+    });
+    const returnedSessionId = mismatchedId ?? result.nativeSessionId;
+    if (resumeId !== undefined && returnedSessionId !== null && returnedSessionId !== resumeId) {
+      throw sessionResumeMismatchError(resumeId, returnedSessionId);
+    }
+    callbackBuffer?.flush();
+    return result;
+  } catch (caught) {
+    const err =
+      mismatchedId !== undefined && resumeId !== undefined
+        ? sessionResumeMismatchError(resumeId, mismatchedId)
+        : caught;
+    if (resumeConfirmed && isSessionExpiredError(err)) {
+      throw error(
+        'session-resume-failed',
+        'The confirmed Claude session failed; continue this step to retry.',
+        { cause: err },
+      );
+    }
+    // A session Claude no longer holds fails the call, as a codex thread does: the run drops
+    // the saved id, and the next call starts a fresh session on the rebuilt transcript.
+    if (resumeId !== undefined && isSessionExpiredError(err)) {
+      session.capture(null);
+      callbacks.onSessionExpired?.(resumeId);
+      throw err;
+    }
+    // A session Claude refused as too long is refused again: the next call starts a fresh one.
+    if (typedRunnerCallErrorCode(err) === 'input-too-large') session.capture(null);
+    callbackBuffer?.flush();
+    throw err;
+  }
+}
+
+export function createClaudeCodePlanner(opts: ClaudeCodePlannerOptions): Planner {
+  const { cliSeat, model, initialSessionId, effort } = opts;
   const runnerConfig = { kind: 'cli' as const, tool: CLAUDE_TOOL, model, effort };
   const resolvedModel = resolveCliModel(model, CLAUDE_TOOL);
   const identityConfig = {
@@ -60,112 +174,20 @@ export function createClaudeCodePlanner(opts: {
   };
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
-
-  function claudeRunnerPrep(input: { env: NodeJS.ProcessEnv; signal?: AbortSignal | undefined }) {
-    return {
-      model: resolvedModel,
-      env: input.env,
-      cliSeat,
-      ...(effort !== undefined && { effort }),
-      configuredArgs: args,
-      ...(skillRoots !== undefined && { skillRoots }),
-      ...(input.signal !== undefined && { signal: input.signal }),
-      ...(timeout !== undefined && { timeoutMs: timeout }),
-      ...(idleWarnMs !== undefined && { idleWarnMs }),
-      ...(idleKillMs !== undefined && { idleKillMs }),
-      ...(maxToolCalls !== undefined && { maxToolCalls }),
-    };
-  }
-
-  async function invokeOnSession(
-    prompt: string,
-    projectDir: string,
-    callbacks: Pick<
-      PlannerCallbacks,
-      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent' | 'steering'
-    >,
-    callContext: RunnerCallContext,
-    images?: Attachment[] | undefined,
-    signal?: AbortSignal | undefined,
-    schema?: TypedSchemaInput | undefined,
-  ) {
-    const resumeId = session.getResumeId() ?? undefined;
-    let resumeConfirmed = false;
-    let mismatchedId: string | undefined;
-    const callbackBuffer =
-      resumeId === undefined ? null : createRunnerAttemptCallbackBuffer(callbacks);
-    const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
-    try {
-      const env = await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner');
-      const result = await invokeClaudePlanner({
-        prompt,
-        projectDir,
-        sessionId: resumeId ?? null,
-        callbacks: {
-          ...attemptCallbacks,
-          steering: callbacks.steering,
-          onSessionInit: (id) => {
-            if (resumeId !== undefined && id !== resumeId) {
-              mismatchedId = id;
-              return;
-            }
-            if (id === resumeId && mismatchedId === undefined) {
-              resumeConfirmed = true;
-              callbackBuffer?.flush();
-            }
-          },
-          // The native id is captured as it streams, not after the call returns:
-          // the next phase resumes the same conversation even when this one is
-          // interrupted, and a run cut mid-call still has a thread to pick up.
-          onSessionId: (id: string) => {
-            if (resumeId !== undefined && id !== resumeId) {
-              mismatchedId = id;
-              return;
-            }
-            session.capture(id);
-            attemptCallbacks.onSessionId?.(id);
-          },
-        },
-        callContext,
-        ...claudeRunnerPrep({ env, signal }),
-        ...(images && images.length > 0 ? { images } : {}),
-        ...(schema !== undefined && { schema: { json: schema.json } }),
-      });
-      const returnedSessionId = mismatchedId ?? result.nativeSessionId;
-      if (resumeId !== undefined && returnedSessionId !== null && returnedSessionId !== resumeId) {
-        throw sessionResumeMismatchError(resumeId, returnedSessionId);
-      }
-      callbackBuffer?.flush();
-      return result;
-    } catch (caught) {
-      const err =
-        mismatchedId !== undefined && resumeId !== undefined
-          ? sessionResumeMismatchError(resumeId, mismatchedId)
-          : caught;
-      if (resumeConfirmed && isSessionExpiredError(err)) {
-        throw error(
-          'session-resume-failed',
-          'The confirmed Claude session failed; continue this step to retry.',
-          { cause: err },
-        );
-      }
-      // A session Claude no longer holds fails the call, as a codex thread does: the run drops
-      // the saved id, and the next call starts a fresh session on the rebuilt transcript.
-      if (resumeId !== undefined && isSessionExpiredError(err)) {
-        session.capture(null);
-        callbacks.onSessionExpired?.(resumeId);
-        throw err;
-      }
-      // A session Claude refused as too long is refused again: the next call starts a fresh one.
-      if (typedRunnerCallErrorCode(err) === 'input-too-large') session.capture(null);
-      callbackBuffer?.flush();
-      throw err;
-    }
-  }
+  const seat: ClaudeCodePlannerSeat = { options: opts, resolvedModel, runnerConfig, session };
 
   return createPlannerBase({
     async invokePlan({ prompt, projectDir, callbacks, callContext, images, signal, schema }) {
-      return invokeOnSession(prompt, projectDir, callbacks, callContext, images, signal, schema);
+      return invokeOnSession(
+        seat,
+        prompt,
+        projectDir,
+        callbacks,
+        callContext,
+        images,
+        signal,
+        schema,
+      );
     },
 
     async invokeOneShot({ prompt, projectDir, callbacks, callContext, signal, images, schema }) {
@@ -176,7 +198,7 @@ export function createClaudeCodePlanner(opts: {
         sessionId: null,
         callbacks,
         callContext,
-        ...claudeRunnerPrep({ env, signal }),
+        ...claudeRunnerPrep(seat, { env, signal }),
         ...(images !== undefined && images.length > 0 ? { images } : {}),
         ...(schema !== undefined && { schema: { json: schema.json } }),
       });
@@ -216,7 +238,7 @@ export function createClaudeCodePlanner(opts: {
             },
           },
           callContext: injection.callContext ?? createPlannerCallContext(identityConfig, 'planner'),
-          ...claudeRunnerPrep({ env, signal: injection.signal }),
+          ...claudeRunnerPrep(seat, { env, signal: injection.signal }),
         });
         const returnedSessionId = mismatchedId ?? result.nativeSessionId ?? sessionId;
         if (returnedSessionId !== null && returnedSessionId !== sessionId) {

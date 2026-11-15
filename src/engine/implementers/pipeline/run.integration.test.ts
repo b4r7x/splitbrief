@@ -1405,6 +1405,22 @@ describe('createImplementerBase — git writes during an in-place call (workflow
       ),
     ).toEqual([]);
   });
+
+  it('warns once when the isolation audit cannot read the checkout, and lets the call stand', async () => {
+    const { bus, events } = makeBusRecorder();
+    checkoutReads.failing = 1;
+
+    const result = await implementerThat(() => {}, bus).implement(
+      inPlaceCall({ phase: 'implementing' }),
+    );
+
+    expect(result.success).toBe(true);
+    const warnings = events.filter((event) => event.type === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ type: 'warning', code: 'isolation_audit_failed' });
+    expect(warnings[0]?.message).toContain('checkout unreadable');
+    expect(warnings[0]?.message).toContain(makeTask().id);
+  });
 });
 
 describe('createImplementerBase — a staged copy inside the checkout', () => {
