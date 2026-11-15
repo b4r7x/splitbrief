@@ -26,7 +26,7 @@ import { resolveCliExecutableAliases } from '../cli-executable/resolve.js';
 import { prepareCustomRunnerAdmission } from '../custom/admission.js';
 import { probeRunnerAvailability } from '../probe-availability.js';
 import { createCliSeatGates } from '../seat-gates.js';
-import { persistedTrustAbortError, throwIfPreparationAborted } from './abort-guard.js';
+import { failAbortAfterSavedTrust, throwIfPreparationAborted } from './abort-guard.js';
 import { evaluateCandidate } from './evaluate-candidate.js';
 import { type PreparedConfig, type RunnerGate, parsePreparedConfig } from './prepared.js';
 import {
@@ -36,14 +36,14 @@ import {
   installedVersionsOf,
   cliToolRecheck,
 } from './recheck.js';
-import { runnerCandidates } from './runner-candidates.js';
+import { type RunnerCandidate, runnerCandidates } from './runner-candidates.js';
 import type {
   PrepareExecutionDependencies,
   AdmissionInput,
   ReportSink,
   AdmissionResult,
   EvaluatedSlot,
-  SlotEvaluation,
+  PreparationContext,
 } from './types.js';
 
 export const DEFAULT_DEPENDENCIES: PrepareExecutionDependencies = {
@@ -100,6 +100,54 @@ function exemptReadOnlyBlockers(report: ReadinessReport): ReadinessReport {
   const counts = countReadinessChecks(checks);
   const status = aggregateReadinessStatus(counts);
   return { ...report, sections, counts, status, nextAction: selectNextAction(checks, status) };
+}
+
+/** Runs the admission ladder for each candidate in order, and notes a saved trust. */
+async function evaluateSlots(
+  candidates: readonly RunnerCandidate[],
+  context: PreparationContext,
+): Promise<{ evaluated: EvaluatedSlot[]; trustPersisted: boolean }> {
+  const evaluated: EvaluatedSlot[] = [];
+  let trustPersisted = false;
+  for (const candidate of candidates) {
+    const evaluation = await failAbortAfterSavedTrust(context.signal, trustPersisted, () =>
+      evaluateCandidate(candidate, context),
+    );
+    evaluated.push({ candidate, evaluation });
+    if (evaluation.kind === 'admitted' && evaluation.trustPersisted === true) {
+      trustPersisted = true;
+    }
+    throwIfPreparationAborted(context.signal, trustPersisted);
+  }
+  return { evaluated, trustPersisted };
+}
+
+/**
+ * The verdict of each slot, then the variant rule of each admitted CLI seat. The
+ * run's readiness reads no tool release and no host model, so the variant rule
+ * waits for the gates that carry both.
+ */
+function slotAdmissionChecks(
+  evaluated: readonly EvaluatedSlot[],
+  reviewSettingsSeat: AdmissionInput['reviewSettingsSeat'],
+): ReadinessCheck[] {
+  return [
+    ...buildRunnerAdmissionChecks(evaluated.map((slot) => slot.evaluation.check)),
+    ...evaluated.flatMap(({ candidate, evaluation }) =>
+      evaluation.kind === 'admitted' && evaluation.gate.kind === 'cli'
+        ? variantWithoutModelChecks(
+            candidate.slot.role === 'reviewer' && reviewSettingsSeat === 'planner'
+              ? { role: 'planner' }
+              : candidate.slot,
+            candidate.runner,
+            {
+              installedVersion: evaluation.gate.installedVersion,
+              model: evaluation.gate.effectiveModel ?? candidate.runner.model,
+            },
+          )
+        : [],
+    ),
+  ];
 }
 
 /**
@@ -160,41 +208,8 @@ export async function admitRunners(
     routeCatalogs: new Map(),
     deps,
   });
-  const evaluated: EvaluatedSlot[] = [];
-  let trustPersisted = false;
-  for (const candidate of enumeration.candidates) {
-    let evaluation: SlotEvaluation;
-    try {
-      evaluation = await evaluateCandidate(candidate, context);
-    } catch (cause) {
-      if (input.signal.aborted && trustPersisted) throw persistedTrustAbortError();
-      throw cause;
-    }
-    evaluated.push({ candidate, evaluation });
-    if (evaluation.kind === 'admitted' && evaluation.trustPersisted === true) {
-      trustPersisted = true;
-    }
-    throwIfPreparationAborted(input.signal, trustPersisted);
-  }
-  // The run's readiness reads no tool release and no host model, so the
-  // variant rule waits for the gates that carry both.
-  const slotChecks = [
-    ...buildRunnerAdmissionChecks(evaluated.map((slot) => slot.evaluation.check)),
-    ...evaluated.flatMap(({ candidate, evaluation }) =>
-      evaluation.kind === 'admitted' && evaluation.gate.kind === 'cli'
-        ? variantWithoutModelChecks(
-            candidate.slot.role === 'reviewer' && input.reviewSettingsSeat === 'planner'
-              ? { role: 'planner' }
-              : candidate.slot,
-            candidate.runner,
-            {
-              installedVersion: evaluation.gate.installedVersion,
-              model: evaluation.gate.effectiveModel ?? candidate.runner.model,
-            },
-          )
-        : [],
-    ),
-  ];
+  const { evaluated, trustPersisted } = await evaluateSlots(enumeration.candidates, context);
+  const slotChecks = slotAdmissionChecks(evaluated, input.reviewSettingsSeat);
   report = applyRunnerPreparationChecks(report, slotChecks);
   sink.report = report;
   if (evaluated.some((slot) => slot.evaluation.kind === 'blocked')) {
@@ -204,13 +219,9 @@ export async function admitRunners(
     slot.evaluation.kind === 'admitted' ? [slot.evaluation.gate] : [],
   );
   const admittedConfig = withEffectiveModels(config, gates);
-  let revalidationBlockers: ReadinessCheck[];
-  try {
-    revalidationBlockers = await revalidateCliGates(gates, context);
-  } catch (cause) {
-    if (input.signal.aborted && trustPersisted) throw persistedTrustAbortError();
-    throw cause;
-  }
+  const revalidationBlockers = await failAbortAfterSavedTrust(input.signal, trustPersisted, () =>
+    revalidateCliGates(gates, context),
+  );
   throwIfPreparationAborted(input.signal, trustPersisted);
   if (revalidationBlockers.length > 0) {
     const blockedIds = new Set(revalidationBlockers.map((check) => check.id));
@@ -224,19 +235,15 @@ export async function admitRunners(
 
   // The preflight runs a real binary, so it waits for the trust ladder above
   // to name one. It still lands before any planning is paid for.
-  let argVectorChecks: ReadinessCheck[];
-  try {
-    argVectorChecks = await deps.collectArgVectorPreflightChecks({
+  const argVectorChecks = await failAbortAfterSavedTrust(input.signal, trustPersisted, () =>
+    deps.collectArgVectorPreflightChecks({
       config: admittedConfig,
       projectDir: input.projectDir,
       roles,
       installedVersions: installedVersionsOf(gates),
       signal: input.signal,
-    });
-  } catch (cause) {
-    if (input.signal.aborted && trustPersisted) throw persistedTrustAbortError();
-    throw cause;
-  }
+    }),
+  );
   throwIfPreparationAborted(input.signal, trustPersisted);
   report = applyRunnerPreparationChecks(report, argVectorChecks);
   sink.report = report;

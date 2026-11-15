@@ -13,3 +13,17 @@ export function throwIfPreparationAborted(signal: AbortSignal, trustPersisted: b
   if (signal.aborted && trustPersisted) throw persistedTrustAbortError();
   throwIfAborted(signal);
 }
+
+/** A step that stops on an abort after a runner's trust was saved fails; it is not a clean abort. */
+export async function failAbortAfterSavedTrust<T>(
+  signal: AbortSignal,
+  trustPersisted: boolean,
+  step: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await step();
+  } catch (cause) {
+    if (signal.aborted && trustPersisted) throw persistedTrustAbortError();
+    throw cause;
+  }
+}

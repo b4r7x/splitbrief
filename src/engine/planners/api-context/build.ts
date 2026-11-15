@@ -82,46 +82,13 @@ export async function buildApiPlanningContext(
   for (const artifact of artifacts) collectMentions(artifact.text, mentions);
   for (const path of input.taskFiles ?? []) record(mentions, path, true, 'new');
 
-  const requiredBlocks: Section[] = [];
-  let unsupportedRequired = false;
   for (const path of ['AGENTS.md', 'CLAUDE.md']) {
     const read = await readSource(projectDir, path);
     if (read.kind !== 'missing') record(mentions, path, true, 'existing');
   }
-  for (const mention of [...mentions.values()].sort((a, b) => (a.path < b.path ? -1 : 1))) {
-    const read = await readSource(projectDir, mention.path);
-    if (read.kind === 'text') {
-      manifest.push({
-        path: mention.path,
-        kind: 'required',
-        state: 'included',
-        sha256: read.sha256,
-      });
-      requiredBlocks.push(
-        section(
-          mention.path,
-          sourceBlock(`${mention.path} — whole file, sha256 ${read.sha256}`, read.content),
-          model,
-        ),
-      );
-      continue;
-    }
-    if (!mention.explicit) continue;
-    if (read.kind === 'unsupported') {
-      manifest.push({ path: mention.path, kind: 'required', state: 'unsupported' });
-      missingSections.push(mention.path);
-      unsupportedRequired = true;
-      continue;
-    }
-    // A path the text asked for but that is not there yet is recorded absent; one
-    // it described as existing is evidence this call was promised and denied.
-    if (mention.disposition === 'existing') {
-      manifest.push({ path: mention.path, kind: 'required', state: 'missing' });
-      missingSections.push(mention.path);
-    } else {
-      manifest.push({ path: mention.path, kind: 'optional', state: 'missing' });
-    }
-  }
+  const mentioned = await requiredSources(projectDir, mentions, model);
+  manifest.push(...mentioned.manifest);
+  missingSections.push(...mentioned.missing);
 
   const optionalSources = [];
   for (const path of rankedRepoMapPaths(input.repoMap)) {
@@ -132,18 +99,18 @@ export async function buildApiPlanningContext(
     if (read.kind === 'text') optionalSources.push({ path, read, index });
   }
 
-  const blocks = requiredBlocks.map((part) => part.text);
+  const blocks = mentioned.blocks.map((part) => part.text);
   const measure = (texts: readonly string[], entries: readonly ApiContextManifestEntry[]) =>
     input.measureInput?.(composeText(project, texts, entries));
   const requiredTokens =
     measure(blocks, manifest) ??
     counted.reduce((total, part) => total + part.tokens, 0) +
-      requiredBlocks.reduce((total, part) => total + part.tokens, 0);
+      mentioned.blocks.reduce((total, part) => total + part.tokens, 0);
 
   if (missingSections.length > 0) {
     return {
       kind: 'insufficient-context',
-      cause: unsupportedRequired ? 'unsupported-required' : 'missing-required',
+      cause: mentioned.unsupported ? 'unsupported-required' : 'missing-required',
       missingSections,
       requiredTokens,
       availableTokens,
@@ -153,7 +120,7 @@ export async function buildApiPlanningContext(
 
   const { userBudgetTokens } = input;
   if (userBudgetTokens !== undefined && requiredTokens > userBudgetTokens) {
-    const overflowing = overflowingSections([...counted, ...requiredBlocks], userBudgetTokens);
+    const overflowing = overflowingSections([...counted, ...mentioned.blocks], userBudgetTokens);
     return {
       kind: 'insufficient-context',
       cause: 'input-budget',
@@ -168,8 +135,99 @@ export async function buildApiPlanningContext(
     };
   }
 
-  let remaining = availableTokens - requiredTokens;
-  for (const { path, read, index } of optionalSources) {
+  const packet = optionalSourcesWithin(
+    optionalSources,
+    { manifest, blocks },
+    { remaining: availableTokens - requiredTokens, availableTokens, measure, model },
+  );
+  return {
+    kind: 'complete',
+    text: composeText(project, packet.blocks, packet.manifest),
+    manifest: packet.manifest,
+  };
+}
+
+/**
+ * The current source of each mentioned path, in path order: a readable file goes
+ * whole; an explicit mention that cannot be read is a named gap.
+ */
+async function requiredSources(
+  projectDir: string,
+  mentions: ReadonlyMap<string, Mention>,
+  model: string | undefined,
+): Promise<{
+  manifest: ApiContextManifestEntry[];
+  blocks: Section[];
+  missing: string[];
+  unsupported: boolean;
+}> {
+  const manifest: ApiContextManifestEntry[] = [];
+  const blocks: Section[] = [];
+  const missing: string[] = [];
+  let unsupported = false;
+  for (const mention of [...mentions.values()].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+    const read = await readSource(projectDir, mention.path);
+    if (read.kind === 'text') {
+      manifest.push({
+        path: mention.path,
+        kind: 'required',
+        state: 'included',
+        sha256: read.sha256,
+      });
+      blocks.push(
+        section(
+          mention.path,
+          sourceBlock(`${mention.path} — whole file, sha256 ${read.sha256}`, read.content),
+          model,
+        ),
+      );
+      continue;
+    }
+    if (!mention.explicit) continue;
+    if (read.kind === 'unsupported') {
+      manifest.push({ path: mention.path, kind: 'required', state: 'unsupported' });
+      missing.push(mention.path);
+      unsupported = true;
+      continue;
+    }
+    // A path the text asked for but that is not there yet is recorded absent; one
+    // it described as existing is evidence this call was promised and denied.
+    if (mention.disposition === 'existing') {
+      manifest.push({ path: mention.path, kind: 'required', state: 'missing' });
+      missing.push(mention.path);
+    } else {
+      manifest.push({ path: mention.path, kind: 'optional', state: 'missing' });
+    }
+  }
+  return { manifest, blocks, missing, unsupported };
+}
+
+/**
+ * Packs the ranked optional source into the window the required packet left:
+ * each file whole when it fits, else its longest whole-line prefix that fits.
+ */
+function optionalSourcesWithin(
+  sources: readonly Readonly<{
+    path: string;
+    read: Readonly<{ content: string; sha256: string }>;
+    index: number;
+  }>[],
+  packet: Readonly<{ manifest: readonly ApiContextManifestEntry[]; blocks: readonly string[] }>,
+  budget: Readonly<{
+    remaining: number;
+    availableTokens: number;
+    measure: (
+      texts: readonly string[],
+      entries: readonly ApiContextManifestEntry[],
+    ) => number | undefined;
+    model: string | undefined;
+  }>,
+): { manifest: ApiContextManifestEntry[]; blocks: string[] } {
+  const manifest = [...packet.manifest];
+  const blocks = [...packet.blocks];
+  const { availableTokens, measure, model } = budget;
+  let { remaining } = budget;
+  for (const { path, read, index } of sources) {
     const fits = (text: string, entry: ApiContextManifestEntry): boolean => {
       const entries = manifest.map((current, position) => (position === index ? entry : current));
       const measured = measure([...blocks, text], entries);
@@ -211,6 +269,5 @@ export async function buildApiPlanningContext(
       excerpt = wholeLinePrefix(read.content, path, allowance, model);
     }
   }
-
-  return { kind: 'complete', text: composeText(project, blocks, manifest), manifest };
+  return { manifest, blocks };
 }

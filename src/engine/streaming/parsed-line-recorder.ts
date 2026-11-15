@@ -151,51 +151,40 @@ export function createParsedLineRecorder(opts: {
         }
       }
 
-      if (parsed.toolUse) {
-        for (const toolUse of parsed.toolUse) {
-          opts.recorder.toolUseDone({
-            toolUse: {
-              id: toolUse.id ?? null,
-              name: toolUse.name,
-              input: toolUse.input,
-              ...(toolUse.output !== undefined && { output: toolUse.output }),
-            },
-          });
-        }
-      }
-
-      if (parsed.toolUseDone) {
-        for (const toolUse of parsed.toolUseDone) {
-          opts.recorder.toolUseDone({
-            toolUse: {
-              id: toolUse.id ?? null,
-              name: toolUse.name,
-              input: toolUse.input,
-              ...(toolUse.output !== undefined && { output: toolUse.output }),
-            },
-          });
-        }
-      }
-
-      if (parsed.warning) {
-        for (const warning of parsed.warning) {
-          opts.recorder.warning({ warning });
-        }
-      }
-
-      if (parsed.isHeartbeat) opts.recorder.heartbeat();
-
-      if (parsed.isError) {
-        opts.recorder.finishFailed({
-          status: 'failed',
-          error: {
-            code: 'runner_result_error',
-            message: parsed.text ?? 'Runner result failed',
-          },
-        });
-      }
+      recordParsedSignals(opts.recorder, parsed);
     },
   };
+}
+
+function recordParsedSignals(recorder: RunnerCallRecorder, parsed: ParsedLine): void {
+  for (const toolUse of [...(parsed.toolUse ?? []), ...(parsed.toolUseDone ?? [])]) {
+    recorder.toolUseDone({
+      toolUse: {
+        id: toolUse.id ?? null,
+        name: toolUse.name,
+        input: toolUse.input,
+        ...(toolUse.output !== undefined && { output: toolUse.output }),
+      },
+    });
+  }
+
+  if (parsed.warning) {
+    for (const warning of parsed.warning) {
+      recorder.warning({ warning });
+    }
+  }
+
+  if (parsed.isHeartbeat) recorder.heartbeat();
+
+  if (parsed.isError) {
+    recorder.finishFailed({
+      status: 'failed',
+      error: {
+        code: 'runner_result_error',
+        message: parsed.text ?? 'Runner result failed',
+      },
+    });
+  }
 }
 
 function inferredTextChannel(parsed: ParsedLine): ParsedTextChannel {

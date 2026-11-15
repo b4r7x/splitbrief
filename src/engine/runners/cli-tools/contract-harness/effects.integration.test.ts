@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CliExecutableReceipt } from '../../../../core/discovery/detection/executable.js';
 import { effectScenario, runEffect } from '#testing/helpers/factories/cli-effect-fixture.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { admitCandidateEffect } from '#testing/helpers/candidate-effect.js';
 import { CLI_CONFORMANCE_EXIT_CODES } from './harness.js';
-import { admitCandidateEffect } from '../../../providers/candidate/effect.js';
 import { runFactoryEffectConformance } from './effects.js';
 
 const NONCE = 'nonce-7f3a9c11';

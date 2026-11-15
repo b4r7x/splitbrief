@@ -407,6 +407,34 @@ describe('planning context completeness', () => {
     });
   });
 
+  it('packs every ranked optional source that fits whole after the required material, in rank order', async () => {
+    await withTempDir('api-context', async (dir) => {
+      const alpha = 'export const alpha = 1;\n';
+      const gamma = 'export const gamma = 3;\n';
+      const delta = 'export const delta = 4;\n';
+      write(dir, 'src/alpha.ts', alpha);
+      write(dir, 'src/gamma.ts', gamma);
+      write(dir, 'src/delta.ts', delta);
+
+      const result = complete(
+        await build(dir, {
+          request: 'Modify `src/alpha.ts`.',
+          artifacts: [{ name: 'spec.md', text: '# Spec\nbody', required: true }],
+          repoMap: 'src/gamma.ts:\n  gamma\n\nsrc/alpha.ts:\n  alpha\n\nsrc/delta.ts:\n  delta',
+        }),
+      );
+
+      expect(result.manifest).toEqual([
+        { path: 'spec.md', kind: 'required', state: 'included' },
+        { path: 'src/alpha.ts', kind: 'required', state: 'included', sha256: sha256Hex(alpha) },
+        { path: 'src/gamma.ts', kind: 'optional', state: 'included', sha256: sha256Hex(gamma) },
+        { path: 'src/delta.ts', kind: 'optional', state: 'included', sha256: sha256Hex(delta) },
+      ]);
+      expect(result.text).toContain(delta);
+      expect(result.text.indexOf(gamma)).toBeLessThan(result.text.indexOf(delta));
+    });
+  });
+
   it('reassembles the source from the files as they are now, never from the last packet', async () => {
     await withTempDir('api-context', async (dir) => {
       write(dir, 'src/alpha.ts', 'export const alpha = 1;\n');

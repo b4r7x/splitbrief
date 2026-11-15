@@ -9,8 +9,8 @@ import { createPlanner } from '../../../src/engine/runners/factory.js';
 import { executableChangedMessage } from '../../../src/engine/runners/cli-executable/identity.js';
 import { CLI_CONFORMANCE_EXIT_CODES } from '../../../src/engine/runners/cli-tools/contract-harness/harness.js';
 import { runFactoryEffectConformance } from '../../../src/engine/runners/cli-tools/contract-harness/effects.js';
-import { admitCandidateEffect } from '../../../src/engine/providers/candidate/effect.js';
 import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
+import { admitCandidateEffect } from '#testing/helpers/candidate-effect.js';
 import {
   effectScenario,
   fixtureExecutable,

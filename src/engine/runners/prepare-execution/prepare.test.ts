@@ -205,6 +205,56 @@ function preparedSession(project: string, sessionId: string) {
   };
 }
 
+const ENDPOINT_PLANNER = {
+  kind: 'api',
+  provider: 'custom-endpoint',
+  service: 'custom-endpoint',
+  offering: 'payg',
+  apiBase: 'https://api.example.test/v1',
+  apiKey: 'sk-endpoint-test',
+  model: 'claude-opus-4-6',
+} as const;
+
+/** The given seats, with a shell implementer whose admission `saveRunnerTrust` grants. */
+function trustSavingShellConfig(
+  seats: Pick<NonNullable<Parameters<typeof makeConfig>[0]>, 'planner' | 'reviewer'>,
+) {
+  return ConfigSchema.parse({
+    ...makeConfig({
+      ...seats,
+      implementerProfiles: {
+        default: 'review',
+        profiles: {
+          review: { kind: 'shell', command: 'node', model: 'custom-reviewer' },
+        },
+      },
+    }),
+    customCommands: {
+      review: { label: 'Review changes', contract: 'output', executable: 'node' },
+    },
+  });
+}
+
+/** Admits the custom runner and reports that its trust was saved to disk. */
+const saveRunnerTrust: PrepareExecutionDependencies['prepareCustomRunnerAdmission'] = async (
+  options,
+) => ({
+  kind: 'admitted' as const,
+  trustPersisted: true,
+  invocation: {
+    kind: 'custom-runner-invocation' as const,
+    runner: options.runner,
+    posture: options.posture,
+    executable,
+    authorization: 'explicit-grant' as const,
+    scope: {
+      projectIdentity: `sha256:${'b'.repeat(64)}`,
+      definitionId: options.runner.command.id,
+      definitionDigest: `sha256:${'c'.repeat(64)}`,
+    },
+  },
+});
+
 function configuredApprovalConfig(processSentinel: string) {
   const childProgram = `require('node:fs').writeFileSync(${JSON.stringify(processSentinel)}, 'started')`;
   return ConfigSchema.parse({
@@ -655,28 +705,7 @@ describe('prepareExecution', () => {
 
   it('reports failure rather than a clean abort when the preflight stops after trust publication', async () => {
     const project = projectDir();
-    const config = ConfigSchema.parse({
-      ...makeConfig({
-        planner: {
-          kind: 'api',
-          provider: 'custom-endpoint',
-          service: 'custom-endpoint',
-          offering: 'payg',
-          apiBase: 'https://api.example.test/v1',
-          apiKey: 'sk-endpoint-test',
-          model: 'claude-opus-4-6',
-        },
-        implementerProfiles: {
-          default: 'review',
-          profiles: {
-            review: { kind: 'shell', command: 'node', model: 'custom-reviewer' },
-          },
-        },
-      }),
-      customCommands: {
-        review: { label: 'Review changes', contract: 'output', executable: 'node' },
-      },
-    });
+    const config = trustSavingShellConfig({ planner: ENDPOINT_PLANNER });
     const controller = new AbortController();
     const prepareSession = vi.fn();
 
@@ -693,22 +722,7 @@ describe('prepareExecution', () => {
           throw abortError(controller.signal);
         },
         collectReadiness: async () => ({ report: readyReport(project), config }),
-        prepareCustomRunnerAdmission: async (options) => ({
-          kind: 'admitted' as const,
-          trustPersisted: true,
-          invocation: {
-            kind: 'custom-runner-invocation' as const,
-            runner: options.runner,
-            posture: options.posture,
-            executable,
-            authorization: 'explicit-grant' as const,
-            scope: {
-              projectIdentity: `sha256:${'b'.repeat(64)}`,
-              definitionId: options.runner.command.id,
-              definitionDigest: `sha256:${'c'.repeat(64)}`,
-            },
-          },
-        }),
+        prepareCustomRunnerAdmission: saveRunnerTrust,
         prepareNewSession: prepareSession,
       },
     });
@@ -717,6 +731,79 @@ describe('prepareExecution', () => {
       kind: 'failed',
       error: { kind: 'custom-runner-trust-persisted-after-abort' },
     });
+    expect(prepareSession).not.toHaveBeenCalled();
+  });
+
+  it('reports failure rather than a clean abort when the gate revalidation stops after trust publication', async () => {
+    const project = projectDir();
+    const config = trustSavingShellConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    const controller = new AbortController();
+    const preflight = vi.fn(async () => []);
+    const prepareSession = vi.fn();
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'abort the gate revalidation after trust publication',
+      effectiveConfig: config,
+      configWarnings: [],
+      signal: controller.signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: preflight,
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
+        resolveCliExecutableAliases: async () => {
+          controller.abort();
+          throw abortError(controller.signal);
+        },
+        prepareCustomRunnerAdmission: saveRunnerTrust,
+        prepareNewSession: prepareSession,
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      error: { kind: 'custom-runner-trust-persisted-after-abort' },
+    });
+    expect(preflight).not.toHaveBeenCalled();
+    expect(prepareSession).not.toHaveBeenCalled();
+  });
+
+  it('reports failure rather than a clean abort when a later seat check stops after trust publication', async () => {
+    const project = projectDir();
+    const config = trustSavingShellConfig({
+      planner: ENDPOINT_PLANNER,
+      reviewer: { kind: 'cli', tool: 'codex' },
+    });
+    const controller = new AbortController();
+    const revalidate = vi.fn();
+    const prepareSession = vi.fn();
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'abort the reviewer check after trust publication',
+      effectiveConfig: config,
+      configWarnings: [],
+      signal: controller.signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async () => {
+          controller.abort();
+          throw abortError(controller.signal);
+        },
+        resolveCliExecutableAliases: revalidate,
+        prepareCustomRunnerAdmission: saveRunnerTrust,
+        prepareNewSession: prepareSession,
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      error: { kind: 'custom-runner-trust-persisted-after-abort' },
+    });
+    expect(revalidate).not.toHaveBeenCalled();
     expect(prepareSession).not.toHaveBeenCalled();
   });
 

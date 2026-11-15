@@ -1,6 +1,9 @@
 import { z } from 'zod';
-import { CandidateIdSchema, RunnerRoleSchema } from './contract.js';
-import { MAX_EVIDENCE_OUTPUT_BYTES } from './evidence.js';
+import {
+  CandidateIdSchema,
+  RunnerRoleSchema,
+} from '../../src/engine/providers/candidate/contract.js';
+import { MAX_EVIDENCE_OUTPUT_BYTES } from '../../src/engine/providers/candidate/evidence.js';
 
 /**
  * The factory harness's observed role/effect receipt that candidate admission

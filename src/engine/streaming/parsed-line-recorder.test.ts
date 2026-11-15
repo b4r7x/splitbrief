@@ -219,6 +219,26 @@ describe('createParsedLineRecorder', () => {
     );
   });
 
+  it('records the finished tools of one line in order, its toolUse list before its toolUseDone list', () => {
+    const { events, parsed } = createHarness();
+
+    parsed.apply({
+      toolUse: [{ id: 'tool-1', name: 'Read', input: { file_path: 'src/a.ts' }, output: 'a' }],
+      toolUseDone: [
+        { id: 'tool-2', name: 'Write', input: { file_path: 'src/b.ts' } },
+        { id: 'tool-3', name: 'Bash', input: { command: 'ls' }, output: 'b.ts' },
+      ],
+    });
+
+    expect(
+      events.flatMap((event) => (event.type === 'call_tool_use_done' ? [event.toolUse] : [])),
+    ).toEqual([
+      { id: 'tool-1', name: 'Read', input: { file_path: 'src/a.ts' }, output: 'a' },
+      { id: 'tool-2', name: 'Write', input: { file_path: 'src/b.ts' } },
+      { id: 'tool-3', name: 'Bash', input: { command: 'ls' }, output: 'b.ts' },
+    ]);
+  });
+
   it('records parsed tool lifecycle deltas and warnings', () => {
     const { events, parsed } = createHarness();
 
