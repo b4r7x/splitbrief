@@ -1,160 +1,51 @@
-import { join } from 'node:path';
-import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { requireReviewSeat } from '../../../core/config/accessors/reviewer-runner.js';
 import {
   getRunnerModelName,
   getRunnerDisplayName,
-  getRunnerCatalogDisplayName,
 } from '../../../core/config/accessors/runner-config.js';
-import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import {
-  reviewChangeFile,
-  SPEC_FILE,
-  PLAN_FILE,
-  TASKS_FILE,
-  sessionDir,
-  EVIDENCE_FILE,
-  SESSION_LOG_FILE,
-  DRIFT_REPORT_FILE,
-  REVIEW_JSON_FILE,
-  REVIEW_FILE,
-} from '../../../core/paths.js';
-import { phaseStage } from '../../../core/phases/rail.js';
-import { isQueuedMessagePendingReviewer } from '../../../core/queue/state.js';
-import { reviewName } from '../../../core/recovery/causes.js';
 import { renderReviewMarkdown } from '../../../core/review/render.js';
-import {
-  reviewScopeFor,
-  verdictCoverageErrors,
-  findingInReviewScope,
-} from '../../../core/review/scope.js';
-import {
-  blockingRedInputs,
-  verificationKey,
-  deriveReviewOutcome,
-  setAsideInputs,
-  blockingEntries,
-  blockingKeys,
-} from '../../../core/review/verdict.js';
-import { seatReadsChangeFile, seatSupportsImages } from '../../../core/runners/capabilities.js';
+import { blockingRedInputs, deriveReviewOutcome } from '../../../core/review/verdict.js';
 import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
-import {
-  type TriageResult,
-  type SetAside,
-  ReviewAnswerSchema,
-  type ReviewAnswer,
-  REVIEW_ANSWER_JSON_SCHEMA,
-  type ReviewVerdict,
+import type {
+  TriageResult,
+  SetAside,
+  ReviewVerdict,
 } from '../../../core/schemas/review/verdict.js';
 import type { TaskId } from '../../../core/schemas/task.js';
-import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
 import { type WorkflowState, fixCyclesOf } from '../../../core/schemas/workflow/state.js';
 import { sessionError } from '../../../core/sessions/errors.js';
-import {
-  type SpecMetadata,
-  readSpecFileOrEmpty,
-  writeSpecFile,
-} from '../../../core/sessions/spec-files.js';
-import { writeConfinedSecureFileAsync } from '../../../lib/fs/secure.js';
-import { warnError } from '../../../lib/warn.js';
-import { throwIfAborted, isAbortError } from '../../../utils/abort.js';
-import { error } from '../../../utils/error.js';
-import { labelError } from '../../../utils/format/errors.js';
-import { nowIso } from '../../../utils/format/time.js';
-import { isRecord } from '../../../utils/type-guards.js';
+import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
+import { isAbortError } from '../../../utils/abort.js';
 import type { SteeringPort } from '../../calls/steering.js';
 import type { EventBus } from '../../events/types.js';
-import {
-  typedRunnerCallErrorCode,
-  typedRunnerCallErrorMessage,
-} from '../../implementers/pipeline/call-result.js';
-import {
-  apiContextError,
-  readApiContextDiagnostic,
-} from '../../providers/api/context-diagnostic.js';
-import { resolveSeatImageFact } from '../../providers/model/resolution.js';
-import { NULL_CACHE } from '../../providers/model/runtime-snapshot.js';
 import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import type { Reviewer } from '../../planners/reviewer.js';
-import { cliPromptLimit } from '../../runners/cli-tools/registry.js';
-import { promptLength, inputTooLargeFigures } from '../../runners/input-limit.js';
-import type { RequestTypedResult } from '../../runners/typed-output.js';
-import { formatTasks } from '../../spec/formatter.js';
-import { refusedCheckErrors } from '../../spec/plan/render-checks.js';
-import { unconfiguredRenderCheckErrors } from '../../spec/plan/render-checks.js';
-import { workspaceReadInstructions } from '../../spec/prompts/builder.js';
-import { composeContinuation } from '../../spec/prompts/continuation.js';
-import { triageLines } from '../../spec/prompts/review/changes.js';
-import { reviewChangeText } from '../../spec/prompts/review/changes.js';
-import type { ReviewTouchedNotSuggested } from '../../spec/prompts/review/types.js';
-import { deserializeChangedFilesBaseline } from '../changed-files-baseline.js';
-import { withContinuationLoop } from '../continuation/loop.js';
 import type { ContinuationHolder } from '../continuation/holder.js';
-import { analyzeBriefDrift } from '../drift/analyze.js';
-import { publishDriftReport, formatDriftReportForPrompt } from '../drift/format.js';
-import { writeDriftReport } from '../drift/io.js';
-import { publishWarning } from '../publish/notice.js';
+import type { RunReviewScope } from '../evidence/review-packet/run-scope.js';
 import { publishReviewEvent } from '../publish/review.js';
-import { publishWarningFromError } from '../publish/notice.js';
-import { publishError } from '../publish/notice.js';
-import { persistReviewEvidence } from '../evidence/persistence.js';
-import { currentCandidateId } from '../evidence/record-checks.js';
-import { readPacketEvents } from '../evidence/review-packet/artifacts.js';
-import { fitReviewPrompt } from '../evidence/review-packet/fit.js';
-import {
-  renderWholeChecksLog,
-  renderChecksLogForPrompt,
-} from '../evidence/review-packet/checks-log.js';
-import { type RunReviewScope, resolveRunReviewScope } from '../evidence/review-packet/run-scope.js';
-import { resolveRunUniverse, runUserFiles } from '../evidence/review-packet/sections-io.js';
-import { buildChecks } from '../evidence/review-packet/sections.js';
-import type { BuildReviewPacketOptions } from '../evidence/review-packet/types.js';
-import { writeReviewPacket } from '../evidence/review-packet/build.js';
-import { runBaseOf } from '../isolation/run-base/tree.js';
-import { drainQueueForReview } from '../queue/drain.js';
-import { settleMidCallDeliveries } from '../queue/mid-call.js';
-import { formatDrainedMessages, imagesFromMessages } from '../queue/prompt.js';
-import { reviewInputTooLargeMessage } from '../recovery/builders/review-input.js';
-import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';
-import { runReviewChecks } from './checks/run-all.js';
-import { plannerFeature } from '../run/planner-callbacks-context.js';
 import type { PreReviewResult } from './checks/gate.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
-import { type SummaryBase, buildSummary } from '../summary/build.js';
-import { touchedNotSuggestedFiles } from '../task/commit.js';
-import { triageContractErrors, fixTaskTargetErrors } from './contract-errors.js';
+import type { SummaryBase } from '../summary/build.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { BaseGate } from '../validation/base-gate.js';
-import {
-  enabledReviewChecks,
-  planApprovesNpmScripts,
-  checkRegistry,
-} from '../validation/checks/runner.js';
-import { buildStageContext, unresolvedTestCheckErrors } from '../validation/run.js';
-import { buildApiReviewContext } from './api-context.js';
-import { runReviewerCall } from './call.js';
-import { reviewPlanData, reviewOperatorInstructions } from './plan.js';
-import { reviewCheckResults, reviewConsultLog, reviewPlanningAnswers } from './prompt.js';
-import { recordFinalReviewStatus } from './record.js';
-import { reviewRenders, forceUnverifiedRenderCriteria } from './renders.js';
-import {
-  type FinalReviewResult,
-  type FinalReview,
-  finalReviewError,
-  REVIEW_UNAVAILABLE,
-  type ReviewPhaseStatus,
+import { callReviewer } from './call.js';
+import { publishReviewFailure } from './failure.js';
+import { resolveReviewBounds, collectReviewInputs } from './inputs.js';
+import { prepareReviewCall } from './prompt.js';
+import { recordReview, writeReviewFiles, finishReview } from './record.js';
+import type {
+  FinalReviewResult,
+  FinalReview,
+  ReviewPhaseStatus,
+  ReviewStatePort,
+  SentReviewPrompt,
 } from './types.js';
-import { verifyReviewClaims } from './verify-claims.js';
+import { reviewVerdictSchema } from './verdict-schema.js';
+import { verifyReviewClaims, keepUnseenRendersUnverified } from './verify-claims.js';
 
-function errorKind(err: unknown): string | undefined {
-  return isRecord(err) && typeof err.kind === 'string' ? err.kind : undefined;
-}
-
-export async function runFinalReviewPhase(opts: {
+type FinalReviewPhaseOptions = {
   projectDir: string;
   workspaceDir: string;
   sessionId: string;
@@ -188,21 +79,22 @@ export async function runFinalReviewPhase(opts: {
    * re-answers a pending question on the same candidate skips it.
    */
   reviewChecks?: { baseGate: BaseGate | undefined } | undefined;
-}): Promise<FinalReviewResult> {
-  let { state } = opts;
-  const {
-    projectDir,
-    workspaceDir,
-    sessionId,
-    config,
-    callbacks,
-    bus,
-    reviewer,
-    metadata,
-    summaryBase,
-  } = opts;
+};
 
-  state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, { keepUnsaved: true });
+/**
+ * The start of the phase: the state rebased on the saved one, ALL_DONE on a fresh final review,
+ * and the pre-review checks, whose halt ends the phase before the review starts.
+ */
+async function openReview(
+  opts: FinalReviewPhaseOptions,
+): Promise<
+  | Readonly<{ kind: 'review'; state: WorkflowState; reviewedBeforeStart: ReadonlySet<string> }>
+  | Readonly<{ kind: 'stopped'; state: WorkflowState }>
+> {
+  const { projectDir, sessionId } = opts;
+  let state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, opts.state, {
+    keepUnsaved: true,
+  });
   const reviewedBeforeStart = new Set(
     state.messageQueue
       .filter((message) => message.deliveredTo?.reviewer !== undefined)
@@ -224,32 +116,53 @@ export async function runFinalReviewPhase(opts: {
     const pre = await opts.preReview(state);
     state = pre.state;
     opts.setTrackedState?.(state);
-    if (pre.kind !== 'review') {
-      return {
-        state,
-        summaryBase,
-        verdict: null,
-        fixWork: null,
-        reviewText: '',
-        reviewStatus: 'failed',
-        preReview: pre.kind,
-      };
-    }
+    if (pre.kind !== 'review') return { kind: pre.kind, state };
   }
+  return { kind: 'review', state, reviewedBeforeStart };
+}
+
+export async function runFinalReviewPhase(
+  opts: FinalReviewPhaseOptions,
+): Promise<FinalReviewResult> {
+  const {
+    projectDir,
+    workspaceDir,
+    sessionId,
+    config,
+    callbacks,
+    bus,
+    reviewer,
+    metadata,
+    summaryBase,
+  } = opts;
+  const opened = await openReview(opts);
+  let { state } = opened;
+  if (opened.kind !== 'review') {
+    return {
+      state,
+      summaryBase,
+      verdict: null,
+      fixWork: null,
+      reviewText: '',
+      reviewStatus: 'failed',
+      preReview: opened.kind,
+    };
+  }
+  const { reviewedBeforeStart } = opened;
+  const live: ReviewStatePort = {
+    get: () => state,
+    set: (next) => {
+      state = next;
+    },
+  };
 
   const reviewRunner = requireReviewSeat(config).runner;
-  const limit =
-    reviewRunner.kind === 'cli' ? cliPromptLimit('planner', reviewRunner.tool) : undefined;
-  // `.splitbrief/` in the run workspace is never a run change.
-  const changeFile = seatReadsChangeFile(reviewRunner)
-    ? join(workspaceDir, reviewChangeFile(sessionId))
-    : undefined;
   const reviewModel = getRunnerModelName(reviewRunner);
   const reviewAxes = seatAxisWords(reviewRunner);
-  const scope = opts.scope ?? 'final';
+  const cadence = opts.scope ?? 'final';
   const reviewEvent = {
-    scope,
-    ...(scope === 'task' && opts.afterTaskId !== undefined && { afterTaskId: opts.afterTaskId }),
+    scope: cadence,
+    ...(cadence === 'task' && opts.afterTaskId !== undefined && { afterTaskId: opts.afterTaskId }),
     tool: getRunnerDisplayName(reviewRunner),
     ...(reviewModel !== undefined && { model: reviewModel }),
     ...(reviewAxes.length > 0 && { axes: [...reviewAxes] }),
@@ -289,452 +202,90 @@ export async function runFinalReviewPhase(opts: {
   let setAside: SetAside[] = [];
   let reviewScope: RunReviewScope | undefined;
   let failure: FinalReviewResult['failure'];
-  let fullPrompt = '';
-  // The text the call appends after the prompt, such as the answer schema; it counts toward the
-  // tool's limit too.
-  let promptSuffix = '';
-  let reviewInput: BuildReviewPacketOptions['reviewInput'];
+  const sent: SentReviewPrompt = {
+    text: '',
+    suffix: '',
+    reviewInput: undefined,
+    tooLarge: undefined,
+  };
   try {
-    const baseline = state.changedFilesBaseline;
-    if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
-    const universe = await resolveRunUniverse({
-      workspaceDir,
-      baseline,
-      runBase: runBaseOf({ projectDir, sessionId }, state),
-    });
-    const userFiles = runUserFiles(universe);
-    reviewScope = await resolveRunReviewScope({
-      ref: { projectDir, sessionId },
-      workspaceDir,
-      tasks: state.tasks,
-      workspaceFiles: universe.changedFiles,
-      workspaceDiff: universe.fullDiff,
-      preRunFiles: universe.preRunFiles,
-      setupFiles: universe.setupFiles,
-      ...(state.applyReview !== undefined && {
-        mergedPaths: state.applyReview.merged.map((entry) => entry.path),
-      }),
-    });
-    const scope = reviewScopeFor(state, opts.scope ?? 'final');
-    let reviewChecksSection: string | undefined;
-    // A review that only re-answers its question on the same candidate keeps the checks it ran.
-    let preExistingChecks = state.review?.preExistingChecks ?? [];
-    if (opts.reviewChecks !== undefined) {
-      const checks = await runReviewChecks({
-        projectDir,
-        workspaceDir,
-        sessionId,
-        config,
-        bus,
-        state,
-        baseGate: opts.reviewChecks.baseGate,
-        signal: opts.signal,
-      });
-      state = checks.state;
-      opts.setTrackedState?.(state);
-      reviewChecksSection = checks.section;
-      preExistingChecks = checks.preExistingChecks;
-    }
-    // A run planned on one session agreed on its plan; only an older run wrote a spec.
-    const spec = readSpecFileOrEmpty(
-      { projectDir, sessionId },
-      state.plan === undefined ? SPEC_FILE : PLAN_FILE,
-    );
-    const taskBriefs =
-      readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE) || formatTasks(state.tasks);
-
-    let driftPromptSection: string | undefined;
-    let checksLog: string | undefined;
-    let wholeChecksLog: string | undefined;
-    let ledger: EvidenceLedger | null = null;
-    const evidencePaths = {
-      validation: join(sessionDir(projectDir, sessionId), EVIDENCE_FILE),
-      sessionLog: join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE),
-      drift: join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE),
-    };
-    try {
-      ledger = readEvidenceLedger({ projectDir, sessionId });
-      const events = await readPacketEvents(projectDir, sessionId, []);
-      if (ledger !== null) {
-        const checks = buildChecks({ ledger, events });
-        if (reviewRunner.kind === 'api') {
-          wholeChecksLog = renderWholeChecksLog(checks);
-        } else {
-          checksLog = renderChecksLogForPrompt(checks, evidencePaths);
-        }
-      }
-    } catch (err) {
-      warnError('Failed to read validation evidence', err);
-    }
-
-    try {
-      const driftReport = analyzeBriefDrift({
-        tasks: state.tasks,
-        changedFiles: reviewScope.provenance.promotedFiles,
-        ledger,
-        briefHash: hashTaskBrief(state.tasks),
-        preRunChangedFiles: universe.preRunFiles,
-      });
-      writeDriftReport({ projectDir, sessionId }, driftReport);
-      publishDriftReport(bus, state.phase, driftReport);
-      driftPromptSection = formatDriftReportForPrompt(driftReport);
-    } catch (err) {
-      warnError('Failed to compute drift report', err);
-    }
-
-    const testChecks = buildStageContext({
-      projectDir: workspaceDir,
-      config,
-      discoveredValidation: state.discoveredValidation,
-      notices: { bus, phase: state.phase },
-    });
-    // Coverage is a contract rule: an incomplete or invented answer fails the
-    // schema, so the seat gets its one repair instead of a silent pass.
-    const verdictSchema = ReviewAnswerSchema.superRefine((candidate, ctx) => {
-      for (const message of [
-        ...verdictCoverageErrors(candidate, scope),
-        ...triageContractErrors(
-          candidate,
-          state.plan,
-          candidate.findings,
-          state.pendingTriage?.inputs ?? [],
-          state.tasks,
-          enabledReviewChecks(config, state.plan),
-          scope,
-        ),
-        ...fixTaskTargetErrors(candidate.fixTasks, userFiles),
-        ...refusedCheckErrors(
-          candidate.fixTasks.flatMap((task) => task.checks),
-          {
-            npmScriptsApproved: planApprovesNpmScripts({ config, state }),
-            projectDir: workspaceDir,
-            writtenFiles: candidate.fixTasks.flatMap((task) => task.suggestedFiles),
-          },
-        ).map((error) => error.message),
-        ...unconfiguredRenderCheckErrors(
-          candidate.fixTasks.flatMap((task) => task.checks),
-          config.validation.render,
-        ),
-        ...unresolvedTestCheckErrors(candidate.fixTasks, testChecks, []),
-      ]) {
-        ctx.addIssue({ code: 'custom', message });
-      }
-    });
-
-    const plan = reviewPlanData(state);
-    // The reviewer judges only the current candidate: an artifact from an earlier
-    // candidate can never stand in for a render this run did not produce.
-    let reviewCandidateId: string | undefined;
-    try {
-      reviewCandidateId = await currentCandidateId(
-        workspaceDir,
-        deserializeChangedFilesBaseline(baseline),
-      );
-    } catch (err) {
-      warnError(
-        'Could not identify the current change, so the reviewer does not see its renders',
-        err,
-      );
-    }
-    // The renders the checks log recorded: a seat that takes images gets up to
-    // four per check, else it gets a manifest and the no-vision statement.
-    const reviewSeatTakesImages = seatSupportsImages({
-      runner: reviewRunner,
-      detected: resolveSeatImageFact({
-        runner: reviewRunner,
-        role: 'reviewer',
-        cache: opts.modelCache,
-      }),
-    });
-    const registry = checkRegistry({
-      plan: state.plan,
-      tasks: state.tasks,
-      reviewChecks: enabledReviewChecks(config, state.plan),
-    });
-    const checkIds = [...registry.keys()];
-    const renders = reviewRenders({
-      ledger,
-      registry,
+    const bounds = await resolveReviewBounds({
       projectDir,
-      seatSupportsImages: reviewSeatTakesImages,
-      currentCandidateId: reviewCandidateId,
+      workspaceDir,
+      sessionId,
+      state,
+      cadence,
     });
-    const criterionCheckIds = (criterionId: string): readonly string[] =>
-      state.plan?.criteria.find((criterion) => criterion.id === criterionId)?.checkIds ?? [];
-    const ledgerChangedFiles = new Map(
-      (ledger?.tasks ?? []).map((entry) => [entry.id, entry.changedFiles]),
-    );
-    const touchedNotSuggested: ReviewTouchedNotSuggested[] = state.tasks
-      .map((task, index) => ({
-        taskId: task.id,
-        files: touchedNotSuggestedFiles({
-          task,
-          tasks: state.tasks.slice(0, index),
-          taskChangedFiles: ledgerChangedFiles.get(task.id) ?? [],
-        }),
-      }))
-      .filter((entry) => entry.files.length > 0);
-    const checkResults = reviewCheckResults(state);
-    const consultLog = reviewConsultLog(state);
-    const triageLog = triageLines(state.triage ?? []);
-    const pendingInputs = state.pendingTriage?.inputs ?? [];
-    const fixCycle = fixCyclesOf(state).used + 1;
-    const writesFiles = resolveImplementerProfiles(config).defaultProfile.capabilities.writesFiles;
-    const planningAnswers = reviewPlanningAnswers(state);
-    const operatorInstructions = reviewOperatorInstructions(state);
-    const promptScope = reviewScope;
-    const messagesForReview = () =>
-      state.messageQueue.filter(
-        (message) =>
-          message.deliveredTo?.reviewer !== undefined && !reviewedBeforeStart.has(message.id),
-      );
-    const preparePrompt = async (): Promise<(suffix: string) => string> => {
-      throwIfAborted(opts.signal);
-      const drain = await drainQueueForReview({ projectDir, sessionId, state, bus });
-      state = drain.state;
-      opts.setTrackedState?.(state);
-      const queueText = formatDrainedMessages(messagesForReview());
-      const promptPrefix = [
-        plannerFeature(workspaceReadInstructions(workspaceDir), state.plannerContext),
-        ...(opts.integration !== undefined ? [opts.integration] : []),
-        ...(reviewChecksSection !== undefined ? [reviewChecksSection] : []),
-        queueText,
-      ].join('\n\n');
-      if (changeFile !== undefined) {
-        await writeConfinedSecureFileAsync(
-          workspaceDir,
-          reviewChangeFile(sessionId),
-          reviewChangeText(promptScope),
-        );
-      }
-
-      return (suffix) => {
-        promptSuffix = suffix;
-        // An API seat reads no file of its own, so it is dispatched only once the
-        // packet it is handed carries every required source, whole and untruncated.
-        if (reviewRunner.kind === 'api') {
-          const packet = buildApiReviewContext({
-            feature: state.feature,
-            spec,
-            taskBriefs,
-            reviewKind: opts.scope ?? 'final',
-            fullDiff: universe.fullDiff,
-            changedFiles: universe.changedFiles,
-            baseline: { head: baseline.head, runStartChangedFiles: universe.preRunFiles },
-            driftSection: driftPromptSection,
-            validation: { recorded: wholeChecksLog !== undefined, evidence: wholeChecksLog },
-            reviewScope: promptScope,
-            queueText: promptPrefix,
-            taskIds: scope.taskIds,
-            criterionIds: scope.criterionIds,
-            checkIds,
-            plan,
-            touchedNotSuggested,
-            checkResults,
-            consultLog,
-            triageLog,
-            planningAnswers,
-            operatorInstructions,
-            pendingInputs,
-            fixCycle,
-            writesFiles,
-            ...(renders.section !== undefined && { renders: renders.section }),
-            ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
-            ...(reviewRunner.contextLength !== undefined && {
-              contextLength: reviewRunner.contextLength,
-            }),
-            ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
-          });
-          if (packet.kind === 'insufficient-context') {
-            throw apiContextError({
-              code: 'insufficient-context',
-              seat: 'review',
-              cause: packet.cause,
-              missingSections: [...packet.missingSections],
-              ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
-              requiredTokens: packet.requiredTokens,
-              availableTokens: packet.availableTokens,
-            });
-          }
-          fullPrompt = packet.text;
-        } else {
-          const result = fitReviewPrompt({
-            prefix: promptPrefix,
-            prompt: {
-              spec,
-              taskBriefs,
-              reviewKind: opts.scope ?? 'final',
-              ...(changeFile === undefined
-                ? {
-                    files: promptScope.files,
-                    laterDiff: promptScope.laterDiff,
-                    workspaceContext: promptScope.workspaceContext,
-                  }
-                : { changeFile: { path: changeFile, provenance: true } }),
-              plan,
-              touchedNotSuggested,
-              checkResults,
-              consultLog,
-              triageLog,
-              planningAnswers,
-              operatorInstructions,
-              pendingInputs,
-              fixCycle,
-              writesFiles,
-              taskIds: scope.taskIds,
-              criterionIds: scope.criterionIds,
-              checkIds,
-              changeCoverage: promptScope.description,
-              driftReport: driftPromptSection,
-              checksLog,
-              renders: renders.section,
-              skillsContext: opts.skillsContext,
-            },
-            limit,
-            suffix,
-            evidencePaths,
-          });
-          if (limit !== undefined) {
-            // The prompt is rebuilt on each retry and repair, so the trim
-            // warning shows once for each review.
-            const trimmedBefore = (reviewInput?.dropped.length ?? 0) > 0;
-            reviewInput = { size: result.size, limit, dropped: [...result.dropped] };
-            if (result.dropped.length > 0 && !trimmedBefore) {
-              publishWarning({
-                bus,
-                phase: state.phase,
-                message: `Review input trimmed to fit ${getRunnerCatalogDisplayName(reviewRunner)} (${result.size.toLocaleString('en-US')} of ${limit.max.toLocaleString('en-US')} ${limit.unit}): ${result.dropped.map((drop) => `${drop.trim}: ${drop.items.join(', ')}`).join('; ')}`,
-              });
-            }
-          }
-          fullPrompt = result.prompt;
-          if (result.kind === 'too-large') {
-            failure = {
-              kind: 'input-too-large',
-              figures: { unit: result.limit.unit, size: result.size, limit: result.limit.max },
-              promptSize: promptLength(fullPrompt + promptSuffix),
-              changeFile: reviewChangeFile(sessionId),
-              workspaceDir,
-            };
-            throw error('review-input-too-large', 'Review input exceeds the tool cap.');
-          }
-        }
-        return fullPrompt;
-      };
+    reviewScope = bounds.reviewScope;
+    const ctx = {
+      projectDir,
+      workspaceDir,
+      sessionId,
+      bus,
+      signal: opts.signal,
+      live,
+      setTrackedState: opts.setTrackedState,
     };
-
-    const reviewStep = { kind: 'review' as const, cycle: fixCyclesOf(state).used };
+    const inputs = await collectReviewInputs({
+      ...ctx,
+      config,
+      bounds,
+      runner: reviewRunner,
+      modelCache: opts.modelCache,
+      reviewChecks: opts.reviewChecks,
+    });
+    const { preExistingChecks } = inputs;
+    const step = { kind: 'review' as const, cycle: fixCyclesOf(state).used };
     // One continuation, one call: a retried review is the whole prompt again
     // with the operator's note on the end, never a session resume.
-    let seed = opts.continuation?.take(reviewStep);
-    let steerImages = seed?.steer?.images ?? [];
-    const reviewImages = () =>
-      imagesFromMessages([
-        { images: renders.images },
-        { images: steerImages },
-        ...messagesForReview(),
-      ]);
-
-    const callReviewer = async (): Promise<RequestTypedResult<ReviewAnswer>> => {
-      if (opts.sinks === undefined) {
-        const call = await runReviewerCall({
-          reviewer,
-          prepareCall: async () => ({ prompt: await preparePrompt(), images: reviewImages() }),
-          schema: verdictSchema,
-          jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
-          schemaName: 'review_answer',
-          projectDir,
-          workspaceDir,
-          sessionId,
-          bus,
+    const asked = await callReviewer(
+      {
+        ...ctx,
+        reviewer,
+        config,
+        callbacks,
+        sinks: opts.sinks,
+        steering: opts.steering,
+        schema: reviewVerdictSchema({
+          getState: live.get,
+          scope: bounds.scope,
           config,
-          state,
-          signal: opts.signal,
-          ...(opts.steering !== undefined && { steering: opts.steering }),
-        });
-        state = call.state;
-        return call.result;
-      }
-      const loopSeed = seed;
-      seed = undefined;
-      const loop = await withContinuationLoop<RequestTypedResult<ReviewAnswer>>({
-        ctx: {
-          projectDir,
-          sessionId,
-          callbacks,
-          bus,
-          signal: opts.signal,
-          sinks: opts.sinks,
-        },
-        state,
-        step: reviewStep,
-        ...(loopSeed === undefined ? {} : { seed: loopSeed }),
-        onStateChange: (s) => {
-          state = s;
-        },
-        // The review is one shot by constitution: a continuation re-issues the
-        // whole deterministic prompt — spec, briefs, diff or change file, drift, evidence — with
-        // the operator's note on the end. It never resumes a session.
-        body: async ({ signal: callSignal, partial, steer, steerInput }) => {
-          seed = steerInput === undefined ? undefined : { steer: steerInput };
-          steerImages = steerInput?.images ?? [];
-          const call = await runReviewerCall({
-            reviewer,
-            prepareCall: async () => {
-              const prompt = await preparePrompt();
-              return {
-                prompt: (suffix) =>
-                  partial === undefined && steer === undefined
-                    ? prompt(suffix)
-                    : composeContinuation({ basePrompt: prompt(suffix), partial, steer }),
-                images: reviewImages(),
-              };
+          workspaceDir,
+          userFiles: bounds.userFiles,
+          testChecks: inputs.testChecks,
+        }),
+        step,
+        prepareCall: (steerImages) =>
+          prepareReviewCall(
+            {
+              ...ctx,
+              runner: reviewRunner,
+              cadence,
+              bounds,
+              inputs,
+              integration: opts.integration,
+              skillsContext: opts.skillsContext,
+              reviewedBeforeStart,
+              sent,
             },
-            schema: verdictSchema,
-            jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
-            schemaName: 'review_answer',
-            projectDir,
-            workspaceDir,
-            sessionId,
-            bus,
-            config,
-            state,
-            signal: callSignal,
-            ...(opts.steering !== undefined && { steering: opts.steering }),
-          });
-          state = call.state;
-          return call.result;
-        },
-      });
-      return loop.value;
-    };
-
-    const messagePendingReviewer = () =>
-      phaseStage(state.phase) === 'review' &&
-      state.messageQueue.some(isQueuedMessagePendingReviewer);
-    let typed = await callReviewer();
-    while (true) {
-      await settleMidCallDeliveries({ projectDir, sessionId });
-      state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
-        keepUnsaved: true,
-      });
-      opts.setTrackedState?.(state);
-      if (opts.signal?.aborted) return interrupted();
-      if ('error' in typed) {
-        failure = { kind: 'seat-protocol-error', error: typed.error };
-        throw typed.error;
-      }
-      if (!messagePendingReviewer()) break;
-      typed = await callReviewer();
+            steerImages,
+          ),
+      },
+      opts.continuation?.take(step),
+    );
+    if (asked.kind === 'stopped') return interrupted();
+    if (asked.kind === 'refused') {
+      failure = { kind: 'seat-protocol-error', error: asked.error };
+      throw asked.error;
     }
-    const answer = typed.value;
-    const { tasks, criteria, findings } = answer;
-    let reviewerVerdict: ReviewVerdict = { tasks, criteria, findings };
+    const { answer } = asked;
     fixWork = { fixTasks: answer.fixTasks, rejected: answer.rejected, ask: answer.ask };
     const redInputs = blockingRedInputs(state.pendingTriage?.inputs ?? [], fixWork);
+    const { tasks, criteria, findings } = answer;
+    const reviewerVerdict: ReviewVerdict = { tasks, criteria, findings };
     const verification = await verifyReviewClaims({
       verdict: reviewerVerdict,
-      scope,
+      scope: bounds.scope,
       state,
       redInputs,
       preExistingChecks,
@@ -745,209 +296,76 @@ export async function runFinalReviewPhase(opts: {
       bus,
       ...(opts.signal !== undefined && { signal: opts.signal }),
     });
-    // A render check with no attached image can only stay unverified: the
-    // reviewer saw no render of it, so nothing it says may turn one into a pass.
-    let unseenRenderCriteria: readonly string[] = [];
-    if (renders.missingCheckIds.length > 0) {
-      const forced = forceUnverifiedRenderCriteria({
-        verdict: reviewerVerdict,
-        renderCheckIds: renders.missingCheckIds,
-        criterionCheckIds,
-        verification: verification.map,
-      });
-      reviewerVerdict = forced.verdict;
-      if (!reviewSeatTakesImages) unseenRenderCriteria = forced.forcedCriterionIds;
-      if (forced.forcedCriterionIds.length > 0) {
-        const forcedKeys = new Set(
-          forced.forcedCriterionIds.map((id) => verificationKey('criterion', id)),
-        );
-        verification.entries = verification.entries.map((entry) =>
-          forcedKeys.has(entry.id) ? { ...entry, status: 'unverified' as const } : entry,
-        );
-      }
-    }
-    const outcome = deriveReviewOutcome(reviewerVerdict, scope, verification.map, redInputs);
-    setAside = setAsideInputs(state.pendingTriage?.inputs ?? [], fixWork);
-    const record: ReviewRecord = {
-      scope: opts.scope ?? 'final',
-      cycle: fixCyclesOf(state).used,
+    const held = keepUnseenRendersUnverified({
       verdict: reviewerVerdict,
-      outcome: outcome.kind,
-      verification: verification.entries,
-      ...(outcome.redInputs.length > 0 && { redInputs: outcome.redInputs }),
-      ...(preExistingChecks.length > 0 && { preExistingChecks }),
-      ...(unseenRenderCriteria.length > 0 && { unseenRenderCriteria: [...unseenRenderCriteria] }),
-      at: nowIso(),
-    };
-    state = transitionAndSave({ projectDir, sessionId }, state, {
-      type: 'RECORD_REVIEW',
-      review: record,
+      verification,
+      missingCheckIds: inputs.renders.missingCheckIds,
+      plan: state.plan,
+      seatTakesImages: inputs.seatTakesImages,
     });
-    persistReviewEvidence({
-      wctx: { projectDir, sessionId, bus },
-      state,
-      review: {
-        scope: scope.kind,
-        ...(state.review?.afterTaskId !== undefined && { afterTaskId: state.review.afterTaskId }),
-        cycle: fixCyclesOf(state).briefed,
-        outcome: record.outcome,
-        blocking: blockingEntries(outcome),
-        ...(setAside.length > 0 && { setAside }),
-        at: record.at,
-      },
+    const outcome = deriveReviewOutcome(
+      held.verdict,
+      bounds.scope,
+      held.verification.map,
+      redInputs,
+    );
+    const recorded = recordReview({
+      projectDir,
+      sessionId,
+      bus,
+      live,
+      cadence,
+      scope: bounds.scope,
+      verdict: held.verdict,
+      outcome,
+      verification: held.verification.entries,
+      fixWork,
+      preExistingChecks,
+      unseenRenderCriteria: held.unseenRenderCriteria,
     });
-    if (fixWork.fixTasks.length > 0 || fixWork.rejected.length > 0 || fixWork.ask !== null)
-      state = transitionAndSave({ projectDir, sessionId }, state, {
-        type: 'RECORD_TRIAGE',
-        record: {
-          cycle: fixCyclesOf(state).used + 1,
-          at: nowIso(),
-          reviewAt: record.at,
-          inputIds: [
-            ...findings
-              .filter(
-                (finding) =>
-                  finding.severity === 'blocking' &&
-                  finding.kind !== 'unverified' &&
-                  findingInReviewScope(finding, scope),
-              )
-              .map((finding) => finding.id),
-            ...(state.pendingTriage?.inputs ?? []).map((input) => input.id),
-          ],
-          result: fixWork,
-          blocking: blockingKeys(outcome, state.pendingTriage?.inputs ?? []),
-          scope: scope.kind,
-        },
-      });
-    verdict = { verdict: reviewerVerdict, outcome };
+    setAside = recorded.setAside;
+    verdict = { verdict: held.verdict, outcome };
     reviewText = renderReviewMarkdown(
-      reviewerVerdict,
+      held.verdict,
       state.tasks,
       outcome,
       preExistingChecks,
       setAside,
     );
-    writeSpecFile(
-      { projectDir, sessionId },
-      REVIEW_JSON_FILE,
-      `${JSON.stringify(record)}\n`,
-      metadata,
-    );
-    writeSpecFile({ projectDir, sessionId }, REVIEW_FILE, reviewText, metadata);
+    writeReviewFiles({ projectDir, sessionId }, recorded.record, reviewText, metadata);
   } catch (err) {
     if (opts.signal?.aborted || isAbortError(err)) return interrupted();
     if (sessionError.isLocalSaveFailure(err)) throw err;
-    const seat = requireReviewSeat(config);
-    const failed = `${reviewName(reviewEvent)} failed`;
-    const label =
-      seat.source === 'configured'
-        ? `${failed} (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})`
-        : failed;
-    // The diagnosis is read off the error's own data, never off its wording, so
-    // recovery keeps every missing section this review was refused for.
-    const diagnostic = readApiContextDiagnostic(err);
-    let message: string;
-    let resetAt: string | undefined;
-    if (typedRunnerCallErrorCode(err) === 'input-too-large') {
-      const sent = promptLength(fullPrompt + promptSuffix);
-      const figures = inputTooLargeFigures(typedRunnerCallErrorMessage(err) ?? '');
-      failure = {
-        kind: 'input-too-large',
-        figures: { ...figures, size: figures.size ?? sent[figures.unit] },
-        promptSize: sent,
-        changeFile: reviewChangeFile(sessionId),
-        workspaceDir,
-      };
-    }
-    if (failure?.kind === 'input-too-large') {
-      message = reviewInputTooLargeMessage(failure, getRunnerCatalogDisplayName(seat.runner));
-    } else if (failure?.kind === 'seat-protocol-error') {
-      message = failure.error.message;
-    } else if (diagnostic !== null) {
-      message = labelError(label, err);
-      failure = { kind: 'insufficient-context', diagnostic };
-    } else {
-      const diagnosis = diagnosePlannerCallFailure({
-        err,
-        label,
-        runner: seat.runner,
-        seat: 'review',
-      });
-      message = diagnosis.message;
-      resetAt = diagnosis.resetsAt?.toISOString();
-      failure =
-        diagnosis.failure === 'call-failed'
-          ? { kind: 'call-failed', code: errorKind(err) ?? REVIEW_UNAVAILABLE, message }
-          : { kind: 'seat-blocked', diagnosis };
-    }
-    if (failure.kind !== 'seat-blocked')
-      publishError({
-        bus: bus,
-        phase: state.phase,
-        message,
-        resetAt,
-        safety: {
-          category: 'recovery',
-          code: failure.kind === 'input-too-large' ? 'review_input_too_large' : 'review_failed',
-        },
-      });
+    failure = publishReviewFailure({
+      err,
+      named: failure ?? sent.tooLarge,
+      sent,
+      config,
+      review: reviewEvent,
+      sessionId,
+      workspaceDir,
+      bus,
+      phase: state.phase,
+    });
     writeStatus = 'failed';
   }
   if (opts.signal?.aborted) return interrupted();
 
-  recordFinalReviewStatus({ projectDir, sessionId }, writeStatus);
-
-  const blockingFindings = verdict === null ? [] : blockingEntries(verdict.outcome);
-  publishReviewEvent(
-    { bus, phase: state.phase },
-    {
-      type: 'review_completed',
-      ...reviewEvent,
-      verdict: verdict?.outcome.kind ?? 'no-verdict',
-      ...(verdict !== null && {
-        findings: {
-          blocking: blockingFindings.length,
-          minor: verdict.outcome.minor.length,
-          outOfScope: verdict.outcome.outOfScope.length,
-          ...(verdict.outcome.unverifiedCriteria.length > 0 && {
-            unverifiedCriteria: verdict.outcome.unverifiedCriteria.length,
-          }),
-        },
-      }),
-      ...(blockingFindings.length > 0 && { blockingFindings }),
-      ...(verdict !== null && setAside.length > 0 && { setAside }),
-      duration: Date.now() - finalReviewStart,
-    },
-  );
-
-  // The packet is the final review's artifact; a task-cadence review writes only
-  // review.json and review.md.
-  if (opts.scope !== 'task' && summaryBase !== undefined) {
-    try {
-      await writeReviewPacket({
-        projectDir,
-        workspaceDir,
-        sessionId,
-        summary: buildSummary({
-          ...summaryBase,
-          projectDir,
-          sessionId,
-          state,
-        }),
-        state,
-        finalReviewStatus: writeStatus,
-        modelCache: summaryBase.pricingCache ?? NULL_CACHE,
-        ...(reviewScope !== undefined && { provenance: reviewScope.provenance }),
-        ...(reviewInput !== undefined && { reviewInput }),
-      });
-    } catch (err) {
-      publishWarningFromError(
-        { bus: bus, phase: state.phase },
-        'Review packet generation failed',
-        err,
-      );
-    }
-  }
+  await finishReview({
+    projectDir,
+    workspaceDir,
+    sessionId,
+    bus,
+    state,
+    event: reviewEvent,
+    startedAt: finalReviewStart,
+    writeStatus,
+    verdict,
+    setAside,
+    summaryBase,
+    reviewScope,
+    reviewInput: sent.reviewInput,
+  });
 
   const reviewStatus: ReviewPhaseStatus =
     writeStatus === 'failed' || verdict === null ? 'failed' : 'written';

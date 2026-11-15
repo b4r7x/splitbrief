@@ -1,4 +1,5 @@
 import type { ReviewOutcome } from '../../../core/review/verdict.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review/verdict.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
@@ -7,6 +8,7 @@ import type { EventBus } from '../../events/types.js';
 import type { ApiContextDiagnostic } from '../../providers/api/context-diagnostic.js';
 import type { PromptSize, PromptLength } from '../../runners/input-limit.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
+import type { BuildReviewPacketOptions } from '../evidence/review-packet/types.js';
 import type { PlannerCallDiagnosis } from '../recovery/planner-call-failure.js';
 import type { SummaryBase } from '../summary/build.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
@@ -39,6 +41,38 @@ export type FinalReviewFailure =
       workspaceDir: string;
     }>
   | Readonly<{ kind: 'seat-protocol-error'; error: SeatProtocolError }>;
+
+/**
+ * The state of the review phase for a step that runs while other steps save it: `get` reads it
+ * when the step needs it, and `set` hands back each state the step saved.
+ */
+export type ReviewStatePort = Readonly<{
+  get: () => WorkflowState;
+  set: (state: WorkflowState) => void;
+}>;
+
+/**
+ * An input built again for each attempt. The prompt is completed once the seat's binding is
+ * known, with the text the call appends after it, such as the answer schema a seat without
+ * native typed output reads.
+ */
+export type PreparedReviewerCallInput = Readonly<{
+  prompt: (suffix: string) => string;
+  images?: readonly Attachment[] | undefined;
+}>;
+
+/**
+ * The prompt the review seat was last sent. The prompt step writes it on each build, and a failed
+ * call and the review packet read it after the call.
+ */
+export type SentReviewPrompt = {
+  text: string;
+  /** The text the call appends after the prompt, such as the answer schema; it counts toward the tool's limit too. */
+  suffix: string;
+  reviewInput: BuildReviewPacketOptions['reviewInput'];
+  /** The cap the built prompt went over, before the seat was asked. */
+  tooLarge: Extract<FinalReviewFailure, { kind: 'input-too-large' }> | undefined;
+};
 
 /** How far the final review got: a written verdict, or a call that did not land. */
 export type ReviewPhaseStatus = 'written' | 'failed' | 'unparseable';

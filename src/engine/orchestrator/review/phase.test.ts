@@ -223,6 +223,51 @@ describe('final review queue delivery', () => {
     },
   );
 
+  it.each([false, true])(
+    'hands the continuation steer images to each verdict call with sinks=%s',
+    async (withSinks) => {
+      const opts = setupReview('cli');
+      const steer = {
+        ...plainUserMessage('Compare with [image:steer-shot]'),
+        images: [
+          {
+            id: 'steer-shot',
+            kind: 'image' as const,
+            path: '/outside/steer.png',
+            mimeType: 'image/png',
+            sizeBytes: 5,
+          },
+        ],
+      };
+      const contexts: TypedCallContext[] = [];
+      const typedCall = typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt, call) => {
+          if (call === 1) opts.enqueue('check the missing guard');
+          return passingReviewVerdict(prompt);
+        },
+      );
+      const reviewer = makePlanner({
+        typedCall: (ctx) => {
+          contexts.push(ctx);
+          return typedCall(ctx);
+        },
+      });
+
+      const result = await runFinalReviewPhase({
+        ...opts,
+        reviewer,
+        ...(withSinks && { sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} } }),
+        continuation: createContinuationHolder({ step: { kind: 'review', cycle: 0 }, steer }),
+      });
+
+      expect(result.reviewStatus).toBe('written');
+      expect(contexts).toHaveLength(2);
+      expect(contexts[0]?.images).toEqual(steer.images);
+      expect(contexts[1]?.images).toEqual(steer.images);
+    },
+  );
+
   it('uses one task verdict when BUILD owns an arrival during the call', async () => {
     const opts = setupReview('cli');
     const prompts: string[] = [];

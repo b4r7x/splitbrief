@@ -873,6 +873,28 @@ describe('runFinalReviewPhase', () => {
     expect(result.state.triage ?? []).toEqual([]);
   });
 
+  it('returns the triage cycle that a failed review with fix work saved', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const { reviewer } = makeReviewer((prompt) =>
+      failedReviewVerdict(prompt, 'src/alpha.ts drops the error'),
+    );
+    const result = await runFinalReviewPhase({
+      modelCache: undefined,
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+    });
+    expect(result.verdict?.outcome.kind).toBe('fail');
+    expect(result.state.triage).toEqual([
+      expect.objectContaining({ cycle: 1, result: result.fixWork }),
+    ]);
+  });
+
   it('runs no claim check while a red suite input still blocks the review', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     const { reviewer } = makeReviewer((prompt) => ({

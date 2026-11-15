@@ -1,6 +1,7 @@
 import { type ReviewScope, findingInReviewScope } from '../../../core/review/scope.js';
 import { verificationKey } from '../../../core/review/verdict.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { Plan } from '../../../core/schemas/plan.js';
 import type { ReviewVerdict, TriageInput } from '../../../core/schemas/review/verdict.js';
 import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
@@ -16,12 +17,17 @@ import {
   planApprovesNpmScripts,
 } from '../validation/checks/runner.js';
 import type { CheckRunResult, RunChecksOptions } from '../validation/checks/types.js';
+import { forceUnverifiedRenderCriteria } from './renders.js';
 import type { TriageContext } from './types.js';
 
 type ReviewVerification = {
   entries: ReviewRecord['verification'];
   map: Map<string, 'pass' | 'fail' | 'unverified'>;
 };
+
+function criterionCheckIds(plan: Plan | undefined, criterionId: string | null): readonly string[] {
+  return plan?.criteria.find((criterion) => criterion.id === criterionId)?.checkIds ?? [];
+}
 
 /**
  * The checks of every unverified criterion and finding, read from the stored results of this tree
@@ -49,8 +55,6 @@ export async function verifyReviewClaims(args: {
   if (args.redInputs.some((input) => input.source === 'check')) {
     return { entries, map };
   }
-  const criterionCheckIds = (criterionId: string | null): readonly string[] =>
-    args.state.plan?.criteria.find((criterion) => criterion.id === criterionId)?.checkIds ?? [];
   const claims: { key: string; checkIds: readonly string[] }[] = [];
   const collect = (
     kind: 'criterion' | 'finding',
@@ -62,7 +66,7 @@ export async function verifyReviewClaims(args: {
   };
   for (const criterion of args.verdict.criteria) {
     if (criterion.status !== 'unverified') continue;
-    collect('criterion', criterion.id, criterionCheckIds(criterion.id));
+    collect('criterion', criterion.id, criterionCheckIds(args.state.plan, criterion.id));
   }
   for (const finding of args.verdict.findings) {
     if (!findingInReviewScope(finding, args.scope)) continue;
@@ -71,7 +75,7 @@ export async function verifyReviewClaims(args: {
     collect(
       'finding',
       finding.id,
-      named.length > 0 ? named : criterionCheckIds(finding.criterionId),
+      named.length > 0 ? named : criterionCheckIds(args.state.plan, finding.criterionId),
     );
   }
   if (claims.length === 0) return { entries, map };
@@ -88,6 +92,47 @@ export async function verifyReviewClaims(args: {
     entries.push({ id: claim.key, status, output });
   }
   return { entries, map };
+}
+
+/**
+ * A render check with no attached image can only stay unverified: the reviewer saw no render of
+ * it, so nothing it says may turn one into a pass. `unseenRenderCriteria` names the criteria it
+ * kept unverified for a seat that takes no images.
+ */
+export function keepUnseenRendersUnverified(input: {
+  verdict: ReviewVerdict;
+  verification: ReviewVerification;
+  missingCheckIds: readonly string[];
+  plan: Plan | undefined;
+  seatTakesImages: boolean;
+}): {
+  verdict: ReviewVerdict;
+  verification: ReviewVerification;
+  unseenRenderCriteria: readonly string[];
+} {
+  const { verdict, verification } = input;
+  if (input.missingCheckIds.length === 0) {
+    return { verdict, verification, unseenRenderCriteria: [] };
+  }
+  const forced = forceUnverifiedRenderCriteria({
+    verdict,
+    renderCheckIds: input.missingCheckIds,
+    criterionCheckIds: (criterionId) => criterionCheckIds(input.plan, criterionId),
+    verification: verification.map,
+  });
+  const forcedKeys = new Set(
+    forced.forcedCriterionIds.map((id) => verificationKey('criterion', id)),
+  );
+  return {
+    verdict: forced.verdict,
+    verification: {
+      map: verification.map,
+      entries: verification.entries.map((entry) =>
+        forcedKeys.has(entry.id) ? { ...entry, status: 'unverified' as const } : entry,
+      ),
+    },
+    unseenRenderCriteria: input.seatTakesImages ? [] : forced.forcedCriterionIds,
+  };
 }
 
 /** A red whose failures were all red at the run base too verifies the claim like a pass. */

@@ -159,6 +159,7 @@ describe('final review render delivery', () => {
         expect(result.verdict?.outcome.kind).toBe('fail');
         expect(result.verdict?.outcome.unverifiedCriteria).toEqual(['C1']);
         expect(result.state.review?.verdict.criteria[0]?.status).toBe('unverified');
+        expect(result.state.review?.unseenRenderCriteria).toBeUndefined();
       }
     },
   );
@@ -366,6 +367,7 @@ describe('final review render delivery', () => {
     expect(result.verdict?.outcome.kind).toBe('fail');
     expect(result.verdict?.outcome.unverifiedCriteria).toEqual(['C1']);
     expect(result.state.review?.verdict.criteria[0]?.status).toBe('unverified');
+    expect(result.state.review?.unseenRenderCriteria).toEqual(['C1']);
   });
 
   it('hands the attached render to the Codex reviewer process as --image', async () => {
