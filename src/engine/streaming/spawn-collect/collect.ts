@@ -1,17 +1,13 @@
 import type { OutputFormat } from '../../../core/schemas/enums.js';
 import { RUNNER_IDLE_WARN_MS } from '../../../core/schemas/runner/fields.js';
 import { processError } from '../../../lib/process/errors.js';
-import { createLineBuffer } from '../../../lib/process/line-buffer.js';
 import { spawnWithStdin } from '../../../lib/process/spawn/line-stream.js';
-import type { SpawnPipeFatalSignal } from '../../../lib/process/spawn/types.js';
 import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import { redactSecrets } from '../../../utils/redact/secrets.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { createRunnerCallId } from '../../calls/call-id.js';
-import { runnerCallLineOutputLimit } from '../../calls/output-limit.js';
 import { createRunnerCallRecorder } from '../../calls/recorder/create.js';
-import type { RunnerCallRecorder } from '../../calls/recorder/types.js';
 import {
   createRunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
@@ -20,21 +16,22 @@ import {
 } from '../../calls/status.js';
 import type { RunnerCallEvent, RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
 import type { TextChunkMarks } from '../../events/types.js';
-import {
-  type CustomRunnerRedactor,
-  customRunnerRedactionValuesFor,
-  createCustomRunnerStreamingRedactor,
-  redactCustomRunnerParsedLine,
-} from '../../runners/custom/redaction.js';
-import {
-  createCustomRunnerToolInputRedactor,
-  customRunnerToolInputStateLimitError,
-} from '../../runners/custom/tool-input-redaction.js';
+import type { CustomRunnerRedactor } from '../../runners/custom/redaction.js';
+import { customRunnerToolInputStateLimitError } from '../../runners/custom/tool-input-redaction.js';
 import { credentialValuesFromEnvironment } from '../../runners/sandbox/credential-values.js';
-import type { ParsedLine, ParsedTextChannel } from '../../runners/types.js';
+import type { ParsedLine } from '../../runners/types.js';
 import { getLineParser } from '../parse/select.js';
 import { createParsedLineRecorder } from '../parsed-line-recorder.js';
 import { createInvocationCancellation, spawnCollectError } from './cancellation.js';
+import {
+  applyParsed,
+  createRedactedStream,
+  flushStderr,
+  flushStdout,
+  pushStderr,
+  toolInputCapacityExceeded,
+  toolInputCapacitySignal,
+} from './redacted-stream.js';
 
 interface SpawnAndCollectOptions {
   command: string;
@@ -105,159 +102,19 @@ export async function spawnAndCollect(
     onLimit: () => limitController.abort(),
     onEvent: (event) => opts.onCallEvent?.(event),
   });
-  const protectedValues = [...credentialValues, ...customRunnerRedactionValuesFor(opts.redact)];
   const parsedRecorder = createParsedLineRecorder({
     recorder,
     onText: opts.onText,
     onSessionId: (id) => opts.onSessionId?.(redactCredential(id)),
   });
-  const createStdoutRedactor = () =>
-    createCustomRunnerStreamingRedactor(redactCredential, protectedValues);
-  const toolInputRedactor =
-    opts.redact === undefined
-      ? undefined
-      : createCustomRunnerToolInputRedactor(redactCredential, protectedValues);
-  let toolInputCapacityExceeded = false;
-  let stdoutRedactor = createStdoutRedactor();
-  let stdoutChannel: ParsedTextChannel = 'stdout';
-  const subagentRedactors = new Map<string, ReturnType<typeof createStdoutRedactor>>();
-  const pendingSubagentLines: {
-    line: ParsedLine;
-    marks: Pick<TextChunkMarks, 'continues'> | undefined;
-  }[] = [];
-  const emitSubagentParsed = (
-    line: ParsedLine,
-    marks?: Pick<TextChunkMarks, 'continues'>,
-  ): void => {
-    if (stdoutRedactor.hasHeld()) {
-      pendingSubagentLines.push({ line, marks });
-      return;
-    }
-    parsedRecorder.apply(line, marks);
-  };
-  const drainSubagentText = (force = false): void => {
-    if (!force && stdoutRedactor.hasHeld()) return;
-    while (pendingSubagentLines.length > 0) {
-      const next = pendingSubagentLines.shift();
-      if (next !== undefined) parsedRecorder.apply(next.line, next.marks);
-    }
-  };
-  const flushSubagentText = (
-    subagentIds: readonly string[] = [...subagentRedactors.keys()],
-  ): void => {
-    for (const subagentId of subagentIds) {
-      const text = subagentRedactors.get(subagentId)?.flush() ?? '';
-      subagentRedactors.delete(subagentId);
-      if (text.length > 0) {
-        emitSubagentParsed({ text, channel: 'assistant', subagentId }, { continues: true });
-      }
-    }
-  };
-  const flushText = (): void => {
-    const text = stdoutRedactor.flush();
-    if (text.length > 0)
-      parsedRecorder.apply({ text, channel: stdoutChannel }, { continues: true });
-    drainSubagentText();
-  };
-  const applyRedactedParsed = (parsed: ParsedLine): void => {
-    const parsedText = parsed.text;
-    const redacted =
-      opts.redact === undefined ? parsed : redactCustomRunnerParsedLine(parsed, redactCredential);
-    if (redacted.subagentId !== undefined && parsedText !== undefined) {
-      const subagentId = redacted.subagentId;
-      const existing = subagentRedactors.get(subagentId);
-      const redactor = existing ?? createStdoutRedactor();
-      if (existing === undefined) subagentRedactors.set(subagentId, redactor);
-      const released = redactor.pushSplit(parsedText);
-      if (released.held.length > 0) {
-        emitSubagentParsed(
-          { text: released.held, channel: 'assistant', subagentId },
-          { continues: true },
-        );
-      }
-      emitSubagentParsed({ ...redacted, text: released.value });
-      return;
-    }
-    const channel = redacted.channel ?? (redacted.isResult ? 'result' : 'stdout');
-    const isFinalBoundary = redacted.isResult === true || channel === 'result';
-    const isStreamingText = channel === 'assistant' || channel === 'stdout';
-
-    if (isFinalBoundary) flushSubagentText();
-    // The main-loop `tool_result` of a subagent's tool use ends that subagent.
-    if (redacted.toolUse !== undefined) {
-      flushSubagentText(
-        redacted.toolUse.flatMap((tool) => (tool.id === undefined ? [] : [tool.id])),
-      );
-    }
-
-    if (isFinalBoundary && parsedText !== undefined) {
-      const terminal = stdoutRedactor.flushBeforeTerminal(parsedText);
-      if (terminal.before.length > 0) {
-        parsedRecorder.apply(
-          { text: terminal.before, channel: stdoutChannel },
-          { continues: true },
-        );
-      }
-      stdoutRedactor = createStdoutRedactor();
-      drainSubagentText();
-      parsedRecorder.apply({ ...redacted, text: terminal.value });
-      return;
-    } else if (redacted.isError === true || !isStreamingText) {
-      flushText();
-    }
-    if (parsedText === undefined) {
-      parsedRecorder.apply(redacted);
-      return;
-    }
-
-    stdoutChannel = channel;
-    const released = stdoutRedactor.pushSplit(parsedText);
-    if (released.held.length > 0) {
-      parsedRecorder.apply({ text: released.held, channel: stdoutChannel }, { continues: true });
-    }
-    const tail = isFinalBoundary || !isStreamingText ? stdoutRedactor.flush() : '';
-    drainSubagentText(released.held.length > 0 || released.value.length > 0);
-    parsedRecorder.apply({ ...redacted, text: released.value + tail });
-  };
-  const flushToolInput = (): void => {
-    for (const parsed of toolInputRedactor?.flush() ?? []) {
-      applyRedactedParsed(parsed);
-    }
-  };
-  const flushStdout = (): void => {
-    flushToolInput();
-    flushSubagentText();
-    flushText();
-    drainSubagentText();
-  };
-  const applyParsed = (parsed: ParsedLine): void => {
-    const redactedLines = toolInputRedactor?.apply(parsed);
-    if (toolInputRedactor?.hasExceededCapacity() === true) {
-      toolInputCapacityExceeded = true;
-      return;
-    }
-    for (const redacted of redactedLines ?? [parsed]) {
-      applyRedactedParsed(redacted);
-    }
-  };
-  const stderrBuffer = createRunnerCallStderrBuffer(recorder);
-  const stderrRedactor = createCustomRunnerStreamingRedactor(redactCredential, protectedValues);
-  const emitStderr = (chunk: string): void => {
-    if (chunk.length === 0) return;
-    stderrBuffer.push(chunk);
-    opts.onStderr?.(chunk);
-  };
-  const flushStderr = (): void => {
-    emitStderr(stderrRedactor.flush());
-    stderrBuffer.flush();
-  };
-  const toolInputCapacitySignal = (): SpawnPipeFatalSignal | undefined =>
-    toolInputCapacityExceeded
-      ? {
-          state: 'protocol-failure',
-          remediation: customRunnerToolInputStateLimitError().message,
-        }
-      : undefined;
+  const stream = createRedactedStream({
+    redact: opts.redact,
+    redactCredential,
+    credentialValues,
+    recorder,
+    parsedRecorder,
+    onStderr: opts.onStderr,
+  });
 
   try {
     await spawnWithStdin({
@@ -268,8 +125,8 @@ export async function spawnAndCollect(
       stdin: opts.stdin,
       notFoundMessage: opts.notFoundMessage,
       onStderr: (chunk) => {
-        emitStderr(stderrRedactor.push(chunk));
-        return toolInputCapacitySignal();
+        pushStderr(stream, chunk);
+        return toolInputCapacitySignal(stream);
       },
       signal: cancellation.signal,
       idle: {
@@ -281,18 +138,18 @@ export async function spawnAndCollect(
       outputMaxBytes: opts.outputMaxBytes,
       stderrMaxBytes: opts.stderrMaxBytes,
       onLine(line) {
-        applyParsed(parseLine(line));
-        return toolInputCapacitySignal();
+        applyParsed(stream, parseLine(line));
+        return toolInputCapacitySignal(stream);
       },
     });
   } catch (err) {
     if (limitController.signal.aborted) {
-      flushStdout();
-      flushStderr();
+      flushStdout(stream);
+      flushStderr(stream);
       return { ...recorder.finalResult(), sessionId: parsedRecorder.sessionId };
     }
-    if (toolInputCapacityExceeded) {
-      flushStderr();
+    if (toolInputCapacityExceeded(stream)) {
+      flushStderr(stream);
       const stateLimitError = customRunnerToolInputStateLimitError();
       if (!recorder.hasTerminal()) {
         recorder.finishFailed({
@@ -307,8 +164,8 @@ export async function spawnAndCollect(
       }
       throw stateLimitError;
     }
-    flushStdout();
-    flushStderr();
+    flushStdout(stream);
+    flushStderr(stream);
     const redactedError = redactThrownError(err, redactCredential);
     if (!recorder.hasTerminal()) {
       const cancellationSource = cancellation.source();
@@ -357,8 +214,8 @@ export async function spawnAndCollect(
     cancellation.cleanup();
   }
 
-  flushStdout();
-  flushStderr();
+  flushStdout(stream);
+  flushStderr(stream);
   if (!recorder.hasTerminal()) {
     recorder.finishCompleted({ nativeSessionId: parsedRecorder.sessionId });
   }
@@ -392,31 +249,4 @@ function redactErrorValue(
     redacted[redactCredential(key)] = redactErrorValue(item, redactCredential, seen);
   }
   return redacted;
-}
-
-const STDERR_LINE_MAX_BYTES = 8 * 1024;
-
-export function createRunnerCallStderrBuffer(recorder: RunnerCallRecorder): {
-  push(chunk: string): void;
-  flush(): void;
-} {
-  return createLineBuffer(
-    (line) => {
-      if (line.length > 0) recorder.stderr({ text: line });
-    },
-    {
-      maxLineBytes: STDERR_LINE_MAX_BYTES,
-      onOverflow: (overflow) => {
-        const limit = runnerCallLineOutputLimit({
-          code: 'stderr_line_overflow',
-          label: 'the tool error output',
-          lineBytes: overflow.lineBytes,
-          maxLineBytes: STDERR_LINE_MAX_BYTES,
-        });
-        recorder.warning({
-          warning: { code: limit.code, message: limit.message },
-        });
-      },
-    },
-  );
 }

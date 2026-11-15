@@ -1116,6 +1116,481 @@ describe('spawnAndCollect', () => {
   });
 });
 
+const mainText = (text: string) => ({
+  type: 'stream_event',
+  event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
+});
+
+const subagentText = (subagentId: string, text: string) => ({
+  ...mainText(text),
+  parent_tool_use_id: subagentId,
+});
+
+function streamJsonProgram(records: readonly unknown[]): string {
+  const chunk = `${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
+  return `process.stdout.write(${JSON.stringify(chunk)});`;
+}
+
+function streamOrder(events: readonly RunnerCallEvent[]): string[] {
+  return events.flatMap((event) => {
+    switch (event.type) {
+      case 'call_text_delta':
+        return [
+          `${event.channel}${event.subagentId === undefined ? '' : `@${event.subagentId}`}:${event.text}`,
+        ];
+      case 'call_tool_use_delta':
+        return [`tool-delta:${event.inputDelta}`];
+      case 'call_tool_use_done':
+        return [`tool-done:${JSON.stringify(event.toolUse.input)}`];
+      case 'call_stderr_delta':
+        return [`stderr:${event.text}`];
+      case 'call_completed':
+      case 'call_error':
+        return [event.type];
+      default:
+        return [];
+    }
+  });
+}
+
+describe('spawnAndCollect redacted stream', () => {
+  it('emits the held text of a subagent before the main-loop tool result that ends it, with the declared value redacted in both', async () => {
+    const declaredValue = 'subagent-order-value-canary-c41d';
+    const prefix = declaredValue.slice(0, 'subagent-order-'.length);
+    const suffix = declaredValue.slice(prefix.length);
+    const callbacks: string[] = [];
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        streamJsonProgram([
+          {
+            type: 'assistant',
+            message: {
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'toolu_task',
+                  name: 'Task',
+                  input: { prompt: `inspect ${declaredValue}` },
+                },
+              ],
+            },
+          },
+          subagentText('toolu_task', `sub reads ${prefix}`),
+          subagentText('toolu_task', `${suffix} then ${prefix}`),
+          {
+            type: 'user',
+            message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_task' }] },
+          },
+          { type: 'result', result: 'done' },
+        ]),
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onText: (text) => callbacks.push(text),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result).toMatchObject({ status: 'completed', text: 'done' });
+    expect(streamOrder(events)).toEqual([
+      'tool-delta:{"prompt":"inspect ***REDACTED***"}',
+      'assistant@toolu_task:sub reads ',
+      'assistant@toolu_task:***REDACTED*** then ',
+      'assistant@toolu_task:***REDACTED***',
+      'tool-done:{"prompt":"inspect ***REDACTED***"}',
+      'result:done',
+      'call_completed',
+    ]);
+    const observed = JSON.stringify({ callbacks, events, result });
+    expect(observed).not.toContain(prefix);
+    expect(observed).not.toContain(suffix);
+  });
+
+  it('flushes the held text of a subagent before the final result', async () => {
+    const declaredValue = 'subagent-final-value-canary-93be';
+    const prefix = declaredValue.slice(0, 'subagent-final-'.length);
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        streamJsonProgram([
+          subagentText('toolu_sub', `sub tail ${prefix}`),
+          { type: 'result', result: 'done' },
+        ]),
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result).toMatchObject({ status: 'completed', text: 'done' });
+    expect(streamOrder(events)).toEqual([
+      'assistant@toolu_sub:sub tail ',
+      'assistant@toolu_sub:***REDACTED***',
+      'result:done',
+      'call_completed',
+    ]);
+    expect(JSON.stringify(events)).not.toContain(prefix);
+  });
+
+  it('keeps a subagent line behind main-loop text held as a possible declared value', async () => {
+    const declaredValue = 'held-main-value-canary-5e09';
+    const prefix = declaredValue.slice(0, 'held-main-'.length);
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        streamJsonProgram([
+          mainText(`main says ${prefix}`),
+          subagentText('toolu_sub', 'sub line'),
+          mainText('notes'),
+          { type: 'result', result: `main says ${prefix}notes` },
+        ]),
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result).toMatchObject({ status: 'completed', text: `main says ${prefix}notes` });
+    expect(streamOrder(events)).toEqual([
+      'assistant:main says ',
+      `assistant:${prefix}`,
+      'assistant@toolu_sub:sub line',
+      'assistant:notes',
+      'call_completed',
+    ]);
+  });
+
+  it('flushes held main-loop text before a streamed line that ends the call with an error', async () => {
+    const declaredValue = 'error-flush-value-canary-a6d2';
+    const prefix = declaredValue.slice(0, 'error-flush-'.length);
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        streamJsonProgram([
+          { text: `main tail ${prefix}`, channel: 'stdout' },
+          { text: 'boom', channel: 'stdout', isError: true },
+        ]),
+      ],
+      cwd: process.cwd(),
+      parseLine: (line) => (line.trim() ? JSON.parse(line) : {}),
+      credentialValues: [],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result.status).toBe('failed');
+    expect(streamOrder(events)).toEqual([
+      'stdout:main tail ',
+      'stdout:***REDACTED***',
+      'stdout:boom',
+      'call_error',
+    ]);
+  });
+
+  it('releases a text on a channel that does not stream whole, after the held main-loop text', async () => {
+    const declaredValue = 'system-flush-value-canary-e3b7';
+    const prefix = declaredValue.slice(0, 'system-flush-'.length);
+    const events: RunnerCallEvent[] = [];
+    await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        streamJsonProgram([
+          { text: `main tail ${prefix}`, channel: 'stdout' },
+          { text: `note ${prefix}`, channel: 'system' },
+        ]),
+      ],
+      cwd: process.cwd(),
+      parseLine: (line) => (line.trim() ? JSON.parse(line) : {}),
+      credentialValues: [],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(streamOrder(events)).toEqual([
+      'stdout:main tail ',
+      'stdout:***REDACTED***',
+      'system:note ***REDACTED***',
+      'call_completed',
+    ]);
+  });
+
+  it.each([
+    {
+      close: 'a clean exit',
+      exitCode: 0,
+      terminal: 'call_completed',
+      text: 'main tail ***REDACTED***',
+      failure: undefined,
+    },
+    {
+      close: 'a failed exit',
+      exitCode: 2,
+      terminal: 'call_error',
+      text: undefined,
+      failure: expect.objectContaining({ kind: 'process-output' }),
+    },
+  ])(
+    'releases the held tool input, main text, subagent text and stderr line in that order before the terminal at $close',
+    async ({ exitCode, terminal, text, failure: expectedFailure }) => {
+      const declaredValue = 'close-order-value-canary-71fa';
+      const prefix = declaredValue.slice(0, 'close-order-'.length);
+      const events: RunnerCallEvent[] = [];
+      let result: Awaited<ReturnType<typeof spawnAndCollect>> | undefined;
+      let failure: unknown;
+      try {
+        result = await spawnAndCollect({
+          command: process.execPath,
+          args: [
+            '-e',
+            [
+              `process.stderr.write(${JSON.stringify(`warn tail ${prefix}`)});`,
+              streamJsonProgram([
+                subagentText('toolu_sub', `sub tail ${prefix}`),
+                {
+                  type: 'stream_event',
+                  event: {
+                    type: 'content_block_start',
+                    content_block: { type: 'tool_use', id: 'tool-w', name: 'Write', input: {} },
+                  },
+                },
+                {
+                  type: 'stream_event',
+                  event: {
+                    type: 'content_block_delta',
+                    index: 1,
+                    delta: { type: 'input_json_delta', partial_json: `{"value":"${prefix}` },
+                  },
+                },
+                mainText(`main tail ${prefix}`),
+              ]),
+              `process.exitCode = ${exitCode};`,
+            ].join(''),
+          ],
+          cwd: process.cwd(),
+          format: 'stream-json',
+          credentialValues: [],
+          redact: createCustomRunnerRedactor([declaredValue]),
+          onCallEvent: (event) => events.push(event),
+        });
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toEqual(expectedFailure);
+      expect(result?.text).toBe(text);
+      expect(streamOrder(events)).toEqual([
+        'assistant@toolu_sub:sub tail ',
+        'tool-delta:{}',
+        'tool-delta:{"value":"',
+        'assistant:main tail ',
+        'tool-delta:***REDACTED***',
+        'assistant:***REDACTED***',
+        'assistant@toolu_sub:***REDACTED***',
+        'stderr:warn tail ***REDACTED***',
+        terminal,
+      ]);
+    },
+  );
+
+  it('releases the held main text and the stderr line before the result of a call that its tool-call limit stops', async () => {
+    await withTempDir('splitbrief-collect-limit-close', async (dir) => {
+      const declaredValue = 'stop-close-value-canary-2d8b';
+      const prefix = declaredValue.slice(0, 'stop-close-'.length);
+      const stderrRead = join(dir, 'stderr-read');
+      const stderr: string[] = [];
+      const events: RunnerCallEvent[] = [];
+      const result = await spawnAndCollect({
+        command: process.execPath,
+        args: [
+          '-e',
+          [
+            "process.stderr.write('limit warning');",
+            "const fs = require('node:fs');",
+            `const wait = setInterval(() => { if (!fs.existsSync(${JSON.stringify(stderrRead)})) return; clearInterval(wait);`,
+            streamJsonProgram([
+              mainText(`main tail ${prefix}`),
+              {
+                type: 'user',
+                message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_a' }] },
+              },
+              {
+                type: 'user',
+                message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_b' }] },
+              },
+            ]),
+            'setInterval(() => {}, 60_000); }, 5);',
+          ].join(''),
+        ],
+        cwd: process.cwd(),
+        format: 'stream-json',
+        credentialValues: [],
+        redact: createCustomRunnerRedactor([declaredValue]),
+        maxToolCalls: 1,
+        onStderr: (chunk) => {
+          stderr.push(chunk);
+          if (stderr.join('') === 'limit warning') writeFileSync(stderrRead, '');
+        },
+        onCallEvent: (event) => events.push(event),
+      });
+
+      expect(result.text).toBe('main tail ***REDACTED***');
+      expect(streamOrder(events)).toEqual([
+        'assistant:main tail ',
+        'tool-done:{}',
+        'tool-done:{}',
+        'assistant:***REDACTED***',
+        'stderr:limit warning',
+        'call_error',
+      ]);
+    });
+  });
+
+  it('releases the stderr line and no held main text before the error of a call that exceeds its tool-input capacity', async () => {
+    await withTempDir('splitbrief-collect-capacity-close', async (dir) => {
+      const declaredValue = 'capacity-close-value-canary-0f4c';
+      const prefix = declaredValue.slice(0, 'capacity-close-'.length);
+      const stderrRead = join(dir, 'stderr-read');
+      const stderr: string[] = [];
+      const events: RunnerCallEvent[] = [];
+      const toolInputs = Array.from(
+        { length: CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE + 1 },
+        (_, index) => ({
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            index,
+            delta: { type: 'input_json_delta', partial_json: 'x' },
+          },
+        }),
+      );
+      let failure: unknown;
+      try {
+        await spawnAndCollect({
+          command: process.execPath,
+          args: [
+            '-e',
+            [
+              "process.stderr.write('capacity warning');",
+              "const fs = require('node:fs');",
+              `const wait = setInterval(() => { if (!fs.existsSync(${JSON.stringify(stderrRead)})) return; clearInterval(wait);`,
+              streamJsonProgram([mainText(`main tail ${prefix}`), ...toolInputs]),
+              'setInterval(() => {}, 60_000); }, 5);',
+            ].join(''),
+          ],
+          cwd: process.cwd(),
+          format: 'stream-json',
+          credentialValues: [],
+          redact: createCustomRunnerRedactor([declaredValue]),
+          onStderr: (chunk) => {
+            stderr.push(chunk);
+            if (stderr.join('') === 'capacity warning') writeFileSync(stderrRead, '');
+          },
+          onCallEvent: (event) => events.push(event),
+        });
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toMatchObject({ kind: 'custom-runner-tool-input-state-limit' });
+      expect(streamOrder(events).filter((entry) => !entry.startsWith('tool-delta:'))).toEqual([
+        'assistant:main tail ',
+        'stderr:capacity warning',
+        'call_error',
+      ]);
+    });
+  });
+
+  it('redacts a credential in the session id before the session callback', async () => {
+    const credential = 'session-id-credential-canary-58d1';
+    const sessionIds: string[] = [];
+    await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        streamJsonProgram([{ type: 'result', result: 'done', session_id: `s-${credential}` }]),
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [credential],
+      onSessionId: (id) => sessionIds.push(id),
+    });
+
+    expect(sessionIds).toEqual(['s-***REDACTED***']);
+  });
+
+  it('holds a credential split across two main-loop text deltas when no declared value is set', async () => {
+    const credential = 'split-credential-canary-6b2e';
+    const prefix = credential.slice(0, 'split-credential-'.length);
+    const suffix = credential.slice(prefix.length);
+    const texts: string[] = [];
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        streamJsonProgram([
+          mainText(`key ${prefix}`),
+          mainText(`${suffix} end`),
+          { type: 'result', result: 'done' },
+        ]),
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [credential],
+      onText: (text) => texts.push(text),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(texts).toEqual(['key ', '***REDACTED*** end']);
+    expect(JSON.stringify({ texts, events, result })).not.toContain(prefix);
+  });
+
+  it('records a subagent line held behind main-loop text before an error result with no text ends the call', async () => {
+    const declaredValue = 'error-drain-value-canary-4c1a';
+    const prefix = declaredValue.slice(0, 'error-drain-'.length);
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        streamJsonProgram([
+          mainText(`main tail ${prefix}`),
+          subagentText('toolu_sub', 'sub said'),
+          { type: 'result', is_error: true },
+        ]),
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result.status).toBe('failed');
+    expect(streamOrder(events)).toEqual([
+      'assistant:main tail ',
+      'assistant:***REDACTED***',
+      'assistant@toolu_sub:sub said',
+      'call_error',
+    ]);
+  });
+});
+
 describe('CLI implementer JSONL parsing', () => {
   it('parses codex-style JSONL into human-readable text', async () => {
     const jsonlOutput = [
