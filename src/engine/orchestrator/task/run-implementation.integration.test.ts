@@ -2244,3 +2244,210 @@ describe('BUILD steering wiring', () => {
     expect(steering.current()).toBeNull();
   });
 });
+
+describe('runImplementation step and dispose order', () => {
+  it('records the seed steer once before it takes the workspace, then the steer of a stop and a message queued during a call, each before the call it reaches', async () => {
+    const { projectDir } = setupProject('step-order');
+    const ref = { projectDir, sessionId: 'step-order-session' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const task = makeTask({ id: 'T080', suggestedFiles: ['src/order.ts'], action: 'create' });
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    const seedSteer = plainUserMessage('seed: keep the parser pure');
+    const stopSteer = plainUserMessage('stop: name it parseOrder');
+    const queued = plainUserMessage('queued: export parseOrder');
+    const recorded = () => loadState(ref)?.lineages?.T080?.corrections ?? [];
+    const log: string[] = [];
+    const abort: { call: (() => void) | null } = { call: null };
+    const calls: ImplementerOptions[] = [];
+    const implementer = makeImplementer({
+      implement: vi.fn(async (call: ImplementerOptions) => {
+        calls.push(call);
+        log.push(`call ${calls.length}: ${recorded().length} recorded`);
+        if (calls.length === 1) {
+          abort.call?.();
+          throw new DOMException('The operation was aborted', 'AbortError');
+        }
+        if (calls.length === 2) {
+          enqueueUserMessage({
+            ...ref,
+            state,
+            bus,
+            phase: 'implementing',
+            message: queued,
+            reviewNone: false,
+          });
+        }
+        return { success: true, output: '' };
+      }),
+    });
+    const wctx = makeWctx({
+      ...ref,
+      bus,
+      implementer,
+      continuation: createContinuationHolder({
+        step: { kind: 'brief', taskId: task.id, attempt: state.attempt },
+        steer: seedSteer,
+      }),
+      callbacks: makeCallbacks({
+        onContinuationNeeded: async () => {
+          log.push('stop answered');
+          return stopSteer;
+        },
+      }).callbacks,
+      sinks: {
+        setAbortHandler: (handler) => {
+          abort.call = handler;
+        },
+        setQueueHandler: () => {},
+      },
+    });
+    const acquire = wctx.isolation.acquire;
+    wctx.isolation.acquire = async (opts) => {
+      log.push(`acquire: ${recorded().join(' | ')}`);
+      return acquire(opts);
+    };
+
+    const result = await runImplementation({
+      wctx,
+      task,
+      state,
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    expect(log).toEqual([
+      'acquire: seed: keep the parser pure',
+      'call 1: 1 recorded',
+      'stop answered',
+      'call 2: 2 recorded',
+      'call 3: 3 recorded',
+    ]);
+    expect(calls.map((call) => call.continuation?.steer)).toEqual([
+      seedSteer.text,
+      `${seedSteer.text}\n\n${stopSteer.text}`,
+      expect.stringMatching(
+        new RegExp(`^${seedSteer.text}\\n\\n${stopSteer.text}\\n\\n.*${queued.text}`, 's'),
+      ),
+    ]);
+    for (const saved of [result.state, loadState(ref)]) {
+      expect(saved?.lineages?.T080?.corrections).toEqual([
+        seedSteer.text,
+        stopSteer.text,
+        expect.stringContaining(queued.text),
+      ]);
+    }
+  });
+
+  async function disposeLog(exit: 'result' | 'parked' | 'stop'): Promise<string[]> {
+    const { projectDir } = setupProject(`dispose-order-${exit}`);
+    const sessionId = `dispose-order-${exit}-session`;
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T081', suggestedFiles: ['src/dispose.ts'], action: 'modify' });
+    const log: string[] = [];
+    const run = new AbortController();
+    const snapshot = await getChangedFilesSnapshot(projectDir);
+    const workspace: AttemptWorkspace = {
+      projectDir,
+      sandboxEnv: {},
+      snapshot,
+      targetBaseline: undefined,
+      changeDetection: 'file-hashes',
+      changedFiles: () => getChangedFilesSinceSnapshot(projectDir, snapshot),
+      cleanup: () => {
+        log.push('workspace cleaned up');
+      },
+      retain: async () => {
+        log.push('workspace retained');
+      },
+      revert: async () => {},
+      discard: async () => ({}),
+    };
+    const isolation: RunIsolation = {
+      open: async () => ({ kind: 'worktree', projectDir, head: null, keptFiles: [] }),
+      acquire: async () => {
+        log.push('workspace acquired');
+        return workspace;
+      },
+      dispose: async () => {},
+    };
+    const sink: StreamingSink = {
+      start: () => {
+        log.push('preview started');
+      },
+      replaceLines: () => {},
+      stop: () => {
+        log.push('preview stopped');
+      },
+    };
+    const implementer = makeImplementer({
+      capabilities: { writesFiles: 'extracted-code' },
+      implement: vi.fn(async ({ onOutput }: ImplementerOptions) => {
+        log.push('call');
+        onOutput('```ts\nexport const dispose = 1;\n```\n');
+        if (exit === 'stop') {
+          run.abort();
+          throw new DOMException('The operation was aborted', 'AbortError');
+        }
+        if (exit === 'parked') {
+          return {
+            success: false,
+            output: '',
+            error: 'Not logged in',
+            outcome: 'unauthenticated' as const,
+          };
+        }
+        return { success: true, output: '' };
+      }),
+    });
+
+    const ended = await runImplementation({
+      wctx: makeWctx({ projectDir, sessionId, implementer, isolation, signal: run.signal }),
+      task,
+      state: makeImplState([task]),
+      taskStartSnapshot: snapshot,
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+      streamingSink: sink,
+    }).then(
+      () => 'returned',
+      () => 'threw',
+    );
+    log.push(`run ${ended}`);
+    return log;
+  }
+
+  it('stops the preview once after a call that returns, and leaves the workspace to its caller', async () => {
+    expect(await disposeLog('result')).toEqual([
+      'workspace acquired',
+      'preview started',
+      'call',
+      'preview stopped',
+      'run returned',
+    ]);
+  });
+
+  it('stops the preview once before it keeps the workspace of a seat that cannot work', async () => {
+    expect(await disposeLog('parked')).toEqual([
+      'workspace acquired',
+      'preview started',
+      'call',
+      'preview stopped',
+      'workspace retained',
+      'run returned',
+    ]);
+  });
+
+  it('settles the workspace of a stopped call before it stops the preview once', async () => {
+    expect(await disposeLog('stop')).toEqual([
+      'workspace acquired',
+      'preview started',
+      'call',
+      'workspace retained',
+      'preview stopped',
+      'run threw',
+    ]);
+  });
+});

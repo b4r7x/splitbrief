@@ -1,35 +1,18 @@
-import { briefContinuation, changedDeclaredFiles, changedDeclaredFilesNote } from '../kept-work.js';
 import type { Task } from '../../../core/schemas/task.js';
-import { lineageAttemptsOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
-import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { WorkflowContext } from '../types.js';
-import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
+import type { ImplementerResult } from '../../implementers/types.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { createImplementerTextHandler } from '../publish/runner.js';
 import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
-import { withContinuationLoop } from '../continuation/loop.js';
-import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-files.js';
-import { persistApprovalEvidence } from '../evidence/decisions.js';
-import { resolveDependsOnFiles } from './resolve-deps.js';
-import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
+import type { GateChangedFilesDenial } from '../approval/gate-files.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { runSeatCall } from '../escalation/seat/call.js';
-import { implementerSeatAttempt } from '../escalation/seat/call.js';
-import { unfinishedGuidance } from '../escalation/consult-guidance.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { settleThrownCall } from '../isolation/retention.js';
-import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
-import {
-  absorbBuildCorrections,
-  buildCorrectionInput,
-  recordSteerCorrection,
-  runWithCorrectionPasses,
-} from '../queue/build-corrections.js';
-import { settleMidCallDeliveries } from '../queue/mid-call.js';
-import { withAttemptRestoreScope } from './restore-scope.js';
+import { recordCorrection, runImplementerLoop } from './implementer-loop.js';
+import type { ImplementerLoopState } from './types.js';
 
 export type RunImplementationResult = {
   state: WorkflowState;
@@ -48,30 +31,24 @@ export async function runImplementation(opts: {
   recordApprovalDenial: (decision: GateChangedFilesDenial, message: string) => void;
   streamingSink?: StreamingSink | undefined;
 }): Promise<RunImplementationResult> {
-  const { wctx, task, setTrackedState } = opts;
-  const { projectDir, sessionId, config, callbacks, context } = wctx;
-  let state = opts.state;
+  const { wctx, task } = opts;
+  const { projectDir, sessionId, config } = wctx;
 
   const textHandler = createImplementerTextHandler(
-    { bus: wctx.bus, phase: state.phase },
+    { bus: wctx.bus, phase: opts.state.phase },
     wctx.implementer,
   );
   const writesDirectly = wctx.implementer.capabilities?.writesFiles === 'direct';
 
-  let preApplyApprovalDenied = false;
-  const preApplyApprovedFiles: string[] = [];
-
-  const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
+  const step = { kind: 'brief' as const, taskId: task.id, attempt: opts.state.attempt };
   const seed = wctx.continuation?.take(step, hashTaskBrief([task]));
-  let recordedCorrection: UserMessageInput | undefined;
-  const recordCorrection = (message: UserMessageInput | undefined): void => {
-    if (message === undefined || message === recordedCorrection) return;
-    state = recordSteerCorrection({ ...wctx, state, taskId: task.id, message });
-    recordedCorrection = message;
-    setTrackedState(state);
+  const shared: ImplementerLoopState = {
+    state: rebaseOnPersistedWorkflowState({ projectDir, sessionId }, opts.state),
+    recordedCorrection: undefined,
+    preApplyApprovalDenied: false,
+    preApplyApprovedFiles: [],
   };
-  state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
-  recordCorrection(seed?.steer);
+  recordCorrection(opts, shared, seed?.steer);
   const workspace: AttemptWorkspace = await wctx.isolation.acquire({
     role: 'implementer',
     config,
@@ -88,195 +65,21 @@ export async function runImplementation(opts: {
 
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
-    loop = await withContinuationLoop<ImplementerResult>({
-      ctx: {
-        projectDir: workspace.projectDir,
-        sessionId,
-        persistRef: { projectDir, sessionId },
-        callbacks,
-        bus: wctx.bus,
-        signal: wctx.signal,
-        sinks: wctx.sinks,
+    loop = await runImplementerLoop(
+      {
+        wctx,
+        task,
+        taskStartSnapshot: opts.taskStartSnapshot,
+        setTrackedState: opts.setTrackedState,
+        recordApprovalDenial: opts.recordApprovalDenial,
+        textHandler,
+        workspace,
+        streamingFeed,
+        step,
+        seed,
       },
-      state,
-      step,
-      ...(seed === undefined ? {} : { seed }),
-      onStateChange: setTrackedState,
-      body: async ({ signal, partial, steerInput, recordOutput }) => {
-        // The brief restarts on its own prompt. What the cut attempt already
-        // wrote is still on disk, so it is named rather than re-derived.
-        recordCorrection(steerInput);
-        const absorb = (): number => {
-          const absorbed = absorbBuildCorrections({
-            projectDir,
-            sessionId,
-            state,
-            taskId: task.id,
-            bus: wctx.bus,
-            config,
-            modelCache: wctx.modelCache,
-          });
-          state = absorbed.state;
-          setTrackedState(state);
-          return absorbed.count;
-        };
-        const call: ImplementerOptions = {
-          task,
-          ...(wctx.steering !== undefined && { steering: wctx.steering }),
-          projectDir: workspace.projectDir,
-          config,
-          context,
-          languageContext: buildProjectLanguageContext(
-            wctx.workspaceDir,
-            state.discoveredValidation?.language,
-          ),
-          plan: state.plan,
-          onOutput: (text, opts) => {
-            recordOutput(text);
-            textHandler(text, opts);
-            streamingFeed.onText(text);
-          },
-          sessionId,
-          signal,
-          sandboxEnv: workspace.sandboxEnv,
-          fileIgnoreProjectDir: projectDir,
-          changeDetection: workspace.changeDetection,
-          phase: state.phase,
-          lineageAttempt: lineageAttemptsOf(state, task) + 1,
-          approveWrite: async (file) => {
-            const decision = await gateChangedFiles({
-              changedFiles: [file],
-              task,
-              dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
-              projectDir,
-              sessionId,
-              phase: state.phase,
-              taskId: task.id,
-              bus: wctx.bus,
-              callbacks,
-              config,
-            });
-            if (decision.cancelled) return { allow: false, reason: decision.reason };
-            if (!decision.allow) {
-              preApplyApprovalDenied = true;
-              const files = decision.changedFiles.join(', ');
-              opts.recordApprovalDenial(
-                decision,
-                `Task changed files blocked by approval gate: ${decision.reason ?? 'denied'} (${files})`,
-              );
-              return { allow: false, reason: decision.reason ?? 'write denied by approval gate' };
-            }
-            preApplyApprovedFiles.push(...decision.changedFiles);
-            persistApprovalEvidence({ wctx, state, decision, taskId: task.id });
-            return { allow: true };
-          },
-        };
-        const creationOwnership = (): Pick<ImplementerOptions, 'createdByThisTask'> => {
-          const createdByThisTask = recordedApiCreatedPaths(
-            { projectDir, sessionId },
-            task,
-            workspace.projectDir,
-          );
-          return createdByThisTask.length > 0 || state.workspace?.kind === 'checkout'
-            ? { createdByThisTask }
-            : {};
-        };
-        const produce = async (attemptSignal: AbortSignal): Promise<ImplementerResult> => {
-          await settleMidCallDeliveries({ projectDir, sessionId });
-          absorb();
-          const correction = buildCorrectionInput(state, task, wctx);
-          const changed = await changedDeclaredFiles(
-            workspace.projectDir,
-            task,
-            opts.taskStartSnapshot,
-          );
-          const continuation = briefContinuation({
-            changed,
-            partial,
-            steer: correction.continuation?.steer,
-          });
-          const guidance = unfinishedGuidance(state, task);
-          const resumed = guidance === undefined ? continuation : { ...continuation, guidance };
-          // A fix task may already have its code on disk when none of its findings needs a change,
-          // and a cut attempt may find its kept work complete: either call may change nothing.
-          const allowNoChange = task.fix !== undefined || continuation?.kept !== undefined;
-          const firstCall: ImplementerOptions = {
-            ...call,
-            ...correction,
-            signal: attemptSignal,
-            ...creationOwnership(),
-            ...(resumed !== undefined && { continuation: resumed }),
-            ...(allowNoChange && { allowNoChange }),
-          };
-          return runWithCorrectionPasses({
-            ref: { projectDir, sessionId },
-            first: () => wctx.implementer.implement(firstCall),
-            pass: async () => {
-              const correction = buildCorrectionInput(state, task, wctx);
-              return wctx.implementer.implement({
-                ...call,
-                ...correction,
-                signal: attemptSignal,
-                ...creationOwnership(),
-                continuation: {
-                  ...correction.continuation,
-                  ...changedDeclaredFilesNote(
-                    await changedDeclaredFiles(workspace.projectDir, task, opts.taskStartSnapshot),
-                  ),
-                },
-                allowNoChange: true,
-              });
-            },
-            absorb,
-            signal: attemptSignal,
-            onDiscardedUsage: (usage) => {
-              state = addUsageAndSave(seatRef, state, 'implementer', usage);
-              setTrackedState(state);
-            },
-            application: {
-              wctx,
-              state: () => state,
-              task,
-              workspacePath: workspace.projectDir,
-            },
-          });
-        };
-
-        const seatRef = { projectDir, sessionId, bus: wctx.bus };
-        const attempt = await withAttemptRestoreScope({
-          ref: wctx,
-          dir: workspace.projectDir,
-          taskStartSnapshot: opts.taskStartSnapshot,
-          attemptSnapshot: workspace.snapshot,
-          run: () =>
-            runSeatCall(
-              {
-                ref: seatRef,
-                state,
-                seat: 'build',
-                runner: config.implementer,
-                config,
-                profile: wctx.implementerProfile,
-                signal,
-                onStateChange: (next) => {
-                  state = next;
-                  setTrackedState(next);
-                },
-              },
-              async (attemptSignal) =>
-                implementerSeatAttempt(
-                  await produce(attemptSignal),
-                  `Implementer call for ${task.id} failed`,
-                ),
-              (discarded) => {
-                state = addUsageAndSave(seatRef, state, 'implementer', discarded.usage);
-                setTrackedState(state);
-              },
-            ),
-        });
-        return attempt.value;
-      },
-    });
+      shared,
+    );
   } catch (err) {
     await settleThrownCall(workspace, wctx.signal, err);
     throw err;
@@ -284,7 +87,7 @@ export async function runImplementation(opts: {
     streamingFeed.stop();
   }
 
-  state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, loop.state);
+  const state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, loop.state);
 
   // A seat that cannot work parks its brief: the workspace is kept so the
   // continued attempt reads the partial edits it already wrote.
@@ -296,7 +99,7 @@ export async function runImplementation(opts: {
     state,
     implResult: loop.value,
     workspace,
-    preApplyApprovalDenied,
-    preApplyApprovedFiles,
+    preApplyApprovalDenied: shared.preApplyApprovalDenied,
+    preApplyApprovedFiles: shared.preApplyApprovedFiles,
   };
 }

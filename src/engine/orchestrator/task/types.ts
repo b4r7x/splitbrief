@@ -2,8 +2,21 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { BlockedReport, RetryAttemptFailure } from '../escalation/types.js';
 import type { WorkflowContext } from '../types.js';
+
+/**
+ * What the implementer calls of one brief share. The steps change it in place: the write gate and
+ * the seat callbacks write it while a call runs, so a returned copy would be stale.
+ */
+export type ImplementerLoopState = {
+  state: WorkflowState;
+  /** The steer the brief recorded last: the same message is not recorded twice. */
+  recordedCorrection: UserMessageInput | undefined;
+  preApplyApprovalDenied: boolean;
+  preApplyApprovedFiles: string[];
+};
 
 export type RetryAndRecordOptions = {
   wctx: WorkflowContext;
