@@ -9,7 +9,7 @@ import type {
   DetectionService,
   DetectionServiceResult,
   ResolvedDetectionSourceContexts,
-} from './service.js';
+} from './service/types.js';
 import { createProductionDetectionDeps } from './deps.js';
 import { createStore } from '../../stores/create-store.js';
 import { detectionStore } from '../../stores/discovery/detection.js';

@@ -1,6 +1,6 @@
 import type { Instance } from 'ink';
 import { awaitActiveWorkflowShutdown } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
-import { getDefaultDetectionService } from '../../engine/detection/service.js';
+import { getDefaultDetectionService } from '../../engine/detection/service/create.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';

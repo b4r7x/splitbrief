@@ -5,7 +5,7 @@ import type { ConfiguredProviderOutcome } from '../../../engine/detection/provid
 import type {
   DetectionRefreshOutcomes,
   DetectionServiceResult,
-} from '../../../engine/detection/service.js';
+} from '../../../engine/detection/service/types.js';
 
 const contexts = {
   readiness: 'reviewer-scope-readiness',

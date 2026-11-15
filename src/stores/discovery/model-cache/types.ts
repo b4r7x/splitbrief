@@ -6,7 +6,7 @@ import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import type { RememberedCliCatalog } from '../../../engine/detection/cache/schema.js';
-import type { ResolvedDetectionSourceContexts } from '../../../engine/detection/service.js';
+import type { ResolvedDetectionSourceContexts } from '../../../engine/detection/service/types.js';
 import type { DetectionPublicationRequest } from '../../../engine/detection/store-publication.js';
 import type { DetectionSourceError } from '../../../engine/detection/types.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';

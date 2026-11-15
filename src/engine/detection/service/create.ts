@@ -1,254 +1,47 @@
+import { mergeCatalogRead } from '../../../core/discovery/catalog-read-merge.js';
+import { cloneDetectedModel } from '../../../core/discovery/clone-model.js';
+import type { ModelsDevCatalogCacheOutcome } from '../../providers/models-dev/cache.js';
+import type { RememberedCliCatalog } from '../cache/schema.js';
 import {
-  invalidateCache,
-  loadDetectionCacheSnapshot,
   loadRememberedSnapshot,
   saveDetectionCache,
-} from './cache/store.js';
-import type { RememberedCliCatalog } from './cache/schema.js';
-import { createDetectionCoordinator } from './coordinator/create.js';
+  loadDetectionCacheSnapshot,
+  invalidateCache,
+} from '../cache/store.js';
+import { createDetectionCoordinator } from '../coordinator/create.js';
+import { type LaneChannel, createLaneChannel } from '../lane-channel.js';
+import { refreshModelsDev, modelsDevCatalogValue } from '../models-dev-lane.js';
 import {
-  type CliModelSnapshot,
   type DetectionCoordinator,
-  detectionContextKey,
-  detectionSourceContextKey,
-  type DetectionProjection,
-  type DetectionSourceError,
   type DetectionSourceOutcome,
+  type CliModelSnapshot,
+  type DetectionProjection,
+  detectionSourceContextKey,
+} from '../types.js';
+import {
+  sourceContext,
+  cloneProjection,
+  sourceError,
+  cloneCliModels,
+  sourceValue,
+  EMPTY_PROJECTION,
+  EMPTY_CLI_MODELS,
+  resultGeneration,
+  uninitializedResult,
+} from './results.js';
+import type {
+  DetectionServiceResult,
+  DetectionDeps,
+  DetectionRefreshOutcomes,
+  DetectionLoadInput,
+  DetectionRefreshInput,
+  DetectionService,
 } from './types.js';
-import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
-import {
-  cloneCliToolDetection,
-  cloneProviderDetection,
-} from '../../core/discovery/clone-detection.js';
-import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
-import { mergeCatalogRead } from '../../core/discovery/catalog-read-merge.js';
-import {
-  cloneConfiguredProviderOutcome,
-  type ConfiguredProviderConnection,
-} from './provider-outcomes.js';
-import { cloneScopedCliCatalogAttempt } from './cli-catalog-outcomes.js';
-import { createLaneChannel, type DetectionLaneListener, type LaneChannel } from './lane-channel.js';
-import {
-  modelsDevCatalogValue,
-  type ModelsDevCatalogRequest,
-  type ModelsDevRefreshOutcome,
-  refreshModelsDev,
-} from './models-dev-lane.js';
-import { assertNever } from '../../utils/type-guards.js';
-import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev/cache.js';
-import { createOpaqueIdFactory } from '../../utils/opaque-id.js';
-
-export interface DetectionSourceContexts {
-  readonly readiness?: string | undefined;
-  readonly modelsDev?: string | undefined;
-  readonly cliModels?: string | undefined;
-}
-
-export interface ResolvedDetectionSourceContexts {
-  readonly readiness: string;
-  readonly modelsDev: string;
-  readonly cliModels: string;
-  /** Current seat connections, so a refresh cannot show another endpoint's rows. */
-  readonly configuredProviders?: readonly ConfiguredProviderConnection[] | undefined;
-}
-
-export interface DetectionLaneRequest {
-  readonly signal: AbortSignal;
-}
-
-export interface CliModelsLaneRequest extends DetectionLaneRequest {
-  readonly mode: 'automatic' | 'manual';
-}
-
-export interface DetectionDeps {
-  detectAll(input: DetectionLaneRequest): Promise<DetectionProjection>;
-  fetchModelsDevCatalog(input: ModelsDevCatalogRequest): Promise<ModelsDevCatalogCacheOutcome>;
-  discoverAllCliTools(input: CliModelsLaneRequest): Promise<CliModelSnapshot>;
-  readonly offline?: boolean | undefined;
-  readonly now?: (() => number) | undefined;
-  readonly sourceContexts?: DetectionSourceContexts | undefined;
-}
-
-export interface DetectionRefreshOutcomes {
-  readonly readiness: DetectionSourceOutcome<DetectionProjection>;
-  readonly modelsDev: ModelsDevRefreshOutcome;
-  readonly cliModels: DetectionSourceOutcome<CliModelSnapshot>;
-}
-
-export interface DetectionServiceResult extends DetectionProjection {
-  readonly catalog: ModelsDevCatalog | null;
-  readonly cliModels: CliModelSnapshot;
-  /** Present for coordinator-backed refreshes; legacy fixture results may omit it. */
-  readonly generation?: number | undefined;
-  /** Present for coordinator-backed refreshes; legacy fixture results may omit it. */
-  readonly outcomes?: DetectionRefreshOutcomes | undefined;
-}
-
-export interface DetectionRefreshInput {
-  readonly deps: DetectionDeps;
-  readonly projectDir?: string | undefined;
-}
-
-export interface DetectionLoadInput extends DetectionRefreshInput {
-  /**
-   * Receives each lane the moment it settles, including any lane that settled
-   * before this listener joined a load already in flight. Lane latency spans two
-   * orders of magnitude (models.dev tens of milliseconds, native CLI probes
-   * seconds), so a caller that publishes progressively must not wait for the
-   * awaited whole-result value.
-   */
-  readonly onLane?: DetectionLaneListener | undefined;
-}
-
-export interface DetectionService {
-  loadDetection(input: DetectionLoadInput): Promise<DetectionServiceResult>;
-  /**
-   * A manual refresh must carry dependencies derived from the current runner
-   * configuration. The service deliberately retains no prior dependencies.
-   */
-  refreshDetection(input?: DetectionRefreshInput): Promise<DetectionServiceResult>;
-  shutdown(): Promise<void>;
-}
 
 const READINESS_TTL_MS = 5 * 60 * 1_000;
 // The catalog lane is keyed by tool and executable context, so a snapshot
 // inside the window belongs to the same executable that produced it.
 const CLI_MODELS_TTL_MS = 5 * 60 * 1_000;
-const EMPTY_CLI_MODELS: CliModelSnapshot = [];
-const EMPTY_PROJECTION: DetectionProjection = { providers: [], cliTools: [] };
-const fallbackDependencyContext = createOpaqueIdFactory('unconfigured-deps');
-
-function cloneProjection(detection: DetectionProjection): DetectionProjection {
-  return {
-    providers: detection.providers.map(cloneProviderDetection),
-    cliTools: detection.cliTools.map(cloneCliToolDetection),
-    ...(detection.configuredProviderOutcomes === undefined
-      ? {}
-      : {
-          configuredProviderOutcomes: detection.configuredProviderOutcomes.map(
-            cloneConfiguredProviderOutcome,
-          ),
-        }),
-  };
-}
-
-function cloneCliModels(cliModels: CliModelSnapshot): CliModelSnapshot {
-  return cliModels.map(cloneScopedCliCatalogAttempt);
-}
-
-function sourceContext(
-  input: Readonly<{
-    deps: DetectionDeps;
-    projectDir: string | undefined;
-    source: keyof DetectionSourceContexts;
-  }>,
-): string {
-  const configured = input.deps.sourceContexts?.[input.source];
-  if (configured !== undefined) return configured;
-  const dependencyContext = fallbackDependencyContext(input.deps);
-  return detectionContextKey({
-    platform: process.platform,
-    runner: `unconfigured-${input.source}`,
-    configGeneration: `${dependencyContext}:${input.projectDir ?? 'process'}`,
-  });
-}
-
-export function resolveDetectionSourceContexts(
-  input: Readonly<{ deps: DetectionDeps; projectDir: string | undefined }>,
-): ResolvedDetectionSourceContexts {
-  return {
-    readiness: sourceContext({
-      deps: input.deps,
-      projectDir: input.projectDir,
-      source: 'readiness',
-    }),
-    modelsDev: sourceContext({
-      deps: input.deps,
-      projectDir: input.projectDir,
-      source: 'modelsDev',
-    }),
-    cliModels: sourceContext({
-      deps: input.deps,
-      projectDir: input.projectDir,
-      source: 'cliModels',
-    }),
-  };
-}
-
-function sourceError(source: 'readiness' | 'cli-models'): DetectionSourceError {
-  switch (source) {
-    case 'readiness':
-      return { kind: 'request-failed', message: 'Runner readiness refresh failed.' };
-    case 'cli-models':
-      return { kind: 'request-failed', message: 'CLI model discovery refresh failed.' };
-  }
-}
-
-function sourceValue<Value extends object>(
-  outcome: DetectionSourceOutcome<Value>,
-  fallback: Value,
-): Value {
-  switch (outcome.kind) {
-    case 'fresh':
-    case 'stale':
-      return outcome.snapshot.value;
-    case 'failed':
-    case 'not-run':
-      return fallback;
-  }
-}
-
-function resultGeneration(outcomes: DetectionRefreshOutcomes, fallback: number): number {
-  const generations = [outcomes.readiness, outcomes.modelsDev, outcomes.cliModels].flatMap(
-    (outcome) => {
-      switch (outcome.kind) {
-        case 'cached':
-        case 'fresh':
-        case 'not-modified':
-        case 'stale':
-          return [outcome.snapshot.generation];
-        case 'failed':
-          return [outcome.generation];
-        case 'not-run':
-          return [];
-        default:
-          return assertNever(outcome);
-      }
-    },
-  );
-  return generations.reduce((latest, generation) => Math.max(latest, generation), fallback);
-}
-
-function uninitializedOutcome<Value extends object>(
-  source: 'readiness' | 'models-dev' | 'cli-models',
-): DetectionSourceOutcome<Value> {
-  return {
-    kind: 'not-run',
-    source,
-    contextKey: 'uninitialized',
-    reason: 'uninitialized',
-  };
-}
-
-function uninitializedResult(generation: number): DetectionServiceResult {
-  const outcomes: DetectionRefreshOutcomes = {
-    readiness: uninitializedOutcome<DetectionProjection>('readiness'),
-    modelsDev: {
-      kind: 'not-run',
-      source: 'models-dev',
-      contextKey: 'uninitialized',
-      reason: 'uninitialized',
-    },
-    cliModels: uninitializedOutcome<CliModelSnapshot>('cli-models'),
-  };
-  return {
-    ...cloneProjection(EMPTY_PROJECTION),
-    catalog: null,
-    cliModels: cloneCliModels(EMPTY_CLI_MODELS),
-    generation,
-    outcomes,
-  };
-}
 
 interface PendingLoad {
   readonly promise: Promise<DetectionServiceResult>;

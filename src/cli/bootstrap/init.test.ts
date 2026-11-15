@@ -23,7 +23,12 @@ import {
   loadDetectionCacheSnapshot,
   saveDetectionCache,
 } from '../../engine/detection/cache/store.js';
-import * as detectionServiceModule from '../../engine/detection/service.js';
+import * as detectionServiceCreate from '../../engine/detection/service/create.js';
+import type {
+  DetectionLoadInput,
+  DetectionRefreshInput,
+  DetectionServiceResult,
+} from '../../engine/detection/service/types.js';
 import * as cliDiscoveryModule from '../../engine/providers/discovery.js';
 import * as modelsDevCacheModule from '../../engine/providers/models-dev/cache.js';
 import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev/cache.js';
@@ -91,7 +96,7 @@ beforeEach(() => {
   // real they probe installed CLIs and race this file's teardown; the cases that
   // assert on them re-stub these two seams themselves.
   vi.spyOn(modelsDevCacheModule, 'loadModelsDevCatalogCache').mockResolvedValue(null);
-  vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+  vi.spyOn(detectionServiceCreate, 'getDefaultDetectionService').mockReturnValue({
     loadDetection: async () => ({ providers: [], cliTools: [], catalog: null, cliModels: [] }),
     refreshDetection: vi.fn(),
     shutdown: async () => {},
@@ -148,7 +153,7 @@ describe('initStores', () => {
       calls.push('load-detection');
       return { providers: [], cliTools: [], catalog: null, cliModels: [] };
     });
-    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+    vi.spyOn(detectionServiceCreate, 'getDefaultDetectionService').mockReturnValue({
       loadDetection,
       refreshDetection: vi.fn(),
       shutdown: async () => {},
@@ -180,36 +185,33 @@ describe('initStores', () => {
     const capabilities = Promise.withResolvers<Awaited<ReturnType<typeof detectCapabilities>>>();
     vi.spyOn(capabilitiesModule, 'detectCapabilities').mockReturnValue(capabilities.promise);
 
-    const backgroundRefresh =
-      Promise.withResolvers<detectionServiceModule.DetectionServiceResult>();
+    const backgroundRefresh = Promise.withResolvers<DetectionServiceResult>();
     let refreshSettled = false;
     const refresh = backgroundRefresh.promise.finally(() => {
       refreshSettled = true;
     });
-    const loadDetection = vi.fn(
-      async ({ deps, onLane }: detectionServiceModule.DetectionLoadInput) => {
-        const result = await refresh;
-        onLane?.({
-          lane: 'readiness',
-          outcome: {
-            kind: 'fresh',
-            origin: 'request',
-            snapshot: {
-              source: 'readiness',
-              contextKey: deps.sourceContexts?.readiness ?? 'missing-readiness-context',
-              generation: 4,
-              requestId: 8,
-              fetchedAt: 200,
-              validatedAt: 200,
-              stale: false,
-              value: { providers: result.providers, cliTools: result.cliTools },
-            },
+    const loadDetection = vi.fn(async ({ deps, onLane }: DetectionLoadInput) => {
+      const result = await refresh;
+      onLane?.({
+        lane: 'readiness',
+        outcome: {
+          kind: 'fresh',
+          origin: 'request',
+          snapshot: {
+            source: 'readiness',
+            contextKey: deps.sourceContexts?.readiness ?? 'missing-readiness-context',
+            generation: 4,
+            requestId: 8,
+            fetchedAt: 200,
+            validatedAt: 200,
+            stale: false,
+            value: { providers: result.providers, cliTools: result.cliTools },
           },
-        });
-        return result;
-      },
-    );
-    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+        },
+      });
+      return result;
+    });
+    vi.spyOn(detectionServiceCreate, 'getDefaultDetectionService').mockReturnValue({
       loadDetection,
       refreshDetection: vi.fn(),
       shutdown: async () => {},
@@ -280,32 +282,30 @@ describe('initStores', () => {
     vi.spyOn(capabilitiesModule, 'detectCapabilities').mockReturnValue(capabilities.promise);
 
     const laneGate = Promise.withResolvers<void>();
-    const loadDetection = vi.fn(
-      async ({ deps, onLane }: detectionServiceModule.DetectionLoadInput) => {
-        await laneGate.promise;
-        // A fresh process counts its own lanes from 1, well below the
-        // generation the remembered record carries.
-        onLane?.({
-          lane: 'readiness',
-          outcome: {
-            kind: 'fresh',
-            origin: 'request',
-            snapshot: {
-              source: 'readiness',
-              contextKey: deps.sourceContexts?.readiness ?? 'missing-readiness-context',
-              generation: 1,
-              requestId: 1,
-              fetchedAt: 300,
-              validatedAt: 300,
-              stale: false,
-              value: { providers: [], cliTools: [live] },
-            },
+    const loadDetection = vi.fn(async ({ deps, onLane }: DetectionLoadInput) => {
+      await laneGate.promise;
+      // A fresh process counts its own lanes from 1, well below the
+      // generation the remembered record carries.
+      onLane?.({
+        lane: 'readiness',
+        outcome: {
+          kind: 'fresh',
+          origin: 'request',
+          snapshot: {
+            source: 'readiness',
+            contextKey: deps.sourceContexts?.readiness ?? 'missing-readiness-context',
+            generation: 1,
+            requestId: 1,
+            fetchedAt: 300,
+            validatedAt: 300,
+            stale: false,
+            value: { providers: [], cliTools: [live] },
           },
-        });
-        return { providers: [], cliTools: [live], catalog: null, cliModels: [] };
-      },
-    );
-    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+        },
+      });
+      return { providers: [], cliTools: [live], catalog: null, cliModels: [] };
+    });
+    vi.spyOn(detectionServiceCreate, 'getDefaultDetectionService').mockReturnValue({
       loadDetection,
       refreshDetection: vi.fn(),
       shutdown: async () => {},
@@ -741,14 +741,14 @@ describe('a crew change after start-up', () => {
       }),
     );
     const discover = vi.spyOn(cliDiscoveryModule, 'discoverAllCliTools').mockResolvedValue([]);
-    const refreshDetection = vi.fn(async (input?: detectionServiceModule.DetectionRefreshInput) => {
+    const refreshDetection = vi.fn(async (input?: DetectionRefreshInput) => {
       await input?.deps.discoverAllCliTools({
         mode: 'manual',
         signal: new AbortController().signal,
       });
       return { providers: [], cliTools: [], catalog: null, cliModels: [] };
     });
-    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+    vi.spyOn(detectionServiceCreate, 'getDefaultDetectionService').mockReturnValue({
       loadDetection: async () => ({ providers: [], cliTools: [], catalog: null, cliModels: [] }),
       refreshDetection,
       shutdown: async () => {},
@@ -781,7 +781,7 @@ describe('a crew change after start-up', () => {
     const order: string[] = [];
     let release = () => {};
     const discover = vi.spyOn(cliDiscoveryModule, 'discoverAllCliTools').mockResolvedValue([]);
-    const refreshDetection = vi.fn(async (input?: detectionServiceModule.DetectionRefreshInput) => {
+    const refreshDetection = vi.fn(async (input?: DetectionRefreshInput) => {
       order.push('refresh');
       await input?.deps.discoverAllCliTools({
         mode: 'manual',
@@ -789,7 +789,7 @@ describe('a crew change after start-up', () => {
       });
       return { providers: [], cliTools: [], catalog: null, cliModels: [] };
     });
-    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+    vi.spyOn(detectionServiceCreate, 'getDefaultDetectionService').mockReturnValue({
       loadDetection: () =>
         new Promise((resolve) => {
           release = () => {

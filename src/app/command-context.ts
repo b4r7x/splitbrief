@@ -39,7 +39,7 @@ import { skillsStore } from '../stores/project/skills.js';
 import { refreshSkills } from './refresh-skills.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
 import { resolveAttachment } from '../core/attachments/resolve.js';
-import { getDefaultDetectionService } from '../engine/detection/service.js';
+import { getDefaultDetectionService } from '../engine/detection/service/create.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/discovery/detection.js';
 import { readActive } from '../core/sessions/active-pointer.js';

@@ -11,7 +11,7 @@ import {
 } from '../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { createProductionDetectionDeps } from './deps.js';
-import { resolveDetectionSourceContexts } from './service.js';
+import { resolveDetectionSourceContexts } from './service/results.js';
 
 function requestUrl(input: string | URL | Request): string {
   if (input instanceof Request) return input.url;

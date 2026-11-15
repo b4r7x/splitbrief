@@ -1,5 +1,5 @@
 import type { DetectionLanePublication } from '../../engine/detection/lane-channel.js';
-import type { DetectionServiceResult } from '../../engine/detection/service.js';
+import type { DetectionServiceResult } from '../../engine/detection/service/types.js';
 import { modelCacheStore } from './model-cache/state.js';
 import type {
   DetectionStoreHydration,

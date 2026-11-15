@@ -1,7 +1,7 @@
 import { detectionStore } from '../../stores/discovery/detection.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { getDefaultDetectionService } from '../../engine/detection/service.js';
+import { getDefaultDetectionService } from '../../engine/detection/service/create.js';
 import { refreshDetectionForCurrentConfig } from '../../engine/detection/store-publication.js';
 import {
   formatDiscoveryRefreshFeedback,

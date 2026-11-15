@@ -20,7 +20,7 @@ import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { DetectionLanePublication } from '../../../engine/detection/lane-channel.js';
-import type { DetectionServiceResult } from '../../../engine/detection/service.js';
+import type { DetectionServiceResult } from '../../../engine/detection/service/types.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 import type { ScopedCliCatalogRuntime } from '../../../engine/detection/cli-catalog-outcomes.js';
 import { includes } from '../../../utils/type-guards.js';

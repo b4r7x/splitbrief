@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { Text, useApp } from 'ink';
 import { useAppKeys } from '../../../../src/app/keys.js';
 import { renderApp } from '../../../../src/cli/render/app.js';
-import { getDefaultDetectionService } from '../../../../src/engine/detection/service.js';
+import { getDefaultDetectionService } from '../../../../src/engine/detection/service/create.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 
 function QuitFixture() {

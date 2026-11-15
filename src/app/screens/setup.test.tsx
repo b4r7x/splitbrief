@@ -26,7 +26,7 @@ import { prepareNewSession } from '../../core/sessions/prepare.js';
 import type {
   DetectionRefreshOutcomes,
   DetectionServiceResult,
-} from '../../engine/detection/service.js';
+} from '../../engine/detection/service/types.js';
 import { createProductionDetectionDeps } from '../../engine/detection/deps.js';
 import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare.js';
 import type {

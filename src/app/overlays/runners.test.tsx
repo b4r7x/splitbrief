@@ -21,7 +21,10 @@ import {
   type PickerEffectDeps,
 } from '../../features/runners/picker/use-actions.js';
 import type { ScopedCliCatalogAttempt } from '../../engine/detection/cli-catalog-outcomes.js';
-import type { DetectionService, DetectionServiceResult } from '../../engine/detection/service.js';
+import type {
+  DetectionService,
+  DetectionServiceResult,
+} from '../../engine/detection/service/types.js';
 import {
   detectionContextsForCurrentConfig,
   refreshDetectionForCurrentConfig,

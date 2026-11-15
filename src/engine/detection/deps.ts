@@ -28,7 +28,7 @@ import type {
   DetectionDeps,
   DetectionSourceContexts,
   ResolvedDetectionSourceContexts,
-} from './service.js';
+} from './service/types.js';
 import { fetchModelsDevCatalogWithCache } from '../providers/models-dev/catalog.js';
 import { discoverAllCliTools } from '../providers/discovery.js';
 import { detectProviderCatalog } from '../providers/catalog-detection.js';

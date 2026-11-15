@@ -72,7 +72,8 @@ import {
   type WorkflowCommandPorts,
 } from './command-context.js';
 import { detectionStore } from '../stores/discovery/detection.js';
-import { getDefaultDetectionService, type DetectionDeps } from '../engine/detection/service.js';
+import { getDefaultDetectionService } from '../engine/detection/service/create.js';
+import type { DetectionDeps } from '../engine/detection/service/types.js';
 import * as clipboard from '../lib/clipboard/clipboard.js';
 
 let projectDir = '';

@@ -8,7 +8,7 @@ import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { API_PROVIDER_CATALOG } from '../../../core/providers/api-provider-catalog.js';
 import { readClaudeCodeModelOptions } from '../../../core/providers/claude-code-options.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import { createDetectionService, type DetectionDeps } from '../../../engine/detection/service.js';
+import { createDetectionService } from '../../../engine/detection/service/create.js';
 import { resolveModelCatalog } from '../../../engine/providers/model/catalog.js';
 import { getRuntimeModelSnapshot } from '../../../engine/providers/model/runtime-snapshot.js';
 import type {
@@ -17,9 +17,10 @@ import type {
 } from '../../../engine/detection/provider-outcomes.js';
 import type { DetectionLanePublication } from '../../../engine/detection/lane-channel.js';
 import type {
+  DetectionDeps,
   DetectionRefreshOutcomes,
   DetectionServiceResult,
-} from '../../../engine/detection/service.js';
+} from '../../../engine/detection/service/types.js';
 import type { ScopedCliCatalogAttempt } from '../../../engine/detection/cli-catalog-outcomes.js';
 import { buildPickerOptions } from '../../../features/runners/model-catalog/options.js';
 

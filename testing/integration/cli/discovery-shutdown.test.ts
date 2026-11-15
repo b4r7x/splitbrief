@@ -9,7 +9,7 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { initStoresForTuiMount } from '../../../src/cli/bootstrap/init.js';
 import { awaitBackgroundDiscovery } from '../../../src/cli/bootstrap/discovery.js';
 import { createTuiCleanup } from '../../../src/cli/render/process-lifecycle.js';
-import { getDefaultDetectionService } from '../../../src/engine/detection/service.js';
+import { getDefaultDetectionService } from '../../../src/engine/detection/service/create.js';
 import { refreshDetectionForCurrentConfig } from '../../../src/engine/detection/store-publication.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { isNodeError } from '../../../src/utils/errno.js';

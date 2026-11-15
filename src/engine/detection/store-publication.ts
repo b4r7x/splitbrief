@@ -12,7 +12,7 @@ import type {
   DetectionService,
   DetectionServiceResult,
   ResolvedDetectionSourceContexts,
-} from './service.js';
+} from './service/types.js';
 
 export interface DetectionPublicationRequest {
   readonly id: number;

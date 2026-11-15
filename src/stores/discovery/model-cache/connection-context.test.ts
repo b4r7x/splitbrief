@@ -3,7 +3,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { createProductionDetectionDeps } from '../../../engine/detection/deps.js';
 import type { ConfiguredProviderOutcome } from '../../../engine/detection/provider-outcomes.js';
-import type { ResolvedDetectionSourceContexts } from '../../../engine/detection/service.js';
+import type { ResolvedDetectionSourceContexts } from '../../../engine/detection/service/types.js';
 import { resolveModelCatalog } from '../../../engine/providers/model/catalog.js';
 import { createOllamaProvider } from '../../../engine/providers/ollama.js';
 import { probeRunnerAvailability } from '../../../engine/runners/probe-availability.js';

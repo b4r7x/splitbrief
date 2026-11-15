@@ -22,7 +22,7 @@ const lifecycleMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../bootstrap/init.js', () => ({ teardownStores: lifecycleMocks.teardownStores }));
-vi.mock('../../engine/detection/service.js', () => ({
+vi.mock('../../engine/detection/service/create.js', () => ({
   getDefaultDetectionService: () => ({ shutdown: lifecycleMocks.shutdownDetection }),
 }));
 vi.mock('../../lib/process/registry.js', () => ({

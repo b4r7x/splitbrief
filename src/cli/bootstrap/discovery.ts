@@ -3,7 +3,7 @@ import { skillsStore } from '../../stores/project/skills.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
 import { warnError } from '../../lib/warn.js';
 import { detectCapabilities } from '../../engine/providers/capabilities.js';
-import { getDefaultDetectionService } from '../../engine/detection/service.js';
+import { getDefaultDetectionService } from '../../engine/detection/service/create.js';
 import {
   detectionContextsForCurrentConfig,
   loadDetectionForCurrentConfig,

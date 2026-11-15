@@ -1,35 +1,38 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
-import { resetLoggerForTests } from '../../lib/logger.js';
+import { resetLoggerForTests } from '../../../lib/logger.js';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
-import type { CliReadinessFacts } from '../../core/schemas/readiness.js';
-import type { DetectedModel } from '../../core/discovery/detection/model.js';
-import type { ProbeOutcome } from '../../core/discovery/runner-evidence.js';
-import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
-import { deepFreeze } from '../../utils/deep-freeze.js';
-import { SPLITBRIEF_DIR } from '../../core/paths.js';
-import { detectionContextKey } from './types.js';
-import { scopedCliCatalogConnection } from './cli-catalog-outcomes.js';
-import { createProductionDetectionDeps } from './deps.js';
-import { loadRememberedSnapshot, saveDetectionCache } from './cache/store.js';
-import { detectionStore } from '../../stores/discovery/detection.js';
-import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev/cache.js';
-import { fetchModelsDevCatalogWithCache } from '../providers/models-dev/catalog.js';
-import {
-  createDetectionService,
-  type DetectionDeps,
-  type DetectionRefreshOutcomes,
-  type DetectionSourceContexts,
-  type DetectionServiceResult,
-  type ResolvedDetectionSourceContexts,
-} from './service.js';
+import type {
+  CliToolDetection,
+  ProviderDetection,
+} from '../../../core/discovery/detection/tool.js';
+import type { CliReadinessFacts } from '../../../core/schemas/readiness.js';
+import type { DetectedModel } from '../../../core/discovery/detection/model.js';
+import type { ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
+import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
+import { deepFreeze } from '../../../utils/deep-freeze.js';
+import { SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { detectionContextKey } from '../types.js';
+import { scopedCliCatalogConnection } from '../cli-catalog-outcomes.js';
+import { createProductionDetectionDeps } from '../deps.js';
+import { loadRememberedSnapshot, saveDetectionCache } from '../cache/store.js';
+import { detectionStore } from '../../../stores/discovery/detection.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
+import type { ModelsDevCatalogCacheOutcome } from '../../providers/models-dev/cache.js';
+import { fetchModelsDevCatalogWithCache } from '../../providers/models-dev/catalog.js';
+import { createDetectionService } from './create.js';
+import type {
+  DetectionDeps,
+  DetectionRefreshOutcomes,
+  DetectionSourceContexts,
+  DetectionServiceResult,
+  ResolvedDetectionSourceContexts,
+} from './types.js';
 
 const makeCliTool = (
   overrides: { tool?: CliToolDetection['tool'] } & Partial<CliReadinessFacts> = {},
@@ -1407,19 +1410,5 @@ describe('createDetectionService', () => {
       modelsDev: { kind: 'not-run', reason: 'uninitialized' },
       cliModels: { kind: 'not-run', reason: 'uninitialized' },
     });
-  });
-});
-
-describe('detectionContextKey', () => {
-  it('keeps the key of an unconfigured source, whose identity names no auth channel', () => {
-    expect(
-      detectionContextKey({
-        platform: 'linux',
-        runner: 'unconfigured-readiness',
-        configGeneration: 'unconfigured-deps-1:process',
-      }),
-    ).toBe(
-      'detection-context-v1|linux|unconfigured-readiness|no-executable-fingerprint|no-executable-version|no-auth-channel|no-endpoint|no-credential-domain|unconfigured-deps-1%3Aprocess',
-    );
   });
 });

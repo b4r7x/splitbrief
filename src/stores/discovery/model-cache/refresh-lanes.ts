@@ -3,7 +3,7 @@ import type { ModelsDevRefreshOutcome } from '../../../engine/detection/models-d
 import type {
   DetectionRefreshOutcomes,
   DetectionServiceResult,
-} from '../../../engine/detection/service.js';
+} from '../../../engine/detection/service/types.js';
 import type {
   DetectionSourceError,
   DetectionSourceOutcome,

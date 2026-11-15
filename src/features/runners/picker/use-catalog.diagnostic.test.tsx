@@ -10,7 +10,7 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import type { CliToolDetection } from '../../../core/discovery/detection/tool.js';
 import type { ProbeOutcomeKind } from '../../../core/discovery/runner-evidence.js';
 import type { ScopedCliCatalogAttempt } from '../../../engine/detection/cli-catalog-outcomes.js';
-import type { DetectionServiceResult } from '../../../engine/detection/service.js';
+import type { DetectionServiceResult } from '../../../engine/detection/service/types.js';
 import { formatToolsByline } from './byline.js';
 import { pickerListingSource } from './listing-source.js';
 import { formatCatalogDiagnostic } from './catalog-guidance.js';
