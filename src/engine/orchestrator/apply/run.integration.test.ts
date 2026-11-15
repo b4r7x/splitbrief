@@ -26,6 +26,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import { groupEventsIntoSections } from '../../../core/sections/group.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
+import { createEventBus } from '../../events/bus.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { deriveRunStatus } from '../../../core/sessions/run/status.js';
@@ -58,7 +59,11 @@ vi.mock('../approval/staged-project/promote.js', async (importOriginal) => {
 });
 vi.mock('../approval/file-snapshots/entry/write.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../approval/file-snapshots/entry/write.js')>();
-  return { ...actual, writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink) };
+  return {
+    ...actual,
+    writeConfinedEntry: vi.fn(actual.writeConfinedEntry),
+    writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink),
+  };
 });
 vi.mock('./backup.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./backup.js')>();
@@ -175,6 +180,9 @@ beforeEach(async () => {
   vi.mocked(entry.writeConfinedEntryOrLink)
     .mockReset()
     .mockImplementation(actualEntry.writeConfinedEntryOrLink);
+  vi.mocked(entry.writeConfinedEntry)
+    .mockReset()
+    .mockImplementation(actualEntry.writeConfinedEntry);
   vi.mocked(merge.mergeApplyStates).mockReset().mockImplementation(actualMerge.mergeApplyStates);
   const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
   vi.mocked(backup.writeApplyBackup).mockReset().mockImplementation(actualBackup.writeApplyBackup);
@@ -2118,5 +2126,388 @@ describe('runApply after a conflict halt', { timeout: 60_000 }, () => {
         expect(read(run.ws, 'a.txt')).toContain('<<<<<<< ours');
       },
     );
+  });
+});
+
+describe('the order of the steps of one Apply', { timeout: 60_000 }, () => {
+  /** The parts of a state that Apply changes, with no time and no backup id. */
+  function describeState(state: WorkflowState): string {
+    return [
+      state.phase,
+      `r${state.stateRevision}`,
+      state.applying !== undefined && 'applying',
+      state.applied !== undefined && `applied ${state.applied.files.join(',')}`,
+      state.pendingRecovery !== undefined &&
+        `halt ${state.pendingRecovery.reason} ${state.pendingRecovery.status}`,
+      state.applyReview !== undefined &&
+        `review ${state.applyReview.merged.map((entry) => entry.path).join(',')}`,
+      state.pendingTriage !== undefined && `triage ${state.pendingTriage.inputs.length}`,
+      state.applyIntegrated !== undefined &&
+        `handed ${state.applyIntegrated.map((record) => record.path).join(',')}`,
+    ]
+      .filter((part) => part !== false)
+      .join(' ');
+  }
+
+  /**
+   * Runs Apply and records each step that a user or a later run can see, in order: each event,
+   * each tracked state, the backup and each entry written into the checkout or the workspace.
+   * Each line ends with the state that state.json holds at that moment.
+   */
+  async function recordApply(run: ApplyRun, options: { refuse?: string } = {}) {
+    const log: string[] = [];
+    const step = (line: string) => log.push(`${line} | ${describeState(savedState(run))}`);
+    const sideOf = (root: string) =>
+      root === run.dir ? 'checkout' : root === run.ws ? 'workspace' : undefined;
+    const actualEntry = await vi.importActual<
+      typeof import('../approval/file-snapshots/entry/write.js')
+    >('../approval/file-snapshots/entry/write.js');
+    const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
+    vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
+      if (root === run.dir && path === options.refuse) throw new Error('disk full');
+      await actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
+      const side = sideOf(root);
+      if (side !== undefined) step(`write ${side} ${path}`);
+    });
+    vi.mocked(entry.writeConfinedEntry).mockImplementation(async (root, path, ...rest) => {
+      await actualEntry.writeConfinedEntry(root, path, ...rest);
+      const side = sideOf(root);
+      if (side !== undefined) step(`write ${side} ${path}`);
+    });
+    vi.mocked(backup.writeApplyBackup).mockImplementation(async (input) => {
+      const written = await actualBackup.writeApplyBackup(input);
+      step(`backup ${written.kind} ${input.files.join(',')}`);
+      return written;
+    });
+    const bus = createEventBus();
+    bus.subscribe((event) =>
+      step(
+        event.type === 'warning' || event.type === 'error'
+          ? `${event.type} ${event.code}`
+          : event.type,
+      ),
+    );
+    return {
+      log,
+      apply: (
+        state: WorkflowState,
+        more: { reviewNone?: boolean; overrideConfirmed?: boolean } = {},
+      ) =>
+        runApply({
+          wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
+          state,
+          reviewNone: more.reviewNone ?? false,
+          overrideConfirmed: more.overrideConfirmed,
+          setTrackedState: (tracked) => step(`tracked ${describeState(tracked)}`),
+        }),
+    };
+  }
+
+  /** A run whose Apply wrote `a.txt`, then the disk refused `b.txt`: the apply-partial halt. */
+  async function partialRun(run: ApplyRun): Promise<void> {
+    writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+    writeFileSync(join(run.ws, 'b.txt'), 'ours b\n');
+    const first = await recordApply(run, { refuse: 'b.txt' });
+    expect((await first.apply(readyState(run))).outcome).toBe('halted');
+  }
+
+  it('a clean Apply merges into the workspace, backs up, records the start, writes the checkout, records the end, then closes the workspace', async () => {
+    await withApplyRun(
+      { 'a.txt': 'base a\n', 'b.txt': 'base b\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+        const state = await reviewedReadyState(run);
+        writeFileSync(join(run.dir, 'b.txt'), 'user b\n');
+        const recorded = await recordApply(run);
+
+        const result = await recorded.apply(state);
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r0',
+          'tracked complete r0 | complete r0',
+          'write workspace b.txt | complete r0',
+          'backup written a.txt | complete r0',
+          'tracked complete r1 applying | complete r1 applying',
+          'write checkout a.txt | complete r1 applying',
+          'tracked complete r2 applied a.txt | complete r2 applied a.txt',
+          'workspace_closed | complete r2 applied a.txt',
+          'apply_finished | complete r2 applied a.txt',
+        ]);
+        expect(result.outcome).toBe('applied');
+        expect(describeState(result.state)).toBe(describeState(savedState(run)));
+        expect(read(run.dir, 'a.txt')).toBe('ours a\n');
+        expect(read(run.dir, 'b.txt')).toBe('user b\n');
+      },
+    );
+  });
+
+  it('a text conflict merges into the workspace, writes the markers there, then records the review and says so, and leaves the checkout untouched', async () => {
+    await withApplyRun(
+      { 'a.txt': FIVE, 'b.txt': 'base b\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), lines('one', 'two', 'OURS', 'four', 'five'));
+        const state = await reviewedReadyState(run);
+        writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'THEIRS', 'four', 'five'));
+        writeFileSync(join(run.dir, 'b.txt'), 'user b\n');
+        const recorded = await recordApply(run);
+
+        const result = await recorded.apply(state);
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r0',
+          'tracked complete r0 | complete r0',
+          'write workspace b.txt | complete r0',
+          'write workspace a.txt | complete r0',
+          'tracked final-review r1 review a.txt triage 1 handed a.txt | final-review r1 review a.txt triage 1 handed a.txt',
+          'planner_text | final-review r1 review a.txt triage 1 handed a.txt',
+          'apply_finished | final-review r1 review a.txt triage 1 handed a.txt',
+        ]);
+        expect(result.outcome).toBe('review');
+        expect(describeState(result.state)).toBe(describeState(savedState(run)));
+        expect(read(run.dir, 'a.txt')).toBe(lines('one', 'two', 'THEIRS', 'four', 'five'));
+        expect(read(run.ws, 'a.txt')).toContain('<<<<<<< ours');
+      },
+    );
+  });
+
+  it('a conflict the review cannot take hands off the files, then names the halt and records it, and writes nothing', async () => {
+    await withApplyRun(
+      { 'a.txt': 'base a\n', 'gone.txt': 'old\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+        unlinkSync(join(run.ws, 'gone.txt'));
+        const state = await reviewedReadyState(run);
+        writeFileSync(join(run.dir, 'gone.txt'), 'edited\n');
+        const recorded = await recordApply(run);
+
+        const result = await recorded.apply(state);
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r0',
+          'tracked complete r0 | complete r0',
+          'error apply_conflict | complete r0',
+          'recovery_prompted | complete r1 halt apply-conflict awaiting-user handed gone.txt',
+          'tracked complete r1 halt apply-conflict awaiting-user handed gone.txt | complete r1 halt apply-conflict awaiting-user handed gone.txt',
+          'apply_finished | complete r1 halt apply-conflict awaiting-user handed gone.txt',
+        ]);
+        expect(result.outcome).toBe('halted');
+        expect(describeState(result.state)).toBe(describeState(savedState(run)));
+        expect(read(run.dir, 'a.txt')).toBe('base a\n');
+        expect(read(run.dir, 'gone.txt')).toBe('edited\n');
+      },
+    );
+  });
+
+  it.each([
+    ['a seat review', false, ['review_fix_started | final-review r1 review a.txt']],
+    ['REVIEW None', true, []],
+  ])(
+    'a merge that changes the reviewed files under %s writes the workspace, then records the recheck and says so',
+    async (_, reviewNone, fixCycle) => {
+      await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+        const state = await reviewedReadyState(run);
+        writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'three', 'four', 'FIVE'));
+        const recorded = await recordApply(run);
+
+        const result = await recorded.apply(state, { reviewNone });
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r0',
+          'tracked complete r0 | complete r0',
+          'write workspace a.txt | complete r0',
+          'tracked final-review r1 review a.txt | final-review r1 review a.txt',
+          ...fixCycle,
+          'planner_text | final-review r1 review a.txt',
+          'apply_finished | final-review r1 review a.txt',
+        ]);
+        expect(result.outcome).toBe('review');
+        expect(describeState(result.state)).toBe(describeState(savedState(run)));
+        expect(read(run.dir, 'a.txt')).toBe(lines('one', 'two', 'three', 'four', 'FIVE'));
+      });
+    },
+  );
+
+  it('a write the disk refuses after the first file records the start before the first write, then names and records the partial halt', async () => {
+    await withApplyRun(
+      { 'a.txt': 'base a\n', 'b.txt': 'base b\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+        writeFileSync(join(run.ws, 'b.txt'), 'ours b\n');
+        const recorded = await recordApply(run, { refuse: 'b.txt' });
+
+        const result = await recorded.apply(readyState(run));
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r0',
+          'tracked complete r0 | complete r0',
+          'backup written a.txt,b.txt | complete r0',
+          'tracked complete r1 applying | complete r1 applying',
+          'write checkout a.txt | complete r1 applying',
+          'error apply_partial | complete r1 applying',
+          'recovery_prompted | complete r2 applying halt apply-partial awaiting-user',
+          'tracked complete r2 applying halt apply-partial awaiting-user | complete r2 applying halt apply-partial awaiting-user',
+          'apply_finished | complete r2 applying halt apply-partial awaiting-user',
+        ]);
+        expect(result.outcome).toBe('halted');
+        expect(describeState(result.state)).toBe(describeState(savedState(run)));
+        expect(read(run.dir, 'a.txt')).toBe('ours a\n');
+        expect(read(run.dir, 'b.txt')).toBe('base b\n');
+      },
+    );
+  });
+
+  it('a backup the disk refuses throws before Apply records a start or writes the checkout, and Apply still ends', async () => {
+    await withApplyRun({ 'a.txt': 'base a\n' }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+      const state = readyState(run);
+      const recorded = await recordApply(run);
+      refusedOpen.pattern = /\.blob\.[0-9a-f]{16}\.tmp$/;
+
+      const thrown = await recorded.apply(state).then(
+        () => undefined,
+        (err: unknown) => err,
+      );
+
+      expect(thrown).toMatchObject({ code: 'ENOSPC' });
+      expect(recorded.log).toEqual([
+        'apply_started | complete r0',
+        'tracked complete r0 | complete r0',
+        'apply_finished | complete r0',
+      ]);
+      expect(read(run.dir, 'a.txt')).toBe('base a\n');
+    });
+  });
+
+  it('an Apply a stop cut halts on what the checkout holds and writes nothing', async () => {
+    await withApplyRun(
+      { 'a.txt': 'base a\n', 'b.txt': 'base b\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        await partialRun(run);
+        const cut = { ...savedState(run), pendingRecovery: undefined };
+        saveState({ projectDir: run.dir, sessionId: run.sessionId }, cut);
+        const recorded = await recordApply(run);
+
+        const result = await recorded.apply(cut);
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r2 applying',
+          'error apply_partial | complete r2 applying',
+          'recovery_prompted | complete r3 applying halt apply-partial awaiting-user',
+          'tracked complete r3 applying halt apply-partial awaiting-user | complete r3 applying halt apply-partial awaiting-user',
+          'apply_finished | complete r3 applying halt apply-partial awaiting-user',
+        ]);
+        expect(result.outcome).toBe('halted');
+        expect(describeState(result.state)).toBe(describeState(savedState(run)));
+        expect(read(run.dir, 'a.txt')).toBe('ours a\n');
+        expect(read(run.dir, 'b.txt')).toBe('base b\n');
+      },
+    );
+  });
+
+  it('Restore puts back the checkout, then records the restore and the answer, says so, and goes no further', async () => {
+    await withApplyRun(
+      { 'a.txt': 'base a\n', 'b.txt': 'base b\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        await partialRun(run);
+        const answered = await choose(run, 'restore-backup');
+        const recorded = await recordApply(run);
+
+        const result = await recorded.apply(answered);
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r3 applying halt apply-partial applying',
+          'write checkout a.txt | complete r3 applying halt apply-partial applying',
+          'tracked complete r4 halt apply-partial applying | complete r4 halt apply-partial applying',
+          'tracked complete r5 | complete r5',
+          'recovery_resolved | complete r5',
+          'planner_text | complete r5',
+          'apply_finished | complete r5',
+        ]);
+        expect(result.outcome).toBe('restored');
+        expect(describeState(result.state)).toBe(describeState(savedState(run)));
+        expect(read(run.dir, 'a.txt')).toBe('base a\n');
+        expect(read(run.dir, 'b.txt')).toBe('base b\n');
+      },
+    );
+  });
+
+  it('Retry records the answer, then writes the files that are left after the start record', async () => {
+    await withApplyRun(
+      { 'a.txt': 'base a\n', 'b.txt': 'base b\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        await partialRun(run);
+        const answered = await choose(run, 'retry-same-worker');
+        const recorded = await recordApply(run);
+
+        const result = await recorded.apply(answered);
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r3 applying halt apply-partial applying',
+          'tracked complete r4 applying | complete r4 applying',
+          'recovery_resolved | complete r4 applying',
+          'tracked complete r4 applying | complete r4 applying',
+          'backup written b.txt | complete r4 applying',
+          'tracked complete r5 applying | complete r5 applying',
+          'write checkout b.txt | complete r5 applying',
+          'tracked complete r6 applied b.txt | complete r6 applied b.txt',
+          'workspace_closed | complete r6 applied b.txt',
+          'apply_finished | complete r6 applied b.txt',
+        ]);
+        expect(result.outcome).toBe('applied');
+        expect(describeState(result.state)).toBe(describeState(savedState(run)));
+        expect(read(run.dir, 'a.txt')).toBe('ours a\n');
+        expect(read(run.dir, 'b.txt')).toBe('ours b\n');
+      },
+    );
+  });
+
+  it('a halt you have not answered stops Apply before it reads, records or writes anything', async () => {
+    await withApplyRun(
+      { 'a.txt': 'base a\n', 'b.txt': 'base b\n' },
+      { sessionId: SESSION_ID },
+      async (run) => {
+        await partialRun(run);
+        const halted = savedState(run);
+        const recorded = await recordApply(run);
+
+        const result = await recorded.apply(halted);
+
+        expect(recorded.log).toEqual([
+          'apply_started | complete r2 applying halt apply-partial awaiting-user',
+          'warning recovery_pending_unresolved | complete r2 applying halt apply-partial awaiting-user',
+          'apply_finished | complete r2 applying halt apply-partial awaiting-user',
+        ]);
+        expect(result.outcome).toBe('halted');
+        expect(result.state).toBe(halted);
+        expect(read(run.dir, 'b.txt')).toBe('base b\n');
+      },
+    );
+  });
+
+  it('a run accepted as is with no confirmation asks before Apply starts, and records and writes nothing', async () => {
+    await withApplyRun({ 'a.txt': 'base a\n' }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'ours a\n');
+      const accepted = {
+        ...readyState(run),
+        acceptedAsIs: { at: '2026-11-15T10:00:00.000Z', findings: ['a.txt drops the error'] },
+      };
+      saveState({ projectDir: run.dir, sessionId: run.sessionId }, accepted);
+      const recorded = await recordApply(run);
+
+      const result = await recorded.apply(accepted);
+
+      expect(recorded.log).toEqual(['warning apply_override_unconfirmed | complete r0']);
+      expect(result.outcome).toBe('needs-confirmation');
+      expect(result.state).toBe(accepted);
+      expect(read(run.dir, 'a.txt')).toBe('base a\n');
+    });
   });
 });

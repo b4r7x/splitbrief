@@ -1,64 +1,21 @@
-import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
-import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { TriageInput } from '../../../core/schemas/review/verdict.js';
-import { formatApplyRestoreCounts } from '../../../core/runtime/commands/messages.js';
-import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run/status.js';
-import { diffFileEntries } from '../../../lib/git/entry-diff.js';
-import { error, matches } from '../../../utils/error.js';
-import { countNoun } from '../../../utils/pluralize.js';
+import { awaitsApply } from '../../../core/sessions/run/status.js';
+import { error } from '../../../utils/error.js';
 import { acceptedSentence } from '../../../core/review/accepted.js';
-import { sha256Hex } from '../../../utils/sha256.js';
-import { isRecord } from '../../../utils/type-guards.js';
 import { publishWarning } from '../publish/notice.js';
-import { publishRecoveryResolved } from '../publish/recovery.js';
-import { publishFixCycleStarted } from '../publish/review.js';
-import { createBusTextHandler } from '../publish/runner.js';
-import {
-  buildApplyConflictRecoveryIssue,
-  buildApplyPartialRecoveryIssue,
-} from '../recovery/builders/apply.js';
-import { removeClosedRunWorkspace } from '../isolation/closed-runs.js';
 import { heldLiveness } from '../run/liveness.js';
 import { trackActiveApply } from '../session-lifecycle/shutdown.js';
-import { transitionAndSave } from '../state-ops/transition.js';
-import type { WorkflowContext } from '../types.js';
-import { writeConfinedEntry } from '../approval/file-snapshots/entry/write.js';
-import { applyBackupDir, readApplyBackup, removeApplyWriteTemporaries } from './backup.js';
-import { bindApplyHandOffs, handOff } from './hand-off.js';
-import { type ApplyConflict, type ApplyMerge, mergeApplyStates } from './merge.js';
-import { restoreApplyBackup } from './restore.js';
+import { readApplyBackup, removeApplyWriteTemporaries } from './backup.js';
 import {
-  candidateOf,
-  captureApplyStates,
-  readBaseBytes,
-  sameSideEntry,
-  type SideEntry,
-} from './states.js';
-import { readSideEntry } from './entry-read.js';
-import { writeApply } from './write.js';
-import { raiseApplyHalt, haltCutApply } from './halt.js';
-
-type ApplyResult =
-  | { outcome: 'applied'; state: WorkflowState; files: string[] }
-  | { outcome: 'halted'; state: WorkflowState }
-  | { outcome: 'restored'; state: WorkflowState; files: string[] }
-  | { outcome: 'review'; state: WorkflowState }
-  | { outcome: 'needs-confirmation'; state: WorkflowState };
-
-type TextMarkerConflict = ApplyConflict & {
-  markers: Buffer;
-  ours: Extract<SideEntry, { kind: 'file' }>;
-  theirs: Extract<SideEntry, { kind: 'file' }>;
-};
-
-type ApplyInput = {
-  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
-  state: WorkflowState;
-  reviewNone: boolean;
-  setTrackedState?: ((state: WorkflowState) => void) | undefined;
-  overrideConfirmed?: boolean | undefined;
-};
+  answerApplyRecovery,
+  mergeOrHalt,
+  recheckChangedMerge,
+  settleConflicts,
+  writeMerged,
+} from './flow.js';
+import { bindApplyHandOffs } from './hand-off.js';
+import { candidateOf, captureApplyStates } from './states.js';
+import { haltCutApply } from './halt.js';
+import type { ApplyInput, ApplyResult, ApplyRun, ApplyState } from './types.js';
 
 /**
  * Every Apply, live or at rest, is this process's active Apply until it settles. An Apply that
@@ -118,81 +75,33 @@ function askOverrideConfirmation(input: ApplyInput): ApplyResult | undefined {
 
 async function applyRun(input: ApplyInput): Promise<ApplyResult> {
   const { wctx, reviewNone, setTrackedState } = input;
-  let { state } = input;
-  let retrying = false;
-  if (state.pendingRecovery !== undefined) {
-    const recovery = state.pendingRecovery;
-    if (!isAnsweredApplyRecovery(recovery)) {
-      publishWarning({
-        bus: wctx.bus,
-        phase: state.phase,
-        message: `Recovery is still pending (reason: ${recovery.reason}, status: ${recovery.status}); no Apply work was started. Available actions: ${recovery.availableActions.join(', ')}.`,
-        safety: { category: 'recovery', code: 'recovery_pending_unresolved' },
-      });
-      return { outcome: 'halted', state };
-    }
-    const action = recovery.selectedAction;
-    let restored: Awaited<ReturnType<typeof restoreApplyBackup>> | undefined;
-    if (action === 'restore-backup') {
-      const backupId = state.applying?.backupId ?? recoveryFactString(recovery.facts, 'backupId');
-      if (backupId === undefined) {
-        throw error('apply-backup-missing', 'Restore requires the Apply backup ID.');
-      }
-      restored = await restoreApplyBackup({
-        projectDir: wctx.projectDir,
-        sessionId: wctx.sessionId,
-        backupId,
-      });
-      if (state.applying !== undefined) {
-        state = transitionAndSave(wctx, state, { type: 'APPLY_RESTORED' });
-        setTrackedState?.(state);
-      }
-    }
-    state = transitionAndSave(wctx, state, { type: 'RESOLVE_PENDING_RECOVERY' });
-    setTrackedState?.(state);
-    publishRecoveryResolved({
-      bus: wctx.bus,
-      phase: state.phase,
-      issue: recovery,
-      action,
-      outcome: 'continued',
-    });
-    if (restored !== undefined) {
-      const message = `Restored Apply backup: ${formatApplyRestoreCounts(restored)}`;
-      if (restored.conflicts.length > 0) {
-        publishWarning({
-          bus: wctx.bus,
-          phase: state.phase,
-          message: `${message}; left as you changed them: ${restored.conflicts.join(', ')}`,
-          safety: { category: 'recovery', code: 'apply_restore_conflict' },
-        });
-      } else {
-        createBusTextHandler({ bus: wctx.bus, phase: state.phase })(message);
-      }
-      return { outcome: 'restored', state, files: restored.restored };
-    }
-    retrying = true;
+  const shared: ApplyState = { state: input.state };
+  const recovery = input.state.pendingRecovery;
+  if (recovery !== undefined) {
+    const answered = await answerApplyRecovery(input, shared, recovery);
+    if (answered !== undefined) return answered;
   }
-  const { workspace } = state;
-  if (!awaitsApply(state) || workspace === undefined || workspace.kind === 'checkout') {
+  const { workspace } = shared.state;
+  if (!awaitsApply(shared.state) || workspace === undefined || workspace.kind === 'checkout') {
     throw error('apply-not-ready', 'Apply requires a reviewed worktree or staged-copy workspace.');
   }
-  const halt = (issue: RecoveryIssue): { outcome: 'halted'; state: WorkflowState } => {
-    state = raiseApplyHalt(wctx, state, issue, setTrackedState);
-    return { outcome: 'halted', state };
-  };
-  if (state.applying !== undefined && !retrying) {
+  if (shared.state.applying !== undefined && recovery === undefined) {
     return {
       outcome: 'halted',
-      state: await haltCutApply(wctx, state, state.applying.backupId, setTrackedState),
+      state: await haltCutApply(
+        wctx,
+        shared.state,
+        shared.state.applying.backupId,
+        setTrackedState,
+      ),
     };
   }
   // A re-run first removes the temporaries the cut write left beside its files, so the capture
   // never reads them as checkout files.
-  if (state.applying !== undefined) {
+  if (shared.state.applying !== undefined) {
     await removeApplyWriteTemporaries(
       wctx.projectDir,
-      await readApplyBackup(wctx.projectDir, wctx.sessionId, state.applying.backupId),
+      await readApplyBackup(wctx.projectDir, wctx.sessionId, shared.state.applying.backupId),
     );
   }
   const states = await captureApplyStates({
@@ -200,178 +109,13 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
     sessionId: wctx.sessionId,
     workspace,
   });
-  state = bindApplyHandOffs(wctx, state, candidateOf(states));
-  setTrackedState?.(state);
-  const integratedMap =
-    state.applyIntegrated === undefined
-      ? undefined
-      : new Map(state.applyIntegrated.map((record) => [record.path, record]));
-  let merged: ApplyMerge;
-  try {
-    merged = await mergeApplyStates(states, integratedMap);
-  } catch (cause) {
-    if (
-      (matches('apply-checkout-changed')(cause) || matches('apply-workspace-changed')(cause)) &&
-      isRecord(cause.data) &&
-      typeof cause.data.path === 'string'
-    ) {
-      return halt(
-        buildApplyConflictRecoveryIssue({
-          conflicts: [
-            {
-              path: cause.data.path,
-              kind: matches('apply-workspace-changed')(cause)
-                ? 'workspace-changed'
-                : 'checkout-changed',
-            },
-          ],
-          workspacePath: workspace.path,
-          createdAt: new Date().toISOString(),
-        }),
-      );
-    }
-    throw cause;
-  }
-  const absent: SideEntry = { kind: 'absent' };
-  const buildMergedEntries = async (
-    paths: readonly string[],
-  ): Promise<{ path: string; checkoutHunks: string }[]> => {
-    const entries: { path: string; checkoutHunks: string }[] = [];
-    for (const path of paths) {
-      const baseEntry = states.base.get(path) ?? absent;
-      const theirsEntry = states.theirs.get(path) ?? absent;
-      let checkoutHunks = '';
-      if (
-        theirsEntry.kind !== 'symlink' &&
-        (baseEntry.kind !== 'file' || baseEntry.blob !== null) &&
-        (baseEntry.kind !== theirsEntry.kind ||
-          (baseEntry.kind === 'file' &&
-            theirsEntry.kind === 'file' &&
-            baseEntry.sha256 !== theirsEntry.sha256))
-      ) {
-        const [baseBytes, theirs] = await Promise.all([
-          readBaseBytes(path, baseEntry),
-          theirsEntry.kind === 'file'
-            ? readSideEntry({ states, path, side: 'theirs', expected: theirsEntry })
-            : null,
-        ]);
-        checkoutHunks = await diffFileEntries({
-          path,
-          before: baseBytes === null ? null : { bytes: baseBytes, mode: theirs?.mode ?? 0o644 },
-          after: theirs === null ? null : { bytes: theirs.bytes, mode: theirs.mode },
-        });
-      }
-      entries.push({ path, checkoutHunks });
-    }
-    return entries;
-  };
-  if (merged.conflicts.length > 0) {
-    const textConflicts = merged.conflicts.filter(
-      (conflict): conflict is TextMarkerConflict =>
-        conflict.kind === 'text' &&
-        conflict.markers !== undefined &&
-        conflict.ours.kind === 'file' &&
-        conflict.theirs.kind === 'file',
-    );
-    if (textConflicts.length === merged.conflicts.length && !reviewNone) {
-      const triage: TriageInput[] = [];
-      for (const [index, conflict] of textConflicts.entries()) {
-        await writeConfinedEntry(workspace.path, conflict.path, {
-          kind: 'file',
-          bytes: conflict.markers,
-          sha256: sha256Hex(conflict.markers),
-          mode: conflict.ours.mode,
-        });
-        triage.push({
-          id: `A${index + 1}`,
-          kind: 'defect',
-          source: 'apply',
-          text: `Apply merge conflict in ${conflict.path}: resolve the conflict markers, keeping both the run's change and the checkout's change unless they compete`,
-          file: conflict.path,
-        });
-      }
-      state = transitionAndSave(wctx, handOff(state, textConflicts), {
-        type: 'APPLY_REVIEW_START',
-        merged: await buildMergedEntries(textConflicts.map((conflict) => conflict.path)),
-        triage,
-      });
-      setTrackedState?.(state);
-      createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
-        `Apply wrote conflict markers for ${countNoun(textConflicts.length, 'file')} both sides changed (${textConflicts.map((conflict) => conflict.path).join(', ')}); the review turns them into fix tasks before Apply runs again.`,
-      );
-      return { outcome: 'review', state };
-    }
-    // The run's own entry of an unsupported file cannot land, so the halt hands off the rest.
-    state = handOff(
-      state,
-      merged.conflicts.filter((conflict) => conflict.kind !== 'unsupported-entry'),
-    );
-    return halt(
-      buildApplyConflictRecoveryIssue({
-        conflicts: merged.conflicts,
-        workspacePath: workspace.path,
-        createdAt: new Date().toISOString(),
-      }),
-    );
-  }
-  const after = await captureApplyStates({
-    projectDir: wctx.projectDir,
-    sessionId: wctx.sessionId,
-    workspace,
-  });
-  const reviewed = state.reviewedCandidate ?? candidateOf(states);
-  const now = candidateOf(after);
-  const changed = [...new Set([...Object.keys(reviewed), ...Object.keys(now)])]
-    .filter((path) => now[path] !== reviewed[path])
-    .filter(
-      (path) =>
-        reviewed[path] !== undefined ||
-        !sameSideEntry(after.ours.get(path) ?? absent, states.theirs.get(path) ?? absent),
-    )
-    .sort();
-  if (changed.length > 0) {
-    state = transitionAndSave(wctx, state, {
-      type: reviewNone ? 'APPLY_RECHECK_START' : 'APPLY_REVIEW_START',
-      merged: await buildMergedEntries(changed),
-    });
-    setTrackedState?.(state);
-    if (!reviewNone) publishFixCycleStarted(wctx.bus, state, []);
-    createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
-      `Your checkout changed ${countNoun(changed.length, 'file')} this run also changed (${changed.join(', ')}); the merged result goes through its checks${reviewNone ? '' : ' and the review'} again before Apply.`,
-    );
-    return { outcome: 'review', state };
-  }
-  const result = await writeApply({
-    scope: wctx,
-    state,
-    states,
-    files: merged.promote,
-    setTrackedState,
-  });
-  state = result.state;
-  switch (result.kind) {
-    case 'changed':
-      return halt(
-        buildApplyConflictRecoveryIssue({
-          conflicts: result.files.map((path) => ({ path, kind: 'checkout-changed' })),
-          workspacePath: workspace.path,
-          createdAt: new Date().toISOString(),
-        }),
-      );
-    case 'partial':
-      return halt(
-        buildApplyPartialRecoveryIssue({
-          backupId: result.backupId,
-          backupDir: applyBackupDir(wctx.projectDir, wctx.sessionId, result.backupId),
-          written: result.written,
-          files: result.files,
-          failedFile: result.failedFile,
-          cause: result.cause,
-          createdAt: new Date().toISOString(),
-        }),
-      );
-    case 'applied':
-      await removeClosedRunWorkspace(wctx, workspace, state.phase);
-      return { outcome: 'applied', state, files: result.files };
-  }
+  shared.state = bindApplyHandOffs(wctx, shared.state, candidateOf(states));
+  setTrackedState?.(shared.state);
+  const run: ApplyRun = { wctx, reviewNone, setTrackedState, workspace, states };
+  const merged = await mergeOrHalt(run, shared);
+  if ('outcome' in merged) return merged;
+  if (merged.conflicts.length > 0) return settleConflicts(run, shared, merged.conflicts);
+  const rechecked = await recheckChangedMerge(run, shared);
+  if (rechecked !== undefined) return rechecked;
+  return writeMerged(run, shared, merged.promote);
 }

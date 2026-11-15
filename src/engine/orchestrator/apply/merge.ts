@@ -1,5 +1,6 @@
 import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { mergeFileEntries } from '../../../lib/git/entry-merge.js';
 import { assertPathConfined } from '../../../lib/fs/confinement.js';
 import { isENOENT } from '../../../utils/errno.js';
@@ -203,4 +204,39 @@ export async function mergeApplyStates(
     await writeConfinedEntryOrLink(states.workspaceDir, path, entry);
   }
   return result;
+}
+
+/** Each merged path with the change the checkout made to it, for the review of the merged result. */
+export async function buildMergedEntries(
+  states: ApplyStates,
+  paths: readonly string[],
+): Promise<{ path: string; checkoutHunks: string }[]> {
+  const entries: { path: string; checkoutHunks: string }[] = [];
+  for (const path of paths) {
+    const baseEntry = states.base.get(path) ?? { kind: 'absent' };
+    const theirsEntry = states.theirs.get(path) ?? { kind: 'absent' };
+    let checkoutHunks = '';
+    if (
+      theirsEntry.kind !== 'symlink' &&
+      (baseEntry.kind !== 'file' || baseEntry.blob !== null) &&
+      (baseEntry.kind !== theirsEntry.kind ||
+        (baseEntry.kind === 'file' &&
+          theirsEntry.kind === 'file' &&
+          baseEntry.sha256 !== theirsEntry.sha256))
+    ) {
+      const [baseBytes, theirs] = await Promise.all([
+        readBaseBytes(path, baseEntry),
+        theirsEntry.kind === 'file'
+          ? readSideEntry({ states, path, side: 'theirs', expected: theirsEntry })
+          : null,
+      ]);
+      checkoutHunks = await diffFileEntries({
+        path,
+        before: baseBytes === null ? null : { bytes: baseBytes, mode: theirs?.mode ?? 0o644 },
+        after: theirs === null ? null : { bytes: theirs.bytes, mode: theirs.mode },
+      });
+    }
+    entries.push({ path, checkoutHunks });
+  }
+  return entries;
 }
