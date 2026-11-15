@@ -5,6 +5,7 @@ import {
   createSteeringPort,
   deliverToRunningCall,
   type RunningCall,
+  type SteeringPort,
   type SteerOutcome,
   type SteerMessage,
 } from '../../../calls/steering.js';
@@ -3602,5 +3603,482 @@ describe('OpenCode process steering', () => {
       expect(existsSync(fixture.shim.serverFile)).toBe(false);
       expect(fixture.port.current()).toBeNull();
     });
+  });
+});
+
+describe('invokeProcessCli step and dispose order', () => {
+  const GRACE_MS = 2_000;
+  const IDLE = 'setInterval(()=>{},1000)';
+  const textLine = (text: string) => `TEXT:${Buffer.from(text).toString('base64')}`;
+
+  /**
+   * Lists the steps of one call in the order they ran: the spawn, each line the parser reads, each
+   * signal sent to the process group of the tool, the close of the tool's output, the terminal
+   * record with the state of the group at that moment, and the result.
+   */
+  function trace() {
+    const steps: string[] = [];
+    let pid: number | undefined;
+    const realKill = process.kill.bind(process);
+    const kill = vi.spyOn(process, 'kill').mockImplementation((target, signal) => {
+      if (pid !== undefined && target === -pid && signal !== 0) steps.push(`kill:${signal}`);
+      return realKill(target, signal);
+    });
+    onTestFinished(() => {
+      kill.mockRestore();
+      if (pid !== undefined) killOrphanRunner(pid);
+    });
+    const groupGone = () => pid === undefined || !canSignalProcess(-pid);
+    const base = adapter({ kind: 'stdin' });
+    const parse = (line: string) => {
+      steps.push(`line:${line}`);
+      return base.parse(line);
+    };
+    return {
+      steps,
+      groupGone,
+      parse,
+      adapter: { ...base, parse } satisfies CliImplementerAdapter,
+      onEvent: (event: RunnerCallEvent) => {
+        if (event.type !== 'call_completed' && event.type !== 'call_error') return;
+        steps.push(`terminal:${event.type}`, groupGone() ? 'group gone' : 'group running');
+      },
+      onSpawned: (child: ChildProcess) => {
+        pid = child.pid;
+        steps.push('spawned');
+        child.once('close', () => steps.push('close'));
+      },
+      // A kill settles on the absence of the group, so the close of the output can come at any
+      // point after the kill.
+      withoutClose: () => steps.filter((step) => step !== 'close'),
+    };
+  }
+
+  type Trace = ReturnType<typeof trace>;
+
+  async function call(
+    t: Trace,
+    selected: CliInvocation,
+    opts: {
+      adapter?: CliImplementerAdapter;
+      idle?: Readonly<{ warnMs: number; killMs: number }>;
+      steering?: SteeringPort;
+      onEvent?: (event: RunnerCallEvent) => void;
+    } = {},
+  ) {
+    const result = await invokeProcessCli(opts.adapter ?? t.adapter, {
+      invocation: selected,
+      prompt: '',
+      callContext,
+      idle: opts.idle,
+      steering: opts.steering,
+      onEvent: (event) => {
+        opts.onEvent?.(event);
+        t.onEvent(event);
+      },
+      onSpawned: t.onSpawned,
+    });
+    t.steps.push('result');
+    return result;
+  }
+
+  function watchGraceTimer(t: Trace) {
+    const handles = new Set<NodeJS.Timeout>();
+    const realSetTimeout = globalThis.setTimeout;
+    const realClearTimeout = globalThis.clearTimeout;
+    const arm = vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, ms) => {
+      const handle = realSetTimeout(callback, ms);
+      if (ms === GRACE_MS) {
+        handles.add(handle);
+        t.steps.push('grace armed');
+      }
+      return handle;
+    });
+    const clear = vi.spyOn(globalThis, 'clearTimeout').mockImplementation((handle) => {
+      if (typeof handle === 'object' && handles.has(handle)) t.steps.push('grace cleared');
+      realClearTimeout(handle);
+    });
+    onTestFinished(() => {
+      arm.mockRestore();
+      clear.mockRestore();
+    });
+  }
+
+  itUnix(
+    'a clean exit reads its last line at the close, records the result, then clears the grace timer, and sends no signal',
+    async () => {
+      const t = trace();
+      watchGraceTimer(t);
+      const result = await call(t, invocation({ script: "process.stdout.write('RESULT')" }));
+
+      expect(result.status).toBe('completed');
+      expect(t.steps).toEqual([
+        'spawned',
+        'line:RESULT',
+        'grace armed',
+        'close',
+        'terminal:call_completed',
+        'group gone',
+        'grace cleared',
+        'result',
+      ]);
+    },
+  );
+
+  itUnix(
+    'a non-zero exit reads its last line at the close before it records the failure, and sends no signal',
+    async () => {
+      const t = trace();
+      const result = await call(
+        t,
+        invocation({ script: "process.stdout.write('NOISE:tail');process.exitCode=3" }),
+      );
+
+      expect(result).toMatchObject({ status: 'failed', error: { code: 'non-zero-exit' } });
+      expect(t.steps).toEqual([
+        'spawned',
+        'line:NOISE:tail',
+        'close',
+        'terminal:call_error',
+        'group gone',
+        'result',
+      ]);
+    },
+  );
+
+  itUnix('a last line that the parser drops does not name the halt of a failed exit', async () => {
+    const result = await invokeProcessCli(adapter({ kind: 'stdin' }), {
+      invocation: invocation({
+        script: "process.stdout.write('NOISE:usage limit');process.exitCode=3",
+      }),
+      prompt: '',
+      callContext,
+    });
+
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'non-zero-exit' } });
+  });
+
+  itUnix('a timeout kills the tool group once before it records the timeout', async () => {
+    await withTempDir('splitbrief-order-timeout', async (dir) => {
+      const ready = join(dir, 'ready');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      const t = trace();
+      const running = call(
+        t,
+        invocation({
+          script: `require('node:fs').writeFileSync(${JSON.stringify(ready)},'');${IDLE}`,
+          timeoutMs: 500,
+        }),
+      );
+      await expireDeadlineAfterFile(ready);
+      const result = await running;
+
+      expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+      expect(t.withoutClose()).toEqual([
+        'spawned',
+        'kill:SIGTERM',
+        'terminal:call_error',
+        'group gone',
+        'result',
+      ]);
+    });
+  });
+
+  itUnix('an idle cut kills the tool group once before it records the cut', async () => {
+    const t = trace();
+    const result = await call(t, invocation({ script: IDLE }), {
+      idle: { warnMs: 20, killMs: 60 },
+    });
+
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'no-progress-cut' } });
+    expect(t.withoutClose()).toEqual([
+      'spawned',
+      'kill:SIGTERM',
+      'terminal:call_error',
+      'group gone',
+      'result',
+    ]);
+  });
+
+  itUnix('a stop by the user kills the tool group once before it records the stop', async () => {
+    const t = trace();
+    const controller = new AbortController();
+    const line = textLine('working');
+    const result = await call(
+      t,
+      invocation({
+        script: `process.stdout.write(${JSON.stringify(`${line}\n`)});${IDLE}`,
+        signal: controller.signal,
+      }),
+      {
+        onEvent: (event) => {
+          if (event.type === 'call_text_delta') controller.abort();
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ status: 'aborted', error: { code: 'runner_interrupted' } });
+    expect(t.withoutClose()).toEqual([
+      'spawned',
+      `line:${line}`,
+      'kill:SIGTERM',
+      'terminal:call_error',
+      'group gone',
+      'result',
+    ]);
+  });
+
+  itUnix(
+    'a spawn that fails on a missing working directory records the failure with no process left',
+    async () => {
+      const t = trace();
+      const result = await call(t, {
+        ...invocation({ script: '' }),
+        cwd: join(tmpdir(), 'splitbrief-order-missing-cwd'),
+      });
+
+      expect(result).toMatchObject({ status: 'failed', error: { code: 'spawn-not-found' } });
+      expect(t.withoutClose()).toEqual(['spawned', 'terminal:call_error', 'group gone', 'result']);
+    },
+  );
+
+  itUnix('a missing executable records the failure before any spawn', async () => {
+    const t = trace();
+    const result = await call(
+      t,
+      invocation({ script: '', executable: missingExecutableIdentity() }),
+    );
+
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'spawn-not-found' } });
+    expect(t.steps).toEqual(['terminal:call_error', 'group gone', 'result']);
+  });
+
+  itUnix('a protocol error kills the tool group once before it records the failure', async () => {
+    const t = trace();
+    const result = await call(
+      t,
+      invocation({ script: `process.stdout.write('not-protocol\\n');${IDLE}` }),
+    );
+
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'protocol-failure' } });
+    expect(t.withoutClose()).toEqual([
+      'spawned',
+      'line:not-protocol',
+      'kill:SIGTERM',
+      'terminal:call_error',
+      'group gone',
+      'result',
+    ]);
+  });
+
+  itUnix(
+    'a throw in the stdout handler kills the tool group once and ends as a callback failure',
+    async () => {
+      const t = trace();
+      const line = textLine('working');
+      const result = await call(
+        t,
+        invocation({ script: `process.stdout.write(${JSON.stringify(`${line}\n`)});${IDLE}` }),
+        {
+          onEvent: (event) => {
+            if (event.type === 'call_text_delta') throw new Error('consumer failed');
+          },
+        },
+      );
+
+      expect(result).toMatchObject({ status: 'failed', error: { code: 'callback-failure' } });
+      expect(t.withoutClose()).toEqual(['spawned', `line:${line}`, 'kill:SIGTERM', 'result']);
+      expect(t.groupGone()).toBe(true);
+    },
+  );
+
+  itUnix(
+    'a throw in the stderr handler kills the tool group once and ends as a callback failure',
+    async () => {
+      const t = trace();
+      const result = await call(
+        t,
+        invocation({ script: `process.stderr.write('progress\\n');${IDLE}` }),
+        {
+          onEvent: (event) => {
+            if (event.type === 'call_stderr_delta') throw new Error('consumer failed');
+          },
+        },
+      );
+
+      expect(result).toMatchObject({ status: 'failed', error: { code: 'callback-failure' } });
+      expect(t.withoutClose()).toEqual(['spawned', 'kill:SIGTERM', 'result']);
+      expect(t.groupGone()).toBe(true);
+    },
+  );
+
+  itUnix(
+    'a last line that fails to parse at the close records a protocol failure, and sends no signal',
+    async () => {
+      const t = trace();
+      const result = await call(t, invocation({ script: "process.stdout.write('not-protocol')" }));
+
+      expect(result).toMatchObject({ status: 'failed', error: { code: 'protocol-failure' } });
+      expect(t.steps).toEqual([
+        'spawned',
+        'line:not-protocol',
+        'close',
+        'terminal:call_error',
+        'group gone',
+        'result',
+      ]);
+    },
+  );
+
+  itUnix(
+    'a held result whose tool never exits waits out the grace, kills the group once, and keeps the result',
+    async () => {
+      const t = trace();
+      const result = await call(t, {
+        ...invocation({ script: `process.stdout.write('RESULT\\n');${IDLE}` }),
+        timeoutMs: undefined,
+      });
+
+      expect(result.status).toBe('completed');
+      expect(t.withoutClose()).toEqual([
+        'spawned',
+        'line:RESULT',
+        'kill:SIGTERM',
+        'terminal:call_completed',
+        'group gone',
+        'result',
+      ]);
+    },
+  );
+
+  describe('a steered call', () => {
+    function watchRemoval(signal: AbortSignal | undefined, step: string, steps: string[]) {
+      if (signal === undefined) throw new Error('the call passed no signal');
+      const remove = signal.removeEventListener.bind(signal);
+      vi.spyOn(signal, 'removeEventListener').mockImplementation((type, listener, options) => {
+        steps.push(step);
+        remove(type, listener, options);
+      });
+    }
+
+    function steered(t: Trace) {
+      const failure = new AbortController();
+      const port = createSteeringPort();
+      const trackedPort: SteeringPort = {
+        current: port.current,
+        attach: (running) => {
+          const detach = port.attach(running);
+          return () => {
+            t.steps.push('detach');
+            detach();
+          };
+        },
+      };
+      const steeredAdapter: CliImplementerAdapter = {
+        ...t.adapter,
+        steering: {
+          supportsVersion: () => true,
+          open: async (input) => {
+            watchRemoval(input.invocation.signal, 'abort listener removed', t.steps);
+            watchRemoval(failure.signal, 'transport listener removed', t.steps);
+            input.onReady(async () => 'delivered');
+            return {
+              invocation: input.invocation,
+              parse: t.parse,
+              failureSignal: failure.signal,
+              onAdmissionClosed: () => {
+                t.steps.push('admission closed');
+              },
+              onLine: () => false,
+              close: async () => {
+                t.steps.push('steering close');
+              },
+            };
+          },
+        },
+      };
+      return { adapter: steeredAdapter, steering: trackedPort };
+    }
+
+    itUnix(
+      'settles on its result: kill, admission close, steering close, terminal record, then the listener removals',
+      async () => {
+        const t = trace();
+        const result = await call(
+          t,
+          invocation({ script: `process.stdout.write('RESULT\\n');${IDLE}` }),
+          steered(t),
+        );
+
+        expect(result.status).toBe('completed');
+        expect(t.withoutClose()).toEqual([
+          'spawned',
+          'line:RESULT',
+          'kill:SIGTERM',
+          'admission closed',
+          'detach',
+          'steering close',
+          'terminal:call_completed',
+          'group gone',
+          'abort listener removed',
+          'transport listener removed',
+          'result',
+        ]);
+      },
+    );
+
+    itUnix(
+      'on a thrown protocol error closes the admission before the kill and disposes each listener once after the record',
+      async () => {
+        const t = trace();
+        const result = await call(
+          t,
+          invocation({ script: `process.stdout.write('not-protocol\\n');${IDLE}` }),
+          steered(t),
+        );
+
+        expect(result).toMatchObject({ status: 'failed', error: { code: 'protocol-failure' } });
+        expect(t.withoutClose()).toEqual([
+          'spawned',
+          'line:not-protocol',
+          'admission closed',
+          'detach',
+          'kill:SIGTERM',
+          'steering close',
+          'terminal:call_error',
+          'group gone',
+          'abort listener removed',
+          'transport listener removed',
+          'result',
+        ]);
+      },
+    );
+
+    itUnix(
+      'with a missing executable closes the admission and the steering before it records the failure',
+      async () => {
+        const t = trace();
+        const result = await call(
+          t,
+          invocation({ script: '', executable: missingExecutableIdentity() }),
+          steered(t),
+        );
+
+        expect(result).toMatchObject({ status: 'failed', error: { code: 'spawn-not-found' } });
+        expect(t.steps).toEqual([
+          'admission closed',
+          'detach',
+          'steering close',
+          'terminal:call_error',
+          'group gone',
+          'abort listener removed',
+          'transport listener removed',
+          'result',
+        ]);
+      },
+    );
   });
 });

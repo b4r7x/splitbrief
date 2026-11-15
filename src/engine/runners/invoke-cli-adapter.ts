@@ -12,7 +12,8 @@ import {
   onlyAddsLineBreaks,
   reconcileFinalText,
 } from '../streaming/final-text.js';
-import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke/invoke.js';
+import { invokeProcessCli } from './cli-tools/process-invoke/invoke.js';
+import type { ToolUseGuard } from './cli-tools/process-invoke/types.js';
 import {
   attachSandboxCredentialValues,
   sandboxCredentialValues,

@@ -3,7 +3,7 @@ import { join, relative, resolve, sep } from 'node:path';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diagnostic.js';
 import { escapeRegExp } from '../../../utils/regexp.js';
 import { isWithinRoot } from '../../../utils/path/within.js';
-import type { ToolUseGuard } from '../../runners/cli-tools/process-invoke/invoke.js';
+import type { ToolUseGuard } from '../../runners/cli-tools/process-invoke/types.js';
 import { type IsolationBoundary, canonicalPath, zoneOf } from './boundary.js';
 import { DEPENDENCY_MARKERS } from './checkout-audit.js';
 import type { PathAccess, PathReference } from './shell/types.js';
