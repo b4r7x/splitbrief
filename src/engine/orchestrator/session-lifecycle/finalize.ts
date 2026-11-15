@@ -16,6 +16,7 @@ import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.
 import { recordedSeatIdentity } from '../../../core/state/seats/record.js';
 import { activeTimeOf, phaseTimesOf, readRunMarks } from '../summary/active-time.js';
 import { buildSummary } from '../summary/build.js';
+import { summaryBaseFromIdentity } from '../summary/seat-identity.js';
 
 export type SaveFinalSessionOpts = {
   projectDir: string;
@@ -71,26 +72,14 @@ export function finalizeEndedRun(
   }>,
 ): Summary {
   const { ref, state } = input;
-  const ident = recordedSeatIdentity(ref, state);
   const summary = buildSummary({
-    feature: state.feature,
-    startTime: Date.parse(state.startedAt) || Date.now(),
-    plannerTool: ident.plannerTool,
-    ...(ident.plannerModel !== undefined && { plannerModel: ident.plannerModel }),
-    ...(ident.plannerKind !== undefined && { plannerKind: ident.plannerKind }),
-    ...(ident.plannerAxes !== undefined && { plannerAxes: ident.plannerAxes }),
-    implementerTool: ident.implementerTool,
-    ...(ident.implementerModel !== undefined && { implementerModel: ident.implementerModel }),
-    ...(ident.implementerKind !== undefined && { implementerKind: ident.implementerKind }),
-    ...(ident.implementerAxes !== undefined && { implementerAxes: ident.implementerAxes }),
-    ...(ident.reviewerTool !== undefined && { reviewerTool: ident.reviewerTool }),
-    ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
-    ...(ident.reviewerKind !== undefined && { reviewerKind: ident.reviewerKind }),
-    ...(ident.reviewerAxes !== undefined && { reviewerAxes: ident.reviewerAxes }),
-    ...(ident.reviewerSeat !== undefined && { reviewerSeat: ident.reviewerSeat }),
-    projectDir: ref.projectDir,
-    sessionId: ref.sessionId,
-    ...(input.modelCache !== undefined && { pricingCache: input.modelCache }),
+    ...summaryBaseFromIdentity(recordedSeatIdentity(ref, state), {
+      feature: state.feature,
+      startTime: Date.parse(state.startedAt) || Date.now(),
+      projectDir: ref.projectDir,
+      sessionId: ref.sessionId,
+      ...(input.modelCache !== undefined && { pricingCache: input.modelCache }),
+    }),
     state,
   });
   saveFinalSession({

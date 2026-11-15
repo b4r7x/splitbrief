@@ -4,7 +4,6 @@ import { retentionError } from '../isolation/retention.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
-import type { Config } from '../../../core/schemas/config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
@@ -32,7 +31,8 @@ import {
   workflowCancelledReasonFromSignal,
 } from '../../events/workflow-cancel.js';
 import type { ResumeContextHolder, WorkflowContext } from '../types.js';
-import { buildSummary, type SummaryBase } from '../summary/build.js';
+import { buildSummary } from '../summary/build.js';
+import { summaryBaseFromIdentity } from '../summary/seat-identity.js';
 import { publishWarning } from '../publish/notice.js';
 import { publishInfo } from '../publish/notice.js';
 import { publishDebug } from '../publish/notice.js';
@@ -135,30 +135,13 @@ async function runScopedWorkflow(
   // against is recorded in the state, and `buildSummary` prices the run from
   // there — a run that swapped seats mid-flight names the new one and is still
   // costed against the old one.
-  const seatIdentityOf = (source: Config): SummaryBase => {
-    const ident = runSeatIdentity(source);
-    return {
-      feature,
-      startTime,
-      plannerTool: ident.plannerTool,
-      ...(ident.plannerModel !== undefined && { plannerModel: ident.plannerModel }),
-      ...(ident.plannerKind !== undefined && { plannerKind: ident.plannerKind }),
-      ...(ident.plannerAxes !== undefined && { plannerAxes: ident.plannerAxes }),
-      implementerTool: ident.implementerTool,
-      ...(ident.implementerModel !== undefined && { implementerModel: ident.implementerModel }),
-      ...(ident.implementerKind !== undefined && { implementerKind: ident.implementerKind }),
-      ...(ident.implementerAxes !== undefined && { implementerAxes: ident.implementerAxes }),
-      ...(ident.reviewerTool !== undefined && { reviewerTool: ident.reviewerTool }),
-      ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
-      ...(ident.reviewerKind !== undefined && { reviewerKind: ident.reviewerKind }),
-      ...(ident.reviewerAxes !== undefined && { reviewerAxes: ident.reviewerAxes }),
-      ...(ident.reviewerSeat !== undefined && { reviewerSeat: ident.reviewerSeat }),
-      projectDir,
-      sessionId,
-      ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
-    };
-  };
-  const summaryBase = seatIdentityOf(config);
+  const summaryBase = summaryBaseFromIdentity(runSeatIdentity(config), {
+    feature,
+    startTime,
+    projectDir,
+    sessionId,
+    ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
+  });
 
   const metadata: SpecMetadata = resolveSpecMetadata(config, opts.modelCache ?? NULL_CACHE);
 
