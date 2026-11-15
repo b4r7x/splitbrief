@@ -20,6 +20,18 @@ export type RunTasksAndReviewOptions = {
   setCurrentTask: (t: Pick<Task, 'suggestedFiles' | 'action'> | undefined) => void;
 };
 
+/** What the build and the review steps of one run read and never change. */
+export type BuildReviewRun = Pick<
+  RunTasksAndReviewOptions,
+  'wctx' | 'summaryBase' | 'setTrackedState' | 'setCurrentTask'
+> & { ref: SessionRef };
+
+/**
+ * The workflow state that the build and the review steps of one run pass on. Each step changes it
+ * in place, so a stop or a close reads the state that the last step left.
+ */
+export type BuildReviewState = { state: WorkflowState };
+
 /**
  * What one run reads and never changes: its options, its identity, and what it holds until its
  * teardown.

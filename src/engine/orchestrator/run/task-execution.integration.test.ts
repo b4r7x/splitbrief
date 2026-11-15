@@ -138,6 +138,19 @@ function reviewedState(tasks: Task[], head: string, currentTaskIndex: number): W
   };
 }
 
+function plannedState(tasks: Task[], head: string): WorkflowState {
+  return {
+    ...reviewedState(tasks, head, tasks.length),
+    plan: {
+      summary: 'Greet people by name',
+      decisions: [],
+      criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: ['K1'] }],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
+      validation: null,
+    },
+  };
+}
+
 function gatePlan(gate: string[]): Plan {
   return { summary: 'Plan', decisions: [], criteria: [], checks: [], gate, validation: null };
 }
@@ -706,19 +719,6 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
 });
 
 describe('runTasksAndReview', { timeout: 120_000 }, () => {
-  function plannedState(tasks: Task[], head: string): WorkflowState {
-    return {
-      ...reviewedState(tasks, head, tasks.length),
-      plan: {
-        summary: 'Greet people by name',
-        decisions: [],
-        criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: ['K1'] }],
-        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version' }],
-        validation: null,
-      },
-    };
-  }
-
   it('a failing review returns its fix task and the next review passes', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
@@ -3269,5 +3269,245 @@ describe('runTasksAndReview resume after a stopped stuck-review planner round', 
     expect(result.completed).toBe(true);
     expect(result.state.reviewStatus).toBe('passed');
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('buildAndReview step order', { timeout: 120_000 }, () => {
+  const briefs = (state: WorkflowState) =>
+    state.tasks.map((task) => `${task.id}:${task.status}`).join(',');
+
+  // Each step writes its line when it runs, so one ordered log holds the build, the candidate, the
+  // review and the fix briefs of the run, with the briefs of the state that the review judges.
+  async function logSteps(log: string[], options: ReturnType<typeof runOptions>['options']) {
+    const loop = await import('../task/loop.js');
+    const park = await import('./boundary-park.js');
+    const snapshots = await import('./snapshots.js');
+    const states = await import('../apply/states.js');
+    const scheduled = await import('../review/loop/scheduled.js');
+    const recheck = await import('./integration-recheck.js');
+    const handOff = await import('../apply/hand-off.js');
+    const phase = await import('../review/phase.js');
+    const follow = await import('../review/loop/follow.js');
+    const record = await import('../review/record.js');
+    const transitionOps = await import('../state-ops/transition.js');
+    const { runTaskLoop } = loop;
+    const { takeSeatChangeAtBoundary } = park;
+    const { recordRunSnapshotForRun } = snapshots;
+    const { captureReviewedCandidate } = states;
+    const { followPendingReview } = scheduled;
+    const { recheckMergedCandidate } = recheck;
+    const { bindApplyHandOffs } = handOff;
+    const { runFinalReviewPhase } = phase;
+    const { followReviewAnswer } = follow;
+    const { recordFinalReviewStatus } = record;
+    const { transitionAndSave } = transitionOps;
+    vi.spyOn(loop, 'runTaskLoop').mockImplementation(async (opts) => {
+      log.push(`build ${briefs(opts.initialState)}`);
+      return runTaskLoop(opts);
+    });
+    vi.spyOn(park, 'takeSeatChangeAtBoundary').mockImplementation(async (args) => {
+      log.push('seat boundary');
+      return takeSeatChangeAtBoundary(args);
+    });
+    vi.spyOn(snapshots, 'recordRunSnapshotForRun').mockImplementation(async (ctx) => {
+      log.push('snapshot');
+      await recordRunSnapshotForRun(ctx);
+    });
+    vi.spyOn(states, 'captureReviewedCandidate').mockImplementation(async (input) => {
+      log.push('candidate');
+      return captureReviewedCandidate(input);
+    });
+    vi.spyOn(scheduled, 'followPendingReview').mockImplementation(async (args) => {
+      log.push('pending answer');
+      return followPendingReview(args);
+    });
+    vi.spyOn(recheck, 'recheckMergedCandidate').mockImplementation(async (opts) => {
+      log.push('recheck');
+      return recheckMergedCandidate(opts);
+    });
+    vi.spyOn(handOff, 'bindApplyHandOffs').mockImplementation((ref, state, candidate) => {
+      log.push('bind hand-offs');
+      return bindApplyHandOffs(ref, state, candidate);
+    });
+    vi.spyOn(phase, 'runFinalReviewPhase').mockImplementation(async (opts) => {
+      log.push(`review ${briefs(opts.state)}`);
+      return runFinalReviewPhase(opts);
+    });
+    vi.spyOn(follow, 'followReviewAnswer').mockImplementation(async (args) => {
+      const followed = await followReviewAnswer(args);
+      log.push(`follow answer: ${followed.next}`);
+      return followed;
+    });
+    vi.spyOn(record, 'recordFinalReviewStatus').mockImplementation((ref, status) => {
+      log.push(`final review ${status}`);
+      recordFinalReviewStatus(ref, status);
+    });
+    vi.spyOn(transitionOps, 'transitionAndSave').mockImplementation((ref, state, action, opts) => {
+      if (action.type === 'REVIEW_DONE') log.push(`review done: ${action.reviewStatus}`);
+      return transitionAndSave(ref, state, action, opts);
+    });
+    options.wctx.bus.subscribe((event) => {
+      if (event.type === 'workflow_complete') log.push(`event:workflow_complete ${event.review}`);
+    });
+  }
+
+  it('runs the briefs, the candidate, the review, the fix briefs and the next review in order', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const log: string[] = [];
+    let reviews = 0;
+    const { options } = runOptions({
+      projectDir,
+      sessionId,
+      state: plannedState(tasks, head),
+      review: (prompt) => {
+        reviews += 1;
+        return reviews === 1
+          ? failedReviewVerdict(prompt, 'src/shared/widget.ts drops the error', {
+              taskId: 'T001',
+              file: 'src/shared/widget.ts',
+            })
+          : passingReviewVerdict(prompt);
+      },
+      triage: () => ({
+        fixTasks: [
+          {
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/shared/widget.ts'],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version' }],
+            }),
+            findingIds: ['F1'],
+          },
+        ],
+        rejected: [],
+        ask: null,
+      }),
+      onComplete: () => log.push('complete'),
+    });
+    await logSteps(log, options);
+
+    const result = await runTasksAndReview(options);
+
+    expect(log).toEqual([
+      'build T001:done',
+      'snapshot',
+      'seat boundary',
+      'candidate',
+      'pending answer',
+      'recheck',
+      'bind hand-offs',
+      'review T001:done',
+      'follow answer: fix',
+      'seat boundary',
+      'build T001:done,T002:pending',
+      'seat boundary',
+      'candidate',
+      'pending answer',
+      'recheck',
+      'bind hand-offs',
+      'review T001:done,T002:done',
+      'review done: passed',
+      'event:workflow_complete passed',
+      'complete',
+    ]);
+    expect(result).toMatchObject({ completed: true, state: { reviewStatus: 'passed' } });
+  });
+
+  it('a run with REVIEW None runs the briefs, then captures, rechecks and binds the candidate before it closes', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })];
+    const log: string[] = [];
+    const { options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      config: makeNoValidationConfig({ reviewer: 'none', workflow: {} }),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: () => log.push('complete'),
+    });
+    await logSteps(log, options);
+
+    const result = await runTasksAndReview(options);
+
+    expect(log).toEqual([
+      'build T001:pending',
+      'snapshot',
+      'candidate',
+      'recheck',
+      'bind hand-offs',
+      'final review skipped',
+      'review done: none',
+      'event:workflow_complete none',
+      'complete',
+    ]);
+    expect(result).toMatchObject({ completed: true, state: { reviewStatus: 'none' } });
+  });
+
+  it('a resumed planner round runs its fix brief before the next review of a new candidate', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const controller = new AbortController();
+    const first = runOptions({
+      projectDir,
+      sessionId,
+      state: stuckReviewState(tasks, head, ['finding:F1']),
+      review: (prompt) =>
+        failedReviewVerdict(prompt, 'src/alpha.ts still crashes', { taskId: 'T001' }),
+      consult: () => {
+        controller.abort();
+        throw new Error('The call was stopped.');
+      },
+      signal: controller.signal,
+      onComplete: vi.fn(),
+    });
+    await runTasksAndReview(first.options);
+    const saved = loadState({ projectDir, sessionId });
+    if (saved?.pendingTriage?.plannerConsult !== true) throw new Error('expected a planner round');
+    const log: string[] = [];
+    const { options } = runOptions({
+      projectDir,
+      sessionId,
+      state: saved,
+      review: (prompt) => passingReviewVerdict(prompt),
+      consult: () => ({
+        answer: {
+          diagnosis: 'The fix brief edits the wrong file',
+          action: 'rewrite-task',
+          task: makeTaskSpec({
+            id: 'T001',
+            title: 'Preserve the error in src/beta.ts',
+            suggestedFiles: ['src/beta.ts'],
+            checks: [],
+            criteria: [],
+          }),
+        },
+      }),
+      onComplete: () => log.push('complete'),
+    });
+    await logSteps(log, options);
+
+    const result = await runTasksAndReview(options);
+
+    expect(log).toEqual([
+      'build T001:done',
+      'snapshot',
+      'seat boundary',
+      'candidate',
+      'pending answer',
+      'follow answer: fix',
+      'seat boundary',
+      'build T001:done,T002:pending',
+      'seat boundary',
+      'candidate',
+      'pending answer',
+      'recheck',
+      'bind hand-offs',
+      'review T001:done,T002:done',
+      'review done: passed',
+      'event:workflow_complete passed',
+      'complete',
+    ]);
+    expect(result).toMatchObject({ completed: true, state: { reviewStatus: 'passed' } });
   });
 });
