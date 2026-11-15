@@ -32,7 +32,6 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
     case 'runner_call_usage':
     case 'runner_call_tool_use':
     case 'runner_call_session_id':
-    case 'runner_call_artifact':
     case 'runner_call_warning':
     case 'runner_call_error':
     case 'runner_call_stalled':

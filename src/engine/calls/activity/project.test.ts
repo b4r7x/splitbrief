@@ -87,7 +87,7 @@ describe('projectRunnerCallActivity', () => {
     expect(recorder.snapshot().toolUses[0]?.id).not.toBeNull();
   });
 
-  it('normalizes safe structured tool, artifact, and warning activity', () => {
+  it('normalizes safe structured tool and warning activity', () => {
     expect(projectRunnerCallActivity(runnerToolUse(), 1, '/project')).toMatchObject({
       kind: 'read',
       label: 'reading src/app.ts',
@@ -153,24 +153,6 @@ describe('projectRunnerCallActivity', () => {
         '/project',
       ),
     ).toBeNull();
-    expect(
-      projectRunnerCallActivity(
-        {
-          ...runnerCallBase,
-          type: 'call_artifact',
-          artifact: {
-            id: 'artifact-1',
-            source: 'file',
-            name: 'plan.md',
-            path: null,
-            mimeType: 'text/markdown',
-            text: null,
-          },
-        },
-        1,
-        '/project',
-      ),
-    ).toMatchObject({ kind: 'artifact', label: 'artifact plan.md' });
     expect(
       projectRunnerCallActivity(
         {

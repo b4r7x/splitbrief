@@ -219,7 +219,6 @@ describe('RunnerCallResultSchema', () => {
       usage: null,
       nativeSessionId: null,
       toolUses: [],
-      artifacts: [],
       warnings: [],
       error: null,
       partial: false,

@@ -81,26 +81,6 @@ describe('requireCompletedCall', () => {
     expect(requireCompletedCall(silent)).toBe(silent);
   });
 
-  it('returns a call that wrote its artifact, whatever its stderr said', () => {
-    const wrote = makeRunnerCallResult({
-      status: 'completed',
-      text: '',
-      warnings: [stderrWarning(AGY_LIMIT)],
-      artifacts: [
-        {
-          id: 'artifact-spec',
-          source: 'file',
-          name: 'spec.md',
-          path: 'spec.md',
-          mimeType: 'text/markdown',
-          text: '# Spec',
-        },
-      ],
-    });
-
-    expect(requireCompletedCall(wrote)).toBe(wrote);
-  });
-
   it('returns a call that answered natively, whatever its stderr said', () => {
     const structured = makeRunnerCallResult({
       status: 'completed',

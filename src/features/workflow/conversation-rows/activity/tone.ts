@@ -37,8 +37,6 @@ export function activityLabelTone(
     case 'CALL':
     case 'EDIT':
       return 'accent';
-    case 'ART':
-      return 'info';
     case 'READ':
     case 'FIND':
     case 'LIST':

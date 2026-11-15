@@ -58,7 +58,6 @@ function acceptsEventAfterCancellation(event: EngineEvent): boolean {
     case 'runner_call_warning':
     case 'runner_call_usage':
     case 'runner_call_session_id':
-    case 'runner_call_artifact':
       return true;
     default:
       return false;

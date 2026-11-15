@@ -507,23 +507,6 @@ describe('eventsStore — append via addEvent', () => {
         output: `stdout ${rawSentinel}`,
       },
     });
-    addEvent({
-      type: 'runner_call_artifact',
-      ts: 1_070,
-      phase: 'implementing',
-      callId: 'call-1',
-      role: 'implementer',
-      backendKind: 'cli',
-      sequence: 4,
-      artifact: {
-        id: 'artifact-1',
-        source: 'tool',
-        name: 'result.txt',
-        path: `/tmp/${rawSentinel}.txt`,
-        mimeType: 'text/plain',
-        text: `artifact ${rawSentinel}`,
-      },
-    });
     addEvent(
       makeRunnerWarning({
         warning: {

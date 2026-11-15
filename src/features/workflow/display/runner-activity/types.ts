@@ -58,7 +58,6 @@ export type RunnerActivityLedgerLabel =
   | 'CALL'
   | 'PLAN'
   | 'AGENT'
-  | 'ART'
   | 'WARN'
   | 'ERR'
   | 'STOP'

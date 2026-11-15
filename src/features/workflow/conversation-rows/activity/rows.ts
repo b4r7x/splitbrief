@@ -262,7 +262,6 @@ const ACTIVITY_LABEL_DISPLAY: Record<RunnerActivityLedgerLabel, string> = {
   CALL: 'Call',
   PLAN: 'Plan',
   AGENT: 'Agent',
-  ART: 'Art',
   WARN: 'Warn',
   ERR: 'Err',
   STOP: 'Stop',

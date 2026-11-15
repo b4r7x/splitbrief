@@ -2,7 +2,6 @@ import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
-  RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_PAYLOAD_TRUNCATED_KEY,
   RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
@@ -11,9 +10,6 @@ import {
   type RunnerCallToolUse,
 } from './output-limit.js';
 import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
-import type { RunnerCallEvent } from './types.js';
-
-export type RunnerCallArtifact = Extract<RunnerCallEvent, { type: 'call_artifact' }>['artifact'];
 
 export interface RunnerCallBoundedValue<T> {
   value: T;
@@ -54,22 +50,6 @@ export function boundRunnerCallToolUse(
   };
 }
 
-export function boundRunnerCallArtifact(
-  artifact: RunnerCallArtifact,
-): RunnerCallBoundedValue<RunnerCallArtifact> {
-  if (artifact.text === null) return { value: artifact, limit: null };
-  const bounded = boundRunnerCallStringPayload(
-    artifact.text,
-    RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
-    'An artifact',
-    'runner_call_artifact_text_limit',
-  );
-  return {
-    value: { ...artifact, text: bounded.value },
-    limit: bounded.limit,
-  };
-}
-
 export function boundRunnerCallStructured(structured: unknown): RunnerCallBoundedValue<unknown> {
   return boundRunnerCallPayload(
     structured,
@@ -92,31 +72,6 @@ function boundRunnerCallRecordPayload(
   return {
     value: { [RUNNER_CALL_PAYLOAD_TRUNCATED_KEY]: bounded.value },
     limit: bounded.limit,
-  };
-}
-
-function boundRunnerCallStringPayload(
-  value: string,
-  maxBytes: number,
-  label: string,
-  code: string,
-): RunnerCallBoundedValue<string> {
-  const bounded = boundConsumerPayload({
-    context: 'session-log',
-    payload: value,
-    overrides: { maxBytes, maxStringBytes: maxBytes },
-  });
-  return {
-    value: typeof bounded.payload === 'string' ? bounded.payload : String(bounded.payload),
-    limit:
-      bounded.truncated || bounded.oversized
-        ? {
-            code,
-            message: runnerCallByteLimitMessage(label, maxBytes),
-            bytesSeen: bounded.bytes,
-            maxBytes,
-          }
-        : null,
   };
 }
 

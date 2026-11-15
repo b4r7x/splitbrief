@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_STDERR_MAX_BYTES,
   RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES,
@@ -120,17 +119,6 @@ describe('runner call records', () => {
     recorder.stalled({ silentMs: 60_000, ts: 1_100 });
     recorder.stallCleared({ ts: 1_101 });
     recorder.stalled({ silentMs: -1, ts: 1_101 });
-    recorder.artifact({
-      artifact: {
-        id: 'artifact-1',
-        source: 'stream',
-        name: 'notes.txt',
-        path: '/tmp/notes.txt',
-        mimeType: 'text/plain',
-        text: 'notes',
-      },
-      ts: 1_102,
-    });
     recorder.warning({ warning: { code: 'provider_warning', message: 'slow stream' }, ts: 1_103 });
     recorder.unknownUpstream({
       rawPreview: 'odd frame',
@@ -211,16 +199,6 @@ describe('runner call records', () => {
           rawPreview: invalidStall,
           backendMetadata: { backendKind: 'api', source: 'recorder', upstreamType: 'call_stalled' },
         }),
-        record('call_artifact', 1_102, {
-          artifact: {
-            id: 'artifact-1',
-            source: 'stream',
-            name: 'notes.txt',
-            path: '/tmp/notes.txt',
-            mimeType: 'text/plain',
-            text: 'notes',
-          },
-        }),
         record('call_warning', 1_103, {
           warning: {
             code: 'provider_warning',
@@ -263,16 +241,6 @@ describe('runner call records', () => {
           toolUses: [
             { id: 'tool-1', name: 'Read', input: { path: 'a.ts' }, output: { lines: 3 } },
             { id: '<id-3>', name: 'Edit', input: {} },
-          ],
-          artifacts: [
-            {
-              id: 'artifact-1',
-              source: 'stream',
-              name: 'notes.txt',
-              path: '/tmp/notes.txt',
-              mimeType: 'text/plain',
-              text: 'notes',
-            },
           ],
           warnings: [
             {
@@ -393,7 +361,6 @@ describe('runner call records', () => {
           usage: null,
           nativeSessionId: null,
           toolUses: [],
-          artifacts: [],
           warnings: [
             textLimitResultNote,
             {
@@ -501,7 +468,6 @@ describe('runner call records', () => {
           usage: null,
           nativeSessionId: null,
           toolUses,
-          artifacts: [],
           warnings: [stopWarning],
           error,
           partial: true,
@@ -577,7 +543,6 @@ describe('runner call records', () => {
           usage: null,
           nativeSessionId: null,
           toolUses: [],
-          artifacts: [],
           warnings: [
             textLimitResultNote,
             {
@@ -626,17 +591,6 @@ describe('runner call records', () => {
       },
       ts: 5,
     });
-    recorder.artifact({
-      artifact: {
-        id: 'artifact-1',
-        source: 'stream',
-        name: 'large.txt',
-        path: null,
-        mimeType: 'text/plain',
-        text: 'a'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES + 1),
-      },
-      ts: 6,
-    });
     const result = recorder.finishCompleted({ endedAt: 9 });
 
     const omitted = '[... oversized payload omitted ...]';
@@ -665,19 +619,7 @@ describe('runner call records', () => {
         'A tool call input was larger than 256 KB and was not kept in full.',
         'rw:8def01925756718e3e3b6f2c',
       ),
-      note(
-        'runner_call_artifact_text_limit',
-        'An artifact was larger than 256 KB and was not kept in full.',
-        'rw:7864bac08549c4f02808df78',
-      ),
     ];
-    const artifact = {
-      id: 'artifact-1',
-      source: 'stream',
-      name: 'large.txt',
-      path: null,
-      mimeType: 'text/plain',
-    };
     const toolUse = { id: 'tool-1', name: 'Write', input: { _truncated: omitted } };
     expect(recordLines([...events, result])).toEqual(
       recordLines([
@@ -702,8 +644,6 @@ describe('runner call records', () => {
         record('call_warning', 5_000, { warning: notes[2] }),
         record('call_warning', 5_000, { warning: notes[3] }),
         record('call_tool_use_done', 5, { channel: 'tool', toolUse }),
-        record('call_warning', 5_000, { warning: notes[4] }),
-        record('call_artifact', 6, { artifact: { ...artifact, text: omitted } }),
         record('call_completed', 9, {
           status: 'completed',
           error: null,
@@ -724,7 +664,6 @@ describe('runner call records', () => {
           usage: null,
           nativeSessionId: null,
           toolUses: [toolUse],
-          artifacts: [{ ...artifact, text: 'a'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES + 1) }],
           warnings: notes.map(({ message, fingerprint, ...fields }) => ({
             ...fields,
             fingerprint,
@@ -837,17 +776,6 @@ describe('runner call records', () => {
     recorder.toolUseDone({ toolUse: { id: 'tool-1', name: 'Read', input: {} }, ts: 3 });
     recorder.usage({ usage: { inputTokens: 1, outputTokens: 1 }, semantics: 'final', ts: 3 });
     recorder.sessionId({ nativeSessionId: 'sid-late', ts: 3 });
-    recorder.artifact({
-      artifact: {
-        id: 'artifact-late',
-        source: 'stream',
-        name: 'late.txt',
-        path: null,
-        mimeType: null,
-        text: 'late',
-      },
-      ts: 3,
-    });
     recorder.warning({ warning: { code: 'late', message: 'late warning' }, ts: 3 });
     recorder.unknownUpstream({
       rawPreview: 'late',
@@ -897,7 +825,6 @@ describe('runner call records', () => {
           usage: null,
           nativeSessionId: null,
           toolUses: [],
-          artifacts: [],
           warnings: [],
           error,
           partial: true,

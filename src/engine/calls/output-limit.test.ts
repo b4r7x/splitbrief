@@ -65,14 +65,14 @@ describe('createRunnerCallDeltaLimiter', () => {
 describe('runnerCallItemLimit', () => {
   it('names the kept items as one sentence', () => {
     const limit = runnerCallItemLimit({
-      code: 'runner_call_artifact_count_limit',
-      label: 'artifacts',
-      maxItems: 64,
+      code: 'runner_call_warning_count_limit',
+      label: 'warnings',
+      maxItems: 256,
     });
 
     expect(limit).toMatchObject({
-      code: 'runner_call_artifact_count_limit',
-      message: 'Only the first 64 artifacts of this call are kept.',
+      code: 'runner_call_warning_count_limit',
+      message: 'Only the first 256 warnings of this call are kept.',
     });
   });
 });

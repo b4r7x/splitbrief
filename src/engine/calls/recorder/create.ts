@@ -11,7 +11,6 @@ import { emit, snapshot } from './emit.js';
 import { snapshotRunnerCallContext, streamedTextBytes, createTextLimiter } from './fields.js';
 import { finalResult, finishCompleted, finishFailed } from './finish.js';
 import {
-  recordArtifact,
   recordHeartbeat,
   recordRuntimeStatus,
   recordSessionId,
@@ -43,7 +42,6 @@ export function createRunnerCallRecorder(opts: {
     events: createHeadTailEventLog(RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES, streamedTextBytes),
     hasTerminalEvent: false,
     toolUseDoneCount: 0,
-    artifactCount: 0,
     warningCount: 0,
     unknownUpstreamCount: 0,
     stderrPreview: '',
@@ -80,7 +78,6 @@ export function createRunnerCallRecorder(opts: {
     toolUseDone: (eventOpts) => recordToolUseDone(state, eventOpts),
     usage: (eventOpts) => recordUsage(state, eventOpts),
     sessionId: (eventOpts) => recordSessionId(state, eventOpts),
-    artifact: (eventOpts) => recordArtifact(state, eventOpts),
     warning: (eventOpts) => recordWarning(state, eventOpts),
     unknownUpstream: (eventOpts) => recordUnknownUpstream(state, eventOpts),
     runtimeStatus: (runtimeStatus) => recordRuntimeStatus(state, runtimeStatus),

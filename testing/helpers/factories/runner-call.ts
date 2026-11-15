@@ -29,7 +29,6 @@ export function makeRunnerCallResult(
     | 'usage'
     | 'nativeSessionId'
     | 'toolUses'
-    | 'artifacts'
     | 'warnings'
   > = {
     callId: 'call-test',
@@ -41,7 +40,6 @@ export function makeRunnerCallResult(
     usage: null,
     nativeSessionId: null,
     toolUses: [],
-    artifacts: [],
     warnings: [],
   };
 

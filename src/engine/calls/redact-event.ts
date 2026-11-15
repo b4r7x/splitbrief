@@ -32,18 +32,6 @@ export function redactRunnerCallEventInput(
         nativeSessionId: redact(input.nativeSessionId),
         ...(input.resolvedModel !== undefined && { resolvedModel: redact(input.resolvedModel) }),
       };
-    case 'call_artifact':
-      return {
-        ...input,
-        artifact: {
-          ...input.artifact,
-          id: redact(input.artifact.id),
-          name: redact(input.artifact.name),
-          path: input.artifact.path === null ? null : redact(input.artifact.path),
-          mimeType: input.artifact.mimeType === null ? null : redact(input.artifact.mimeType),
-          text: input.artifact.text === null ? null : redact(input.artifact.text),
-        },
-      };
     case 'call_warning':
       return { ...input, warning: redactRunnerCallWarningInput(input.warning, redact) };
     case 'call_error':

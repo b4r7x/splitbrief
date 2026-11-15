@@ -20,7 +20,6 @@ function callResult(status: RunnerCallStatus, code = 'provider-error'): RunnerCa
     usage: null,
     nativeSessionId: null,
     toolUses: [],
-    artifacts: [],
     warnings: [],
   } satisfies Omit<RunnerCallResult, 'status' | 'error' | 'partial'>;
 

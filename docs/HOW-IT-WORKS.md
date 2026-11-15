@@ -227,7 +227,7 @@ graph LR
 
 One optimization: `cost_update` events take a fast path that only touches the tokens store, skipping the other writes.
 
-The run view folds every event before this check, so a brief the stop cut still settles on it. If the lifecycle store's `cancelled` flag is set, `addEvent()` then drops every event that `acceptsEventAfterCancellation()` does not admit. That function admits `workflow_cancelled`, `turn_interrupted`, `review_completed`, and the `runner_call_*` events that settle a call (completion, error, warning, usage, session id and artifact), so a call cut by the stop still settles. This prevents other late-arriving events from a cancelled workflow from polluting the display.
+The run view folds every event before this check, so a brief the stop cut still settles on it. If the lifecycle store's `cancelled` flag is set, `addEvent()` then drops every event that `acceptsEventAfterCancellation()` does not admit. That function admits `workflow_cancelled`, `turn_interrupted`, `review_completed`, and the `runner_call_*` events that settle a call (completion, error, warning, usage and session id), so a call cut by the stop still settles. This prevents other late-arriving events from a cancelled workflow from polluting the display.
 
 React components subscribe to individual store slices via `store.use(selector)`. A component that only reads `runViewStore.use((s) => s.briefs)` won't re-render when the token count changes. The store system makes selector-based subscriptions automatic — no `useMemo` or `useCallback` needed.
 

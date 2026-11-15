@@ -30,7 +30,6 @@ export interface RunnerCallCollectionState {
   nativeSessionId: string | null;
   structured?: unknown;
   toolUses: RunnerCallResult['toolUses'];
-  artifacts: RunnerCallResult['artifacts'];
   warnings: RunnerCallWarning[];
   error: RunnerCallError | null;
   partial: boolean | null;
@@ -39,7 +38,6 @@ export interface RunnerCallCollectionState {
   stderrLimiter: ReturnType<typeof createRunnerCallDeltaLimiter>;
   stderrPreview: string;
   stderrWarningEmitted: boolean;
-  artifactCount: number;
   warningCount: number;
   unknownUpstreamCount: number;
 }

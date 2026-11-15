@@ -3,7 +3,6 @@ import { runnerCallWarningFingerprint } from './warning-fingerprint.js';
 import {
   RUNNER_CALL_ACTIVITY_KINDS,
   RUNNER_CALL_ACTIVITY_STAGES,
-  RUNNER_CALL_ARTIFACT_SOURCES,
   RUNNER_CALL_BACKEND_KINDS,
   RUNNER_CALL_CHANNELS,
   RUNNER_CALL_FAILURE_STATUSES,
@@ -43,7 +42,6 @@ export const RunnerCallStatusSchema = z.enum(RUNNER_CALL_STATUSES);
 export const RunnerCallUsageSemanticsSchema = z.enum(RUNNER_CALL_USAGE_SEMANTICS);
 export const RunnerCallWarningSeveritySchema = z.enum(RUNNER_CALL_WARNING_SEVERITIES);
 export const RunnerCallWarningSurfaceSchema = z.enum(RUNNER_CALL_WARNING_SURFACES);
-export const RunnerCallArtifactSourceSchema = z.enum(RUNNER_CALL_ARTIFACT_SOURCES);
 export const RunnerCallActivityStageSchema = z.enum(RUNNER_CALL_ACTIVITY_STAGES);
 export const RunnerCallActivityKindSchema = z.enum(RUNNER_CALL_ACTIVITY_KINDS);
 
@@ -82,15 +80,6 @@ export const RunnerCallToolUseSchema = z.strictObject({
   name: boundedName,
   input: z.record(z.string(), z.unknown()),
   output: z.unknown().optional(),
-});
-
-export const RunnerCallArtifactSchema = z.strictObject({
-  id: boundedId,
-  source: RunnerCallArtifactSourceSchema,
-  name: boundedName,
-  path: z.string().min(1).max(2048).nullable(),
-  mimeType: z.string().min(1).max(256).nullable(),
-  text: z.string().nullable(),
 });
 
 export const RunnerCallErrorSchema = z.strictObject({
@@ -195,9 +184,6 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
     /** The model id the tool reports it runs; `model` stays the saved seat value. */
     resolvedModel: boundedName.optional(),
   }),
-  callEvent('call_artifact', {
-    artifact: RunnerCallArtifactSchema,
-  }),
   callEvent('call_warning', {
     warning: RunnerCallWarningSchema,
   }),
@@ -237,7 +223,6 @@ const runnerCallResultBaseFields = {
   usage: RunnerCallUsageSchema.nullable(),
   nativeSessionId: nullableSessionId,
   toolUses: z.array(RunnerCallToolUseSchema),
-  artifacts: z.array(RunnerCallArtifactSchema),
   warnings: z.array(RunnerCallWarningSchema),
 } as const;
 

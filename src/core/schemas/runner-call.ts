@@ -52,7 +52,6 @@ export const RUNNER_CALL_WARNING_SURFACES = [
   'transcript',
   'debug',
 ] as const;
-export const RUNNER_CALL_ARTIFACT_SOURCES = ['stream', 'file', 'tool', 'derived'] as const;
 export const RUNNER_CALL_ACTIVITY_STAGES = [
   'started',
   'updated',
@@ -81,7 +80,6 @@ export const RUNNER_CALL_ACTIVITY_KINDS = [
   'web',
   'plan',
   'session',
-  'artifact',
   'warning',
   'error',
   'unknown',

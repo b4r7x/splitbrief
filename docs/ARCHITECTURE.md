@@ -224,8 +224,8 @@ Older logs without these fields still render. `message_injected_native` keeps it
 **Protected-write approval:**
 `approval_prompted`, `approval_granted`, `approval_rejected`. Replay only: `approval_mode_changed` (no producer now) and `approval_sticky_recorded` (sticky grants are deleted)
 
-**Runner calls (14):**
-`runner_call_started`, `runner_call_runtime_status`, `runner_call_text_delta`, `runner_call_usage`, `runner_call_tool_use`, `runner_call_activity`, `runner_call_session_id`, `runner_call_artifact`, `runner_call_warning`, `runner_call_error`, `runner_call_completed`, `runner_call_stalled`, `runner_call_stall_cleared`, `runner_call_heartbeat`. Each carries the call's context fields and a `sequence` number. `projectRunnerCallEvents` projects a seat call's stream into them. The summary reads its per-call usage from them.
+**Runner calls (13):**
+`runner_call_started`, `runner_call_runtime_status`, `runner_call_text_delta`, `runner_call_usage`, `runner_call_tool_use`, `runner_call_activity`, `runner_call_session_id`, `runner_call_warning`, `runner_call_error`, `runner_call_completed`, `runner_call_stalled`, `runner_call_stall_cleared`, `runner_call_heartbeat`. Each carries the call's context fields and a `sequence` number. `projectRunnerCallEvents` projects a seat call's stream into them. The summary reads its per-call usage from them.
 
 **Session replay (2):**
 `replay_started`, `replay_complete` — published only by `readRunEvents`, which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents`. See [ENGINE.md](./ENGINE.md#replay).

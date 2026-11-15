@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { PhaseSchema } from '../../../core/schemas/enums.js';
 import { RunnerCallTextChannelSchema } from '../../../core/schemas/runner-call.js';
 import {
-  RunnerCallArtifactSchema,
   RunnerCallApiRuntimeStatusSchema,
   RunnerCallActivityKindSchema,
   RunnerCallActivityStageSchema,
@@ -85,9 +84,6 @@ export const RunnerCallEventSchemas = [
     nativeSessionId: z.string(),
     /** The model id the tool reports it runs; `model` stays the saved seat value. */
     resolvedModel: z.string().min(1).max(256).optional(),
-  }),
-  strictCallPhaseEvent('runner_call_artifact').extend({
-    artifact: RunnerCallArtifactSchema,
   }),
   strictCallPhaseEvent('runner_call_warning').extend({
     warning: RunnerCallWarningSchema,

@@ -191,7 +191,6 @@ const suppressedRunnerCallTypes = [
   'runner_call_usage',
   'runner_call_tool_use',
   'runner_call_session_id',
-  'runner_call_artifact',
   'runner_call_warning',
   'runner_call_error',
   'runner_call_completed',
@@ -230,19 +229,6 @@ function suppressedRunnerCallEvent(type: (typeof suppressedRunnerCallTypes)[numb
       };
     case 'runner_call_session_id':
       return { type, ...base, nativeSessionId: 'native-session-1' };
-    case 'runner_call_artifact':
-      return {
-        type,
-        ...base,
-        artifact: {
-          id: 'artifact-1',
-          source: 'tool',
-          name: 'result.txt',
-          path: '/tmp/result.txt',
-          mimeType: 'text/plain',
-          text: 'artifact body',
-        },
-      };
     case 'runner_call_warning':
       return {
         type,

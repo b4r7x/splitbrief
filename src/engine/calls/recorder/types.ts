@@ -1,4 +1,3 @@
-import type { RunnerCallArtifact } from '../bounded-payload.js';
 import type {
   createRunnerCallDeltaLimiter,
   HeadTailEventLog,
@@ -58,7 +57,6 @@ export interface RunnerCallRecorder {
     resolvedModel?: string | undefined;
     ts?: number | undefined;
   }) => void;
-  artifact: (opts: { artifact: RunnerCallArtifact; ts?: number | undefined }) => void;
   warning: (opts: { warning: RunnerCallWarningInput; ts?: number | undefined }) => void;
   unknownUpstream: (opts: {
     rawPreview: string;
@@ -100,7 +98,6 @@ export interface RunnerCallRecorderState {
   readonly events: HeadTailEventLog<RunnerCallEvent>;
   hasTerminalEvent: boolean;
   toolUseDoneCount: number;
-  artifactCount: number;
   warningCount: number;
   unknownUpstreamCount: number;
   stderrPreview: string;

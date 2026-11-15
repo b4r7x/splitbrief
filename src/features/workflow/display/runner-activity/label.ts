@@ -36,8 +36,6 @@ export function runnerActivityLedgerLabel(
       return 'PLAN';
     case 'task':
       return 'AGENT';
-    case 'artifact':
-      return 'ART';
     default:
       return assertNever(input.kind);
   }
@@ -54,7 +52,6 @@ export function stripActivityVerb(text: string): string {
     'calling ',
     'planning ',
     'task ',
-    'artifact ',
     'warning ',
     'failed ',
     'timeout ',

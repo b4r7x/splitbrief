@@ -101,7 +101,6 @@ function restoreReviewFallback(state: OperationsState): OperationsState {
 // Activity that is not a tool the seat runs: it never opens, so it never holds a silence open.
 const NOT_A_TOOL: ReadonlySet<EngineEventOf<'runner_call_activity'>['kind']> = new Set([
   'text',
-  'artifact',
   'warning',
   'error',
 ]);

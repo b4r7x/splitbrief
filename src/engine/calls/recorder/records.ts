@@ -1,12 +1,10 @@
-import { boundRunnerCallArtifact, sanitizeRunnerCallRawPreview } from '../bounded-payload.js';
+import { sanitizeRunnerCallRawPreview } from '../bounded-payload.js';
 import {
-  RUNNER_CALL_ARTIFACT_MAX_ITEMS,
   runnerCallItemLimit,
   RUNNER_CALL_WARNING_MAX_ITEMS,
   RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
 } from '../output-limit.js';
 import { redactRunnerCallWarningInput } from '../redact-event.js';
-import type { RunnerCallEventInput } from '../types.js';
 import { normalizeRunnerCallWarning } from '../warnings.js';
 import { emit, noteLimit } from './emit.js';
 import type { RunnerCallRecorder, RunnerCallRecorderState } from './types.js';
@@ -46,44 +44,6 @@ export function recordSessionId(
     nativeSessionId: eventOpts.nativeSessionId,
     ...(eventOpts.resolvedModel !== undefined && { resolvedModel: eventOpts.resolvedModel }),
   });
-}
-
-export function recordArtifact(
-  state: RunnerCallRecorderState,
-  eventOpts: Parameters<RunnerCallRecorder['artifact']>[0],
-): void {
-  if (state.artifactCount >= RUNNER_CALL_ARTIFACT_MAX_ITEMS) {
-    noteLimit(
-      state,
-      runnerCallItemLimit({
-        code: 'runner_call_artifact_count_limit',
-        label: 'artifacts',
-        maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
-      }),
-    );
-    return;
-  }
-  const artifact = {
-    ...eventOpts.artifact,
-    id: state.redactCredential(eventOpts.artifact.id),
-    name: state.redactCredential(eventOpts.artifact.name),
-    path: eventOpts.artifact.path === null ? null : state.redactCredential(eventOpts.artifact.path),
-    mimeType:
-      eventOpts.artifact.mimeType === null
-        ? null
-        : state.redactCredential(eventOpts.artifact.mimeType),
-    text: eventOpts.artifact.text === null ? null : state.redactCredential(eventOpts.artifact.text),
-  };
-  const bounded = boundRunnerCallArtifact(artifact);
-  state.artifactCount += 1;
-  if (bounded.limit !== null) noteLimit(state, bounded.limit);
-  const artifactEvent: RunnerCallEventInput = {
-    type: 'call_artifact',
-    ts: eventOpts.ts ?? Date.now(),
-    ...state.context,
-    artifact,
-  };
-  emit(state, artifactEvent, true, { ...artifactEvent, artifact: bounded.value });
 }
 
 export function recordWarning(

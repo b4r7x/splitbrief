@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  RUNNER_CALL_ARTIFACT_MAX_ITEMS,
-  RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES,
   RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
   RUNNER_CALL_STDERR_MAX_BYTES,
@@ -262,17 +260,6 @@ describe('createRunnerCallRecorder', () => {
       resolvedModel: `model-${credential}`,
       ts: 10,
     });
-    recorder.artifact({
-      artifact: {
-        id: 'artifact-1',
-        source: 'stream',
-        name: 'debug.txt',
-        path: `/tmp/${credential}`,
-        mimeType: 'text/plain',
-        text: credential,
-      },
-      ts: 11,
-    });
     recorder.warning({
       warning: { code: 'debug_warning', surface: 'debug', message: credential },
       ts: 12,
@@ -462,24 +449,6 @@ describe('createRunnerCallRecorder', () => {
     for (let index = 0; index < 600; index += 1) {
       recorder.toolUseDelta({ toolUseId: 'tool-0', name: 'Write', inputDelta: 'x'.repeat(2048) });
     }
-
-    const result = recorder.finishCompleted({ endedAt: 20 });
-
-    expect(result).toMatchObject({ status: 'completed', error: null });
-  });
-
-  it('completes a call whose artifact text passes its record bound', () => {
-    const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
-    recorder.artifact({
-      artifact: {
-        id: 'artifact-1',
-        source: 'stream',
-        name: 'large.txt',
-        path: null,
-        mimeType: 'text/plain',
-        text: 'z'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES + 10),
-      },
-    });
 
     const result = recorder.finishCompleted({ endedAt: 20 });
 
@@ -755,38 +724,6 @@ describe('createRunnerCallRecorder', () => {
     ]);
   });
 
-  it('keeps a direct artifact whole in the result and bounds its recorded copy', () => {
-    const events: RunnerCallEvent[] = [];
-    const recorder = createRunnerCallRecorder({
-      context,
-      startedAt: 1,
-      onEvent: (event) => events.push(event),
-    });
-    recorder.artifact({
-      artifact: {
-        id: 'artifact-1',
-        source: 'stream',
-        name: 'large.txt',
-        path: null,
-        mimeType: 'text/plain',
-        text: 'z'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES + 10),
-      },
-    });
-
-    const result = recorder.finishCompleted({ endedAt: 20 });
-
-    expect(result.status).toBe('completed');
-    expect(result.artifacts[0]?.text).toBe('z'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES + 10));
-    expect(JSON.stringify(events)).not.toContain('z'.repeat(RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES));
-    expect(result.warnings).toEqual([
-      expect.objectContaining({
-        code: 'runner_call_artifact_text_limit',
-        severity: 'debug',
-        surface: 'debug',
-      }),
-    ]);
-  });
-
   it('stalled and stallCleared emit stall events', () => {
     const events: RunnerCallEvent[] = [];
     const recorder = createRunnerCallRecorder({
@@ -969,24 +906,6 @@ describe('runner-call output limits', () => {
       reach: (recorder) => {
         for (let index = 0; index <= RUNNER_CALL_WARNING_MAX_ITEMS; index += 1) {
           recorder.warning({ warning: { code: `provider_${index}`, message: 'slow stream' } });
-        }
-      },
-    },
-    {
-      name: 'the artifact count',
-      code: 'runner_call_artifact_count_limit',
-      reach: (recorder) => {
-        for (let index = 0; index <= RUNNER_CALL_ARTIFACT_MAX_ITEMS; index += 1) {
-          recorder.artifact({
-            artifact: {
-              id: `artifact-${index}`,
-              source: 'stream',
-              name: 'notes.txt',
-              path: null,
-              mimeType: null,
-              text: null,
-            },
-          });
         }
       },
     },

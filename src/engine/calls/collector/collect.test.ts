@@ -63,7 +63,7 @@ describe('collectRunnerCallResult', () => {
     expect(collectRunnerCallResult(events).text).toBe('Main answer.');
   });
 
-  it('collects text, usage, session, tools, artifacts, warnings, and terminal success', () => {
+  it('collects text, usage, session, tools, warnings, and terminal success', () => {
     const events: RunnerCallEvent[] = [
       { type: 'call_started', ...base },
       { type: 'call_text_delta', ...base, channel: 'assistant', text: 'hello ' },
@@ -86,18 +86,6 @@ describe('collectRunnerCallResult', () => {
         ...base,
         channel: 'tool',
         toolUse: { id: 'tool-1', name: 'read_file', input: { path: 'a.ts' } },
-      },
-      {
-        type: 'call_artifact',
-        ...base,
-        artifact: {
-          id: 'artifact-1',
-          source: 'file',
-          name: 'plan.md',
-          path: 'plan.md',
-          mimeType: 'text/markdown',
-          text: null,
-        },
       },
       {
         type: 'call_warning',
@@ -124,16 +112,6 @@ describe('collectRunnerCallResult', () => {
       usage: { inputTokens: 8, outputTokens: 3 },
       nativeSessionId: 'native-1',
       toolUses: [{ id: 'tool-1', name: 'read_file', input: { path: 'a.ts' } }],
-      artifacts: [
-        {
-          id: 'artifact-1',
-          source: 'file',
-          name: 'plan.md',
-          path: 'plan.md',
-          mimeType: 'text/markdown',
-          text: null,
-        },
-      ],
       warnings: [
         expect.objectContaining({
           code: 'slow',

@@ -148,18 +148,6 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     redacted: false,
   },
   runner_call_session_id: { phase: 'implementing', ...callContext, nativeSessionId: 'native-1' },
-  runner_call_artifact: {
-    phase: 'implementing',
-    ...callContext,
-    artifact: {
-      id: 'artifact-1',
-      source: 'stream',
-      name: 'plan.md',
-      path: null,
-      mimeType: null,
-      text: null,
-    },
-  },
   runner_call_warning: {
     phase: 'implementing',
     ...callContext,
@@ -717,6 +705,46 @@ describe('readRunEvents', () => {
 
     expect(events.slice(1, -1)).toEqual([reply]);
     expect(diagnostics).toEqual({ total: 2, skipped: 1, unknownTypes: ['questions_declined'] });
+  });
+
+  it('skips the call artifact lines of an older log and replays the call around them', async () => {
+    const started = sampleFor('runner_call_started');
+    const read = sampleFor('runner_call_activity');
+    const completed = sampleFor('runner_call_completed', { ts: TS + 10 });
+    const append = createSessionLogAppender(ref());
+    const line = (type: string, data: Record<string, unknown>) =>
+      append({ kind: 'event', ts: new Date(TS).toISOString(), type, phase: 'implementing', data });
+    const artifact = {
+      id: 'artifact-1',
+      source: 'file',
+      name: 'plan.md',
+      path: 'plan.md',
+      mimeType: 'text/markdown',
+      text: null,
+    };
+    append(toEngineEventEntry(started));
+    line('runner_call_artifact', { ...callContext, artifact });
+    line('call_artifact', { ...callContext, artifact });
+    line('runner_call_activity', {
+      ...callContext,
+      activityId: 'call-1:artifact:artifact-1',
+      stage: 'completed',
+      kind: 'artifact',
+      label: 'artifact plan.md',
+      target: 'plan.md',
+      redacted: false,
+    });
+    append(toEngineEventEntry(read));
+    append(toEngineEventEntry(completed));
+
+    const { events, diagnostics } = await readRunEvents(ref());
+
+    expect(events.slice(1, -1)).toEqual([started, read, completed]);
+    expect(diagnostics).toEqual({
+      total: 6,
+      skipped: 3,
+      unknownTypes: ['runner_call_artifact', 'call_artifact'],
+    });
   });
 
   it('skips retired variants, malformed data and unreadable lines, and counts each', async () => {

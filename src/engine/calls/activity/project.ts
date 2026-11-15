@@ -100,14 +100,6 @@ export function projectRunnerCallActivity(
     }
     case 'call_session_id':
       return null;
-    case 'call_artifact':
-      return buildActivity({
-        activityId: `${event.callId}:artifact:${event.artifact.id}`,
-        stage: 'completed',
-        kind: 'artifact',
-        label: `artifact ${event.artifact.name}`,
-        target: event.artifact.path ?? event.artifact.name,
-      });
     case 'call_warning':
       return warningActivity(event.callId, event.warning);
     case 'call_unknown_upstream':

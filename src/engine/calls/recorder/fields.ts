@@ -101,10 +101,5 @@ export function createTextLimiter(): ReturnType<typeof createRunnerCallDeltaLimi
 }
 
 export function hasPartialResult(result: RunnerCallResult): boolean {
-  return (
-    result.text.length > 0 ||
-    result.warnings.length > 0 ||
-    result.toolUses.length > 0 ||
-    result.artifacts.length > 0
-  );
+  return result.text.length > 0 || result.warnings.length > 0 || result.toolUses.length > 0;
 }

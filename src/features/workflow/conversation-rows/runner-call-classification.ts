@@ -7,7 +7,6 @@ type RunnerCallEvent = EngineEventOf<
   | 'runner_call_tool_use'
   | 'runner_call_activity'
   | 'runner_call_session_id'
-  | 'runner_call_artifact'
   | 'runner_call_warning'
   | 'runner_call_error'
   | 'runner_call_completed'
@@ -26,7 +25,6 @@ export function isRunnerCallEvent(event: EngineEvent): event is RunnerCallEvent 
     case 'runner_call_tool_use':
     case 'runner_call_activity':
     case 'runner_call_session_id':
-    case 'runner_call_artifact':
     case 'runner_call_warning':
     case 'runner_call_error':
     case 'runner_call_completed':

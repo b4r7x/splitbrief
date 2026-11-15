@@ -441,7 +441,6 @@ function callResult(
     usage: null,
     nativeSessionId: null,
     toolUses: [],
-    artifacts: [],
     warnings: [],
   } satisfies Omit<RunnerCallResult, 'status' | 'error' | 'partial'>;
 

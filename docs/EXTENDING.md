@@ -89,7 +89,7 @@ Use an existing runner kind only (`cli`, `api`, `shell`, `agent`). Do not add a 
 6. Declare a `capabilities` struct — the orchestrator reads capability flags, never backend identity
 7. Set `backendKind` in the base config and normalize backend output through the runner-call contract
    - Emit `RunnerCallEvent` / `RunnerCallResult` directly
-   - Preserve terminal status, partial output, session IDs, tool-use, artifacts, warnings, and usage semantics
+   - Preserve terminal status, partial output, session IDs, tool-use, warnings, and usage semantics
 8. Write colocated tests: `src/engine/planners/<name>.test.ts`, `src/engine/implementers/<name>.test.ts`
 
 ---

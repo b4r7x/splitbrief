@@ -4,7 +4,6 @@ import { boundRunnerCallToolUse } from '../bounded-payload.js';
 import {
   createRunnerCallDeltaLimiter,
   RUNNER_CALL_STDERR_MAX_BYTES,
-  RUNNER_CALL_ARTIFACT_MAX_ITEMS,
   runnerCallItemLimit,
   RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
 } from '../output-limit.js';
@@ -32,7 +31,6 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     usage: null,
     nativeSessionId: null,
     toolUses: [],
-    artifacts: [],
     warnings: [],
     error: null,
     partial: null,
@@ -45,7 +43,6 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     }),
     stderrPreview: '',
     stderrWarningEmitted: false,
-    artifactCount: 0,
     warningCount: 0,
     unknownUpstreamCount: 0,
   };
@@ -111,7 +108,6 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     usage: state.usage,
     nativeSessionId: state.nativeSessionId,
     toolUses: state.toolUses,
-    artifacts: state.artifacts,
     warnings: state.warnings,
   };
 
@@ -167,21 +163,6 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       return;
     case 'call_session_id':
       state.nativeSessionId = event.nativeSessionId;
-      return;
-    case 'call_artifact':
-      if (state.artifactCount >= RUNNER_CALL_ARTIFACT_MAX_ITEMS) {
-        noteLimit(
-          state,
-          runnerCallItemLimit({
-            code: 'runner_call_artifact_count_limit',
-            label: 'artifacts',
-            maxItems: RUNNER_CALL_ARTIFACT_MAX_ITEMS,
-          }),
-        );
-        return;
-      }
-      state.artifactCount += 1;
-      state.artifacts.push(event.artifact);
       return;
     case 'call_warning':
       appendWarning(state, event.warning);

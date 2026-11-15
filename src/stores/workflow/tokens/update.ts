@@ -174,7 +174,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'runner_call_usage':
     case 'runner_call_tool_use':
     case 'runner_call_activity':
-    case 'runner_call_artifact':
     case 'runner_call_warning':
     case 'runner_call_error':
     case 'runner_call_completed':
