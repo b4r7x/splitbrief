@@ -5,10 +5,10 @@ import type {
   CliExecutableIdentity,
 } from '../../../core/discovery/detection/executable.js';
 import { error, matches } from '../../../utils/error.js';
+import { isWithinRoot } from '../../../utils/path/within.js';
 import { customExecutableNames, canonicalProjectDir } from './custom.js';
 import {
   executableIdentity,
-  isWithin,
   diagnosticCommand,
   assertTrustedIdentity,
   executableChangedMessage,
@@ -39,11 +39,12 @@ export async function sanitizedRuntimePath(projectDir: string): Promise<string> 
   const seen = new Set<string>();
 
   for (const entry of (process.env.PATH ?? '').split(delimiter)) {
-    if (entry.length === 0 || !isAbsolute(entry) || isWithin(resolve(entry), projectPath)) continue;
+    if (entry.length === 0 || !isAbsolute(entry) || isWithinRoot(projectPath, resolve(entry)))
+      continue;
     try {
       const path = await realpath(entry);
       const info = await stat(path);
-      if (!info.isDirectory() || isWithin(path, realProjectPath) || seen.has(path)) continue;
+      if (!info.isDirectory() || isWithinRoot(realProjectPath, path) || seen.has(path)) continue;
       seen.add(path);
       directories.push(path);
     } catch {
@@ -52,7 +53,7 @@ export async function sanitizedRuntimePath(projectDir: string): Promise<string> 
   }
 
   const nodeDirectory = await realpath(dirname(process.execPath));
-  if (!isWithin(nodeDirectory, realProjectPath) && !seen.has(nodeDirectory)) {
+  if (!isWithinRoot(realProjectPath, nodeDirectory) && !seen.has(nodeDirectory)) {
     directories.push(nodeDirectory);
   }
   return directories.join(delimiter);
@@ -84,8 +85,8 @@ export async function resolveCliExecutable(
     }
     const requiresExactTrust =
       !isAbsolute(command) ||
-      isWithin(resolve(candidate), projectPath) ||
-      isWithin(identity.path, realProjectPath);
+      isWithinRoot(projectPath, resolve(candidate)) ||
+      isWithinRoot(realProjectPath, identity.path);
     assertTrustedIdentity({ command, identity, trust, requiresExactTrust });
     return identity;
   }
@@ -97,7 +98,9 @@ export async function resolveCliExecutable(
     if (!identity) continue;
 
     const requiresExactTrust =
-      unsafeEntry || isWithin(directory, projectPath) || isWithin(identity.path, realProjectPath);
+      unsafeEntry ||
+      isWithinRoot(projectPath, directory) ||
+      isWithinRoot(realProjectPath, identity.path);
     assertTrustedIdentity({ command, identity, trust, requiresExactTrust });
     return identity;
   }

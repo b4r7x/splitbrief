@@ -2,8 +2,9 @@ import { existsSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diagnostic.js';
 import { escapeRegExp } from '../../../utils/regexp.js';
+import { isWithinRoot } from '../../../utils/path/within.js';
 import type { ToolUseGuard } from '../../runners/cli-tools/process-invoke/invoke.js';
-import { type IsolationBoundary, isWithin, canonicalPath, zoneOf } from './boundary.js';
+import { type IsolationBoundary, canonicalPath, zoneOf } from './boundary.js';
 import { DEPENDENCY_MARKERS } from './checkout-audit.js';
 import type { PathAccess, PathReference } from './shell/types.js';
 import { type ToolUse, readToolUse, toolUseInputText } from './tool-paths.js';
@@ -28,7 +29,7 @@ export type IsolationBreach = Readonly<{
 function readsToolStateOrSkills(boundary: IsolationBoundary, reference: PathReference): boolean {
   if (reference.access === 'write') return false;
   const path = resolve(reference.path);
-  return boundary.readDirs.some((dir) => isWithin(dir, path));
+  return boundary.readDirs.some((dir) => isWithinRoot(dir, path));
 }
 
 /** The dot entries of `node_modules` that hold what is installed, not a tool cache. */
@@ -71,7 +72,7 @@ function crosses(boundary: IsolationBoundary, reference: PathReference): string 
   if (zoneOf(boundary, path)?.allows.has(reference.access) !== true) return path;
   if (reference.access !== 'search') return null;
   const closed = boundary.zones.some(
-    (zone) => !zone.allows.has('search') && zone.root !== path && isWithin(path, zone.root),
+    (zone) => !zone.allows.has('search') && zone.root !== path && isWithinRoot(path, zone.root),
   );
   return closed ? path : null;
 }
@@ -83,8 +84,8 @@ function excerptOf(line: string): string {
 }
 
 function breachWhere(boundary: IsolationBoundary, path: string): IsolationBreach['where'] {
-  if (isWithin(join(boundary.checkoutDir, 'node_modules'), path)) return 'dependencies';
-  return isWithin(boundary.checkoutDir, path) ? 'checkout' : 'outside';
+  if (isWithinRoot(join(boundary.checkoutDir, 'node_modules'), path)) return 'dependencies';
+  return isWithinRoot(boundary.checkoutDir, path) ? 'checkout' : 'outside';
 }
 
 /**
@@ -104,7 +105,7 @@ function tildeHomes(boundary: IsolationBoundary, text: string): string {
  * against canonical; any other path as the tool named it, its home spelled `~`.
  */
 function spellPath(boundary: IsolationBoundary, named: string, canonical: string): string {
-  return boundary.siblingsDir !== null && isWithin(boundary.siblingsDir, canonical)
+  return boundary.siblingsDir !== null && isWithinRoot(boundary.siblingsDir, canonical)
     ? relative(boundary.isolationDir, canonical)
     : tildeHomes(boundary, named);
 }
@@ -199,7 +200,7 @@ export function isolationToolUseGuard(
     // Claude Code keeps `pwd -P` and resets its shell to the directory it started in
     // when that lies outside its working directories.
     const next = canonicalPath(inspection.cwd);
-    cwd = boundary.shellCwdRoots.some((root) => isWithin(root, next))
+    cwd = boundary.shellCwdRoots.some((root) => isWithinRoot(root, next))
       ? next
       : boundary.isolationDir;
     return null;

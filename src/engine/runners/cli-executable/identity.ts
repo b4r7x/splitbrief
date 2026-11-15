@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, open, realpath, stat } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { resolve } from 'node:path';
 import type * as Detection from '../../../core/discovery/detection/executable.js';
 import {
   type CliExecutableIdentity,
@@ -61,15 +61,6 @@ export function executableToolName(command: string): string {
 
 export function diagnosticIdentity(identity: CliExecutableIdentity): DiagnosticIdentity {
   return { fingerprint: { ...identity.fingerprint } };
-}
-
-export function isWithin(path: string, parent: string): boolean {
-  const pathFromParent = relative(parent, path);
-  if (pathFromParent === '') return true;
-  if (isAbsolute(pathFromParent)) return false;
-  // Segment semantics: only exactly `..` or a `..${sep}` prefix is parent
-  // traversal; a name beginning two dots (`..bin`) is an ordinary child.
-  return pathFromParent !== '..' && !pathFromParent.startsWith(`..${sep}`);
 }
 
 export function fingerprintsEqual(

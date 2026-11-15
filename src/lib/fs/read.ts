@@ -8,7 +8,8 @@ import {
   closeSync,
 } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
+import { resolve } from 'node:path';
+import { isWithinRoot } from '../../utils/path/within.js';
 
 export function readJsonSafe(path: string): unknown | null {
   if (!existsSync(path)) return null;
@@ -106,7 +107,7 @@ export function readProjectFileConfined(projectDir: string, relativePath: string
     if (lstatSync(fullPath).isSymbolicLink()) return null;
     const realProject = realpathSync(projectDir);
     const realFile = realpathSync(fullPath);
-    if (!realFile.startsWith(realProject + sep) && realFile !== realProject) return null;
+    if (!isWithinRoot(realProject, realFile)) return null;
   } catch {
     return null;
   }

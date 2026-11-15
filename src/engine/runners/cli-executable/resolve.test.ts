@@ -436,6 +436,58 @@ describe('resolveCliExecutable', () => {
     expect(executableRan(dotDotBin)).toBe(false);
     expect(executableRan(repoOther)).toBe(false);
   });
+
+  itUnix(
+    'requires exact trust for an absolute command that reaches the project by its path or its link target',
+    async () => {
+      const projectDir = createTempDir('resolver-absolute-link-project');
+      const outsideDir = createTempDir('resolver-absolute-link-outside');
+      dirs.push(projectDir, outsideDir);
+      const projectCli = join(projectDir, 'vendor-cli');
+      const outsideCli = join(outsideDir, 'vendor-cli');
+      makeExecutable(projectCli);
+      makeExecutable(outsideCli);
+      const linkInProject = join(projectDir, 'outside-cli');
+      const linkToProject = join(outsideDir, 'project-cli');
+      symlinkSync(outsideCli, linkInProject);
+      symlinkSync(projectCli, linkToProject);
+
+      await expect(
+        resolveCliExecutable({ command: linkInProject, projectDir }),
+      ).rejects.toMatchObject({ kind: 'cli-executable-untrusted' });
+      await expect(
+        resolveCliExecutable({ command: linkToProject, projectDir }),
+      ).rejects.toMatchObject({ kind: 'cli-executable-untrusted' });
+    },
+  );
+
+  itUnix(
+    'requires exact trust for a PATH entry that reaches the project by its path or its link target',
+    async () => {
+      const projectDir = createTempDir('resolver-path-link-project');
+      const outsideDir = createTempDir('resolver-path-link-outside');
+      dirs.push(projectDir, outsideDir);
+      const projectBin = join(projectDir, 'bin');
+      const outsideBin = join(outsideDir, 'bin');
+      mkdirSync(projectBin);
+      mkdirSync(outsideBin);
+      makeExecutable(join(projectBin, 'vendor-cli'));
+      makeExecutable(join(outsideBin, 'vendor-cli'));
+      const linkInProject = join(projectDir, 'outside-bin');
+      const linkToProject = join(outsideDir, 'project-bin');
+      symlinkSync(outsideBin, linkInProject);
+      symlinkSync(projectBin, linkToProject);
+
+      setEnv('PATH', linkInProject);
+      await expect(
+        resolveCliExecutable({ command: 'vendor-cli', projectDir }),
+      ).rejects.toMatchObject({ kind: 'cli-executable-untrusted' });
+      setEnv('PATH', linkToProject);
+      await expect(
+        resolveCliExecutable({ command: 'vendor-cli', projectDir }),
+      ).rejects.toMatchObject({ kind: 'cli-executable-untrusted' });
+    },
+  );
 });
 
 describe('resolveCliExecutableAliases', () => {
@@ -535,6 +587,41 @@ describe('sanitizedRuntimePath', () => {
     expect(entries).not.toContain(dotDotBin);
     expect(entries).not.toContain(realpathSync(dotDotBin));
     expect(entries).toContain(realpathSync(repoOther));
+  });
+
+  itUnix(
+    'excludes PATH entries that reach the project by their path or their link target',
+    async () => {
+      const projectDir = createTempDir('sanitized-path-link-project');
+      const outsideDir = createTempDir('sanitized-path-link-outside');
+      dirs.push(projectDir, outsideDir);
+      const projectBin = join(projectDir, 'bin');
+      mkdirSync(projectBin);
+      const linkInProject = join(projectDir, 'outside-link');
+      const linkToProject = join(outsideDir, 'project-link');
+      symlinkSync(outsideDir, linkInProject);
+      symlinkSync(projectBin, linkToProject);
+      setEnv('PATH', [linkInProject, linkToProject].join(delimiter));
+
+      const entries = (await sanitizedRuntimePath(projectDir)).split(delimiter);
+      expect(entries).not.toContain(realpathSync(outsideDir));
+      expect(entries).not.toContain(realpathSync(projectBin));
+    },
+  );
+
+  itUnix('leaves out a node directory inside the project', async () => {
+    const projectDir = createTempDir('sanitized-path-node-project');
+    dirs.push(projectDir);
+    const nodeBin = join(projectDir, 'node-bin');
+    mkdirSync(nodeBin);
+    setEnv('PATH', '');
+    const execPath = process.execPath;
+    process.execPath = join(nodeBin, 'node');
+    try {
+      await expect(sanitizedRuntimePath(projectDir)).resolves.toBe('');
+    } finally {
+      process.execPath = execPath;
+    }
   });
 });
 

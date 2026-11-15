@@ -68,6 +68,10 @@ describe('isPathConfined', () => {
     expect(isPathConfined('C:\\windows', ROOT)).toBe(false);
     expect(isPathConfined('C:/windows', ROOT)).toBe(false);
   });
+
+  it('refuses a path under a root of /', () => {
+    expect(isPathConfined('etc/x', '/')).toBe(false);
+  });
 });
 
 describe('isInsideRoot', () => {

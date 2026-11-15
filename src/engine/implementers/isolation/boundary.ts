@@ -1,12 +1,13 @@
 import { realpathSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join } from 'node:path';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import {
   GLOBAL_SKILL_SCAN_PATHS,
   PROJECT_SKILL_SCAN_PATHS,
 } from '../../../core/skills/scan-paths.js';
 import { cliToolHome, hasCliToolHome } from '../../runners/host-model-selection.js';
+import { isWithinRoot } from '../../../utils/path/within.js';
 import { resolveFollowingLinks } from './shell/read.js';
 import type { PathAccess } from './shell/types.js';
 
@@ -152,14 +153,8 @@ export function canonicalPath(
   }
 }
 
-/** `root` itself or anything under it; `<root>/...` is a name under it, not its parent. */
-export function isWithin(root: string, path: string): boolean {
-  const rel = relative(root, path);
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-}
-
 function isAncestorOfAny(path: string, targets: readonly string[]): boolean {
-  return path === '/' || targets.some((target) => isWithin(path, target));
+  return path === '/' || targets.some((target) => isWithinRoot(path, target));
 }
 
 /**
@@ -176,7 +171,8 @@ function pathEntryRoots(pathValue: string | undefined, homes: readonly string[])
     if (isAncestorOfAny(root, homes)) continue;
     roots.push(root);
     const prefix = dirname(root);
-    const nearHome = isAncestorOfAny(prefix, homes) || homes.some((home) => isWithin(home, prefix));
+    const nearHome =
+      isAncestorOfAny(prefix, homes) || homes.some((home) => isWithinRoot(home, prefix));
     if (basename(root) === 'bin' && !nearHome) roots.push(prefix);
   }
   return roots;
@@ -252,5 +248,5 @@ export function createIsolationBoundary(input: {
 }
 
 export function zoneOf(boundary: IsolationBoundary, path: string): Zone | undefined {
-  return boundary.zones.find((zone) => isWithin(zone.root, path));
+  return boundary.zones.find((zone) => isWithinRoot(zone.root, path));
 }

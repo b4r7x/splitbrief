@@ -1,11 +1,12 @@
 import type { Dirent } from 'node:fs';
 import { readFile, readdir, access, stat, realpath } from 'node:fs/promises';
-import { join, basename, sep } from 'node:path';
+import { join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { PROJECT_SKILL_SCAN_PATHS, GLOBAL_SKILL_SCAN_PATHS } from '../../core/skills/scan-paths.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { readProjectFileConfined } from '../../lib/fs/read.js';
 import { warnError } from '../../lib/warn.js';
+import { isWithinRoot } from '../../utils/path/within.js';
 import { parseFrontmatter } from './frontmatter.js';
 
 const MAX_SCAN_DEPTH = 4;
@@ -36,7 +37,7 @@ async function exists(path: string): Promise<boolean> {
 function insideProject(ctx: ScanContext, target: string): boolean {
   const { realProjectDir } = ctx;
   if (realProjectDir === undefined) return false;
-  return target === realProjectDir || target.startsWith(realProjectDir + sep);
+  return isWithinRoot(realProjectDir, target);
 }
 
 // Project scope never leaves the project: an entry resolving outside it is dropped rather than
