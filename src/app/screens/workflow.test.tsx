@@ -76,6 +76,13 @@ import {
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 import { NO_CORRECTION_MESSAGE } from '../../features/workflow/recovery/actions.js';
 
+// The composer lists the project files with a git child. Each test deletes its project folder at
+// the end, and a git child that reads its working folder after that scans the whole temp folder.
+vi.mock('../../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
+  listTrackedAndUntrackedFiles: async () => null,
+}));
+
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
 
@@ -4268,6 +4275,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     resetAllStores();
     if (projectDir) cleanupTempDir(projectDir);
   });
@@ -4346,6 +4354,20 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
       ui.stdin.write(key);
       await flushEffects();
     }
+  }
+
+  // A prompt starts its typeahead grace when it is drawn or opened, later than a wait begun before
+  // it. The frame shows the prompt first; then a clock that starts at that moment passes the grace.
+  async function waitPastGrace(
+    ui: ReturnType<typeof renderFeature>,
+    shown: string | RegExp,
+  ): Promise<void> {
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(shown);
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
   }
 
   it('runs a slash command typed over the stop sheet and names the sheet in the placeholder', async () => {
@@ -4490,8 +4512,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         { cols, rows },
       );
       const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
-      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-      await flushEffects();
+      await waitPastGrace(ui, /\| src\/auth\.ts/);
 
       expect(frame()).toMatch(/\| src\/auth\.ts/);
       expect(frame()).not.toContain('+-|');
@@ -4536,8 +4557,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         actionDescription: 'write .github/workflows/ci.yml',
         phase: 'implementing',
       });
-      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-      await flushEffects();
+      await waitPastGrace(ui, /\|\s+Confirm/);
 
       expect(frame()).toMatch(/\|\s+Confirm/);
       await pressKeys(ui, [down]);
@@ -4571,8 +4591,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
       actionDescription: 'write .github/workflows/ci.yml',
       phase: 'implementing',
     });
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-    await flushEffects();
+    await waitPastGrace(ui, /\|\s+Confirm/);
 
     await pressKeys(ui, [down, '\r', ...'ok by me']);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('ok by me');
@@ -4582,7 +4601,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
   });
 
   describe('a confirm prompt in a short terminal', () => {
-    const openConfirm = async (rows: number) => {
+    const openConfirm = async (rows: number, shown: string) => {
       terminalSizeStore.__testReset({ cols: 80, rows });
       navigatePreparedWorkflow(projectDir, 'panel slash');
       runWorkflow.mockImplementation(async (opts) => {
@@ -4601,13 +4620,12 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         actionDescription: 'write package.json',
         phase: 'implementing',
       }).then(answered);
-      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-      await flushEffects();
+      await waitPastGrace(ui, shown);
       return { ui, answered, frame: () => stripAnsiStyles(ui.lastFrame() ?? '') };
     };
 
     it('moves back to Confirm on y with Confirm out of view at 80 x 9', async () => {
-      const { ui, answered, frame } = await openConfirm(9);
+      const { ui, answered, frame } = await openConfirm(9, 'write package.json');
       await pressKeys(ui, [down, down]);
       expect(frame()).toMatch(/\| x\s+Deny/);
       expect(frame()).not.toContain('Confirm');
@@ -4624,7 +4642,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     });
 
     it('moves to the reason row on r with that row out of view at 80 x 9', async () => {
-      const { ui, answered, frame } = await openConfirm(9);
+      const { ui, answered, frame } = await openConfirm(9, 'write package.json');
       await pressKeys(ui, [down, down, 'r']);
       expect(frame()).toMatch(/\| r\s+Confirm with a reason/);
 
@@ -4638,14 +4656,14 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     });
 
     it('names the action in the reason step at 80 x 9', async () => {
-      const { ui, frame } = await openConfirm(9);
+      const { ui, frame } = await openConfirm(9, 'write package.json');
       await pressKeys(ui, [down, '\r']);
       expect(frame()).toContain('write package.json');
       ui.unmount();
     });
 
     it('answers nothing at 80 x 7, where no row of the prompt is in view', async () => {
-      const { ui, answered, frame } = await openConfirm(7);
+      const { ui, answered, frame } = await openConfirm(7, 'Waiting for your answer');
       expect(frame()).not.toContain('Confirm');
       await pressKeys(ui, ['\r', 'y']);
       await tick(30);
@@ -4905,8 +4923,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
         { cols: 80, rows },
       );
-      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-      await flushEffects();
+      await waitPastGrace(ui, 'Which module should change?');
       return ui;
     };
 
