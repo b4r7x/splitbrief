@@ -9,7 +9,7 @@ import type {
 import { composeContinuation } from '../../spec/prompts/continuation.js';
 import type { RunnerCallContext, RunnerCallResult, RunnerCallStatus } from '../../calls/types.js';
 import type { TextChunkMarks } from '../../events/types.js';
-import { toTokenDelta } from '../../calls/projection.js';
+import { runnerCallTokenDelta } from '../../calls/usage/normalize.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
@@ -26,7 +26,7 @@ import { applyFileBundle } from '../file-bundle/apply.js';
 import { assertPathConfined } from '../../../lib/fs/confinement.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import { formatErrorWithHint } from '../../error-hints.js';
-import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from '../../spec/prompts/system.js';
+import { buildImplementerSystemPreamble } from '../../spec/prompts/system.js';
 import { formatTaskPrompt, formatRetryPrompt } from '../../spec/prompts/task.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { DEFAULT_AVAILABILITY } from '../../availability.js';
@@ -510,7 +510,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     checkoutBefore: CheckoutRead | undefined,
   ): Promise<ImplementerResult> {
     const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
-    const systemPreamble = formatImplementerSystemPreamble(
+    const systemPreamble = buildImplementerSystemPreamble(
       languageContext,
       writesFiles,
       opts.projectDir,
@@ -662,7 +662,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       };
     }
 
-    const usage = toTokenDelta(callResult.usage);
+    const usage = runnerCallTokenDelta(callResult.usage);
     const usageField = usage !== null ? { usage } : {};
     const outputText = callResult.text;
 

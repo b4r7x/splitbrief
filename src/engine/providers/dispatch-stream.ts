@@ -7,8 +7,6 @@ import type { StreamMessage } from './types.js';
 import type { ApiInvocationEvidence } from '../runners/invocation-identity.js';
 import type { ApiRuntimeObservation } from './api/runtime-status.js';
 
-export type { StreamMessage } from './types.js';
-
 interface StreamDispatchOpts {
   provider: string;
   client: StreamClient;

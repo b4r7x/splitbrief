@@ -104,6 +104,11 @@ export function toTokenDeltaFromRunnerCallUsage(usage: RunnerCallUsage): TokenDe
   };
 }
 
+export function runnerCallTokenDelta(usage: RunnerCallUsage | null): TokenDelta | null {
+  if (usage === null) return null;
+  return toTokenDeltaFromRunnerCallUsage(usage);
+}
+
 function normalizeParsedUsage(raw: BackendTokenUsage): RunnerCallUsage | null {
   // Snake-case subcounters are carved out of an inclusive provider total, so they
   // are subtracted from it. camelCase counters come from our own contract, where

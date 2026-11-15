@@ -10,7 +10,7 @@ import type {
   PlannerSummaryMessage,
   PlannerSummaryOptions,
 } from './types.js';
-import { toTokenDelta } from '../calls/projection.js';
+import { runnerCallTokenDelta } from '../calls/usage/normalize.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 import { createRunnerCallId } from '../calls/call-id.js';
 import { requireCompletedCall } from './require-completed-call.js';
@@ -106,7 +106,7 @@ export async function summarize(
       signal: opts.signal,
     }),
   );
-  return { text: result.text.trim(), usage: toTokenDelta(result.usage) };
+  return { text: result.text.trim(), usage: runnerCallTokenDelta(result.usage) };
 }
 
 export async function summarizeStructured(
@@ -132,5 +132,9 @@ export async function summarizeStructured(
     }),
   );
   const text = result.text.trim();
-  return { text, structured: tryParseStructuredSummary(text), usage: toTokenDelta(result.usage) };
+  return {
+    text,
+    structured: tryParseStructuredSummary(text),
+    usage: runnerCallTokenDelta(result.usage),
+  };
 }

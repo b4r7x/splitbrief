@@ -1,5 +1,9 @@
 import type { PlanAnswer, PlanProposal, PlanResult } from '../../../core/schemas/plan.js';
-import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
+import {
+  type ClarificationQuestion,
+  type PlannerReplyAnswer,
+  questionDefault,
+} from '../../../core/schemas/question.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
 import { blocksPlan } from '../../spec/plan/checks.js';
@@ -51,8 +55,7 @@ function clarificationQuestions(
 }
 
 function defaultAnswer(question: ClarificationQuestion): string {
-  if (typeof question.default === 'boolean') return question.default ? 'Yes' : 'No';
-  return question.default ?? '';
+  return questionDefault(question) ?? '';
 }
 
 /** An empty reply takes every default; a typed reply stands as it was written. */

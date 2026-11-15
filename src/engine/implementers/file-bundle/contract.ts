@@ -3,6 +3,11 @@ import type { RunnerCallContext } from '../../calls/types.js';
 
 export const FILE_BUNDLE_MAX_FILES = 32;
 
+export function compareBundlePaths(left: string, right: string): number {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
+}
+
 export const FileBundleEntrySchema = z.strictObject({
   path: z.string(),
   action: z.enum(['create', 'modify']),

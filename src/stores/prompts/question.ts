@@ -1,5 +1,9 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { ClarificationQuestion, PlannerReplyAnswer } from '../../core/schemas/question.js';
+import {
+  type ClarificationQuestion,
+  type PlannerReplyAnswer,
+  questionDefault,
+} from '../../core/schemas/question.js';
 import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
 import { DECIDE_YOURSELF_ANSWER } from '../../core/recovery/decide.js';
 import { error } from '../../utils/error.js';
@@ -24,15 +28,6 @@ export interface QuestionPromptState {
   focus: 'menu' | 'answer' | 'composer';
   openedAt: number;
   complete: boolean;
-}
-
-/** The default as the card shows it: a confirm's boolean reads Yes or No. */
-export function questionDefault(question: ClarificationQuestion): string | undefined {
-  return typeof question.default === 'boolean'
-    ? question.default
-      ? 'Yes'
-      : 'No'
-    : question.default;
 }
 
 /** A question with no options of its own offers its default as the one option, like a choice. */

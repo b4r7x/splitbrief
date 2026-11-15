@@ -5,15 +5,9 @@ import { matches } from '../../../utils/error.js';
 import { extractCode } from '../../parsers/response-extractor.js';
 import { applyCode, hasApplicablePatch } from './apply-code.js';
 import { computeDiff } from '../../../utils/diff.js';
+import { shrinkRefusal } from '../rewrite-guard.js';
 
 const isPathEscape = matches('path-confined-escape');
-
-const MIN_GUARDED_BASELINE_LINES = 5;
-const MAX_WHOLE_FILE_SHRINK = 0.5;
-
-function countNonEmptyLines(content: string): number {
-  return content.split('\n').filter((line) => line.trim().length > 0).length;
-}
 
 function refuseImplausibleRewrite(opts: {
   task: Task;
@@ -21,9 +15,9 @@ function refuseImplausibleRewrite(opts: {
   candidate: string;
 }): string | undefined {
   if (opts.baseline === null || hasApplicablePatch(opts.candidate)) return undefined;
-  const had = countNonEmptyLines(opts.baseline);
-  const kept = countNonEmptyLines(opts.candidate);
-  if (had < MIN_GUARDED_BASELINE_LINES || kept >= had * MAX_WHOLE_FILE_SHRINK) return undefined;
+  const refusal = shrinkRefusal(opts.baseline, opts.candidate);
+  if (refusal === undefined) return undefined;
+  const { kept, had } = refusal;
   return [
     `Refusing to overwrite ${opts.task.suggestedFiles[0]}: the response keeps ${kept} of ${had} non-empty lines, which is not a plausible whole-file rewrite.`,
     'Return the complete new file content, or apply an exact patch:',

@@ -25,6 +25,15 @@ export const ClarificationQuestionSchema = z.discriminatedUnion('type', [
 
 export type ClarificationQuestion = z.infer<typeof ClarificationQuestionSchema>;
 
+/** The default as the card shows it: a confirm's boolean reads Yes or No. */
+export function questionDefault(question: ClarificationQuestion): string | undefined {
+  return typeof question.default === 'boolean'
+    ? question.default
+      ? 'Yes'
+      : 'No'
+    : question.default;
+}
+
 export const AnsweredQuestionSchema = z.object({
   question: z.string(),
   answer: z.string(),

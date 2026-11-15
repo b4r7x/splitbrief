@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from './system.js';
+import { buildImplementerSystemPreamble } from './system.js';
 import { formatTaskPrompt, formatRetryPrompt } from './task.js';
 import { buildLanguageContext } from './language-context.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
@@ -345,7 +345,7 @@ describe('formatTaskPrompt', () => {
       contextFiles: ['src/types.ts'],
       contextCodeByFile: { 'src/types.ts': 'export type Health = "ok";\n'.repeat(1_400) },
     });
-    const system = formatImplementerSystemPreamble(
+    const system = buildImplementerSystemPreamble(
       buildLanguageContext(undefined),
       'extracted-code',
       context.dir,
@@ -375,7 +375,7 @@ describe('formatTaskPrompt', () => {
       contextFiles: ['src/big.ts'],
       contextCodeByFile: { 'src/big.ts': 'x'.repeat(36_000) },
     });
-    const system = formatImplementerSystemPreamble(
+    const system = buildImplementerSystemPreamble(
       buildLanguageContext(undefined),
       'extracted-code',
       context.dir,

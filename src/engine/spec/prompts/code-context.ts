@@ -8,7 +8,7 @@ import { extractFunctionContext } from '../../parsers/scope-extractor.js';
 import { TASK_BRIEF_HEADINGS, READ_ONLY_CONTEXT_HEADING } from '../headings.js';
 import { computeTokenBudget, truncateMiddle } from '../token-budget.js';
 import { type LanguageContext, buildLanguageContext } from './language-context.js';
-import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from './system.js';
+import { buildImplementerSystemPreamble } from './system.js';
 
 function resolveCodeContext(
   fileContent: string,
@@ -178,7 +178,7 @@ export function insertTaskCode(
   } else if (task.currentCode || task.currentCodeByFile || task.contextCodeByFile) {
     const budget = contextLength
       ? computeTokenBudget({
-          system: formatImplementerSystemPreamble(
+          system: buildImplementerSystemPreamble(
             opts.languageContext ?? buildLanguageContext(undefined),
             writesFiles,
             opts.context.dir,

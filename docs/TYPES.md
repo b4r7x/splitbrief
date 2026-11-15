@@ -116,8 +116,8 @@ Types should live where their domain meaning is created — not in a central `ty
 | `EngineEvent` (alias) | `engine/events/types.ts` | `z.infer<typeof EngineEventSchema>`, carved out next to the event ports (see the colocation carve-out above); workflow sub-stores and all sinks consume it directly |
 | `EventBus`, `EventSink` | `engine/events/types.ts` | Declared alongside the `EngineEvent` alias; schema-less ports for `createEventBus()` and sink subscribers |
 | `WorkflowCancelReason`, `WORKFLOW_CANCEL_REASONS` | `engine/events/workflow-cancel.ts` | Workflow cancellation is an engine event contract used by both schema validation and orchestrator abort handling; keeping it with events avoids schema → orchestrator ownership imports |
-| `RunnerCallEventSchema`, `RunnerCallResultSchema` | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, hooks, and explicit `InvokeResult` projections |
-| `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
+| `RunnerCallEventSchema`, `RunnerCallResultSchema` | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay and hooks |
+| `RunnerRuntime`, `ToolUseInfo`, `ParsedLine` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
 | `SkillMeta` | `core/skills/types.ts` | Produced by `engine/skills/discover.ts`, consumed by stores/features without importing `engine/` |
 | `Screen`, `InputMode`, `OverlayType` | `core/navigation/types.ts` | Cross-cutting: many consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime values `ALL_SCREENS` and `ACTIVE_OVERLAYS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
 | `RuntimeCommandDef`, `RuntimeCommandContext` | `core/runtime/commands/types.ts` | Multiple files in one folder |

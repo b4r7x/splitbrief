@@ -19,7 +19,7 @@ import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createPlannerCallContext } from './call-context.js';
 import { summarize, summarizeStructured } from './summary.js';
-import { toTokenDelta } from '../calls/projection.js';
+import { runnerCallTokenDelta } from '../calls/usage/normalize.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from './require-completed-call.js';
 import { cliPromptLimit } from '../runners/cli-tools/registry.js';
@@ -108,7 +108,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           signal: callbacks.signal,
         }),
       );
-      return { text: result.text, usage: toTokenDelta(result.usage) };
+      return { text: result.text, usage: runnerCallTokenDelta(result.usage) };
     },
 
     typedCall: (ctx) => ({

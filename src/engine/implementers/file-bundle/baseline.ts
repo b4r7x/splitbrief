@@ -2,7 +2,7 @@ import { confinedFileIdentity } from '../../../lib/fs/confined.js';
 import { assertModelWritablePathConfined } from '../../../core/scope/control-plane.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { readConfinedEntry } from '../../orchestrator/approval/file-snapshots/entry/read.js';
-import { FILE_BUNDLE_MAX_FILES, type BundleBaseline } from './contract.js';
+import { compareBundlePaths, FILE_BUNDLE_MAX_FILES, type BundleBaseline } from './contract.js';
 import { unsafePathReason } from './parse.js';
 
 export interface CaptureBundleBaselineInput {
@@ -31,11 +31,6 @@ export type CompareBundleBaselineResult =
 
 /** Strict: an invalid sequence throws instead of decoding to U+FFFD, and a BOM stays content. */
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-
-function byPath(left: string, right: string): number {
-  if (left < right) return -1;
-  return left > right ? 1 : 0;
-}
 
 function rejected(
   code: 'unsafe-target' | 'baseline-conflict' | 'output-limit',
@@ -104,7 +99,7 @@ export async function captureBundleBaseline(
   input: CaptureBundleBaselineInput,
 ): Promise<CaptureBundleBaselineResult> {
   const { projectDir, task } = input;
-  const paths = [...task.suggestedFiles].sort(byPath);
+  const paths = [...task.suggestedFiles].sort(compareBundlePaths);
   if (paths.length > FILE_BUNDLE_MAX_FILES) {
     return rejected(
       'output-limit',
@@ -188,7 +183,9 @@ export async function compareBundleBaseline(
   projectDir: string,
   baselines: readonly BundleBaseline[],
 ): Promise<CompareBundleBaselineResult> {
-  for (const baseline of [...baselines].sort((left, right) => byPath(left.path, right.path))) {
+  for (const baseline of [...baselines].sort((left, right) =>
+    compareBundlePaths(left.path, right.path),
+  )) {
     const observed = await observeTarget(projectDir, baseline.path);
     if (observed.kind === 'unsupported') {
       return { kind: 'conflict', path: baseline.path, error: observed.error };

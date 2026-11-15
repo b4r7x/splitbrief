@@ -4,10 +4,22 @@ import {
   assertNotHardlink,
   assertWritablePathConfined,
   nearestExistingAncestor,
-  pathConfinementError,
 } from '../../lib/fs/confinement.js';
+import { error } from '../../utils/error.js';
+import { SPLITBRIEF_IDENTITY } from '../identity.js';
 
-export const CONTROL_PLANE_SEGMENTS: ReadonlySet<string> = new Set(['.git', '.splitbrief']);
+export const CONTROL_PLANE_SEGMENTS: ReadonlySet<string> = new Set([
+  '.git',
+  SPLITBRIEF_IDENTITY.stateDir,
+]);
+
+function controlPlaneError(relativePath: string) {
+  return error(
+    'path-confined-control-plane',
+    `unsafe path: refusing to write into control plane (.git/.splitbrief): ${relativePath}`,
+    { relativePath },
+  );
+}
 
 function firstSegment(root: string, target: string): string {
   const rel = relative(root, target);
@@ -38,7 +50,7 @@ export function reachesControlPlane(relativePath: string, rootDir: string): bool
 export function assertProjectWritablePathConfined(relativePath: string, rootDir: string): void {
   assertWritablePathConfined(relativePath, rootDir);
   if (reachesControlPlane(relativePath, rootDir)) {
-    throw pathConfinementError.controlPlane(relativePath);
+    throw controlPlaneError(relativePath);
   }
 }
 

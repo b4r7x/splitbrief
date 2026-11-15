@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectContext } from '../../../core/state/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { classifyContextFit, estimateFormattedTaskPromptTokens } from './estimation.js';
-import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from '../../spec/prompts/system.js';
+import { buildImplementerSystemPreamble } from '../../spec/prompts/system.js';
 import { formatTaskPrompt } from '../../spec/prompts/task.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../../spec/prompts/system.js';
@@ -95,7 +95,7 @@ describe('estimateFormattedTaskPromptTokens', () => {
 
     expect(estimatedTokens).toBe(
       promptOnlyTokens +
-        estimateTokens(formatImplementerSystemPreamble(languageContext, 'direct', context.dir)),
+        estimateTokens(buildImplementerSystemPreamble(languageContext, 'direct', context.dir)),
     );
 
     // The equality above already pins the estimate to the prompt actually sent, so this

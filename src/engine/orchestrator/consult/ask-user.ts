@@ -1,5 +1,9 @@
 import { DECIDE_YOURSELF_ANSWER } from '../../../core/recovery/decide.js';
-import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
+import {
+  type ClarificationQuestion,
+  type PlannerReplyAnswer,
+  questionDefault,
+} from '../../../core/schemas/question.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { PlannerConversation } from '../../../core/schemas/workflow/state.js';
 import { briefCorrections } from '../../../core/state/lineage.js';
@@ -48,8 +52,7 @@ function askUserQuestion(
 }
 
 function defaultAnswer(question: ClarificationQuestion): string {
-  if (typeof question.default === 'boolean') return question.default ? 'Yes' : 'No';
-  return question.default ?? DECIDE_YOURSELF_ANSWER;
+  return questionDefault(question) ?? DECIDE_YOURSELF_ANSWER;
 }
 
 export function consultReplyAnswer(

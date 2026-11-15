@@ -7,7 +7,7 @@ import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { type AppError, error, matches } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact/secrets.js';
-import { toTokenDelta } from '../calls/projection.js';
+import { runnerCallTokenDelta } from '../calls/usage/normalize.js';
 import { accumulateTokenUsage } from '../calls/usage/accumulate.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from '../planners/require-completed-call.js';
@@ -180,8 +180,8 @@ function seatProtocolError(
 }
 
 function totalUsage(first: RunnerCallResult, repair: RunnerCallResult): TokenDelta | null {
-  const repairUsage = toTokenDelta(repair.usage);
-  const firstUsage = toTokenDelta(first.usage);
+  const repairUsage = runnerCallTokenDelta(repair.usage);
+  const firstUsage = runnerCallTokenDelta(first.usage);
   return repairUsage === null ? firstUsage : accumulateTokenUsage(firstUsage, repairUsage);
 }
 
@@ -233,14 +233,14 @@ export async function requestTyped<T>(
     return {
       value: firstCheck.value,
       nativeSessionId: first.nativeSessionId,
-      usage: toTokenDelta(first.usage),
+      usage: runnerCallTokenDelta(first.usage),
     };
   }
 
   if (seat === 'implementer') {
     return {
       error: seatProtocolError(seat, 1, transport, firstCheck),
-      usage: toTokenDelta(first.usage),
+      usage: runnerCallTokenDelta(first.usage),
     };
   }
 

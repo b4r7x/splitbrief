@@ -38,8 +38,6 @@ import { assertNever } from '../../utils/type-guards.js';
 import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev/cache.js';
 import { createOpaqueIdFactory } from '../../utils/opaque-id.js';
 
-export type { DetectionProjection } from './types.js';
-
 export interface DetectionSourceContexts {
   readonly readiness?: string | undefined;
   readonly modelsDev?: string | undefined;

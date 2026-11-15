@@ -2,6 +2,7 @@ import {
   HookCommandResponseSchema,
   type HookEntry,
   type HookCommandEntry,
+  type HookOutcome,
   type HooksConfig,
   type HookCommandResponse,
 } from '../../core/schemas/hooks.js';
@@ -9,7 +10,7 @@ import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import { processError } from '../../lib/process/errors.js';
 import { isENOENT } from '../../utils/errno.js';
 import { startsWithEventPlaceholder, substituteEventFields } from './substitute.js';
-import type { HookOutcome, HookContext, HookPayload } from './types.js';
+import type { HookContext, HookPayload } from './types.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import { isRecord } from '../../utils/type-guards.js';

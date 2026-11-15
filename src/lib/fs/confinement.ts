@@ -11,12 +11,6 @@ export const pathConfinementError = {
     error('path-confined-escape', `unsafe path: path escapes root directory: ${relativePath}`, {
       relativePath,
     }),
-  controlPlane: (relativePath: string) =>
-    error(
-      'path-confined-control-plane',
-      `unsafe path: refusing to write into control plane (.git/.splitbrief): ${relativePath}`,
-      { relativePath },
-    ),
   hardlink: (relativePath: string) =>
     error(
       'path-confined-hardlink',

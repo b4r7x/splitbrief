@@ -4,12 +4,15 @@ import { assertModelWritablePathConfined } from '../../../core/scope/control-pla
 import { computeDiff } from '../../../utils/diff.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { readConfinedEntry } from '../../orchestrator/approval/file-snapshots/entry/read.js';
-import type { AppliedFile, BundleApplyResult, BundleBaseline } from './contract.js';
+import { shrinkRefusal } from '../rewrite-guard.js';
+import {
+  compareBundlePaths,
+  type AppliedFile,
+  type BundleApplyResult,
+  type BundleBaseline,
+} from './contract.js';
 import { compareBundleBaseline } from './baseline.js';
 import type { FileBundleCandidate } from './parse.js';
-
-const MIN_GUARDED_BASELINE_LINES = 5;
-const MAX_WHOLE_FILE_SHRINK = 0.5;
 
 export interface ApplyFileBundleInput {
   projectDir: string;
@@ -29,17 +32,8 @@ export interface ApplyFileBundleInput {
   signal?: AbortSignal | undefined;
 }
 
-function byPath(left: string, right: string): number {
-  if (left < right) return -1;
-  return left > right ? 1 : 0;
-}
-
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function countNonEmptyLines(content: string): number {
-  return content.split('\n').filter((line) => line.trim().length > 0).length;
 }
 
 /**
@@ -50,9 +44,9 @@ function countNonEmptyLines(content: string): number {
  */
 function implausibleRewrite(baseline: BundleBaseline, content: string): string | undefined {
   if (baseline.kind !== 'text') return undefined;
-  const had = countNonEmptyLines(baseline.content);
-  const kept = countNonEmptyLines(content);
-  if (had < MIN_GUARDED_BASELINE_LINES || kept >= had * MAX_WHOLE_FILE_SHRINK) return undefined;
+  const refusal = shrinkRefusal(baseline.content, content);
+  if (refusal === undefined) return undefined;
+  const { kept, had } = refusal;
   return [
     `Refusing to overwrite ${baseline.path}: the response keeps ${kept} of ${had} non-empty lines, which is not a plausible whole-file rewrite.`,
     'Return the complete content of every declared file, or ask for the brief to be split so each file fits one response.',
@@ -69,7 +63,7 @@ function untouchedPaths(
   return baselines
     .map((baseline) => baseline.path)
     .filter((path) => !settled.has(path))
-    .sort(byPath);
+    .sort(compareBundlePaths);
 }
 
 type WriteOutcome =
@@ -173,9 +167,9 @@ function appliedFile(input: {
  */
 export async function applyFileBundle(input: ApplyFileBundleInput): Promise<BundleApplyResult> {
   const { projectDir, baselines, candidates, callId, signal } = input;
-  const noops = [...input.noops].sort(byPath);
+  const noops = [...input.noops].sort(compareBundlePaths);
   const baselineByPath = new Map(baselines.map((baseline) => [baseline.path, baseline]));
-  const ordered = [...candidates].sort((left, right) => byPath(left.path, right.path));
+  const ordered = [...candidates].sort((left, right) => compareBundlePaths(left.path, right.path));
   const candidatePaths = ordered.map((candidate) => candidate.path);
 
   const rejected = (

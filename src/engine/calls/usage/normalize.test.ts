@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { coverage } from '#testing/helpers/usage-coverage.js';
-import { BackendTokenUsageSchema, normalizeRunnerCallUsage, toTokenDelta } from './normalize.js';
+import {
+  BackendTokenUsageSchema,
+  normalizeRunnerCallUsage,
+  runnerCallTokenDelta,
+  toTokenDelta,
+  toTokenDeltaFromRunnerCallUsage,
+} from './normalize.js';
 
 describe('normalizeRunnerCallUsage', () => {
   it('normalizes Anthropic-style usage with cache reads and cache creation', () => {
@@ -303,5 +309,31 @@ describe('BackendTokenUsageSchema', () => {
       true,
     );
     expect(BackendTokenUsageSchema.safeParse({ input_tokens: 1.25 }).success).toBe(false);
+  });
+});
+
+describe('runnerCallTokenDelta', () => {
+  it('gives null for a call with no usage', () => {
+    expect(runnerCallTokenDelta(null)).toBeNull();
+  });
+
+  it('projects a usage like toTokenDeltaFromRunnerCallUsage', () => {
+    const usage = {
+      inputTokens: 100,
+      outputTokens: 40,
+      cacheReadTokens: 25,
+      cacheCreateTokens: 10,
+      reasoningTokens: 5,
+      counterCoverage: coverage({
+        input: 'reported',
+        output: 'reported',
+        cacheRead: 'reported',
+        cacheCreate: 'reported',
+        reasoning: 'reported',
+      }),
+      providerTotals: { output: 45 },
+    };
+
+    expect(runnerCallTokenDelta(usage)).toEqual(toTokenDeltaFromRunnerCallUsage(usage));
   });
 });

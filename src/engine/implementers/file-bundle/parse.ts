@@ -1,6 +1,11 @@
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
 import type { RunnerCallStatus } from '../../calls/types.js';
-import { FileBundleSchema, type BundleBaseline, type FileBundleEntry } from './contract.js';
+import {
+  compareBundlePaths,
+  FileBundleSchema,
+  type BundleBaseline,
+  type FileBundleEntry,
+} from './contract.js';
 
 export const FILE_BUNDLE_MAX_FILE_BYTES = 1024 * 1024;
 export const FILE_BUNDLE_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -39,11 +44,6 @@ export type ParseFileBundleResult =
       code: 'invalid-bundle' | 'unsafe-target' | 'output-limit' | 'no-changes';
       error: string;
     };
-
-function byPath(left: string, right: string): number {
-  if (left < right) return -1;
-  return left > right ? 1 : 0;
-}
 
 function rejected(
   code: 'invalid-bundle' | 'unsafe-target' | 'output-limit' | 'no-changes',
@@ -202,11 +202,11 @@ export function parseFileBundle(input: ParseFileBundleInput): ParseFileBundleRes
     return rejected('no-changes', 'every declared target already holds the response content');
   }
 
-  candidates.sort((left, right) => byPath(left.path, right.path));
+  candidates.sort((left, right) => compareBundlePaths(left.path, right.path));
   return {
     kind: 'parsed',
     candidates,
-    noops: noops.sort(byPath),
-    untouched: [...targets.keys()].filter((path) => !seen.has(path)).sort(byPath),
+    noops: noops.sort(compareBundlePaths),
+    untouched: [...targets.keys()].filter((path) => !seen.has(path)).sort(compareBundlePaths),
   };
 }

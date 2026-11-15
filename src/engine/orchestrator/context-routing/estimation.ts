@@ -1,5 +1,5 @@
 import { estimateTokens } from '../../../core/tokens/estimate.js';
-import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from '../../spec/prompts/system.js';
+import { buildImplementerSystemPreamble } from '../../spec/prompts/system.js';
 import { formatTaskPrompt } from '../../spec/prompts/task.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
@@ -25,7 +25,7 @@ export function estimateFormattedTaskPromptTokens(
   // Routing runs before the isolation directory exists; the project path stands in for its length.
   return (
     estimateTokens(
-      formatImplementerSystemPreamble(
+      buildImplementerSystemPreamble(
         languageContext,
         writesFiles,
         opts.context.dir,

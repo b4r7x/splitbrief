@@ -1,7 +1,7 @@
 import { relative, resolve } from 'node:path';
 import { type ActionClass, PROTECTED_ACTION_CLASSES } from '../../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../../core/approval/types.js';
-import { SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { CONTROL_PLANE_SEGMENTS } from '../../../core/scope/control-plane.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
 import { isInsideRoot, isPathConfined } from '../../../lib/fs/confinement.js';
 import { matchesGlob } from '../../../utils/path/patterns.js';
@@ -86,8 +86,6 @@ function isKnownPackagePath(filePath: string): boolean {
   const name = normalized.split('/').at(-1) ?? normalized;
   return PACKAGE_MANIFEST_FILES.has(name);
 }
-
-const CONTROL_PLANE_SEGMENTS = new Set(['.git', SPLITBRIEF_DIR]);
 
 function isControlPlanePath(filePath: string): boolean {
   return CONTROL_PLANE_SEGMENTS.has(filePath.split('/')[0] ?? '');

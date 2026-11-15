@@ -116,15 +116,6 @@ export type ParsedLine =
       isHeartbeat?: boolean | undefined;
     };
 
-/**
- * Compatibility return shape for legacy runner adapters.
- * New typed call records should use `RunnerCallResult` from `src/engine/calls/types.ts`.
- */
-export interface InvokeResult {
-  text: string;
-  usage: TokenDelta | null;
-}
-
 export interface RunnerRuntime {
   isAvailable(): Promise<boolean>;
   getVersion(): Promise<string | null>;

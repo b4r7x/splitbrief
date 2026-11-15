@@ -4,7 +4,7 @@ import { estimateBundleOutputReserve } from '../../providers/api/budget.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
-import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from '../../spec/prompts/system.js';
+import { buildImplementerSystemPreamble } from '../../spec/prompts/system.js';
 import { formatTaskPrompt } from '../../spec/prompts/task.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProfileFit, RouteTaskOptions } from './types.js';
@@ -66,7 +66,7 @@ export function assessProfile(
   // Routing runs before the isolation directory exists; the project path stands in for its length.
   const estimatedTokens =
     estimateTokens(
-      formatImplementerSystemPreamble(
+      buildImplementerSystemPreamble(
         languageContext,
         writesFiles,
         opts.context.dir,

@@ -88,8 +88,7 @@ Use an existing runner kind only (`cli`, `api`, `shell`, `agent`). Do not add a 
    - Add the `case '<kind>':` branch in both `loadPlanner()` and `createImplementer()`
 6. Declare a `capabilities` struct — the orchestrator reads capability flags, never backend identity
 7. Set `backendKind` in the base config and normalize backend output through the runner-call contract
-   - Prefer emitting `RunnerCallEvent` / `RunnerCallResult` directly
-   - If the backend still returns `{ text, usage }`, keep that as a temporary compatibility projection only
+   - Emit `RunnerCallEvent` / `RunnerCallResult` directly
    - Preserve terminal status, partial output, session IDs, tool-use, artifacts, warnings, and usage semantics
 8. Write colocated tests: `src/engine/planners/<name>.test.ts`, `src/engine/implementers/<name>.test.ts`
 
