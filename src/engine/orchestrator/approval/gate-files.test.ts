@@ -18,7 +18,7 @@ import type {
 } from '../../../core/approval/types.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { persistApprovalEvidence } from '../evidence/persistence.js';
+import { persistApprovalEvidence } from '../evidence/decisions.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { TaskSpecSchema } from '../../../core/schemas/plan.js';
 import { taskFromSpec } from '../../spec/plan/tasks.js';

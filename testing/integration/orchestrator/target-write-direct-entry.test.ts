@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { getChangedFilesSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/capture.js';
-import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/task.js';
+import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/target-writes.js';
 import { runImplementation } from '../../../src/engine/orchestrator/task/run-implementation.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';

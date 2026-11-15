@@ -22,11 +22,8 @@ import type { ImplementerOptions, RetryOptions } from '../../implementers/types.
 import { createQueueHandler } from '../queue/submit.js';
 import { enqueueUserMessage } from '../queue/enqueue.js';
 import { createWriteSequencer } from '../../../utils/serial-executor.js';
-import {
-  recordApiApplyEvidence,
-  recordApiRevertEvidence,
-  recordedApiCreatedPaths,
-} from '../evidence/task.js';
+import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
+import { recordApiApplyEvidence, recordApiRevertEvidence } from '../evidence/api-apply.js';
 import { withContinuationLoop } from '../continuation/loop.js';
 import { addUsageAndSave } from '../state-ops/usage.js';
 import { recordBriefCorrection } from '../state-ops/corrections.js';

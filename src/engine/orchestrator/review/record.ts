@@ -21,7 +21,7 @@ import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format/time.js';
 import type { EngineEventOf, EventBus } from '../../events/types.js';
 import { NULL_CACHE } from '../../providers/model/runtime-snapshot.js';
-import { persistReviewEvidence } from '../evidence/persistence.js';
+import { persistReviewEvidence } from '../evidence/decisions.js';
 import { recordFinalReviewEvidence } from '../evidence/reporting.js';
 import { writeReviewPacket } from '../evidence/review-packet/build.js';
 import type { RunReviewScope } from '../evidence/review-packet/run-scope.js';

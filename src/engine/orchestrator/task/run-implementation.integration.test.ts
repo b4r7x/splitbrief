@@ -26,7 +26,7 @@ import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { revertedDir } from '../../../core/paths.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { recordedApiCreatedPaths } from '../evidence/task.js';
+import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
 import { makeImplementerRetryInvoker } from '../escalation/make-implementer-retry-invoker.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { addUsageAndSave } from '../state-ops/usage.js';

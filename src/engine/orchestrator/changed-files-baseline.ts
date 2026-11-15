@@ -17,7 +17,7 @@ import type { ChangedFilesSnapshot } from '../../core/schemas/workflow/changed-f
 import { readProjectSymlink } from './approval/file-snapshots/entry/link.js';
 import { listWorkspaceEntries } from '../snapshots/files.js';
 import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/changed-since.js';
-import { recordedTargetOutput } from './evidence/task.js';
+import { recordedTargetOutput } from './evidence/target-writes.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from '../../core/gitignore-bookkeeping.js';
 

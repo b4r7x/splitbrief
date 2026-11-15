@@ -6,7 +6,7 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { deserializeChangedFilesBaseline } from '../changed-files-baseline.js';
-import { getOrCreateLedger } from '../evidence/persistence.js';
+import { getOrCreateLedger } from '../evidence/ledger.js';
 import { currentCandidateId } from '../evidence/record-checks.js';
 import type { CheckRunResult } from './checks/types.js';
 

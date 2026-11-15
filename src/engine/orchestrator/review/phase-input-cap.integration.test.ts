@@ -43,7 +43,7 @@ import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
 import { resolveRunUniverse } from '../evidence/review-packet/sections-io.js';
-import { getOrCreateLedger } from '../evidence/persistence.js';
+import { getOrCreateLedger } from '../evidence/ledger.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { runFinalReviewPhase } from './phase.js';

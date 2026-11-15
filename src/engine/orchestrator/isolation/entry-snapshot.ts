@@ -25,7 +25,7 @@ import {
   restoreError,
 } from '../approval/file-snapshots/restore.js';
 import { retentionError } from './retention.js';
-import { recordApiRevertEvidence } from '../evidence/task.js';
+import { recordApiRevertEvidence } from '../evidence/api-apply.js';
 
 /**
  * Snapshots for a directory git cannot describe on its own — a staged copy, or a

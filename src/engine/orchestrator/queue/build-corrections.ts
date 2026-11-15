@@ -5,7 +5,7 @@ import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
-import { persistApiApplyEvidence } from '../evidence/persistence.js';
+import { persistApiApplyEvidence } from '../evidence/api-apply.js';
 import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
 import { recordBriefCorrection } from '../state-ops/corrections.js';
 import { commitQueueMessagesDrained, readQueueForPrompt } from './drain.js';

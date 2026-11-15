@@ -23,7 +23,7 @@ import type { BundleApplyResult } from '../../src/engine/implementers/file-bundl
 import type { getChangedFilesSnapshot } from '../../src/engine/orchestrator/approval/file-snapshots/capture.js';
 import { getChangedFilesSinceSnapshot } from '../../src/engine/orchestrator/approval/file-snapshots/changed-since.js';
 import { createStagedProject } from '../../src/engine/orchestrator/approval/staged-project/create.js';
-import { recordApiApplyEvidence } from '../../src/engine/orchestrator/evidence/task.js';
+import { recordApiApplyEvidence } from '../../src/engine/orchestrator/evidence/api-apply.js';
 import { runRetryStep } from '../../src/engine/orchestrator/escalation/step.js';
 import { makeTask } from './factories/task.js';
 import { makeImplState } from './factories/workflow-state.js';

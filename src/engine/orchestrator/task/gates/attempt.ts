@@ -15,7 +15,7 @@ import type { WorkflowContext } from '../../types.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { GateDecision } from '../../approval/types.js';
 import { publishError } from '../../publish/notice.js';
-import { persistApprovalEvidence, persistRejectionEvidence } from '../../evidence/persistence.js';
+import { persistApprovalEvidence, persistRejectionEvidence } from '../../evidence/decisions.js';
 import { buildApprovalDeniedRecoveryIssue } from '../../recovery/builders/approval.js';
 import { parkStoppedRun, raisePendingRecovery } from '../../state-ops/halts.js';
 import { resolveDependsOnFiles } from '../resolve-deps.js';

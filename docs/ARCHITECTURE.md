@@ -450,9 +450,13 @@ export function recordFinalReviewEvidence(input): EvidenceLedger
 export function buildRejectionContext(ledger): string
 export function buildEvidenceSummary(ledger): NonNullable<Summary['evidenceSummary']>
 
-// persistence.ts
+// ledger.ts
 export function getOrCreateLedger(input): EvidenceLedger
+
+// persistence.ts
 export async function persistTaskEvidence(input): Promise<void>
+
+// decisions.ts
 export function persistRejectionEvidence(input): void
 export function persistApprovalEvidence(input): void
 ```

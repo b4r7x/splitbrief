@@ -1,14 +1,14 @@
-import { chmodSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { sessionDir } from '../../../core/paths.js';
-import { recordedApiCreatedPaths } from './task.js';
-import { persistApiApplyEvidence, persistReviewEvidence } from './persistence.js';
+import { EvidenceLedgerSchema } from '../../../core/schemas/evidence.js';
+import { persistApiApplyEvidence, recordApiApplyEvidence } from './api-apply.js';
+import { recordedApiCreatedPaths } from './target-writes.js';
 
 const directories: string[] = [];
 
@@ -77,49 +77,70 @@ describe('persistApiApplyEvidence', () => {
   });
 });
 
-describe('evidence a run cannot save', () => {
-  it('warns in plain words with the cause and the file, and the run goes on', () => {
-    const ref = setupProject(directories);
+describe('recordApiApplyEvidence', () => {
+  it('keeps one entry per path, a later receipt replacing the earlier one', () => {
     const task = makeTask();
-    const state = makeImplState([task]);
-    const { bus, events } = makeBusRecorder();
-    const wctx = { ...ref, bus };
-    const folder = sessionDir(ref.projectDir, ref.sessionId);
-    chmodSync(folder, 0o500);
-    try {
-      persistApiApplyEvidence({
-        wctx,
-        state,
-        task,
-        workspacePath: '/tmp/workspace-a',
-        result: {
-          callId: 'create',
-          status: 'applied',
-          candidatePaths: [],
-          applied: [],
-          noops: [],
-          untouched: [],
-        },
-      });
-      persistReviewEvidence({
-        wctx,
-        state,
-        review: {
-          scope: 'final',
-          cycle: 1,
-          outcome: 'pass',
-          blocking: [],
-          at: '2026-10-23T00:00:00.000Z',
-        },
-      });
-    } finally {
-      chmodSync(folder, 0o700);
-    }
+    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
+    const first = recordApiApplyEvidence({
+      ledger,
+      task,
+      result: {
+        callId: 'call-1',
+        status: 'applied',
+        candidatePaths: ['src/a.ts', 'src/b.ts'],
+        applied: [
+          {
+            path: 'src/a.ts',
+            action: 'modify',
+            beforeSha256: 'a0',
+            afterSha256: 'a1',
+            afterMode: 0o644,
+            diff: '',
+            linesAdded: 1,
+            linesRemoved: 1,
+          },
+          {
+            path: 'src/b.ts',
+            action: 'modify',
+            beforeSha256: 'b0',
+            afterSha256: 'b1',
+            afterMode: 0o644,
+            diff: '',
+            linesAdded: 1,
+            linesRemoved: 1,
+          },
+        ],
+        noops: [],
+        untouched: [],
+      },
+    });
+    const second = recordApiApplyEvidence({
+      ledger: first,
+      task,
+      result: {
+        callId: 'call-2',
+        status: 'applied',
+        candidatePaths: ['src/a.ts'],
+        applied: [
+          {
+            path: 'src/a.ts',
+            action: 'modify',
+            beforeSha256: 'a1',
+            afterSha256: 'a2',
+            afterMode: 0o644,
+            diff: '',
+            linesAdded: 1,
+            linesRemoved: 1,
+          },
+        ],
+        noops: [],
+        untouched: [],
+      },
+    });
 
-    const line = `Could not save the run evidence: permission denied · .splitbrief/sessions/${ref.sessionId}/evidence.json`;
-    expect(events.flatMap((event) => (event.type === 'warning' ? [event.message] : []))).toEqual([
-      line,
-      line,
+    expect(EvidenceLedgerSchema.parse(second).tasks[0]?.promotedFiles).toEqual([
+      { path: 'src/b.ts', sha256: 'b1', mode: 0o644 },
+      { path: 'src/a.ts', sha256: 'a2', mode: 0o644 },
     ]);
   });
 });

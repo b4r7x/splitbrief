@@ -1,18 +1,15 @@
 import { existsSync } from 'node:fs';
-import { isTaskSettled, type Task, type TaskId } from '../../../core/schemas/task.js';
+import { isTaskSettled, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowContext } from '../types.js';
-import { publishWarning } from '../publish/notice.js';
 import { publishError } from '../publish/notice.js';
 import { raisePendingRecovery } from '../state-ops/halts.js';
 import { createRecoveryIssue } from '../recovery/builders/issue.js';
 import { nowIso } from '../../../utils/format/time.js';
-import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
-import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { isOwnRunWorkspace } from '../isolation/worktree/remove.js';
 import {
-  recordApiApplyEvidence,
   recordLocalTaskEvidence,
   recordRemainderEvidence,
   recordRetryOrEscalationEvidence,
@@ -21,54 +18,17 @@ import {
   unbookedFiles,
 } from './task.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
-import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
-import type { ActionClass, TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
-import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import type { GateDecision } from '../approval/types.js';
-import type { EvidenceLedger, EvidenceReview } from '../../../core/schemas/evidence.js';
+import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
-import { EVIDENCE_FILE, revertedDir, sessionDir } from '../../../core/paths.js';
+import { revertedDir, sessionDir } from '../../../core/paths.js';
 import { replacedFilesSavedIn } from '../../../core/runtime/commands/messages.js';
-import { sessionFileFailure } from '../../../core/sessions/errors.js';
-import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import { checkSessionLockStatus } from '../../../core/sessions/lock/status.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
 import { changedSinceAtRest } from '../../snapshots/run/rest-changes.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
-
-/** A lost evidence write warns in plain words and never fails the step that made it. */
-function warnEvidenceNotSaved(
-  wctx: Pick<WorkflowContext, 'sessionId' | 'bus'>,
-  phase: WorkflowState['phase'],
-  err: unknown,
-): void {
-  publishWarning({
-    bus: wctx.bus,
-    phase,
-    message: sessionFileFailure(
-      'Could not save the run evidence',
-      sessionRelativePath(wctx.sessionId, EVIDENCE_FILE),
-      err,
-    ),
-  });
-}
-
-export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
-  const { ref, state } = opts;
-  const existing = readEvidenceLedger(ref);
-  const briefHash = hashTaskBrief(state.tasks);
-  return (
-    existing ??
-    createEvidenceLedger({
-      sessionId: ref.sessionId,
-      feature: state.feature,
-      tasks: state.tasks,
-      briefHash,
-    })
-  );
-}
+import { getOrCreateLedger, warnEvidenceNotSaved } from './ledger.js';
 
 export async function persistTaskEvidence(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
@@ -226,34 +186,6 @@ function closingLineageBrief(
     .at(-1);
 }
 
-/**
- * §6: the bundle's receipt is written before the attempt's own outcome is
- * handled, so a brief that stops mid-application still leaves the applied prefix
- * on the record. A write that fails is a warning rather than a halt: the next
- * attempt then finds no proof of ownership and parks, which is the safe answer.
- */
-export function persistApiApplyEvidence(opts: {
-  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
-  state: WorkflowState;
-  task: Task;
-  result: BundleApplyResult;
-  workspacePath: string;
-}): void {
-  const { wctx, state, task, result } = opts;
-  try {
-    mutateEvidenceLedger(wctx, (existing) =>
-      recordApiApplyEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref: wctx, state }),
-        task,
-        result,
-        workspacePath: opts.workspacePath,
-      }),
-    );
-  } catch (err) {
-    warnEvidenceNotSaved(wctx, state.phase, err);
-  }
-}
-
 /** A checkout attempt is put back before recovery; an isolated attempt keeps its partial output. */
 export async function raiseApiApplyRecovery(opts: {
   wctx: WorkflowContext;
@@ -298,77 +230,4 @@ export async function raiseApiApplyRecovery(opts: {
       createdAt: nowIso(),
     }),
   );
-}
-
-export function persistRejectionEvidence(opts: {
-  wctx: WorkflowContext;
-  state: WorkflowState;
-  reason: string;
-  actionClass: ActionClass;
-  tier: 'sticky' | 'confirm';
-  actionDescription: string;
-  taskId?: TaskId | undefined;
-}): void {
-  const { wctx, state, reason, actionClass, tier, actionDescription, taskId } = opts;
-  try {
-    mutateEvidenceLedger(wctx, (existing) => {
-      const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
-      return recordRejectionEvidence({
-        ledger,
-        tier,
-        actionClass,
-        actionDescription,
-        ...(taskId !== undefined && { taskId }),
-        reason,
-      });
-    });
-  } catch {
-    // non-fatal: rejection evidence loss is acceptable vs crashing
-  }
-}
-
-/** Appends one review to the ledger; a lost entry warns and never fails the review. */
-export function persistReviewEvidence(opts: {
-  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
-  state: WorkflowState;
-  review: EvidenceReview;
-}): void {
-  const { wctx, state, review } = opts;
-  try {
-    mutateEvidenceLedger(wctx, (existing) => {
-      const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
-      return { ...ledger, reviews: [...(ledger.reviews ?? []), review], generatedAt: nowIso() };
-    });
-  } catch (err) {
-    warnEvidenceNotSaved(wctx, state.phase, err);
-  }
-}
-
-export function persistApprovalEvidence(opts: {
-  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'config' | 'bus'>;
-  state: WorkflowState;
-  decision: GateDecision;
-  taskId?: TaskId | undefined;
-}): void {
-  const { wctx, state, decision, taskId } = opts;
-  const confirmApprovals = decision.confirmApprovals;
-  if (!confirmApprovals || confirmApprovals.length === 0) return;
-  try {
-    mutateEvidenceLedger(wctx, (existing) => {
-      let ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
-      for (const approval of confirmApprovals) {
-        ledger = recordApprovalEvidence({
-          ledger,
-          tier: approval.tier,
-          actionClass: approval.actionClass,
-          actionDescription: approval.actionDescription,
-          ...(taskId !== undefined && { taskId }),
-          reason: approval.reason,
-        });
-      }
-      return ledger;
-    });
-  } catch (err) {
-    warnEvidenceNotSaved(wctx, state.phase, err);
-  }
 }

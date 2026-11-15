@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/task.js';
+import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/target-writes.js';
 import {
   applyTargetBundle,
   cleanupTargetWriteFixtures,

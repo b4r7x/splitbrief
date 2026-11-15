@@ -5,7 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import { planRevisedTurn } from '../../spec/prompts/plan-session.js';
 import { planConfirmations } from '../approval/confirm.js';
-import { persistApprovalEvidence } from '../evidence/persistence.js';
+import { persistApprovalEvidence } from '../evidence/decisions.js';
 import { publishPlannerStatus } from '../publish/runner.js';
 import { publishTasksPlanned } from '../publish/task.js';
 import { formatDrainedMessages } from '../queue/prompt.js';

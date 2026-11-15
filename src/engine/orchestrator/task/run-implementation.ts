@@ -11,7 +11,7 @@ import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation/loop.js';
 import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-files.js';
-import { persistApprovalEvidence } from '../evidence/persistence.js';
+import { persistApprovalEvidence } from '../evidence/decisions.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
@@ -21,7 +21,7 @@ import { unfinishedGuidance } from '../escalation/consult-guidance.js';
 import { addUsageAndSave } from '../state-ops/usage.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { settleThrownCall } from '../isolation/retention.js';
-import { recordedApiCreatedPaths } from '../evidence/task.js';
+import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
 import {
   absorbBuildCorrections,
   buildCorrectionInput,

@@ -21,7 +21,8 @@ import { sha256Hex } from '../../../utils/sha256.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { recordApiApplyEvidence, recordedApiCreatedPaths } from '../evidence/task.js';
+import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
+import { recordApiApplyEvidence } from '../evidence/api-apply.js';
 import {
   captureWorkspaceSnapshot,
   entryStoreDir,

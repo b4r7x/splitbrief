@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { captureBundleBaseline } from '../../../src/engine/implementers/file-bundle/baseline.js';
 import { applyFileBundle } from '../../../src/engine/implementers/file-bundle/apply.js';
-import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/task.js';
+import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/target-writes.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import {
   cleanupTargetWriteFixtures,

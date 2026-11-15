@@ -37,7 +37,7 @@ import { applyConsultAnswer } from '../consult/apply.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
-import { getOrCreateLedger } from '../evidence/persistence.js';
+import { getOrCreateLedger } from '../evidence/ledger.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { resolveRunReviewScope } from '../evidence/review-packet/run-scope.js';
 import { createSnapshot } from '../../snapshots/create.js';

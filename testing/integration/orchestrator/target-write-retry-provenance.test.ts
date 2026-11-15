@@ -8,7 +8,7 @@ import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js
 import { createImplementerBase } from '../../../src/engine/implementers/pipeline/run.js';
 import { getChangedFilesSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/capture.js';
 import { makeImplementerRetryInvoker } from '../../../src/engine/orchestrator/escalation/make-implementer-retry-invoker.js';
-import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/task.js';
+import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/target-writes.js';
 import { buildLanguageContext } from '../../../src/engine/spec/prompts/language-context.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import {

@@ -19,8 +19,8 @@ import {
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { checkEntries } from './task.js';
 import type { CheckRunResult } from '../validation/checks/types.js';
+import type { EvidenceCheckEntry } from '../../../core/schemas/evidence.js';
 
 export async function currentCandidateId(
   workspaceDir: string,
@@ -94,4 +94,42 @@ export async function recordCheckRuns(input: RecordCheckRunsInput): Promise<void
       err,
     );
   }
+}
+
+type CheckEntryMeta = {
+  workspaceSnapshotId?: string | undefined;
+};
+
+function runCheckEntry(run: CheckRunResult, meta: CheckEntryMeta, ts: string): EvidenceCheckEntry {
+  const entry: EvidenceCheckEntry = { id: run.checkId, status: run.status, ts };
+  if (run.command !== undefined) entry.command = run.command;
+  if (run.exitCode !== undefined) entry.exitCode = run.exitCode;
+  if (run.output.trim() !== '') entry.output = run.output;
+  if (run.reusedAt !== undefined) entry.reusedAt = run.reusedAt;
+  if (run.base !== undefined) {
+    entry.base = {};
+    if (run.base.exitCode !== undefined) entry.base.exitCode = run.base.exitCode;
+    if (run.base.output.trim() !== '') entry.base.output = run.base.output;
+  }
+  if (run.preExisting !== undefined && run.preExisting.length > 0) {
+    entry.preExisting = [...run.preExisting];
+  }
+  if (run.artifacts !== undefined && run.artifacts.length > 0) {
+    entry.artifacts = run.artifacts.map((artifact) => ({
+      path: artifact.path,
+      sha256: artifact.sha256,
+    }));
+  }
+  if (meta.workspaceSnapshotId !== undefined) entry.workspaceSnapshotId = meta.workspaceSnapshotId;
+  return entry;
+}
+
+export function checkEntries(input: {
+  runs?: readonly CheckRunResult[] | undefined;
+  workspaceSnapshotId?: string | undefined;
+  ts?: string | undefined;
+}): EvidenceCheckEntry[] {
+  const ts = input.ts ?? nowIso();
+  const meta: CheckEntryMeta = { workspaceSnapshotId: input.workspaceSnapshotId };
+  return (input.runs ?? []).map((run) => runCheckEntry(run, meta, ts));
 }

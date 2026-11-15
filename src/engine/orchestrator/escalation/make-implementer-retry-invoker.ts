@@ -11,7 +11,7 @@ import {
   buildCorrectionInput,
   runWithCorrectionPasses,
 } from '../queue/build-corrections.js';
-import { recordedApiCreatedPaths } from '../evidence/task.js';
+import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
 import { runSeatCall } from './seat/call.js';
 import { implementerSeatAttempt } from './seat/call.js';
 import type { RetryInvokeArgs, RetryInvokeResult } from './types.js';

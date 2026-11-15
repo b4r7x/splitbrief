@@ -1,6 +1,6 @@
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { withContinuationLoop } from '../continuation/loop.js';
-import { recordedApiCreatedPaths } from '../evidence/task.js';
+import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
 import { settleThrownCall } from '../isolation/retention.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { briefContinuation, changedDeclaredFiles } from '../kept-work.js';

@@ -19,7 +19,7 @@ import { createRunIsolation } from '../isolation/create.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { recordedApiCreatedPaths } from '../evidence/task.js';
+import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { captureBundleBaseline } from '../../implementers/file-bundle/baseline.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
