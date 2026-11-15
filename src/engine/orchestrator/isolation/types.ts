@@ -1,8 +1,15 @@
 import type { Config } from '../../../core/schemas/config.js';
+import type { IsolationStrategy } from '../../../core/schemas/enums.js';
+import type {
+  RetainedWorkspace,
+  WorkspaceOwner,
+} from '../../../core/schemas/retained-workspace.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
+import type { GitClient } from '../../../lib/git/client.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { AcquisitionBaseline } from '../approval/file-snapshots/entry/baseline.js';
+import type { createWorkspaceSandboxEnvs } from './sandbox-env.js';
 
 export type IsolationRole = 'planner' | 'implementer';
 
@@ -70,4 +77,48 @@ export type RunIsolation = {
     brief: AttemptBrief;
   }) => Promise<AttemptWorkspace>;
   dispose: () => Promise<void>;
+};
+
+export type RunIsolationOptions = {
+  projectDir: string;
+  sessionId: string;
+  strategy: IsolationStrategy;
+  onFallback: (reason: string) => void;
+  warningPublisher?: (message: string) => void;
+  /** `briefKept` counts the files a put-back of the brief still acts on. */
+  infoPublisher?: (row: { message: string; briefKept?: number | undefined }) => void;
+};
+
+/**
+ * What the open, the attempts, their put-backs and the dispose of one run isolation share, changed
+ * in place: each step reads or writes it while another one awaits.
+ */
+export type RunIsolationState = {
+  readonly opts: RunIsolationOptions;
+  readonly sandboxEnvs: ReturnType<typeof createWorkspaceSandboxEnvs>;
+  // Public retain/acquire calls still in flight. Disposal waits for them, so
+  // none of them can write ownership after it completes.
+  readonly inFlightOperations: Set<Promise<unknown>>;
+  fallbackReported: boolean;
+  /** The run's worktree; `abandoned` when the open fell back after it made the worktree. */
+  worktree: { dir: string; git: GitClient; abandoned: boolean } | null;
+  nodeModulesExcludeFile: string | null;
+  runWorkspace: RunWorkspace | undefined;
+  removeWorkspaceRoot: (() => void) | undefined;
+  location: RetainedWorkspace['location'] | undefined;
+  directory: RetainedWorkspace['directory'] | undefined;
+  owner: WorkspaceOwner | undefined;
+  retainedAttempt: RetainedWorkspace | null;
+  ownedWorkspace: IsolatedWorkspace | undefined;
+  openPromise: Promise<RunWorkspace> | undefined;
+  disposePromise: Promise<void> | undefined;
+  acquisitionQueue: Promise<unknown>;
+  // A worktree cleanup is asynchronous while its callers are not, so the work is
+  // chained here and awaited by everything that reads the worktree afterwards.
+  pendingCleanup: Promise<void>;
+  // A discard that failed left an attempt's files in the workspace; every later read refuses them.
+  cleanupFailure: Error | undefined;
+  // Disposal ends public acquisition authority: retain and acquire are refused
+  // from here on, and public cleanup must not touch canonical metadata again.
+  disposed: boolean;
 };
