@@ -1,9 +1,14 @@
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import type { ModelsDevCatalogCacheOutcome } from '../../providers/models-dev/cache.js';
-import type { DetectionLaneListener } from '../lane-channel.js';
+import type { DetectionLaneListener, LaneChannel } from '../lane-channel.js';
 import type { ModelsDevCatalogRequest, ModelsDevRefreshOutcome } from '../models-dev-lane.js';
 import type { ConfiguredProviderConnection } from '../provider-outcomes.js';
-import type { DetectionProjection, CliModelSnapshot, DetectionSourceOutcome } from '../types.js';
+import type {
+  DetectionCoordinator,
+  DetectionProjection,
+  CliModelSnapshot,
+  DetectionSourceOutcome,
+} from '../types.js';
 
 export interface DetectionSourceContexts {
   readonly readiness?: string | undefined;
@@ -75,4 +80,21 @@ export interface DetectionService {
    */
   refreshDetection(input?: DetectionRefreshInput): Promise<DetectionServiceResult>;
   shutdown(): Promise<void>;
+}
+
+interface PendingLoad {
+  readonly promise: Promise<DetectionServiceResult>;
+  readonly channel: LaneChannel;
+}
+
+/** Changed in place: a shutdown refuses saves while a load still awaits its lanes. */
+export interface DetectionServiceState {
+  clock: () => number;
+  readonly coordinator: DetectionCoordinator;
+  pendingSave: Promise<void>;
+  acceptingSaves: boolean;
+  nextGeneration: number;
+  readonly pendingLoads: Map<string, PendingLoad>;
+  readonly persistedRequestIds: Set<number>;
+  readonly modelsDevCacheOutcomes: Map<string, ModelsDevCatalogCacheOutcome>;
 }

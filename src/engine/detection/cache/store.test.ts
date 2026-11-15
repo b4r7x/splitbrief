@@ -21,7 +21,6 @@ import { detectionContextsForCurrentConfig } from '../store-publication.js';
 import type { DetectionCacheSnapshot, RememberedCliCatalog } from './schema.js';
 import type { ConfiguredProviderOutcome } from '../provider-outcomes.js';
 import {
-  invalidateCache,
   loadDetectionCacheSnapshot,
   loadRememberedCliRuntime,
   loadRememberedPresentationSnapshot,
@@ -1308,19 +1307,6 @@ describe('detection cache', () => {
         snapshot: cacheSnapshot(),
       }),
     ).resolves.toBeUndefined();
-  });
-
-  it('removes an existing cache only when explicitly invalidated', async () => {
-    await saveDetectionCache({ projectDir: tempDir, snapshot: cacheSnapshot() });
-    await expect(
-      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
-    ).resolves.not.toBeNull();
-
-    await invalidateCache(tempDir);
-
-    await expect(
-      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
-    ).resolves.toBeNull();
   });
 
   describe('remembered CLI runtime', () => {

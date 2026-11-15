@@ -50,9 +50,9 @@ async function readCache(projectDir: string): Promise<DetectionCache | null> {
   const raw = await readCacheRaw(projectDir);
   if (isLegacyPrivateCache(raw)) {
     try {
-      // Versions 1 and 2 persisted model inventories and diagnostics. Keep
-      // the same confined unlink boundary as explicit invalidation, without
-      // reading or propagating any of their private fields.
+      // Versions 1 and 2 persisted model inventories and diagnostics. Delete
+      // the file through the confined unlink, without reading or propagating
+      // any of their private fields.
       confinedUnlinkSync(projectDir, CACHE_RELATIVE_PATH);
     } catch {
       // A cache cleanup failure is non-critical and must not bypass confinement.
@@ -142,13 +142,5 @@ export async function saveDetectionCache(input: SaveDetectionCacheInput): Promis
     );
   } catch {
     // Cache write failure is non-critical.
-  }
-}
-
-export async function invalidateCache(projectDir: string): Promise<void> {
-  try {
-    confinedUnlinkSync(projectDir, CACHE_RELATIVE_PATH);
-  } catch {
-    // File doesn't exist or can't be deleted — non-critical.
   }
 }

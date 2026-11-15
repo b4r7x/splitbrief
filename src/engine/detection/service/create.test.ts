@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -20,7 +20,12 @@ import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { detectionContextKey } from '../types.js';
 import { scopedCliCatalogConnection } from '../cli-catalog-outcomes.js';
 import { createProductionDetectionDeps } from '../deps.js';
-import { loadRememberedSnapshot, saveDetectionCache } from '../cache/store.js';
+import * as cacheStore from '../cache/store.js';
+import {
+  loadDetectionCacheSnapshot,
+  loadRememberedSnapshot,
+  saveDetectionCache,
+} from '../cache/store.js';
 import { detectionStore } from '../../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import type { ModelsDevCatalogCacheOutcome } from '../../providers/models-dev/cache.js';
@@ -1200,22 +1205,6 @@ describe('createDetectionService', () => {
     expect(failed.checkedAt).not.toBe(first.snapshot.fetchedAt);
   });
 
-  it('invalidates explicitly without making manual refresh delete snapshots first', async () => {
-    const deps = makeDeps();
-
-    const first = await service.loadDetection({ deps, projectDir: tempDir });
-    await service.getPendingSave();
-    await service.invalidateDetection({ deps, projectDir: tempDir });
-    const afterInvalidation = await service.loadDetection({ deps, projectDir: tempDir });
-
-    expect(first.cliTools[0]?.installedVersion).toBe('gen-1');
-    expect(afterInvalidation.cliTools[0]?.installedVersion).toBe('gen-2');
-    expect(outcomes(afterInvalidation).readiness).toMatchObject({
-      kind: 'fresh',
-      origin: 'request',
-    });
-  });
-
   it('publishes each lane as it settles instead of behind the slowest one', async () => {
     const contexts = sourceContexts();
     const catalog: ModelsDevCatalog = {
@@ -1410,5 +1399,157 @@ describe('createDetectionService', () => {
       modelsDev: { kind: 'not-run', reason: 'uninitialized' },
       cliModels: { kind: 'not-run', reason: 'uninitialized' },
     });
+  });
+
+  it('stamps each load with its own generation and saves only the newer of two overlapping loads', async () => {
+    const contextsFor = (name: string): ResolvedDetectionSourceContexts => ({
+      readiness: sourceContext(`${name}-readiness`),
+      modelsDev: sourceContext(`${name}-models-dev`),
+      cliModels: sourceContext(`${name}-cli-models`),
+    });
+    const olderStarted = Promise.withResolvers<void>();
+    const olderGate = Promise.withResolvers<void>();
+    const older = makeDeps({
+      sourceContexts: contextsFor('older'),
+      detectAll: async () => {
+        olderStarted.resolve();
+        await olderGate.promise;
+        return { providers: [], cliTools: [makeCliTool({ installedVersion: 'older' })] };
+      },
+      fetchModelsDevCatalog: async () => {
+        await olderGate.promise;
+        return modelsDevOutcome({});
+      },
+      discoverAllCliTools: async () => {
+        await olderGate.promise;
+        return [];
+      },
+    });
+    const newer = makeDeps({
+      sourceContexts: contextsFor('newer'),
+      detectAll: async () => ({
+        providers: [],
+        cliTools: [makeCliTool({ installedVersion: 'newer' })],
+      }),
+    });
+
+    const olderLoad = service.loadDetection({ deps: older, projectDir: tempDir });
+    await olderStarted.promise;
+    const newerResult = await service.loadDetection({ deps: newer, projectDir: tempDir });
+    olderGate.resolve();
+    const olderResult = await olderLoad;
+    await service.getPendingSave();
+
+    expect(olderResult.generation).toBe(1);
+    expect(outcomes(olderResult)).toMatchObject({
+      readiness: { kind: 'not-run', reason: 'superseded' },
+      modelsDev: { kind: 'not-run', reason: 'superseded' },
+      cliModels: { kind: 'not-run', reason: 'superseded' },
+    });
+    expect(newerResult.generation).toBeGreaterThan(1);
+    expect(
+      await loadDetectionCacheSnapshot({
+        projectDir: tempDir,
+        contextKey: contextsFor('newer').readiness,
+      }),
+    ).toMatchObject({ cliTools: [{ installedVersion: 'newer' }] });
+  });
+
+  it('counts a started load and a manual refresh, not a load that joins one in flight, into the generation of a refresh without deps', async () => {
+    const deps = makeDeps();
+
+    await Promise.all([service.loadDetection({ deps }), service.loadDetection({ deps })]);
+    const afterLoad = await service.refreshDetection();
+    await service.refreshDetection({ deps });
+    const afterRefresh = await service.refreshDetection();
+
+    expect(afterLoad.generation).toBe(1);
+    expect(afterRefresh.generation).toBe(2);
+  });
+
+  it('saves a readiness request once when two loads share it', async () => {
+    const save = vi.spyOn(cacheStore, 'saveDetectionCache');
+    try {
+      const gate = Promise.withResolvers<void>();
+      const readinessStarted = Promise.withResolvers<void>();
+      const firstCatalogStarted = Promise.withResolvers<void>();
+      const secondCatalogStarted = Promise.withResolvers<void>();
+      let readinessProbes = 0;
+      const contexts = sourceContexts();
+      const shared = {
+        detectAll: async () => {
+          readinessProbes += 1;
+          readinessStarted.resolve();
+          await gate.promise;
+          return { providers: [makeProvider()], cliTools: [makeCliTool()] };
+        },
+      };
+      const first = makeDeps({
+        ...shared,
+        sourceContexts: contexts,
+        fetchModelsDevCatalog: async () => {
+          firstCatalogStarted.resolve();
+          await gate.promise;
+          return modelsDevOutcome({});
+        },
+      });
+      const second = makeDeps({
+        ...shared,
+        sourceContexts: { ...contexts, modelsDev: sourceContext('second-models-dev') },
+        fetchModelsDevCatalog: async () => {
+          secondCatalogStarted.resolve();
+          await gate.promise;
+          return modelsDevOutcome({});
+        },
+      });
+
+      const firstLoad = service.loadDetection({ deps: first, projectDir: tempDir });
+      const secondLoad = service.loadDetection({ deps: second, projectDir: tempDir });
+      await Promise.all([
+        readinessStarted.promise,
+        firstCatalogStarted.promise,
+        secondCatalogStarted.promise,
+      ]);
+      gate.resolve();
+      const [firstResult, secondResult] = await Promise.all([firstLoad, secondLoad]);
+      await service.getPendingSave();
+
+      expect(readinessProbes).toBe(1);
+      expect(outcomes(firstResult).readiness).toMatchObject({ kind: 'fresh', origin: 'request' });
+      expect(outcomes(secondResult).readiness).toEqual(outcomes(firstResult).readiness);
+      expect(save).toHaveBeenCalledTimes(1);
+    } finally {
+      save.mockRestore();
+    }
+  });
+
+  it('keeps the models.dev cache outcome of a load for a later load inside its TTL', async () => {
+    const clock = createClock();
+    let catalogReads = 0;
+    const deps = makeDeps({
+      now: clock.now,
+      fetchModelsDevCatalog: async () => {
+        catalogReads += 1;
+        return {
+          kind: 'cached',
+          snapshot: {
+            sourceUrl: 'https://models.dev/api.json',
+            parserVersion: 'test-parser',
+            catalog: {},
+            catalogState: 'empty',
+            fetchedAt: clock.now(),
+            validatedAt: clock.now(),
+          },
+        };
+      },
+    });
+
+    const first = await service.loadDetection({ deps });
+    clock.advance(1_000);
+    const second = await service.loadDetection({ deps });
+
+    expect(catalogReads).toBe(1);
+    expect(outcomes(first).modelsDev).toMatchObject({ kind: 'cached', origin: 'snapshot' });
+    expect(outcomes(second).modelsDev).toMatchObject({ kind: 'cached', origin: 'snapshot' });
   });
 });
