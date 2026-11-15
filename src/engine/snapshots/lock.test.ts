@@ -2,7 +2,14 @@ import { mkdtemp, rm, mkdir, utimes, writeFile, readFile } from 'node:fs/promise
 import { openSync, closeSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../lib/process/start-time.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/process/start-time.js')>();
+  return { ...actual, readProcessStartTimeMs: vi.fn(actual.readProcessStartTimeMs) };
+});
+
+import { readProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { acquireSnapshotLock } from './lock.js';
 
 let tmp: string;
@@ -94,6 +101,13 @@ describe('acquireSnapshotLock', () => {
     expect(onDisk.pid).toBe(process.pid);
 
     await release();
+  });
+
+  it('refuses a stale lock whose holder takes signals but has no readable start time', async () => {
+    const lockPath = await writeAgedLock('sess-01', { pid: process.pid, startedAt: 1 });
+    vi.mocked(readProcessStartTimeMs).mockReturnValueOnce(null);
+
+    await expect(acquireSnapshotLock(tmp, 'sess-01')).rejects.toThrow(lockPath);
   });
 
   it('judges a stale lock with the system ps, not a ps supplied by the ambient PATH', async () => {

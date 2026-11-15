@@ -2,7 +2,8 @@ import { constants, closeSync, readFileSync, fstatSync, openSync } from 'node:fs
 import { randomBytes } from 'node:crypto';
 import { open } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { isNodeError, isENOENT } from '../../../../utils/errno.js';
+import { isENOENT } from '../../../../utils/errno.js';
+import { probePid, startTimeMatches } from '../../../process/liveness.js';
 import { readProcessStartTimeMs } from '../../../process/start-time.js';
 import { fsError } from '../../secure.js';
 import {
@@ -20,7 +21,6 @@ import type {
 
 const ATOMIC_LOCK_SUFFIX = '.cas.lock';
 export const ATOMIC_LOCK_RETRY_MS = 5;
-const PROCESS_START_TOLERANCE_MS = 2000;
 
 const CURRENT_PROCESS_START_TIME_MS = Math.round(
   readProcessStartTimeMs(process.pid) ?? Date.now() - process.uptime() * 1000,
@@ -70,16 +70,9 @@ export function atomicLockOwnerState(owner: AtomicLockOwner): 'live' | 'dead' | 
   const observedStartTimeMs =
     owner.pid === process.pid ? CURRENT_PROCESS_START_TIME_MS : readProcessStartTimeMs(owner.pid);
   if (observedStartTimeMs !== null) {
-    return Math.abs(observedStartTimeMs - owner.startTimeMs) <= PROCESS_START_TOLERANCE_MS
-      ? 'live'
-      : 'dead';
+    return startTimeMatches(observedStartTimeMs, owner.startTimeMs) ? 'live' : 'dead';
   }
-  try {
-    process.kill(owner.pid, 0);
-    return 'unknown';
-  } catch (err) {
-    return isNodeError(err) && err.code === 'ESRCH' ? 'dead' : 'unknown';
-  }
+  return probePid(owner.pid);
 }
 
 function assertAtomicLockStat(

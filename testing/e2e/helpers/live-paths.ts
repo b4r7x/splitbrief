@@ -7,12 +7,12 @@ import { sessionDir, sessionsRoot } from '../../../src/core/paths.js';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { PROCESS_START_TOLERANCE_MS } from '../../../src/core/sessions/lock/status.js';
 import { type RunnerPidEntry, readRunnerPids } from '../../../src/core/sessions/runner-pids.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import type { Implementer, ImplementerOptions } from '../../../src/engine/implementers/types.js';
+import { startTimeMatches } from '../../../src/lib/process/liveness.js';
 import { readProcessStartTimeMs } from '../../../src/lib/process/start-time.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { resolveReleaseMatrixSeat } from '../live/matrix.js';
@@ -412,9 +412,7 @@ export function readProcessGroups(psOutput: string): Map<number, number[]> {
 function leaderRecycled(entry: RunnerPidEntry): boolean {
   if (entry.startTimeMs === null) return false;
   const startTimeMs = readProcessStartTimeMs(entry.pid);
-  return (
-    startTimeMs !== null && Math.abs(startTimeMs - entry.startTimeMs) > PROCESS_START_TOLERANCE_MS
-  );
+  return startTimeMs !== null && !startTimeMatches(startTimeMs, entry.startTimeMs);
 }
 
 /**

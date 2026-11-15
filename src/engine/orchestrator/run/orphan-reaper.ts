@@ -8,12 +8,11 @@ import {
   releaseRunnerPids,
   type RunnerPidEntry,
 } from '../../../core/sessions/runner-pids.js';
-import { canSignalProcess } from '../../../lib/process/liveness.js';
+import { canSignalProcess, startTimeMatches } from '../../../lib/process/liveness.js';
 import { readProcessStartTimeMs as defaultReadProcessStartTimeMs } from '../../../lib/process/start-time.js';
 import { warnError } from '../../../lib/warn.js';
 
 const SIGKILL_GRACE_MS = 2000;
-const START_TIME_TOLERANCE_MS = 2000;
 
 export type OrphanReaperDeps = {
   readProcessStartTimeMs: (pid: number) => number | null;
@@ -48,7 +47,7 @@ function sendGroupSignal(pid: number, signal: NodeJS.Signals): void {
 function pidWasRecycled(pid: number, recordedStartTimeMs: number, deps: OrphanReaperDeps): boolean {
   const actualStartTimeMs = deps.readProcessStartTimeMs(pid);
   if (actualStartTimeMs === null) return true;
-  return Math.abs(actualStartTimeMs - recordedStartTimeMs) > START_TIME_TOLERANCE_MS;
+  return !startTimeMatches(actualStartTimeMs, recordedStartTimeMs);
 }
 
 async function reapOrphanPid(entry: RunnerPidEntry, deps: OrphanReaperDeps): Promise<void> {

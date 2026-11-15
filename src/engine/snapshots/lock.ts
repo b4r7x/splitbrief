@@ -2,8 +2,7 @@ import { openSync, closeSync, unlinkSync, statSync, writeFileSync, readFileSync 
 import { snapshotLockPath, snapshotsDir } from '../../core/paths.js';
 import { ensureSecureDir } from '../../lib/fs/secure.js';
 import { hasErrnoCode } from '../../utils/errno.js';
-import { canSignalProcess } from '../../lib/process/liveness.js';
-import { readProcessStartTimeMs } from '../../lib/process/start-time.js';
+import { checkProcessIdentity } from '../../lib/process/liveness.js';
 import { error } from '../../utils/error.js';
 
 const STALE_LOCK_MS = 60_000;
@@ -30,12 +29,8 @@ function writeLockPayload(lockPath: string, payload: LockPayload): void {
 }
 
 async function isProcessAlive(pid: number, startedAt: number): Promise<boolean> {
-  if (!canSignalProcess(pid)) return false;
-
-  const psTime = readProcessStartTimeMs(pid);
-  if (psTime !== null && Math.abs(psTime - startedAt) > 2000) return false;
-
-  return true;
+  const identity = checkProcessIdentity(pid, startedAt);
+  return identity === 'live' || identity === 'unknown';
 }
 
 export async function acquireSnapshotLock(

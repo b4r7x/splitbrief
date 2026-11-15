@@ -227,6 +227,26 @@ describe('reapOrphanRunners', () => {
     expect(readRunnerPids({ projectDir: tmp, sessionId: 'dead-b' })).toEqual([]);
   });
 
+  it('signals a ledger pid whose process started 2000 ms off the recorded time and skips one 2001 ms off', async () => {
+    vi.useFakeTimers();
+    tmp = createTempDir('orphan-reaper-test');
+    const calls = installKillSpy(new Set([50091, 50092]));
+    const ref = { projectDir: tmp, sessionId: 'dead-session' };
+
+    writeLockfile(tmp, 'dead-session', { pid: 40091, startTimeMs: 1000 });
+    recordRunnerPid(ref, 50091, 111_000);
+    recordRunnerPid(ref, 50092, 222_000);
+    mockedStartTimes.set(50091, 113_000);
+    mockedStartTimes.set(50092, 224_001);
+
+    const reaping = reapOrphanRunners(tmp, reaperDeps());
+    await vi.advanceTimersByTimeAsync(2000);
+    await reaping;
+
+    expect(calls).toContainEqual({ pid: -50091, signal: 'SIGTERM' });
+    expect(calls.filter((call) => Math.abs(call.pid) === 50092)).toEqual([]);
+  });
+
   it('never signals ledger entries with pid 1 or a null start time', async () => {
     tmp = createTempDir('orphan-reaper-test');
     const calls = installKillSpy(new Set([1, 50021]));
