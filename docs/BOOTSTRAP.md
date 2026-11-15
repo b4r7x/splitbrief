@@ -85,14 +85,13 @@ Missing or corrupt cache records remain misses; stale catalogs retain the existi
 
 ## Rules for adding bootstrap steps
 
-### 1. Split a bootstrap file past 150 LOC
+### 1. Split a bootstrap file along its phases
 
-A bootstrap file stays one file until it exceeds **150 LOC**. Past that threshold, split it along its phases. The bootstrap folder has this shape:
+A bootstrap file stays one file until it passes a trigger of [the cut rule](./STRUCTURE.md#the-cut-rule) and holds more than one phase. Then split it along its phases. The bootstrap folder has this shape:
 
 ```
 src/cli/bootstrap/
-├── init.ts          # entry — orchestrates phases; holds the one-line UI chrome step
-├── project.ts       # internal — project-state loading
+├── init.ts          # entry — orchestrates phases; holds project-state loading and the one-line UI chrome step
 └── discovery.ts     # internal — async discovery
 ```
 
@@ -203,5 +202,5 @@ TUI quit tears down stores and cancels the current preparation. Detection shutdo
 ## References
 
 - [STORES-AND-UI.md](./STORES-AND-UI.md) — full store architecture
-- [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) — 150 LOC threshold and folder-colocation pattern
+- [STRUCTURE.md](./STRUCTURE.md#the-cut-rule) — the cut rule and the [folder-colocation pattern](./STRUCTURE.md#deep-modules-and-folder-colocation)
 - [LAYERS.md](./LAYERS.md) — `cli/` / `core/` / `stores/` boundaries

@@ -900,6 +900,6 @@ Run it after a move, rename or deletion pass: `tsc` reports the same breakage, b
 
 - Skill: `test-behavior-not-implementation` — Kent C. Dodds Testing Trophy + TkDodo's testing principles. The spine of these rules.
 - Skill: `react-senior-guide` — React 19 patterns, hook contracts, anti-pattern checklist.
-- [`STRUCTURE.md`](./STRUCTURE.md) — file tree, test strategy summary, colocation rule, file-length thresholds.
+- [`STRUCTURE.md`](./STRUCTURE.md) — file tree, test strategy summary, colocation rule, the cut rule.
 - [`CODE-STANDARD.md` §6](./CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — test behavior, not implementation.
 - [`LAYERS.md`](./LAYERS.md) — layer boundaries that define what counts as a "boundary" test.

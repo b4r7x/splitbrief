@@ -122,8 +122,8 @@ Does it know SPLITBRIEF concepts (config, cost, tokens, sessions, `.splitbrief/`
 Is it CLI-only prep (commander flags, TTY, exit codes) with a single consumer?
 └── YES → src/cli/  (promote to core/ on second consumer)
 
-Is the file about to exceed 300 LOC with >1 concern?
-└── Create a folder with helpers (see Deep modules and folder colocation)
+Is the file over a size trigger (.ts 300 lines, .tsx 250, a function 150)?
+└── Look for a seam and cut there (see The cut rule)
 
 Am I about to create an `index.ts` that only re-exports?
 └── STOP — barrels banned (see NO-BARRELS.md).
@@ -315,7 +315,7 @@ Reference: [Milan Jovanović — Screaming Architecture](https://www.milanjovano
 
 The codebase follows John Ousterhout's *deep module* principle: a module's public surface should be a small fraction of its internal complexity. A single file with 8 exports and no internals is shallow; a folder with 5 internal files and one entry point is deep.
 
-**When a file grows past the [length threshold](#file-length-thresholds), create a folder named after the file and move its helpers inside alongside the entry file.**
+**When a file passes a trigger of [the cut rule](#the-cut-rule) and has a seam, cut it at the seam. When the cut gives a group of files with one prefix, a folder replaces the prefix.** The folder can keep the name of the file that it replaces, but no file in the folder repeats the folder name. The entry file has the name of its role: `src/engine/calls/recorder/` holds the call recorder, and its entry is `recorder/create.ts`, not `recorder/recorder.ts`.
 
 The canonical patterns in this codebase are `src/engine/orchestrator/planning/` and `src/engine/orchestrator/task/`.
 
@@ -327,18 +327,24 @@ References:
 - [Sandor Dargo — Deep vs Shallow Modules](https://www.sandordargo.com/blog/2023/01/25/deep-vs-shallow-modules)
 - [Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)
 
-## File length thresholds
+## The cut rule
 
-Rough guidance — not a hard rule, but a strong signal:
+The cut rule tells when and where to cut a production source file or a function. A cut follows a concern, not a line count. Smaller files are better than larger files, but one function does not get its own file only to make a file smaller (rule 5). Review applies the rule; no gate checks it. A test file follows [CODE-STANDARD.md §3](./CODE-STANDARD.md#3-file-size-a-trigger-to-inspect-never-an-auto-violation).
 
-| File LOC | Responsibilities | Action |
-|---|---|---|
-| ≤ 200 | Any | Fine |
-| 200–300 | 1 | Fine |
-| 200–300 | >1 | Split into sibling files |
-| > 300 | 1 | Fine, but watch for creep |
-| > 300 | >1 | Create a folder with helpers (see [Deep modules and folder colocation](#deep-modules-and-folder-colocation)) |
-| > 500 | Any | Reconsider — the file is probably hiding a second concept |
+1. **Triggers, not limits.** A `.ts` file over 300 lines, a `.tsx` file over 250 lines and a function over 150 lines start a look for a seam. The aim is about 200 lines for a file and 60 for a function. A number alone does not force a cut.
+2. **Seam.** A cut goes between groups of top-level declarations. Each group names one concern, and the references between the groups go in one direction. A module-level `let` moves with its only writer.
+3. **One large declaration.** A switch, a union or a table over 300 lines is cut by member family when the members share no locals. The declaration stays in its file as the dispatch. `src/core/state/machine.ts` sends each family of transitions to a file in `src/core/state/transitions/`, and `src/engine/events/schema.ts` spreads the member arrays of `src/engine/events/payloads/`.
+4. **Components.** A pure function above a component moves out of the `.tsx` file into a `.ts` file, with a test that needs no Ink. The `.ts` file sits beside the component (`src/components/composer/prompt-mode.ts` beside `view.tsx`) or with the pure helpers of its feature ([Feature anatomy](#feature-anatomy)).
+5. **Floor.** A file of 30 lines or less needs one of three reasons: 2 or more production importers, its own test, or a load by path (`src/engine/providers/models-dev/parse-worker.ts` is the entry of a worker thread, and `parse.ts` loads it by its URL). A file that holds only a type goes into the folder's `types.ts` or into its one consumer ([TYPES.md](./TYPES.md#three-case-rule--where-does-a-typescript-type-go)). A lone constant or a forwarding function stays with its consumer.
+6. **Exceptions.** Each exception needs a written reason, and review checks the reason.
+   - A closure or a store whose members write shared `let`s stays whole until the shared `let`s become one state value that its steps take. That change rewrites the bodies, so it gets its own tests first.
+   - A schema or a data table of up to 500 lines stays whole when no part of it has an importer outside the file.
+   - A file that needs more than the trigger stays larger. The reason tells why no seam gives a better cut.
+7. **Names.**
+   - A folder replaces a prefix group. The files lose the prefix: `review/call.ts` and `review/phase.ts` under `src/engine/orchestrator/`, not `review-call.ts` and `review-phase.ts`.
+   - A file in a folder does not repeat the folder name: `review/call.ts`, not `review/review-call.ts` or `review/review.ts` ([CODE-STANDARD.md §5](./CODE-STANDARD.md#5-naming--file-naming)).
+   - The entry file has the name of its role: `orchestrator/review/phase.ts`, `runners/cli-tools/codex/adapter.ts`, `runners/cli-tools/process-invoke/invoke.ts` under `src/engine/`.
+   - No `index.ts` and no re-export file ([NO-BARRELS.md](./NO-BARRELS.md)).
 
 **Counter-rule for giant merged files.** When cleaning up a folder with small scattered files, do not collapse them into one 460-LOC file. Prefer a folder with 4 clean sub-files over one big file with 4 section banners. Section banners are banned (see [No decorative comments](#no-decorative-comments)).
 

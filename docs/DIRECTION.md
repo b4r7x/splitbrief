@@ -86,7 +86,7 @@ Design goals:
 
 ### AD-2: No god-functions in the orchestrator
 
-Any function exceeding ~300 lines with 5+ responsibilities must be decomposed. Extract named helpers at the responsibility boundary. The orchestrator is the most-changed code; readability > compactness.
+A function over 150 lines starts a look for a seam ([STRUCTURE.md › The cut rule](./STRUCTURE.md#the-cut-rule)). Extract named helpers at the responsibility boundary. The orchestrator is the most-changed code; readability > compactness.
 
 Canonical example: the orchestrator's task step was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (workspace, streaming preview), `implementer-loop.ts` (continuation loop, pre-apply write gate, correction passes), `task/gates/attempt.ts` (the protected-write gate over an attempt's changes in the run workspace), `rollback.ts` (snapshot restore in the run workspace after hook denial, retry exhaustion or an interrupted attempt), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.integration.test.ts` (completion/abort/evidence), `step-approval.integration.test.ts`, `step-user-edit.integration.test.ts`, and `step-recovery.integration.test.ts`.
 

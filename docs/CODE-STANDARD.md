@@ -31,7 +31,7 @@ A file should be describable in one sentence with no "and". If the description n
 - **Engine-domain logic under `features/`.** A React-free module that re-runs engine work (route + prompt assembly + token estimate) sitting in `features/` because its only consumer is a preview panel. It is engine work — move the compute into a domain-named `engine/` home (e.g. `engine/routing-preview.ts`, never an `engine/facades/`-style tech-layer folder) and let the feature call one function.
 - **A function that both transforms and does IO.** `buildSummary` mixing pure aggregation with five disk reads, `review-packet/sections.ts` mixing pure section builders with git/fs. Extract the IO into a sibling so the transform stays pure and unit-testable without temp dirs.
 
-SRP is judged on the **function/file responsibility**, not line count. A cohesive 400-line file is fine; a 120-line file doing four things is not.
+SRP is judged on the **function/file responsibility**, not line count. A cohesive 400-line file with no seam stays whole with a written reason (the exceptions of the [cut rule](./STRUCTURE.md#the-cut-rule)); a 120-line file doing four things is not fine.
 
 ---
 
@@ -62,35 +62,33 @@ Blockers (also gated by [INVARIANTS.md](./INVARIANTS.md) #9, #12, #12b, #12c): `
 
 ## 3. File size: a TRIGGER to inspect, never an auto-violation
 
-LOC is a smoke alarm, not a verdict. The canonical thresholds live in [STRUCTURE.md §File length thresholds](./STRUCTURE.md#file-length-thresholds); these refinements are compatible with it:
+LOC is a smoke alarm, not a verdict. The canonical rule is [STRUCTURE.md §The cut rule](./STRUCTURE.md#the-cut-rule); this table is its review summary:
 
-| LOC | Action |
+| Size | Action |
 |---|---|
-| ≤ 300, 1 concern | Fine. |
-| ≤ 300, **>1 concern** | Split into sibling files (§1). |
-| > 300, **>1 concern** | **Inspect for SRP.** If two concerns, split into a folder (see recipe). One concern → fine, watch for creep. |
-| > 400 | **Strong split candidate** — open it and justify why it is still one responsibility. |
-| > 500 (source) | Reconsider — almost certainly hiding a second concept. |
+| Production `.ts` file over 300 lines, `.tsx` file over 250, function over 150 | **Look for a seam.** Cut at the seam (see recipe), or keep the file whole with a written reason. The aim is about 200 lines for a file and 60 for a function. |
+| Any size, **>1 concern** | Split into sibling files (§1) when each part passes the floor (next row). |
+| Production file of 30 lines or less | Keep it only with 2 or more production importers, its own test, or a load by path. Otherwise fold it into the folder's `types.ts` or into its consumer. |
 | > 500 (test) | Inspect: is it one cohesive unit (size flag only) or several units bundled (split by concern)? |
 
-The audit explicitly **did not flag** several cohesive 400–650-LOC files ("size flag, not a smell"; "anchor on the function, not LOC"). Prefer **maximum splitness where it improves clarity**, but do not shred a genuinely cohesive file to hit a number. The trigger asks a question; SRP answers it.
+The audit explicitly **did not flag** several cohesive 400–650-LOC files ("size flag, not a smell"; "anchor on the function, not LOC"). Prefer **maximum splitness where it improves clarity**, but do not shred a genuinely cohesive file to hit a number. The trigger asks a question; the seams and SRP answer it.
 
 ### Split recipe (worked example)
 
-When a file trips the trigger **and** carries >1 responsibility, create a folder named after the file and move each concern into an intent-named kebab-case sibling. Real case: the old snapshot store (362 LOC, five concerns) split into —
+When a file passes a trigger **and** has a seam, cut it at the seam and give each concern an intent-named kebab-case file. When the cut gives a group of files with one prefix, a folder replaces the prefix. Real case: the snapshot store in `src/engine/snapshots/` (its other files are left out here) —
 
 ```
 engine/snapshots/
-├── snapshot-path.ts      # encode/decode/generateId
-├── snapshot-manifest.ts  # writeManifest/readManifest/listSnapshotIds
-├── snapshot-lock.ts      # acquireSnapshotLock + STALE_LOCK_MS
-├── snapshot-files.ts     # hashFile/collectTrackedFiles/readdirRecursive
-└── snapshot-create.ts    # createSnapshot/listSnapshots — imports the four above
+├── path-codec.ts   # encodeSnapshotPath/generateSnapshotId
+├── manifest.ts     # writeManifest/readManifest/listSnapshotIds/listSnapshots
+├── lock.ts         # acquireSnapshotLock + STALE_LOCK_MS
+├── files.ts        # hashFile/walkProjectEntries/collectTrackedFiles
+└── create.ts       # createSnapshot — imports the four above
 ```
 
 Rules for the split:
-- **kebab-case** sibling names that scream the concern (`snapshot-lock.ts`, not `utils2.ts`).
-- **The entry file** keeps the folder's public name and imports its siblings directly. Non-entry files are *internal to the folder* — the folder boundary is the privacy boundary (see [STRUCTURE.md §Deep modules](./STRUCTURE.md#deep-modules-and-folder-colocation)).
+- **kebab-case** names that scream the concern and do not repeat the folder name (`review/call.ts`, not `review/review-call.ts` or `utils2.ts`).
+- **The entry file** has the name of its role (`review/phase.ts`), never the folder's name, and imports its siblings directly. Non-entry files are *internal to the folder* — the folder boundary is the privacy boundary (see [STRUCTURE.md §Deep modules](./STRUCTURE.md#deep-modules-and-folder-colocation)).
 - **Shared types** follow the three-case rule ([TYPES.md](./TYPES.md)): reuse the existing schema/type in `core/schemas/` or `core/types/`; if folder-local and multi-file, a single `types.ts` in the folder. Do **not** invent a parallel result type that duplicates a `core/runtime/commands/types.ts` contract — import it.
 - **No barrels.** No `index.ts`, no re-export-only file, no migration shim. Rewrite consumer imports in the same change. ([NO-BARRELS.md](./NO-BARRELS.md), gate #1.)
 
@@ -159,12 +157,12 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 | No decorative comments / section banners (`// ═══ X ═══`) — keep related exports near each other; the ordering is the documentation | [STRUCTURE.md](./STRUCTURE.md#no-decorative-comments) | review |
 | Screaming architecture — folder names say what the code does in the domain (`planning/`, `escalation/`, `validation/`), never which technical layer (`services/`, `use-cases/`, `controllers/`) | [STRUCTURE.md](./STRUCTURE.md#screaming-folders) | review |
 | Deep modules — small public surface, large hidden implementation; aim for a folder with 5+ internal files and one entry point | [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) | review |
-| Folder colocation for internal helpers — when a file grows, create a folder named after it and move its helpers in beside the entry file (`planning/run.ts` + siblings); no underscore prefix | [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) | review |
+| Folder colocation for internal helpers — when a file passes a size trigger, cut it at a seam; a folder replaces a prefix group, no file in it repeats the folder name, and the entry file names its role (`planning/run.ts` + siblings); no underscore prefix | [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) | review |
 | Ports + adapters in the same folder — an interface (`types.ts`) and its implementations (`cli.ts`, `api.ts`, `shell.ts`, …) live together; never move the port to a separate `ports/` folder | [LAYERS.md](./LAYERS.md#ports-and-adapters) | review |
 | Runtime vs compile-time split — Zod schemas (runtime validation) in `src/core/schemas/`; TypeScript types (compile-time only) inline or in a folder-local `types.ts`; a type inferred from a schema (`z.infer<>`) lives with the schema | [TYPES.md](./TYPES.md) | INVARIANTS #2 |
 | Type placement, three-case rule — one consumer → inline; several consumers in one folder → `types.ts` in that folder; cross-folder → with the producer (the file that creates values of the type) | [TYPES.md](./TYPES.md#three-case-rule--where-does-a-typescript-type-go) | review |
 | Screaming types — a type lives where its domain meaning is created, not in a central `core/types/` grab-bag; only truly cross-cutting types (fan-in > 30, ≥3 top-level folders) stay in `core/types/` | [TYPES.md](./TYPES.md#screaming-types) | review |
-| No giant merged files — when a merge would produce a file with >300 LOC and >1 responsibility, use a folder instead (§3) | [STRUCTURE.md](./STRUCTURE.md#file-length-thresholds) | review |
+| No giant merged files — a merge must not produce a file over a size trigger with >1 responsibility; keep the concerns in sibling files or a folder (§3) | [STRUCTURE.md](./STRUCTURE.md#the-cut-rule) | review |
 | Prompts get their own folder (`src/engine/spec/prompts/`) — never inlined into orchestrator or runner code | [STRUCTURE.md](./STRUCTURE.md#prompts-folder) | review |
 | Test behavior, not implementation — no tests of trivial helpers, trivial hooks, mocks being called, or TS types; a behavior-bearing hook may get a colocated test, a trivial hook is covered by the consuming integration test; test at meaningful consumer boundaries | [STRUCTURE.md](./STRUCTURE.md#test-strategy), [HOOKS.md](./HOOKS.md), [TESTING.md](./TESTING.md) | review |
 | No backwards-compatibility shims — a refactor updates every import site in the same change; no re-export shim to smooth a migration (that would create a barrel) | [NO-BARRELS.md](./NO-BARRELS.md) | review |
@@ -185,7 +183,7 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 
 ## Where does X go?
 
-For file placement, see [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree) — the canonical flow covers Zod schemas, TypeScript types, React/Ink components, stores, pure primitives, infrastructure wrappers, domain logic, orchestration, CLI prep, and the barrel / length-threshold guardrails.
+For file placement, see [`STRUCTURE.md` §File placement decision tree](./STRUCTURE.md#file-placement-decision-tree) — the canonical flow covers Zod schemas, TypeScript types, React/Ink components, stores, pure primitives, infrastructure wrappers, domain logic, orchestration, CLI prep, and the barrel / cut-rule guardrails.
 
 For the per-layer reference (what each layer contains, acceptance criteria, prohibited imports, anti-patterns), see [`LAYERS.md`](./LAYERS.md).
 
@@ -200,7 +198,7 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 - [ ] No `shared.ts`/`helpers.ts` junk-drawer; no IO/routing under `components/`; no engine logic under `features/` (§1).
 - [ ] Import direction respected; no cross-feature import; engine is React-free (§2, INVARIANTS).
 - [ ] A helper I reused/duplicated is in a layer all its consumers can import — if not, move it down rather than copy (§2).
-- [ ] Files past the size trigger were inspected for SRP and either split into a kebab-case folder (no barrel) or justified as cohesive (§3).
+- [ ] Files and functions past a size trigger were inspected for a seam and either cut there (no barrel, no stutter) or kept whole with a written reason (§3).
 
 **APIs & types**
 - [ ] No function ≥4 params, and no exported function ≥3 params, without an options object (§4).
