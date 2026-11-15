@@ -1444,6 +1444,18 @@ describe('InputFooter', () => {
     ui.unmount();
     terminalSizeStore.reset();
   });
+  it('leads the row with a stop under way, not with the record byline', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    stopStore.request('stop-now');
+    stopStore.fail('Disk full');
+    const ui = renderFeature(<InputFooter byline={[{ text: 'Ready to apply', tone: 'accent' }]} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Stop failed');
+    expect(frame).not.toContain('Ready to apply');
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('paints a failed stop with error and its cause with text', () => {
     chalk.level = 3;
     stopStore.request('stop-now');

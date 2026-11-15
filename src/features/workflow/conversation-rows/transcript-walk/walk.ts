@@ -1,8 +1,5 @@
 import { type Section, isSettledSection } from '../../../../core/sections/types.js';
-import { WORKSPACE_KEPT_CODE } from '../../../../core/sessions/workspace-notice.js';
 import type { EngineEventOf, EngineEvent } from '../../../../engine/events/types.js';
-import { COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT } from '../activity/batch-model.js';
-import { isTranscriptRowlessEvent } from '../event-rows/visibility.js';
 import {
   endedImplementerAttempts,
   endedCallActivity,
@@ -10,18 +7,15 @@ import {
   reissuedPlannerCallDiagnostics,
   heldConsultAnswers,
 } from './ended-calls.js';
-import {
-  automaticRecoveryFolds,
-  sameHeader,
-  joinsRecovery,
-  restatesHalt,
-} from './recovery-folds.js';
+import { flush, walkEvent } from './event.js';
+import { automaticRecoveryFolds, sameHeader } from './recovery-folds.js';
+import { answeredResumes, carriedOnSeatChanges, keptWorkspaceNotice } from './resumes.js';
 import type {
   SettledTranscriptSection,
+  TranscriptWalk,
+  TranscriptWalkReads,
   TranscriptWalkStep,
-  RunnerActivityBatch,
-  RecoveryFold,
-  CheckEvent,
+  WalkSection,
 } from './types.js';
 
 export function settledTaskStartedEvent(
@@ -61,239 +55,95 @@ export function settledTaskStartedEvent(
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
+  const reads = walkReads(sections);
+  const walk: TranscriptWalk = {
+    activityBatch: null,
+    recovery: null,
+    afterRecovery: [],
+    checkRun: [],
+    lastRowEvent: null,
+    openHeader: null,
+    restatedPrompt: null,
+    settledContext: {},
+  };
+  for (const section of sections) {
+    const scope = walkSection(section);
+    yield* enterSection(walk, reads, scope);
+    for (const [index, event] of section.items.entries())
+      yield* walkEvent(walk, reads, scope, event, section.startIndex + index);
+    yield* leaveSection(walk, reads, section);
+  }
+  yield* flush(walk, reads, true);
+}
+
+function walkReads(sections: readonly Section<EngineEvent>[]): TranscriptWalkReads {
   const automatic = automaticRecoveryFolds(sections);
-  let workspaceNotice: EngineEventOf<'warning'> | undefined;
-  const carriedOn = new Set<EngineEvent>();
-  const answeredResumes = new Set<EngineEvent>();
-  let recoveryAnswerMark = false;
-  let seatChangePark: EngineEventOf<'turn_interrupted'> | undefined;
-  for (const section of sections) {
-    for (const event of section.items) {
-      if (event.type === 'warning' && event.code === WORKSPACE_KEPT_CODE) workspaceNotice = event;
-      if (event.type === 'workflow_resumed' || event.type === 'workspace_closed')
-        workspaceNotice = undefined;
-      if (event.type === 'recovery_action_selected') recoveryAnswerMark = true;
-      if (
-        event.type === 'workflow_cancelled' ||
-        event.type === 'turn_interrupted' ||
-        event.type === 'recovery_action_failed'
-      )
-        recoveryAnswerMark = false;
-      if (event.type === 'turn_interrupted' || event.type === 'workflow_cancelled')
-        seatChangePark =
-          event.type === 'turn_interrupted' && event.cause === 'seat-change' ? event : undefined;
-      if (event.type !== 'workflow_resumed') continue;
-      if (recoveryAnswerMark) {
-        answeredResumes.add(event);
-        recoveryAnswerMark = false;
-      }
-      if (event.cause === 'seat-change') {
-        carriedOn.add(event);
-        if (seatChangePark !== undefined) carriedOn.add(seatChangePark);
-      }
-      seatChangePark = undefined;
-    }
-  }
-  const endedAttempts = endedImplementerAttempts(sections);
-  const endedActivity = endedCallActivity(sections);
-  const retriedAttempts = retriedImplementerAttempts(sections);
-  const reissuedCalls = reissuedPlannerCallDiagnostics(sections);
-  const heldAnswers = heldConsultAnswers(sections);
-  let activityBatch: RunnerActivityBatch | null = null;
-  let recovery: RecoveryFold | null = null;
-  let afterRecovery: Extract<TranscriptWalkStep, { kind: 'event' }>[] = [];
-  let checkRun: { event: CheckEvent; globalIndex: number }[] = [];
-  let lastRowEvent: EngineEvent | null = null;
-  let openHeader: EngineEventOf<'task_started'> | null = null;
-  let restatedPrompt: EngineEventOf<'recovery_prompted'> | null = null;
-  let settledContext: { settledSection?: SettledTranscriptSection } = {};
+  return {
+    recoveries: automatic.recoveries,
+    switches: automatic.switches,
+    hidden: new Set([
+      ...automatic.hidden,
+      ...endedImplementerAttempts(sections),
+      ...carriedOnSeatChanges(sections),
+      ...answeredResumes(sections),
+      ...retriedImplementerAttempts(sections),
+      ...reissuedPlannerCallDiagnostics(sections),
+      ...heldConsultAnswers(sections),
+    ]),
+    workspaceNotice: keptWorkspaceNotice(sections),
+    endedActivity: endedCallActivity(sections),
+  };
+}
 
-  function* flush(open = false): Generator<TranscriptWalkStep> {
-    if (activityBatch !== null)
-      yield {
-        kind: 'activity-batch',
-        batch: activityBatch,
-        callEnded: endedActivity.has(activityBatch.lastEvent),
-        ...settledContext,
-      };
-    if (recovery !== null) yield { kind: 'recovery', recovery, ...settledContext };
-    yield* afterRecovery;
-    const [firstCheck] = checkRun;
-    if (firstCheck !== undefined && checkRun.length > COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT)
-      yield {
-        kind: 'check-group',
-        firstIndex: firstCheck.globalIndex,
-        checks: checkRun.map(({ event }) => event),
-        open,
-        ...settledContext,
-      };
-    else
-      for (const { event, globalIndex } of checkRun)
-        yield { kind: 'event', event, globalIndex, ...settledContext };
-    activityBatch = null;
-    recovery = null;
-    afterRecovery = [];
-    checkRun = [];
+function walkSection(section: Section<EngineEvent>): WalkSection {
+  const latestHeaders = new Map<string, EngineEventOf<'task_started'>>();
+  for (const event of section.items) {
+    if (event.type !== 'task_started') continue;
+    const header = latestHeaders.get(event.taskId);
+    if (header === undefined || !sameHeader(header, event)) latestHeaders.set(event.taskId, event);
   }
+  const review =
+    section.type === 'active-review'
+      ? section.review
+      : section.type === 'settled-stage' && section.summary.stage === 'review'
+        ? section.summary
+        : undefined;
+  const started = isSettledSection(section) ? settledTaskStartedEvent(section) : undefined;
+  return { section, review, started, latestHeaders };
+}
 
-  for (const section of sections) {
-    const latestHeaders = new Map<string, EngineEventOf<'task_started'>>();
-    for (const event of section.items) {
-      if (event.type !== 'task_started') continue;
-      const header = latestHeaders.get(event.taskId);
-      if (header === undefined || !sameHeader(header, event))
-        latestHeaders.set(event.taskId, event);
-    }
-    const review =
-      section.type === 'active-review'
-        ? section.review
-        : section.type === 'settled-stage' && section.summary.stage === 'review'
-          ? section.summary
-          : undefined;
-    if (isSettledSection(section) || review !== undefined) {
-      yield* flush();
-      lastRowEvent = null;
-    }
-    settledContext = isSettledSection(section) ? { settledSection: section } : {};
-    const started = isSettledSection(section) ? settledTaskStartedEvent(section) : undefined;
-    if (isSettledSection(section)) openHeader = started ?? null;
-    if (review !== undefined) {
-      yield {
-        kind: 'review-heading',
-        startIndex: section.startIndex,
-        review,
-        items: section.items,
-      };
-    } else if (isSettledSection(section)) {
-      yield { kind: 'settled', section };
-    }
-    for (const [index, event] of section.items.entries()) {
-      const globalIndex = section.startIndex + index;
-      const folded = automatic.recoveries.get(event);
-      if (folded !== undefined) {
-        yield* flush();
-        yield { kind: 'recovery', recovery: folded, ...settledContext };
-        lastRowEvent = event;
-        continue;
-      }
-      if (
-        automatic.hidden.has(event) ||
-        endedAttempts.has(event) ||
-        carriedOn.has(event) ||
-        answeredResumes.has(event) ||
-        retriedAttempts.has(event) ||
-        reissuedCalls.has(event) ||
-        heldAnswers.has(event)
-      )
-        continue;
-      if (
-        event.type === 'warning' &&
-        event.code === WORKSPACE_KEPT_CODE &&
-        event !== workspaceNotice
-      )
-        continue;
-      if (
-        isSettledSection(section) &&
-        (event === started ||
-          event.type === 'implementer_generate_running' ||
-          (section.type === 'completed-task' &&
-            (event.type === 'task_skipped' || event.type === 'task_full_fail') &&
-            event.taskId === section.summary.id))
-      )
-        continue;
-      if (isTranscriptRowlessEvent(event)) {
-        yield { kind: 'event', event, globalIndex, ...settledContext };
-        continue;
-      }
-      if (event.type === 'runner_call_activity') {
-        if (activityBatch !== null && activityBatch.callId === event.callId) {
-          activityBatch.events.push(event);
-          activityBatch.lastEvent = event;
-        } else {
-          yield* flush();
-          lastRowEvent = null;
-          activityBatch = {
-            callId: event.callId,
-            firstIndex: globalIndex,
-            events: [event],
-            lastEvent: event,
-          };
-        }
-        continue;
-      }
-
-      if (
-        event.type === 'seat_switched' &&
-        recovery !== null &&
-        recovery.resolved === undefined &&
-        recovery.seatSwitch === undefined &&
-        recovery.selected?.action === 'switch-seat' &&
-        recovery.selected.seat === event.seat &&
-        recovery.selected.reason === event.cause &&
-        recovery.selected.phase === event.phase
-      ) {
-        recovery.seatSwitch = event;
-        afterRecovery.push({ kind: 'event', event, globalIndex, ...settledContext });
-        continue;
-      }
-      if (
-        event.type === 'user_message' &&
-        recovery !== null &&
-        recovery.selected !== undefined &&
-        recovery.resolved === undefined
-      ) {
-        afterRecovery.push({ kind: 'event', event, globalIndex, ...settledContext });
-        continue;
-      }
-      if (recovery !== null && joinsRecovery(recovery, event)) continue;
-      if (event.type === 'full_suite' && review !== undefined) {
-        if (checkRun.length === 0) yield* flush();
-        checkRun.push({ event, globalIndex });
-        lastRowEvent = event;
-        continue;
-      }
-      yield* flush();
-      if (event.type === 'recovery_prompted' && restatesHalt(lastRowEvent, event)) {
-        restatedPrompt = event;
-        continue;
-      }
-      if (
-        event.type === 'recovery_prompted' ||
-        event.type === 'recovery_action_selected' ||
-        event.type === 'recovery_resolved'
-      ) {
-        recovery = { firstIndex: globalIndex, issueId: event.issueId };
-        if (restatedPrompt?.issueId === event.issueId) {
-          recovery.prompted = restatedPrompt;
-          recovery.haltAlreadyShown = true;
-        }
-        restatedPrompt = null;
-        joinsRecovery(recovery, event);
-        lastRowEvent = event;
-        continue;
-      }
-      if (event.type === 'task_started') {
-        if (openHeader !== null && sameHeader(openHeader, event)) continue;
-        openHeader = event;
-      }
-      lastRowEvent = event;
-      yield {
-        kind: 'event',
-        event,
-        globalIndex,
-        ...settledContext,
-        ...(automatic.switches.has(event) && { causeInRecovery: true }),
-        ...(event.type === 'task_started' &&
-          latestHeaders.get(event.taskId) !== event && { historicalTaskHeader: true }),
-      };
-    }
-    if (isSettledSection(section)) {
-      yield* flush();
-      if (section.type === 'settled-stage' && section.summary.stage === 'review')
-        yield { kind: 'settled-end', section };
-      lastRowEvent = null;
-      openHeader = null;
-    }
+function* enterSection(
+  walk: TranscriptWalk,
+  reads: TranscriptWalkReads,
+  { section, review, started }: WalkSection,
+): Generator<TranscriptWalkStep> {
+  if (isSettledSection(section) || review !== undefined) {
+    yield* flush(walk, reads);
+    walk.lastRowEvent = null;
   }
-  yield* flush(true);
+  walk.settledContext = isSettledSection(section) ? { settledSection: section } : {};
+  if (isSettledSection(section)) walk.openHeader = started ?? null;
+  if (review !== undefined) {
+    yield {
+      kind: 'review-heading',
+      startIndex: section.startIndex,
+      review,
+      items: section.items,
+    };
+  } else if (isSettledSection(section)) {
+    yield { kind: 'settled', section };
+  }
+}
+
+function* leaveSection(
+  walk: TranscriptWalk,
+  reads: TranscriptWalkReads,
+  section: Section<EngineEvent>,
+): Generator<TranscriptWalkStep> {
+  if (!isSettledSection(section)) return;
+  yield* flush(walk, reads);
+  if (section.type === 'settled-stage' && section.summary.stage === 'review')
+    yield { kind: 'settled-end', section };
+  walk.lastRowEvent = null;
+  walk.openHeader = null;
 }

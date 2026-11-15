@@ -1,8 +1,6 @@
 import { ListRow } from '../../components/list-row/row.js';
-import { wholeWordLabelForms } from '../../components/list-row/fit.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
@@ -20,28 +18,11 @@ interface ToolRowParams {
   currentCommand: string | undefined;
   currentCommandKind: 'shell' | 'agent' | undefined;
   isContext: boolean;
-  /** Whether this list's width seats every status word; see `toolStatusesFit`. */
+  /** Whether this list's width seats every status word; see `rowPlansFor`. */
   showStatus: boolean;
 }
 
 const ADD_COMMAND_LABEL = '+ Add custom command…';
-/** What a tool row spends beside its name and its word: the lead and the check column. */
-const TOOL_ROW_CHROME = 4;
-
-/**
- * A status says what is wrong with a tool, so a list that prints it on one row and not the next
- * tells the reader the others are fine. The list keeps every status or none: each one must sit
- * whole beside at least its tool's first word.
- */
-export function toolStatusesFit(items: readonly PickerOption[], width: number): boolean {
-  const room = width - TOOL_ROW_CHROME;
-  return items.every((item) => {
-    const status = formatPickerStatusLabel(item.status);
-    if (status === undefined) return true;
-    const shortest = wholeWordLabelForms(item.displayName).at(-1) ?? item.displayName;
-    return getTerminalCellWidth(shortest) + 1 + getTerminalCellWidth(status) <= room;
-  });
-}
 
 export function renderToolRow({
   item,

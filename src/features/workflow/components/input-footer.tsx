@@ -12,27 +12,15 @@ import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { collapsedReviewSeat } from '../../../core/crew/seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import { SOFT_SEP } from '../../../core/separators.js';
-import { selectBuildMessageBrief } from '../../../core/run-view/briefs.js';
-import {
-  operationsStore,
-  selectRunningSuite,
-  selectScheduledReview,
-} from '../../../stores/workflow/operations/state.js';
+import { operationsStore, selectRunningSuite } from '../../../stores/workflow/operations/state.js';
 import { useStopByline } from '../stop/use-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../../hooks/use-slow-probe-text.js';
-import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
-import { segmentsForRowText } from '../../../utils/display-text/width.js';
-import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
-import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
-import { buildInputFooterByline, fitCheckingRow } from '../input-footer-byline.js';
+import { fitCheckingRow, fitInputFooterByline } from '../input-footer-byline.js';
 import { formatSeatIdentity, isReviewNone } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
-import { queueCopy } from '../queue-copy.js';
-import { messageSeat } from '../../../core/queue/state.js';
+import { runQueueCopy } from '../queue-copy.js';
 import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
@@ -146,51 +134,18 @@ export function InputFooter({
     now,
   });
 
-  const buildBrief = selectBuildMessageBrief(runView.briefs);
-  const queuedCopy =
-    lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
-      ? queueCopy({
-          seat: messageSeat(
-            runView.phase,
-            selectScheduledReview(operations),
-            runView.reviewNone,
-            buildBrief !== null,
-          ),
-          taskId: buildBrief?.id,
-          count: lifecycle.queueDepth,
-        })
-      : null;
-
-  const atRestByline = givenByline !== undefined && stopped === null;
-  const bylineLead = atRestByline
-    ? ([
-        { text: ' '.repeat(MARK_SLOT_CELLS), tone: 'textDim' },
-        ...givenByline,
-      ] satisfies ConversationRowSegment[])
-    : lead;
-  const bylineInput = {
-    // Raw width in; the builder owns the framed text measure.
-    cols: Math.max(1, width ?? cols),
-    lead:
-      atRestByline && queuedCopy !== null
-        ? segmentsForRowText(
-            bylineLead,
-            truncateTerminalDisplayText(
-              bylineLead.map((part) => part.text).join(''),
-              getChromeContentWidth(width ?? cols) -
-                getTerminalCellWidth(`${SOFT_SEP}${queuedCopy.shortByline}`),
-            ),
-          )
-        : bylineLead,
-    leadClock: atRestByline ? undefined : leadClock,
-    hintText: atRestByline ? null : hintText,
-    queuedText: queuedCopy?.byline ?? null,
-    worktreeLabel: !atRestByline && worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
-  };
-  let byline = buildInputFooterByline(bylineInput);
-  if (queuedCopy !== null && !byline.some((part) => part.text === queuedCopy.byline)) {
-    byline = buildInputFooterByline({ ...bylineInput, queuedText: queuedCopy.shortByline });
-  }
+  const byline = fitInputFooterByline({
+    cols: width ?? cols,
+    lead,
+    leadClock,
+    hintText,
+    recordByline: stopped === null ? givenByline : undefined,
+    queued:
+      lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
+        ? runQueueCopy(runView, operations, lifecycle.queueDepth)
+        : null,
+    worktreeName,
+  });
 
   if (checkingStage !== null) {
     return (

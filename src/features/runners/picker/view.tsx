@@ -19,7 +19,6 @@ import { type PickerOption, sortPickerOptions } from '../model-catalog/options.j
 import { isCustomModel } from '../model-catalog/recency.js';
 import { rightRowKey, sectionOf } from '../model-catalog/rows.js';
 import type { RightRow } from '../model-catalog/types.js';
-import { type ModelRowPlan, planModelRows } from '../model-catalog/row-plan.js';
 import {
   type RouteAuthContext,
   confirmRow as confirmRightRow,
@@ -29,12 +28,13 @@ import {
 } from '../right-column/policy.js';
 import { cycleRightRow } from '../right-column/drafts.js';
 import { expansionDraft } from '../right-column/drafts.js';
-import { toolStatusesFit, renderToolRow, renderModelRow } from '../tool-row.js';
+import { renderToolRow, renderModelRow } from '../tool-row.js';
 import { TwoColumnPicker } from '../two-column-picker/picker.js';
 import type { PickerCatalog } from './use-catalog.js';
 import { fallbackInheritanceNotice, isPickerItemDisabled } from './labels.js';
 import { ModelGuidance } from './model-guidance.js';
 import { resolvePreview, terminalPaneFor } from './preview.js';
+import { rowPlansFor } from './row-plans.js';
 import {
   type PickerActions,
   type PickerEffectDeps,
@@ -94,26 +94,7 @@ export function PickerView({
   };
 
   const rightRows = keyRows(catalog.rightRows);
-  // Every row of the column is drawn at one width and the plan answers for the whole list, so it
-  // is made once per render, at the width the first row asks for.
-  let rowPlan: ModelRowPlan | undefined;
-  const rowPlanAt = (width: number): ModelRowPlan => {
-    if (rowPlan?.width !== width)
-      rowPlan = planModelRows({
-        rows: catalog.rightRows,
-        width,
-        providerId: catalog.currentItem?.id,
-      });
-    return rowPlan;
-  };
-  // The tool column answers for its status words the same way, over every tool, not the filtered few.
-  let statusPlan: { width: number; fits: boolean } | undefined;
-  const statusesFitAt = (width: number): boolean => {
-    if (statusPlan?.width !== width) {
-      statusPlan = { width, fits: toolStatusesFit(catalog.items, width) };
-    }
-    return statusPlan.fits;
-  };
+  const { rowPlanAt, statusesFitAt } = rowPlansFor(catalog);
 
   return (
     <TwoColumnPicker<PickerOption, KeyedRightRow>

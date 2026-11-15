@@ -19,7 +19,7 @@ import type { ProvenanceWord } from '../../core/providers/provenance.js';
 import { AUTO_ROW_METADATA, BROWSE_CATALOG_TEXT } from './model-catalog/rows.js';
 import type { RightAxisName, RightRow, TreeLead } from './model-catalog/types.js';
 import type { RouteAuthState } from '../../core/runners/route-auth.js';
-import { renderModelRow, renderToolRow, toolStatusesFit } from './tool-row.js';
+import { renderModelRow, renderToolRow } from './tool-row.js';
 
 const AUTH = { tool: undefined, providerAuth: undefined, catalog: undefined };
 
@@ -193,12 +193,6 @@ describe('runner row grammar', () => {
       tool('kilo-code', 'Kilo Code CLI', unavailable),
       tool('codex', 'OpenAI Codex CLI', { state: 'ready', remediation: null }),
     ];
-
-    // 20 cells is the tool column's row at a 60x18 terminal, 32 at 80x24.
-    it('keeps every status word or none, never one row at a time', () => {
-      expect(toolStatusesFit(items, 20)).toBe(false);
-      expect(toolStatusesFit(items, 32)).toBe(true);
-    });
 
     it('hides a status together with any version, so the row never reads as ready', async () => {
       forceUnicodeGlyphs();

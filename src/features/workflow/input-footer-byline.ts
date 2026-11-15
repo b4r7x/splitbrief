@@ -1,5 +1,7 @@
+import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import { ELLIPSIS } from '../../utils/display-text/truncate.js';
 import { segmentsForRowText } from '../../utils/display-text/width.js';
@@ -154,4 +156,55 @@ export function buildInputFooterByline(
     ...separatedSpans(queuedOut, 'info'),
     ...separatedSpans(restOut, 'textDim'),
   ];
+}
+
+/**
+ * The byline of the footer row. A run at rest states its record byline in place of the lead, with
+ * no clock, hint or worktree, and cuts it to leave room for the short queued count. A queued count
+ * that does not fit whole falls to its short form.
+ */
+export function fitInputFooterByline(
+  input: Readonly<{
+    /** The footer's width, before the gutter. */
+    cols: number;
+    lead: readonly ConversationRowSegment[];
+    leadClock: string | undefined;
+    hintText: string | null;
+    /** The byline of a run at rest, when no stop leads the row. */
+    recordByline: readonly ConversationRowSegment[] | undefined;
+    queued: Readonly<{ byline: string; shortByline: string }> | null;
+    worktreeName: string | undefined;
+  }>,
+): readonly ConversationRowSegment[] {
+  const { recordByline, queued } = input;
+  const atRest = recordByline !== undefined;
+  const lead = atRest
+    ? ([
+        { text: ' '.repeat(MARK_SLOT_CELLS), tone: 'textDim' },
+        ...recordByline,
+      ] satisfies ConversationRowSegment[])
+    : input.lead;
+  const bylineInput = {
+    // Raw width in; the builder owns the framed text measure.
+    cols: Math.max(1, input.cols),
+    lead:
+      atRest && queued !== null
+        ? segmentsForRowText(
+            lead,
+            truncateTerminalDisplayText(
+              lead.map((part) => part.text).join(''),
+              getChromeContentWidth(input.cols) -
+                getTerminalCellWidth(`${SOFT_SEP}${queued.shortByline}`),
+            ),
+          )
+        : lead,
+    leadClock: atRest ? undefined : input.leadClock,
+    hintText: atRest ? null : input.hintText,
+    queuedText: queued?.byline ?? null,
+    worktreeLabel:
+      !atRest && input.worktreeName ? sanitizeTerminalDisplayText(input.worktreeName) : null,
+  };
+  const byline = buildInputFooterByline(bylineInput);
+  if (queued === null || byline.some((part) => part.text === queued.byline)) return byline;
+  return buildInputFooterByline({ ...bylineInput, queuedText: queued.shortByline });
 }

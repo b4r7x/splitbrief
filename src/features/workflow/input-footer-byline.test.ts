@@ -1,12 +1,16 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { ConversationRowSegment } from './conversation-rows/types.js';
+import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { taskId } from '../../core/schemas/task.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 import {
   buildInputFooterByline,
   fitCheckingRow,
+  fitInputFooterByline,
   stageFractionText,
 } from './input-footer-byline.js';
 import { stopByline } from './stop/copy.js';
@@ -481,5 +485,71 @@ describe('fitCheckingRow', () => {
     expect(fitCheckingRow({ ...row, cancellable: true, width: 32 })).toBe(
       'Checking tools · esc cancel',
     );
+  });
+});
+
+describe('fitInputFooterByline', () => {
+  const lead: ConversationRowSegment[] = [{ text: 'Building T001', tone: 'info' }];
+  const record: ConversationRowSegment[] = [{ text: 'Run paused at T002', tone: 'warning' }];
+  const queued = { byline: '2 queued for BUILD on T001', shortByline: '2 queued' };
+  const live = {
+    cols: 120,
+    lead,
+    leadClock: '1:05',
+    hintText: 'esc to stop',
+    recordByline: undefined,
+    queued: null,
+    worktreeName: 'run-tree',
+  };
+
+  it('passes a live lead through with its clock, hint and worktree', () => {
+    expect(fitInputFooterByline(live)).toEqual(
+      buildInputFooterByline({
+        cols: 120,
+        lead,
+        leadClock: '1:05',
+        hintText: 'esc to stop',
+        queuedText: null,
+        worktreeLabel: 'run-tree',
+      }),
+    );
+  });
+
+  it('states the record byline after the mark slot, with no clock, hint or worktree', () => {
+    const parts = fitInputFooterByline({ ...live, recordByline: record });
+    expect(parts[0]).toEqual({ text: ' '.repeat(MARK_SLOT_CELLS), tone: 'textDim' });
+    expect(fullByline(parts)).toBe(`${' '.repeat(MARK_SLOT_CELLS)}Run paused at T002`);
+  });
+
+  it('keeps the whole queued count when it fits', () => {
+    expect(fullByline(fitInputFooterByline({ ...live, queued }))).toContain(queued.byline);
+  });
+
+  it('falls to the short queued count when the whole one does not fit', () => {
+    const cols = colsForLine(`Building T001 1:05${SOFT_SEP}2 queued for BUILD`);
+    const text = fullByline(
+      fitInputFooterByline({ ...live, cols, queued, worktreeName: undefined }),
+    );
+    expect(text).not.toContain(queued.byline);
+    expect(text).toContain(`${SOFT_SEP}2 queued`);
+  });
+
+  it('cuts a long record byline to the room the short queued count leaves', () => {
+    const cols = colsForLine(`${' '.repeat(MARK_SLOT_CELLS)}Run paused at${SOFT_SEP}2 queued`);
+    const room = getChromeContentWidth(cols) - getTerminalCellWidth(`${SOFT_SEP}2 queued`);
+    const cut = truncateTerminalDisplayText(
+      `${' '.repeat(MARK_SLOT_CELLS)}Run paused at T002`,
+      room,
+    );
+    expect(fullByline(fitInputFooterByline({ ...live, cols, recordByline: record, queued }))).toBe(
+      `${cut}${SOFT_SEP}2 queued`,
+    );
+    expect(cut).not.toContain('T002');
+  });
+
+  it('strips control sequences from the worktree name', () => {
+    const text = fullByline(fitInputFooterByline({ ...live, worktreeName: 'run\u001b[31m-tree' }));
+    expect(text).toContain(`${glyph('cursor')} run-tree`);
+    expect(text).not.toContain('\u001b');
   });
 });

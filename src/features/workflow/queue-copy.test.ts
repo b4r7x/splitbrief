@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { seedBriefs } from '#testing/helpers/stores.js';
 import { phaseStage } from '../../core/phases/rail.js';
-import { queueCopy } from './queue-copy.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
+import { operationsStore } from '../../stores/workflow/operations/state.js';
+import { runViewStore } from '../../stores/workflow/run-view.js';
+import { currentQueueCopy, queueCopy, runQueueCopy } from './queue-copy.js';
 
 describe('queueCopy', () => {
   it.each([0, 1, 2])('owns clear feedback and transcript copy for %s messages', (count) => {
@@ -170,5 +174,56 @@ describe('queueCopy', () => {
     const copy = queueCopy({ seat: null });
     expect(copy.queued).toEqual({ label: 'Queued', value: undefined });
     expect(copy.delivered).toEqual({ label: 'Delivered', value: undefined });
+  });
+});
+
+describe('runQueueCopy', () => {
+  afterEach(() => {
+    runViewStore.__testReset();
+    operationsStore.__testReset();
+    lifecycleStore.__testReset();
+  });
+  const building = () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    seedBriefs({
+      currentTask: 1,
+      totalTasks: 2,
+      tasks: [
+        { id: 'T003', title: 'T3', status: 'in_progress' },
+        { id: 'T004', title: 'T4', status: 'pending' },
+      ],
+    });
+  };
+
+  it('names BUILD on the brief that is building', () => {
+    building();
+    expect(runQueueCopy(runViewStore.get(), operationsStore.get(), 2).byline).toBe(
+      '2 queued for BUILD on T003',
+    );
+  });
+
+  it('names REVIEW while a review is scheduled', () => {
+    building();
+    operationsStore.__testReset({ scheduledReview: true });
+    expect(runQueueCopy(runViewStore.get(), operationsStore.get(), 2).byline).toBe(
+      '2 queued for REVIEW',
+    );
+  });
+
+  it('names no seat when no seat reviews and no brief is left', () => {
+    runViewStore.__testReset({ phase: 'implementing', reviewNone: true });
+    seedBriefs({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T003', title: 'T3', status: 'done' }],
+    });
+    expect(runQueueCopy(runViewStore.get(), operationsStore.get(), 2).byline).toBe('2 queued');
+  });
+
+  it('gives the run on screen the copy of its queue depth', () => {
+    building();
+    lifecycleStore.__testReset({ status: 'running', queueDepth: 3 });
+    expect(currentQueueCopy().byline).toBe('3 queued for BUILD on T003');
+    expect(currentQueueCopy(1).byline).toBe('1 queued for BUILD on T003');
   });
 });

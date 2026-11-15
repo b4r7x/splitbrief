@@ -54,3 +54,42 @@ export type TranscriptWalkStep =
           historicalTaskHeader?: true;
         }
     ) & { settledSection?: SettledTranscriptSection });
+
+/** What the walk holds open between the events of the transcript. Its steps change it in place. */
+export interface TranscriptWalk {
+  activityBatch: RunnerActivityBatch | null;
+  recovery: RecoveryFold | null;
+  /** The seat switch and the correction of the open fold, which follow its Recovery row. */
+  afterRecovery: Extract<TranscriptWalkStep, { kind: 'event' }>[];
+  checkRun: { event: CheckEvent; globalIndex: number }[];
+  /** The last event that gave a row: a prompt that restates its halt opens no fold. */
+  lastRowEvent: EngineEvent | null;
+  /** The header on screen: a restart on the same worker does not repeat it. */
+  openHeader: EngineEventOf<'task_started'> | null;
+  restatedPrompt: EngineEventOf<'recovery_prompted'> | null;
+  settledContext: { settledSection?: SettledTranscriptSection };
+}
+
+/** What the steps of the walk read: the passes over the whole transcript that run before it. */
+export interface TranscriptWalkReads {
+  /** The Recovery row of each automatic recovery, at the event that opens it. */
+  readonly recoveries: ReadonlyMap<EngineEvent, RecoveryFold>;
+  /** The seat switches that an automatic recovery made. */
+  readonly switches: ReadonlySet<EngineEvent>;
+  /** The events that show no row. */
+  readonly hidden: ReadonlySet<EngineEvent>;
+  /** The kept-workspace notice that still shows; every other one shows no row. */
+  readonly workspaceNotice: EngineEventOf<'warning'> | undefined;
+  /** The activity of each call that has ended. */
+  readonly endedActivity: ReadonlySet<EngineEvent>;
+}
+
+/** One section as its events read it. */
+export interface WalkSection {
+  readonly section: Section<EngineEvent>;
+  readonly review: ReviewStage | undefined;
+  /** The header of a settled brief, which its settled row states. */
+  readonly started: EngineEventOf<'task_started'> | undefined;
+  /** The last header of each brief: an earlier one on another worker reads as history. */
+  readonly latestHeaders: ReadonlyMap<string, EngineEventOf<'task_started'>>;
+}

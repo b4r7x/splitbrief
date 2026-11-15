@@ -1,8 +1,13 @@
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../../core/crew/identity.js';
 import { messageSeat } from '../../core/queue/state.js';
 import { selectBuildMessageBrief } from '../../core/run-view/briefs.js';
+import type { RunView } from '../../core/run-view/reduce.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
-import { operationsStore, selectScheduledReview } from '../../stores/workflow/operations/state.js';
+import {
+  type OperationsState,
+  operationsStore,
+  selectScheduledReview,
+} from '../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { pluralize } from '../../utils/pluralize.js';
 
@@ -70,18 +75,30 @@ export function queueCopy(input: {
   };
 }
 
-/** The queue copy of the run on screen: the seat that reads a message typed now, and its brief. */
-export function currentQueueCopy(count?: number) {
-  const { phase, briefs, reviewNone } = runViewStore.get();
-  const buildBrief = selectBuildMessageBrief(briefs);
+/** The queue copy of a run: the seat that reads a message typed now, and its brief. */
+export function runQueueCopy(
+  view: Pick<RunView, 'phase' | 'briefs' | 'reviewNone'>,
+  operations: OperationsState,
+  count: number,
+) {
+  const buildBrief = selectBuildMessageBrief(view.briefs);
   return queueCopy({
     seat: messageSeat(
-      phase,
-      selectScheduledReview(operationsStore.get()),
-      reviewNone,
+      view.phase,
+      selectScheduledReview(operations),
+      view.reviewNone,
       buildBrief !== null,
     ),
     taskId: buildBrief?.id,
-    count: count ?? lifecycleStore.get().queueDepth,
+    count,
   });
+}
+
+/** The queue copy of the run on screen. */
+export function currentQueueCopy(count?: number) {
+  return runQueueCopy(
+    runViewStore.get(),
+    operationsStore.get(),
+    count ?? lifecycleStore.get().queueDepth,
+  );
 }
