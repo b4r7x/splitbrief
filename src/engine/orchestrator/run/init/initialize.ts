@@ -94,7 +94,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         state: seats.savedState ?? createInitialState(feature),
       }),
       bus,
-      phase: seats.savedState?.phase ?? 'idle',
     };
   }
   const { skillIds, ...skills } = seats.skills;

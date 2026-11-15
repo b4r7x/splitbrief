@@ -66,7 +66,7 @@ export type InitResult =
       state: WorkflowState;
       wctx: WorkflowContext;
     }
-  | { ok: false; summary: Summary; bus: EventBus; phase: WorkflowState['phase'] };
+  | { ok: false; summary: Summary; bus: EventBus };
 
 export type InitializeWorkflowArgs = {
   opts: RunWorkflowOptions;

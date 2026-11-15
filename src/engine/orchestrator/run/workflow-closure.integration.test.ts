@@ -34,6 +34,7 @@ import type { EngineEvent } from '../../events/types.js';
 import { readRunEvents } from '../../events/replay.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/review-failed.js';
+import { retentionError } from '../isolation/retention.js';
 import { closeRunIfOpen } from './close.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 
@@ -311,4 +312,203 @@ describe('workflow closure', () => {
       (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
     ).toEqual([]);
   });
+});
+
+describe('runWorkflow step and dispose order', () => {
+  const LOGGED_EVENTS = new Set(['error', 'run_failed', 'workflow_cancelled', 'workflow_complete']);
+  const TEARDOWN = [
+    'stop following',
+    'clear ledger',
+    'clear sign-in copies',
+    'dispose isolation',
+    'checkout snapshot',
+    'release liveness',
+  ];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Each step writes its line when it runs, so one ordered log holds the body, the settle and the
+  // teardown of the run.
+  async function logRunSteps(log: string[], projectDir: string): Promise<void> {
+    const registry = await import('../../../lib/process/registry.js');
+    const finalize = await import('../session-lifecycle/finalize.js');
+    const commit = await import('../state-ops/commit.js');
+    const bridge = await import('../../runners/sandbox/state/bridge.js');
+    const isolation = await import('../isolation/create.js');
+    const snapshots = await import('./snapshots.js');
+    const liveness = await import('./liveness.js');
+    const close = await import('./close.js');
+    const halts = await import('../state-ops/halts.js');
+    const { killProcessScope, clearProcessLedger } = registry;
+    const { saveFinalSession } = finalize;
+    const { followCommittedState } = commit;
+    const { clearBridgedCliState } = bridge;
+    const { createRunIsolation } = isolation;
+    const { recordCheckoutRunSnapshot } = snapshots;
+    const { acquireLiveness } = liveness;
+    const { closeRunIfOpen } = close;
+    const { recordLastFailure, parkStoppedRun } = halts;
+    vi.spyOn(registry, 'killProcessScope').mockImplementation((scope) => {
+      log.push('kill scope');
+      return killProcessScope(scope);
+    });
+    vi.spyOn(registry, 'clearProcessLedger').mockImplementation((ledger) => {
+      log.push('clear ledger');
+      clearProcessLedger(ledger);
+    });
+    vi.spyOn(finalize, 'saveFinalSession').mockImplementation((opts) => {
+      log.push('save summary');
+      saveFinalSession(opts);
+    });
+    vi.spyOn(commit, 'followCommittedState').mockImplementation((ref, follower) => {
+      const stop = followCommittedState(ref, follower);
+      return () => {
+        log.push('stop following');
+        stop();
+      };
+    });
+    vi.spyOn(bridge, 'clearBridgedCliState').mockImplementation(async (dir, tool) => {
+      if (dir === projectDir) log.push('clear sign-in copies');
+      await clearBridgedCliState(dir, tool);
+    });
+    vi.spyOn(isolation, 'createRunIsolation').mockImplementation((opts) => {
+      const handle = createRunIsolation(opts);
+      return {
+        ...handle,
+        dispose: async () => {
+          log.push('dispose isolation');
+          await handle.dispose();
+        },
+      };
+    });
+    vi.spyOn(snapshots, 'recordCheckoutRunSnapshot').mockImplementation(async (ctx) => {
+      log.push('checkout snapshot');
+      await recordCheckoutRunSnapshot(ctx);
+    });
+    vi.spyOn(liveness, 'acquireLiveness').mockImplementation(async (opts) => {
+      const release = await acquireLiveness(opts);
+      return async () => {
+        log.push('release liveness');
+        await release();
+      };
+    });
+    vi.spyOn(close, 'closeRunIfOpen').mockImplementation(async (...args) => {
+      log.push('close run');
+      return closeRunIfOpen(...args);
+    });
+    vi.spyOn(halts, 'recordLastFailure').mockImplementation((...args) => {
+      log.push('record failure');
+      return recordLastFailure(...args);
+    });
+    vi.spyOn(halts, 'parkStoppedRun').mockImplementation(async (...args) => {
+      log.push('park run');
+      return parkStoppedRun(...args);
+    });
+  }
+
+  function finalReviewRun(name: string) {
+    const projectDir = createTempDir(`workflow-order-${name}-`);
+    dirs.push(projectDir);
+    execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
+    const ref = { projectDir, sessionId: `order-${name}` };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const state: WorkflowState = {
+      ...createInitialState(`Order ${name}`),
+      phase: 'final-review',
+      changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+    };
+    saveState(ref, state);
+    return { projectDir, ref, prepared: preparedFinalReview(ref, state) };
+  }
+
+  it('runs the body, then saves the summary, then tears the run down in order', async () => {
+    const { projectDir, prepared } = finalReviewRun('finish');
+    const log: string[] = [];
+    await logRunSteps(log, projectDir);
+    await runTrackedWorkflow({
+      prepared,
+      sinks: TEST_SINKS,
+      callbacks: makeCallbacks().callbacks,
+      _planner: makePlanner({
+        typedCall: typedCallPlanAndReview(
+          () => planFromTasks([]),
+          (prompt) => passingReviewVerdict(prompt),
+        ),
+      }),
+      _implementer: makeImplementer(),
+      _eventSink: (event) => {
+        if (LOGGED_EVENTS.has(event.type)) log.push(`event:${event.type}`);
+      },
+    });
+    expect(log).toEqual(['event:workflow_complete', 'kill scope', 'save summary', ...TEARDOWN]);
+  });
+
+  it.each([
+    {
+      stop: 'no stop',
+      signal: false,
+      abortReason: undefined,
+      thrown: () => new Error('the order fixture throws'),
+      steps: [
+        'kill scope',
+        'event:error',
+        'record failure',
+        'event:run_failed',
+        'kill scope',
+        'save summary',
+      ],
+    },
+    {
+      stop: 'End run',
+      signal: false,
+      abortReason: WORKFLOW_USER_CANCELLED_ABORT_REASON,
+      thrown: () => new Error('the order fixture throws'),
+      steps: ['kill scope', 'kill scope', 'close run', 'event:workflow_cancelled', 'save summary'],
+    },
+    {
+      stop: 'a plain stop and a signal',
+      signal: true,
+      abortReason: 'plain',
+      thrown: () => retentionError.failed('/kept/workspace', new Error('disk full')),
+      steps: [
+        'kill scope',
+        'event:error',
+        'record failure',
+        'event:run_failed',
+        'kill scope',
+        'park run',
+        'event:workflow_cancelled',
+        'save summary',
+      ],
+    },
+  ] as const)(
+    'a body that throws after $stop settles the run in order before the save and the teardown',
+    async ({ stop, signal, abortReason, thrown, steps }) => {
+      const { projectDir, prepared } = finalReviewRun(stop.replaceAll(' ', '-'));
+      const log: string[] = [];
+      await logRunSteps(log, projectDir);
+      const controller = new AbortController();
+      const phases = await import('./phases.js');
+      vi.spyOn(phases, 'runPlanningPhases').mockImplementation(async () => {
+        if (abortReason === 'plain') controller.abort();
+        else if (abortReason !== undefined) controller.abort(abortReason);
+        if (signal) process.emit('SIGINT');
+        throw thrown();
+      });
+      await runTrackedWorkflow({
+        prepared,
+        sinks: TEST_SINKS,
+        callbacks: makeCallbacks().callbacks,
+        signal: controller.signal,
+        _planner: makePlanner(),
+        _implementer: makeImplementer(),
+        _eventSink: (event) => {
+          if (LOGGED_EVENTS.has(event.type)) log.push(`event:${event.type}`);
+        },
+      });
+      expect(log).toEqual([...steps, ...TEARDOWN]);
+    },
+  );
 });

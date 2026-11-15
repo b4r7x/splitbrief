@@ -351,7 +351,7 @@ Hydration restores ids through `isQueuedMessagePendingFirstDelivery`. It include
 
 ### Delivery to a running call
 
-The orchestrator creates one `SteeringPort` per run through `createSteeringPort({ onChange })`. It creates the port when `run/workflow.ts` installs the queue handler through `session-lifecycle/install-queue.ts`. `WorkflowContext.steering` holds this port. A port with no attached call keeps the queue delivery path.
+The orchestrator creates one `SteeringPort` per run through `createSteeringPort({ onChange })`. It creates the port when `run/body.ts` installs the queue handler through `session-lifecycle/install-queue.ts`. `WorkflowContext.steering` holds this port. A port with no attached call keeps the queue delivery path.
 
 BUILD implementation, retry, and correction calls receive the port. The planning session calls and the final-review verdict call receive it too. Helper calls receive no port. These include consults, hints, compaction, summaries, and probes.
 

@@ -6,7 +6,7 @@ import { readProcessStartTimeMs } from './start-time.js';
 import { REAP_POLL_MS, groupExists, terminateProcess, usesProcessGroup } from './termination.js';
 import { unwatchGroup, watchGroup } from './parent-watchdog.js';
 
-type ProcessLedger = {
+export type ProcessLedger = {
   record(pid: number, startTimeMs: number | null): void;
   release(pid: number): void;
 };
