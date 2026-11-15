@@ -106,22 +106,14 @@ export function setTerminalInputModes(
   }
 }
 
-export function restoreTerminalControl(opts: {
-  fullscreen: boolean;
-  mouse: boolean;
-  paste?: boolean | undefined;
-  stdin?: NodeJS.ReadStream | undefined;
-}): void {
-  const paste = opts.paste ?? opts.mouse;
-  if (opts.mouse || paste) setTerminalInputModes('disable', { mouse: opts.mouse, paste });
+export function restoreTerminalControl(opts: { fullscreen: boolean }): void {
   if (opts.fullscreen) {
     writeTerminalSequence(terminalSequences.exitAltBuffer);
     writeTerminalSequence(terminalSequences.showCursor);
   }
-  const stdin = opts.stdin ?? process.stdin;
-  if (!stdin.isTTY) return;
+  if (!process.stdin.isTTY) return;
   try {
-    stdin.setRawMode(false);
+    process.stdin.setRawMode(false);
   } catch {
     // terminal may already be detached during signal shutdown
   }

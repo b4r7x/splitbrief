@@ -1,50 +1,31 @@
-import { render } from 'ink';
-import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
-import { installDiagnosticSink, warnError } from '../../lib/warn.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
-import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
-import { installTerminalSelection } from '../../lib/terminal/selection/install.js';
-import { createFilteredStdin } from '../../lib/terminal/filtered-stdin/create.js';
-import type { FilteredStdin } from '../../lib/terminal/filtered-stdin/types.js';
-import { setActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active.js';
+import { warnError } from '../../lib/warn.js';
 import { detectKittyKeyboardFlags } from '../../lib/terminal/kitty-keyboard.js';
 import { queryTerminalBackground } from '../../lib/terminal/background.js';
 import { terminalBackgroundStore } from '../../stores/ui/terminal-background.js';
-import {
-  configureSplitbriefKeyDebugLog,
-  isConfiguredKeyDebugEnabled,
-  logSplitbriefRawKeyChunk,
-} from '../../core/keybindings/debug-log.js';
-import {
-  installTerminalOutputErrorGuard,
-  isBrokenOutputError,
-} from '../../lib/terminal/control.js';
+import { configureSplitbriefKeyDebugLog } from '../../core/keybindings/debug-log.js';
+import { installTerminalOutputErrorGuard } from '../../lib/terminal/control.js';
 import {
   resumeTerminalAfterEditor,
-  setActiveTerminalHandover,
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
+import type { TerminationSignal } from '../../lib/process/signals.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { holdSlowProbeLines } from '../slow-probe-line.js';
 import { resolveRenderInputConfig } from './input-config.js';
 import { createEditorOutput } from './editor-output.js';
+import { mountTui } from './mount.js';
 import {
   createCrashHandler,
   createCrashListener,
   createResumeHandler,
   createSuspendHandler,
   createSuspendListenerToggle,
+  createTerminalCleanup,
   createTerminationHandler,
   createTerminationSignalListener,
-  createTuiCleanup,
-  restoreTerminal,
-  unmountWhenSignalled,
 } from './process-lifecycle.js';
-import {
-  prepareInlineFallbackAfterFullscreenFailure,
-  startFullscreenThenActivateHandover,
-} from './terminal-handover.js';
+import { openTuiInput } from './stdin.js';
 
 interface RenderOptions {
   fullscreen: boolean;
@@ -61,116 +42,26 @@ interface RenderOptions {
 
 const BACKGROUND_QUERY_TIMEOUT_MS = 300;
 
-export async function renderApp(
-  appElement: ReturnType<typeof createElement>,
-  options: RenderOptions,
-  deps: { exit: (code: number) => void } = { exit: (code) => process.exit(code) },
-): Promise<void> {
-  const releaseSlowProbeLines = holdSlowProbeLines();
-  const { fullscreen, mouse, hover, projectDir, unmountSignal } = options;
-  let processCompletion: Promise<void> | undefined;
-  const kittyKeyboard = detectKittyKeyboardFlags();
-  installTerminalOutputErrorGuard();
+/**
+ * The process listeners of the TUI. A termination signal and a crash share one completion: the
+ * first one that arrives runs the cleanup and the exit, and a later one waits on it.
+ */
+interface ProcessListeners {
+  completion: Promise<void> | undefined;
+  settleTerminationSignal: (signal: TerminationSignal) => void;
+  settleCrash: (reason: unknown) => void;
+  onSuspend: () => void;
+  onResume: () => void;
+}
 
-  configureSplitbriefKeyDebugLog(projectDir ? { projectDir } : undefined);
-
-  const { useMouse, useHover, usePaste } = resolveRenderInputConfig({
-    fullscreen,
-    mouse,
-    hover,
-  });
-  if (fullscreen && process.stdin.isTTY && process.stdout.isTTY) {
-    const background = await queryTerminalBackground(
-      process.stdin,
-      process.stdout,
-      BACKGROUND_QUERY_TIMEOUT_MS,
-    );
-    if (background !== undefined) terminalBackgroundStore.detected(background);
-  }
-  let filteredStdin: FilteredStdin;
-  const selection =
-    fullscreen && useMouse && process.stdout.isTTY
-      ? installTerminalSelection({
-          stdout: process.stdout,
-          copy: copyToClipboard,
-          reportError: (message) => feedbackStore.setError(message),
-          onCopyKey: (result) => {
-            filteredStdin.stdin.emit('selection-copy', result);
-          },
-        })
-      : undefined;
-
-  const rawKeyTap = isConfiguredKeyDebugEnabled()
-    ? (chunk: Buffer) => logSplitbriefRawKeyChunk(chunk)
-    : undefined;
-  if (rawKeyTap) {
-    process.stdin.on('data', rawKeyTap);
-  }
-
-  // Ink reads its keys through this stream in both render modes: it writes each backspace byte
-  // as its own key, which Ink would otherwise join with the rest of the read.
-  filteredStdin = createFilteredStdin(process.stdin, {
-    activate: false,
-    mouse: useMouse,
-    hover: useHover,
-    paste: usePaste,
-    handleMouse: selection?.handleMouse,
-    filterInput: selection?.filterInput,
-    onPaste: selection?.clear,
-  });
-
-  const disableFilteredStdin = () => {
-    selection?.dispose();
-    filteredStdin.disable();
-  };
-
-  // While the TUI owns the terminal a diagnostic that names a presentation goes to the feedback
-  // line, never as raw stderr into the frame. An at-exit note, and a feedback diagnostic raised
-  // during teardown or rejected, is written after the terminal is restored.
-  const deferredDiagnostics: string[] = [];
-  let tearingDown = false;
-  const releaseDiagnosticSink = installDiagnosticSink((message, presentation) => {
-    if (tearingDown || presentation === 'at-exit') {
-      deferredDiagnostics.push(message);
-      return;
-    }
-    try {
-      feedbackStore.setError(message);
-    } catch {
-      deferredDiagnostics.push(message);
-    }
-  });
-
-  // Every frame Ink writes goes through this stream. Ink unmounts on process exit and paints
-  // a final frame, which after a signal or a crash would land on the restored main screen
-  // (a frame as tall as the terminal clears it and the scrollback), so the restore closes it
-  // first; only the keyboard-mode pop of that unmount still reaches the terminal.
-  const editorOutput = createEditorOutput(process.stdout);
-  const cleanupTerminal = () => {
-    try {
-      editorOutput.close();
-      setActiveTerminalHandover(undefined);
-      setActiveFilteredStdin(undefined);
-      disableFilteredStdin();
-      if (rawKeyTap) process.stdin.off('data', rawKeyTap);
-      restoreTerminal({ fullscreen, stdin: process.stdin });
-    } finally {
-      releaseDiagnosticSink();
-      for (const message of deferredDiagnostics.splice(0)) process.stderr.write(`${message}\n`);
-    }
-  };
-
-  const cleanupTui = createTuiCleanup({ restore: cleanupTerminal });
-  const cleanup = () => {
-    tearingDown = true;
-    selection?.suspend();
-    return cleanupTui();
-  };
-
-  // A fullscreen `kill` reaches this handler at the same time as the in-flight workflow's
-  // own signal-driven shutdown; exiting the process here would race it to completion and
-  // skip the mid-task rollback. Await cleanup before exiting so the TUI discards a partially
-  // applied task exactly like the headless host does.
+// A fullscreen `kill` reaches the termination handler at the same time as the in-flight
+// workflow's own signal-driven shutdown; exiting the process there would race it to completion
+// and skip the mid-task rollback. Await cleanup before exiting so the TUI discards a partially
+// applied task exactly like the headless host does.
+function installProcessListeners(
+  cleanup: () => Promise<void>,
+  exit: (code: number) => void,
+): ProcessListeners {
   const reportTerminationCleanupFailure = (error: unknown) =>
     warnError(
       'Could not stop every tool process while SPLITBRIEF stopped, so one may keep running',
@@ -180,19 +71,8 @@ export async function renderApp(
   const onTerminationSignal = createTerminationHandler({
     cleanup,
     reportCleanupFailure: reportTerminationCleanupFailure,
-    exit: deps.exit,
+    exit,
   });
-  const settleTerminationSignal = createTerminationSignalListener({
-    handle: (signal) => {
-      processCompletion ??= onTerminationSignal(signal);
-      return processCompletion;
-    },
-    reportCleanupFailure: reportTerminationCleanupFailure,
-  });
-  process.on('SIGINT', settleTerminationSignal);
-  process.on('SIGTERM', settleTerminationSignal);
-  process.on('SIGHUP', settleTerminationSignal);
-
   const reportCrash = (reason: unknown) => {
     process.stderr.write(`SPLITBRIEF crashed: ${toErrorMessage(reason)}\n`);
   };
@@ -206,152 +86,99 @@ export async function renderApp(
     cleanup,
     report: reportCrash,
     reportCleanupFailure: reportCrashCleanupFailure,
-    exit: deps.exit,
+    exit,
   });
-  const settleCrash = createCrashListener({
-    handle: (reason) => {
-      processCompletion ??= onCrash(reason);
-      return processCompletion;
-    },
-    reportCrash,
-    reportCleanupFailure: reportCrashCleanupFailure,
-  });
-  process.on('uncaughtException', settleCrash);
-  process.on('unhandledRejection', settleCrash);
-
   // SIGTSTP must remove its own listener before re-raising so the kernel applies Node's default
   // stop disposition; SIGCONT re-installs it after restoring so a second Ctrl+Z still works. The
   // toggle keeps install/uninstall balanced so a spurious SIGCONT cannot stack a second listener.
   const suspendListener = createSuspendListenerToggle({
-    install: () => process.on('SIGTSTP', onSuspend),
-    uninstall: () => process.off('SIGTSTP', onSuspend),
+    install: () => process.on('SIGTSTP', listeners.onSuspend),
+    uninstall: () => process.off('SIGTSTP', listeners.onSuspend),
   });
-  const onSuspend = createSuspendHandler({
-    save: () => suspendTerminalForEditor(),
-    raiseDefault: () => {
-      suspendListener.uninstall();
-      process.kill(process.pid, 'SIGTSTP');
-    },
-  });
-  const onResume = createResumeHandler({
-    restore: () => {
-      resumeTerminalAfterEditor();
-      suspendListener.install();
-    },
-  });
-  suspendListener.install();
-  process.on('SIGCONT', onResume);
-
-  // No `incrementalRendering`: Ink 6.8's incremental writer assumes the cursor rests on the
-  // last rendered line, but Ink writes a frame shorter than the terminal with a trailing
-  // newline and the cursor a row below it (log-update.js:164 against ink.js:320-321), so every
-  // repaint of a short frame lands one row low. Ink 7.0.0 fixed that arithmetic, but the
-  // manifest pins `^6.8.0`, so restoring this needs a major bump the repo has not taken. The
-  // cost is a whole-frame rewrite per repaint, which Ink brackets in DEC 2026 synchronized
-  // output on a TTY outside CI (ink/build/write-synchronized.js) and leaves unbracketed on a
-  // pipe. Under CI there is no cost at all: Ink drops every non-static redraw (ink.js:262).
-  const renderFallback = (input: FilteredStdin) => {
-    setActiveTerminalHandover({
-      fullscreen: false,
-      mouse: false,
-      sourceStdin: process.stdin,
-      beforeSuspend: editorOutput.suspend,
-      beforeResume: editorOutput.resume,
-      keyboardPush: editorOutput.keyboardPush,
-    });
-    const instance = render(appElement, {
-      exitOnCtrlC: false,
-      maxFps: 30,
-      kittyKeyboard,
-      stdout: editorOutput.stdout,
-      stdin: input.stdin,
-    });
-    input.activate();
-    return instance;
+  const listeners: ProcessListeners = {
+    completion: undefined,
+    settleTerminationSignal: createTerminationSignalListener({
+      handle: (signal) => {
+        listeners.completion ??= onTerminationSignal(signal);
+        return listeners.completion;
+      },
+      reportCleanupFailure: reportTerminationCleanupFailure,
+    }),
+    settleCrash: createCrashListener({
+      handle: (reason) => {
+        listeners.completion ??= onCrash(reason);
+        return listeners.completion;
+      },
+      reportCrash,
+      reportCleanupFailure: reportCrashCleanupFailure,
+    }),
+    onSuspend: createSuspendHandler({
+      save: () => suspendTerminalForEditor(),
+      raiseDefault: () => {
+        suspendListener.uninstall();
+        process.kill(process.pid, 'SIGTSTP');
+      },
+    }),
+    onResume: createResumeHandler({
+      restore: () => {
+        resumeTerminalAfterEditor();
+        suspendListener.install();
+      },
+    }),
   };
+  process.on('SIGINT', listeners.settleTerminationSignal);
+  process.on('SIGTERM', listeners.settleTerminationSignal);
+  process.on('SIGHUP', listeners.settleTerminationSignal);
+  process.on('uncaughtException', listeners.settleCrash);
+  process.on('unhandledRejection', listeners.settleCrash);
+  suspendListener.install();
+  process.on('SIGCONT', listeners.onResume);
+  return listeners;
+}
+
+function removeProcessListeners(listeners: ProcessListeners): void {
+  process.off('SIGINT', listeners.settleTerminationSignal);
+  process.off('SIGTERM', listeners.settleTerminationSignal);
+  process.off('SIGHUP', listeners.settleTerminationSignal);
+  process.off('SIGTSTP', listeners.onSuspend);
+  process.off('SIGCONT', listeners.onResume);
+  process.off('uncaughtException', listeners.settleCrash);
+  process.off('unhandledRejection', listeners.settleCrash);
+}
+
+export async function renderApp(
+  appElement: ReturnType<typeof createElement>,
+  options: RenderOptions,
+  deps: { exit: (code: number) => void } = { exit: (code) => process.exit(code) },
+): Promise<void> {
+  const releaseSlowProbeLines = holdSlowProbeLines();
+  const { fullscreen, mouse, hover, projectDir, unmountSignal } = options;
+  const kittyKeyboard = detectKittyKeyboardFlags();
+  installTerminalOutputErrorGuard();
+
+  configureSplitbriefKeyDebugLog(projectDir ? { projectDir } : undefined);
+
+  const modes = resolveRenderInputConfig({ fullscreen, mouse, hover });
+  if (fullscreen && process.stdin.isTTY && process.stdout.isTTY) {
+    const background = await queryTerminalBackground(
+      process.stdin,
+      process.stdout,
+      BACKGROUND_QUERY_TIMEOUT_MS,
+    );
+    if (background !== undefined) terminalBackgroundStore.detected(background);
+  }
+  const input = openTuiInput(fullscreen, modes);
+  const output = createEditorOutput(process.stdout);
+  const cleanup = createTerminalCleanup(fullscreen, input, output);
+  const listeners = installProcessListeners(cleanup, deps.exit);
 
   try {
-    if (fullscreen) {
-      const fullscreenStdin = filteredStdin;
-      let ink: ReturnType<typeof withFullScreen> | undefined;
-      try {
-        const fullscreenInk = withFullScreen(appElement, {
-          exitOnCtrlC: false,
-          kittyKeyboard,
-          stdout: editorOutput.stdout,
-          stdin: fullscreenStdin.stdin,
-        });
-        ink = fullscreenInk;
-        await startFullscreenThenActivateHandover({
-          start: () => fullscreenInk.start(),
-          publishFilteredStdin: () => {
-            setActiveFilteredStdin(fullscreenStdin);
-          },
-          activateFilteredStdin: () => {
-            fullscreenStdin.activate();
-          },
-          handover: {
-            fullscreen: true,
-            mouse: useMouse,
-            paste: usePaste,
-            hover: useHover,
-            sourceStdin: process.stdin,
-            beforeSuspend: () => {
-              editorOutput.suspend();
-              selection?.suspend();
-            },
-            beforeResume: () => {
-              editorOutput.resume();
-              selection?.resume();
-            },
-            keyboardPush: editorOutput.keyboardPush,
-          },
-          setHandover: setActiveTerminalHandover,
-        });
-      } catch (err) {
-        ink = undefined;
-        if (!isBrokenOutputError(err)) {
-          warnError('Fullscreen init failed, falling back to inline mode', err);
-          filteredStdin = prepareInlineFallbackAfterFullscreenFailure({
-            clearTerminalHandover: () => setActiveTerminalHandover(undefined),
-            clearFilteredStdin: () => setActiveFilteredStdin(undefined),
-            disableFilteredStdin,
-            createInlineStdin: () =>
-              createFilteredStdin(process.stdin, { activate: false, mouse: false, paste: false }),
-          });
-          const inst = renderFallback(filteredStdin);
-          unmountWhenSignalled(inst, unmountSignal);
-          try {
-            await inst.waitUntilExit();
-          } catch (fallbackErr) {
-            if (!isBrokenOutputError(fallbackErr)) throw fallbackErr;
-          }
-        }
-      }
-      if (ink !== undefined) {
-        unmountWhenSignalled(ink.instance, unmountSignal, selection?.suspend);
-        try {
-          await ink.waitUntilExit();
-        } catch (err) {
-          if (!isBrokenOutputError(err)) throw err;
-        }
-      }
-    } else {
-      const inst = renderFallback(filteredStdin);
-      unmountWhenSignalled(inst, unmountSignal);
-      await inst.waitUntilExit();
-    }
+    await mountTui(appElement, { fullscreen, kittyKeyboard, output, input, unmountSignal });
   } finally {
-    process.off('SIGINT', settleTerminationSignal);
-    process.off('SIGTERM', settleTerminationSignal);
-    process.off('SIGHUP', settleTerminationSignal);
-    process.off('SIGTSTP', onSuspend);
-    process.off('SIGCONT', onResume);
-    process.off('uncaughtException', settleCrash);
-    process.off('unhandledRejection', settleCrash);
+    removeProcessListeners(listeners);
     await cleanup();
     releaseSlowProbeLines();
   }
-  if (processCompletion !== undefined) await processCompletion;
+  if (listeners.completion !== undefined) await listeners.completion;
   else if (!unmountSignal?.aborted) deps.exit(Number(process.exitCode ?? 0));
 }

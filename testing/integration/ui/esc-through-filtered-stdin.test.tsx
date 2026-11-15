@@ -25,7 +25,7 @@ import { installDiagnosticSink } from '../../../src/lib/warn.js';
 
 // End-to-end regression guards. ESC and Ctrl+C bytes travel through the production
 // FilteredStdin (mouse filter + bracketed-paste stripper) before reaching Ink — the path
-// src/cli/render/app.ts wires and the path src/app/keys.test.tsx bypasses. They pin the
+// src/cli/render/stdin.ts wires and the path src/app/keys.test.tsx bypasses. They pin the
 // user-visible ladder (one esc opens the stop sheet; ctrl+c stops now) so a future filter
 // change cannot silently swallow a leading control byte. Drafts survive opening the menu.
 

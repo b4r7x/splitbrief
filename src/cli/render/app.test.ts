@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { createElement, Fragment } from 'react';
 import { withFullScreen } from 'fullscreen-ink';
@@ -9,6 +12,8 @@ import {
   resumeTerminalAfterEditor,
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
+import { getActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active.js';
+import { warnError, warnStderr } from '../../lib/warn.js';
 import { renderApp } from './app.js';
 import { __testResetProbeActivity, trackProbe } from '../../engine/probe-activity.js';
 import { watchSlowProbeLines } from '../slow-probe-line.js';
@@ -46,6 +51,77 @@ function inkInstance(
   unmount: () => void = () => {},
 ) {
   return { waitUntilExit, unmount, rerender: () => {}, cleanup: () => {}, clear: () => {} };
+}
+
+const PROCESS_EVENTS = [
+  'SIGINT',
+  'SIGTERM',
+  'SIGHUP',
+  'SIGTSTP',
+  'SIGCONT',
+  'uncaughtException',
+  'unhandledRejection',
+] as const;
+
+const TERMINAL_STEPS = new Map<string, string>(
+  Object.entries(terminalSequences).map(([name, sequence]) => [sequence, name]),
+);
+
+// A TTY stdin and stdout that record the raw mode, each named control sequence and each stderr
+// line in one list, and answer the background query. The key debug log is on, so the TUI taps
+// the stdin.
+function fakeTerminal() {
+  vi.stubEnv('SPLITBRIEF_DEBUG_KEYS', '1');
+  const steps: string[] = [];
+  const input = Object.assign(new PassThrough(), {
+    isTTY: true,
+    isRaw: false,
+    setRawMode: (mode: boolean) => {
+      steps.push(`raw ${mode}`);
+      input.isRaw = mode;
+      return input;
+    },
+    ref: () => input,
+    unref: () => input,
+  });
+  const write = (chunk: string | Uint8Array) => {
+    const text = String(chunk);
+    const step = TERMINAL_STEPS.get(text);
+    if (step !== undefined) steps.push(step);
+    if (text === '\u001b[c') input.write('\u001b]11;rgb:24/27/3a\u0007\u001b[?62c');
+    return true;
+  };
+  const output = Object.assign(new PassThrough(), {
+    isTTY: true,
+    fd: 1,
+    columns: 100,
+    rows: 24,
+    write,
+  });
+  vi.spyOn(process, 'stdin', 'get').mockReturnValue(input as unknown as typeof process.stdin);
+  vi.spyOn(process, 'stdout', 'get').mockReturnValue(output as unknown as typeof process.stdout);
+  vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+    steps.push(`stderr ${String(chunk).trimEnd()}`);
+    return true;
+  });
+  const base = PROCESS_EVENTS.map((event) => process.listenerCount(event));
+  const listenerCounts = () => PROCESS_EVENTS.map((event) => process.listenerCount(event));
+  return {
+    steps,
+    input,
+    output,
+    listening: () => listenerCounts().every((count, index) => count === (base[index] ?? 0) + 1),
+    released: () => listenerCounts().every((count, index) => count === base[index]),
+    selecting: () => output.write !== write || output.listenerCount('resize') > 0,
+  };
+}
+
+function crashListener(known: Set<NodeJS.UncaughtExceptionListener>) {
+  return process.listeners('uncaughtException').find((listener) => !known.has(listener));
+}
+
+function ended(stream: NodeJS.ReadStream | undefined): boolean {
+  return stream !== undefined && 'writableEnded' in stream && stream.writableEnded === true;
 }
 
 beforeEach(() => {
@@ -209,6 +285,42 @@ describe('renderApp slow-check line', () => {
       await rendering;
       probe.resolve();
       await probeRun;
+      stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops the line of a check that comes due while the cleanup runs, and writes the next one after it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    __testResetProbeActivity();
+    const workflow = Promise.withResolvers<void>();
+    lifecycle.awaitActiveWorkflowShutdown.mockImplementation(() => workflow.promise);
+    const lines: string[] = [];
+    const stop = watchSlowProbeLines((line) => lines.push(line));
+    const during = Promise.withResolvers<void>();
+    const after = Promise.withResolvers<void>();
+    const probeRuns: Promise<void>[] = [];
+    const rendering = renderApp(
+      createElement(Fragment),
+      { fullscreen: false, unmountSignal: new AbortController().signal },
+      { exit: vi.fn() },
+    );
+    try {
+      await vi.waitFor(() => expect(lifecycle.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce());
+      probeRuns.push(trackProbe({ tool: 'codex', check: 'version' }, () => during.promise));
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(lines).toEqual([]);
+      workflow.resolve();
+      await rendering;
+      probeRuns.push(trackProbe({ tool: 'opencode', check: 'version' }, () => after.promise));
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(lines).toHaveLength(1);
+    } finally {
+      workflow.resolve();
+      await rendering;
+      during.resolve();
+      after.resolve();
+      await Promise.all(probeRuns);
       stop();
       vi.useRealTimers();
     }
@@ -505,6 +617,369 @@ describe('renderApp completion', () => {
         stdout.mockRestore();
         stderr.mockRestore();
       }
+    },
+  );
+});
+
+type InkPath = 'fullscreen' | 'inline' | 'fallback';
+type Stop = 'an Ink exit' | 'a mount failure' | 'a termination signal' | 'a crash';
+
+function mountInk(path: InkPath, inkExit: PromiseWithResolvers<void>) {
+  const ink: { stdout?: NodeJS.WriteStream | undefined } = {};
+  vi.mocked(render).mockImplementationOnce((_node, options) => {
+    if (options !== undefined && 'stdout' in options) ink.stdout = options.stdout;
+    return inkInstance(() => inkExit.promise);
+  });
+  vi.mocked(withFullScreen).mockImplementationOnce((_node, options) => {
+    if (options !== undefined && 'stdout' in options) ink.stdout = options.stdout;
+    return {
+      start: () =>
+        path === 'fallback'
+          ? Promise.reject(new Error('fullscreen unavailable'))
+          : Promise.resolve(),
+      waitUntilExit: () => inkExit.promise,
+      instance: inkInstance(() => inkExit.promise),
+    };
+  });
+  return ink;
+}
+
+const RESTORE_STEPS: Record<InkPath, string[]> = {
+  fullscreen: [
+    'disableMouseTracking',
+    'disableButtonEventMouse',
+    'disableAnyMotionMouse',
+    'disableSgrMouse',
+    'disableBracketedPaste',
+    'exitAltBuffer',
+    'showCursor',
+    'raw false',
+  ],
+  inline: ['raw false'],
+  fallback: ['exitAltBuffer', 'showCursor', 'raw false'],
+};
+
+const END_STEPS: Record<Stop, string[]> = {
+  'an Ink exit': ['exit 0'],
+  'a mount failure': [],
+  'a termination signal': ['exit 143'],
+  'a crash': ['stderr SPLITBRIEF crashed: boom', 'exit 1'],
+};
+
+describe('renderApp terminal ownership', () => {
+  let projectDir: string;
+
+  beforeEach(() => {
+    projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-render-'));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    terminalBackgroundStore.reset();
+    rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  it('installs the selection, the key tap and the process listeners before the mount, publishes the input before the start, and reads keys after it', async () => {
+    const terminal = fakeTerminal();
+    const inkExit = Promise.withResolvers<void>();
+    let inkStdin: NodeJS.ReadStream | undefined;
+    const moments: object[] = [];
+    const moment = (at: string) => ({
+      at,
+      selecting: terminal.selecting(),
+      listening: terminal.listening(),
+      reads: terminal.input.listenerCount('data'),
+      published: inkStdin !== undefined && getActiveFilteredStdin()?.stdin === inkStdin,
+      modes: terminal.steps.filter((step) => step.startsWith('enable')),
+    });
+    vi.mocked(withFullScreen).mockImplementationOnce((_node, options) => {
+      if (options !== undefined && 'stdin' in options) inkStdin = options.stdin;
+      moments.push(moment('mount'));
+      return {
+        start: async () => {
+          moments.push(moment('start'));
+        },
+        waitUntilExit: () => {
+          moments.push(moment('wait'));
+          return inkExit.promise;
+        },
+        instance: inkInstance(() => inkExit.promise),
+      };
+    });
+    const rendering = renderApp(
+      createElement(Fragment),
+      { fullscreen: true, projectDir },
+      { exit: vi.fn() },
+    );
+    try {
+      await vi.waitFor(() => expect(moments).toHaveLength(3));
+      expect(inkStdin).toBeDefined();
+      expect(inkStdin).not.toBe(terminal.input);
+      expect(moments).toEqual([
+        { at: 'mount', selecting: true, listening: true, reads: 1, published: false, modes: [] },
+        { at: 'start', selecting: true, listening: true, reads: 1, published: true, modes: [] },
+        {
+          at: 'wait',
+          selecting: true,
+          listening: true,
+          reads: 2,
+          published: true,
+          modes: ['enableButtonEventMouse', 'enableSgrMouse', 'enableBracketedPaste'],
+        },
+      ]);
+    } finally {
+      inkExit.resolve();
+      await rendering;
+    }
+  });
+
+  it('closes the fullscreen input and drops the selection before it mounts the inline fallback, and reads keys from a new input', async () => {
+    const terminal = fakeTerminal();
+    const inkExit = Promise.withResolvers<void>();
+    const inputs: { fullscreen?: NodeJS.ReadStream; inline?: NodeJS.ReadStream } = {};
+    let atInlineMount: object | undefined;
+    vi.mocked(withFullScreen).mockImplementationOnce((_node, options) => {
+      if (options !== undefined && 'stdin' in options) inputs.fullscreen = options.stdin;
+      return {
+        start: () => Promise.reject(new Error('fullscreen unavailable')),
+        waitUntilExit: () => inkExit.promise,
+        instance: inkInstance(() => inkExit.promise),
+      };
+    });
+    vi.mocked(render).mockImplementationOnce((_node, options) => {
+      if (options !== undefined && 'stdin' in options) inputs.inline = options.stdin;
+      atInlineMount = {
+        fullscreenInputEnded: ended(inputs.fullscreen),
+        published: getActiveFilteredStdin() !== undefined,
+        selecting: terminal.selecting(),
+        listening: terminal.listening(),
+        reads: terminal.input.listenerCount('data'),
+      };
+      return inkInstance(() => inkExit.promise);
+    });
+    const rendering = renderApp(
+      createElement(Fragment),
+      { fullscreen: true, projectDir },
+      { exit: vi.fn() },
+    );
+    try {
+      await vi.waitFor(() => expect(terminal.input.listenerCount('data')).toBe(2));
+      expect(atInlineMount).toEqual({
+        fullscreenInputEnded: true,
+        published: false,
+        selecting: false,
+        listening: true,
+        reads: 1,
+      });
+      expect(inputs.inline).toBeDefined();
+      expect(inputs.inline).not.toBe(inputs.fullscreen);
+      expect(ended(inputs.inline)).toBe(false);
+    } finally {
+      inkExit.resolve();
+      await rendering;
+    }
+    expect(ended(inputs.inline)).toBe(true);
+  });
+
+  it.each(
+    (['an Ink exit', 'a mount failure', 'a termination signal', 'a crash'] as const).flatMap(
+      (stop) =>
+        (['fullscreen', 'inline', 'fallback'] as const).map((path) => [stop, path] as const),
+    ),
+  )('restores each terminal step once and in order after %s on the %s path', async (stop, path) => {
+    const terminal = fakeTerminal();
+    const inkExit = Promise.withResolvers<void>();
+    const ink = mountInk(path, inkExit);
+    lifecycle.teardownStores.mockImplementation(() => {
+      terminal.steps.push(
+        terminal.listening() ? 'listeners on' : 'listeners off',
+        'teardown stores',
+      );
+      warnError('note during teardown', undefined, 'feedback');
+    });
+    lifecycle.shutdownDetection.mockImplementation(async () => {
+      terminal.steps.push('stop detection');
+    });
+    lifecycle.killAllProcesses.mockImplementation(async () => {
+      terminal.steps.push('reap processes');
+    });
+    lifecycle.awaitActiveWorkflowShutdown.mockImplementation(async () => {
+      terminal.steps.push('await the workflow');
+    });
+    const exit = vi.fn((code: number) => {
+      terminal.steps.push(`exit ${code}`);
+    });
+    const known = new Set(process.listeners('uncaughtException'));
+    const settled = renderApp(
+      createElement(Fragment),
+      { fullscreen: path !== 'inline', projectDir },
+      { exit },
+    ).then(
+      () => 'resolved',
+      (error: unknown) => (error instanceof Error ? error.message : 'rejected'),
+    );
+    let started = 0;
+    try {
+      await vi.waitFor(() => expect(terminal.input.listenerCount('data')).toBe(2));
+      ink.stdout?.write('\u001b[>1u');
+      warnStderr('note at exit', 'at-exit');
+      started = terminal.steps.length;
+      if (stop === 'an Ink exit') inkExit.resolve();
+      if (stop === 'a mount failure') inkExit.reject(new Error('mount failed'));
+      if (stop === 'a termination signal') process.emit('SIGTERM', 'SIGTERM');
+      if (stop === 'a crash') crashListener(known)?.(new Error('boom'), 'uncaughtException');
+      await vi.waitFor(() => expect(terminal.steps).toContain('await the workflow'));
+      if (stop === 'a termination signal' || stop === 'a crash') {
+        await vi.waitFor(() => expect(exit).toHaveBeenCalled());
+        inkExit.resolve();
+      }
+      expect(await settled).toBe(stop === 'a mount failure' ? 'mount failed' : 'resolved');
+    } finally {
+      inkExit.resolve();
+      await settled;
+    }
+
+    expect(terminal.steps.slice(started)).toEqual([
+      stop === 'an Ink exit' || stop === 'a mount failure' ? 'listeners off' : 'listeners on',
+      'teardown stores',
+      'stop detection',
+      'reap processes',
+      'await the workflow',
+      ...RESTORE_STEPS[path],
+      'stderr note at exit',
+      'stderr note during teardown',
+      ...END_STEPS[stop],
+    ]);
+    expect(terminal.released()).toBe(true);
+    expect(terminal.selecting()).toBe(false);
+    expect(terminal.input.listenerCount('data')).toBe(0);
+    expect(getActiveFilteredStdin()).toBeUndefined();
+    const probed = terminal.steps.length;
+    suspendTerminalForEditor();
+    resumeTerminalAfterEditor();
+    warnError('note after', undefined, 'feedback');
+    expect(terminal.steps.slice(probed)).toEqual(['showCursor', 'hideCursor', 'stderr note after']);
+  });
+
+  it.each(['an Ink exit', 'a termination signal'] as const)(
+    'sends a frame that Ink writes during the cleanup after %s to the terminal at once while a drag is open',
+    async (stop) => {
+      const terminal = fakeTerminal();
+      const sent: string[] = [];
+      const write = terminal.output.write;
+      terminal.output.write = (chunk: string | Uint8Array) => {
+        sent.push(String(chunk));
+        return write(chunk);
+      };
+      const inkExit = Promise.withResolvers<void>();
+      const ink = mountInk('fullscreen', inkExit);
+      const atCleanup: boolean[] = [];
+      lifecycle.teardownStores.mockImplementation(() => {
+        ink.stdout?.write('frame during cleanup');
+        atCleanup.push(sent.includes('frame during cleanup'));
+      });
+      const exit = vi.fn();
+      const rendering = renderApp(
+        createElement(Fragment),
+        { fullscreen: true, projectDir },
+        { exit },
+      );
+      try {
+        await vi.waitFor(() => expect(terminal.input.listenerCount('data')).toBe(2));
+        ink.stdout?.write('first frame');
+        const painted = sent.length;
+        terminal.input.write('\u001b[<0;2;1M');
+        terminal.input.write('\u001b[<32;6;1M');
+        await vi.waitFor(() => expect(sent.length).toBeGreaterThan(painted));
+        ink.stdout?.write('frame during the drag');
+        if (stop === 'an Ink exit') inkExit.resolve();
+        else process.emit('SIGTERM', 'SIGTERM');
+        await vi.waitFor(() => expect(atCleanup).toHaveLength(1));
+        if (stop === 'a termination signal') {
+          await vi.waitFor(() => expect(exit).toHaveBeenCalled());
+          inkExit.resolve();
+        }
+        await rendering;
+      } finally {
+        inkExit.resolve();
+        await rendering;
+      }
+      expect(sent.includes('frame during the drag')).toBe(false);
+      expect(atCleanup).toEqual([true]);
+    },
+  );
+
+  it.each([
+    ['a termination signal', 'a crash', 143, []],
+    ['a crash', 'a termination signal', 1, ['SPLITBRIEF crashed: boom\n']],
+  ] as const)(
+    'exits once with the code of %s when %s arrives during its cleanup',
+    async (first, second, code, crashLines) => {
+      const inkExit = Promise.withResolvers<void>();
+      const workflow = Promise.withResolvers<void>();
+      vi.mocked(render).mockReturnValueOnce(inkInstance(() => inkExit.promise));
+      lifecycle.awaitActiveWorkflowShutdown.mockImplementation(() => workflow.promise);
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const exit = vi.fn();
+      const known = new Set(process.listeners('uncaughtException'));
+      const stopWith = (stop: Stop) => {
+        if (stop === 'a crash') crashListener(known)?.(new Error('boom'), 'uncaughtException');
+        else process.emit('SIGTERM', 'SIGTERM');
+      };
+      const rendering = renderApp(createElement(Fragment), { fullscreen: false }, { exit });
+      try {
+        stopWith(first);
+        await vi.waitFor(() =>
+          expect(lifecycle.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce(),
+        );
+        stopWith(second);
+        workflow.resolve();
+        await vi.waitFor(() => expect(exit).toHaveBeenCalled());
+        inkExit.resolve();
+        await rendering;
+        expect(exit).toHaveBeenCalledExactlyOnceWith(code);
+        expect(
+          stderr.mock.calls
+            .map(([chunk]) => String(chunk))
+            .filter((line) => line.startsWith('SPLITBRIEF crashed')),
+        ).toEqual(crashLines);
+      } finally {
+        workflow.resolve();
+        inkExit.resolve();
+        await rendering;
+      }
+    },
+  );
+
+  const brokenOutput = () =>
+    Promise.reject(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+  const unavailable = () => Promise.reject(new Error('fullscreen unavailable'));
+  const settles = () => Promise.resolve();
+
+  it.each([
+    ['the fullscreen start', true, brokenOutput, settles, settles, 'resolved', 0],
+    ['the wait of the fullscreen app', true, settles, brokenOutput, settles, 'resolved', 0],
+    ['the wait of the inline fallback', true, unavailable, settles, brokenOutput, 'resolved', 1],
+    ['the wait of the inline app', false, settles, settles, brokenOutput, 'write EPIPE', 1],
+  ] as const)(
+    'ends on a broken output at %s',
+    async (_at, fullscreen, start, fullscreenWait, inlineWait, outcome, inlineMounts) => {
+      vi.mocked(withFullScreen).mockReturnValueOnce({
+        start,
+        waitUntilExit: fullscreenWait,
+        instance: inkInstance(),
+      });
+      vi.mocked(render).mockReturnValueOnce(inkInstance(inlineWait));
+      vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const exit = vi.fn();
+      const settled = await renderApp(createElement(Fragment), { fullscreen }, { exit }).then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.message : 'rejected'),
+      );
+      expect(settled).toBe(outcome);
+      expect(vi.mocked(render)).toHaveBeenCalledTimes(inlineMounts);
+      expect(exit.mock.calls).toEqual(outcome === 'resolved' ? [[0]] : []);
     },
   );
 });

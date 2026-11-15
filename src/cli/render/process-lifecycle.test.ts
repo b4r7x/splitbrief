@@ -440,30 +440,6 @@ describe('restoreTerminal', () => {
     expect(written).toEqual([terminalSequences.exitAltBuffer, terminalSequences.showCursor]);
   });
 
-  it('disables mouse and paste modes when requested', () => {
-    restoreTerminal({ fullscreen: true, mouse: true });
-
-    expect(written).toEqual([
-      terminalSequences.disableMouseTracking,
-      terminalSequences.disableButtonEventMouse,
-      terminalSequences.disableAnyMotionMouse,
-      terminalSequences.disableSgrMouse,
-      terminalSequences.disableBracketedPaste,
-      terminalSequences.exitAltBuffer,
-      terminalSequences.showCursor,
-    ]);
-  });
-
-  it('can disable paste mode without disabling mouse tracking', () => {
-    restoreTerminal({ fullscreen: true, mouse: false, paste: true });
-
-    expect(written).toEqual([
-      terminalSequences.disableBracketedPaste,
-      terminalSequences.exitAltBuffer,
-      terminalSequences.showCursor,
-    ]);
-  });
-
   it('writes nothing in non-fullscreen mode', () => {
     restoreTerminal({ fullscreen: false });
 
@@ -475,7 +451,7 @@ describe('restoreTerminal', () => {
     Object.defineProperty(process.stdout, 'destroyed', { value: true, configurable: true });
 
     try {
-      restoreTerminal({ fullscreen: true, mouse: true });
+      restoreTerminal({ fullscreen: true });
     } finally {
       if (destroyed) Object.defineProperty(process.stdout, 'destroyed', destroyed);
     }

@@ -1,18 +1,15 @@
-import type { Instance } from 'ink';
 import { awaitActiveWorkflowShutdown } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { getDefaultDetectionService } from '../../engine/detection/service/create.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
+import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 import { teardownStores } from '../bootstrap/init.js';
 import { SIGNAL_EXIT_CODE, type TerminationSignal } from '../../lib/process/signals.js';
-
-interface RestoreTerminalOptions {
-  fullscreen: boolean;
-  mouse?: boolean | undefined;
-  paste?: boolean | undefined;
-  stdin?: NodeJS.ReadStream | undefined;
-}
+import { closeTuiInput } from './stdin.js';
+import type { EditorOutput, TuiInput } from './types.js';
 
 type CleanupStep = () => void | Promise<void>;
 
@@ -61,14 +58,75 @@ export function createTuiCleanup(deps: { restore: CleanupStep }): () => Promise<
 // signal handler that calls `process.exit()` terminates before that async cleanup can run. So
 // on a signal during fullscreen we must exit the alternate buffer and unhide the cursor here,
 // otherwise the terminal is left on the alternate screen and needs a manual `reset`.
-export function restoreTerminal(options: RestoreTerminalOptions): void {
+export function restoreTerminal(options: { fullscreen: boolean }): void {
   if (process.stdout.destroyed || process.stdout.writableEnded) return;
-  restoreTerminalControl({
-    fullscreen: options.fullscreen,
-    mouse: options.mouse ?? false,
-    paste: options.paste,
-    stdin: options.stdin,
+  restoreTerminalControl({ fullscreen: options.fullscreen });
+}
+
+/**
+ * What the terminal cleanup of the TUI reads and changes: the terminal it gives back, and the
+ * diagnostics it holds until the terminal is restored.
+ */
+interface TerminalTeardown {
+  fullscreen: boolean;
+  input: TuiInput;
+  output: EditorOutput;
+  tearingDown: boolean;
+  deferredDiagnostics: string[];
+}
+
+// Every frame Ink writes goes through the output. Ink unmounts on process exit and paints a final
+// frame, which after a signal or a crash would land on the restored main screen (a frame as tall
+// as the terminal clears it and the scrollback), so the restore closes it first; only the
+// keyboard-mode pop of that unmount still reaches the terminal.
+function restoreTuiTerminal(teardown: TerminalTeardown, releaseDiagnosticSink: () => void): void {
+  try {
+    teardown.output.close();
+    setActiveTerminalHandover(undefined);
+    closeTuiInput(teardown.input);
+    restoreTerminal({ fullscreen: teardown.fullscreen });
+  } finally {
+    releaseDiagnosticSink();
+    for (const message of teardown.deferredDiagnostics.splice(0))
+      process.stderr.write(`${message}\n`);
+  }
+}
+
+/** Takes the diagnostics of the TUI and returns the cleanup that gives the terminal back once. */
+export function createTerminalCleanup(
+  fullscreen: boolean,
+  input: TuiInput,
+  output: EditorOutput,
+): () => Promise<void> {
+  const teardown: TerminalTeardown = {
+    fullscreen,
+    input,
+    output,
+    tearingDown: false,
+    deferredDiagnostics: [],
+  };
+  // While the TUI owns the terminal a diagnostic that names a presentation goes to the feedback
+  // line, never as raw stderr into the frame. An at-exit note, and a feedback diagnostic raised
+  // during teardown or rejected, is written after the terminal is restored.
+  const releaseDiagnosticSink = installDiagnosticSink((message, presentation) => {
+    if (teardown.tearingDown || presentation === 'at-exit') {
+      teardown.deferredDiagnostics.push(message);
+      return;
+    }
+    try {
+      feedbackStore.setError(message);
+    } catch {
+      teardown.deferredDiagnostics.push(message);
+    }
   });
+  const cleanupTui = createTuiCleanup({
+    restore: () => restoreTuiTerminal(teardown, releaseDiagnosticSink),
+  });
+  return () => {
+    teardown.tearingDown = true;
+    input.selection?.suspend();
+    return cleanupTui();
+  };
 }
 
 // Fires when Ctrl+C reaches the OS instead of Ink (a child owns the terminal, so raw
@@ -203,21 +261,4 @@ export function createCrashListener(deps: {
       deps.reportCleanupFailure(error);
     },
   });
-}
-
-export function unmountWhenSignalled(
-  instance: Instance,
-  signal: AbortSignal | undefined,
-  beforeUnmount?: () => void,
-): void {
-  if (!signal) return;
-  const unmount = () => {
-    beforeUnmount?.();
-    instance.unmount();
-  };
-  if (signal.aborted) {
-    unmount();
-    return;
-  }
-  signal.addEventListener('abort', unmount, { once: true });
 }

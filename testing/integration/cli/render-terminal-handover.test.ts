@@ -4,7 +4,7 @@ import { createFilteredStdin } from '../../../src/lib/terminal/filtered-stdin/cr
 import {
   prepareInlineFallbackAfterFullscreenFailure,
   startFullscreenThenActivateHandover,
-} from '../../../src/cli/render/terminal-handover.js';
+} from '../../../src/cli/render/mount.js';
 
 describe('startFullscreenThenActivateHandover', () => {
   it('marks terminal handover only after fullscreen start succeeds', async () => {

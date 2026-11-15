@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -39,7 +39,7 @@ function makeFakeStdin() {
       return stdin;
     },
   });
-  return { stdin: stdin as unknown as NodeJS.ReadStream, rawModes };
+  return { stdin: stdin as unknown as typeof process.stdin, rawModes };
 }
 
 describe('terminal control', () => {
@@ -127,39 +127,23 @@ describe('terminal control', () => {
     ]);
   });
 
-  it('restores fullscreen, mouse, paste, and raw terminal modes', () => {
+  it('restores the main screen, the cursor and the raw mode', () => {
     const written: string[] = [];
     process.stdout.write = ((chunk: string) => {
       written.push(chunk);
       return true;
     }) as typeof process.stdout.write;
     const { stdin, rawModes } = makeFakeStdin();
+    const input = vi.spyOn(process, 'stdin', 'get').mockReturnValue(stdin);
 
-    restoreTerminalControl({ fullscreen: true, mouse: true, stdin });
+    try {
+      restoreTerminalControl({ fullscreen: true });
+    } finally {
+      input.mockRestore();
+    }
 
-    expect(written).toEqual([
-      terminalSequences.disableMouseTracking,
-      terminalSequences.disableButtonEventMouse,
-      terminalSequences.disableAnyMotionMouse,
-      terminalSequences.disableSgrMouse,
-      terminalSequences.disableBracketedPaste,
-      terminalSequences.exitAltBuffer,
-      terminalSequences.showCursor,
-    ]);
+    expect(written).toEqual([terminalSequences.exitAltBuffer, terminalSequences.showCursor]);
     expect(rawModes).toEqual([false]);
-  });
-
-  it('can restore paste mode without restoring mouse mode', () => {
-    const written: string[] = [];
-    process.stdout.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
-    const { stdin } = makeFakeStdin();
-
-    restoreTerminalControl({ fullscreen: false, mouse: false, paste: true, stdin });
-
-    expect(written).toEqual([terminalSequences.disableBracketedPaste]);
   });
 
   it('ignores synchronous broken-pipe writes', () => {

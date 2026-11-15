@@ -10,8 +10,9 @@ import {
 import type { FilteredStdin } from '../../src/lib/terminal/filtered-stdin/types.js';
 
 // Bridges raw terminal bytes through the real FilteredStdin (mouse filter +
-// bracketed-paste stripper) into a real Ink render, the way src/cli/render/app.ts wires
-// production: createFilteredStdin(process.stdin) -> render({ stdin: filtered.stdin }).
+// bracketed-paste stripper) into a real Ink render, the way src/cli/render/stdin.ts and
+// src/cli/render/mount.ts wire production: createFilteredStdin(process.stdin) ->
+// render({ stdin: filtered.stdin }).
 // Drive input via `pressBytes`.
 
 export interface FilteredStdinViewport {
