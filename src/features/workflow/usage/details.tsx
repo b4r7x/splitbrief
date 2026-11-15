@@ -1,9 +1,6 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box, useInput } from 'ink';
-import {
-  OverlayPanel,
-  overlayInnerRowCapacity,
-} from '../../../components/overlays/overlay-panel.js';
+import { OverlayPanel, overlayInnerRowCapacity } from '../../../components/overlays/panel.js';
 import { RuleHeader } from '../../../components/rule-header.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { ScrollableDocument } from '../../../components/scrollable-document/document.js';
@@ -13,7 +10,7 @@ import { overlayRect, type OverlayDensity } from '../../../core/navigation/overl
 import { SOFT_SEP } from '../../../core/separators.js';
 import { CLOSE_HINT, formatKeyHints, SCROLL_HINT } from '../../../components/key-legend.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import {
   padTerminalDisplayTextEnd,
   truncateTerminalDisplayText,

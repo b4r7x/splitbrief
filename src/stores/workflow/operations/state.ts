@@ -1,7 +1,7 @@
 import { isProcessWentAwayMark } from '../../../core/phases/of-event.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
-import { createStore, storeBase } from '../../create-store.js';
+import { createStore, storeBase } from '../../create.js';
 
 type RunnerCallFailureStatus = EngineEventOf<'runner_call_error'>['status'];
 

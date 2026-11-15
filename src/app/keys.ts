@@ -16,7 +16,7 @@ import {
   cancelEscapeAction,
   isEscapeActionPending,
 } from '../lib/terminal/escape-debounce.js';
-import { useStores } from '../stores/use-stores.js';
+import { useStores } from '../stores/use-many.js';
 import { assertNever } from '../utils/type-guards.js';
 import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
 import { requestQuit, requestLeaveSession } from '../features/workflow/run-requests/departure.js';

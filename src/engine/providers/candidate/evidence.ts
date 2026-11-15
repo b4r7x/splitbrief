@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ApiRunnerRole } from '../../../core/providers/api-provider-catalog.js';
+import type { ApiRunnerRole } from '../../../core/providers/api-catalog.js';
 import { CandidateIdSchema, RunnerRoleSchema } from './contract.js';
 
 export const MAX_EVIDENCE_OUTPUT_BYTES = 32_768;

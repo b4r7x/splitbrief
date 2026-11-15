@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { includes } from '../../../utils/type-guards.js';
-import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
+import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../../providers/api-catalog.js';
 import { isListedCliTool, CLI_TOOL_IDS } from '../../runners/cli-tool/catalog.js';
 import { type ActiveRunnerRole, runnerRoleForActiveRole } from '../../runners/seat-roles.js';
 import {

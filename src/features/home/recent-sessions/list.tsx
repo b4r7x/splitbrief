@@ -11,7 +11,7 @@ import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import { filterSession } from '../../../core/sessions/search.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
-import { copyToClipboard } from '../../../lib/clipboard/clipboard.js';
+import { copyToClipboard } from '../../../lib/clipboard/copy.js';
 import { isUnmodifiedYInput } from '../../../lib/terminal/text-entry.js';
 
 export const RECENT_SESSIONS_HINT = formatKeyHints([

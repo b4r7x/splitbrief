@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { loadConfig, transactConfigDocument } from '../../core/config/load/io.js';
 import {
   configRevisionsMatch,

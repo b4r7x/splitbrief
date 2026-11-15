@@ -1,4 +1,4 @@
-import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../core/providers/api-catalog.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import {
   InvocationIdentitySchema,

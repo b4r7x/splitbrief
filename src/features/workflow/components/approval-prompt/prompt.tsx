@@ -12,7 +12,7 @@ import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../lib/terminal/typeahead-gr
 import { overlayRect } from '../../../../core/navigation/overlay-rect.js';
 import { getChromeContentWidth } from '../../layout/chrome-rows.js';
 import type { TieredApprovalResponse } from '../../../../core/approval/types.js';
-import type { OverlayCard } from '../../../../components/overlays/overlay-panel.js';
+import type { OverlayCard } from '../../../../components/overlays/panel.js';
 import { ConfirmApprovalPrompt } from './confirm.js';
 import { DocumentReviewPrompt } from './document.js';
 import type { ReviewArtifact } from '../../prompt-rows/review-document.js';

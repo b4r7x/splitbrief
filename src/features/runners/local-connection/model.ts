@@ -4,7 +4,7 @@ import {
   type ApiProviderId,
   getApiProviderDescriptor,
   type ApiProviderDescriptor,
-} from '../../../core/providers/api-provider-catalog.js';
+} from '../../../core/providers/api-catalog.js';
 import { normalizeProviderEndpoint } from '../../../core/providers/endpoint-policy.js';
 import {
   OLLAMA_LOCAL_API_KEY_REFERENCE,

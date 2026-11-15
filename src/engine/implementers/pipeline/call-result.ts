@@ -1,7 +1,7 @@
 import type { TaskId } from '../../../core/schemas/task.js';
 import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
-import { createRunnerCallId } from '../../calls/call-id.js';
+import { createRunnerCallId } from '../../calls/id.js';
 import {
   runnerOutcome,
   type RunnerFailureOutcomeState,

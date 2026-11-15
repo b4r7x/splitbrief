@@ -6,7 +6,7 @@ import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
-import { useCrew } from './use-crew.js';
+import { useCrew } from './use-rows.js';
 
 function CrewProbe() {
   const crew = useCrew();

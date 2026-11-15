@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 
 // What the editor overlay asks of the review prompt it cannot reach: open the external editor, or
 // settle the gate with an edit the overlay saved.

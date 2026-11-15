@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   IMPLEMENTER_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
-} from '../../providers/api-provider-catalog.js';
+} from '../../providers/api-catalog.js';
 import { IMPLEMENTER_CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../../runners/cli-tool/catalog.js';
 import {
   ImplementerConfigSchema,

@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { gateAction } from './tiered-approval.js';
+import { gateAction } from './gate-action.js';
 import type { GateActionInput } from './types.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';

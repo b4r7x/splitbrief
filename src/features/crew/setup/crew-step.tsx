@@ -1,6 +1,6 @@
 import { Box } from 'ink';
 import { FeedbackNotice, layoutFeedbackNotice } from '../../../components/feedback-notice.js';
-import { OverlayPanel } from '../../../components/overlays/overlay-panel.js';
+import { OverlayPanel } from '../../../components/overlays/panel.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { crewRowKey } from '../../../core/crew/rows.js';
@@ -17,7 +17,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { crewActivate } from '../rows.js';
 import { CrewVerdictLine } from '../row-view.js';
-import { useCrew } from '../use-crew.js';
+import { useCrew } from '../use-rows.js';
 import { SetupItemRow } from './item-row.js';
 import {
   CONTINUE_SECTION,

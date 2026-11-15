@@ -1,5 +1,5 @@
 import { clamp } from '../../utils/math.js';
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 
 export type ReviewSource =
   | Readonly<{ kind: 'file'; filePath: string }>

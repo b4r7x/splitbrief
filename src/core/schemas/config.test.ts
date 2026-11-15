@@ -5,8 +5,8 @@ import {
   IMPLEMENTER_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
   type ApiRunnerRole,
-} from '../providers/api-provider-catalog.js';
-import { FORBIDDEN_API_PROVIDER_IDS } from '../providers/api-provider-verdicts.js';
+} from '../providers/api-catalog.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../providers/api-verdicts.js';
 import { STACKS } from '../validation/stacks/registry.js';
 import { STACK_IDS } from '../validation/stacks/types.js';
 import { ConfigSchema } from './config.js';

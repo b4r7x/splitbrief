@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 
 export type DepartureKind = 'home' | 'quit';
 

@@ -74,7 +74,7 @@ import {
 import { detectionStore } from '../stores/discovery/detection.js';
 import { getDefaultDetectionService } from '../engine/detection/service/create.js';
 import type { DetectionDeps } from '../engine/detection/service/types.js';
-import * as clipboard from '../lib/clipboard/clipboard.js';
+import * as clipboard from '../lib/clipboard/copy.js';
 
 let projectDir = '';
 const originalPlatform = process.platform;

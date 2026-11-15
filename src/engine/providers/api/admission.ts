@@ -1,4 +1,4 @@
-import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import { isApiProviderId } from '../../../core/providers/api-catalog.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { error } from '../../../utils/error.js';

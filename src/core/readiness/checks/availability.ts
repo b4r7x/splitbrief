@@ -1,5 +1,5 @@
 import type { RunnerConfigSlot } from '../../config/accessors/runner-config.js';
-import { getApiProviderDescriptor } from '../../providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../providers/api-catalog.js';
 import { getRunnerIdentityDisplayName } from '../../providers/catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { CREW_SEAT_LABELS, formatSlotLabel } from '../../crew/identity.js';

@@ -2,7 +2,7 @@ import type { CrewSeatId } from '../../../core/crew/identity.js';
 import type { SeatIdentity } from '../../../core/providers/seat-identity.js';
 import type { RunnerKind, Phase } from '../../../core/schemas/enums.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
-import { createStore, storeBase } from '../../create-store.js';
+import { createStore, storeBase } from '../../create.js';
 
 export interface PhaseTokens {
   inputTokens: number;

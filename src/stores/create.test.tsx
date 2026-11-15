@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Text } from 'ink';
-import { createStore } from './create-store.js';
+import { createStore } from './create.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 
 describe('createStore.use', () => {

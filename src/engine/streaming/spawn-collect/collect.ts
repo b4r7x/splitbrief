@@ -6,7 +6,7 @@ import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import { redactSecrets } from '../../../utils/redact/secrets.js';
 import { isRecord } from '../../../utils/type-guards.js';
-import { createRunnerCallId } from '../../calls/call-id.js';
+import { createRunnerCallId } from '../../calls/id.js';
 import { createRunnerCallRecorder } from '../../calls/recorder/create.js';
 import {
   createRunnerCallCredentialRedactor,

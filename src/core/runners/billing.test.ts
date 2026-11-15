@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PlannerConfig } from '../schemas/runner/planner.js';
 import { CLI_TOOL_IDS } from './cli-tool/catalog.js';
-import { RUNNER_BILLING_POSTURES, billingWord, runnerBillingPosture } from './runner-billing.js';
+import { RUNNER_BILLING_POSTURES, billingWord, runnerBillingPosture } from './billing.js';
 
 describe('runner billing posture', () => {
   it('lists the billing postures in canonical presentation order', () => {

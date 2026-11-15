@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { uniqueInOrder } from '../../utils/collections.js';
-import { API_OFFERINGS } from '../providers/api-provider-catalog.js';
-import { RunnerBillingPostureSchema } from '../runners/runner-billing.js';
+import { API_OFFERINGS } from '../providers/api-catalog.js';
+import { RunnerBillingPostureSchema } from '../runners/billing.js';
 import { InvocationIdentitySchema } from './invocation-identity.js';
 import { RUNNER_CALL_ROLES } from './runner-call.js';
 import { TaskIdSchema } from './task.js';

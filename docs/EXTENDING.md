@@ -54,7 +54,7 @@ Existing example to follow: `registerStartCommand`.
 2. Define the state type and initial value
 3. Create the store:
    ```ts
-   import { createStore, storeBase } from '../create-store.js';
+   import { createStore, storeBase } from '../create.js';
 
    const store = createStore<MyState>(initialState);
    export const myStore = storeBase(store);

@@ -10,7 +10,7 @@ import { FeedbackRow } from '../../../src/features/workflow/components/feedback-
 import { installTerminalSelection } from '../../../src/lib/terminal/selection/install.js';
 import { createFilteredStdin } from '../../../src/lib/terminal/filtered-stdin/create.js';
 import { setActiveFilteredStdin } from '../../../src/lib/terminal/filtered-stdin/active.js';
-import type { CopyOutcome } from '../../../src/lib/clipboard/clipboard.js';
+import type { CopyOutcome } from '../../../src/lib/clipboard/copy.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';

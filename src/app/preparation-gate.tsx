@@ -1,7 +1,7 @@
 import { ApprovalPrompt } from '../features/workflow/components/approval-prompt/prompt.js';
 import { observePreparationCleanup } from '../features/start-preparation/observe-cleanup.js';
 import { StartPreparationPanel } from '../features/start-preparation/panel.js';
-import type { StartPreparationState } from '../features/start-preparation/use-start-preparation.js';
+import type { StartPreparationState } from '../features/start-preparation/use-controller.js';
 import { approvalPromptStore } from '../stores/prompts/approval.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 

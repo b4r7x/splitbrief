@@ -1,5 +1,5 @@
 import { fitKeyLegend } from '../../../components/key-legend.js';
-import type { OverlayCard } from '../../../components/overlays/overlay-panel.js';
+import type { OverlayCard } from '../../../components/overlays/panel.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/prompts/approval.js';

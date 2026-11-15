@@ -1,4 +1,4 @@
-import type { RunnerBillingPosture } from '../runner-billing.js';
+import type { RunnerBillingPosture } from '../billing.js';
 
 export const CLI_AUTH_CHANNEL_IDS = Object.freeze([
   'api-key',

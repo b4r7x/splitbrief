@@ -6,7 +6,7 @@ import type {
   PreparedExecution,
 } from '../../engine/runners/prepare-execution/prepared.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { routerStore } from './router.js';
 
 export type PreparationOrigin = 'start' | 'continue';

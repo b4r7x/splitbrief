@@ -4,7 +4,7 @@ import { formatModelName } from '../../../core/providers/model-display.js';
 import { localProviderStartup } from '../../../core/readiness/checks/availability.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { RouteAuthState } from '../../../core/runners/route-auth.js';
-import { billingWord } from '../../../core/runners/runner-billing.js';
+import { billingWord } from '../../../core/runners/billing.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { providerOracleCommand } from '../../../engine/runners/cli-tools/probe/provider-oracle.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';

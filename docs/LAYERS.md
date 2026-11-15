@@ -180,7 +180,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 
 ## `stores/` — external state
 
-See [`STORES-AND-UI.md`](./STORES-AND-UI.md) for full architecture. In layer terms: stores are the sanctioned cross-boundary channel between `engine/` (writes) and `features/` (reads). They depend on `utils/`, `core/`, and optionally `lib/`. They never import React (only `use-stores.ts` consumers do, and those are hook-level).
+See [`STORES-AND-UI.md`](./STORES-AND-UI.md) for full architecture. In layer terms: stores are the sanctioned cross-boundary channel between `engine/` (writes) and `features/` (reads). They depend on `utils/`, `core/`, and optionally `lib/`. They never import React (only `use-many.ts` consumers do, and those are hook-level).
 
 Stores may import engine **types only** (`import type`) — for example `EngineEvent` from `engine/events/`, the detection types under `engine/detection/`, and the prepared-execution types from `engine/runners/`. No engine values cross into `stores/`.
 

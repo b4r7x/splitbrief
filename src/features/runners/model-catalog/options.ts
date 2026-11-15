@@ -5,7 +5,7 @@ import {
   LISTED_API_PROVIDER_IDS,
   type ApiProviderDescriptor,
   type DataUsePosture,
-} from '../../../core/providers/api-provider-catalog.js';
+} from '../../../core/providers/api-catalog.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { hasAutomaticModelDefault } from '../../../core/providers/model-selection.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
@@ -18,7 +18,7 @@ import {
   type ActiveRunnerRole,
   type SeatPickerRole,
 } from '../../../core/runners/seat-roles.js';
-import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
+import type { RunnerBillingPosture } from '../../../core/runners/billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ImplementerConfig } from '../../../core/schemas/runner/implementer.js';
 import type { PlannerConfig } from '../../../core/schemas/runner/planner.js';

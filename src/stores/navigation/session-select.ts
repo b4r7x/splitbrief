@@ -11,7 +11,7 @@ import { APPLY_RUNNING_REFUSAL } from '../../core/runtime/commands/messages.js';
 import type { PreparationOutcome } from '../../engine/runners/prepare-execution/prepared.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { oneLineDisplayText } from '../../utils/display-text/sanitize.js';
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { skillsStore } from '../project/skills.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { overlayStore } from '../ui/overlay.js';

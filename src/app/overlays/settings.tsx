@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { Box } from 'ink';
-import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { OverlayPanel } from '../../components/overlays/panel.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -27,7 +27,7 @@ import { crewActivate, crewVerdict, fallbackActivate } from '../../features/crew
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 import { FilterInput } from '../../components/filter-input.js';
 import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
 import { SOFT_SEP } from '../../core/separators.js';

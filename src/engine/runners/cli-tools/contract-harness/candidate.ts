@@ -13,7 +13,7 @@ import {
 import type { CliProcessAdapter } from '../contract.js';
 import { type RawCapture, type CliConformanceRole, INVOCATION_TIMEOUT_MS } from './harness.js';
 import type { CliExecutableIdentity } from '../../../../core/discovery/detection/executable.js';
-import { createRunnerCallId } from '../../../calls/call-id.js';
+import { createRunnerCallId } from '../../../calls/id.js';
 import { RunnerCallResultSchema } from '../../../calls/schema.js';
 import type { RunnerCallResult, RunnerCallContext } from '../../../calls/types.js';
 import { toCliEnvironment } from '../../invoke-cli-adapter.js';

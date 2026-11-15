@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HELP_EXAMPLES } from '../../../src/cli/help-examples.js';
 import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { findKnownModel } from '../../../src/core/providers/known-models.js';
-import { getApiProviderDescriptor } from '../../../src/core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../../src/core/providers/api-catalog.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../../../src/core/runners/cli-tool/catalog.js';
 
 describe('CLI help examples', () => {

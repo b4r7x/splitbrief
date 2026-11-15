@@ -1,4 +1,4 @@
-import { API_PROVIDER_CATALOG } from '../src/core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG } from '../src/core/providers/api-catalog.js';
 import { ConfigSchema, type Config } from '../src/core/schemas/config.js';
 import { error } from '../src/utils/error.js';
 

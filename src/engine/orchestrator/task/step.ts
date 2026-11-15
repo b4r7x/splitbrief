@@ -12,7 +12,7 @@ import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed
 import { gateTaskAttempt } from './gates/attempt.js';
 import { retryAndRecord, consultHandedBackToLoop, continueLadder } from './retry.js';
 import { recordSteerCorrection } from '../queue/build-corrections.js';
-import { runPreTaskHooksAndPublish } from './pre-task.js';
+import { runPreTaskHooksAndPublish } from './start.js';
 import { runImplementationStep } from './implementation-result.js';
 import { runBriefGate } from './gates/brief.js';
 

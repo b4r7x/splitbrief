@@ -10,7 +10,7 @@ import {
   ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
   KNOWN_API_PROVIDER_IDS,
-} from './api-provider-catalog.js';
+} from './api-catalog.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel, resolveCliModel } from './automatic-model.js';
 import { resolveDefaultApiBase } from './catalog.js';
 import {

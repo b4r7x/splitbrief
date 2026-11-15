@@ -108,7 +108,7 @@ See [`STORES-AND-UI.md`](./STORES-AND-UI.md#reading-and-writing-stores) for how 
 ### Use `useStores(...)` for multi-store flat reads
 
 ```ts
-import { useStores } from '../stores/use-stores.js';
+import { useStores } from '../stores/use-many.js';
 
 const [{ screen }, { active }, { cols }] = useStores(routerStore, overlayStore, terminalSizeStore);
 ```

@@ -1,9 +1,6 @@
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import type { DetectedModel } from '../../core/discovery/detection/model.js';
-import {
-  getApiProviderDescriptor,
-  type ApiProviderId,
-} from '../../core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor, type ApiProviderId } from '../../core/providers/api-catalog.js';
 import { resolveDefaultApiBase } from '../../core/providers/catalog.js';
 import { normalizeProviderEndpoint } from '../../core/providers/endpoint-policy.js';
 import { throwIfAborted } from '../../utils/abort.js';

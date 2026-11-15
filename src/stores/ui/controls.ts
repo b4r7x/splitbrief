@@ -1,5 +1,5 @@
 import type { InputMode } from '../../core/navigation/types.js';
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 
 interface ControlsState {
   sidebarVisible: boolean;

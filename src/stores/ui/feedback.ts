@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { subscribeFeedbackErrors, subscribeFeedbackReset } from '../channels/feedback.js';
 
 const FEEDBACK_AUTO_CLEAR_MS = 3000;

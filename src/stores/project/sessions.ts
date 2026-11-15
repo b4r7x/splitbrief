@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { listSessions } from '../../core/sessions/io.js';
 import type { Session } from '../../core/schemas/session.js';
 

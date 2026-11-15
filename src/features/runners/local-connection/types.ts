@@ -1,4 +1,4 @@
-import type { ApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import type { ApiProviderId } from '../../../core/providers/api-catalog.js';
 import type { SeatPickerRole } from '../../../core/runners/seat-roles.js';
 import type { LocalConnectionProbe, LocalConnectionSave, LocalConnectionSeat } from './model.js';
 

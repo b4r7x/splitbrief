@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import type { Key } from 'ink';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_RENDER_VIEWPORT, flushEffects, renderFeature } from '#testing/helpers/ink.js';
-import { MultilineInput } from './multiline-input.js';
+import { MultilineInput } from './field.js';
 import type { InputEdit } from './atoms.js';
 import type { InputAtom } from './atoms.js';
 

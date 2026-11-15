@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { RunnerBillingPostureSchema } from '../runners/runner-billing.js';
+import { RunnerBillingPostureSchema } from '../runners/billing.js';
 
 /**
  * A static adapter id, or a CLI matrix entry id in an older record, never

@@ -5,7 +5,7 @@ import { selectionRange } from '../../core/editor/state.js';
 import type { EditorEvent } from '../../core/editor/types.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
+import { copyToClipboard } from '../../lib/clipboard/copy.js';
 
 interface UseEditorKeysOptions {
   onSave: () => void;

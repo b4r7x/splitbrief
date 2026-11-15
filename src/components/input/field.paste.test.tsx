@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_RENDER_VIEWPORT, flushEffects } from '#testing/helpers/ink.js';
 import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
-import { MultilineInput } from './multiline-input.js';
+import { MultilineInput } from './field.js';
 
 function Input({
   onSubmit,

@@ -2,8 +2,8 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   API_PROVIDER_CATALOG,
   ADMITTED_API_PROVIDER_IDS,
-} from '../../core/providers/api-provider-catalog.js';
-import { FORBIDDEN_API_PROVIDER_IDS } from '../../core/providers/api-provider-verdicts.js';
+} from '../../core/providers/api-catalog.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../../core/providers/api-verdicts.js';
 import { KNOWN_PROVIDERS, getProvider } from './registry.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 

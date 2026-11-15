@@ -3,7 +3,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { deriveCrewRows, type CrewRow as CrewBlockRow } from '../../core/crew/rows.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
-import { billingWord } from '../../core/runners/runner-billing.js';
+import { billingWord } from '../../core/runners/billing.js';
 import {
   CREW_IDENTITY_COLUMN,
   formatCrewRow,

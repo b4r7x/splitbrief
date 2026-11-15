@@ -12,7 +12,7 @@ import { streamingOutputStore } from '../../../../stores/workflow/streaming-outp
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
-import { useStores } from '../../../../stores/use-stores.js';
+import { useStores } from '../../../../stores/use-many.js';
 import type { ConversationRowBlock } from '../../conversation-rows/types.js';
 import { publishTranscriptTail } from '../../conversation-rows/transcript-tail.js';
 import { conversationViewportWindow } from '../../conversation-rows/viewport.js';

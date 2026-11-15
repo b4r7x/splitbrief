@@ -1,9 +1,6 @@
 import { Box } from 'ink';
 import { ListRow } from '../../../components/list-row/row.js';
-import {
-  overlayInnerRowCapacity,
-  OverlayPanel,
-} from '../../../components/overlays/overlay-panel.js';
+import { overlayInnerRowCapacity, OverlayPanel } from '../../../components/overlays/panel.js';
 import { windowSlice } from '../../../components/pickers/scroll-offset.js';
 import { useTheme } from '../../../components/theme.js';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
@@ -11,13 +8,13 @@ import { overlayRect } from '../../../core/navigation/overlay-rect.js';
 import {
   type ApiProviderDescriptor,
   API_PROVIDER_CATALOG,
-} from '../../../core/providers/api-provider-catalog.js';
+} from '../../../core/providers/api-catalog.js';
 import { localProviderStartup } from '../../../core/readiness/checks/availability.js';
 import { PICKER_ROLE_SEAT_IDS } from '../../../core/runners/seat-roles.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { CANCEL_HINT, formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { LABEL_WIDTH, DimLine, FieldRow } from './field-row.js';
 import { defaultAddress, tokenReference } from './model.js';
 import type { LocalConnectionFormProps } from './types.js';

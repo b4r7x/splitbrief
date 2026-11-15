@@ -1,6 +1,6 @@
 import { Box, useInput } from 'ink';
 import { layoutFeedbackNotice, FeedbackNotice } from '../../components/feedback-notice.js';
-import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { OverlayPanel } from '../../components/overlays/panel.js';
 import { useTheme, ThemeText as Text } from '../../components/theme.js';
 import { BOOT_MANIFEST_TITLE, TOOL_CHECK_FAILED_TITLE } from '../../core/discovery/copy.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';

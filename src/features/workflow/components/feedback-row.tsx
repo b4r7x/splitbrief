@@ -5,7 +5,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { controlsStore } from '../../../stores/ui/controls.js';

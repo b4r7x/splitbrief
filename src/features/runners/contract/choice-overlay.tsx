@@ -9,7 +9,7 @@ import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
-import { OverlayPanel } from '../../../components/overlays/overlay-panel.js';
+import { OverlayPanel } from '../../../components/overlays/panel.js';
 import { ContractChip, StepIndicator, tierColor } from './chip.js';
 import {
   contractForRunnerKind,

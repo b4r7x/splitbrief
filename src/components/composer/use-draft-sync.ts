@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { composerDraftStore, type ComposerDraftRequest } from '../../stores/ui/composer-draft.js';
 import { createDraftDocument } from '../../core/composer/document.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import type { InputMode } from '../../core/navigation/types.js';

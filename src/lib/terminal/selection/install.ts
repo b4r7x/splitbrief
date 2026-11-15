@@ -1,6 +1,6 @@
 import XtermHeadless from '@xterm/headless';
 import { UnicodeGraphemesAddon } from './grapheme-addon.js';
-import type { CopyOutcome } from '../../clipboard/clipboard.js';
+import type { CopyOutcome } from '../../clipboard/copy.js';
 import type { MouseEvent, MouseListener } from '../filtered-stdin/types.js';
 import { filterInput } from './copy.js';
 import { handleMouse } from './gesture.js';

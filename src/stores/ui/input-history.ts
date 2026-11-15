@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { createDraftDocument, normalizeDraftDocument } from '../../core/composer/document.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { DraftDocument, DraftPart } from '../../core/schemas/draft-document.js';

@@ -16,7 +16,7 @@ import { publishWarning } from '../publish/notice.js';
 import { publishTasksPlanned } from '../publish/task.js';
 import { checkDependencyGate } from './gates/dependency.js';
 import { setupTaskImplementer } from './implementer-setup.js';
-import { commitOnHead, finishTask, withBaseline } from './post-task.js';
+import { commitOnHead, finishTask, withBaseline } from './finish.js';
 import { runScheduledReview } from '../review/loop/scheduled.js';
 
 type RunTaskLoopOptions = {

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
-import { useStores } from '../stores/use-stores.js';
+import { useStores } from '../stores/use-many.js';
 
 interface ScreenShellProps {
   header?: ReactNode;

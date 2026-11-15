@@ -1,7 +1,7 @@
 import { ThemeText as Text, useTheme } from '../theme.js';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Box, type Key } from 'ink';
-import { MultilineInput } from '../input/multiline-input.js';
+import { MultilineInput } from '../input/field.js';
 import type { InputEdit } from '../input/atoms.js';
 import { useCommandCompletion } from './completion/command/hook.js';
 import { useReferenceCompletion } from './completion/reference/hook.js';
@@ -12,7 +12,7 @@ import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { completionStore } from '../../stores/ui/completion.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { configStore } from '../../stores/project/config.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';

@@ -3,7 +3,7 @@ import type { Phase } from '../../schemas/enums.js';
 import type { TaskStatus } from '../../schemas/enums.js';
 import { CREW_SEAT_IDS } from '../../crew/identity.js';
 import type { OverlayType, Screen } from '../../navigation/types.js';
-import type { CopyOutcome } from '../../../lib/clipboard/clipboard.js';
+import type { CopyOutcome } from '../../../lib/clipboard/copy.js';
 import type { AttachmentFailureReason } from '../../attachments/failure.js';
 
 /** A returned string is a refusal: the command did nothing, and the string is the reason. */

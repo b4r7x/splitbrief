@@ -5,7 +5,7 @@ import {
   LOCAL_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
   REMOTE_API_PROVIDER_IDS,
-} from '../providers/api-provider-catalog.js';
+} from '../providers/api-catalog.js';
 import {
   CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,

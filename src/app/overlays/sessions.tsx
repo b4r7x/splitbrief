@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { SessionRow } from '../../components/session-row.js';
 import { SOFT_SEP } from '../../core/separators.js';

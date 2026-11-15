@@ -7,7 +7,7 @@ import {
   isApiProviderId,
   type ApiProviderDescriptor,
   type ApiProviderId,
-} from './api-provider-catalog.js';
+} from './api-catalog.js';
 import { endpointPolicyError } from './endpoint-policy.js';
 
 export type ProviderCategory = 'cli' | 'remote-api' | 'local-service' | 'custom';

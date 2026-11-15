@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../../create-store.js';
+import { createStore, storeBase } from '../../create.js';
 import type {
   CliToolDetection,
   ProviderDetection,
@@ -9,7 +9,7 @@ import {
   cloneProviderDetection,
 } from '../../../core/discovery/clone-detection.js';
 import { cloneDetectedModel } from '../../../core/discovery/clone-model.js';
-import type { ApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import type { ApiProviderId } from '../../../core/providers/api-catalog.js';
 import type { ProviderId, RunnerKind } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import {

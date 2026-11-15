@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import type { Key } from 'ink';
-import { OverlayPanel } from '../overlays/overlay-panel.js';
+import { OverlayPanel } from '../overlays/panel.js';
 import { FilterInput } from '../filter-input.js';
 import type { FilterableListKeyContext } from '../../hooks/use-filterable-list.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { availableRows } from './scroll-offset.js';

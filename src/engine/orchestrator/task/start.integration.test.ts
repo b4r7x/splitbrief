@@ -10,7 +10,7 @@ import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { EngineEventSchema } from '../../events/schema.js';
 import { createContinuationHolder } from '../continuation/holder.js';
-import { runPreTaskHooksAndPublish } from './pre-task.js';
+import { runPreTaskHooksAndPublish } from './start.js';
 
 const capture = vi.hoisted(() => ({ snapshotFails: false }));
 vi.mock('../approval/file-snapshots/capture.js', async (importOriginal) => {

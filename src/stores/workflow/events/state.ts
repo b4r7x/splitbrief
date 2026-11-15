@@ -1,5 +1,5 @@
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { createStore, storeBase } from '../../create-store.js';
+import { createStore, storeBase } from '../../create.js';
 
 export interface EventsState {
   events: EngineEvent[];

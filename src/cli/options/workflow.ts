@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import {
   isListedApiProvider,
   IMPLEMENTER_API_PROVIDER_IDS,
-} from '../../core/providers/api-provider-catalog.js';
+} from '../../core/providers/api-catalog.js';
 import { isListedCliTool, IMPLEMENTER_CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import { PLANNER_TOOL_IDS, META_PROVIDER_IDS } from '../../core/schemas/enums.js';
 import { cliError } from '../errors.js';

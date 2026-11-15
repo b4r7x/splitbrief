@@ -5,7 +5,7 @@ import type {
   ProviderDetection,
 } from '../../../core/discovery/detection/tool.js';
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
-import { API_PROVIDER_CATALOG } from '../../../core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG } from '../../../core/providers/api-catalog.js';
 import { readClaudeCodeModelOptions } from '../../../core/providers/claude-code-options.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { createDetectionService } from '../../../engine/detection/service/create.js';

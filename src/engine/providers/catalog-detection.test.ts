@@ -5,10 +5,7 @@ import {
   detectProviderCatalogs,
   providerDetectionFromOutcome,
 } from './catalog-detection.js';
-import {
-  KNOWN_API_PROVIDER_IDS,
-  type ApiProviderId,
-} from '../../core/providers/api-provider-catalog.js';
+import { KNOWN_API_PROVIDER_IDS, type ApiProviderId } from '../../core/providers/api-catalog.js';
 import { PROVIDER_CATALOG_FAILURE_KINDS } from './types.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
 import { probeActivitySnapshot } from '../probe-activity.js';

@@ -3,7 +3,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { splitTerminalGraphemes, getTerminalCellWidth } from '../../utils/display-text/width.js';
-import type { StartPreparationState } from './use-start-preparation.js';
+import type { StartPreparationState } from './use-controller.js';
 
 const INDENT = '  ';
 /** `blocker`, the longest severity word a problem carries, so the detail IDs line up. */

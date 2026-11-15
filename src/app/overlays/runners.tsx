@@ -5,7 +5,7 @@ import {
   type PickerSlot,
   type SeatPickerRole,
 } from '../../core/runners/seat-roles.js';
-import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { OverlayPanel } from '../../components/overlays/panel.js';
 import { ThemeText as Text } from '../../components/theme.js';
 import { arrowSep, SOFT_SEP } from '../../core/separators.js';
 import { CLOSE_HINT, formatKeyHints } from '../../components/key-legend.js';

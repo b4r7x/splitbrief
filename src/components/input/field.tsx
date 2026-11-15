@@ -8,10 +8,7 @@ import {
   prevGraphemeBoundary,
   nextGraphemeBoundary,
 } from './text-editing.js';
-import {
-  ControlledMultilineInput,
-  type ControlledMultilineInputProps,
-} from './controlled-multiline-input.js';
+import { ControlledMultilineInput, type ControlledMultilineInputProps } from './view.js';
 import { isTerminalControlRun } from '../../lib/terminal/text-entry.js';
 import { sanitizePasteBody } from '../../lib/terminal/filtered-stdin/paste.js';
 import { SUPPORTED_IMAGE_EXTS } from '../../core/schemas/attachment.js';

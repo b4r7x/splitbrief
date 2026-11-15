@@ -21,7 +21,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { saveHomeDraft } from '../../stores/ui/session-drafts.js';
 import { createDraftDocument } from '../../core/composer/document.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 import type { Session } from '../../core/schemas/session.js';
 import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import {
@@ -38,7 +38,7 @@ import { useRecentSessionsFocus } from '../../features/home/recent-sessions/use-
 import { sessionSelectDeps } from '../prepare-resume.js';
 import { checkingStatusText, prepareStart } from '../prepare-start.js';
 import { PreparationGate } from '../preparation-gate.js';
-import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
+import { useStartPreparation } from '../../features/start-preparation/use-controller.js';
 import { useCancelKey } from '../../features/start-preparation/use-cancel-key.js';
 import { useClosePromptOnLeave } from '../../features/start-preparation/use-close-prompt-on-leave.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';

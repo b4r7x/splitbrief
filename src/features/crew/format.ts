@@ -3,7 +3,7 @@ import { cutSeatIdentity } from '../../core/crew/seat-line/wrap.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { crewSeatWord } from '../../core/crew/seats.js';
-import { billingWord } from '../../core/runners/runner-billing.js';
+import { billingWord } from '../../core/runners/billing.js';
 
 export const CREW_COLUMN_GAP = '  ';
 export const CREW_MARKER_GUTTER = 2;

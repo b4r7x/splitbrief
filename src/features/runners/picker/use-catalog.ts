@@ -30,7 +30,7 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js'
 import { configStore } from '../../../stores/project/config.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../../stores/ui/picker-view.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { includes } from '../../../utils/type-guards.js';
 import {
   type PickerModelCounts,

@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../../create-store.js';
+import { createStore, storeBase } from '../../create.js';
 import { durationFromStart, markLifecycleInterrupted } from './marks.js';
 import { runningLifecycleState } from './phase.js';
 import type { LifecycleState, LifecycleResetState } from './types.js';

@@ -3,11 +3,11 @@ import {
   type ApiOffering,
   API_PROVIDER_CATALOG,
   isApiProviderId,
-} from '../../../core/providers/api-provider-catalog.js';
+} from '../../../core/providers/api-catalog.js';
 import { normalizeProviderEndpoint } from '../../../core/providers/endpoint-policy.js';
 import { CLI_TOOL_CATALOG, cliToolIdForCommand } from '../../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
-import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
+import type { RunnerBillingPosture } from '../../../core/runners/billing.js';
 import type {
   BillingAttribution,
   ProviderRunMetadata,

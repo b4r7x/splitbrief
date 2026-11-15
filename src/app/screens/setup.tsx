@@ -11,7 +11,7 @@ import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
-import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
+import { useStartPreparation } from '../../features/start-preparation/use-controller.js';
 import { useCancelKey } from '../../features/start-preparation/use-cancel-key.js';
 import { useClosePromptOnLeave } from '../../features/start-preparation/use-close-prompt-on-leave.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';

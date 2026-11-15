@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  API_PROVIDER_CATALOG,
-  KNOWN_API_PROVIDER_IDS,
-} from '../../providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG, KNOWN_API_PROVIDER_IDS } from '../../providers/api-catalog.js';
 import { CLI_TOOL_IDS } from '../../runners/cli-tool/catalog.js';
 import {
   DetectedModelSchema,

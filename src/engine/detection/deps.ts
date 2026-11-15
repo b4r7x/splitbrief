@@ -7,7 +7,7 @@ import {
   projectRunnerDiscoveryContext,
   type RunnerDiscoveryContext,
 } from '../../core/config/accessors/runner-discovery-context.js';
-import { isApiProviderId, type ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import { isApiProviderId, type ApiProviderId } from '../../core/providers/api-catalog.js';
 import {
   defaultCliAuthChannel,
   NATIVE_CLI_CATALOG_TOOL_IDS,

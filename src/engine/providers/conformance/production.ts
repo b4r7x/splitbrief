@@ -32,7 +32,7 @@ import {
 import {
   type UnregisteredOpenAICompatProvider,
   createUnregisteredOpenAICompatProvider,
-} from '../unregistered-provider.js';
+} from '../unregistered.js';
 
 export interface ProductionProviderConformanceOptions extends ProviderConformanceFetchOptions {
   readonly modulePath: string;

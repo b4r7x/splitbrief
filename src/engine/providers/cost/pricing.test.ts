@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isApiPricedProvider, resolvePricing, getPricingMode, LOCAL_PRICING } from './pricing.js';
-import { REMOTE_API_PROVIDER_IDS } from '../../../core/providers/api-provider-catalog.js';
+import { REMOTE_API_PROVIDER_IDS } from '../../../core/providers/api-catalog.js';
 import { NULL_CACHE } from '../model/runtime-snapshot.js';
 import type { ModelCacheAccessor } from '../model/runtime-snapshot.js';
 

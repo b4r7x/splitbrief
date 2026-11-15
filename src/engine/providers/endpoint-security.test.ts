@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG } from '../../core/providers/api-catalog.js';
 import {
   endpointPolicyError,
   endpointPolicyFetch,

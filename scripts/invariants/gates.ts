@@ -127,7 +127,7 @@ export const gates: readonly Gate[] = [
   {
     id: '17',
     description: 'No incidental non-null assertions (sanctioned files in CLAUDE.md allow-listed)',
-    command: `{ rg -n -P "[A-Za-z0-9_)\\]]![^=)]" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "!==|!=" | rg -v "^src/(stores/use-stores|engine/codebase/graph|engine/codebase/pagerank)\\.ts:" || true; } | wc -l`,
+    command: `{ rg -n -P "[A-Za-z0-9_)\\]]![^=)]" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "!==|!=" | rg -v "^src/(stores/use-many|engine/codebase/graph|engine/codebase/pagerank)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -140,7 +140,7 @@ export const gates: readonly Gate[] = [
     id: '17c',
     description:
       'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract, comment lines, ESM import/export alias clauses, and sanctioned files)',
-    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v -P "^[^:]+:\\d+:\\s*(?://|\\*|/\\*|(?:import|export)\\s+(?:type\\s+)?\\{)" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error|utils/type-guards)\\.ts:" || true; } | wc -l`,
+    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v -P "^[^:]+:\\d+:\\s*(?://|\\*|/\\*|(?:import|export)\\s+(?:type\\s+)?\\{)" | rg -v "^src/(stores/use-many|engine/hooks/substitute|utils/error|utils/type-guards)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -225,7 +225,7 @@ export const gates: readonly Gate[] = [
     id: '29',
     description: 'Exhaustive CLI and API role registries match catalog tuples',
     command:
-      "node --import tsx/esm --input-type=module -e \"import { CLI_PLANNER_ADAPTERS, CLI_IMPLEMENTER_ADAPTERS } from './src/engine/runners/cli-tools/registry.ts'; import { PLANNER_CLI_TOOL_IDS, IMPLEMENTER_CLI_TOOL_IDS } from './src/core/runners/cli-tool/catalog.ts'; import { API_PROVIDER_CATALOG } from './src/core/providers/api-provider-catalog.ts'; import { KNOWN_PROVIDERS } from './src/engine/providers/registry.ts'; let n=0; if (JSON.stringify(Object.keys(CLI_PLANNER_ADAPTERS)) !== JSON.stringify([...PLANNER_CLI_TOOL_IDS])) n++; if (JSON.stringify(Object.keys(CLI_IMPLEMENTER_ADAPTERS)) !== JSON.stringify([...IMPLEMENTER_CLI_TOOL_IDS])) n++; if (JSON.stringify(Object.keys(KNOWN_PROVIDERS).toSorted()) !== JSON.stringify(Object.keys(API_PROVIDER_CATALOG).toSorted())) n++; process.stdout.write(String(n));\"",
+      "node --import tsx/esm --input-type=module -e \"import { CLI_PLANNER_ADAPTERS, CLI_IMPLEMENTER_ADAPTERS } from './src/engine/runners/cli-tools/registry.ts'; import { PLANNER_CLI_TOOL_IDS, IMPLEMENTER_CLI_TOOL_IDS } from './src/core/runners/cli-tool/catalog.ts'; import { API_PROVIDER_CATALOG } from './src/core/providers/api-catalog.ts'; import { KNOWN_PROVIDERS } from './src/engine/providers/registry.ts'; let n=0; if (JSON.stringify(Object.keys(CLI_PLANNER_ADAPTERS)) !== JSON.stringify([...PLANNER_CLI_TOOL_IDS])) n++; if (JSON.stringify(Object.keys(CLI_IMPLEMENTER_ADAPTERS)) !== JSON.stringify([...IMPLEMENTER_CLI_TOOL_IDS])) n++; if (JSON.stringify(Object.keys(KNOWN_PROVIDERS).toSorted()) !== JSON.stringify(Object.keys(API_PROVIDER_CATALOG).toSorted())) n++; process.stdout.write(String(n));\"",
     expected: 0,
   },
   {
@@ -260,7 +260,7 @@ export const gates: readonly Gate[] = [
     id: '34',
     description: 'Zero excluded first-class CLI/API IDs in runtime tuples or catalogs',
     command:
-      "node --import tsx/esm --input-type=module -e \"import { EXCLUDED_CLI_TOOL_IDS } from './src/core/runners/cli-tool/custom-only.ts'; import { CLI_TOOL_CATALOG } from './src/core/runners/cli-tool/catalog.ts'; import { API_PROVIDER_CATALOG } from './src/core/providers/api-provider-catalog.ts'; import { FORBIDDEN_API_PROVIDER_IDS } from './src/core/providers/api-provider-verdicts.ts'; import { PROVIDER_IDS, PLANNER_TOOL_IDS } from './src/core/schemas/enums.ts'; let n=0; const admitted=new Set([...PROVIDER_IDS,...PLANNER_TOOL_IDS,...Object.keys(CLI_TOOL_CATALOG),...Object.keys(API_PROVIDER_CATALOG)]); for (const id of EXCLUDED_CLI_TOOL_IDS) if (admitted.has(id)) n++; for (const id of FORBIDDEN_API_PROVIDER_IDS) if (admitted.has(id)) n++; process.stdout.write(String(n));\"",
+      "node --import tsx/esm --input-type=module -e \"import { EXCLUDED_CLI_TOOL_IDS } from './src/core/runners/cli-tool/custom-only.ts'; import { CLI_TOOL_CATALOG } from './src/core/runners/cli-tool/catalog.ts'; import { API_PROVIDER_CATALOG } from './src/core/providers/api-catalog.ts'; import { FORBIDDEN_API_PROVIDER_IDS } from './src/core/providers/api-verdicts.ts'; import { PROVIDER_IDS, PLANNER_TOOL_IDS } from './src/core/schemas/enums.ts'; let n=0; const admitted=new Set([...PROVIDER_IDS,...PLANNER_TOOL_IDS,...Object.keys(CLI_TOOL_CATALOG),...Object.keys(API_PROVIDER_CATALOG)]); for (const id of EXCLUDED_CLI_TOOL_IDS) if (admitted.has(id)) n++; for (const id of FORBIDDEN_API_PROVIDER_IDS) if (admitted.has(id)) n++; process.stdout.write(String(n));\"",
     expected: 0,
   },
   {

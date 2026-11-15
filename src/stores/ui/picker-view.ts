@@ -1,6 +1,6 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands/tuple.js';
-import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import type { ApiProviderId } from '../../core/providers/api-catalog.js';
 
 export type PickerSubView =
   | { kind: 'picker' }

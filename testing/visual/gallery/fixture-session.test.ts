@@ -55,8 +55,8 @@ vi.mock('../../../src/engine/skills/discover.js', async (original) => ({
   ...(await original<typeof import('../../../src/engine/skills/discover.js')>()),
   discoverSkills: production.discoverSkills,
 }));
-vi.mock('../../../src/lib/clipboard/clipboard.js', async (original) => ({
-  ...(await original<typeof import('../../../src/lib/clipboard/clipboard.js')>()),
+vi.mock('../../../src/lib/clipboard/copy.js', async (original) => ({
+  ...(await original<typeof import('../../../src/lib/clipboard/copy.js')>()),
   copyToClipboard: production.copyToClipboard,
 }));
 vi.mock('../../../src/features/workflow/run-requests/departure.js', async (original) => ({

@@ -5,7 +5,7 @@ import { apiConnectionContextKey } from '../selected-model.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { createRunnerCallRecorder } from '../../calls/recorder/create.js';
-import { createRunnerCallId } from '../../calls/call-id.js';
+import { createRunnerCallId } from '../../calls/id.js';
 import {
   RUNNER_CALL_STOPPED_ERROR,
   createRunnerCallCredentialRedactor,

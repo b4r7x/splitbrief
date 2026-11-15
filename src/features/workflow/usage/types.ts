@@ -1,4 +1,4 @@
-import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
+import type { RunnerBillingPosture } from '../../../core/runners/billing.js';
 import type {
   BillingAttribution,
   CostAmountBasis,

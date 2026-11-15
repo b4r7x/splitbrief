@@ -4,7 +4,7 @@ import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { parksCutCall, stopStore } from '../../../stores/workflow/stop.js';
 import { tokensStore } from '../../../stores/workflow/tokens/state.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { deriveRunningSeats, type RunningSeats } from '../display/running-seats.js';
 
 /**

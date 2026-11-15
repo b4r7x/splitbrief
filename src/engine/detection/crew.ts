@@ -3,10 +3,7 @@ import { projectRunnerDiscoveryContext } from '../../core/config/accessors/runne
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { detectedSeatReady, type CrewDetection } from '../../core/crew/default.js';
-import {
-  API_PROVIDER_CATALOG,
-  isApiProviderId,
-} from '../../core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG, isApiProviderId } from '../../core/providers/api-catalog.js';
 import { getKnownProviderBaseURL } from '../../core/providers/catalog.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';

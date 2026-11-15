@@ -1,5 +1,5 @@
 import { includes, typedEntries } from '../../utils/type-guards.js';
-import type { RunnerBillingPosture } from '../runners/runner-billing.js';
+import type { RunnerBillingPosture } from '../runners/billing.js';
 import type { EndpointPolicy } from './endpoint-policy.js';
 
 export const API_OFFERINGS = Object.freeze([

@@ -1,5 +1,5 @@
 import type { Terminal } from '@xterm/headless';
-import type { CopyOutcome } from '../../clipboard/clipboard.js';
+import type { CopyOutcome } from '../../clipboard/copy.js';
 import type { SelectionPoint, TerminalFrame } from './frame.js';
 
 export interface SelectionGesture {

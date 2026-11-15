@@ -1,8 +1,5 @@
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
-import {
-  isApiProviderId,
-  type ApiProviderId,
-} from '../../../core/providers/api-provider-catalog.js';
+import { isApiProviderId, type ApiProviderId } from '../../../core/providers/api-catalog.js';
 import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
 import { type KnownModel, KNOWN_MODELS } from '../../../core/providers/known-models.js';
 import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';

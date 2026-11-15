@@ -8,7 +8,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { wrapOnWords } from '../picker/byline.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { SingleColumnPicker } from './single-column.js';
 import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
 import { glyph } from '../../../lib/glyphs.js';

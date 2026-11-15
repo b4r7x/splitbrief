@@ -2,7 +2,7 @@ import {
   ADMITTED_API_PROVIDER_IDS,
   getApiProviderDescriptor,
   isApiProviderId,
-} from '../src/core/providers/api-provider-catalog.js';
+} from '../src/core/providers/api-catalog.js';
 import { getKnownProviderBaseURL } from '../src/core/providers/catalog.js';
 import { OLLAMA_LOCAL_API_KEY_REFERENCE } from '../src/core/providers/ollama-credential.js';
 import { error } from '../src/utils/error.js';

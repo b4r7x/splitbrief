@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { resolveAttachment } from '../../core/attachments/resolve.js';
 import type { AttachImageResult } from '../../core/runtime/commands/types.js';
 import type { Attachment } from '../../core/schemas/attachment.js';

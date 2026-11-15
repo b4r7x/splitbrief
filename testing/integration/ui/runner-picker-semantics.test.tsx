@@ -27,7 +27,7 @@ import {
   type CliToolDetection,
   type ProviderDetection,
 } from '../../../src/core/discovery/detection/tool.js';
-import { IMPLEMENTER_API_PROVIDER_IDS } from '../../../src/core/providers/api-provider-catalog.js';
+import { IMPLEMENTER_API_PROVIDER_IDS } from '../../../src/core/providers/api-catalog.js';
 import { getProviderDisplayName } from '../../../src/core/providers/catalog.js';
 import {
   CLI_TOOL_CATALOG,

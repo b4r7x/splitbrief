@@ -2,7 +2,7 @@ import { Box } from 'ink';
 import { expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { DEFAULT_RENDER_VIEWPORT, flushEffects, renderFeature } from '#testing/helpers/ink.js';
-import { ControlledMultilineInput } from './controlled-multiline-input.js';
+import { ControlledMultilineInput } from './view.js';
 import chalk from 'chalk';
 import { defaultTheme } from '../theme.js';
 import { paint } from '../../core/theme/paint.js';

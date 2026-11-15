@@ -1,5 +1,5 @@
 import { uniqueSorted } from '../../../utils/collections.js';
-import { gateAction } from './tiered-approval.js';
+import { gateAction } from './gate-action.js';
 import type { GateDecision, GateActionInput } from './types.js';
 
 export type GateChangedFilesInput = Omit<GateActionInput, 'actionDescription' | 'targetPath'> & {

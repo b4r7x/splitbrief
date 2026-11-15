@@ -12,7 +12,7 @@ import { useAppMouse } from './mouse.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { runViewStore } from '../stores/workflow/run-view.js';
-import { useStores } from '../stores/use-stores.js';
+import { useStores } from '../stores/use-many.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { APPLY_RUNNING_REFUSAL } from '../core/runtime/commands/messages.js';

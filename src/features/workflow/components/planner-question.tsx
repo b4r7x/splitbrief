@@ -9,7 +9,7 @@ import {
   followQuestionSelection,
   questionMenu,
 } from '../prompt-rows/question.js';
-import { MultilineInput } from '../../../components/input/multiline-input.js';
+import { MultilineInput } from '../../../components/input/field.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { listRowLead } from '../../../components/list-row/lead.js';
 import { formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';

@@ -4,10 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  API_PROVIDER_CATALOG,
-  isListedApiProvider,
-} from '../../../core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG, isListedApiProvider } from '../../../core/providers/api-catalog.js';
 import { assemblePickerDescriptors } from '../../../features/runners/model-catalog/options.js';
 import {
   RawProviderCandidateContract,
@@ -19,7 +16,7 @@ import type { OpenAICompatPolicy } from '../openai-compat-policy.js';
 import { resolveOpenAICompatPolicy } from '../openai-compat-policy.js';
 import { PROVIDER_CONFORMANCE_EXIT_CODES } from './shared.js';
 import { runProductionProviderConformance } from './production.js';
-import { createUnregisteredOpenAICompatProvider } from '../unregistered-provider.js';
+import { createUnregisteredOpenAICompatProvider } from '../unregistered.js';
 import { KNOWN_PROVIDERS, getProvider } from '../registry.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../../..');

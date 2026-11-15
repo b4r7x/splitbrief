@@ -28,7 +28,7 @@ import {
   createEndpointPolicyFetch,
   type EndpointPolicyFetch,
 } from '../../../lib/http/policy-fetch.js';
-import { getApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../../core/providers/api-catalog.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);

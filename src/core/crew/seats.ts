@@ -7,7 +7,7 @@ import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { CLI_TOOL_IDS, isListedCliTool } from '../runners/cli-tool/catalog.js';
 import type { CliToolId } from '../runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
-import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/runner-billing.js';
+import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/billing.js';
 import type { Config } from '../schemas/config.js';
 import { assertNever } from '../../utils/type-guards.js';
 import {

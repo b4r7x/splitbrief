@@ -1,5 +1,5 @@
 import { PROVIDER_CATALOG, isSameOrigin } from '../providers/catalog.js';
-import { isApiProviderId } from '../providers/api-provider-catalog.js';
+import { isApiProviderId } from '../providers/api-catalog.js';
 import type { ImplementerConfig } from '../schemas/runner/implementer.js';
 import type { PlannerConfig } from '../schemas/runner/planner.js';
 import { redactSecrets } from '../../utils/redact/secrets.js';

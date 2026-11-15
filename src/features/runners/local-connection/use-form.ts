@@ -4,7 +4,7 @@ import { overlayAllowsPickerKeys } from '../../../core/navigation/types.js';
 import {
   type ApiProviderDescriptor,
   API_PROVIDER_CATALOG,
-} from '../../../core/providers/api-provider-catalog.js';
+} from '../../../core/providers/api-catalog.js';
 import { useSlowProbeText } from '../../../hooks/use-slow-probe-text.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';

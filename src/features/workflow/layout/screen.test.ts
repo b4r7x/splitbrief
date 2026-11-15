@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildProgressRowCount, getChromeContentWidth, getChromeHeight } from './chrome-rows.js';
-import { workflowScreenLayout } from './screen-layout.js';
+import { workflowScreenLayout } from './screen.js';
 
 const atRest = {
   cols: 100,

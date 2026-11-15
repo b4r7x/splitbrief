@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
-import { FORBIDDEN_API_PROVIDER_IDS } from '../../core/providers/api-provider-verdicts.js';
+import { getApiProviderDescriptor } from '../../core/providers/api-catalog.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../../core/providers/api-verdicts.js';
 import type { ProviderDef, ProviderOverrides } from './types.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createOllamaProvider } from './ollama.js';

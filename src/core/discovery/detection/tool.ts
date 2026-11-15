@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { KNOWN_API_PROVIDER_IDS } from '../../providers/api-provider-catalog.js';
+import { KNOWN_API_PROVIDER_IDS } from '../../providers/api-catalog.js';
 import { CliToolIdSchema } from '../../schemas/enums.js';
 import { CliProviderAuthSchema } from './auth.js';
 import { CliExecutableIdentitySchema } from './executable.js';

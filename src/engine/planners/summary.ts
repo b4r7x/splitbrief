@@ -12,7 +12,7 @@ import type {
 } from './types.js';
 import { runnerCallTokenDelta } from '../calls/usage/normalize.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
-import { createRunnerCallId } from '../calls/call-id.js';
+import { createRunnerCallId } from '../calls/id.js';
 import { requireCompletedCall } from './require-completed-call.js';
 
 type PlannerSummaryConfig = {

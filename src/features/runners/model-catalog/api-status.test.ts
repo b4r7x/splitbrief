@@ -4,7 +4,7 @@ import {
   API_PROVIDER_CATALOG,
   type ApiProviderDescriptor,
   type ApiProviderId,
-} from '../../../core/providers/api-provider-catalog.js';
+} from '../../../core/providers/api-catalog.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 import { deriveApiStatus } from './api-status.js';
 import { isSelectable, type PickerDetectionSnapshot } from './status.js';

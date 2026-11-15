@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import {
   applyEditorEvent,
   clampScrollToDocument,
@@ -56,7 +56,7 @@ export const editorStore = {
   setLayout: (layout: EditorLayout) =>
     store.set((s) => {
       if (s.status !== 'open') return s;
-      // Idempotent by value: an unchanged layout returns the SAME state so create-store bails on
+      // Idempotent by value: an unchanged layout returns the SAME state so createStore bails on
       // Object.is and never notifies. This lets the editor re-measure its render box in a
       // layout effect every render without a set → re-render → re-measure loop.
       if (s.layout.columns === layout.columns && s.layout.rows === layout.rows) return s;

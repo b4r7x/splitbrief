@@ -7,11 +7,8 @@ import type {
 } from './types.js';
 import type { ProviderDetection } from '../../core/discovery/detection/tool.js';
 import type { DetectedModel } from '../../core/discovery/detection/model.js';
-import {
-  API_PROVIDER_CATALOG,
-  LISTED_API_PROVIDER_IDS,
-} from '../../core/providers/api-provider-catalog.js';
-import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG, LISTED_API_PROVIDER_IDS } from '../../core/providers/api-catalog.js';
+import type { ApiProviderId } from '../../core/providers/api-catalog.js';
 import { getProvider } from './registry.js';
 import { CLI_PROBE_TIMEOUT_MS } from '../constants.js';
 import { trackProbe } from '../probe-activity.js';

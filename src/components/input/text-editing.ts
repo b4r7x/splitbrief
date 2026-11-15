@@ -53,7 +53,7 @@ function deleteWordForward(value: string, cursor: number): EditResult {
 
 // Ctrl+A (move-line-start) and Ctrl+U (delete-line-backward) act on the painted row of the
 // caret. The paint wraps the draft with its caret cell and each tab as TAB_SIZE spaces through
-// wrapWordVisualLines (controlled-multiline-input.tsx), so this builds the same painted text,
+// wrapWordVisualLines (view.tsx), so this builds the same painted text,
 // wraps it the same way and maps the row start back to its offset in `value`. A row that
 // starts inside a tab's spaces starts after the tab.
 function findVisualLineStart(value: string, cursor: number, columns: number): number {

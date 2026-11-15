@@ -16,7 +16,7 @@ import type {
   PreparationOutcome,
   PreparedExecution,
 } from '../../engine/runners/prepare-execution/prepared.js';
-import { useStartPreparation } from './use-start-preparation.js';
+import { useStartPreparation } from './use-controller.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const OWNERSHIP_FILE = '.prepare-owner.json';

@@ -61,8 +61,8 @@ vi.mock('../engine/detection/store-publication.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../engine/detection/store-publication.js')>()),
   refreshDetectionForCurrentConfig: production.refreshDetectionForCurrentConfig,
 }));
-vi.mock('../lib/clipboard/clipboard.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../lib/clipboard/clipboard.js')>()),
+vi.mock('../lib/clipboard/copy.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/clipboard/copy.js')>()),
   copyToClipboard: production.copyToClipboard,
 }));
 vi.mock('../engine/providers/catalog-detection.js', async (importOriginal) => ({

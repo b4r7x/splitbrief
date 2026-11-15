@@ -5,7 +5,7 @@ import { completionStore } from '../../../stores/ui/completion.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { clamp } from '../../../utils/math.js';
 import { resolveScrollKey } from '../../../core/keybindings/scroll.js';

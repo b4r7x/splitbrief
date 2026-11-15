@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { preparationStore } from '../navigation/preparation.js';
 import { routerStore } from '../navigation/router.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';

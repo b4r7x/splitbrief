@@ -1,4 +1,4 @@
-import type { CopyOutcome } from '../../clipboard/clipboard.js';
+import type { CopyOutcome } from '../../clipboard/copy.js';
 import { selectionText } from './frame.js';
 import { clear } from './output.js';
 import type { SelectionGesture, SelectionState } from './types.js';

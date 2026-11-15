@@ -2,7 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import { ListViewport } from '../../../../components/pickers/list-viewport.js';
 import { RuleHeader } from '../../../../components/rule-header.js';
-import { OverlayPanel } from '../../../../components/overlays/overlay-panel.js';
+import { OverlayPanel } from '../../../../components/overlays/panel.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
 import { listRowLead } from '../../../../components/list-row/lead.js';
 import { withMark } from '../prompt-body.js';

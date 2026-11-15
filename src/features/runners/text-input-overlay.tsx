@@ -2,8 +2,8 @@ import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useState, useEffect } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Box } from 'ink';
-import { MultilineInput } from '../../components/input/multiline-input.js';
-import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { MultilineInput } from '../../components/input/field.js';
+import { OverlayPanel } from '../../components/overlays/panel.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { BACK_HINT, formatKeyHints } from '../../components/key-legend.js';
@@ -14,7 +14,7 @@ import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.j
 import { overlayAllowsPickerKeys } from '../../core/navigation/types.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 
 // The input box's border and padding (2 + 2) and the prompt with its space (2).
 const INPUT_CHROME_COLUMNS = 6;

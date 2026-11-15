@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { createDraftDocument, draftLength } from '../../core/composer/document.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { draftDocumentText } from './input-history.js';

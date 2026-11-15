@@ -1,5 +1,5 @@
 import { Box } from 'ink';
-import { MultilineInput } from '../../../components/input/multiline-input.js';
+import { MultilineInput } from '../../../components/input/field.js';
 import { useTheme, ThemeText as Text } from '../../../components/theme.js';
 import { glyph } from '../../../lib/glyphs.js';
 

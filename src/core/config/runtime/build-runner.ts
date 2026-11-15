@@ -1,6 +1,6 @@
 import { includes, assertNever } from '../../../utils/type-guards.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
-import { getApiProviderDescriptor } from '../../providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../providers/api-catalog.js';
 import { normalizeProviderEndpoint } from '../../providers/endpoint-policy.js';
 import {
   CLI_TOOL_IDS,

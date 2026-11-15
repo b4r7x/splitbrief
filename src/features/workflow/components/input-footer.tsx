@@ -1,7 +1,7 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';

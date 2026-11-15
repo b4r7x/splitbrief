@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
-import { getApiProviderDescriptor } from '../providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../providers/api-catalog.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export const RUNNER_BILLING_POSTURES = [

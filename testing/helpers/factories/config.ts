@@ -1,9 +1,6 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  API_PROVIDER_CATALOG,
-  type ApiOffering,
-} from '../../../src/core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG, type ApiOffering } from '../../../src/core/providers/api-catalog.js';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type {
   ApiImplementerConfig,

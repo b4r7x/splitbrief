@@ -5,7 +5,7 @@ import {
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { buildRunnerConfig } from '../../../core/config/runtime/build-runner.js';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
-import type { ApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import type { ApiProviderId } from '../../../core/providers/api-catalog.js';
 import { getKnownProviderBaseURL } from '../../../core/providers/catalog.js';
 import {
   PICKER_ROLE_SEAT_IDS,

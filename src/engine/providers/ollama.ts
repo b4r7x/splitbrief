@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
+import { API_PROVIDER_CATALOG } from '../../core/providers/api-catalog.js';
 import type { DetectedModel, DetectedModelInstance } from '../../core/discovery/detection/model.js';
 import {
   endpointPolicyFetch,

@@ -1,5 +1,5 @@
 import type { ProviderDetection } from '../../../core/discovery/detection/tool.js';
-import type { ApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
+import type { ApiProviderDescriptor } from '../../../core/providers/api-catalog.js';
 import { hasApiKey } from '../../../core/providers/catalog.js';
 import {
   seatPickerLane,

@@ -1,4 +1,4 @@
-import type { RunnerBillingPosture } from '../runner-billing.js';
+import type { RunnerBillingPosture } from '../billing.js';
 import type {
   CliAuthChannelId,
   CliAuthChannel,

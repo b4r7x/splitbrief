@@ -1,4 +1,4 @@
-import type { ApiOffering } from '../../providers/api-provider-catalog.js';
+import type { ApiOffering } from '../../providers/api-catalog.js';
 import type { RunnerKind, OutputFormat, EffortLevel } from '../../schemas/enums.js';
 import type { ImplementerConfig } from '../../schemas/runner/implementer.js';
 import type { PlannerConfig } from '../../schemas/runner/planner.js';

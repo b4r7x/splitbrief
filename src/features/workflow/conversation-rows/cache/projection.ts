@@ -104,7 +104,7 @@ export function getConversationRowsWindowProjection(
 // on every change.
 //
 // Streaming is compared field-by-field rather than by object identity: useStores hands components a
-// fresh Proxy per render (src/stores/use-stores.ts), so a whole-object check never matched from the
+// fresh Proxy per render (src/stores/use-many.ts), so a whole-object check never matched from the
 // render path and the transcript was rebuilt on every keypress. The projection reads only these three
 // fields (event-rows/execution.ts) and the store replaces `lines` on every change, so comparing them
 // is equivalent to comparing the state itself.

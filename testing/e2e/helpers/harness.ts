@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect } from 'vitest';
 import YAML from 'yaml';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
-import { getApiProviderDescriptor } from '../../../src/core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../../src/core/providers/api-catalog.js';
 import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';

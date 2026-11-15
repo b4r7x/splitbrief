@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { PROVIDER_CONFORMANCE_EXIT_CODES } from './shared.js';
 import { runProductionProviderConformance } from './production.js';
 import { runRawProviderConformance } from './raw.js';
-import { createUnregisteredOpenAICompatProvider } from '../unregistered-provider.js';
+import { createUnregisteredOpenAICompatProvider } from '../unregistered.js';
 import { contractSha256 } from '../candidate/contract.js';
 
 const credential = 'ex-live-credential-canary-123';

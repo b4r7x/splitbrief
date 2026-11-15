@@ -2,7 +2,7 @@ import type { ResolvedImplementerProfile } from '../../../core/config/accessors/
 import { assertNever } from '../../../utils/type-guards.js';
 import { resolveRunnerContextWindow } from '../../providers/model/context-window.js';
 import { resolveApplicationContextTokens } from '../../providers/api/runtime-context.js';
-import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import { isApiProviderId } from '../../../core/providers/api-catalog.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { getEffectiveModelId, resolveExactRuntimeModel } from '../../providers/model/resolution.js';
 import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';

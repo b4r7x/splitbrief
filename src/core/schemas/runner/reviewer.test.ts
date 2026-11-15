@@ -63,15 +63,14 @@ describe('ReviewerConfigSchema', () => {
 // runs against an injected implementer-only descriptor.
 describe('reviewer API admission against an implementer-only descriptor', () => {
   afterEach(() => {
-    vi.doUnmock('../../providers/api-provider-catalog.js');
+    vi.doUnmock('../../providers/api-catalog.js');
     vi.resetModules();
   });
 
   it('names the reviewer seat when an API provider is not admitted', async () => {
     vi.resetModules();
-    vi.doMock('../../providers/api-provider-catalog.js', async (importOriginal) => {
-      const actual =
-        await importOriginal<typeof import('../../providers/api-provider-catalog.js')>();
+    vi.doMock('../../providers/api-catalog.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../providers/api-catalog.js')>();
       return {
         ...actual,
         API_PROVIDER_CATALOG: {

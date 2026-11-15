@@ -1,4 +1,4 @@
-import { createRunnerCallId } from '../calls/call-id.js';
+import { createRunnerCallId } from '../calls/id.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import {
   createPlannerArtifactAttemptId,

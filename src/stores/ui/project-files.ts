@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 
 const store = createStore<{ refreshEpoch: number }>({ refreshEpoch: 0 });
 

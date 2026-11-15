@@ -11,7 +11,7 @@ import {
   overlayGutterRows,
   overlayRect,
 } from '../../core/navigation/overlay-rect.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 
 export function overlayInnerRowCapacity(input: { rows: number; outerChromeRows: number }): number {
   return Math.max(

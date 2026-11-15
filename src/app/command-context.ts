@@ -55,7 +55,7 @@ import type {
 import { plannerSupportsImages } from '../engine/providers/capabilities.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
-import { copyToClipboard } from '../lib/clipboard/clipboard.js';
+import { copyToClipboard } from '../lib/clipboard/copy.js';
 import { appPreparationError } from './prepare-resume.js';
 import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
 import { readRunRecord } from '../core/sessions/run/record-io.js';

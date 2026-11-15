@@ -1,6 +1,6 @@
 import type { ProviderId, RunnerKind } from '../../../core/schemas/enums.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
-import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import { isApiProviderId } from '../../../core/providers/api-catalog.js';
 import { findKnownModel } from '../../../core/providers/known-models.js';
 import {
   getEffectiveModelId,

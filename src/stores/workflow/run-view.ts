@@ -1,6 +1,6 @@
 import { EMPTY_BRIEFS, type RunBriefs } from '../../core/run-view/briefs.js';
 import { EMPTY_RUN_VIEW, type RunView } from '../../core/run-view/reduce.js';
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 
 const store = createStore<RunView>(EMPTY_RUN_VIEW);
 

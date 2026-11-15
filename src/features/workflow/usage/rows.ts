@@ -1,5 +1,5 @@
 import { formatCost } from '../../../core/formatting.js';
-import { billingWord } from '../../../core/runners/runner-billing.js';
+import { billingWord } from '../../../core/runners/billing.js';
 import { runnerKeyLabel } from './derive.js';
 import type { UsageRateRow, UsageBillingRow, UsageDetailsView } from './types.js';
 import {

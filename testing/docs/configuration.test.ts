@@ -7,8 +7,8 @@ import { loadConfig } from '../../src/core/config/load/io.js';
 import {
   ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
-} from '../../src/core/providers/api-provider-catalog.js';
-import { FORBIDDEN_API_PROVIDER_IDS } from '../../src/core/providers/api-provider-verdicts.js';
+} from '../../src/core/providers/api-catalog.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from '../../src/core/providers/api-verdicts.js';
 import { KNOWN_MODELS } from '../../src/core/providers/known-models.js';
 import { narrowRecord } from '../../src/utils/type-guards.js';
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';

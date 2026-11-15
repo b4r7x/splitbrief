@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { RunnerBillingPostureSchema } from '../../../core/runners/runner-billing.js';
+import { RunnerBillingPostureSchema } from '../../../core/runners/billing.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import {

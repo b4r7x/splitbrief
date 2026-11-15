@@ -11,7 +11,7 @@ import type {
   ResolvedDetectionSourceContexts,
 } from './service/types.js';
 import { createProductionDetectionDeps } from './deps.js';
-import { createStore } from '../../stores/create-store.js';
+import { createStore } from '../../stores/create.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import {

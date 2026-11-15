@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import * as apiProviderCatalog from './api-provider-catalog.js';
+import * as apiProviderCatalog from './api-catalog.js';
 import {
   ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
@@ -10,9 +10,9 @@ import {
   REMOTE_API_PROVIDER_IDS,
   getApiProviderDescriptor,
   isApiProviderId,
-} from './api-provider-catalog.js';
+} from './api-catalog.js';
 import { normalizeProviderEndpoint } from './endpoint-policy.js';
-import { FORBIDDEN_API_PROVIDER_IDS } from './api-provider-verdicts.js';
+import { FORBIDDEN_API_PROVIDER_IDS } from './api-verdicts.js';
 import {
   getKnownProviderBaseURL,
   KNOWN_PROVIDER_BASE_URLS,

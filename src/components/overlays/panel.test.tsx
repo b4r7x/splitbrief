@@ -5,7 +5,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { defaultTheme, ThemeText as Text } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
-import { OverlayPanel, overlayInnerRowCapacity } from './overlay-panel.js';
+import { OverlayPanel, overlayInnerRowCapacity } from './panel.js';
 
 // ink-testing-library's stdout mock resolves chalk color level 0 unless FORCE_COLOR is set before
 // ink (and its chalk dependency) first load, so the color assertions below would silently no-op

@@ -1,7 +1,7 @@
 import { META_PROVIDER_IDS, type ProviderId } from '../../../core/schemas/enums.js';
 import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
 import { REMOVED_CLI_TOOL_IDS, REMOVED_RUNNER_KINDS } from '../../../core/schemas/runner/fields.js';
-import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import { isApiProviderId } from '../../../core/providers/api-catalog.js';
 import {
   isProviderLocal,
   isProviderSubscription,

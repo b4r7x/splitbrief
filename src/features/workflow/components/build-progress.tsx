@@ -5,7 +5,7 @@ import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { deriveBuildProgress } from '../display/build-progress/derive.js';
 import { buildProgressRows } from '../display/build-progress/rows.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';

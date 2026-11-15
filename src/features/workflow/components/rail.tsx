@@ -15,7 +15,7 @@ import type { LifecycleState } from '../../../stores/workflow/lifecycle/types.js
 import type { RunBriefs } from '../../../core/run-view/briefs.js';
 import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import {
   applyStopRailStages,

@@ -5,8 +5,8 @@ import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createLlamaCppProvider } from './llama-cpp.js';
 import { createOpenAICompatProvider } from './openai-compat.js';
-import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
-import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../core/providers/api-catalog.js';
+import type { ApiProviderId } from '../../core/providers/api-catalog.js';
 import {
   endpointPolicyError,
   normalizeProviderEndpoint,

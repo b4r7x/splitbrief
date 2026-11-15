@@ -6,7 +6,7 @@ import { overlayStore } from '../stores/ui/overlay.js';
 import type { RouteData } from '../stores/navigation/router.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin/active.js';
 import { activeApply } from '../engine/orchestrator/session-lifecycle/shutdown.js';
-import type { CopyOutcome } from '../lib/clipboard/clipboard.js';
+import type { CopyOutcome } from '../lib/clipboard/copy.js';
 import { formatCopyResult } from '../core/runtime/commands/types.js';
 import type { AppKeyDeps } from './keys.js';
 

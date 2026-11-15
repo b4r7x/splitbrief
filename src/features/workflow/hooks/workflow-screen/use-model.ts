@@ -45,7 +45,7 @@ import { departureStore } from '../../../../stores/workflow/departure.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import { approvalPromptStore } from '../../../../stores/prompts/approval.js';
-import { useStores } from '../../../../stores/use-stores.js';
+import { useStores } from '../../../../stores/use-many.js';
 import {
   applyComposer,
   atRestComposer,

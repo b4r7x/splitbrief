@@ -1,6 +1,6 @@
 import { formatContextLength } from '../../../core/formatting.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
-import { type RunnerBillingPosture, billingWord } from '../../../core/runners/runner-billing.js';
+import { type RunnerBillingPosture, billingWord } from '../../../core/runners/billing.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';

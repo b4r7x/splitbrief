@@ -7,7 +7,7 @@ import {
   setClipboardExitCodes,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 
-import { copyToClipboard } from './clipboard.js';
+import { copyToClipboard } from './copy.js';
 import { _resetLinuxCopyCache } from './native.js';
 
 const ESC = String.fromCharCode(0x1b);

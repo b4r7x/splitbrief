@@ -1,7 +1,7 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import type { ReactNode } from 'react';
 import { useInput } from 'ink';
-import { OverlayPanel, type OverlayCard } from '../../components/overlays/overlay-panel.js';
+import { OverlayPanel, type OverlayCard } from '../../components/overlays/panel.js';
 import { RuleHeader } from '../../components/rule-header.js';
 import { ScrollableDocument } from '../../components/scrollable-document/document.js';
 import type { ScrollableDocumentRow } from '../../components/scrollable-document/window.js';
@@ -14,8 +14,8 @@ import {
 } from '../../core/navigation/overlay-rect.js';
 import { overlayStore, selectHasOverlay } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { useStores } from '../../stores/use-stores.js';
-import type { StartPreparationState } from './use-start-preparation.js';
+import { useStores } from '../../stores/use-many.js';
+import type { StartPreparationState } from './use-controller.js';
 import { fitHint, panelLines, panelModel, type LineTone } from './panel-lines.js';
 
 const DENSITY: OverlayDensity = 'roomy';

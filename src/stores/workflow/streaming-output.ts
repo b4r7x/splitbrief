@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import type { TaskId } from '../../core/schemas/task.js';
 
 export interface StreamingOutputState {

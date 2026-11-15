@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Box, useInput } from 'ink';
-import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
+import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/panel.js';
 import { ListRow } from '../../components/list-row/row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';

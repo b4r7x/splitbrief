@@ -2,7 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { useStores } from '../../../stores/use-stores.js';
+import { useStores } from '../../../stores/use-many.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 
 export function RecentSessionsShell({ children }: { children: ReactNode }) {

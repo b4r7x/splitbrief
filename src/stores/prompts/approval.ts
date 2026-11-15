@@ -1,4 +1,4 @@
-import { createStore, storeBase } from '../create-store.js';
+import { createStore, storeBase } from '../create.js';
 import { createPromptChannel } from '../channels/prompt.js';
 import { markWaitEnded, markWaitStarted } from '../workflow/actions/wait.js';
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';

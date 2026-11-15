@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getInputHistoryDocuments, inputHistoryStore } from '../../stores/ui/input-history.js';
-import { useStores } from '../../stores/use-stores.js';
+import { useStores } from '../../stores/use-many.js';
 import { INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE, stepDocumentHistory } from './history.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import type { Screen } from '../../core/navigation/types.js';

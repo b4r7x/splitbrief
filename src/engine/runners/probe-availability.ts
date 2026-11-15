@@ -2,10 +2,7 @@ import { resolveImplementerProfiles } from '../../core/config/accessors/implemen
 import { parseApiKeyEnvRef } from '../../core/config/credentials.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
-import {
-  getApiProviderDescriptor,
-  isApiProviderId,
-} from '../../core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor, isApiProviderId } from '../../core/providers/api-catalog.js';
 import type {
   RunnerAvailabilityFact,
   RunnerAvailabilitySlot,

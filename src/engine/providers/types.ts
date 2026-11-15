@@ -1,5 +1,5 @@
 import type { DetectedModel } from '../../core/discovery/detection/model.js';
-import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import type { ApiProviderId } from '../../core/providers/api-catalog.js';
 
 export interface ProviderModelListOptions {
   readonly signal?: AbortSignal | undefined;

@@ -3,7 +3,7 @@ import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { areExactModelSelectionIdsEqual } from '../../../core/providers/canonical-model-id.js';
 import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
-import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import { isApiProviderId } from '../../../core/providers/api-catalog.js';
 import { isProviderId, type ProviderId, type RunnerKind } from '../../../core/schemas/enums.js';
 import { modelRowLanes } from './lane-policy.js';
 import { getModelsDevEntries } from './resolution.js';

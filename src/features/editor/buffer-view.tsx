@@ -10,7 +10,7 @@ import { clampScrollToDocument, selectionRange } from '../../core/editor/state.j
 import { buildEditorRowSegments } from './line-segments.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import type { SegmentType } from '../../components/input/segments.js';
-import type { TextStyle } from '../../components/input/controlled-multiline-input.js';
+import type { TextStyle } from '../../components/input/view.js';
 
 // The one shared paint path for both editor surfaces (raw overlay + inline brief field). It
 // pre-wraps session.value with wrapVisualLines at session.layout.columns and paints each visual

@@ -6,7 +6,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { CANCEL_HINT, formatKeyHints } from '../../components/key-legend.js';
 import { useEditorKeys } from '../../features/editor/use-keys.js';
-import { usePlanEditorSession } from '../../features/editor/use-plan-editor-session.js';
+import { usePlanEditorSession } from '../../features/editor/use-session.js';
 import { EditorBufferView } from '../../features/editor/buffer-view.js';
 import { FramePanel, OVERLAY_FRAME_COLS } from '../../components/frame-panel.js';
 

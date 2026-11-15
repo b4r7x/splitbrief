@@ -6,7 +6,7 @@ import type { CliExecutableIdentity } from '../../../../core/discovery/detection
 import { CLI_TOOL_CATALOG } from '../../../../core/runners/cli-tool/catalog.js';
 import type { ImplementerCliToolId } from '../../../../core/schemas/enums.js';
 import { ImplementerConfigSchema } from '../../../../core/schemas/runner/implementer.js';
-import { createRunnerCallId } from '../../../calls/call-id.js';
+import { createRunnerCallId } from '../../../calls/id.js';
 import type { RunnerCallResult } from '../../../calls/types.js';
 import { sanitizeCandidateOutput } from '../../../providers/candidate/evidence.js';
 import { writeEvidenceFile } from '../../../providers/candidate/harness.js';

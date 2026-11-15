@@ -2,7 +2,7 @@ import {
   isConfiguredKeyDebugEnabled,
   logSplitbriefRawKeyChunk,
 } from '../../core/keybindings/debug-log.js';
-import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
+import { copyToClipboard } from '../../lib/clipboard/copy.js';
 import { setActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active.js';
 import { createFilteredStdin } from '../../lib/terminal/filtered-stdin/create.js';
 import { installTerminalSelection } from '../../lib/terminal/selection/install.js';

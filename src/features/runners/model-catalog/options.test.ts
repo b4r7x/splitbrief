@@ -6,7 +6,7 @@ import {
   CLI_READINESS_STATES,
   type ProviderDetection,
 } from '../../../core/discovery/detection/tool.js';
-import { LOCAL_API_PROVIDER_IDS } from '../../../core/providers/api-provider-catalog.js';
+import { LOCAL_API_PROVIDER_IDS } from '../../../core/providers/api-catalog.js';
 import {
   CLI_TOOL_CATALOG,
   IMPLEMENTER_CLI_TOOL_IDS,

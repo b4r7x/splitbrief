@@ -1,5 +1,5 @@
 import type { CliEffortChannel } from '../effort-channel.js';
-import type { RunnerBillingPosture } from '../runner-billing.js';
+import type { RunnerBillingPosture } from '../billing.js';
 import type { RunnerRole } from '../seat-roles.js';
 import type { CliAuthPolicy } from './auth-channels.js';
 import type { CliVersionScheme } from './version.js';
