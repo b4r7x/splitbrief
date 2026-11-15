@@ -131,9 +131,8 @@ export interface DetectionCoordinator {
   snapshot(
     input: Readonly<{ source: 'cli-models'; contextKey: string }>,
   ): DetectionSourceSnapshot<CliModelSnapshot> | undefined;
-  cancel(input: Readonly<{ source: DetectionSourceId; contextKey?: string | undefined }>): void;
   shutdown(): void;
-  invalidate(input: Readonly<{ source: DetectionSourceId; contextKey?: string | undefined }>): void;
+  invalidate(input: Readonly<{ source: DetectionSourceId; contextKey: string }>): void;
   hydrate(input: ReadinessSourceHydration): void;
   hydrate(input: ModelsDevSourceHydration): void;
   hydrate(input: CliModelsSourceHydration): void;

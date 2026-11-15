@@ -6,6 +6,7 @@ import {
   type DetectionProjection,
   type DetectionSourceError,
   type CliModelSnapshot,
+  type ReadinessSourceRequest,
 } from '../types.js';
 
 function createClock() {
@@ -42,6 +43,25 @@ function readiness(value: string): DetectionProjection {
 
 function failedSource(): DetectionSourceError {
   return { kind: 'request-failed', message: 'Discovery source could not refresh.' };
+}
+
+function readinessRefresh(
+  input: Readonly<{
+    contextKey: string;
+    load: (signal: AbortSignal) => Promise<DetectionProjection>;
+    mode?: 'automatic' | 'manual';
+    offline?: boolean;
+  }>,
+): ReadinessSourceRequest {
+  return {
+    source: 'readiness',
+    contextKey: input.contextKey,
+    ttlMs: 1_000,
+    mode: input.mode ?? 'manual',
+    offline: input.offline,
+    load: input.load,
+    error: failedSource,
+  };
 }
 
 describe('detection coordinator', () => {
@@ -374,28 +394,292 @@ describe('detection coordinator', () => {
         contextKey: 'runner|endpoint-a|channel-a|generation-a',
       }),
     ).toBeUndefined();
+  });
 
-    const cancelledResponse = deferred<CliModelSnapshot>();
-    let cancelledSignal: AbortSignal | undefined;
-    const cancelled = coordinator.refresh({
+  it('numbers each new request one past the last and drops the late result of a superseded context', async () => {
+    const coordinator = createDetectionCoordinator();
+    const oldResponse = deferred<DetectionProjection>();
+    let oldSignal: AbortSignal | undefined;
+    const old = coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-a',
+        load: (signal) => {
+          oldSignal = signal;
+          return oldResponse.promise;
+        },
+      }),
+    );
+    const current = await coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-b', load: async () => readiness('new') }),
+    );
+    expect(current).toMatchObject({
+      kind: 'fresh',
+      origin: 'request',
+      snapshot: { generation: 2, requestId: 2 },
+    });
+    expect(oldSignal?.aborted).toBe(true);
+
+    oldResponse.resolve(readiness('old'));
+    await expect(old).resolves.toEqual({
+      kind: 'not-run',
+      source: 'readiness',
+      contextKey: 'context-a',
+      reason: 'superseded',
+    });
+    expect(coordinator.snapshot({ source: 'readiness', contextKey: 'context-a' })).toBeUndefined();
+
+    const next = await coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-b', load: async () => readiness('next') }),
+    );
+    expect(next).toMatchObject({ snapshot: { generation: 3, requestId: 3 } });
+  });
+
+  it('retires the request of an old context before it answers an offline refresh of a new one', async () => {
+    const coordinator = createDetectionCoordinator();
+    const oldResponse = deferred<DetectionProjection>();
+    let oldSignal: AbortSignal | undefined;
+    const old = coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-a',
+        load: (signal) => {
+          oldSignal = signal;
+          return oldResponse.promise;
+        },
+      }),
+    );
+    const offline = await coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-b',
+        offline: true,
+        load: async () => readiness('must-not-run'),
+      }),
+    );
+    expect(offline).toEqual({
+      kind: 'not-run',
+      source: 'readiness',
+      contextKey: 'context-b',
+      reason: 'offline',
+    });
+    expect(oldSignal?.aborted).toBe(true);
+
+    oldResponse.resolve(readiness('old'));
+    await expect(old).resolves.toMatchObject({ kind: 'not-run', reason: 'superseded' });
+    expect(coordinator.snapshot({ source: 'readiness', contextKey: 'context-a' })).toBeUndefined();
+  });
+
+  it('answers an offline refresh before it joins the request in flight of the same context', async () => {
+    const coordinator = createDetectionCoordinator();
+    const response = deferred<DetectionProjection>();
+    const inFlight = coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-a', load: () => response.promise }),
+    );
+    const offline = coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-a',
+        offline: true,
+        load: async () => readiness('must-not-run'),
+      }),
+    );
+
+    response.resolve(readiness('first'));
+    await expect(offline).resolves.toEqual({
+      kind: 'not-run',
+      source: 'readiness',
+      contextKey: 'context-a',
+      reason: 'offline',
+    });
+    await expect(inFlight).resolves.toMatchObject({ kind: 'fresh', origin: 'request' });
+  });
+
+  it('joins the request in flight before it reuses a snapshot inside the TTL', async () => {
+    const coordinator = createDetectionCoordinator({ now: createClock().now });
+    await coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-a',
+        mode: 'automatic',
+        load: async () => readiness('first'),
+      }),
+    );
+    const replacement = deferred<DetectionProjection>();
+    const manual = coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-a', load: () => replacement.promise }),
+    );
+    const automatic = coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-a',
+        mode: 'automatic',
+        load: async () => readiness('must-not-run'),
+      }),
+    );
+
+    replacement.resolve(readiness('replacement'));
+    const [manualResult, automaticResult] = await Promise.all([manual, automatic]);
+    expect(automaticResult).toMatchObject({
+      kind: 'fresh',
+      origin: 'request',
+      snapshot: { value: readiness('replacement') },
+    });
+    expect(automaticResult).toEqual(manualResult);
+  });
+
+  it('leaves the stored snapshot as it was when a superseded load fails late', async () => {
+    const coordinator = createDetectionCoordinator();
+    await coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-a', load: async () => readiness('first') }),
+    );
+    const failing = deferred<DetectionProjection>();
+    const old = coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-a', load: () => failing.promise }),
+    );
+    await coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-b', load: async () => readiness('new') }),
+    );
+
+    failing.reject(new Error('late failure'));
+    await expect(old).resolves.toMatchObject({ kind: 'not-run', reason: 'superseded' });
+    const stored = coordinator.snapshot({ source: 'readiness', contextKey: 'context-a' });
+    expect(stored).toMatchObject({ stale: false, generation: 1, requestId: 1 });
+    expect(stored?.error).toBeUndefined();
+  });
+
+  it('keeps the next generation and request id above every hydrated pair', async () => {
+    const coordinator = createDetectionCoordinator();
+    const hydrated = { value: readiness('first'), fetchedAt: 1, validatedAt: 1 };
+    coordinator.hydrate({
+      source: 'readiness',
+      contextKey: 'context-a',
+      ...hydrated,
+      generation: 10,
+      requestId: 20,
+    });
+    coordinator.hydrate({
+      source: 'readiness',
+      contextKey: 'context-a',
+      ...hydrated,
+      generation: 3,
+      requestId: 4,
+    });
+
+    const outcome = await coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-a', load: async () => readiness('next') }),
+    );
+    expect(outcome).toMatchObject({ kind: 'fresh', snapshot: { generation: 11, requestId: 21 } });
+
+    coordinator.hydrate({ source: 'readiness', contextKey: 'context-b', ...hydrated });
+    expect(coordinator.snapshot({ source: 'readiness', contextKey: 'context-b' })).toMatchObject({
+      generation: 12,
+      requestId: 22,
+    });
+  });
+
+  it('after shutdown aborts each request in flight, lands no result and starts no load', async () => {
+    const coordinator = createDetectionCoordinator();
+    const started: string[] = [];
+    const readinessResponse = deferred<DetectionProjection>();
+    const cliResponse = deferred<CliModelSnapshot>();
+    const signals: AbortSignal[] = [];
+    const readinessInFlight = coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-a',
+        load: (signal) => {
+          signals.push(signal);
+          started.push('readiness');
+          return readinessResponse.promise;
+        },
+      }),
+    );
+    const cliInFlight = coordinator.refresh({
       source: 'cli-models',
-      contextKey: 'cli|channel-c|generation-c',
+      contextKey: 'cli-context',
       ttlMs: 1_000,
       mode: 'manual',
       load: (signal) => {
-        cancelledSignal = signal;
-        return cancelledResponse.promise;
+        signals.push(signal);
+        started.push('cli-models');
+        return cliResponse.promise;
       },
       error: failedSource,
     });
-    coordinator.cancel({ source: 'cli-models', contextKey: 'cli|channel-c|generation-c' });
-    expect(cancelledSignal?.aborted).toBe(true);
-    cancelledResponse.resolve([]);
-    await expect(cancelled).resolves.toEqual({
+
+    coordinator.shutdown();
+    expect(signals.map((signal) => signal.aborted)).toEqual([true, true]);
+
+    readinessResponse.resolve(readiness('late'));
+    cliResponse.resolve([]);
+    await expect(readinessInFlight).resolves.toEqual({
       kind: 'not-run',
-      source: 'cli-models',
-      contextKey: 'cli|channel-c|generation-c',
+      source: 'readiness',
+      contextKey: 'context-a',
       reason: 'cancelled',
     });
+    await expect(cliInFlight).resolves.toEqual({
+      kind: 'not-run',
+      source: 'cli-models',
+      contextKey: 'cli-context',
+      reason: 'cancelled',
+    });
+    expect(coordinator.snapshot({ source: 'readiness', contextKey: 'context-a' })).toBeUndefined();
+    expect(
+      coordinator.snapshot({ source: 'cli-models', contextKey: 'cli-context' }),
+    ).toBeUndefined();
+
+    await expect(
+      coordinator.refresh(
+        readinessRefresh({
+          contextKey: 'context-a',
+          load: async () => {
+            started.push('after-shutdown');
+            return readiness('next');
+          },
+        }),
+      ),
+    ).resolves.toEqual({
+      kind: 'not-run',
+      source: 'readiness',
+      contextKey: 'context-a',
+      reason: 'cancelled',
+    });
+    expect(started).toEqual(['readiness', 'cli-models']);
+  });
+
+  it('invalidates the snapshot of one context and supersedes only the request of that context', async () => {
+    const coordinator = createDetectionCoordinator();
+    await coordinator.refresh(
+      readinessRefresh({ contextKey: 'context-a', load: async () => readiness('first') }),
+    );
+    const response = deferred<DetectionProjection>();
+    let signal: AbortSignal | undefined;
+    const inFlight = coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-a',
+        load: (current) => {
+          signal = current;
+          return response.promise;
+        },
+      }),
+    );
+
+    coordinator.invalidate({ source: 'readiness', contextKey: 'context-a' });
+    expect(signal?.aborted).toBe(true);
+    expect(coordinator.snapshot({ source: 'readiness', contextKey: 'context-a' })).toBeUndefined();
+    response.resolve(readiness('late'));
+    await expect(inFlight).resolves.toMatchObject({ kind: 'not-run', reason: 'superseded' });
+    expect(coordinator.snapshot({ source: 'readiness', contextKey: 'context-a' })).toBeUndefined();
+
+    const other = deferred<DetectionProjection>();
+    let otherSignal: AbortSignal | undefined;
+    const otherInFlight = coordinator.refresh(
+      readinessRefresh({
+        contextKey: 'context-b',
+        load: (current) => {
+          otherSignal = current;
+          return other.promise;
+        },
+      }),
+    );
+    coordinator.invalidate({ source: 'readiness', contextKey: 'context-a' });
+    expect(otherSignal?.aborted).toBe(false);
+    other.resolve(readiness('other'));
+    await expect(otherInFlight).resolves.toMatchObject({ kind: 'fresh', origin: 'request' });
   });
 });
