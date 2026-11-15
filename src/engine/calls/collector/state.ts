@@ -1,12 +1,15 @@
-import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diagnostic.js';
 import {
-  RUNNER_CALL_STDERR_MAX_BYTES,
   RUNNER_CALL_WARNING_MAX_ITEMS,
   runnerCallItemLimit,
   runnerCallLimitWarning,
   type createRunnerCallDeltaLimiter,
   type RunnerCallOutputLimit,
 } from '../output-limit.js';
+import {
+  appendStderrPreview,
+  stderrDiagnosticWarning,
+  stderrLooksWarningLike,
+} from '../stderr-diagnostics.js';
 import type {
   RunnerCallContext,
   RunnerCallUsage,
@@ -75,21 +78,12 @@ export function noteLimit(state: RunnerCallCollectionState, limit: RunnerCallOut
 export function applyStderrEvent(state: RunnerCallCollectionState, text: string): void {
   const accepted = state.stderrLimiter.accept(text);
   if (accepted.text.length > 0) {
-    state.stderrPreview = sanitizeTerminalDiagnosticText(
-      `${state.stderrPreview}${accepted.text}\n`,
-      {
-        maxChars: RUNNER_CALL_STDERR_MAX_BYTES,
-      },
-    );
+    state.stderrPreview = appendStderrPreview(state.stderrPreview, accepted.text);
     if (stderrLooksWarningLike(accepted.text)) {
       emitStderrDiagnosticWarning(state, 'stderr_diagnostic', accepted.text);
     }
   }
   if (accepted.limit !== null) noteLimit(state, accepted.limit);
-}
-
-function stderrLooksWarningLike(text: string): boolean {
-  return /\b(error|failed|failure|fatal|exception|warning|warn|deprecated)\b/i.test(text);
 }
 
 function emitStderrDiagnosticWarning(
@@ -99,14 +93,7 @@ function emitStderrDiagnosticWarning(
 ): void {
   if (state.stderrWarningEmitted) return;
   state.stderrWarningEmitted = true;
-  appendWarning(state, {
-    code,
-    severity: 'warning',
-    source: 'stderr',
-    surface: 'status',
-    channel: 'stderr',
-    message: sanitizeTerminalDiagnosticText(message),
-  });
+  appendWarning(state, stderrDiagnosticWarning(code, message));
 }
 
 export function emitStderrFailureWarning(state: RunnerCallCollectionState): void {

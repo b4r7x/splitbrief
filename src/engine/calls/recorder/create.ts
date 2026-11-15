@@ -34,6 +34,11 @@ import {
 } from '../redact-event.js';
 import { RunnerCallEventSchema, RunnerCallResultSchema } from '../schema.js';
 import {
+  appendStderrPreview,
+  stderrDiagnosticWarning,
+  stderrLooksWarningLike,
+} from '../stderr-diagnostics.js';
+import {
   createRunnerCallCredentialRedactor,
   isRunnerCallTerminalEvent,
   runnerCallCompletedEvent,
@@ -326,17 +331,6 @@ export function createRunnerCallRecorder(opts: {
     opts.onLimit?.();
   }
 
-  function appendStderrPreview(text: string): void {
-    const clean = sanitizeTerminalDiagnosticText(text, { maxChars: RUNNER_CALL_STDERR_MAX_BYTES });
-    stderrPreview = sanitizeTerminalDiagnosticText(`${stderrPreview}${clean}\n`, {
-      maxChars: RUNNER_CALL_STDERR_MAX_BYTES,
-    });
-  }
-
-  function stderrLooksWarningLike(text: string): boolean {
-    return /\b(error|failed|failure|fatal|exception|warning|warn|deprecated)\b/i.test(text);
-  }
-
   function emitStderrDiagnosticWarning(code: string, message: string): void {
     if (stderrWarningEmitted) return;
     stderrWarningEmitted = true;
@@ -344,14 +338,7 @@ export function createRunnerCallRecorder(opts: {
       type: 'call_warning',
       ts: Date.now(),
       ...context,
-      warning: {
-        code,
-        severity: 'warning',
-        source: 'stderr',
-        surface: 'status',
-        channel: 'stderr',
-        message: sanitizeTerminalDiagnosticText(message),
-      },
+      warning: stderrDiagnosticWarning(code, message),
     });
   }
 
@@ -398,7 +385,10 @@ export function createRunnerCallRecorder(opts: {
     stderr: (eventOpts) => {
       const accepted = stderrLimiter.accept(redactCredential(eventOpts.text));
       if (accepted.text.length > 0) {
-        appendStderrPreview(accepted.text);
+        stderrPreview = appendStderrPreview(
+          stderrPreview,
+          sanitizeTerminalDiagnosticText(accepted.text, { maxChars: RUNNER_CALL_STDERR_MAX_BYTES }),
+        );
         if (stderrLooksWarningLike(accepted.text)) {
           emitStderrDiagnosticWarning('stderr_diagnostic', accepted.text);
         }

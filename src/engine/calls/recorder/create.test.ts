@@ -909,6 +909,24 @@ describe('runner stderr preview', () => {
       }),
     );
   });
+
+  it('warns once, about the first stderr chunk that reads like a warning', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({ context, onEvent: (event) => events.push(event) });
+    recorder.stderr({ text: 'background progress', ts: 1 });
+    recorder.stderr({ text: 'warn: low disk', ts: 2 });
+    recorder.stderr({ text: 'the flag is deprecated', ts: 3 });
+
+    expect(events.filter((event) => event.type === 'call_warning')).toEqual([
+      expect.objectContaining({
+        warning: expect.objectContaining({
+          code: 'stderr_diagnostic',
+          source: 'stderr',
+          message: 'warn: low disk',
+        }),
+      }),
+    ]);
+  });
 });
 
 describe('runner-call output limits', () => {

@@ -1,3 +1,5 @@
+import { isCredentialEnvironmentName } from '../../../utils/redact/assignment.js';
+
 /**
  * Internal-only metadata attached to a sandbox environment for parent-side
  * redaction. It is non-enumerable, never copied into a child process, and is
@@ -32,6 +34,31 @@ export function sandboxCredentialValues(environment: unknown): readonly string[]
   return value.filter(
     (candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0,
   );
+}
+
+export function attachSandboxCredentialValues(
+  environment: object,
+  values: readonly string[],
+): void {
+  Object.defineProperty(environment, SANDBOX_CREDENTIAL_VALUES, {
+    value: Object.freeze([...values]),
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+}
+
+export function credentialValuesFromEnvironment(
+  environment: Readonly<Record<string, string | undefined>>,
+  declaredNames: readonly string[] = [],
+): string[] {
+  const declared = new Set(declaredNames);
+  const values: string[] = [];
+  for (const [name, value] of Object.entries(environment)) {
+    if (value === undefined || value.length === 0) continue;
+    if (declared.has(name) || isCredentialEnvironmentName(name)) values.push(value);
+  }
+  return [...new Set([...values, ...sandboxCredentialValues(environment)])];
 }
 
 export function collectStateStrings(value: unknown, values: Set<string>): void {

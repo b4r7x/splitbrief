@@ -13,7 +13,7 @@ import {
 import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
 import type { RunnerCallEvent } from './types.js';
 
-type RunnerCallArtifact = Extract<RunnerCallEvent, { type: 'call_artifact' }>['artifact'];
+export type RunnerCallArtifact = Extract<RunnerCallEvent, { type: 'call_artifact' }>['artifact'];
 
 export interface RunnerCallBoundedValue<T> {
   value: T;

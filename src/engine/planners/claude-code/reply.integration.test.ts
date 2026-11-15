@@ -8,7 +8,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import { projectRunnerCallEvents } from '../../calls/event-projection.js';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../../calls/output-limit.js';
-import { SANDBOX_CREDENTIAL_VALUES } from '../../runners/sandbox/credential-values.js';
+import { attachSandboxCredentialValues } from '../../runners/sandbox/credential-values.js';
 
 let shimDir: string;
 let projectDir: string;
@@ -121,7 +121,7 @@ describe('Claude stream credential redaction', () => {
     controller.abort(new DOMException(`cancelled with ${credential}`, 'TimeoutError'));
     // A Claude child holds its sign-in as a sandbox credential value, never as an env key.
     const env: NodeJS.ProcessEnv = { PATH: process.env.PATH };
-    Object.defineProperty(env, SANDBOX_CREDENTIAL_VALUES, { value: [credential] });
+    attachSandboxCredentialValues(env, [credential]);
 
     const interrupted = await invokeReply([], {
       signal: controller.signal,

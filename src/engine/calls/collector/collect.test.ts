@@ -331,6 +331,24 @@ describe('collectRunnerCallResult', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('warns once, about the first stderr chunk that reads like a warning', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      { type: 'call_stderr_delta', ...base, channel: 'stderr', text: 'background progress' },
+      { type: 'call_stderr_delta', ...base, channel: 'stderr', text: 'warn: low disk' },
+      { type: 'call_stderr_delta', ...base, channel: 'stderr', text: 'the flag is deprecated' },
+      { type: 'call_completed', ...base, status: 'completed', ...completedTerminal },
+    ]);
+
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: 'stderr_diagnostic',
+        source: 'stderr',
+        message: 'warn: low disk',
+      }),
+    ]);
+  });
+
   it('surfaces bounded stderr on failure', () => {
     const result = collectRunnerCallResult([
       { type: 'call_started', ...base },

@@ -6,7 +6,6 @@ import { spawnPipeError } from '../../../../lib/process/spawn/fatal.js';
 import { spawnPipe } from '../../../../lib/process/spawn/lifecycle.js';
 import { isENOENT } from '../../../../utils/errno.js';
 import { matches, error } from '../../../../utils/error.js';
-import { isCredentialEnvironmentName } from '../../../../utils/redact/assignment.js';
 import { isRecord } from '../../../../utils/type-guards.js';
 import {
   RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
@@ -26,7 +25,7 @@ import {
   revalidateCliExecutableIdentity,
   executableChangedMessage,
 } from '../../cli-executable/identity.js';
-import { sandboxCredentialValues } from '../../sandbox/credential-values.js';
+import { credentialValuesFromEnvironment } from '../../sandbox/credential-values.js';
 import type {
   CliProcessAdapter,
   CliInvocation,
@@ -106,7 +105,10 @@ export async function invokeProcessCli(
 ): Promise<RunnerCallResult> {
   let credentialValues: string[];
   try {
-    credentialValues = selectedCredentialValues(adapter, context.invocation.environment);
+    credentialValues = credentialValuesFromEnvironment(
+      context.invocation.environment,
+      adapter.descriptor.auth.channels.flatMap((channel) => channel.env),
+    );
   } catch {
     const recorder = createRunnerCallRecorder({ context: context.callContext });
     return finishFailureSafely({
@@ -761,17 +763,4 @@ function formatArgumentConflicts(conflicts: readonly string[]): string {
       return '[redacted argument]';
     })
     .join(', ');
-}
-
-function selectedCredentialValues(
-  adapter: CliAdapter,
-  environment: Readonly<Record<string, string>>,
-): string[] {
-  const declaredNames = new Set(adapter.descriptor.auth.channels.flatMap((channel) => channel.env));
-  const values: string[] = [];
-  for (const [name, value] of Object.entries(environment)) {
-    if (declaredNames.has(name) || isCredentialEnvironmentName(name)) values.push(value);
-  }
-  values.push(...sandboxCredentialValues(environment));
-  return [...new Set(values)];
 }

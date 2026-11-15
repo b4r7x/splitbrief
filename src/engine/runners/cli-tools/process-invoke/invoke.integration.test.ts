@@ -1407,6 +1407,34 @@ describe('invokeProcessCli', () => {
     expect(persisted).toContain('***REDACTED***');
   });
 
+  it('never emits the value of a name that an auth channel of the adapter declares', async () => {
+    const credential = 'declared-channel-canary-5f21';
+    const codex = CLI_TOOL_CATALOG.codex;
+    const declaredChannelAdapter: CliImplementerAdapter = {
+      ...adapter({ kind: 'stdin' }),
+      descriptor: {
+        ...codex,
+        auth: { ...codex.auth, channels: [{ ...codex.auth.channels[0], env: ['TOOL_LOGIN'] }] },
+      },
+    };
+    const events: RunnerCallEvent[] = [];
+
+    const result = await run(
+      declaredChannelAdapter,
+      invocation({
+        environment: { TOOL_LOGIN: credential },
+        script: "process.stderr.write('fatal debug '+process.env.TOOL_LOGIN);process.exit(2)",
+      }),
+      '',
+      (event) => events.push(event),
+    );
+
+    expect(result.status).toBe('failed');
+    const persisted = JSON.stringify({ result, events });
+    expect(persisted).not.toContain(credential);
+    expect(persisted).toContain('***REDACTED***');
+  });
+
   it('redacts credentials read from a bridged CLI state file before callbacks and persistence', async () => {
     await withTempDir('splitbrief-state-redaction-host', async (hostHome) => {
       await withTempDir('splitbrief-state-redaction-project', async (projectDir) => {

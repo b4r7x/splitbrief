@@ -1,3 +1,4 @@
+import type { RunnerCallArtifact } from '../bounded-payload.js';
 import type { RunnerCallToolUse } from '../redact-event.js';
 import type {
   RunnerCallContext,
@@ -11,7 +12,6 @@ import type {
 } from '../types.js';
 
 type RunnerCallTextChannel = Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'];
-type RunnerCallArtifact = Extract<RunnerCallEvent, { type: 'call_artifact' }>['artifact'];
 type RunnerCallUnknownUpstreamMetadata = Extract<
   RunnerCallEvent,
   { type: 'call_unknown_upstream' }

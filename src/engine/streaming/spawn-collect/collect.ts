@@ -6,7 +6,6 @@ import { spawnWithStdin } from '../../../lib/process/spawn/line-stream.js';
 import type { SpawnPipeFatalSignal } from '../../../lib/process/spawn/types.js';
 import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { isCredentialEnvironmentName } from '../../../utils/redact/assignment.js';
 import { redactSecrets } from '../../../utils/redact/secrets.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { createRunnerCallId } from '../../calls/call-id.js';
@@ -31,7 +30,7 @@ import {
   createCustomRunnerToolInputRedactor,
   customRunnerToolInputStateLimitError,
 } from '../../runners/custom/tool-input-redaction.js';
-import { sandboxCredentialValues } from '../../runners/sandbox/credential-values.js';
+import { credentialValuesFromEnvironment } from '../../runners/sandbox/credential-values.js';
 import type { ParsedLine, ParsedTextChannel } from '../../runners/types.js';
 import { getLineParser } from '../parse/select.js';
 import { createParsedLineRecorder } from '../parsed-line-recorder.js';
@@ -366,14 +365,6 @@ export async function spawnAndCollect(
 
   const result = recorder.finalResult();
   return { ...result, sessionId: parsedRecorder.sessionId };
-}
-
-export function credentialValuesFromEnvironment(environment: NodeJS.ProcessEnv): readonly string[] {
-  const values = Object.entries(environment)
-    .filter(([name, value]) => value !== undefined && isCredentialEnvironmentName(name))
-    .map(([, value]) => value)
-    .filter((value): value is string => value !== undefined && value.length > 0);
-  return [...new Set([...values, ...sandboxCredentialValues(environment)])];
 }
 
 function redactThrownError(err: unknown, redactCredential: (value: string) => string): Error {

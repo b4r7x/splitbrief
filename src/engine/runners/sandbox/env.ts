@@ -12,7 +12,7 @@ import { hasCliToolHome, CLI_TOOL_HOME_ENV } from '../host-model-selection.js';
 import { sanitizedRuntimePath } from '../cli-executable/resolve.js';
 import { clearBridgedStateUnder, bridgeCliState } from './state/bridge.js';
 import { type RunnerLike, runnerAuthEnvKeys, cliChannelStaging } from './auth-env.js';
-import { sandboxCredentialValues, SANDBOX_CREDENTIAL_VALUES } from './credential-values.js';
+import { attachSandboxCredentialValues, sandboxCredentialValues } from './credential-values.js';
 import { sandboxRootCandidates, sandboxRoot, sandboxTempDir } from './state/paths.js';
 
 /**
@@ -51,15 +51,7 @@ export function withPrependedPathDirectory(
     if (entry.length > 0 && isAbsolute(entry)) entries.add(entry);
   }
   result.PATH = [...entries].join(delimiter);
-  const credentialValues = sandboxCredentialValues(env);
-  if (credentialValues.length > 0) {
-    Object.defineProperty(result, SANDBOX_CREDENTIAL_VALUES, {
-      value: credentialValues,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    });
-  }
+  attachSandboxCredentialValues(result, sandboxCredentialValues(env));
   return result;
 }
 
@@ -246,12 +238,7 @@ export async function createSandboxEnv(options: {
         credentialValues = await bridgeCliState(selectedCli, process.env, { home, config, data });
       }
       const result = { ...env, ...sandboxState };
-      Object.defineProperty(result, SANDBOX_CREDENTIAL_VALUES, {
-        value: Object.freeze([...credentialValues]),
-        enumerable: false,
-        configurable: false,
-        writable: false,
-      });
+      attachSandboxCredentialValues(result, credentialValues);
       return result;
     },
   );

@@ -13,7 +13,10 @@ import {
   reconcileFinalText,
 } from '../streaming/final-text.js';
 import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke/invoke.js';
-import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox/credential-values.js';
+import {
+  attachSandboxCredentialValues,
+  sandboxCredentialValues,
+} from './sandbox/credential-values.js';
 import { contributesToResultText } from '../calls/result-text.js';
 import { boundedRunnerCallMessage } from '../calls/status.js';
 
@@ -37,15 +40,7 @@ export function toCliEnvironment(environment: NodeJS.ProcessEnv): Readonly<Recor
   for (const [name, value] of Object.entries(environment)) {
     if (value !== undefined) result[name] = value;
   }
-  const credentialValues = sandboxCredentialValues(environment);
-  if (credentialValues.length > 0) {
-    Object.defineProperty(result, SANDBOX_CREDENTIAL_VALUES, {
-      value: credentialValues,
-      enumerable: false,
-      configurable: false,
-      writable: false,
-    });
-  }
+  attachSandboxCredentialValues(result, sandboxCredentialValues(environment));
   return result;
 }
 
