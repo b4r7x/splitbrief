@@ -34,6 +34,7 @@ import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factor
 import { error } from '../../../utils/error.js';
 import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { requestConsult } from '../consult/request.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { retryAndRecord } from './retry.js';
 import { handleTaskPlannerCallFailure } from './planner-failure.js';
 
@@ -77,6 +78,7 @@ describe('retryAndRecord — retry budget', () => {
       task,
       initialError: 'tsc failed',
       state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns,
       setTrackedState,
@@ -114,19 +116,21 @@ describe('retryAndRecord — retry budget', () => {
     });
     const validator: Validator = { formatChangedFiles: vi.fn().mockResolvedValue(undefined) };
 
+    const wctx = makeWorkflowContext({
+      config: makeConfig({ workflow: { review: 'task' } }),
+      projectDir,
+      sessionId,
+      implementer,
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+      validator,
+    });
     const result = await retryAndRecord({
-      wctx: makeWorkflowContext({
-        config: makeConfig({ workflow: { review: 'task' } }),
-        projectDir,
-        sessionId,
-        implementer,
-        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-        validator,
-      }),
+      wctx,
       task,
       initialError: 'test failed',
       initialChangedFiles: ['src/initial.ts'],
       state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
@@ -157,17 +161,19 @@ describe('retryAndRecord — retry budget', () => {
     );
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => ++now);
     try {
+      const wctx = makeWorkflowContext({
+        projectDir,
+        sessionId,
+        implementer,
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+        bus,
+      });
       const result = await retryAndRecord({
-        wctx: makeWorkflowContext({
-          projectDir,
-          sessionId,
-          implementer,
-          planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-          bus,
-        }),
+        wctx,
         task,
         initialError: 'test failed',
         state,
+        taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
         tokensBefore: { ...state.tokenUsage },
         taskBreakdowns: [],
         setTrackedState: vi.fn(),
@@ -226,6 +232,7 @@ describe('retryAndRecord — retry budget', () => {
       task,
       initialError: 'initial tsc failure',
       state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
@@ -281,6 +288,7 @@ describe('retryAndRecord — retry budget', () => {
       task,
       initialError: 'initial tsc failure',
       state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
@@ -326,6 +334,7 @@ describe('retryAndRecord — the exhaustion issue', () => {
       task,
       initialError: 'lint: unexpected any',
       state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
       tokensBefore: { ...state.tokenUsage },
       taskBreakdowns: [],
       setTrackedState: vi.fn(),

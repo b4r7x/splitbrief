@@ -22,6 +22,7 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import { handleRetryAndEscalation } from './handle.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -135,6 +136,9 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
         initialError: 'Implementer is blocked.',
         currentState,
         initialBlocked: { status: 'blocked', question: 'How should I proceed?', filesNeeded: [] },
+        taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+        dependsOnFiles: [],
+        onConsult: () => {},
       });
 
       expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
@@ -193,6 +197,9 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
         question: 'May I edit src/consumer.ts?',
         filesNeeded: ['src/consumer.ts'],
       },
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     // No local retry ran before the consult; the only retry is the answer's.
@@ -250,6 +257,9 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
       task: makeTask(),
       initialError: 'type error',
       currentState: makeValidatingState(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     // The first consult answers the failed check; the guided retry reported blocked.
@@ -297,6 +307,9 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
       task: makeTask(),
       initialError: 'type error',
       currentState: makeValidatingStateWithPlan(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(report).toMatchObject({

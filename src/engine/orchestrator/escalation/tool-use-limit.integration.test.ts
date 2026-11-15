@@ -21,6 +21,7 @@ import {
   runnerCallOutcome,
 } from '../../implementers/pipeline/call-result.js';
 import { handleRetryAndEscalation } from './handle.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -119,6 +120,9 @@ describe('implementer tool-use stop', () => {
       initialError: summary,
       currentState: makeValidatingState(),
       initialFailure: { outcome: outcome.state, runner: makeNoValidationConfig().implementer },
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(retry).toHaveBeenCalledTimes(1);

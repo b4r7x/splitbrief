@@ -1,32 +1,19 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
-import type { ConsultQuestion, ConsultReason } from '../../../core/schemas/consult.js';
+import type { ConsultQuestion } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import { isAbortedOutcome, recordNoProgressCut, runHeldCorrection } from './held-correction.js';
-import { runRetryStep } from './step.js';
-import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
-import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { publishWarningFromError } from '../publish/notice.js';
-import { raisePendingRecovery } from '../state-ops/halts.js';
 import { transitionAndSave } from '../state-ops/transition.js';
-import { requestConsult } from '../consult/request.js';
-import { applyConsultAnswer } from '../consult/apply.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
-import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
-import { haltAttempts } from '../recovery/builders/details.js';
-import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
-import { buildSeatHalt, raiseSeatHalt } from './halts.js';
 import { preEscalationHalt } from './pre-hook.js';
-import { nowIso } from '../../../utils/format/time.js';
-import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
-import { consultAttemptError, guidanceInstructions } from './consult-guidance.js';
+import { absorbOutcome, attemptHalt, isUnfinishedCall } from './attempt.js';
+import { runLadder } from './ladder.js';
 import type {
   BlockedReport,
   EscalationContext,
+  LadderEnd,
+  LadderState,
   RetryAttemptFailure,
-  RetryResult,
-  RetryStepOutcome,
 } from './types.js';
 import { failedRetry } from './types.js';
 
@@ -35,8 +22,8 @@ type HandleRetryOptions = {
   task: Task;
   initialError: string;
   currentState: WorkflowState;
-  taskStartSnapshot?: ChangedFilesSnapshot;
-  dependsOnFiles?: string[];
+  taskStartSnapshot: ChangedFilesSnapshot;
+  dependsOnFiles: string[];
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
@@ -46,55 +33,8 @@ type HandleRetryOptions = {
   /** The unfinished calls in a row before a consult that runs again, which its halt kept. */
   unfinishedCalls?: number | undefined;
   /** Receives the question of each consult before it is asked, for a halt on that consult. */
-  onConsult?: ((question: ConsultQuestion) => void) | undefined;
+  onConsult: (question: ConsultQuestion) => void;
 };
-
-function handBackOf(outcome: RetryStepOutcome): string | undefined {
-  return outcome.lastFailure?.handBack;
-}
-
-/** A timeout and a no-progress cut both end a call that did not finish. */
-function isUnfinishedCall(failure: RetryAttemptFailure | undefined): boolean {
-  return failure?.outcome === 'timeout' || failure?.outcome === 'no-progress-cut';
-}
-
-/**
- * A seat that cannot work and a runner defect halt the ladder at once: the same failure comes
- * back on every further attempt, and the next rung would spend a consult on a brief no retry can
- * land.
- */
-async function runnerHalt(
-  ctx: EscalationContext,
-  task: Task,
-  stepOutcome: RetryStepOutcome,
-): Promise<{ state: WorkflowState; result: RetryResult } | null> {
-  const failure = stepOutcome.lastFailure;
-  if (failure === undefined) return null;
-  const halt = await buildSeatHalt(ctx, stepOutcome.state, task, {
-    outcome: failure.outcome,
-    runner: failure.runner,
-    toolMessage: stepOutcome.lastError,
-    // The ladder books a timeout before it names the second one in a row a defect.
-    booked: failure.outcome === 'runner-timeout-repeated',
-  });
-  if (halt === undefined) return null;
-  return {
-    state: raiseSeatHalt(ctx, stepOutcome.state, task, halt),
-    result: failedRetry(stepOutcome.attempts),
-  };
-}
-
-/** The files this attempt changed since its snapshot; a diff the consult cannot render is empty. */
-async function attemptChangedFiles(
-  projectDir: string,
-  snapshot: ChangedFilesSnapshot,
-): Promise<string[]> {
-  try {
-    return await getChangedFilesSinceSnapshot(projectDir, snapshot);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * The ladder: every red goes to the consult seat with the exact errors. A
@@ -107,254 +47,61 @@ async function attemptChangedFiles(
  * answers and the failures that followed them. A question of the seat that
  * nobody answers halts the brief for the operator.
  */
-export async function handleRetryAndEscalation(
-  opts: HandleRetryOptions,
-): Promise<{ state: WorkflowState; result: RetryResult }> {
-  const { wctx, initialError, currentState } = opts;
-  let taskStartSnapshot = opts.taskStartSnapshot;
-  if (!taskStartSnapshot) {
-    try {
-      taskStartSnapshot = await captureWorkspaceSnapshot(wctx.workspaceDir, wctx);
-    } catch (err) {
-      publishWarningFromError(
-        { bus: wctx.bus, phase: currentState.phase },
-        'retry approval snapshot failed',
-        err,
-      );
-      return { state: currentState, result: failedRetry(0) };
-    }
-  }
+export async function handleRetryAndEscalation(opts: HandleRetryOptions): Promise<LadderEnd> {
+  const { wctx, taskStartSnapshot } = opts;
   const ctx: EscalationContext = {
     ...wctx,
     taskStartSnapshot,
-    dependsOnFiles: opts.dependsOnFiles ?? [],
+    dependsOnFiles: opts.dependsOnFiles,
+  };
+  const ladder: LadderState = {
+    state: opts.currentState,
+    task: opts.task,
+    lastError: opts.initialError,
+    attempts: 0,
+    handBack: undefined,
+    blocked: opts.initialBlocked,
+    attemptSnapshot: taskStartSnapshot,
+    answer: undefined,
+    unfinishedCalls: opts.unfinishedCalls ?? (isUnfinishedCall(opts.initialFailure) ? 1 : 0),
   };
 
-  let task = opts.task;
-  let state = currentState;
-  let lastError = initialError;
-  let attempts = 0;
-  let handBack: string | undefined;
-  let blocked: BlockedReport | undefined = opts.initialBlocked;
-  let attemptSnapshot: ChangedFilesSnapshot = taskStartSnapshot;
-  let answer: string | undefined;
-
-  // Timeouts and no-progress cuts share one count: two unfinished calls in a row halt as
-  // `runner-timeout-repeated`; any other outcome resets it.
-  let consecutiveTimeouts = opts.unfinishedCalls ?? (isUnfinishedCall(opts.initialFailure) ? 1 : 0);
-  const countCall = (outcome: RetryStepOutcome) => {
-    const failure = outcome.lastFailure;
-    consecutiveTimeouts = isUnfinishedCall(failure) ? consecutiveTimeouts + 1 : 0;
-    if (failure === undefined || consecutiveTimeouts < TIMEOUTS.consecutiveTimeoutsHalt) {
-      return null;
-    }
-    return runnerHalt(ctx, task, {
-      ...outcome,
-      state,
-      lastFailure: { ...failure, outcome: 'runner-timeout-repeated' },
-    });
-  };
-
-  if (isAbortedOutcome(lastError, ctx.signal)) return { state, result: failedRetry(attempts) };
+  if (isAbortedOutcome(ladder.lastError, ctx.signal)) {
+    return { state: ladder.state, result: failedRetry(ladder.attempts) };
+  }
   // The first attempt can be the one the watchdog cut; record it before the consult it earns.
-  recordNoProgressCut(ctx, task, state, opts.initialFailure);
+  recordNoProgressCut(ctx, ladder.task, ladder.state, opts.initialFailure);
 
-  if (blocked === undefined && opts.initialAnswer !== undefined) {
-    const held = await runHeldCorrection({ ctx, task, state, answer: opts.initialAnswer });
-    state = held.state;
-    task = held.task;
-    lastError = held.lastError;
-    handBack = handBackOf(held) ?? handBack;
-    attemptSnapshot = held.attemptSnapshot ?? attemptSnapshot;
-    blocked = held.blocked;
-    if (held.result) return { state, result: held.result };
-    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-    const heldHalt = (await runnerHalt(ctx, held.task, held)) ?? (await countCall(held));
+  if (ladder.blocked === undefined && opts.initialAnswer !== undefined) {
+    const held = await runHeldCorrection({
+      ctx,
+      task: ladder.task,
+      state: ladder.state,
+      answer: opts.initialAnswer,
+    });
+    absorbOutcome(ladder, held);
+    if (held.result) return { state: ladder.state, result: held.result };
+    if (ctx.signal?.aborted) return { state: ladder.state, result: failedRetry(ladder.attempts) };
+    const heldHalt = await attemptHalt(ctx, ladder, held);
     if (heldHalt) return heldHalt;
   }
 
   // Every red goes to the consult seat: the brief is escalating from here.
-  if (state.phase === 'implementing') state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
-  state = transitionAndSave(ctx, state, { type: 'VALIDATION_FAIL' });
+  if (ladder.state.phase === 'implementing') {
+    ladder.state = transitionAndSave(ctx, ladder.state, { type: 'TASK_SENT' });
+  }
+  ladder.state = transitionAndSave(ctx, ladder.state, { type: 'VALIDATION_FAIL' });
 
-  const hookHalt = await preEscalationHalt(ctx, state, task, lastError);
-  if (hookHalt !== undefined) return { state: hookHalt, result: failedRetry(attempts) };
+  const hookHalt = await preEscalationHalt(ctx, ladder.state, ladder.task, ladder.lastError);
+  if (hookHalt !== undefined) return { state: hookHalt, result: failedRetry(ladder.attempts) };
 
   // Every answer from here is the consult seat's or the operator's.
   wctx.bus.publish({
     type: 'task_escalating',
     ts: Date.now(),
-    phase: state.phase,
-    taskId: task.id,
+    phase: ladder.state.phase,
+    taskId: ladder.task.id,
   });
 
-  const attempt = async (
-    attemptError: string,
-    deliversAnswer: boolean,
-  ): Promise<{ state: WorkflowState; result: RetryResult } | null> => {
-    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-    const nextAttempts = attempts + 1;
-    const outcome = await runRetryStep({
-      ctx,
-      task,
-      state,
-      lastError: attemptError,
-      attempts: nextAttempts,
-      deliversAnswer,
-      method: 'consulted',
-      transitionType: 'VALIDATION_PASS',
-      commitSuffix: 'after consult',
-      usageCategory: 'implementer',
-      retryFailureFallback: 'Consult-guided retry failed to produce valid code',
-      invokeRetry: makeImplementerRetryInvoker({
-        context: ctx.context,
-        steering: ctx.steering,
-        kind: 'consult',
-        sessionId: ctx.sessionId,
-        languageContext: buildProjectLanguageContext(
-          ctx.projectDir,
-          state.discoveredValidation?.language,
-        ),
-        phase: state.phase,
-      }),
-    });
-    state = outcome.state;
-    task = outcome.task;
-    lastError = outcome.lastError;
-    attempts = outcome.attempts;
-    handBack = handBackOf(outcome) ?? handBack;
-    attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
-    blocked = outcome.blocked;
-    answer = outcome.answer;
-    state = transitionAndSave(ctx, state, {
-      type: 'COUNT_ATTEMPT',
-      taskId: task.id,
-      ...(outcome.result === undefined && { failure: lastError }),
-    });
-    recordNoProgressCut(ctx, task, state, outcome.lastFailure);
-    if (outcome.result) return { state, result: outcome.result };
-    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-    return (await runnerHalt(ctx, outcome.task, outcome)) ?? countCall(outcome);
-  };
-
-  for (;;) {
-    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-
-    // The user's answer is not a consult: the next attempt delivers it.
-    if (answer !== undefined) {
-      const halted = await attempt(answer, true);
-      if (halted) return halted;
-      continue;
-    }
-
-    const snapshot = attemptSnapshot ?? taskStartSnapshot;
-    const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
-    const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
-    opts.onConsult?.({
-      failingOutput: lastError,
-      ...(blocked !== undefined && { report: blocked }),
-      unfinishedCalls: consecutiveTimeouts,
-    });
-    const consult = await requestConsult(
-      {
-        projectDir: ctx.projectDir,
-        workspaceDir: ctx.workspaceDir,
-        sessionId: ctx.sessionId,
-        bus: ctx.bus,
-        config: ctx.config,
-        planner: ctx.planner,
-        state,
-        ...(ctx.signal !== undefined && { signal: ctx.signal }),
-        onStateChange: (next) => {
-          state = next;
-        },
-      },
-      {
-        task,
-        reason,
-        failingOutput: lastError,
-        report: blocked ?? null,
-      },
-    );
-    if ('error' in consult) throw consult.error;
-
-    const applied = await applyConsultAnswer(
-      {
-        projectDir: ctx.projectDir,
-        workspaceDir: ctx.workspaceDir,
-        sessionId: ctx.sessionId,
-        bus: ctx.bus,
-        config: ctx.config,
-        validator: ctx.validator,
-        callbacks: ctx.callbacks,
-        sinks: ctx.sinks,
-        state,
-        ...(ctx.signal !== undefined && { signal: ctx.signal }),
-        changedFiles,
-        taskStartSnapshot: ctx.taskStartSnapshot,
-        baseGate: ctx.baseGate,
-        onStateChange: (next) => {
-          state = next;
-        },
-      },
-      task,
-      consult.answer,
-      snapshot,
-    );
-
-    // The consult replaced or split the brief; the task loop dispatches the new current task.
-    if (applied.action === 'rewrite-task' || applied.action === 'split-task') {
-      return {
-        state,
-        result: failedRetry(attempts, { lastError, ...(handBack !== undefined && { handBack }) }),
-      };
-    }
-    if (applied.action === 'completed') {
-      return {
-        state,
-        result: {
-          completed: true,
-          method: 'consulted',
-          attempts,
-          durationMs: applied.durationMs,
-          ...(applied.bookedFiles.length > 0 && { changedFiles: applied.bookedFiles }),
-        },
-      };
-    }
-    if (applied.action === 'skipped') {
-      return { state, result: { completed: false, method: 'skipped', attempts } };
-    }
-    if (applied.action === 'correction') {
-      answer = applied.answer;
-      continue;
-    }
-    if (applied.action === 'failed') {
-      lastError = applied.reason;
-      blocked = undefined;
-      continue;
-    }
-    // Only the operator can answer the seat's question or overrule its "cannot", so asking the
-    // seat again cannot help.
-    if (applied.action === 'unanswered' || applied.action === 'cannot') {
-      const issue = buildRetryExhaustedRecoveryIssue({
-        task,
-        phase: state.phase,
-        ...(applied.action === 'unanswered'
-          ? { question: applied.question }
-          : { cannot: applied.reason, cannotNext: applied.next }),
-        validationSummary: lastError,
-        ...haltAttempts(state, task, { booked: true }),
-        allowRetryOverride: true,
-        ...(ctx.implementerProfile !== undefined && {
-          selectedImplementerProfile: ctx.implementerProfile,
-        }),
-        createdAt: nowIso(),
-      });
-      return { state: raisePendingRecovery(ctx, state, issue), result: failedRetry(attempts) };
-    }
-
-    const instructions = guidanceInstructions(applied.instructions, applied.context);
-    const halted = await attempt(consultAttemptError({ lastError, instructions }), false);
-    if (halted) return halted;
-  }
+  return runLadder(ctx, ladder, opts.onConsult);
 }

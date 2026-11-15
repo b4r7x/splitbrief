@@ -94,6 +94,31 @@ export type RetryStepResult = RetryStepOutcome & {
   answer?: string | undefined;
 };
 
+/** How the ladder of one brief ends: the state it leaves and the brief's result. */
+export type LadderEnd = { state: WorkflowState; result: RetryResult };
+
+/**
+ * What the steps of the retry and consult ladder of one brief share. The steps change it in place:
+ * the consult and its answer write `state` while they run, so a returned copy would be stale.
+ */
+export type LadderState = {
+  state: WorkflowState;
+  task: Task;
+  /** The failure the next consult reads. */
+  lastError: string;
+  /** The consult-guided attempts the ladder ran. */
+  attempts: number;
+  /** Bounded tail of the last attempt that printed its own account of its stop. */
+  handBack: string | undefined;
+  blocked: BlockedReport | undefined;
+  /** The start snapshot of the last attempt: the consult reads that attempt's changed files from it. */
+  attemptSnapshot: ChangedFilesSnapshot;
+  /** The user's answer the next attempt delivers, in place of a consult. */
+  answer: string | undefined;
+  /** Timeouts and no-progress cuts in a row: two halt as `runner-timeout-repeated`. */
+  unfinishedCalls: number;
+};
+
 export type SuccessMethod = Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
 
 /** Where the seat-trouble wrapper parks a wait: the live state and the seat's call site. */

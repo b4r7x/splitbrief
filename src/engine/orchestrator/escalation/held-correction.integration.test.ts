@@ -28,6 +28,7 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { runHeldCorrection } from './held-correction.js';
 import { handleRetryAndEscalation } from './handle.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import type { EscalationContext } from './types.js';
 
 let dirs: string[] = [];
@@ -360,6 +361,9 @@ describe('handleRetryAndEscalation — aborted implementer call', () => {
       task,
       initialError: ABORTED_OUTCOME_TEXT,
       currentState: state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result).toEqual({ completed: false, method: 'failed', attempts: 0 });
@@ -473,6 +477,9 @@ describe('handleRetryAndEscalation — cuts and timeouts in the consult loop', (
       initialError: 'opencode sent no output for 20:00; SPLITBRIEF stopped it',
       currentState: makeValidatingState(),
       initialFailure: { outcome: 'no-progress-cut', runner: config.implementer },
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -505,6 +512,9 @@ describe('handleRetryAndEscalation — cuts and timeouts in the consult loop', (
       task: makeTask(),
       initialError: 'type error',
       currentState: makeValidatingState(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(retry).toHaveBeenCalledTimes(2);
@@ -534,6 +544,9 @@ describe('handleRetryAndEscalation — cuts and timeouts in the consult loop', (
       initialError: 'opencode sent no output for 10:00; SPLITBRIEF stopped it',
       currentState: makeValidatingState(),
       initialFailure: { outcome: 'no-progress-cut', runner: config.implementer },
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -563,6 +576,9 @@ describe('handleRetryAndEscalation — cuts and timeouts in the consult loop', (
       initialError: 'opencode sent no output for 10:00; SPLITBRIEF stopped it',
       currentState: makeValidatingState(),
       initialFailure: { outcome: 'no-progress-cut', runner: config.implementer },
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(retry).toHaveBeenCalledTimes(3);

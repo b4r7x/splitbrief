@@ -1,10 +1,8 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ConsultQuestion } from '../../../core/schemas/consult.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 
-import { toErrorMessage } from '../../../utils/format/errors.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { publishWarning } from '../publish/notice.js';
 import { publishError } from '../publish/notice.js';
@@ -19,7 +17,6 @@ import { haltOf } from '../../../core/recovery/halt.js';
 import { haltAttempts } from '../recovery/builders/details.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
-import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { isConsultError } from '../consult/request.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
@@ -63,7 +60,6 @@ export async function retryAndRecord(
   opts: RetryAndRecordOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, task, initialError } = opts;
-  let taskStartSnapshot = opts.taskStartSnapshot;
   // The attempt that reached the ladder counts on the lineage before the retry it
   // earned: one implementer call, one attempt, whether it failed on validation or
   // on its own output.
@@ -75,19 +71,7 @@ export async function retryAndRecord(
           taskId: task.id,
           failure: initialError,
         });
-  if (!taskStartSnapshot) {
-    try {
-      taskStartSnapshot = await captureWorkspaceSnapshot(wctx.workspaceDir, wctx);
-    } catch (err) {
-      publishError({
-        bus: wctx.bus,
-        phase: opts.state.phase,
-        message: `Retry blocked by approval gate: ${toErrorMessage(err)}`,
-      });
-      return { state, completed: false };
-    }
-  }
-  return continueLadder({ ...opts, state, taskStartSnapshot });
+  return continueLadder({ ...opts, state });
 }
 
 /**
@@ -97,10 +81,10 @@ export async function retryAndRecord(
  * Switch and Try later continue on them, and Skip restores them.
  */
 export async function continueLadder(
-  opts: RetryAndRecordOptions & { taskStartSnapshot: ChangedFilesSnapshot },
+  opts: RetryAndRecordOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, taskStartSnapshot } = opts;
-  const retry = await escalateAndRecord(opts, opts.state, taskStartSnapshot);
+  const retry = await escalateAndRecord(opts, opts.state);
   const recovery = retry.state.pendingRecovery;
   if (
     !retry.completed &&
@@ -120,7 +104,6 @@ export async function continueLadder(
 async function escalateAndRecord(
   opts: RetryAndRecordOptions,
   counted: WorkflowState,
-  taskStartSnapshot: ChangedFilesSnapshot,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, task, initialError, tokensBefore, taskBreakdowns, setTrackedState } = opts;
   let state = counted;
@@ -132,7 +115,7 @@ async function escalateAndRecord(
       task,
       initialError,
       currentState: state,
-      taskStartSnapshot,
+      taskStartSnapshot: opts.taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialBlocked !== undefined && { initialBlocked: opts.initialBlocked }),

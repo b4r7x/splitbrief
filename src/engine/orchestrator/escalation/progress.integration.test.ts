@@ -21,6 +21,7 @@ import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { handleRetryAndEscalation } from './handle.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -104,6 +105,9 @@ async function escalate(
     task: makeTask(),
     initialError: 'type error',
     currentState,
+    taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+    dependsOnFiles: [],
+    onConsult: () => {},
   });
   return { ...outcome, events, prompts, projectDir, sessionId, bus };
 }

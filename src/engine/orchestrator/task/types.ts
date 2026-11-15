@@ -23,7 +23,7 @@ export type RetryAndRecordOptions = {
   task: Task;
   initialError: string;
   state: WorkflowState;
-  taskStartSnapshot?: ChangedFilesSnapshot;
+  taskStartSnapshot: ChangedFilesSnapshot;
   initialChangedFiles?: string[] | undefined;
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;

@@ -20,6 +20,7 @@ import {
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { renderBlock } from '../../../scripts/skill-blocks.js';
 import { handleRetryAndEscalation } from '../../engine/orchestrator/escalation/handle.js';
+import { captureWorkspaceSnapshot } from '../../engine/orchestrator/isolation/entry-snapshot.js';
 import {
   MAX_TEST_TAIL_LINES,
   MAX_VALIDATION_OUTPUT_CHARS,
@@ -102,6 +103,9 @@ describe('retry ladder', () => {
       task,
       initialError: 'type error',
       currentState: transition(makeImplState([task]), { type: 'TASK_SENT' }),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(events.filter((e) => e.type === 'task_escalating')).toHaveLength(1);

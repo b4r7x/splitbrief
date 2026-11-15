@@ -30,6 +30,8 @@ import type { Implementer } from '../../implementers/types.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import { handleRetryAndEscalation } from './handle.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
+import type { RetryAttemptFailure } from './types.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
@@ -92,7 +94,10 @@ function splitAnswer(diagnosis: string, specs: readonly TaskSpec[]): ConsultAnsw
 }
 
 /** A planner seat whose typed consult calls answer from a script, in order. */
-function consultPlanner(script: readonly ConsultAnswer[]): {
+function consultPlanner(
+  script: readonly ConsultAnswer[],
+  onCall?: () => void,
+): {
   planner: Planner;
   prompts: string[];
 } {
@@ -103,6 +108,7 @@ function consultPlanner(script: readonly ConsultAnswer[]): {
     typedOutput: 'fallback',
     canResume: false,
     invoke: async ({ prompt }) => {
+      onCall?.();
       prompts.push(prompt);
       const next = answers.shift();
       if (next === undefined) throw new Error('the planner was asked once too often');
@@ -166,6 +172,9 @@ describe('handleRetryAndEscalation', () => {
       task,
       initialError: 'type error',
       currentState: makeValidatingState(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(ref.projectDir, ref),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 1 });
@@ -229,6 +238,9 @@ describe('handleRetryAndEscalation', () => {
       task,
       initialError: 'check K1 failed',
       currentState,
+      taskStartSnapshot: await captureWorkspaceSnapshot(ref.projectDir, ref),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(prompts).toHaveLength(2);
@@ -274,6 +286,9 @@ describe('handleRetryAndEscalation', () => {
       task: makeTask(),
       initialError: 'type error',
       currentState: makeValidatingState(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(order).toEqual(['consult', 'consult retry, attempt 1']);
@@ -307,6 +322,9 @@ describe('handleRetryAndEscalation', () => {
       initialError: 'implementer timed out',
       currentState: makeValidatingState(),
       initialFailure: { outcome: 'timeout', runner: config.implementer },
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(prompts).toHaveLength(1);
@@ -339,6 +357,9 @@ describe('handleRetryAndEscalation', () => {
       initialError: 'Use the existing helper.',
       currentState: state,
       initialAnswer: 'Use the existing helper.',
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(true);
@@ -372,6 +393,9 @@ describe('handleRetryAndEscalation', () => {
       task: makeTask(),
       initialError: 'type error',
       currentState: makeValidatingState(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     const errors = (implementer.retry as ReturnType<typeof vi.fn>).mock.calls.map(
@@ -434,6 +458,9 @@ describe('handleRetryAndEscalation', () => {
         initialError: 'type error',
         currentState,
         ...(kind !== 'consult' && { initialAnswer: 'Use the existing helper.' }),
+        taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+        dependsOnFiles: [],
+        onConsult: () => {},
       });
 
       expect(outcome.result.completed).toBe(true);
@@ -470,6 +497,9 @@ describe('handleRetryAndEscalation', () => {
       task: makeTask(),
       initialError: 'type error',
       currentState: makeValidatingState(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(true);
@@ -519,6 +549,9 @@ describe('handleRetryAndEscalation', () => {
         type: 'COUNT_ATTEMPT',
         taskId: makeTask().id,
       }),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     const children = state.tasks.filter((task) => task.parentId === 'T001');
@@ -550,6 +583,9 @@ describe('handleRetryAndEscalation', () => {
       task: child,
       initialError: 'still broken',
       currentState: resumed,
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(second.prompts[0]).toContain('The brief does two things');
@@ -586,6 +622,9 @@ describe('handleRetryAndEscalation', () => {
       task,
       initialError: 'type error',
       currentState: state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(false);
@@ -628,6 +667,9 @@ describe('handleRetryAndEscalation', () => {
       task,
       initialError: 'type error',
       currentState: state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(false);
@@ -685,6 +727,9 @@ describe('handleRetryAndEscalation', () => {
       task: makeTask(),
       initialError: 'type error',
       currentState: makeValidatingState(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(false);
@@ -732,6 +777,9 @@ describe('handleRetryAndEscalation', () => {
       task: makeTask(),
       initialError: 'type error',
       currentState: makeValidatingState(),
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(false);
@@ -796,6 +844,9 @@ describe('handleRetryAndEscalation', () => {
       task,
       initialError: 'type error',
       currentState: state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(false);
@@ -858,6 +909,9 @@ describe('handleRetryAndEscalation', () => {
       task,
       initialError: 'type error',
       currentState: state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(false);
@@ -909,6 +963,9 @@ describe('handleRetryAndEscalation', () => {
       task,
       initialError: 'type error',
       currentState: state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result.completed).toBe(false);
@@ -983,6 +1040,9 @@ describe('handleRetryAndEscalation', () => {
       task: first,
       initialError: 'type error',
       currentState: state,
+      taskStartSnapshot: await captureWorkspaceSnapshot(projectDir, { projectDir, sessionId }),
+      dependsOnFiles: [],
+      onConsult: () => {},
     });
 
     expect(result).toMatchObject({ completed: false, method: 'skipped' });
@@ -1054,6 +1114,9 @@ describe('handleRetryAndEscalation /steer on a consult-guided attempt', () => {
         task,
         initialError: 'type error',
         currentState,
+        taskStartSnapshot: await captureWorkspaceSnapshot(ref.projectDir, ref),
+        dependsOnFiles: [],
+        onConsult: () => {},
       });
 
       expect(onContinuationNeeded).toHaveBeenCalledTimes(1);
@@ -1082,4 +1145,370 @@ describe('handleRetryAndEscalation /steer on a consult-guided attempt', () => {
       );
     },
   );
+});
+
+describe('handleRetryAndEscalation step order', () => {
+  type Retry = Awaited<ReturnType<Implementer['retry']>>;
+
+  const timedOut: Retry = {
+    success: false,
+    output: '',
+    error: 'implementer timed out',
+    outcome: 'timeout',
+  };
+
+  function rewriteAnswer(title: string): ConsultAnswer {
+    return {
+      answer: {
+        diagnosis: 'The brief names the wrong module',
+        action: 'rewrite-task',
+        task: makeTaskSpec({ id: 'T001', title, criteria: ['C1'] }),
+      },
+    };
+  }
+
+  /**
+   * One ladder from a first call its lineage already booked. The log holds each consult question,
+   * planner call, implementer call and bus event in the order they happened.
+   */
+  async function ladderOrder(opts: {
+    answers: readonly ConsultAnswer[];
+    retries: readonly Retry[];
+    initialFailure?: RetryAttemptFailure['outcome'];
+    initialAnswer?: string;
+    denyEscalation?: boolean;
+    stopDuring?: 'consult' | 'attempt';
+  }) {
+    const ref = setupProject();
+    const task = makeTask({ id: 'T001', criteria: ['C1'] });
+    const currentState = transition(transition(makeImplState([task]), { type: 'TASK_SENT' }), {
+      type: 'COUNT_ATTEMPT',
+      taskId: task.id,
+    });
+    const log: string[] = [];
+    const { bus } = makeBusRecorder();
+    bus.subscribe((event) => {
+      log.push(event.type === 'recovery_prompted' ? `${event.type} ${event.reason}` : event.type);
+    });
+    const stop = new AbortController();
+    const { planner } = consultPlanner(opts.answers, () => {
+      log.push('planner call');
+      if (opts.stopDuring === 'consult') stop.abort();
+    });
+    const retries = [...opts.retries];
+    const retry = vi.fn<Implementer['retry']>(async () => {
+      log.push('implementer call');
+      if (opts.stopDuring === 'attempt') stop.abort();
+      const next = retries.shift();
+      if (next === undefined) throw new Error('the implementer was called once too often');
+      return next;
+    });
+    let hooks: HooksConfig | undefined;
+    if (opts.denyEscalation === true) {
+      writeFileSync(
+        join(ref.projectDir, 'deny-escalation.mjs'),
+        "console.log(JSON.stringify({ decision: 'deny', message: 'policy: no escalation' }));\n",
+      );
+      hooks = {
+        pre_escalation: [
+          {
+            kind: 'command',
+            command: 'node',
+            args: ['deny-escalation.mjs'],
+            timeout_ms: 30_000,
+            on_failure: 'warn',
+          },
+        ],
+      };
+      markHooksConfigTrusted(ref.projectDir, hooks);
+    }
+    const config = makeNoValidationConfig(hooks === undefined ? {} : { hooks });
+
+    const outcome = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        ...ref,
+        config,
+        planner,
+        implementer: makeImplementer({ retry }),
+        callbacks: makeCallbacks({ onPlannerReply: vi.fn().mockResolvedValue(undefined) })
+          .callbacks,
+        bus,
+        signal: stop.signal,
+      }),
+      task,
+      initialError: 'type error',
+      currentState,
+      ...(opts.initialFailure !== undefined && {
+        initialFailure: { outcome: opts.initialFailure, runner: config.implementer },
+      }),
+      ...(opts.initialAnswer !== undefined && { initialAnswer: opts.initialAnswer }),
+      onConsult: (question) => {
+        log.push(`consult asked after ${question.unfinishedCalls} unfinished calls`);
+      },
+      taskStartSnapshot: await captureWorkspaceSnapshot(ref.projectDir, ref),
+      dependsOnFiles: [],
+    });
+
+    const saved = loadState(ref);
+    const recovery = outcome.state.pendingRecovery;
+    return {
+      log,
+      result: outcome.result,
+      state: outcome.state,
+      saved,
+      lineage: {
+        returned: lineageAttemptsOf(outcome.state, task),
+        saved: saved === null ? null : lineageAttemptsOf(saved, task),
+      },
+      consults: {
+        returned: outcome.state.lineages?.T001?.consultRecords.length ?? 0,
+        saved: saved?.lineages?.T001?.consultRecords.length ?? 0,
+      },
+      halt:
+        recovery === undefined
+          ? undefined
+          : {
+              reason: recovery.reason,
+              attempts: recovery.details.filter((line) => line.startsWith('Attempts:')),
+            },
+    };
+  }
+
+  it('a consult-guided attempt that passes books its call and completes as consulted', async () => {
+    const run = await ladderOrder({
+      answers: [guidanceAnswer('The export is missing', 'Add the named export.')],
+      retries: [{ success: true, output: 'fixed' }],
+    });
+
+    expect(run.log).toEqual([
+      'task_escalating',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'implementer call',
+      'task_completed',
+    ]);
+    expect(run.result).toEqual({
+      completed: true,
+      method: 'consulted',
+      attempts: 1,
+      durationMs: expect.any(Number),
+    });
+    expect(run.lineage).toEqual({ returned: 2, saved: 2 });
+    expect(run.consults).toEqual({ returned: 1, saved: 1 });
+    expect(run.halt).toBeUndefined();
+  });
+
+  it('a consult rewrite hands back the last error and the hand-back of the attempt that printed one', async () => {
+    const run = await ladderOrder({
+      answers: [
+        guidanceAnswer('The export is missing', 'Add the named export.'),
+        guidanceAnswer('The import path is wrong', 'Import from src/greet.ts.'),
+        rewriteAnswer('Export the greeting from src/greet.ts'),
+      ],
+      retries: [
+        {
+          success: false,
+          output: 'I stopped: the export is gone',
+          error: 'still broken',
+          outcome: 'non-zero-exit',
+        },
+        { success: false, output: '', error: 'still broken again' },
+      ],
+    });
+
+    expect(run.log).toEqual([
+      'task_escalating',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'implementer call',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'implementer call',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'tasks_planned',
+      'task_replaced',
+    ]);
+    expect(run.result).toEqual({
+      completed: false,
+      method: 'failed',
+      attempts: 2,
+      lastError: 'still broken again',
+      handBack: 'I stopped: the export is gone',
+    });
+    expect(run.state.tasks.map((task) => task.title)).toEqual([
+      'Export the greeting from src/greet.ts',
+    ]);
+    expect(run.saved?.tasks.map((task) => task.title)).toEqual([
+      'Export the greeting from src/greet.ts',
+    ]);
+    expect(run.lineage).toEqual({ returned: 3, saved: 3 });
+    expect(run.consults).toEqual({ returned: 3, saved: 3 });
+    expect(run.halt).toBeUndefined();
+  });
+
+  it('a timeout after a first call that timed out halts as repeated on the attempt the ladder booked', async () => {
+    const run = await ladderOrder({
+      answers: [guidanceAnswer('The call ran out of time', 'Write the smaller change first.')],
+      retries: [timedOut],
+      initialFailure: 'timeout',
+    });
+
+    expect(run.log).toEqual([
+      'task_escalating',
+      'consult asked after 1 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'implementer call',
+      'error',
+      'recovery_prompted runner-timeout-repeated',
+    ]);
+    expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    expect(run.halt).toEqual({ reason: 'runner-timeout-repeated', attempts: ['Attempts: 2'] });
+    expect(run.lineage).toEqual({ returned: 2, saved: 2 });
+    expect(run.consults).toEqual({ returned: 1, saved: 1 });
+  });
+
+  it('a seat that signs out halts on the attempt it ran as, with the call left unbooked', async () => {
+    const run = await ladderOrder({
+      answers: [guidanceAnswer('The export is missing', 'Add the named export.')],
+      retries: [
+        { success: false, output: '', error: 'HTTP 403 Forbidden', outcome: 'unauthenticated' },
+      ],
+    });
+
+    expect(run.log).toEqual([
+      'task_escalating',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'implementer call',
+      'error',
+      'recovery_prompted runner-unauthenticated',
+    ]);
+    expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    expect(run.halt).toEqual({ reason: 'runner-unauthenticated', attempts: ['Attempts: 2'] });
+    expect(run.lineage).toEqual({ returned: 1, saved: 1 });
+    expect(run.consults).toEqual({ returned: 1, saved: 1 });
+  });
+
+  it('a pre_escalation hook that refuses halts before the brief escalates, with no call', async () => {
+    const run = await ladderOrder({ answers: [], retries: [], denyEscalation: true });
+
+    expect(run.log).toEqual(['warning', 'recovery_prompted retry-exhausted']);
+    expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 0 });
+    expect(run.halt).toEqual({ reason: 'retry-exhausted', attempts: ['Attempts: 1'] });
+    expect(run.lineage).toEqual({ returned: 1, saved: 1 });
+    expect(run.consults).toEqual({ returned: 0, saved: 0 });
+    expect(run.state.phase).toBe('escalating');
+  });
+
+  it('a stop during the consult-guided attempt books the attempt and ends with no further consult', async () => {
+    const run = await ladderOrder({
+      answers: [guidanceAnswer('The export is missing', 'Add the named export.')],
+      retries: [{ success: false, output: '', error: 'Aborted', outcome: 'user-abort' }],
+      stopDuring: 'attempt',
+    });
+
+    expect(run.log).toEqual([
+      'task_escalating',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'implementer call',
+    ]);
+    expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    expect(run.lineage).toEqual({ returned: 2, saved: 2 });
+    expect(run.consults).toEqual({ returned: 1, saved: 1 });
+    expect(run.halt).toBeUndefined();
+  });
+
+  it('a stop during the consult ends before the guided attempt calls the implementer', async () => {
+    const run = await ladderOrder({
+      answers: [guidanceAnswer('The export is missing', 'Add the named export.')],
+      retries: [],
+      stopDuring: 'consult',
+    });
+
+    expect(run.log).toEqual([
+      'task_escalating',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+    ]);
+    expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 0 });
+    expect(run.lineage).toEqual({ returned: 1, saved: 1 });
+    expect(run.consults).toEqual({ returned: 1, saved: 1 });
+    expect(run.halt).toBeUndefined();
+  });
+
+  it('a held correction that times out after a first call that timed out halts before the brief escalates', async () => {
+    const run = await ladderOrder({
+      answers: [],
+      retries: [timedOut],
+      initialFailure: 'timeout',
+      initialAnswer: 'Use the existing helper.',
+    });
+
+    expect(run.log).toEqual([
+      'implementer call',
+      'error',
+      'recovery_prompted runner-timeout-repeated',
+    ]);
+    expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 0 });
+    expect(run.halt).toEqual({ reason: 'runner-timeout-repeated', attempts: ['Attempts: 2'] });
+    expect(run.lineage).toEqual({ returned: 2, saved: 2 });
+    expect(run.consults).toEqual({ returned: 0, saved: 0 });
+    expect(run.state.phase).toBe('validating-task');
+  });
+
+  it('a planner question that nobody answers halts on the attempts the ladder booked', async () => {
+    const run = await ladderOrder({
+      answers: [
+        guidanceAnswer('The export is missing', 'Add the named export.'),
+        {
+          answer: {
+            diagnosis: 'The brief names no locale table.',
+            action: 'ask-user',
+            question: 'Which locale table does greet.ts read?',
+            whyOnlyUserCanAnswer: 'Only you know which table the product ships.',
+            choices: null,
+            default: null,
+          },
+        },
+      ],
+      retries: [{ success: false, output: '', error: 'still broken' }],
+    });
+
+    expect(run.log).toEqual([
+      'task_escalating',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'implementer call',
+      'consult asked after 0 unfinished calls',
+      'planner call',
+      'consult_answered',
+      'cost_update',
+      'planner_questions_asked',
+      'recovery_prompted retry-exhausted',
+    ]);
+    expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    expect(run.halt).toEqual({ reason: 'retry-exhausted', attempts: ['Attempts: 2'] });
+    expect(run.lineage).toEqual({ returned: 2, saved: 2 });
+    expect(run.consults).toEqual({ returned: 2, saved: 2 });
+  });
 });
