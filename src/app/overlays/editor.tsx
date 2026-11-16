@@ -9,8 +9,10 @@ import { useEditorKeys } from '../../features/editor/use-keys.js';
 import { usePlanEditorSession } from '../../features/editor/use-session.js';
 import { EditorBufferView } from '../../features/editor/buffer-view.js';
 import { FramePanel, OVERLAY_FRAME_COLS } from '../../components/frame-panel.js';
+import { fitFeedbackMessage } from '../../components/composer/feedback-fit.js';
 
 const FRAME_ROWS = 5; // border 2 + title 1 + divider 1 + footer 1
+const REASON_MAX_ROWS = 3;
 
 export function EditorOverlay() {
   const t = useTheme();
@@ -19,7 +21,14 @@ export function EditorOverlay() {
   const filePath = editorStore.use((s) => (s.status === 'open' ? s.filePath : null));
   const { refusal, onSave, onCancel, onOpenExternal } = usePlanEditorSession();
 
-  const viewport = Math.max(1, rows - FRAME_ROWS - (refusal === null ? 0 : 1));
+  const reasonRows =
+    refusal === null
+      ? []
+      : fitFeedbackMessage(refusal, {
+          width: cols - OVERLAY_FRAME_COLS,
+          maxRows: Math.max(1, Math.min(REASON_MAX_ROWS, rows - FRAME_ROWS - 1)),
+        }).split('\n');
+  const viewport = Math.max(1, rows - FRAME_ROWS - reasonRows.length);
 
   useEffect(() => {
     overlayStore.setExclusive(true);
@@ -44,11 +53,13 @@ export function EditorOverlay() {
       <Box height={viewport} overflow="hidden">
         <EditorBufferView />
       </Box>
-      {refusal !== null && (
-        <Box height={1}>
-          <Text color={t.error} wrap="truncate">
-            {refusal}
-          </Text>
+      {reasonRows.length > 0 && (
+        <Box flexDirection="column" height={reasonRows.length}>
+          {reasonRows.map((row, index) => (
+            <Text key={`${index}:${row}`} color={t.error} wrap="truncate">
+              {row}
+            </Text>
+          ))}
         </Box>
       )}
       <Box height={1}>

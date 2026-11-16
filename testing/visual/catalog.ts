@@ -4502,6 +4502,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-project-gone-at-rest',
+      title: 'Workflow · a run at rest whose project folder moved away under the screen',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'project-gone-at-rest',
+        title: 'The transcript stays, and the footer says that the project folder is gone',
+        kind: 'failure',
+        marker: 'The project folder',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Moved project error' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-project-gone-draft',
+      title: 'Workflow · a draft typed on a run at rest whose project folder moved away',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'project-gone-draft',
+        title: 'The draft warning names the project folder that is gone',
+        kind: 'failure',
+        marker: 'Draft not saved',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Draft warning' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-moved-project-skip',
       title: 'Workflow · Skip task refused at a halt after the project folder moved',
       surface: screenSurface('workflow'),
@@ -7816,6 +7848,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-editor-not-saved',
         title: 'Overlay · editor · a plan that fails its checks is not saved',
         marker: 'Not saved',
+      },
+      {
+        id: 'overlay-editor-missing-context-file',
+        title: 'Overlay · editor · a plan that reads a file that does not exist is not saved',
+        marker: 'nor an earlier one writes.',
+      },
+      {
+        id: 'overlay-editor-project-gone',
+        title: 'Overlay · editor · a plan saved after the project folder moved away is not saved',
+        marker: 'shop-moved is gone',
       },
     ],
   }),

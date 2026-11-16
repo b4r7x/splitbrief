@@ -1,8 +1,23 @@
 import { afterEach, describe, it, expect } from 'vitest';
-import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { confinedReadFile, confinedReadFileAsync, confinedReplaceFile } from './confined.js';
+import {
+  confinedAppendFileSync,
+  confinedEnsureDir,
+  confinedReadFile,
+  confinedReadFileAsync,
+  confinedReplaceFile,
+  confinedWriteFile,
+} from './confined.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const tmpDirs: string[] = [];
@@ -102,6 +117,59 @@ describe('confinedReadFileAsync', () => {
     await expect(confinedReadFileAsync(root, 'linked.md')).rejects.toMatchObject({
       kind: 'path-symlink-read',
     });
+  });
+});
+
+describe.each([
+  ['confinedWriteFile', confinedWriteFile],
+  ['confinedAppendFileSync', confinedAppendFileSync],
+])('%s', (_name, write) => {
+  it('refuses a root folder that is gone and makes no folder', () => {
+    const parent = createTempDir('confined-root-gone');
+    tmpDirs.push(parent);
+    const root = join(parent, 'project');
+
+    expect(() => write(root, join('.splitbrief', 'sessions', 'draft.json'), 'words')).toThrow(
+      expect.objectContaining({
+        kind: 'path-confined-root-missing',
+        message: `the project folder ${root} is gone`,
+      }),
+    );
+    expect(existsSync(root)).toBe(false);
+  });
+
+  it('makes the folders below a root folder that exists', () => {
+    const root = createTempDir('confined-root-present');
+    tmpDirs.push(root);
+
+    write(root, join('.splitbrief', 'sessions', 'draft.json'), 'words');
+
+    expect(readFileSync(join(root, '.splitbrief', 'sessions', 'draft.json'), 'utf8')).toBe('words');
+  });
+});
+
+describe('confinedEnsureDir', () => {
+  it('refuses a root folder that is gone and makes no folder', () => {
+    const parent = createTempDir('confined-dir-root-gone');
+    tmpDirs.push(parent);
+    const root = join(parent, 'project');
+
+    expect(() => confinedEnsureDir(root, join('.splitbrief', 'sessions', 'run'))).toThrow(
+      expect.objectContaining({
+        kind: 'path-confined-root-missing',
+        message: `the project folder ${root} is gone`,
+      }),
+    );
+    expect(existsSync(root)).toBe(false);
+  });
+
+  it('makes the folders below a root folder that exists', () => {
+    const root = createTempDir('confined-dir-root-present');
+    tmpDirs.push(root);
+
+    confinedEnsureDir(root, join('.splitbrief', 'sessions', 'run'));
+
+    expect(statSync(join(root, '.splitbrief', 'sessions', 'run')).isDirectory()).toBe(true);
   });
 });
 

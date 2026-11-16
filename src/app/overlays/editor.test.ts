@@ -1,11 +1,25 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  flushEffects,
+  type RenderFeatureResult,
+  renderFeature,
+  tick,
+} from '#testing/helpers/ink.js';
 import { PLAN_JSON_FILE, SPEC_FILE } from '../../core/paths.js';
-import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import type { PlanProposal } from '../../core/schemas/plan.js';
 import { readSpecFile } from '../../core/sessions/spec-files.js';
 import type { EditorLayout } from '../../core/editor/types.js';
 import { configStore } from '../../stores/project/config.js';
@@ -20,6 +34,19 @@ const CTRL_S = '\x13';
 const CTRL_O = '\x0f';
 const LAYOUT: EditorLayout = { columns: 80, rows: 24 };
 const SESSION_ID = 's1';
+const FOOTER = 'ctrl+s save';
+const MISSING_CONTEXT_FILE = 'src/features/workflow/run-requests/end-run.test.ts';
+
+/** The reason rows above the key legend, as one text with the frame borders and the spaces out. */
+function reasonText(frame: string): string {
+  const lines = frame.split('\n');
+  const first = lines.findIndex((line) => line.includes('Not saved:'));
+  const legend = lines.findIndex((line) => line.includes(FOOTER));
+  return lines
+    .slice(first, legend)
+    .join('')
+    .replace(/[│|\s]/gu, '');
+}
 
 const tempDirs: string[] = [];
 const unmounts: Array<() => void> = [];
@@ -131,6 +158,24 @@ describe('raw editor overlay plan.json save', () => {
     expect(overlayStore.get().active).toBe('editor');
   });
 
+  it('gives a long reason the rows it needs, with the whole path, at 80x24', async () => {
+    const plan = makePlanProposal({
+      tasks: [makeTaskSpec({ contextFiles: [MISSING_CONTEXT_FILE] })],
+    });
+    openPlanJson(JSON.stringify(plan));
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+
+    const { stdin, lastFrame } = renderOverlay();
+    await flushEffects();
+    stdin.write(CTRL_S);
+    await tick(20);
+
+    expect(reasonText(lastFrame() ?? ''), lastFrame()).toBe(
+      `Notsaved:TaskT001reads${MISSING_CONTEXT_FILE},whichdoesnotexistandneitherthistasknoranearlieronewrites.`,
+    );
+    expect(overlayStore.get().active).toBe('editor');
+  });
+
   it('writes a valid plan and asks the review prompt to apply the edit', async () => {
     const text = JSON.stringify(makePlanProposal(), null, 2);
     const { projectDir, owner } = openPlanJson(text);
@@ -219,9 +264,108 @@ describe('raw editor overlay Ctrl+O external escape hatch', () => {
   });
 });
 
-describe('raw editor overlay frame layout', () => {
-  const FOOTER = 'ctrl+s save';
+describe('raw editor overlay after the project folder moved away', () => {
+  const CONTEXT_FILE = 'src/greeting/format.ts';
 
+  /** Opens the editor on `plan` in a project that holds `CONTEXT_FILE` and an npm test script, then moves the project. */
+  async function movedProjectEditor(
+    plan: PlanProposal,
+    viewport: { cols: number; rows: number },
+  ): Promise<{ projectDir: string; instance: RenderFeatureResult }> {
+    const parent = tempDir();
+    const projectDir = join(parent, 'project');
+    mkdirSync(join(projectDir, 'src', 'greeting'), { recursive: true });
+    writeFileSync(join(projectDir, CONTEXT_FILE), 'export const format = 1;\n');
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'vitest' } }),
+    );
+    configStore.__testReset({ projectDir });
+    editorStore.openRaw({
+      filePath: join(projectDir, SESSION_ID, PLAN_JSON_FILE),
+      value: JSON.stringify(plan, null, 2),
+      ownerToken: reviewStore.setReviewFile(join(projectDir, SESSION_ID, 'plan.md')),
+      layout: LAYOUT,
+    });
+    overlayStore.open('editor');
+    terminalSizeStore.__testReset(viewport);
+    const instance = renderFeature(createElement(EditorOverlay), viewport);
+    unmounts.push(instance.unmount);
+    await flushEffects();
+    renameSync(projectDir, join(parent, 'moved'));
+    return { projectDir, instance };
+  }
+
+  function expectEditorKept(projectDir: string): void {
+    expect(overlayStore.get().active).toBe('editor');
+    expect(editorStore.get().status).toBe('open');
+    expect(externalEditRequestStore.get()).toEqual({ status: 'idle' });
+    expect(existsSync(projectDir)).toBe(false);
+  }
+
+  it.each([
+    ['Ctrl+S', CTRL_S],
+    ['Ctrl+O', CTRL_O],
+  ])('keeps the editor open on %s and says that the project folder is gone', async (_name, key) => {
+    // The frame is wide enough for the whole sentence with the folder on one row.
+    const { projectDir, instance } = await movedProjectEditor(makePlanProposal(), {
+      cols: 400,
+      rows: 24,
+    });
+
+    instance.stdin.write(key);
+
+    await vi.waitFor(() => {
+      expect(instance.lastFrame()).toContain(`Not saved: the project folder ${projectDir} is gone`);
+    });
+    expectEditorKept(projectDir);
+  });
+
+  it.each([
+    ['Ctrl+S', CTRL_S],
+    ['Ctrl+O', CTRL_O],
+  ])('ends the reason on %s with "is gone" at 60x18', async (_name, key) => {
+    const { projectDir, instance } = await movedProjectEditor(makePlanProposal(), {
+      cols: 60,
+      rows: 18,
+    });
+
+    instance.stdin.write(key);
+
+    await vi.waitFor(() => {
+      expect(instance.lastFrame()).toContain('Not saved:');
+    });
+    expect(reasonText(instance.lastFrame()), instance.lastFrame()).toMatch(
+      /^Notsaved:theprojectfolder\/.*\/projectisgone$/u,
+    );
+    expectEditorKept(projectDir);
+  });
+
+  it.each([
+    [
+      'a task that reads a file of the project',
+      makePlanProposal({ tasks: [makeTaskSpec({ contextFiles: [CONTEXT_FILE] })] }),
+    ],
+    [
+      'an npm run check that package.json defines',
+      makePlanProposal({
+        tasks: [makeTaskSpec({ checks: [{ id: 'K1', kind: 'cmd', value: 'npm run test' }] })],
+      }),
+    ],
+  ])('says on Ctrl+S that the project folder is gone for %s', async (_name, plan) => {
+    const { projectDir, instance } = await movedProjectEditor(plan, { cols: 400, rows: 24 });
+
+    instance.stdin.write(CTRL_S);
+
+    await vi.waitFor(() => {
+      expect(instance.lastFrame()).toContain('Not saved:');
+    });
+    expect(instance.lastFrame()).toContain(`Not saved: the project folder ${projectDir} is gone`);
+    expectEditorKept(projectDir);
+  });
+});
+
+describe('raw editor overlay frame layout', () => {
   function openEditor(projectDir: string): void {
     const filePath = join(projectDir, SESSION_ID, SPEC_FILE);
     const owner = reviewStore.setReviewFile(filePath);
@@ -269,6 +413,39 @@ describe('raw editor overlay frame layout', () => {
     expect(lines[5]).not.toContain(FOOTER);
     expect(lines[7]?.trim()).not.toBe('');
   });
+
+  it.each([
+    [24, 16],
+    [8, 1],
+  ])(
+    'keeps the frame full-height at 80x%i under a long reason (buffer rows: %i)',
+    async (rows, bufferRows) => {
+      const projectDir = tempDir();
+      configStore.__testReset({ projectDir });
+      terminalSizeStore.__testReset({ cols: 80, rows });
+      editorStore.openRaw({
+        filePath: join(projectDir, SESSION_ID, PLAN_JSON_FILE),
+        value: JSON.stringify(
+          makePlanProposal({ tasks: [makeTaskSpec({ contextFiles: [MISSING_CONTEXT_FILE] })] }),
+        ),
+        ownerToken: reviewStore.setReviewFile(join(projectDir, SESSION_ID, 'plan.md')),
+        layout: LAYOUT,
+      });
+      overlayStore.open('editor');
+
+      const { stdin, lastFrame } = renderOverlay();
+      await flushEffects();
+      stdin.write(CTRL_S);
+      await tick(20);
+
+      const lines = (lastFrame() ?? '').split('\n');
+      expect(lastFrame()).toContain('Not saved: Task T001 reads');
+      expect(lines, lastFrame()).toHaveLength(rows);
+      expect(lines[rows - 2]).toContain(FOOTER);
+      expect(lines[rows - 1]?.trim()).not.toBe('');
+      expect(editorStore.get()).toMatchObject({ layout: { rows: bufferRows } });
+    },
+  );
 
   it('recomputes the viewport, wrap width, and caret layout when the terminal resizes mid-session', async () => {
     const projectDir = tempDir();

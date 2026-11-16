@@ -33,6 +33,11 @@ export async function rereadRunAtRest(ref: SessionRef, signal?: AbortSignal): Pr
   const attempt = ++rereadAttempt;
   try {
     const run = readRunRecord(ref, configStore.reviewNone());
+    // The run is whole where the project is now; the screen keeps what it drew of it.
+    if (run.hydration.kind === 'invalid' && run.hydration.code === 'project-gone') {
+      feedbackStore.setError(run.hydration.message);
+      return;
+    }
     const publish = await readRunHistory(run);
     if (signal?.aborted || attempt !== rereadAttempt || routerStore.get() !== route) return;
     publish();
@@ -53,6 +58,10 @@ export function requestEndRun(): boolean {
   if (route.screen === 'workflow' && route.execution.kind === 'at-rest') {
     try {
       const record = readRunRecord(route.run.ref, configStore.reviewNone());
+      if (record.hydration.kind === 'invalid' && record.hydration.code === 'project-gone') {
+        feedbackStore.setError(record.hydration.message);
+        return true;
+      }
       if (record.status.kind === 'running') return false;
       if (record.status.kind === 'closed') {
         void rereadRunAtRest(record.ref);

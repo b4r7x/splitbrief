@@ -21,6 +21,8 @@ export const pathConfinementError = {
     error('path-symlink-read', `refusing to read through symlink: ${filePath}`, { filePath }),
   symlinkParent: (filePath: string) =>
     error('path-symlink-parent', `refusing symlinked parent directory: ${filePath}`, { filePath }),
+  rootMissing: (rootDir: string) =>
+    error('path-confined-root-missing', `the project folder ${rootDir} is gone`, { rootDir }),
   isSymlinkRead: matches('path-symlink-read'),
   isSymlinkParent: matches('path-symlink-parent'),
   isEscapesRoot: matches('path-confined-escape'),

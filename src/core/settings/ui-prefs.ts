@@ -1,7 +1,8 @@
+import { join } from 'node:path';
 import { z } from 'zod';
-import { getSplitbriefPath, UI_PREFS_FILE } from '../paths.js';
+import { getSplitbriefPath, SPLITBRIEF_DIR, UI_PREFS_FILE } from '../paths.js';
+import { confinedWriteFile } from '../../lib/fs/confined.js';
 import { readValidatedJsonResult } from '../../lib/fs/read.js';
-import { writeSecureFile } from '../../lib/fs/secure.js';
 import { warnError } from '../../lib/warn.js';
 import { projectRelativePathLabel } from '../../utils/path/links.js';
 
@@ -44,7 +45,11 @@ export function readUiPrefs(projectDir: string): UiPrefs {
 
 export function writeUiPrefs(projectDir: string, prefs: UiPrefs): void {
   try {
-    writeSecureFile(uiPrefsPath(projectDir), JSON.stringify(prefs, null, 2) + '\n');
+    confinedWriteFile(
+      projectDir,
+      join(SPLITBRIEF_DIR, UI_PREFS_FILE),
+      JSON.stringify(prefs, null, 2) + '\n',
+    );
   } catch (err) {
     warnError(
       `Could not save ${uiPrefsLabel(projectDir)}, so the layout is not kept for the next start`,

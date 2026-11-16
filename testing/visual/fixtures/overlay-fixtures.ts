@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type OverlayType, seatAxisFocus } from '../../../src/core/navigation/types.js';
 import { LISTED_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool/catalog.js';
@@ -86,7 +86,7 @@ import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import { flushEffects } from '../../helpers/ink.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { setRunHalt } from '../../helpers/stores.js';
-import { makePlanProposal } from '../../helpers/factories/plan.js';
+import { makePlanProposal, makeTaskSpec } from '../../helpers/factories/plan.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSession } from '../../helpers/factories/session.js';
@@ -116,6 +116,7 @@ import {
   VISUAL_FIXTURE_PROJECT_DIR,
   VISUAL_PUBLISHED_AT,
 } from './screen-fixtures.js';
+import { PROJECT_GONE_DIR } from './workflow/at-rest-projections.js';
 
 type OverlaySeed = () => void;
 type OverlayUnderlyingScreen = 'home' | 'workflow';
@@ -430,16 +431,13 @@ function seedLongTaskSession(): Session {
   return session;
 }
 
-function seedEditor(plan = makePlanProposal({ summary: 'Add greeting helper' })): void {
+function seedEditor(
+  plan = makePlanProposal({ summary: 'Add greeting helper' }),
+  projectDir = VISUAL_FIXTURE_PROJECT_DIR,
+): void {
   const ownerToken = reviewStore.setReviewFile('fixtures/visual-session/plan.md', 8);
   editorStore.openRaw({
-    filePath: resolve(
-      VISUAL_FIXTURE_PROJECT_DIR,
-      '.splitbrief',
-      'sessions',
-      LONG_SESSION_ID,
-      'plan.json',
-    ),
+    filePath: resolve(projectDir, '.splitbrief', 'sessions', LONG_SESSION_ID, 'plan.json'),
     ownerToken,
     value: `${JSON.stringify(plan, null, 2)}\n`,
     layout: { columns: 72, rows: 19 },
@@ -2983,6 +2981,47 @@ const createEditorNotSavedFixture: FixtureFactory = () => ({
   }),
   afterMount: (write) => write.press('\x13'),
 });
+/** The edited plan reads a file that does not exist, so the reason of the refused save is long. */
+const createEditorMissingContextFileFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'editor',
+    seed: () =>
+      seedEditor(
+        makePlanProposal({
+          summary: 'Add greeting helper',
+          tasks: [
+            makeTaskSpec({
+              contextFiles: ['src/features/workflow/run-requests/end-run.test.ts'],
+            }),
+          ],
+        }),
+      ),
+    underlyingScreen: 'workflow',
+  }),
+  afterMount: (write) => write.press('\x13'),
+});
+/**
+ * The project folder moved away while the editor was open, so Ctrl+S keeps the editor open. The task
+ * reads a file, so the save tells of the folder, not of a file it no longer finds.
+ */
+const createEditorProjectGoneFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'editor',
+    seed: () => {
+      if (existsSync(PROJECT_GONE_DIR)) throw new Error(`${PROJECT_GONE_DIR} must not exist`);
+      seedEditor(
+        makePlanProposal({
+          summary: 'Add greeting helper',
+          tasks: [makeTaskSpec({ contextFiles: ['src/greeting/format.ts'] })],
+        }),
+        PROJECT_GONE_DIR,
+      );
+      configStore.__testReset({ ...configStore.get(), projectDir: PROJECT_GONE_DIR });
+    },
+    underlyingScreen: 'workflow',
+  }),
+  afterMount: (write) => write.press('\x13'),
+});
 
 export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help'), createHelpFixture],
@@ -3514,4 +3553,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-usage-context-insufficient'), createUsageContextFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
   [scenarioId('overlay-editor-not-saved'), createEditorNotSavedFixture],
+  [scenarioId('overlay-editor-missing-context-file'), createEditorMissingContextFileFixture],
+  [scenarioId('overlay-editor-project-gone'), createEditorProjectGoneFixture],
 ]);

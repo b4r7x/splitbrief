@@ -103,4 +103,23 @@ describe('editorStore setLayout re-follows the caret after reflow', () => {
     expect(row).toBeGreaterThanOrEqual(narrow.scrollTop);
     expect(row).toBeLessThan(narrow.scrollTop + narrow.layout.rows);
   });
+
+  it('clamps scrollTop to the end of the document when the window grows, so the first wheel-up step scrolls', () => {
+    const owner = reviewStore.setReviewFile('spec.md');
+    const value = Array.from({ length: 47 }, (_, i) => `line-${i + 1}`).join('\n');
+    editorStore.openRaw({
+      filePath: 'spec.md',
+      value,
+      ownerToken: owner,
+      layout: { columns: 75, rows: 16 },
+    });
+    editorStore.dispatch({ kind: 'motion', motion: 'doc-end', select: false });
+    expect(editorStore.get()).toMatchObject({ scrollTop: 31 });
+
+    editorStore.setLayout({ columns: 75, rows: 17 });
+    expect(editorStore.get()).toMatchObject({ scrollTop: 30 });
+
+    editorStore.scrollBy(-1);
+    expect(editorStore.get()).toMatchObject({ scrollTop: 29 });
+  });
 });

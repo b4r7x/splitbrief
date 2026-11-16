@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import type { WorkflowState } from '../schemas/workflow/state.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { loadState } from './persistence.js';
@@ -32,6 +33,10 @@ function withUnsavedFailure(ref: SessionRef, state: WorkflowState): WorkflowStat
   return { ...state, lastFailure: kept.failure };
 }
 
+export function projectGoneMessage(projectDir: string): string {
+  return `The project folder ${projectDir} is gone. Start SPLITBRIEF where the project is now.`;
+}
+
 /**
  * `loadState` collapses every unreadable file into null. This re-reads the raw
  * bytes only on that path, so a loaded state costs one read and a rejected one
@@ -42,7 +47,11 @@ export function loadOwnerWorkflowState(ref: SessionRef): OwnedResumeState {
   if (state !== null) return { kind: 'loaded', state: withUnsavedFailure(ref, state) };
 
   const raw = readRawState(ref);
-  if (raw.kind === 'missing') return { kind: 'missing' };
+  if (raw.kind === 'missing') {
+    // A run read through the folder this process started in finds nothing when that folder moved.
+    if (existsSync(ref.projectDir)) return { kind: 'missing' };
+    return { kind: 'invalid', code: 'project-gone', message: projectGoneMessage(ref.projectDir) };
+  }
   if (raw.kind === 'malformed') {
     return { kind: 'invalid', code: 'malformed', message: raw.message };
   }

@@ -132,7 +132,11 @@ export function clampScrollToDocument(
 export function followCaretScroll(state: EditorState, layout: EditorLayout): EditorState {
   const lines = wrapVisualLines(state.value, layout.columns);
   const { row } = visualPositionOf(lines, state.cursor, state.affinity);
-  const scrollTop = clampScrollTop(row, layout.rows, state.scrollTop);
+  const scrollTop = clampScrollToDocument(
+    clampScrollTop(row, layout.rows, state.scrollTop),
+    layout.rows,
+    lines.length,
+  );
   return scrollTop === state.scrollTop ? state : { ...state, scrollTop };
 }
 

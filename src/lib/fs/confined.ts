@@ -74,6 +74,7 @@ export async function confinedReadFileAsync(
 export function confinedWriteFile(projectDir: string, relativePath: string, content: string): void {
   assertWritablePathConfined(relativePath, projectDir);
   const filePath = resolve(projectDir, relativePath);
+  if (!existsSync(projectDir)) throw pathConfinementError.rootMissing(projectDir);
   ensureSecureDir(dirname(filePath));
   assertWritablePathConfined(relativePath, projectDir);
   writeSecureFile(filePath, content);
@@ -86,6 +87,7 @@ export function confinedAppendFileSync(
 ): void {
   assertWritablePathConfined(relativePath, projectDir);
   const filePath = resolve(projectDir, relativePath);
+  if (!existsSync(projectDir)) throw pathConfinementError.rootMissing(projectDir);
   ensureSecureDir(dirname(filePath));
   assertWritablePathConfined(relativePath, projectDir);
   try {
@@ -108,6 +110,7 @@ export function confinedUnlinkSync(projectDir: string, relativePath: string): vo
 export function confinedEnsureDir(projectDir: string, relativePath: string): void {
   assertWritablePathConfined(relativePath, projectDir);
   const dirPath = resolve(projectDir, relativePath);
+  if (!existsSync(projectDir)) throw pathConfinementError.rootMissing(projectDir);
   ensureSecureDir(dirPath);
   assertWritablePathConfined(relativePath, projectDir);
 }

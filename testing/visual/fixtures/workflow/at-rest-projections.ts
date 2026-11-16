@@ -3411,6 +3411,9 @@ export const MOVED_PROJECT_STARTED_IN = '/Users/me/projects/shop';
 
 export const MOVED_PROJECT_MESSAGE = retentionError.moved(MOVED_PROJECT_STARTED_IN).message;
 
+/** The folder the moved run stopped in, gone once the user moved the project back. */
+export const PROJECT_GONE_DIR = '/Users/me/projects/shop-moved';
+
 const MOVED_PROJECT_STEP = { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 } as const;
 const MOVED_PROJECT_TS = CRASH_TS + 300_000;
 
@@ -3691,6 +3694,20 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   {
     ...atRestProjection({
       id: 'workflow-moved-project-run',
+      route: { record: MOVED_PROJECT_RUN, log: MOVED_PROJECT_LOG },
+    }),
+    config: { workflow: { isolation: 'none' } },
+  },
+  {
+    ...atRestProjection({
+      id: 'workflow-project-gone-at-rest',
+      route: { record: MOVED_PROJECT_RUN, log: MOVED_PROJECT_LOG },
+    }),
+    config: { workflow: { isolation: 'none' } },
+  },
+  {
+    ...atRestProjection({
+      id: 'workflow-project-gone-draft',
       route: { record: MOVED_PROJECT_RUN, log: MOVED_PROJECT_LOG },
     }),
     config: { workflow: { isolation: 'none' } },

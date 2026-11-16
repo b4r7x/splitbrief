@@ -77,10 +77,9 @@ function escapeBytes(text: string): string {
 }
 
 function append(line: string): void {
-  if (!logTarget) initKeyDebugLog();
-  if (!logTarget) return;
-
   try {
+    if (!logTarget) initKeyDebugLog();
+    if (!logTarget) return;
     if (logTarget.kind === 'project') {
       confinedAppendFileSync(logTarget.projectDir, logTarget.relativePath, `${line}\n`);
       return;

@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -7,6 +7,7 @@ import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/sessions/sp
 import { STATE_FILE, sessionDir } from '../../../core/paths.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
+import { projectGoneMessage } from '../../../core/state/resume-hydration.js';
 import { hydrateResume, resumeFailureMessage } from './hydration.js';
 
 let projectDir: string;
@@ -27,6 +28,24 @@ describe('hydrateResume', () => {
     ensureSessionDir(projectDir, ref.sessionId);
 
     expect(hydrateResume(ref)).toEqual({ kind: 'missing' });
+  });
+
+  it('reports the project folder gone when the folder of the run moved away', () => {
+    const ref = { projectDir, sessionId: '2026-09-01-moved' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    saveState(ref, createInitialState('add auth'));
+    renameSync(projectDir, `${projectDir}-moved`);
+
+    const hydrated = hydrateResume(ref);
+    renameSync(`${projectDir}-moved`, projectDir);
+
+    expect(hydrated).toMatchObject({ kind: 'invalid', code: 'project-gone' });
+    expect(hydrated).toEqual({
+      kind: 'invalid',
+      code: 'project-gone',
+      message: projectGoneMessage(projectDir),
+    });
+    expect(projectGoneMessage(projectDir)).toContain(`The project folder ${projectDir} is gone.`);
   });
 
   it('loads the saved state through the owner loader', () => {

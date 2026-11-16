@@ -51,7 +51,7 @@ import { glyph, type GlyphName } from '../../../../src/lib/glyphs.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../../src/stores/ui/composer-live.js';
-import { saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
+import { reportDraftNotSaved, saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
 import { createDraftDocument } from '../../../../src/core/composer/document.js';
 import { listRowLead } from '../../../../src/components/list-row/lead.js';
@@ -79,7 +79,11 @@ import {
   OUTPUT_LIMIT_READ_FILE,
   OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE,
 } from './output-limit-projection.js';
-import { MOVED_PROJECT_MESSAGE } from './at-rest-projections.js';
+import { MOVED_PROJECT_MESSAGE, PROJECT_GONE_DIR } from './at-rest-projections.js';
+import { projectGoneMessage } from '../../../../src/core/state/resume-hydration.js';
+import { sessionError } from '../../../../src/core/sessions/errors.js';
+import { sessionRelativePath } from '../../../../src/core/sessions/ownership-marker.js';
+import { pathConfinementError } from '../../../../src/lib/fs/confinement.js';
 import { seatMovedModelLineProjection } from './seat-moved-model-line.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
@@ -410,6 +414,30 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         await write.press('s');
         await refused.promise;
         off();
+      },
+    });
+  }
+  // The footer holds the reason the screen gives when the project folder goes away under it.
+  if (projection.scenarioId === 'workflow-project-gone-at-rest') {
+    return () => ({
+      ...base(),
+      afterMount: () => feedbackStore.setError(projectGoneMessage(PROJECT_GONE_DIR)),
+    });
+  }
+  // The draft of words typed after the move is refused with the same reason.
+  if (projection.scenarioId === 'workflow-project-gone-draft') {
+    return () => ({
+      ...base(),
+      afterMount: () => {
+        const route = routerStore.get();
+        if (route.screen !== 'workflow') throw new Error('The draft fixture needs a run');
+        reportDraftNotSaved(
+          sessionError.draftNotSaved(
+            sessionRelativePath(route.run.ref.sessionId, 'draft.json'),
+            pathConfinementError.rootMissing(PROJECT_GONE_DIR),
+          ),
+          false,
+        );
       },
     });
   }
@@ -815,6 +843,7 @@ export const workflowProjectionRegistry: ReadonlyMap<ScenarioId, WorkflowFixture
 export const workflowFixtureFeedback: ReadonlyMap<string, string> = new Map([
   ['workflow-command-image-refused', COMMAND_IMAGE_REASON],
   ['workflow-moved-project-skip', MOVED_PROJECT_MESSAGE],
+  ['workflow-project-gone-at-rest', projectGoneMessage(PROJECT_GONE_DIR)],
 ]);
 
 export function workflowFixtureProjectionFor(
@@ -1904,6 +1933,28 @@ const checkpointPredicates = [
       includesTranscript('Recovery  Skip task blocked')(context) &&
       workflowTranscriptText().replace(/\s+/g, ' ').includes(MOVED_PROJECT_MESSAGE) &&
       context.output.includes('Needs you'),
+  ],
+  [
+    checkpointId('project-gone-draft'),
+    // The warning closes the transcript, and the byline of the run stays under it.
+    (context) => {
+      const text = context.output.replace(/\s*[│|]\s*/g, ' ').replace(/\s+/g, ' ');
+      return (
+        includesTranscript()(context) &&
+        text.includes('Draft not saved: the project folder') &&
+        context.output.includes('to retry the step')
+      );
+    },
+  ],
+  [
+    checkpointId('project-gone-at-rest'),
+    // The transcript and the byline of the run stay under the reason in the footer.
+    (context) =>
+      includesTranscript()(context) &&
+      workflowTranscriptText().replace(/\s+/g, ' ').includes(MOVED_PROJECT_MESSAGE) &&
+      context.output.includes('The project folder') &&
+      context.output.includes('to retry the step') &&
+      excludesAll('Saved state unreadable', 'no events yet')(context),
   ],
   [
     checkpointId('cli-stop-continued'),

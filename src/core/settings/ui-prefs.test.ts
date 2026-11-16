@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js';
@@ -77,6 +77,18 @@ describe('ui-prefs', () => {
 
     expect(loggedDiagnostics(testDir)).toEqual([
       expect.stringContaining('Could not save .splitbrief/ui-prefs.json'),
+    ]);
+  });
+
+  it('makes no folder for a project folder that is gone and writes the cause to the debug log', () => {
+    const projectDir = join(testDir, 'project');
+    enableDebugLog(testDir);
+
+    writeUiPrefs(projectDir, { sidebarVisible: false });
+
+    expect(existsSync(projectDir)).toBe(false);
+    expect(loggedDiagnostics(testDir)).toEqual([
+      `Could not save .splitbrief/ui-prefs.json, so the layout is not kept for the next start: the project folder ${projectDir} is gone`,
     ]);
   });
 

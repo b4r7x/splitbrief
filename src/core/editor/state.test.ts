@@ -81,6 +81,28 @@ describe('scroll follows the caret so stored scrollTop matches the rendered view
     expect(s.scrollTop).toBe(0);
   });
 
+  it('pulls scrollTop back to the end of the document when a delete takes the last line away', () => {
+    const tall: EditorLayout = { columns: 75, rows: 19 };
+    const lines = Array.from({ length: 46 }, (_, i) => `line-${i + 1}`);
+    const backspace = { kind: 'delete', dir: 'backward', unit: 'char' } as const;
+    let s = applyEditorEvent(
+      createEditorState([...lines, '}'].join('\n')),
+      { kind: 'motion', motion: 'doc-end', select: false },
+      tall,
+    );
+    expect(s.scrollTop).toBe(28);
+
+    s = applyEditorEvent(s, backspace, tall);
+    s = applyEditorEvent(s, backspace, tall);
+
+    const visual = wrapVisualLines(s.value, tall.columns);
+    expect(visual).toHaveLength(46);
+    expect(s.scrollTop).toBe(visual.length - tall.rows);
+    const { row } = visualPositionOf(visual, s.cursor, s.affinity);
+    expect(row).toBeGreaterThanOrEqual(s.scrollTop);
+    expect(row).toBeLessThan(s.scrollTop + tall.rows);
+  });
+
   it('clampScrollTop keeps the caret row inside [scrollTop, scrollTop+height)', () => {
     expect(clampScrollTop(0, 3, 5)).toBe(0);
     expect(clampScrollTop(9, 3, 0)).toBe(7);

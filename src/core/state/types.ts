@@ -22,7 +22,7 @@ export type ResumeLoadResult =
   | { readonly kind: 'loaded'; readonly state: WorkflowState }
   | {
       readonly kind: 'invalid';
-      readonly code: 'malformed' | 'future-version';
+      readonly code: 'malformed' | 'future-version' | 'project-gone';
       readonly message: string;
     };
 

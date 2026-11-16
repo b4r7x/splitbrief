@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -54,6 +54,22 @@ describe('key-debug', () => {
       expect(readFileSync(path!, 'utf8')).toContain('RAW');
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('drops the first line and makes no folder when the project folder is gone', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'key-debug-'));
+    const projectDir = join(parent, 'project');
+    try {
+      configureKeyDebugLog({
+        enabled: true,
+        target: { kind: 'project', projectDir, relativeDir: 'debug', filePrefix: 'log' },
+      });
+
+      expect(() => logRawChunk(Buffer.from('x'))).not.toThrow();
+      expect(existsSync(projectDir)).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 

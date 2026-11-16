@@ -389,7 +389,7 @@ phase: reviewing-plan
 > edit
 ```
 
-The `Edit plan.json` row, `Ctrl+E` and the typed `edit` all open the run's `plan.json` in the in-app editor. `Ctrl+S` checks the text first — the JSON, the plan schema and the plan checks. A text that fails stays open with `Not saved: <first message> (+N more)`. A valid save closes the editor; SPLITBRIEF compiles the edited plan, rewrites `plan.md` and `tasks.md`, and shows the card again until you approve.
+The `Edit plan.json` row, `Ctrl+E` and the typed `edit` all open the run's `plan.json` in the in-app editor. `Ctrl+S` checks the text first — the JSON, the plan schema and the plan checks. A text that fails stays open with `Not saved: <first message> (+N more)`. When the project folder moved away while the editor was open, the editor stays open with `Not saved: the project folder <path> is gone`. A valid save closes the editor; SPLITBRIEF compiles the edited plan, rewrites `plan.md` and `tasks.md`, and shows the card again until you approve.
 
 **You'll see:**
 

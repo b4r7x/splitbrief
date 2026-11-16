@@ -34,6 +34,7 @@ const FIXTURE_HOST_PATHS = new Set([
   '/Users/me/notes/product-planning/archive/',
   '/Users/me/notes/product-planning/archive/receiving-workflow/',
   '/Users/me/projects/shop',
+  '/Users/me/projects/shop-moved',
   '/Volumes/design/receiving-flow.png',
   '/usr/local/bin/review-bot',
   '/opt/homebrew/Cellar/review-bot/2.5.0/bin/review-bot',
