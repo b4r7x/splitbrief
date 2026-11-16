@@ -10,7 +10,7 @@ import {
   WORKSPACE_KEPT_CODE,
   WORKSPACE_NOTICE_CATEGORY,
 } from '../../../../core/sessions/workspace-notice.js';
-import { retainedWorkspaceNotice } from '../../../../engine/orchestrator/isolation/retention.js';
+import { retainedWorkspaceNotice } from '../../../../engine/orchestrator/isolation/kept-notice.js';
 import { projectRunnerCallEvents } from '../../../../engine/calls/event-projection.js';
 import type { RunnerCallEvent } from '../../../../engine/calls/types.js';
 import { walkTranscript } from './walk.js';

@@ -1,5 +1,5 @@
 import { publishRecoveryPrompted } from '../../../engine/orchestrator/publish/recovery.js';
-import { publishRetainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
+import { publishRetainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/kept-notice.js';
 import { applyDecidedRecovery } from '../../../engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';

@@ -10,7 +10,7 @@ import type { StreamingSink } from './streaming-feed.js';
 import type { GateChangedFilesDenial } from '../approval/gate-files.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
-import { settleThrownCall } from '../isolation/retention.js';
+import { settleThrownCall } from '../isolation/thrown-call.js';
 import { recordCorrection, runImplementerLoop } from './implementer-loop.js';
 import type { ImplementerLoopState } from './types.js';
 

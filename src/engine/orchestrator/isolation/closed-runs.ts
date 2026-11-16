@@ -8,7 +8,8 @@ import type { EventBus } from '../../events/types.js';
 import { publishWarning } from '../publish/notice.js';
 import { publishInfo } from '../publish/notice.js';
 import { readWorkflowStateHead } from '../state-ops/head.js';
-import { foreignWorkspaceNotice, readWorkspaceRecordFile } from './retention.js';
+import { foreignWorkspaceNotice } from './kept-notice.js';
+import { readWorkspaceRecordFile } from './retention.js';
 import { removeRunWorkspace } from './worktree/remove.js';
 
 export async function removeClosedRunWorkspace(

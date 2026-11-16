@@ -6,7 +6,7 @@ import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { boundEngineEventForConsumer } from '../../engine/events/bound.js';
 import type { EventBus } from '../../engine/events/types.js';
-import { publishRetainedWorkspaceNotice } from '../../engine/orchestrator/isolation/retention.js';
+import { publishRetainedWorkspaceNotice } from '../../engine/orchestrator/isolation/kept-notice.js';
 import { applyDecidedRecovery } from '../../engine/orchestrator/recovery/actions/apply.js';
 import type { ApplyRecoveryActionResult } from '../../engine/orchestrator/recovery/actions/types.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';

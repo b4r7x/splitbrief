@@ -46,11 +46,8 @@ import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/review-failed.js';
 import { runPlanApproval } from '../planning/approval.js';
-import {
-  foreignWorkspaceNotice,
-  readWorkspaceRecord,
-  stagedWorkspaceRoot,
-} from '../isolation/retention.js';
+import { foreignWorkspaceNotice } from '../isolation/kept-notice.js';
+import { readWorkspaceRecord, stagedWorkspaceRoot } from '../isolation/retention.js';
 import { closeRunIfOpen, filesStillOnDiskSuffix, rejectCheckoutRun } from './close.js';
 import { removeClosedRunWorkspaces } from '../isolation/closed-runs.js';
 

@@ -11,29 +11,16 @@ import {
 } from '../../../core/schemas/retained-workspace.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import { deriveRunStatus } from '../../../core/sessions/run/status.js';
-import { sessionError, sessionFileFailure } from '../../../core/sessions/errors.js';
-import {
-  WORKSPACE_KEPT_CODE,
-  WORKSPACE_NOTICE_CATEGORY,
-} from '../../../core/sessions/workspace-notice.js';
 import {
   assertSessionConfinement,
   assertSessionDirConfined,
 } from '../../../core/sessions/confinement.js';
 import { writeConfinedSecureFileAsync, writeSecureFile } from '../../../lib/fs/secure.js';
-import { createLogger } from '../../../lib/logger.js';
 import { assertPathConfined } from '../../../lib/fs/confinement.js';
 import { isENOENT } from '../../../utils/errno.js';
-import { isAbortError } from '../../../utils/abort.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { error, matches } from '../../../utils/error.js';
-import { toErrorMessage } from '../../../utils/format/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.js';
-import type { EventBus } from '../../events/types.js';
-import { publishWarning } from '../publish/notice.js';
-import { publishError } from '../publish/notice.js';
 import type { IsolatedWorkspace, RunIsolationState } from './types.js';
 
 const MAX_RECORD_BYTES = 8 * 1024 * 1024;
@@ -61,29 +48,6 @@ export const retentionError = {
   isUnavailable: matches('isolation-retention-unavailable'),
 };
 
-export function isResumableWorkspaceStop(signal: AbortSignal | undefined): boolean {
-  return signal?.aborted === true && workflowCancelledReasonFromSignal(signal) === undefined;
-}
-
-/**
- * Settles the workspace of a BUILD call that threw. A stop takes the call's files back, and a stop
- * the run can resume keeps them for it. A failed save of the run takes them back too, because the
- * run stops with no consult. A call that failed keeps them for the consult.
- */
-export async function settleThrownCall(
-  workspace: IsolatedWorkspace,
-  signal: AbortSignal | undefined,
-  err: unknown,
-): Promise<void> {
-  if (isAbortError(err) && isResumableWorkspaceStop(signal)) await workspace.retain?.();
-  else if (
-    isAbortError(err) ||
-    sessionError.isLocalSaveFailure(err) ||
-    (signal?.aborted && !retentionError.isFailed(err))
-  )
-    workspace.cleanup();
-}
-
 export function workspaceOwner(input: { sessionId: string; config: Config }): WorkspaceOwner {
   return {
     runId: input.sessionId,
@@ -91,7 +55,7 @@ export function workspaceOwner(input: { sessionId: string; config: Config }): Wo
   };
 }
 
-function recordPath(ref: SessionRef): string {
+export function recordPath(ref: SessionRef): string {
   assertSessionDirConfined(ref.projectDir, ref.sessionId);
   const root = sessionDir(ref.projectDir, ref.sessionId);
   const path = join(root, 'retained-workspace.json');
@@ -286,48 +250,4 @@ export function retainedStagedDirectory(ref: SessionRef, record: RetainedWorkspa
   return record.location.kind === 'staged-copy'
     ? join(stagedWorkspaceRoot(ref, record.location.leaf), 'workspace')
     : null;
-}
-
-export function retainedWorkspaceNotice(dir: string): string {
-  return `Workspace kept at ${dir} for Continue, with its private CLI state and caches.`;
-}
-
-export function foreignWorkspaceNotice(path: string): string {
-  return `The run workspace at ${path} belongs to another project folder and stays on disk. Delete that run workspace when you no longer need it.`;
-}
-
-export async function publishRetainedWorkspaceNotice(
-  input: SessionRef & { state: WorkflowState; bus: EventBus },
-): Promise<boolean> {
-  const { state, bus } = input;
-  const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
-  if (status.kind !== 'open') return false;
-  const workspace = state.workspace;
-  if (workspace === undefined || workspace.kind === 'checkout') return false;
-  try {
-    const record = await readWorkspaceRecord(input);
-    if (record?.retained !== true || !(await retainedDirectoryMatches(record, workspace.path)))
-      return false;
-  } catch (err) {
-    if (retentionError.isMoved(err)) return false;
-    const message = retentionError.isUnavailable(err)
-      ? toErrorMessage(err)
-      : sessionFileFailure('Could not read the kept workspace record', recordPath(input), err);
-    publishError({ bus, phase: state.phase, message });
-    return false;
-  }
-  const message = retainedWorkspaceNotice(workspace.path);
-  // A paused run, which a stop the user asked for or a watchdog park leaves, keeps the workspace
-  // for Continue, so only the debug log names it.
-  if (status.stop.kind === 'stopped' && status.stop.on.kind === 'paused') {
-    createLogger('engine').debug(WORKSPACE_KEPT_CODE, { message });
-    return true;
-  }
-  publishWarning({
-    bus,
-    phase: state.phase,
-    message,
-    safety: { category: WORKSPACE_NOTICE_CATEGORY, code: WORKSPACE_KEPT_CODE },
-  });
-  return true;
 }

@@ -12,7 +12,7 @@ import { boundedHandBack, failedRetry } from './types.js';
 import type { BlockedReport, RetryInvokeResult, RetryStepOpts, RetryStepResult } from './types.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 import { isRecord } from '../../../utils/type-guards.js';
-import { isResumableWorkspaceStop } from '../isolation/retention.js';
+import { isResumableWorkspaceStop } from '../isolation/thrown-call.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { commitWorkflowState } from '../state-ops/commit.js';
 import { stateOpsError } from '../state-ops/errors.js';

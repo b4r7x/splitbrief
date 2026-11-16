@@ -9,7 +9,7 @@ import {
   type GateChangedFilesDecision,
   type GateChangedFilesDenial,
 } from '../../approval/gate-files.js';
-import { isResumableWorkspaceStop } from '../../isolation/retention.js';
+import { isResumableWorkspaceStop } from '../../isolation/thrown-call.js';
 import type { AttemptWorkspace } from '../../isolation/types.js';
 import type { WorkflowContext } from '../../types.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';

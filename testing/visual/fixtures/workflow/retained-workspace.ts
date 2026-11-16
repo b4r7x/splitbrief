@@ -1,4 +1,4 @@
-import { retainedWorkspaceNotice } from '../../../../src/engine/orchestrator/isolation/retention.js';
+import { retainedWorkspaceNotice } from '../../../../src/engine/orchestrator/isolation/kept-notice.js';
 import {
   WORKSPACE_KEPT_CODE,
   WORKSPACE_NOTICE_CATEGORY,

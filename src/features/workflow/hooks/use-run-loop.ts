@@ -9,7 +9,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
-import { publishRetainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
+import { publishRetainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/kept-notice.js';
 import { addTuiEvent } from '../tui-sink.js';
 import type { PreparedExecution } from '../../../engine/runners/prepare-execution/prepared.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';

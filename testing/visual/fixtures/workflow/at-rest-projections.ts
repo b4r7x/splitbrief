@@ -58,7 +58,7 @@ import { checkFailureText } from '../../../../src/engine/orchestrator/validation
 import {
   foreignWorkspaceNotice,
   retainedWorkspaceNotice,
-} from '../../../../src/engine/orchestrator/isolation/retention.js';
+} from '../../../../src/engine/orchestrator/isolation/kept-notice.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { VISUAL_FIXTURE_PROJECT_DIR, visualConfig } from '../screen-fixtures.js';
