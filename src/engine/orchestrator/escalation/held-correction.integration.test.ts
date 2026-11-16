@@ -1,9 +1,9 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
-import { lineageAttemptsOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { transition } from '../../../core/state/machine.js';
-import { briefCorrections } from '../../../core/state/lineage.js';
+import { briefCorrections, lineageAttemptsOf } from '../../../core/state/lineage.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { Implementer } from '../../implementers/types.js';
 import { createSteeringPort } from '../../calls/steering.js';

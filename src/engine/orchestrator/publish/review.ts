@@ -2,7 +2,8 @@ import { BASE_SPLIT_NAMED } from '../../../core/review/base-split.js';
 import { runRejectFacts } from '../../../core/runtime/commands/messages.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 import type { Check, CheckStatus, TaskId } from '../../../core/schemas/task.js';
-import { type WorkflowState, fixCyclesOf } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../core/state/selectors.js';
 import type { EngineEventOf, EventBus } from '../../events/types.js';
 import type { BusContext } from './notice.js';
 

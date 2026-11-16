@@ -6,8 +6,9 @@ import {
   getEscalatedTaskIds,
   getFailedTaskIds,
   getSkippedTaskIds,
+  fixCyclesOf,
 } from './selectors.js';
-import { WorkflowStateSchema, fixCyclesOf, type WorkflowState } from '../schemas/workflow/state.js';
+import { WorkflowStateSchema, type WorkflowState } from '../schemas/workflow/state.js';
 import type { LineageRecord } from '../schemas/workflow/lineage.js';
 import type { QueuedMessage } from '../schemas/workflow/queue.js';
 import type { ChangedFilesSnapshot } from '../schemas/workflow/changed-files.js';

@@ -13,7 +13,8 @@ import type {
   ReviewVerdict,
 } from '../../../core/schemas/review/verdict.js';
 import type { TaskId } from '../../../core/schemas/task.js';
-import { type WorkflowState, fixCyclesOf } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../core/state/selectors.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
 import { isAbortError } from '../../../utils/abort.js';

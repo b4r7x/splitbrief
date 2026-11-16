@@ -1,4 +1,5 @@
-import { fixCyclesOf, type WorkflowState } from '../../schemas/workflow/state.js';
+import type { WorkflowState } from '../../schemas/workflow/state.js';
+import { fixCyclesOf } from '../selectors.js';
 import type { FixCycles, ReviewRecord } from '../../schemas/workflow/review-record.js';
 import type { TriageInput } from '../../schemas/review/verdict.js';
 import { assertNever } from '../../../utils/type-guards.js';

@@ -26,6 +26,14 @@ export function briefCorrections(state: WorkflowState, taskId: TaskId): readonly
   return state.lineages?.[lineageKeyFor(state, taskId)]?.corrections ?? [];
 }
 
+/** The attempts a task's lineage has spent; a lineage with no record starts fresh. */
+export function lineageAttemptsOf(
+  state: Pick<WorkflowState, 'lineages'>,
+  task: Pick<Task, 'id' | 'parentId'>,
+): number {
+  return state.lineages?.[lineageIdOf(task)]?.attempts ?? 0;
+}
+
 export function withLineage(
   state: WorkflowState,
   key: TaskId,

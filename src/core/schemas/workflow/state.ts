@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { isRecord } from '../../../utils/type-guards.js';
-import { lineageIdOf } from '../../state/task-insert.js';
 import { topoSort } from '../../state/topo-sort.js';
 import { ConsultQuestionSchema } from '../consult.js';
 import {
@@ -15,10 +14,11 @@ import { PlanSchema } from '../plan.js';
 import { ClarificationQuestionSchema } from '../question.js';
 import { RecoveryIssueSchema } from '../recovery/schemas.js';
 import { StepRefSchema, StepCutSchema } from '../run-step.js';
-import { type Task, TaskSchema, TaskIdSchema } from '../task.js';
+import { TaskSchema, TaskIdSchema } from '../task.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from '../tokens.js';
 import { ChangedFilesBaselineSchema } from './changed-files.js';
 import { nonnegativeInteger } from './consult-record.js';
+import { DiscoveredValidationSchema } from './discovered-validation.js';
 import { LineageRecordSchema } from './lineage.js';
 import { QueuedMessageSchema } from './queue.js';
 import {
@@ -27,7 +27,6 @@ import {
   TriageRecordSchema,
   PendingTriageSchema,
   RedCheckSchema,
-  type FixCycles,
 } from './review-record.js';
 import { SeatWaitSchema, SeatSwitchRecordSchema } from './seat.js';
 
@@ -44,23 +43,7 @@ export type PlannerConversation = z.infer<typeof PlannerConversationSchema>;
 
 export const WORKFLOW_STATE_VERSION = 4;
 
-export const DiscoveredValidationSchema = z.object({
-  testCommand: z.string().optional(),
-  testPattern: z.string().optional(),
-  language: z.string().optional(),
-});
-
-export type DiscoveredValidation = z.infer<typeof DiscoveredValidationSchema>;
-
 const TASK_ACTIVE_PHASES = new Set<Phase>(['validating-task', 'escalating']);
-
-/** The attempts a task's lineage has spent; a lineage with no record starts fresh. */
-export function lineageAttemptsOf(
-  state: Pick<WorkflowState, 'lineages'>,
-  task: Pick<Task, 'id' | 'parentId'>,
-): number {
-  return state.lineages?.[lineageIdOf(task)]?.attempts ?? 0;
-}
 
 const ApplyIntegratedSchema = z.object({
   path: z.string(),
@@ -307,13 +290,3 @@ export type WorkflowStateAssembly = Omit<
   stateRevision?: number;
 };
 export type WorkflowState = WorkflowStateAssembly;
-
-export function fixCyclesOf(
-  state: Pick<WorkflowState, 'fixCycles' | 'reviewFixes'>,
-): FixCycles & { briefed: number } {
-  const fixCycles: FixCycles = state.fixCycles ?? {
-    used: state.reviewFixes?.cycle ?? 0,
-    notes: [],
-  };
-  return { ...fixCycles, briefed: fixCycles.briefed ?? fixCycles.used };
-}

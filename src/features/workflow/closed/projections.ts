@@ -1,6 +1,7 @@
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../core/state/selectors.js';
 import { isTestScript } from '../../../core/validation/stacks/registry.js';
 import { reviewOutcomeOf } from '../../../core/review/verdict.js';
 import type { PhaseTiming, RunDigest, ScopeView, SummaryView } from './view-model.js';

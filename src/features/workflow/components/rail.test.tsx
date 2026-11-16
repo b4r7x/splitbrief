@@ -21,7 +21,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { getRailStages, type RailStageStatus } from '../../../core/phases/rail.js';
+import type { RailStageStatus } from '../../../core/phases/rail.js';
 import {
   RAIL_MARKER_SLOT_WIDTH,
   railConnectorString,
@@ -36,7 +36,8 @@ import {
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { readRailStages } from '../hooks/use-rail-cells.js';
-import { measureRailCells, Rail, RailFormB, railFormCText, resolveRailStages } from './rail.js';
+import { Rail, RailFormB } from './rail.js';
+import { measureRailCells } from '../layout/rail-stages.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readRailSnapshot } from '../layout/snapshot.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -495,32 +496,6 @@ describe('Rail — a run with REVIEW None', () => {
     expect(frame).toBe(`${DONE} Apply`);
     expect(measured).toBe(getTerminalCellWidth(frame));
   });
-
-  it.each([
-    { status: 'paused', cancelled: false, apply: 'active' },
-    { status: 'running', cancelled: true, apply: 'cancelled' },
-    { status: 'paused', cancelled: true, apply: 'cancelled' },
-  ] as const)(
-    'keeps the review skipped and marks Apply $apply on a $status run (cancelled $cancelled) while the merged result is checked',
-    ({ status, cancelled, apply }) => {
-      expect(
-        resolveRailStages({
-          phase: 'final-review',
-          status,
-          cancelled,
-          pendingRecovery: false,
-          events: [],
-          recoveryAt: null,
-          afterLastBrief: { kind: 'apply' },
-        }),
-      ).toEqual([
-        { stage: 'plan', status: 'done' },
-        { stage: 'build', status: 'done' },
-        { stage: 'review', status: 'skipped' },
-        { stage: 'apply', status: apply },
-      ]);
-    },
-  );
 });
 
 describe('Rail — a halt in the final-review phase of a REVIEW None run', () => {
@@ -811,25 +786,6 @@ describe('Rail — Form C (narrow floor)', () => {
       ui.unmount();
     },
   );
-
-  it('builds the active stage line without a task fraction outside task stages', () => {
-    expect(railFormCText({ stages: getRailStages('planning'), fraction: '' })).toBe(`${DONE} Plan`);
-  });
-
-  it('builds the active build stage line with its passed fraction', () => {
-    expect(railFormCText({ stages: getRailStages('implementing'), fraction: '3/7' })).toBe(
-      `${DONE} Build  3/7 passed`,
-    );
-  });
-
-  it('builds the cancelled stage line without a task fraction', () => {
-    expect(
-      railFormCText({
-        stages: getRailStages('implementing', { cancelled: true }),
-        fraction: '3/7',
-      }),
-    ).toBe(`${CANCELLED} Build${RAIL_FORM_C_CANCELLED_SUFFIX}`);
-  });
 
   it('renders only the active stage and its fraction, no verb', async () => {
     terminalSizeStore.__testReset({ cols: 24, rows: 30, isSmall: false });

@@ -21,7 +21,8 @@ import {
   makeWctx,
   makeWorktreeIsolation,
 } from '#testing/helpers/orchestrator-factories.js';
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../core/state/selectors.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { groupEventsIntoSections } from '../../../core/sections/group.js';
 import type { Config } from '../../../core/schemas/config.js';

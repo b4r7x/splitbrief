@@ -1,7 +1,8 @@
 import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
 import { PlanSchema, type PlanProposal } from '../../../core/schemas/plan.js';
-import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { DiscoveredValidation } from '../../../core/schemas/workflow/discovered-validation.js';
 import { writePlanJson, parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { readSpecFileOrEmpty, writeSpecFile } from '../../../core/sessions/spec-files.js';
 import { readManifestCommands } from '../../../core/validation/manifest-commands.js';

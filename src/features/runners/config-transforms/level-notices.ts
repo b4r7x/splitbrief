@@ -1,5 +1,5 @@
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { TOOL_EFFORT_LADDERS } from '../../../core/providers/known-models.js';
+import { TOOL_EFFORT_LADDERS } from '../../../core/providers/tool-effort-ladders.js';
 import { seatEffortChannel } from '../../../core/runners/capabilities.js';
 import { unusedEffortReason } from '../../../core/runners/effort-channel.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';

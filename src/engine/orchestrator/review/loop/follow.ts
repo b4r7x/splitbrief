@@ -12,7 +12,8 @@ import {
 import type { TriageResult, TriageInput } from '../../../../core/schemas/review/verdict.js';
 import { isTaskCompleted } from '../../../../core/schemas/task.js';
 import type { ReviewRecord } from '../../../../core/schemas/workflow/review-record.js';
-import { type WorkflowState, fixCyclesOf } from '../../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../../core/state/selectors.js';
 import { sameFailure } from '../../../../core/state/progress.js';
 import { error } from '../../../../utils/error.js';
 import { transitionAndSave } from '../../state-ops/transition.js';

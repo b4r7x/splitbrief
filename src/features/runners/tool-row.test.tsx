@@ -19,9 +19,18 @@ import type { ProvenanceWord } from '../../core/providers/provenance.js';
 import { AUTO_ROW_METADATA, BROWSE_CATALOG_TEXT } from './model-catalog/rows.js';
 import type { RightAxisName, RightRow, TreeLead } from './model-catalog/types.js';
 import type { RouteAuthState } from '../../core/runners/route-auth.js';
+import { planModelRows } from './model-catalog/row-plan.js';
 import { renderModelRow, renderToolRow } from './tool-row.js';
 
 const AUTH = { tool: undefined, providerAuth: undefined, catalog: undefined };
+
+/** A row drawn alone: the list it is planned in holds that one row. */
+function renderModelRowAlone(params: Omit<Parameters<typeof renderModelRow>[0], 'plan'>) {
+  return renderModelRow({
+    ...params,
+    plan: planModelRows({ rows: [params.row], width: params.maxWidth, providerId: undefined }),
+  });
+}
 
 function modelRow(
   model: ModelOption,
@@ -67,7 +76,7 @@ function pickerItem(
 
 async function rowFrame(row: RightRow, maxWidth: number, currentModel?: string): Promise<string> {
   const ui = renderFeature(
-    renderModelRow({
+    renderModelRowAlone({
       row,
       isCursor: false,
       maxWidth,
@@ -351,7 +360,7 @@ describe('runner row grammar', () => {
 
   it('renders custom/default model provenance without parens badges', async () => {
     const customUi = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: modelRow({ id: 'my-org/custom', isCustom: true }, 'Custom'),
         isCursor: false,
         maxWidth: 40,
@@ -366,7 +375,7 @@ describe('runner row grammar', () => {
     customUi.unmount();
 
     const defaultUi = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: modelRow({ id: 'gpt-5.4' }, 'Known'),
         isCursor: false,
         maxWidth: 40,
@@ -385,7 +394,7 @@ describe('runner row grammar', () => {
 
   it('marks a stale retained model without calling it detected', async () => {
     const ui = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: modelRow({ id: 'retained-model', membership: 'stale', isStale: true }, 'Stale'),
         isCursor: false,
         maxWidth: 60,
@@ -404,7 +413,7 @@ describe('runner row grammar', () => {
 
   it('shows a floored context window on a model row', async () => {
     const million = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: modelRow({ id: 'gpt-5.6', contextLength: 1_048_576 }, 'Detected'),
         isCursor: false,
         maxWidth: 60,
@@ -419,7 +428,7 @@ describe('runner row grammar', () => {
     million.unmount();
 
     const thousands = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: modelRow({ id: 'gpt-5.6-mini', contextLength: 262_144 }, 'Detected'),
         isCursor: false,
         maxWidth: 60,
@@ -435,7 +444,7 @@ describe('runner row grammar', () => {
   it('renders the browse-catalog escape as an affordance, not a failure', async () => {
     forceUnicodeGlyphs();
     const ui = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: { kind: 'action', action: 'browse-catalog', text: BROWSE_CATALOG_TEXT },
         isCursor: false,
         maxWidth: 60,
@@ -454,7 +463,7 @@ describe('runner row grammar', () => {
   it('renders tool decides on the Auto row, not Default, inside a section and outside one', async () => {
     for (const section of ['Custom', '']) {
       const ui = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: modelRow({ id: 'auto' }, 'Known', section),
           isCursor: false,
           maxWidth: 40,
@@ -492,7 +501,7 @@ describe('runner row grammar', () => {
 
     // The id gives way whole before the name loses a cell, and a truncated id —
     // which would name a model that does not exist — never paints at all.
-    const squeezed = renderModelRow({
+    const squeezed = renderModelRowAlone({
       row: modelRow(alias, 'Known'),
       isCursor: false,
       maxWidth: 34,
@@ -504,7 +513,7 @@ describe('runner row grammar', () => {
     expect(squeezed.metadata).not.toContain('claude-fable');
 
     // A row with no size or detail carries the id alone.
-    const bare = renderModelRow({
+    const bare = renderModelRowAlone({
       row: modelRow(
         { id: 'best', displayName: 'Best', catalogModelId: 'claude-fable-5-1' },
         'Known',
@@ -520,7 +529,7 @@ describe('runner row grammar', () => {
 
   it('puts a detail string in the metadata cell, not the label', async () => {
     const row = modelRow({ id: 'opus', displayName: 'Opus 5.5', detail: 'opus · 1M' }, 'Known');
-    const el = renderModelRow({
+    const el = renderModelRowAlone({
       row,
       isCursor: false,
       maxWidth: 60,
@@ -545,7 +554,7 @@ describe('runner row grammar', () => {
       },
       'Known',
     );
-    const el = renderModelRow({
+    const el = renderModelRowAlone({
       row,
       isCursor: false,
       maxWidth: 80,
@@ -565,7 +574,7 @@ describe('runner row grammar', () => {
   });
 
   it('falls back to the formatted context length, and leaves metadata empty when neither is present', () => {
-    const withSize = renderModelRow({
+    const withSize = renderModelRowAlone({
       row: modelRow({ id: 'gpt-5.6', displayName: 'GPT-5.6', contextLength: 1_000_000 }, 'Known'),
       isCursor: false,
       maxWidth: 40,
@@ -575,7 +584,7 @@ describe('runner row grammar', () => {
     expect(withSize.props.metadata).toBe('1M');
     expect(withSize.props.label).not.toContain('1M');
 
-    const empty = renderModelRow({
+    const empty = renderModelRowAlone({
       row: modelRow({ id: 'plain', displayName: 'Plain' }, 'Known'),
       isCursor: false,
       maxWidth: 40,
@@ -588,7 +597,7 @@ describe('runner row grammar', () => {
 
   it('drops the provenance word when the section header already carries it', async () => {
     const ui = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: modelRow({ id: 'opus' }, 'Known', 'Fallback'),
         isCursor: false,
         maxWidth: 40,
@@ -618,7 +627,7 @@ describe('runner row grammar', () => {
     const theme = resolveTheme({ variant: 'dark', level: 1, terminalBackground: undefined });
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
-        {renderModelRow({
+        {renderModelRowAlone({
           row: routeRow({ kind: 'configured', source: 'oauth' }),
           isCursor: false,
           maxWidth: 60,
@@ -745,7 +754,7 @@ describe('runner row grammar', () => {
 
     it('signposts a multi-provider row with a provider count, no tags or glyphs', async () => {
       const ui = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: modelRow(MERGED, 'Detected'),
           isCursor: false,
           maxWidth: 60,
@@ -774,7 +783,7 @@ describe('runner row grammar', () => {
         ],
       };
       const ui = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: modelRow(luna, 'Detected'),
           isCursor: false,
           maxWidth: 60,
@@ -804,7 +813,7 @@ describe('runner row grammar', () => {
       };
       const count = /2 options/;
       const expanded = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: { ...modelRow(luna, 'Detected'), expanded: true },
           isCursor: false,
           maxWidth: 60,
@@ -820,7 +829,7 @@ describe('runner row grammar', () => {
       expanded.unmount();
 
       const collapsed = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: modelRow(luna, 'Detected'),
           isCursor: false,
           maxWidth: 60,
@@ -876,7 +885,7 @@ describe('runner row grammar', () => {
       expect(wide).toContain('Stale');
       expect(wide).toContain('272K');
 
-      const squeezed = renderModelRow({
+      const squeezed = renderModelRowAlone({
         row: modelRow(grok, 'Stale'),
         isCursor: false,
         maxWidth: 32,
@@ -898,7 +907,7 @@ describe('runner row grammar', () => {
           { fullId: 'claude-opus-4-8-fast', providerPrefix: '', tag: 'Fast' },
         ],
       };
-      const wide = renderModelRow({
+      const wide = renderModelRowAlone({
         row: modelRow(opus48, 'Detected'),
         isCursor: false,
         maxWidth: 60,
@@ -908,7 +917,7 @@ describe('runner row grammar', () => {
       expect(wide.metadata).toContain('2 options');
       expect(wide.metadata).toContain('200K');
 
-      const squeezed = renderModelRow({
+      const squeezed = renderModelRowAlone({
         row: modelRow(opus48, 'Detected'),
         isCursor: false,
         maxWidth: 32,
@@ -926,7 +935,7 @@ describe('runner row grammar', () => {
         contextLength: 272_000,
       };
       const ui = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: modelRow(retained, 'Stale'),
           isCursor: false,
           maxWidth: 21,
@@ -957,7 +966,7 @@ describe('runner row grammar', () => {
       };
       const width = 60;
       const parent = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: { ...modelRow(luna, 'Detected'), expanded: true },
           isCursor: false,
           maxWidth: width,
@@ -966,7 +975,7 @@ describe('runner row grammar', () => {
         }),
       );
       const effort = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: axisRow(luna, 'effort', 'high'),
           isCursor: false,
           maxWidth: width,
@@ -975,7 +984,7 @@ describe('runner row grammar', () => {
         }),
       );
       const fast = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: axisRow(luna, 'fast', 'off', true),
           isCursor: false,
           maxWidth: width,
@@ -1056,7 +1065,7 @@ describe('runner row grammar', () => {
         ],
       };
       const effort = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: axisRow(luna, 'effort', 'high'),
           isCursor: false,
           maxWidth: 60,
@@ -1070,7 +1079,7 @@ describe('runner row grammar', () => {
       effort.unmount();
 
       const fast = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: axisRow(luna, 'fast', 'on'),
           isCursor: false,
           maxWidth: 60,
@@ -1208,7 +1217,7 @@ describe('runner row grammar', () => {
 
     it('renders a single-variant row without any provider annotation', async () => {
       const ui = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: modelRow(
             {
               id: 'openrouter/gemini-3-flash',
@@ -1238,7 +1247,7 @@ describe('runner row grammar', () => {
 
     it('marks the row configured when any variant spelling matches the saved model', async () => {
       const ui = renderFeature(
-        renderModelRow({
+        renderModelRowAlone({
           row: modelRow(MERGED, 'Detected'),
           isCursor: false,
           maxWidth: 60,
@@ -1289,7 +1298,7 @@ describe('runner row grammar', () => {
 
   it('renders displayName when present and falls back to formatModelName when absent', async () => {
     const withName = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: modelRow({ id: 'custom-coder-v1', displayName: 'Claude Opus 4.5' }, 'Known'),
         isCursor: false,
         maxWidth: 40,
@@ -1302,7 +1311,7 @@ describe('runner row grammar', () => {
     withName.unmount();
 
     const withoutName = renderFeature(
-      renderModelRow({
+      renderModelRowAlone({
         row: modelRow({ id: 'custom-coder-v1' }, 'Known'),
         isCursor: false,
         maxWidth: 40,

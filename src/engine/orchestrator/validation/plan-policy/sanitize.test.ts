@@ -6,7 +6,7 @@ import { missingNpmScript } from './npm-scripts.js';
 import { commandTextRefusal, unsafeCommandReason } from './command.js';
 import type { PackageScriptsReadinessInput } from '../../../../core/readiness/checks/validation.js';
 import type { Config } from '../../../../core/schemas/config.js';
-import type { DiscoveredValidation } from '../../../../core/schemas/workflow/state.js';
+import type { DiscoveredValidation } from '../../../../core/schemas/workflow/discovered-validation.js';
 
 const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 

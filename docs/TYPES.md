@@ -191,7 +191,7 @@ This matters in this project because:
 
 Example from this codebase:
 ```ts
-// features/workflow/components/rail.tsx summarizes the header rail from engine events
+// features/workflow/layout/rail-stages.ts summarizes the header rail from engine events
 import type { EngineEvent } from '../../../engine/events/types.js';
 ```
 

@@ -1,6 +1,6 @@
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase } from '../../../../core/schemas/enums.js';
-import type { DiscoveredValidation } from '../../../../core/schemas/workflow/state.js';
+import type { DiscoveredValidation } from '../../../../core/schemas/workflow/discovered-validation.js';
 import type { ManifestCommands } from '../../../../core/validation/manifest-commands.js';
 import type { Stack } from '../../../../core/validation/stacks/types.js';
 import { resolveTestCommand } from '../../../../core/validation/stage-command.js';

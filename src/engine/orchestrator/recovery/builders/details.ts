@@ -1,6 +1,7 @@
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../../../core/crew/identity.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
-import { lineageAttemptsOf, type WorkflowState } from '../../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
+import { lineageAttemptsOf } from '../../../../core/state/lineage.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path/patterns.js';
 import { withoutRunBanners } from '../../validation/manager-output.js';

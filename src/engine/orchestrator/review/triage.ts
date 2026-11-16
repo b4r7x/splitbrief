@@ -7,7 +7,8 @@ import {
 } from '../../../core/schemas/review/verdict.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
-import { type WorkflowState, fixCyclesOf } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../core/state/selectors.js';
 import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
 import { insertTasks } from '../../../core/state/task-insert.js';
 import { taskFromSpec } from '../../spec/plan/tasks.js';

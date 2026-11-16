@@ -4,7 +4,7 @@ import type {
   ReviewPacket,
   ReviewPacketCheckpoint,
 } from '../../../../core/schemas/review/packet.js';
-import { ReviewPacketSeatSwitchSchema } from '../../../../core/schemas/review/packet.js';
+import { ReviewPacketSeatSwitchSchema } from '../../../../core/schemas/review/seat-switch.js';
 import {
   RECOVERY_ACTIONS,
   RECOVERY_REASONS,

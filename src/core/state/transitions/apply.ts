@@ -1,5 +1,6 @@
 import { awaitsApply, deriveRunStatus } from '../../sessions/run/status.js';
-import { fixCyclesOf, type WorkflowState } from '../../schemas/workflow/state.js';
+import type { WorkflowState } from '../../schemas/workflow/state.js';
+import { fixCyclesOf } from '../selectors.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { transitionError } from '../errors.js';
 import type { MachineAction } from '../types.js';

@@ -2,7 +2,7 @@ import { posix } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
 import type { TaskSpec } from '../../../core/schemas/plan.js';
 import { normalizeProjectRelativePath } from '../../../utils/path/patterns.js';
-import type { DiscoveredValidation } from '../../../core/schemas/workflow/state.js';
+import type { DiscoveredValidation } from '../../../core/schemas/workflow/discovered-validation.js';
 import {
   readManifestCommands,
   type ManifestCommands,

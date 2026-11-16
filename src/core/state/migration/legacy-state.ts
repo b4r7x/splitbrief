@@ -3,7 +3,7 @@ import { PhaseSchema, ApproveLevelSchema, WorkflowModeSchema } from '../../schem
 import { TaskSchema } from '../../schemas/task.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../schemas/tokens.js';
 import { RecoveryIssueSchema } from '../../schemas/recovery/schemas.js';
-import { DiscoveredValidationSchema } from '../../schemas/workflow/state.js';
+import { DiscoveredValidationSchema } from '../../schemas/workflow/discovered-validation.js';
 import { QueuedMessageSchema } from '../../schemas/workflow/queue.js';
 import { ChangedFilesBaselineSchema } from '../../schemas/workflow/changed-files.js';
 import { topoSort } from '../topo-sort.js';

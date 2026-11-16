@@ -1,7 +1,5 @@
-import {
-  TOOL_EFFORT_LADDERS,
-  MODELS_DEV_VENDOR_FOR_RUNNER,
-} from '../../../core/providers/known-models.js';
+import { MODELS_DEV_VENDOR_FOR_RUNNER } from '../../../core/providers/known-models.js';
+import { TOOL_EFFORT_LADDERS } from '../../../core/providers/tool-effort-ladders.js';
 import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';

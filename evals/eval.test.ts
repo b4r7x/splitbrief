@@ -11,10 +11,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import {
-  KNOWN_MODELS,
-  PENDING_EVALUATION_CANDIDATE_IDS,
-} from '../src/core/providers/known-models.js';
+import { PENDING_EVALUATION_CANDIDATE_IDS } from '#testing/helpers/pending-evaluation-candidates.js';
+import { KNOWN_MODELS } from '../src/core/providers/known-models.js';
 import {
   MODEL_EVALUATION_OMIT_ROWS,
   MODEL_EVALUATION_SCENARIO_IDS,

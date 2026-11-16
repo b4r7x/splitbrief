@@ -21,6 +21,7 @@ import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { PickerOption } from '../model-catalog/options.js';
 import { rightRowKey } from '../model-catalog/rows.js';
+import { planModelRows } from '../model-catalog/row-plan.js';
 import type { RightRow } from '../model-catalog/types.js';
 import type { ModelOption } from '../model-catalog/recency.js';
 import { CATALOG_SUGGESTION_MEMBERSHIP } from '../../../engine/providers/model/suggestions.js';
@@ -427,6 +428,7 @@ describe('usePickerCatalog', () => {
                       catalog: currentCatalog.toolCatalog,
                       tool: undefined,
                     },
+                    plan: planModelRows({ rows: [row], width: 80, providerId: undefined }),
                   })}
                 </Box>
               ))}
@@ -509,6 +511,7 @@ describe('usePickerCatalog', () => {
                   catalog: catalog.toolCatalog,
                   tool: undefined,
                 },
+                plan: planModelRows({ rows: [row], width: 80, providerId: undefined }),
               })}
             </Box>
           ))}

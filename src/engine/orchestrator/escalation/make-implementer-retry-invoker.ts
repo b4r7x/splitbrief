@@ -3,7 +3,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer, ImplementerOptions, RetryOptions } from '../../implementers/types.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProjectContext } from '../../../core/state/types.js';
-import { lineageAttemptsOf } from '../../../core/schemas/workflow/state.js';
+import { lineageAttemptsOf } from '../../../core/state/lineage.js';
 import type { SeatAttempt } from '../../runners/seat-failure/transient.js';
 import { addUsageAndSave } from '../state-ops/usage.js';
 import {

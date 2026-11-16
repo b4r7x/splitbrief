@@ -48,7 +48,8 @@ import type { FinalReviewResult } from '../types.js';
 import type { Planner, TypedCallContext } from '../../../planners/types.js';
 import type { ConsultAnswer } from '../../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../../types.js';
-import { fixCyclesOf, type WorkflowState } from '../../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../../core/state/selectors.js';
 import type {
   ReviewVerdict,
   TriageInput,

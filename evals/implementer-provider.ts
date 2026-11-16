@@ -1,4 +1,4 @@
-import { PENDING_EVALUATION_CANDIDATE_IDS } from '../src/core/providers/known-models.js';
+import { PENDING_EVALUATION_CANDIDATE_IDS } from '#testing/helpers/pending-evaluation-candidates.js';
 import type { ProviderId } from '../src/core/schemas/enums.js';
 
 export const MODEL_EVALUATION_SCENARIO_IDS = Object.freeze([

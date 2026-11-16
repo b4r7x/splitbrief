@@ -14,9 +14,7 @@ import {
   readSavedRecoveryAction,
   readSavedRecoveryActions,
   readSavedRecoverySelections,
-  SeatSwapCandidateSchema,
 } from '../recovery/schemas.js';
-import { SeatSwitchCauseSchema, SeatSwitchRecordSchema } from '../workflow/seat.js';
 import { EvidenceFinalReviewStatusSchema, EvidenceReviewSchema } from '../evidence.js';
 import {
   ReviewFinalReviewStatusSchema,
@@ -27,6 +25,7 @@ import { CostAmountBasisSchema } from '../cost.js';
 import { CostBreakdownSchema } from '../cost.js';
 import { CheckStatusSchema, TaskIdSchema } from '../task.js';
 import { ReviewProvenanceSchema } from './changes.js';
+import { ReviewPacketSeatSwitchSchema } from './seat-switch.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../tokens.js';
 import { RunSnapshotKindSchema } from '../snapshot.js';
 import {
@@ -235,12 +234,6 @@ const ReviewPacketDriftSchema = z.object({
     errorCount: z.number().int().nonnegative(),
     warningCount: z.number().int().nonnegative(),
   }),
-});
-
-export const ReviewPacketSeatSwitchSchema = SeatSwitchRecordSchema.omit({ ts: true }).extend({
-  from: z.union([SeatSwapCandidateSchema, z.string()]),
-  to: z.union([SeatSwapCandidateSchema, z.string()]),
-  cause: SeatSwitchCauseSchema,
 });
 
 const ReviewPacketEventSchema = z.preprocess(

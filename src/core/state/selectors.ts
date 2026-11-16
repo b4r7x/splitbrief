@@ -1,6 +1,7 @@
 import type { WorkflowState } from '../schemas/workflow/state.js';
 import type { Task, TaskId } from '../schemas/task.js';
 import type { TaskStatus } from '../schemas/enums.js';
+import type { FixCycles } from '../schemas/workflow/review-record.js';
 
 function getTaskIdsByStatus(state: Pick<WorkflowState, 'tasks'>, status: TaskStatus): TaskId[] {
   return state.tasks.filter((t) => t.status === status).map((t) => t.id);
@@ -42,4 +43,14 @@ export function getSkippedTaskIds(state: Pick<WorkflowState, 'tasks'>): TaskId[]
 
 export function getEscalatedTaskIds(state: Pick<WorkflowState, 'tasks'>): TaskId[] {
   return getTaskIdsByStatus(state, 'escalated');
+}
+
+export function fixCyclesOf(
+  state: Pick<WorkflowState, 'fixCycles' | 'reviewFixes'>,
+): FixCycles & { briefed: number } {
+  const fixCycles: FixCycles = state.fixCycles ?? {
+    used: state.reviewFixes?.cycle ?? 0,
+    notes: [],
+  };
+  return { ...fixCycles, briefed: fixCycles.briefed ?? fixCycles.used };
 }

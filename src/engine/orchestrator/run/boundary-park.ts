@@ -1,4 +1,5 @@
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../core/state/selectors.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { BoundaryPark, WorkflowContext } from '../types.js';
 import { recordSteer } from '../continuation/loop.js';

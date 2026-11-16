@@ -2,7 +2,7 @@ import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { Plan } from '../../../../core/schemas/plan.js';
 import type { CheckStatus, Task, Check } from '../../../../core/schemas/task.js';
-import type { DiscoveredValidation } from '../../../../core/schemas/workflow/state.js';
+import type { DiscoveredValidation } from '../../../../core/schemas/workflow/discovered-validation.js';
 import type { EventBus } from '../../../events/types.js';
 import type { RunBase } from '../../isolation/run-base/tree.js';
 import type { FailureKeys } from '../extract-failure-keys.js';

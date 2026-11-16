@@ -14,7 +14,8 @@ import type {
   TriageResult,
 } from '../../../core/schemas/review/verdict.js';
 import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
-import { type WorkflowState, fixCyclesOf } from '../../../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../../../core/state/selectors.js';
 import { type SpecMetadata, writeSpecFile } from '../../../core/sessions/spec-files.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { warnError } from '../../../lib/warn.js';

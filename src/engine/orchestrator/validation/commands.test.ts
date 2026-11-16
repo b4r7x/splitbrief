@@ -5,7 +5,7 @@ import YAML from 'yaml';
 import { buildStageContext, planTestCheck } from './run.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { DiscoveredValidation } from '../../../core/schemas/workflow/state.js';
+import type { DiscoveredValidation } from '../../../core/schemas/workflow/discovered-validation.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { makeConfig } from '#testing/helpers/validation-fixtures.js';

@@ -18,7 +18,8 @@ import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { STATE_FILE, sessionDir } from '../core/paths.js';
-import { fixCyclesOf, type WorkflowState } from '../core/schemas/workflow/state.js';
+import type { WorkflowState } from '../core/schemas/workflow/state.js';
+import { fixCyclesOf } from '../core/state/selectors.js';
 import { readRunRecord } from '../core/sessions/run/record-io.js';
 import type { RunStatus } from '../core/sessions/run/status.js';
 import { transition } from '../core/state/machine.js';

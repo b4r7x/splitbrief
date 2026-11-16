@@ -1,10 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  KNOWN_MODELS,
-  PENDING_EVALUATION_CANDIDATE_IDS,
-} from '../../../core/providers/known-models.js';
+import { PENDING_EVALUATION_CANDIDATE_IDS } from '#testing/helpers/pending-evaluation-candidates.js';
+import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
 import { buildRightModels, countModelOptions } from './catalog.js';
 import { resolveAndSort } from './runtime-dedupe.js';
 import type { PickerOption } from './options.js';

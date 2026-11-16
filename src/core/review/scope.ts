@@ -1,6 +1,7 @@
 import type { ReviewVerdict } from '../schemas/review/verdict.js';
 import { isTaskCompleted } from '../schemas/task.js';
-import { type WorkflowState, fixCyclesOf } from '../schemas/workflow/state.js';
+import type { WorkflowState } from '../schemas/workflow/state.js';
+import { fixCyclesOf } from '../state/selectors.js';
 
 export type Finding = ReviewVerdict['findings'][number];
 

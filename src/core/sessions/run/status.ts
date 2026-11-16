@@ -2,7 +2,8 @@ import { opensPlanGate } from '../../pipeline-spec/steps.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { RecoveryIssue } from '../../schemas/recovery/schemas.js';
 import type { GateName, StepCut, StepRef } from '../../schemas/run-step.js';
-import { fixCyclesOf, type WorkflowState } from '../../schemas/workflow/state.js';
+import type { WorkflowState } from '../../schemas/workflow/state.js';
+import { fixCyclesOf } from '../../state/selectors.js';
 
 /** What a run waiting for you waits on: the planner's question, a gate, or a halt. */
 export type WaitingOn =

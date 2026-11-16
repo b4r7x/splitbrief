@@ -5,7 +5,7 @@ import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.j
 import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import type { RightRow, TreeLead } from './model-catalog/types.js';
-import { planModelRows, type ModelRowPlan } from './model-catalog/row-plan.js';
+import type { ModelRowPlan } from './model-catalog/row-plan.js';
 import { formatRouteAuth } from './picker/route-auth.js';
 import { formatPickerStatusLabel } from './picker/labels.js';
 import { isExpandableRow, type RouteAuthContext } from './right-column/policy.js';
@@ -82,8 +82,8 @@ interface ModelRowParams {
   currentModel: string | undefined;
   /** What the tool's credential listing says; the chevron rule needs it. */
   auth: RouteAuthContext;
-  /** The list this row is drawn in, planned at `maxWidth`; a row drawn alone is a list of one. */
-  plan?: ModelRowPlan | undefined;
+  /** The list this row is drawn in, planned at `maxWidth`. */
+  plan: ModelRowPlan;
 }
 
 export function renderModelRow({
@@ -121,7 +121,6 @@ export function renderModelRow({
       />
     );
   }
-  const rowPlan = plan ?? planModelRows({ rows: [row], width: maxWidth, providerId: undefined });
   if (row.kind === 'axis') {
     return (
       <ListRow
@@ -129,14 +128,14 @@ export function renderModelRow({
         label={row.axis}
         state={isCursor ? 'active' : 'default'}
         metadata={row.value}
-        width={rowPlan.childWidth}
+        width={plan.childWidth}
         // The level is what the row steps; its axis name is the part a narrow row gives up.
         keepWhole="metadata"
       />
     );
   }
 
-  const planned = rowPlan.rows.get(row.model.id);
+  const planned = plan.rows.get(row.model.id);
   const label = planned?.label ?? row.model.id;
   return (
     <ListRow
