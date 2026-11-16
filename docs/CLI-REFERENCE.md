@@ -698,7 +698,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 - `splitbrief start` — fresh run.
 - `splitbrief continue` — continue a run by id or alias.
 - `splitbrief status` — see the current phase before continuing.
-- [WORKFLOW.md](./WORKFLOW.md), [CHANGELOG.md](../CHANGELOG.md) — schema migrations.
+- [WORKFLOW.md](./WORKFLOW.md) — schema migrations.
 
 ### Behavior notes
 

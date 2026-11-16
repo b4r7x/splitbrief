@@ -75,8 +75,8 @@ Do these steps on an up-to-date `main` with a clean working tree. `<x>` is the n
 1. Run `npm run release-check`.
 2. Run the pre-publish smoke and the release matrix (above). The release rule applies to the manifest.
 3. Run `npm version <x> --no-git-tag-version`. It writes `<x>` to `package.json` and `package-lock.json` and makes no commit and no tag.
-4. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<x>] - <YYYY-MM-DD>`.
-5. Add a new empty `## [Unreleased]` section above it.
+4. In `CHANGELOG.md`, write the `## [<x>] - <YYYY-MM-DD>` section at the top. When a `## [<x>]` heading with no date is there, add the date to it.
+5. Keep the section to a few entries that a user can see. Leave out tests, refactors and small changes. The changelog has no `[Unreleased]` section.
 6. Copy `.test-artifacts/live/manifest.json` to `.release-records/<x>/manifest.json`. Do not add the manifest, its skipped rows or any test result to the `[<x>]` entry. Run `npm run check:invariants`; gate 59 fails on internal text in the changelog and the user guides.
 7. Run `npm run release:smoke` under Node 22. On a macOS machine, run it under Node 22 and Node 24. Each run must print `ok` with the Node version and platform it proved. `release.yml` proves Node 24 on Linux in step 9.
 8. Commit the version and changelog change, then push `main`.
@@ -91,7 +91,7 @@ A failed workflow run publishes nothing when it fails before the publish step. F
 
 ### First publish (bootstrap)
 
-The first published version is `0.2.0`. The `[0.1.0] - 2026-08-07` changelog entry records work that was never published. `package.json` already has version `0.1.0`, so `npm version 0.1.0` fails with "Version not changed". Keep that historical entry. Bump the version only at procedure step 3.
+The first published version is `0.2.0`. Version `0.1.0` was never published, and the changelog has no entry for it. `package.json` already has version `0.1.0`, so `npm version 0.1.0` fails with "Version not changed". Bump the version only at procedure step 3. The changelog already has the `## [0.2.0]` heading; add its date at procedure step 4.
 
 The name `splitbrief` has no package on the npm registry yet (`npm view splitbrief` returned 404 on 2026-10-11). npm configures a trusted publisher in the settings of an existing package, so the first publish uses a token.
 

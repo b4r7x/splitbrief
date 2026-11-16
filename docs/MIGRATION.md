@@ -1,6 +1,6 @@
 # Migration guides
 
-Two releases changed enough to need one. The [run contract](#the-run-contract-2026-09) is the recent one; the EventBus release is below it. For everything else, see [`CHANGELOG.md`](../CHANGELOG.md) at the repository root.
+Two releases changed enough to need one. The [run contract](#the-run-contract-2026-09) is the recent one; the EventBus release is below it. For the main changes of each release, see [`CHANGELOG.md`](../CHANGELOG.md) at the repository root.
 
 ---
 
