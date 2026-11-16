@@ -954,6 +954,7 @@ describe('renderApp terminal ownership', () => {
   it.each(['fullscreen', 'inline', 'fallback'] as const)(
     'turns bracketed paste on when the %s path reads keys, off for an editor and on again after it',
     async (path) => {
+      vi.stubEnv('TERM_PROGRAM', undefined);
       const terminal = fakeTerminal();
       const inkExit = Promise.withResolvers<void>();
       mountInk(path, inkExit);
@@ -965,16 +966,69 @@ describe('renderApp terminal ownership', () => {
       const pasteSteps = () => terminal.steps.filter((step) => step.endsWith('BracketedPaste'));
       try {
         await vi.waitFor(() => expect(terminal.input.listenerCount('data')).toBe(2));
-        expect(pasteSteps()).toEqual(['enableBracketedPaste']);
+        expect(pasteSteps()).toEqual(['enableBracketedPaste', 'queryBracketedPaste']);
         suspendTerminalForEditor();
-        expect(pasteSteps()).toEqual(['enableBracketedPaste', 'disableBracketedPaste']);
+        expect(pasteSteps()).toEqual([
+          'enableBracketedPaste',
+          'queryBracketedPaste',
+          'disableBracketedPaste',
+        ]);
         resumeTerminalAfterEditor();
         expect(pasteSteps()).toEqual([
           'enableBracketedPaste',
+          'queryBracketedPaste',
           'disableBracketedPaste',
           'enableBracketedPaste',
         ]);
       } finally {
+        inkExit.resolve();
+        await rendering;
+      }
+    },
+  );
+
+  // A stop from outside (`kill -TSTP`) gives the terminal back to the shell, and `fg` sends the
+  // SIGCONT that takes it again. The bridge still holds the terminal's word on bracketed paste.
+  it.each(['fullscreen', 'inline'] as const)(
+    'reads keys again with raw mode and bracketed paste on after each outside stop and fg on the %s path',
+    async (path) => {
+      const terminal = fakeTerminal();
+      const inkExit = Promise.withResolvers<void>();
+      mountInk(path, inkExit);
+      const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+      const rendering = renderApp(
+        createElement(Fragment),
+        { fullscreen: path !== 'inline', mouse: false, projectDir },
+        { exit: vi.fn() },
+      );
+      const pasteSteps = () => terminal.steps.filter((step) => step.endsWith('BracketedPaste'));
+      try {
+        await vi.waitFor(() => expect(terminal.input.listenerCount('data')).toBe(2));
+        terminal.input.setRawMode(true);
+        const before = pasteSteps().length;
+        for (let round = 1; round <= 2; round++) {
+          process.emit('SIGTSTP', 'SIGTSTP');
+          expect(kill).toHaveBeenCalledTimes(round);
+          expect(terminal.input.isRaw).toBe(false);
+          process.emit('SIGCONT', 'SIGCONT');
+          expect({
+            paste: pasteSteps().slice(before),
+            raw: terminal.input.isRaw,
+            flowing: terminal.input.readableFlowing,
+            listening: terminal.listening(),
+          }).toEqual({
+            paste: Array.from({ length: round }).flatMap(() => [
+              'disableBracketedPaste',
+              'enableBracketedPaste',
+            ]),
+            raw: true,
+            flowing: true,
+            listening: true,
+          });
+        }
+      } finally {
+        // A red run leaves the stop hand-over open; close it, so the next test gets its signals.
+        if (!terminal.listening()) resumeTerminalAfterEditor();
         inkExit.resolve();
         await rendering;
       }

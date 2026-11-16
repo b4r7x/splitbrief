@@ -27,6 +27,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { waitPastGrace } from '#testing/helpers/typeahead-grace.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -526,6 +527,56 @@ describe('WorkflowScreen chrome calibration', () => {
     }
     ui.unmount();
   });
+
+  // On a terminal that gave no word on bracketed paste, a pasted word and its line break come as
+  // the same bytes as the word typed with its Enter in one read.
+  it.each([
+    { typed: 'ok', answer: { approved: true } },
+    { typed: 'q', answer: { approved: false, action: 'end-run' } },
+  ])(
+    'keeps the plan card waiting on $typed and ⏎ of one read through the input bridge on a terminal that gave no word, and answers on the next ⏎',
+    async ({ typed, answer }) => {
+      vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });
+      const reviewPath = join(projectDir, 'plan.md');
+      writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+      const outcomes: ApprovalReviewResult[] = [];
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+      navigatePreparedWorkflow(projectDir, 'plan card paste');
+      runWorkflow.mockImplementation(async (opts) => {
+        publishEvent(opts, {
+          type: 'workflow_started',
+          ts: FIXED_TS,
+          phase: 'reviewing-plan',
+          feature: 'plan card paste',
+        });
+        outcomes.push(await opts.callbacks.onApprovalNeeded('plan', reviewPath, []));
+        return pendingWorkflow();
+      });
+
+      const ui = renderThroughFilteredStdin(
+        <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+        { cols: 120, rows: 40 },
+        { terminalAnswers: false },
+      );
+      onTestFinished(() => ui.unmount());
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Greet people by name.');
+      });
+      vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await ui.settled();
+      ui.pressBytes(`${typed}\r`);
+      await ui.settled();
+      await tick();
+      expect(outcomes).toEqual([]);
+      expect(composerLiveStore.get().text).toBe(`${typed}\n`);
+
+      ui.pressBytes('\r');
+      await vi.waitFor(() => {
+        expect(outcomes).toEqual([answer]);
+      });
+    },
+  );
 
   it('keeps Request changes marked while its composer draft owns the keys', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });

@@ -20,7 +20,6 @@ import {
   createCrashListener,
   createResumeHandler,
   createSuspendHandler,
-  createSuspendListenerToggle,
   createTerminalCleanup,
   createTerminationHandler,
   createTerminationSignalListener,
@@ -88,13 +87,6 @@ function installProcessListeners(
     reportCleanupFailure: reportCrashCleanupFailure,
     exit,
   });
-  // SIGTSTP must remove its own listener before re-raising so the kernel applies Node's default
-  // stop disposition; SIGCONT re-installs it after restoring so a second Ctrl+Z still works. The
-  // toggle keeps install/uninstall balanced so a spurious SIGCONT cannot stack a second listener.
-  const suspendListener = createSuspendListenerToggle({
-    install: () => process.on('SIGTSTP', listeners.onSuspend),
-    uninstall: () => process.off('SIGTSTP', listeners.onSuspend),
-  });
   const listeners: ProcessListeners = {
     completion: undefined,
     settleTerminationSignal: createTerminationSignalListener({
@@ -112,26 +104,24 @@ function installProcessListeners(
       reportCrash,
       reportCleanupFailure: reportCrashCleanupFailure,
     }),
+    // The hand-off takes the SIGTSTP and SIGCONT listeners off, so the SIGTSTP raised again gets
+    // Node's default stop. The SIGCONT of `fg` needs a listener to take the terminal back, and the
+    // end of the hand-off puts both listeners back.
     onSuspend: createSuspendHandler({
       save: () => suspendTerminalForEditor(),
       raiseDefault: () => {
-        suspendListener.uninstall();
+        process.once('SIGCONT', listeners.onResume);
         process.kill(process.pid, 'SIGTSTP');
       },
     }),
-    onResume: createResumeHandler({
-      restore: () => {
-        resumeTerminalAfterEditor();
-        suspendListener.install();
-      },
-    }),
+    onResume: createResumeHandler({ restore: () => resumeTerminalAfterEditor() }),
   };
   process.on('SIGINT', listeners.settleTerminationSignal);
   process.on('SIGTERM', listeners.settleTerminationSignal);
   process.on('SIGHUP', listeners.settleTerminationSignal);
   process.on('uncaughtException', listeners.settleCrash);
   process.on('unhandledRejection', listeners.settleCrash);
-  suspendListener.install();
+  process.on('SIGTSTP', listeners.onSuspend);
   process.on('SIGCONT', listeners.onResume);
   return listeners;
 }

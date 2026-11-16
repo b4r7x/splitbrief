@@ -18,6 +18,7 @@ import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { waitForStdinRead } from '../helpers/key-log.js';
+import { forwardTerminalReplies } from '../helpers/terminal-replies.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
@@ -192,6 +193,7 @@ async function inTui(
           (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? '',
         ).join('\n');
       const dataListener = child.onData((data) => terminal.write(data));
+      const replyListener = forwardTerminalReplies(terminal, child);
       const exitListener = child.onExit((event) => {
         outcome = event;
         exit.resolve(event);
@@ -202,6 +204,7 @@ async function inTui(
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
         dataListener.dispose();
+        replyListener.dispose();
         exitListener.dispose();
         terminal.dispose();
       }

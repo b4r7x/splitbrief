@@ -15,7 +15,8 @@ import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { UNREAD_WORDS_MESSAGE } from '../../../src/features/workflow/inline-menu/use-keys.js';
-import { waitForStdinRead } from '../helpers/key-log.js';
+import { waitForLastStdinReads, waitForStdinRead } from '../helpers/key-log.js';
+import { forwardTerminalReplies } from '../helpers/terminal-replies.js';
 import { createStopContinueFixture, readState } from '../helpers/stop-continue-fixture.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
@@ -179,6 +180,7 @@ async function inTui(
           (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? '',
         ).join('\n');
       const dataListener = child.onData((data) => terminal.write(data));
+      const replyListener = forwardTerminalReplies(terminal, child);
       const exitListener = child.onExit((event) => {
         outcome = event;
         exit.resolve(event);
@@ -189,6 +191,7 @@ async function inTui(
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
         dataListener.dispose();
+        replyListener.dispose();
         exitListener.dispose();
         terminal.dispose();
       }
@@ -421,6 +424,72 @@ it(
         const seen = outcome();
         await waitForStdinRead(run.target.projectDir, 'discard\r');
         expect(seen).toBe('refused');
+        expect(screen()).toContain('Ready to apply');
+        expect(checkoutHasTotal(run)).toBe(false);
+      },
+      { SPLITBRIEF_DEBUG_KEYS: '1' },
+    );
+  },
+);
+
+/** Types `keys` one key per read: each key waits until the key log shows its own read. */
+async function typeKeyPerRead(run: Run, write: (keys: string) => void, keys: readonly string[]) {
+  for (let index = 0; index < keys.length; index++) {
+    write(keys[index] ?? '');
+    await waitForLastStdinReads(run.target.projectDir, keys.slice(0, index + 1));
+  }
+}
+
+// A letter that is the key of no action names no row, as a word does.
+it(
+  'keeps the Seat down halt open on n, o and ⏎ typed one key per read and says how to choose',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(
+      'seat-down',
+      async (run, { screen, write }) => {
+        await vi.waitFor(() => expect(implementerCalls(run)).toBe(1), PATIENCE);
+        unlinkSync(run.hold);
+        await expect.poll(screen, PATIENCE).toContain('Try again');
+        await expect.poll(screen, PATIENCE).toContain('⏎ confirm');
+        writeFileSync(run.hold, '');
+
+        await typeKeyPerRead(run, write, ['n', 'o', '\r']);
+        const outcome = () => {
+          if (screen().includes(UNREAD_WORDS_MESSAGE)) return 'refused';
+          const acted = implementerCalls(run) > 1 || savedRun(run).pendingRecovery === undefined;
+          return acted ? 'acted' : 'open';
+        };
+        await expect.poll(outcome, PATIENCE).not.toBe('open');
+        expect(outcome()).toBe('refused');
+        expect(savedRun(run).pendingRecovery?.reason).toBe('runner-usage-limit');
+        expect(implementerCalls(run)).toBe(1);
+      },
+      { SPLITBRIEF_DEBUG_KEYS: '1' },
+    );
+  },
+);
+
+// The rows of the result menu have no letter keys, so each typed letter names no row.
+it(
+  'keeps a ready run out of the checkout on discard and ⏎ typed one key per read and says how to choose',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(
+      'final-review',
+      async (run, { screen, write }) => {
+        await vi.waitFor(() => expect(callsMade(run)).toContain('final-review'), PATIENCE);
+        unlinkSync(run.hold);
+        await expect.poll(screen, PATIENCE).toContain('Ready to apply');
+        await expect.poll(screen, PATIENCE).toContain('▌ Apply');
+
+        await typeKeyPerRead(run, write, [...'discard', '\r']);
+        const outcome = () => {
+          if (screen().includes(UNREAD_WORDS_MESSAGE)) return 'refused';
+          return screen().includes('Applied') || checkoutHasTotal(run) ? 'applied' : 'open';
+        };
+        await expect.poll(outcome, PATIENCE).not.toBe('open');
+        expect(outcome()).toBe('refused');
         expect(screen()).toContain('Ready to apply');
         expect(checkoutHasTotal(run)).toBe(false);
       },

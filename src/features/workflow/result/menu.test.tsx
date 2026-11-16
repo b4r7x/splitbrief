@@ -473,6 +473,29 @@ describe('ResultMenu', () => {
     }
   });
 
+  // The rows of this menu have no letter keys, so each typed letter names no row.
+  it('takes no action on discard typed one key per read and ⏎, and applies on the ⏎ after it', async () => {
+    const menu = menuElement();
+    const ui = renderThroughFilteredStdin(menu.element);
+    try {
+      await ui.settled();
+      for (const letter of 'discard') {
+        ui.pressBytes(letter);
+        await ui.settled();
+      }
+      ui.pressBytes('\r');
+      await ui.settled();
+      expect(menu.onCommand).not.toHaveBeenCalled();
+      expect(feedbackStore.get().message).toBe(UNREAD_WORDS_MESSAGE);
+
+      ui.pressBytes('\r');
+      await ui.settled();
+      expect(menu.onCommand).toHaveBeenCalledExactlyOnceWith('/run accept');
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('takes no action on a bracketed paste of discard and ⏎, and says how to choose one', async () => {
     const menu = menuElement();
     const ui = renderThroughFilteredStdin(menu.element);

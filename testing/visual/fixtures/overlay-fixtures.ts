@@ -3200,9 +3200,10 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('workflow-stop-sheet-typed-words'),
     () => ({
       ...createStopSheetFixture(),
-      // The word changes no frame; the ⏎ behind it writes the feedback line.
+      // Each letter of the word is its own key and names no row, so it changes no frame; the ⏎
+      // behind them writes the feedback line.
       afterMount: async (write) => {
-        write('no');
+        for (const letter of 'no') write(letter);
         await write.press('\r');
       },
     }),

@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
-import { Box, useInput } from 'ink';
+import { Box } from 'ink';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -7,7 +7,6 @@ import { ListRow } from '../../../components/list-row/row.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { colorForTone } from '../../../core/theme/tone-color.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
-import { isItemIndexVisible } from '../../../components/pickers/scroll-window.js';
 import { slashHandoffPending } from '../slash-handoff.js';
 import { InlineMenuPanel } from '../inline-menu/panel.js';
 import { useInlineMenuKeys } from '../inline-menu/use-keys.js';
@@ -120,6 +119,7 @@ export function RecoveryMenu({
   const selectedIndex = useInlineMenuKeys({
     items: actions,
     keyOf: (item) => item.action,
+    letterOf: (item) => item.key,
     initialIndex: initialAction,
     focused,
     listRows: fit.listRows,
@@ -128,28 +128,6 @@ export function RecoveryMenu({
       if (!slashHandoffPending()) onFocusChange(false);
     },
   });
-
-  useInput(
-    (input, key) => {
-      if (slashHandoffPending()) return;
-      // A letter is the row's own key; one that matches no offered row does nothing.
-      if (input.length === 1 && !key.ctrl && !key.meta) {
-        const letter = input.toLowerCase();
-        const item = actions.find((entry) => recoveryActionKey(entry.action) === letter);
-        if (
-          item !== undefined &&
-          isItemIndexVisible({
-            items: actions,
-            selectedIndex,
-            itemIndex: actions.indexOf(item),
-            rowBudget: fit.listRows,
-          })
-        )
-          chooseAction(item);
-      }
-    },
-    { isActive: focused },
-  );
 
   // Tab hands the keys to the composer, where a letter is a typed letter, so the panel stops
   // advertising its keys until focus comes back and says what ⏎ there does instead.

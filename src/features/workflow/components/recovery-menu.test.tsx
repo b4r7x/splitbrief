@@ -6,7 +6,10 @@ import { stateTone } from '../../../core/theme/state-tone.js';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
-import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
+import {
+  renderThroughFilteredStdin,
+  type FilteredStdinHarnessDependencies,
+} from '#testing/helpers/filtered-stdin-harness.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -1642,7 +1645,11 @@ describe('a typed word and ⏎ through the input bridge', () => {
   // The rows are Try again, Skip and End run; the menu opens on End run.
   const END_RUN_FIRST = makeRecoveryIssue({ recommendedAction: 'end-run' });
 
-  async function answersOf(reads: ReadonlyArray<string | typeof FOCUS_BACK>) {
+  async function answersOf(
+    reads: ReadonlyArray<string | typeof FOCUS_BACK>,
+    dependencies: FilteredStdinHarnessDependencies = {},
+    boxRows = 14,
+  ) {
     const answers: string[] = [];
     let focus: (focused: boolean) => void = () => {};
     function Menu() {
@@ -1652,14 +1659,14 @@ describe('a typed word and ⏎ through the input bridge', () => {
         <RecoveryMenu
           issue={END_RUN_FIRST}
           width={80}
-          clampedBoxRows={14}
+          clampedBoxRows={boxRows}
           focused={focused}
           onFocusChange={setFocused}
           onResolve={(answer) => answers.push(answer)}
         />
       );
     }
-    const ui = renderThroughFilteredStdin(<Menu />);
+    const ui = renderThroughFilteredStdin(<Menu />, undefined, dependencies);
     try {
       await ui.settled();
       for (const read of reads) {
@@ -1710,6 +1717,54 @@ describe('a typed word and ⏎ through the input bridge', () => {
 
   it('takes no action on ⏎ after a word and shift+↓, which chooses no row', async () => {
     expect(await answersOf(['skip', SHIFT_DOWN, ENTER])).toEqual({
+      answers: [],
+      message: UNREAD_WORDS_MESSAGE,
+    });
+  });
+
+  it.each([
+    { name: 'n and o', reads: ['n', 'o', ENTER] },
+    { name: 'a digit', reads: ['1', ENTER] },
+  ])(
+    'takes no action on ⏎ after $name typed one key per read, which name no action, and says how to choose one',
+    async ({ reads }) => {
+      expect(await answersOf(reads)).toEqual({ answers: [], message: UNREAD_WORDS_MESSAGE });
+    },
+  );
+
+  it.each([
+    { name: 'a space', read: ' ' },
+    { name: 'a Ctrl+A key', read: '\u0001' },
+    { name: 'an Alt+n key', read: '\u001bn' },
+  ])('takes the highlighted action on ⏎ after $name, with no text', async ({ read }) => {
+    expect(await answersOf([read, ENTER])).toEqual({
+      answers: [recoveryActionKey('end-run')],
+      message: null,
+    });
+  });
+
+  it('skips on S', async () => {
+    expect(await answersOf(['S'])).toEqual({
+      answers: [recoveryActionKey('skip-current-task')],
+      message: null,
+    });
+  });
+
+  it('takes no action on ⏎ after the letter of an action out of view, and says how to choose one', async () => {
+    expect(await answersOf(['r', ENTER], {}, 4)).toEqual({
+      answers: [],
+      message: UNREAD_WORDS_MESSAGE,
+    });
+  });
+
+  // On a terminal that gave no word on bracketed paste, a row letter and ⏎ of one read are the
+  // same bytes as a pasted letter and its line break.
+  it('takes no action on the letter of an action and ⏎ of one read on a terminal that gave no word, and says how to choose one on the next ⏎', async () => {
+    expect(await answersOf([`s${ENTER}`], { terminalAnswers: false })).toEqual({
+      answers: [],
+      message: null,
+    });
+    expect(await answersOf([`s${ENTER}`, ENTER], { terminalAnswers: false })).toEqual({
       answers: [],
       message: UNREAD_WORDS_MESSAGE,
     });

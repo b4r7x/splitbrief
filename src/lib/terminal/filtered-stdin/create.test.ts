@@ -48,6 +48,9 @@ async function readFiltered(
   });
 }
 
+// The reply of a terminal that has bracketed paste on, to the query that the bridge sends.
+const REPLY_YES = '\x1b[?2004;1$y';
+
 // Ink reads the filtered stream on each `readable` event and parses one read as one key unless
 // an ESC starts the next one, so each read here is one key as Ink sees it. Each chunk is one
 // terminal read.
@@ -73,6 +76,7 @@ describe('createFilteredStdin input filtering', () => {
   let written: string[];
 
   beforeEach(() => {
+    vi.stubEnv('TERM_PROGRAM', undefined);
     originalWrite = process.stdout.write.bind(process.stdout);
     written = [];
     process.stdout.write = ((chunk: string) => {
@@ -83,6 +87,7 @@ describe('createFilteredStdin input filtering', () => {
 
   afterEach(() => {
     process.stdout.write = originalWrite;
+    vi.unstubAllEnvs();
   });
 
   it('reassembles a wheel event when the escape sequence is split across two chunks', async () => {
@@ -608,6 +613,7 @@ describe('createFilteredStdin input filtering', () => {
       terminalSequences.enableButtonEventMouse,
       terminalSequences.enableSgrMouse,
       terminalSequences.enableBracketedPaste,
+      terminalSequences.queryBracketedPaste,
       terminalSequences.disableMouseTracking,
       terminalSequences.disableButtonEventMouse,
       terminalSequences.disableAnyMotionMouse,
@@ -626,6 +632,7 @@ describe('createFilteredStdin input filtering', () => {
       terminalSequences.enableAnyMotionMouse,
       terminalSequences.enableSgrMouse,
       terminalSequences.enableBracketedPaste,
+      terminalSequences.queryBracketedPaste,
       terminalSequences.disableMouseTracking,
       terminalSequences.disableButtonEventMouse,
       terminalSequences.disableAnyMotionMouse,
@@ -652,6 +659,7 @@ describe('createFilteredStdin input filtering', () => {
     expect(events).toEqual([]);
     expect(written).toEqual([
       terminalSequences.enableBracketedPaste,
+      terminalSequences.queryBracketedPaste,
       terminalSequences.disableBracketedPaste,
     ]);
   });
@@ -749,7 +757,7 @@ describe('createFilteredStdin: one key per backspace byte', () => {
   });
 });
 
-describe('createFilteredStdin: one key per Enter of a typed read', () => {
+describe('createFilteredStdin: one key per Enter of a typed read after the terminal said that it brackets a paste', () => {
   let originalWrite: typeof process.stdout.write;
 
   beforeEach(() => {
@@ -778,11 +786,11 @@ describe('createFilteredStdin: one key per Enter of a typed read', () => {
     ['41 characters of 81 bytes with Enter', [`${z40}\r`], [z40, '\r']],
     ['text and Enter in one read, then text', ['line 1\r', 'line 2'], ['line 1', '\r', 'line 2']],
   ])('reads %s as one key per Enter', (_label, chunks, keys) => {
-    expect(readKeys(chunks)).toEqual(keys);
+    expect(readKeys([REPLY_YES, ...chunks])).toEqual(keys);
   });
 
   it('reads text and Enter as two keys with the options of an inline mount', () => {
-    expect(readKeys(['ok\r'], { mouse: false })).toEqual(['ok', '\r']);
+    expect(readKeys([REPLY_YES, 'ok\r'], { mouse: false })).toEqual(['ok', '\r']);
   });
 
   it.each([
@@ -795,19 +803,19 @@ describe('createFilteredStdin: one key per Enter of a typed read', () => {
   ])(
     'keeps the Enter of %s in its text, as a paste the terminal did not bracket',
     (_label, chunks, keys) => {
-      expect(readKeys(chunks)).toEqual(keys);
+      expect(readKeys([REPLY_YES, ...chunks])).toEqual(keys);
     },
   );
 
   it('keeps Alt+Enter as one key', () => {
-    expect(readKeys(['\x1b\r'])).toEqual(['\x1b\r']);
+    expect(readKeys([REPLY_YES, '\x1b\r'])).toEqual(['\x1b\r']);
   });
 
   it.each([
     ['a line feed', 'abc\ndef'],
     ['two Ctrl+C bytes after text', 'fix\x03\x03'],
   ])('keeps %s in one read', (_label, chunk) => {
-    expect(readKeys([chunk])).toEqual([chunk]);
+    expect(readKeys([REPLY_YES, chunk])).toEqual([chunk]);
   });
 
   it('gives a bracketed paste of three lines on the options of an inline mount as one paste and no key', () => {
@@ -825,6 +833,100 @@ describe('createFilteredStdin: one key per Enter of a typed read', () => {
     filtered.disable();
 
     expect(inputs).toEqual(['paste "line one\\nline two\\nline three"']);
+  });
+});
+
+// On a terminal that does not bracket a paste, a pasted text and its line break come as the same
+// bytes as typed text and Enter, so the Enter of a typed read waits for the terminal's word.
+describe("createFilteredStdin: the Enter of a typed read waits for the terminal's word", () => {
+  let originalWrite: typeof process.stdout.write;
+  let written: string[];
+
+  beforeEach(() => {
+    originalWrite = process.stdout.write.bind(process.stdout);
+    written = [];
+    process.stdout.write = ((chunk: string) => {
+      written.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalWrite;
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ['text and Enter', 'ok\r'],
+    ['a typed answer and Enter', 'fix the login\r'],
+    ['Enter and text', '\rok'],
+    ['two Enters', '\r\r'],
+    ['Ctrl+D and Enter', '\x04\r'],
+    ['each Enter of a short read', 'a\rb\rc'],
+  ])('keeps %s in one key while the terminal gave no word', (_label, chunk) => {
+    expect(readKeys([chunk])).toEqual([chunk]);
+  });
+
+  it.each([
+    ['in its own read', [REPLY_YES, 'ok\r']],
+    ['in the read of the keys', [`${REPLY_YES}ok\r`]],
+    ['as permanently set', ['\x1b[?2004;3$y', 'ok\r']],
+  ])(
+    'reads text and Enter as two keys after the terminal says %s that it brackets a paste, and gives the reply to no one',
+    (_label, chunks) => {
+      expect(readKeys(chunks)).toEqual(['ok', '\r']);
+    },
+  );
+
+  it('keeps the Enter of the keys that came before the reply in their text', () => {
+    expect(readKeys(['ok\r', REPLY_YES, 'go\r'])).toEqual(['ok\r', 'go', '\r']);
+  });
+
+  it.each([
+    ['not known', '0'],
+    ['reset', '2'],
+    ['permanently reset', '4'],
+  ])(
+    'keeps text and Enter in one key after the terminal says that the mode is %s',
+    (_label, state) => {
+      expect(readKeys([`\x1b[?2004;${state}$y`, 'ok\r'])).toEqual(['ok\r']);
+    },
+  );
+
+  it('keeps text and Enter in one key after a reset reply follows a yes', () => {
+    expect(readKeys([REPLY_YES, '\x1b[?2004;2$y', 'ok\r'])).toEqual(['ok\r']);
+  });
+
+  it('reads text and Enter as two keys after a bracketed paste came', () => {
+    expect(readKeys(['\x1b[200~x\x1b[201~', 'ok\r'])).toEqual(['x', 'ok', '\r']);
+  });
+
+  it('takes the reply about another mode as no word and gives it to no one', () => {
+    expect(readKeys(['\x1b[?2026;1$y', 'ok\r'])).toEqual(['ok\r']);
+  });
+
+  it('asks the terminal once, right after it turns bracketed paste on', () => {
+    vi.stubEnv('TERM_PROGRAM', undefined);
+    const filtered = createFilteredStdin(makeFakeStdin(), { activate: false });
+    filtered.activate();
+    filtered.activate();
+
+    expect(written).toEqual([
+      terminalSequences.enableButtonEventMouse,
+      terminalSequences.enableSgrMouse,
+      terminalSequences.enableBracketedPaste,
+      '\x1b[?2004$p',
+    ]);
+    filtered.disable();
+  });
+
+  it('does not ask Terminal.app', () => {
+    vi.stubEnv('TERM_PROGRAM', 'Apple_Terminal');
+    const filtered = createFilteredStdin(makeFakeStdin());
+    filtered.disable();
+
+    expect(written).toContain(terminalSequences.enableBracketedPaste);
+    expect(written).not.toContain('\x1b[?2004$p');
   });
 });
 

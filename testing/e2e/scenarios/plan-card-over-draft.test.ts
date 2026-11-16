@@ -14,7 +14,9 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { waitForStdinRead } from '../helpers/key-log.js';
 import { createStopContinueFixture, readState } from '../helpers/stop-continue-fixture.js';
+import { forwardTerminalReplies } from '../helpers/terminal-replies.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 const PATIENCE = { timeout: 60_000 };
@@ -127,11 +129,23 @@ function savedRun(run: Run) {
   return readState(run.target, sessionId);
 }
 
-async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>): Promise<void> {
+/** With `pasteWord: false` the terminal gives no word on bracketed paste. */
+interface TerminalOptions {
+  readonly pasteWord?: boolean;
+  readonly env?: Readonly<Record<string, string>>;
+}
+
+async function inTui(
+  run: Run,
+  home: string,
+  drive: (tui: Tui) => Promise<void>,
+  options: TerminalOptions = {},
+): Promise<void> {
   const { target, offlinePath } = run;
   const env: Readonly<Record<string, string>> = {
     ...safeChildEnvironment(home),
     XDG_STATE_HOME: target.stateHome,
+    ...options.env,
   };
   await trustDeclaredRunners({
     projectDir: target.projectDir,
@@ -174,6 +188,7 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
           (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? '',
         ).join('\n');
       const dataListener = child.onData((data) => terminal.write(data));
+      const replyListener = forwardTerminalReplies(terminal, child, options.pasteWord);
       const exitListener = child.onExit((event) => {
         outcome = event;
         exit.resolve(event);
@@ -184,6 +199,7 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
         dataListener.dispose();
+        replyListener.dispose();
         exitListener.dispose();
         terminal.dispose();
       }
@@ -202,17 +218,25 @@ afterEach(() => {
 });
 
 // The run starts and the first planner call holds, so the composer is live while the planner runs.
-async function scenario(drive: (run: Run, tui: Tui) => Promise<void>) {
+async function scenario(
+  drive: (run: Run, tui: Tui) => Promise<void>,
+  options: TerminalOptions = {},
+) {
   const run = setup();
   try {
-    await inTui(run, trustHome.home, async (tui) => {
-      await expect.poll(tui.screen, PATIENCE).toContain('Describe your feature');
-      tui.write('add a total helper');
-      await expect.poll(tui.screen, PATIENCE).toContain('› add a total helper');
-      tui.write(PTY_SUBMIT_INPUT);
-      await vi.waitFor(() => expect(callsMade(run)).toContain('plan 1'), PATIENCE);
-      await drive(run, tui);
-    });
+    await inTui(
+      run,
+      trustHome.home,
+      async (tui) => {
+        await expect.poll(tui.screen, PATIENCE).toContain('Describe your feature');
+        tui.write('add a total helper');
+        await expect.poll(tui.screen, PATIENCE).toContain('› add a total helper');
+        tui.write(PTY_SUBMIT_INPUT);
+        await vi.waitFor(() => expect(callsMade(run)).toContain('plan 1'), PATIENCE);
+        await drive(run, tui);
+      },
+      options,
+    );
   } finally {
     cleanupTempDir(run.target.tmpDir);
   }
@@ -306,6 +330,37 @@ it(
       await vi.waitFor(() => expect(callsMade(run)).toContain('implement'), PATIENCE);
       expect(callsMade(run)).not.toContain('plan 2');
     });
+  },
+);
+
+// A terminal that gives no word on bracketed paste may send a paste as typed keys, so a pasted
+// `ok` and its line break are the same bytes as `ok` and ⏎ of one read there.
+it(
+  'keeps the plan card waiting on ok and ⏎ of one read on a terminal that gives no word on bracketed paste, and approves on the next ⏎',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(
+      async (run, { screen, write }) => {
+        unlinkSync(run.hold);
+        await expect.poll(screen, PATIENCE).toContain(APPROVE_ACTIVE);
+
+        write('ok\r');
+        await waitForStdinRead(run.target.projectDir, 'ok\r');
+        await vi.waitFor(() => {
+          const rows = screen().split('\n');
+          const first = rows.findIndex((row) => row.includes('› ok'));
+          expect(first, screen()).toBeGreaterThanOrEqual(0);
+          expect(rows[first + 1]?.replace(/[│\s]/g, ''), screen()).toBe('');
+        }, PATIENCE);
+        expect(screen()).toContain(APPROVE_ROW);
+        expect(callsMade(run)).toEqual(['plan 1']);
+
+        write('\r');
+        await vi.waitFor(() => expect(callsMade(run)).toContain('implement'), PATIENCE);
+        expect(callsMade(run)).not.toContain('plan 2');
+      },
+      { pasteWord: false, env: { SPLITBRIEF_DEBUG_KEYS: '1' } },
+    );
   },
 );
 

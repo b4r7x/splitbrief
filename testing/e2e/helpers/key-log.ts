@@ -29,3 +29,11 @@ export function waitForStdinRead(projectDir: string, bytes: string): Promise<voi
     timeout: 10_000,
   });
 }
+
+/** Waits until the last stdin reads of the CLI in `projectDir` are `reads`, in order, one read each. */
+export function waitForLastStdinReads(projectDir: string, reads: readonly string[]): Promise<void> {
+  return vi.waitFor(
+    () => expect(stdinReads(projectDir).slice(-reads.length)).toEqual(reads.map(rawReadLine)),
+    { timeout: 10_000 },
+  );
+}

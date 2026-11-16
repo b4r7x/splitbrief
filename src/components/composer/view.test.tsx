@@ -3102,6 +3102,22 @@ describe('Composer Enter in the same read as an edit', () => {
     expect(composerLiveStore.get().text).toBe('');
   });
 
+  it('keeps text and Enter of one read as a draft with its line break on a terminal that gave no word, and sends the text on the next Enter', async () => {
+    const submissions: string[] = [];
+    const ui = mountThroughFilteredStdin(composer('normal', submissions), undefined, {
+      terminalAnswers: false,
+    });
+    await flushEffects();
+    ui.pressBytes('ok\r');
+    await ui.settled();
+    expect(submissions).toEqual([]);
+    expect(composerLiveStore.get().text).toBe('ok\n');
+
+    ui.pressBytes('\r');
+    await ui.settled();
+    expect(submissions).toEqual(['ok']);
+  });
+
   it('keeps a read of 64 characters or more as a draft with its line break', async () => {
     const submissions: string[] = [];
     const ui = mountThroughFilteredStdin(composer('normal', submissions));

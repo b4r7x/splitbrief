@@ -13,6 +13,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { waitForStdinRead } from '../helpers/key-log.js';
+import { forwardTerminalReplies } from '../helpers/terminal-replies.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 
@@ -31,14 +32,22 @@ interface Home {
   readonly box: () => string;
   /** Waits until the key log shows that the CLI got `bytes` in one stdin read. */
   readonly waitForOneRead: (bytes: string) => Promise<void>;
+  /** Sends `signal` to the CLI from outside, as `kill` does. */
+  readonly signal: (signal: 'SIGTSTP' | 'SIGCONT') => void;
+  /** The rows of the screen. */
+  readonly rows: () => string[];
 }
 
-/** Opens SPLITBRIEF home in a PTY, runs `drive`, then quits with Ctrl+C twice. */
+/**
+ * Opens SPLITBRIEF home in a PTY, runs `drive`, then quits with Ctrl+C twice. With
+ * `pasteWord: false` the terminal gives no word on bracketed paste.
+ */
 async function withHome(
   label: string,
   fullscreen: boolean,
   drive: (home: Home) => Promise<void>,
   skip: (reason: string) => void,
+  pasteWord = true,
 ): Promise<void> {
   await withTempDir(label, async (dir) => {
     const home = join(dir, 'home');
@@ -123,6 +132,7 @@ async function withHome(
             .map((row) => row.replace(/[│]/g, '').trim())
             .join(' / ');
         const dataListener = child.onData((data) => terminal.write(data));
+        const replyListener = forwardTerminalReplies(terminal, child, pasteWord);
         const exitListener = child.onExit((event) => {
           didExit = true;
           exited.resolve(event);
@@ -140,6 +150,8 @@ async function withHome(
             screen,
             box,
             waitForOneRead: (bytes) => waitForStdinRead(projectDir, bytes),
+            signal: (signal) => process.kill(child.pid, signal),
+            rows: () => screen().split('\n'),
           });
 
           child.write('\x03');
@@ -152,6 +164,7 @@ async function withHome(
             if (!didExit) await terminatePtyProcessGroup(child, exited.promise);
           } finally {
             dataListener.dispose();
+            replyListener.dispose();
             exitListener.dispose();
             terminal.dispose();
           }
@@ -300,6 +313,67 @@ it.for([true, false])(
         await vi.waitFor(() => expect(screen()).not.toContain(PREPARATION_BLOCKED), {
           timeout: 10_000,
         });
+      },
+      (reason) => context.skip(reason),
+    );
+  },
+);
+
+// A terminal that gives no word on bracketed paste may send a paste as typed keys, so a pasted
+// line break and a typed Enter of one read are the same bytes there.
+it.for([true, false])(
+  'keeps ok and ⏎ of one read as a draft of two rows on a terminal that gives no word on bracketed paste, and sends it on the next ⏎, fullscreen=%s',
+  async (fullscreen, context) => {
+    await withHome(
+      'composer-no-word-one-read',
+      fullscreen,
+      async ({ write, screen, rows, pasteMode, waitForOneRead }) => {
+        await vi.waitFor(() => expect(pasteMode()).toBe(true), { timeout: 10_000 });
+        write('ok\r');
+        await waitForOneRead('ok\r');
+        await vi.waitFor(
+          () => {
+            const all = rows();
+            const first = all.findIndex((row) => row.includes('› ok'));
+            expect(first, screen()).toBeGreaterThanOrEqual(0);
+            expect(all[first + 1]?.replace(/[│\s]/g, ''), screen()).toBe('');
+          },
+          { timeout: 10_000 },
+        );
+        expect(screen()).not.toContain(PREPARATION_BLOCKED);
+
+        write('\r');
+        await shows(screen, PREPARATION_BLOCKED);
+        write('\x1b');
+        await vi.waitFor(() => expect(screen()).not.toContain(PREPARATION_BLOCKED), {
+          timeout: 10_000,
+        });
+      },
+      (reason) => context.skip(reason),
+      false,
+    );
+  },
+);
+
+// A stop from outside gives the terminal back to the shell, and `fg` sends the SIGCONT that takes
+// it again.
+it.for([true, false])(
+  'reads keys again with bracketed paste on after an outside stop and fg, fullscreen=%s',
+  async (fullscreen, context) => {
+    await withHome(
+      'composer-stop-fg',
+      fullscreen,
+      async ({ write, box, pasteMode, signal }) => {
+        await vi.waitFor(() => expect(pasteMode()).toBe(true), { timeout: 10_000 });
+        write('before');
+        await vi.waitFor(() => expect(box()).toBe('› before'), { timeout: 10_000 });
+
+        signal('SIGTSTP');
+        await vi.waitFor(() => expect(pasteMode()).toBe(false), { timeout: 10_000 });
+        signal('SIGCONT');
+        await vi.waitFor(() => expect(pasteMode()).toBe(true), { timeout: 10_000 });
+        write(' after');
+        await vi.waitFor(() => expect(box()).toBe('› before after'), { timeout: 10_000 });
       },
       (reason) => context.skip(reason),
     );

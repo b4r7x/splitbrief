@@ -69,7 +69,15 @@ export interface FilteredStdinHarness {
 
 export interface FilteredStdinHarnessDependencies {
   readonly render?: typeof render;
+  /**
+   * False models a terminal that gives no answer to the bracketed paste query of the bridge. By
+   * default the terminal answers that it brackets a paste, as tmux and xterm.js do.
+   */
+  readonly terminalAnswers?: boolean;
 }
+
+// The reply of a terminal that has bracketed paste on, to the query that the bridge sends.
+const BRACKETED_PASTE_REPLY = '\u001b[?2004;1$y';
 
 // Runs `fn` with process.stdout.write muted, so the mouse/paste enable/disable
 // sequences createFilteredStdin / filtered.disable() write to the real terminal do
@@ -97,6 +105,7 @@ export function renderThroughFilteredStdin(
   const { source, filtered, instance } = withMutedStdout(() => {
     const source = makeSourceStdin();
     const filtered = createFilteredStdin(source);
+    if (dependencies.terminalAnswers !== false) source.write(Buffer.from(BRACKETED_PASTE_REPLY));
     try {
       setActiveFilteredStdin(filtered);
       // The production turns, counted: the bridge asks one turn for each input it gives on, and

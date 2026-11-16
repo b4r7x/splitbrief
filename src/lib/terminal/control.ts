@@ -14,6 +14,7 @@ export const terminalSequences = {
   disableSgrMouse: '\u001b[?1006l',
   enableBracketedPaste: '\u001b[?2004h',
   disableBracketedPaste: '\u001b[?2004l',
+  queryBracketedPaste: '\u001b[?2004$p',
   popKittyKeyboard: '\u001b[<u',
   eraseDown: '\u001b[J',
 } as const;

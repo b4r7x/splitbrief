@@ -4,7 +4,6 @@ import {
   createCrashListener,
   createResumeHandler,
   createSuspendHandler,
-  createSuspendListenerToggle,
   createTerminationHandler,
   createTerminationSignalListener,
   createTuiCleanup,
@@ -372,48 +371,6 @@ describe('createResumeHandler', () => {
     handle();
 
     expect(calls).toEqual(['restore']);
-  });
-});
-
-describe('createSuspendListenerToggle', () => {
-  it('balances a normal suspend/resume cycle', () => {
-    const calls: string[] = [];
-    const toggle = createSuspendListenerToggle({
-      install: () => calls.push('install'),
-      uninstall: () => calls.push('uninstall'),
-    });
-
-    toggle.install();
-    toggle.uninstall();
-    toggle.install();
-
-    expect(calls).toEqual(['install', 'uninstall', 'install']);
-  });
-
-  it('ignores a spurious resume so no duplicate listener is stacked', () => {
-    const calls: string[] = [];
-    const toggle = createSuspendListenerToggle({
-      install: () => calls.push('install'),
-      uninstall: () => calls.push('uninstall'),
-    });
-
-    toggle.install();
-    toggle.install();
-    toggle.uninstall();
-
-    expect(calls).toEqual(['install', 'uninstall']);
-  });
-
-  it('ignores uninstall when nothing is installed', () => {
-    const calls: string[] = [];
-    const toggle = createSuspendListenerToggle({
-      install: () => calls.push('install'),
-      uninstall: () => calls.push('uninstall'),
-    });
-
-    toggle.uninstall();
-
-    expect(calls).toEqual([]);
   });
 });
 

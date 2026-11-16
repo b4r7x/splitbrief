@@ -200,30 +200,6 @@ export function createResumeHandler(deps: { restore: () => void }): () => void {
   };
 }
 
-// Tracks whether the SIGTSTP listener is currently registered so install/uninstall stays balanced.
-// A suspend removes the listener before re-raising the default stop disposition; the matching resume
-// re-adds it. A spurious SIGCONT (an external `kill -CONT` on a process that never stopped) must not
-// stack a second listener that a later suspend can no longer match, so re-install is a no-op unless
-// a prior suspend actually removed it.
-export function createSuspendListenerToggle(deps: { install: () => void; uninstall: () => void }): {
-  install: () => void;
-  uninstall: () => void;
-} {
-  let installed = false;
-  return {
-    install: () => {
-      if (installed) return;
-      installed = true;
-      deps.install();
-    },
-    uninstall: () => {
-      if (!installed) return;
-      installed = false;
-      deps.uninstall();
-    },
-  };
-}
-
 function createSettledProcessListener<T>(deps: {
   handle: (value: T) => Promise<void>;
   reportFailure: (value: T, error: unknown) => void;

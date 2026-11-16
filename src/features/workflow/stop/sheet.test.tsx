@@ -322,6 +322,30 @@ describe('StopSheet', () => {
     }
   });
 
+  // The rows of this menu have no letter keys, so each typed letter names no row.
+  it('keeps the sheet open on no typed one key per read and ⏎, stops nothing, and says how to choose', async () => {
+    const abort = vi.fn();
+    createAbortHandlerScope()(abort);
+    overlayStore.open('stop-sheet');
+    const ui = renderThroughFilteredStdin(
+      <StopSheet rows={stopSheetRows(RUNNING_BRIEF)} footer={null} />,
+    );
+    try {
+      await ui.settled();
+      for (const read of ['n', 'o', '\r']) {
+        ui.pressBytes(read);
+        await ui.settled();
+      }
+
+      expect(overlayStore.get().active).toBe('stop-sheet');
+      expect(abort).not.toHaveBeenCalled();
+      expect(stopStore.get().intent).toBe('none');
+      expect(feedbackStore.get().message).toBe(UNREAD_WORDS_MESSAGE);
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('keeps the sheet open on a bracketed paste of no and ⏎, stops nothing, and says how to choose', async () => {
     const abort = vi.fn();
     createAbortHandlerScope()(abort);

@@ -1317,11 +1317,11 @@ If the clipboard offers both text and an image, [Zed pastes the text](https://gi
 
 Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain readable attachments. See [Image attachments](./FEATURES.md#image-attachments) for paste, drop, and removal behavior.
 
-### Symptom: a paste sends the text before its first line break
+### Symptom: a pasted text or a line typed with Enter stays in the composer with a line break
 
-**Likely cause:** Your terminal does not mark the paste as a paste. SPLITBRIEF turns on bracketed paste in fullscreen and with `--no-fullscreen`. A terminal that does not do bracketed paste, or has it turned off, sends a paste as typed keys. In a paste of fewer than 64 characters, each line break then acts as Enter. The composer sends the text before the line break, and on the plan card a pasted `ok` and a line break approves the plan. A longer paste can also act this way at a line break, because the terminal can send it in short parts.
+**Likely cause:** Your terminal does not mark a paste as a paste. A terminal that does not do bracketed paste, or has it turned off, sends a paste as typed keys, and a line break in the paste is the same key as Enter. At start, SPLITBRIEF asks the terminal if it marks a paste. Until the terminal says yes, or until a marked paste comes, an Enter that comes together with other keys stays a line break. So a pasted text stays in the composer, and a pasted `ok` and a line break do not approve the plan. Text and its Enter can also stay there when the terminal sends them together, for example over a slow connection or from a tool that types for you. On a menu or a confirm panel, a letter and Enter that come together choose nothing. SPLITBRIEF does not ask Terminal.app; there, the first marked paste of the session gives the answer.
 
-**Fix:** Turn on bracketed paste in the settings of your terminal, or use a terminal that does bracketed paste. Then a paste stays text in the composer, and a paste of 4 or more lines shows as one `[paste #n +N lines]` item.
+**Fix:** Press Enter again to send the text. The line break at its end is not sent. On a menu or a panel, choose the row with Up/Down and Enter. For an Enter that always acts at once, turn on bracketed paste in the settings of your terminal, or use a terminal that does bracketed paste. Then a paste stays text in the composer, and a paste of 4 or more lines shows as one `[paste #n +N lines]` item. In tmux, paste with the tmux paste key (`prefix ]`). A key binding that runs `paste-buffer` without `-p` sends the paste as typed keys, and the paste then sends at its first line break.
 
 **See also:** [Input footer](./FEATURES.md#input-footer).
 

@@ -7,6 +7,10 @@ const CSI = 0x5b;
 const SS3 = 0x4f;
 const CSI_U_FINAL = 0x75;
 
+// A DECRPM reply after its CSI: `? mode ; state $ y`. State 1 is set and 3 is permanently set.
+const MODE_REPORT = /^\?(\d+);(\d)\$y$/;
+const BRACKETED_PASTE_MODE = '2004';
+
 const HELD_PREFIX_FLUSH_MS = 35;
 const BARE_ESCAPE_PREFIX_FLUSH_MS = 50;
 
@@ -123,6 +127,14 @@ export function readEscape(
     source.readUInt8(csiLength - 1) === 0x63
   ) {
     return { kind: 'skip', length: csiLength };
+  }
+  if (typeof csiLength === 'number') {
+    const report = MODE_REPORT.exec(source.toString('latin1', 2, csiLength));
+    if (report !== null) {
+      if (report[1] !== BRACKETED_PASTE_MODE) return { kind: 'skip', length: csiLength };
+      const brackets = report[2] === '1' || report[2] === '3';
+      return { kind: 'paste-mode', length: csiLength, brackets };
+    }
   }
 
   if (mouseEnabled) {

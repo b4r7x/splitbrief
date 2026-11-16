@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { waitPastGrace } from '#testing/helpers/typeahead-grace.js';
-import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
+import {
+  renderThroughFilteredStdin,
+  type FilteredStdinHarnessDependencies,
+} from '#testing/helpers/filtered-stdin-harness.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { listRowLead } from '../../../../components/list-row/lead.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -739,8 +742,9 @@ describe('text and ⏎ on the confirm panel through the input bridge', () => {
   async function answerOf(
     actionClass: TieredApprovalRequest['actionClass'],
     reads: readonly string[],
+    dependencies: FilteredStdinHarnessDependencies = {},
   ): Promise<TieredApprovalResponse | 'nudge'> {
-    const ui = renderThroughFilteredStdin(<ApprovalPrompt />);
+    const ui = renderThroughFilteredStdin(<ApprovalPrompt />, undefined, dependencies);
     let answer: TieredApprovalResponse | undefined;
     void openApprovalPrompt(makeConfirmRequest('package.json', actionClass)).then((value) => {
       answer = value;
@@ -792,4 +796,34 @@ describe('text and ⏎ on the confirm panel through the input bridge', () => {
   it('denies on a word and ⏎ in one read once ↓ chose Deny', async () => {
     expect(await answerOf('runner_trust', [DOWN, `no${ENTER}`])).toEqual(DENIED);
   });
+
+  // On a terminal that gave no word on bracketed paste, a row letter and ⏎ of one read are the
+  // same bytes as a pasted letter and its line break.
+  it.each(['y', 'n'])(
+    'answers nothing on %s and ⏎ of one read on a terminal that gave no word, and shows the nudge on the next ⏎',
+    async (letter) => {
+      const ui = renderThroughFilteredStdin(<ApprovalPrompt />, undefined, {
+        terminalAnswers: false,
+      });
+      let answer: TieredApprovalResponse | undefined;
+      void openApprovalPrompt(makeConfirmRequest('package.json', 'package_change')).then(
+        (value) => {
+          answer = value;
+        },
+      );
+      try {
+        await waitPastGrace(ui, 'package.json');
+        ui.pressBytes(`${letter}${ENTER}`);
+        await ui.settled();
+        await tick();
+        expect(answer).toBeUndefined();
+        expect(stripColor(ui.lastFrame())).not.toContain(confirmNudge('package_change'));
+      } finally {
+        ui.unmount();
+      }
+      expect(
+        await answerOf('package_change', [`${letter}${ENTER}`, ENTER], { terminalAnswers: false }),
+      ).toBe('nudge');
+    },
+  );
 });

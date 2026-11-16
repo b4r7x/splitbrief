@@ -21,11 +21,28 @@ describe('filtered stdin terminal replies', () => {
     ['an ST-terminated background reply', '\u001b]11;rgb:2424/2727/3a3a\u001b\\'],
     ['a BEL-terminated background reply', '\u001b]11;rgb:2424/2727/3a3a\u0007'],
     ['a device-attributes reply', '\u001b[?62;22c'],
+    ['a mode reply about another mode', '\u001b[?2026;2$y'],
   ])('skips %s whole', (_label, reply) => {
     const source = Buffer.from(reply);
 
     expect(readEscape(source, false, true)).toEqual({ kind: 'skip', length: source.length });
     expect(readEscape(source, false, false)).toEqual({ kind: 'skip', length: source.length });
+  });
+
+  it.each([
+    ['set', '1', true],
+    ['permanently set', '3', true],
+    ['not known', '0', false],
+    ['reset', '2', false],
+    ['permanently reset', '4', false],
+  ])('reads the reply that bracketed paste is %s', (_label, state, brackets) => {
+    const source = Buffer.from(`\u001b[?2004;${state}$y`);
+
+    expect(readEscape(source, false, true)).toEqual({
+      kind: 'paste-mode',
+      length: source.length,
+      brackets,
+    });
   });
 
   it('holds a background reply that has not finished arriving', () => {

@@ -35,6 +35,7 @@ export type EscapeDecision =
   | { kind: 'mouse'; length: number; event: MouseEvent | undefined }
   | { kind: 'skip'; length: number }
   | { kind: 'paste-newline'; length: number }
+  | { kind: 'paste-mode'; length: number; brackets: boolean }
   | { kind: 'text'; length: number };
 
 export interface PasteState {
@@ -78,6 +79,8 @@ export interface FilterState {
   mouseListeners: MouseListener[];
   held: HeldPrefix;
   paste: PasteState;
+  /** The terminal said that it brackets a paste, so a read without brackets is typed keys. */
+  bracketsPaste: boolean;
   active: boolean;
   disabled: boolean;
   queue: InputEntry[];

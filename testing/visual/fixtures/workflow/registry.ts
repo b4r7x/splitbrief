@@ -419,16 +419,17 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (projection.scenarioId === 'workflow-ready-slash-command') {
     return () => ({ ...base(), afterMount: (write) => write.press('/settings') });
   }
-  // The word changes no frame; the ⏎ behind it writes the feedback line.
+  // Each letter of the word is its own key and names no row, so it changes no frame; the ⏎ behind
+  // them writes the feedback line.
   if (
     projection.scenarioId === 'workflow-recovery-typed-words' ||
     projection.scenarioId === 'workflow-ready-typed-words'
   ) {
-    const word = projection.scenarioId === 'workflow-ready-typed-words' ? 'discard' : 'skip';
+    const word = projection.scenarioId === 'workflow-ready-typed-words' ? 'discard' : 'no';
     return () => ({
       ...base(),
       afterMount: async (write) => {
-        write(word);
+        for (const letter of word) write(letter);
         await write.press('\r');
       },
     });

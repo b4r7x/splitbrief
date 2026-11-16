@@ -1,6 +1,6 @@
 import { PassThrough } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
-import { setTerminalInputModes } from '../control.js';
+import { setTerminalInputModes, terminalSequences, writeTerminalSequence } from '../control.js';
 import { drain, emitText } from './deliver.js';
 import type {
   FilterState,
@@ -69,13 +69,14 @@ function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.Read
 // Ink names DEL and the kitty codepoint 127 `delete`, the name of the forward Delete key, so the
 // Backspace key is written as BS and codepoint 8, which Ink names `backspace`. Ink names Enter only
 // when it stands alone, so each Enter of a typed read is written as its own key, and CR LF is one
-// Enter.
+// Enter. On a terminal that does not bracket a paste, a pasted line break and a typed Enter are the
+// same bytes, so the Enter of a typed read waits for the terminal's word that it brackets a paste.
 function writeKeyBytes(state: FilterState, bytes: Buffer, typed: boolean): void {
   if (bytes.length === 0) return;
   const text = state.decoder.write(bytes);
   const keys = state.options?.filterInput ? state.options.filterInput(text) : text;
   for (const piece of keys.split(BACKSPACE_KEY)) {
-    for (const key of typed ? piece.split(ENTER_KEY) : [piece]) {
+    for (const key of typed && state.bracketsPaste ? piece.split(ENTER_KEY) : [piece]) {
       if (key.length === 0) continue;
       const named = key.replace(DEL_KEY, '$1\b').replace(KITTY_BACKSPACE, '\x1b[8$1');
       state.queue.push({ kind: 'key', text: named });
@@ -136,6 +137,7 @@ function processBytes(state: FilterState, source: Buffer, typed: boolean): void 
         state.held.bytes = Buffer.from(tail);
         return;
       case 'paste-start':
+        state.bracketsPaste = true;
         startPaste(state.paste);
         cursor += decision.length;
         break;
@@ -152,6 +154,10 @@ function processBytes(state: FilterState, source: Buffer, typed: boolean): void 
         break;
       case 'paste-newline':
         appendPasteNewline(state.paste);
+        cursor += decision.length;
+        break;
+      case 'paste-mode':
+        state.bracketsPaste = decision.brackets;
         cursor += decision.length;
         break;
       case 'text':
@@ -211,6 +217,7 @@ export function createFilteredStdin(
     mouseListeners: [],
     held: { bytes: EMPTY_BUFFER, timer: null },
     paste: { active: false, chunks: [], pendingCr: false },
+    bracketsPaste: false,
     active: false,
     disabled: false,
     queue: [],
@@ -224,6 +231,11 @@ export function createFilteredStdin(
     if (state.active || state.disabled) return;
     state.active = true;
     setTerminalInputModes('enable', { mouse: mouseEnabled, hover: hoverEnabled });
+    // The reply tells about the mode that SPLITBRIEF set. Terminal.app is not asked, because it may
+    // show the query as text.
+    if (process.env['TERM_PROGRAM'] !== 'Apple_Terminal') {
+      writeTerminalSequence(terminalSequences.queryBracketedPaste);
+    }
     stdin.on('data', dataHandler);
     stdin.resume();
   };

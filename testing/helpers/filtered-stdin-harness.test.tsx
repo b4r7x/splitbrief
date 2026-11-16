@@ -1,4 +1,4 @@
-import { Text, useStdout } from 'ink';
+import { Text, useInput, useStdout } from 'ink';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   getActiveFilteredStdin,
@@ -51,6 +51,38 @@ describe('filtered stdin render harness lifecycle', () => {
     expect(getActiveFilteredStdin()).toBe(priorActive);
   });
 });
+
+describe('filtered stdin render harness terminal', () => {
+  it.each([
+    { terminal: 'answers that it brackets a paste', dependencies: {}, keys: ['ok', '⏎'] },
+    { terminal: 'gives no answer', dependencies: { terminalAnswers: false }, keys: ['ok\r'] },
+  ])(
+    'gives text and Enter of one read to the app as a terminal that $terminal does',
+    async ({ dependencies, keys }) => {
+      const seen: string[] = [];
+      const harness = renderThroughFilteredStdin(
+        <KeyProbe seen={seen} />,
+        VIEWPORTS[1],
+        dependencies,
+      );
+      try {
+        await harness.settled();
+        harness.pressBytes('ok\r');
+        await harness.settled();
+        expect(seen).toEqual(keys);
+      } finally {
+        harness.unmount();
+      }
+    },
+  );
+});
+
+function KeyProbe({ seen }: { seen: string[] }) {
+  useInput((input, key) => {
+    seen.push(key.return ? '⏎' : input);
+  });
+  return <Text>keys</Text>;
+}
 
 function ViewportProbe() {
   const { stdout } = useStdout();
