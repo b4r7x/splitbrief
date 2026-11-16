@@ -68,7 +68,7 @@ A dissolved surface has **no `features/` folder** — the page *is* the whole su
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.
 - **`hooks/` subfolder** appears only when the feature has ≥2 hook files.
-- **Pure helpers** (non-React modules) sit at the feature root as flat files (`keyboard.ts`, `layout.ts`). They get the `.ts` extension and their tests colocate when they carry behavior (`layout.test.ts`).
+- **Pure helpers** (non-React modules) sit at the feature root as flat files (`keyboard.ts`, `layout.ts`), or in the feature subfolder of their concern (`workflow/display/`, `workflow/prompt-rows/`). They get the `.ts` extension and their tests colocate when they carry behavior (`layout.test.ts`).
 - **No `index.ts` barrels** inside a feature. The surface's entry is a FLAT page in `src/app/` (`app/screens/<x>.tsx` | `app/overlays/<x>.tsx`); feature folders hold only internals. See [`NO-BARRELS.md`](./NO-BARRELS.md).
 
 ### Example: the inline editor feature

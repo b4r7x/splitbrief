@@ -196,7 +196,7 @@ describe('parseJsonlLine', () => {
         {
           id: 'cmd-1',
           name: 'command_execution',
-          input: { type: 'command_execution', command: 'npm test' },
+          input: { command: 'npm test' },
         },
       ],
     });
@@ -205,7 +205,7 @@ describe('parseJsonlLine', () => {
         {
           id: 'cmd-1',
           name: 'command_execution',
-          input: { type: 'command_execution', command: 'npm test', status: 'completed' },
+          input: { command: 'npm test' },
           output: 'ok',
         },
       ],
@@ -225,7 +225,7 @@ describe('parseJsonlLine', () => {
         {
           id: 'file-1',
           name: 'file_change',
-          input: { type: 'file_change', path: 'src/app.ts', status: 'completed' },
+          input: { path: 'src/app.ts' },
           output: 'completed',
         },
       ],
@@ -248,12 +248,7 @@ describe('parseJsonlLine', () => {
         {
           id: 'mcp-1',
           name: 'mcp_tool_call',
-          input: {
-            owner: 'acme',
-            type: 'mcp_tool_call',
-            server: 'github',
-            tool_name: 'list_issues',
-          },
+          input: { owner: 'acme', server: 'github', tool_name: 'list_issues' },
         },
       ],
     });
@@ -269,7 +264,7 @@ describe('parseJsonlLine', () => {
         {
           id: 'web-1',
           name: 'web_search',
-          input: { type: 'web_search', query: 'codex jsonl' },
+          input: { query: 'codex jsonl' },
         },
       ],
     });
@@ -285,7 +280,7 @@ describe('parseJsonlLine', () => {
         {
           id: 'plan-1',
           name: 'plan_update',
-          input: { type: 'plan_update' },
+          input: {},
           output: '1. inspect\n2. edit',
         },
       ],
@@ -310,7 +305,7 @@ describe('parseJsonlLine', () => {
         {
           id: 'cmd-2',
           name: 'command_execution',
-          input: { cwd: '/tmp/project', type: 'command_execution', command: 'npm run lint' },
+          input: { cwd: '/tmp/project', command: 'npm run lint' },
         },
       ],
     });

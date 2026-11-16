@@ -88,6 +88,8 @@ const verdict = ${JSON.stringify(verdict)};
 console.log(JSON.stringify({ type: 'thread.started', thread_id: '01a16d96-01dd-7df1-b4d6-51ffa50e10a5' }));
 console.log(JSON.stringify({ type: 'item.started', item: { id: 'collab_spawn', type: 'collab_tool_call', tool: 'spawn_agent', prompt: 'check finding F1', input: { prompt: 'check finding F1' } } }));
 console.log(JSON.stringify({ type: 'item.completed', item: { id: 'collab_spawn', type: 'collab_tool_call', tool: 'spawn_agent', prompt: 'check finding F1', input: { prompt: 'check finding F1' }, status: 'completed' } }));
+console.log(JSON.stringify({ type: 'item.completed', item: { id: 'web_1', type: 'web_search', query: 'codex review rules' } }));
+console.log(JSON.stringify({ type: 'item.completed', item: { id: 'mcp_1', type: 'mcp_tool_call', server: 'github', tool: 'list_issues', arguments: { owner: 'acme' }, status: 'completed' } }));
 console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify(verdict) } }));
 console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100, output_tokens: 40 } }));
 process.exit(0);`,
@@ -139,6 +141,8 @@ process.exit(0);`,
   const combinedReviewView = `${headerText}\n${visibleSummary}`;
 
   expect(visibleSummary).toContain('AGENT spawn_agent');
+  expect(visibleSummary).toContain('FIND codex review rules');
+  expect(visibleSummary).toContain('CALL github');
   expect(combinedReviewView).not.toContain('collab_tool_call');
   expect(combinedReviewView).not.toContain('collab spawn failed');
   expect(combinedReviewView).not.toContain('1 warn');

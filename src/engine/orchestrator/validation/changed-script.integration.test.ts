@@ -444,6 +444,51 @@ describe('changedDefinitionRefusal', { timeout: 60_000 }, () => {
     });
   });
 
+  const LIFECYCLE = {
+    install: 'node setup.js',
+    prepare: 'husky',
+    restart: 'node restart.js',
+    stop: 'node stop.js',
+    start: 'node app.js',
+  };
+
+  it('compares the prepare scripts of the install lifecycle for an install script', async () => {
+    await withApplyRun(
+      { 'package.json': JSON.stringify({ scripts: LIFECYCLE }) },
+      { sessionId: 'sess-script-install' },
+      async (run) => {
+        writePackage(run, { ...LIFECYCLE, prepare: 'echo ok' });
+        for (const command of [
+          'npm run install',
+          'pnpm run install',
+          'yarn run install',
+          'bun run install',
+        ]) {
+          expect(await refusal(run, command), command).toBe(
+            'runs the package script install with its prepare script, which this run changed',
+          );
+        }
+      },
+    );
+  });
+
+  it('compares the stop and start scripts for restart', async () => {
+    await withApplyRun(
+      { 'package.json': JSON.stringify({ scripts: LIFECYCLE }) },
+      { sessionId: 'sess-script-restart' },
+      async (run) => {
+        for (const changed of ['stop', 'start']) {
+          writePackage(run, { ...LIFECYCLE, [changed]: 'echo ok' });
+          for (const command of ['npm restart', 'pnpm restart', 'yarn restart', 'bun restart']) {
+            expect(await refusal(run, command), command).toBe(
+              `runs the package script restart with its ${changed} script, which this run changed`,
+            );
+          }
+        }
+      },
+    );
+  });
+
   it('compares the composer scripts a script reaches through @ references', async () => {
     await withApplyRun(
       { 'composer.json': JSON.stringify(COMPOSER) },

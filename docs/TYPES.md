@@ -162,7 +162,7 @@ Consumers import whichever they need (or both). They do **not** import `Task` fr
 
 **Enforcement — `core/types/` MUST NOT contain `z.infer`.** Inferred types live next to their schema in `core/schemas/`. `core/types/` is only for TS-only types with no runtime schema backing (e.g., `WorkflowOpts`, `SessionRef`, `UserMessageInput`). Anything derived from a Zod schema via `z.infer<>` belongs in the schema file.
 
-**Why the root is mostly flat**: schemas are a cohesive cross-cutting concern. Grouping unrelated domains further (e.g., a `schemas/config/` folder beside the config schema) adds depth without separating them — every consumer of one schema tends to consume others. The four domain folders are the intentional exceptions because the schemas of each form one coupled boundary. Keep other schema leaves flat unless they earn the same cohesive boundary.
+**Domain subfolders**: a domain whose schemas form one coupled boundary gets its own folder under `core/schemas/` (`recovery/`, `review/`, `runner/`, `workflow/`). Every other schema leaf stays flat at the root: a folder for one schema file, such as a `schemas/config/` folder beside the config schema, adds depth and separates nothing, because a consumer of one schema tends to consume others.
 
 ---
 

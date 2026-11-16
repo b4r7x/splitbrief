@@ -3,6 +3,7 @@ import { join, posix, relative } from 'node:path';
 import { namesListedIn } from '../../../lib/fs/read.js';
 import { isPathConfined } from '../../../lib/fs/confinement.js';
 import { hasErrnoCode } from '../../../utils/errno.js';
+import { scriptsRunFor } from '../../../core/trust/package-scripts.js';
 import { isTestScript } from '../../../core/validation/stacks/registry.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';
@@ -17,15 +18,6 @@ type BaseReader = (file: string) => Promise<RunBaseFile>;
 type PackageScript = Extract<CheckDefinition, { kind: 'package-script' }>;
 type TaskFile = Extract<CheckDefinition, { kind: 'task-file' | 'wrapper' }>;
 type Manifest = { scripts: Record<string, unknown>; aliases: string | undefined };
-
-/**
- * A package.json runner can run `pre<script>` and `post<script>` around a script (npm, yarn classic,
- * bun, pnpm with `enable-pre-post-scripts`), so they are compared as part of what it runs.
- */
-function scriptsRun(definition: PackageScript): string[] {
-  const { manifest, script } = definition;
-  return manifest === 'package.json' ? [`pre${script}`, script, `post${script}`] : [script];
-}
 
 async function orNoFiles<T>(listing: Promise<T[]>): Promise<T[]> {
   try {
@@ -125,7 +117,9 @@ async function workspaceText(workspaceDir: string, file: string): Promise<string
 
 /** Composer runs the scripts an `@name` entry names, before or after the run, so they are run too. */
 function scriptsReached(definition: PackageScript, before: Manifest, after: Manifest): string[] {
-  const reached = new Set(scriptsRun(definition));
+  const reached = new Set(
+    definition.manifest === 'package.json' ? scriptsRunFor(definition.script) : [definition.script],
+  );
   if (definition.manifest !== 'composer.json') return [...reached];
   // A Set iterator also visits the names added while it runs.
   for (const name of reached) {

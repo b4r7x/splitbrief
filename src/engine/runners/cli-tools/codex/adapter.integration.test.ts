@@ -2,6 +2,7 @@ import { chmodSync, readFileSync, realpathSync, statSync, writeFileSync } from '
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { parseJsonlLine } from '../../../streaming/parse/jsonl.js';
 import { codexProtocolEvents } from './protocol.js';
 import { CLI_CONFORMANCE_CANDIDATES } from './conformance.js';
 import { codexImplementerAdapter, codexPlannerAdapter } from './adapter.js';
@@ -557,6 +558,59 @@ describe('Codex JSONL protocol adapter', () => {
         output: 'completed',
       },
     ]);
+  });
+
+  it.each([
+    {
+      kind: 'command_execution',
+      item: {
+        command: 'npm test',
+        cwd: '/tmp/probe',
+        aggregated_output: 'ok',
+        exit_code: 0,
+        status: 'completed',
+      },
+      input: { command: 'npm test', cwd: '/tmp/probe' },
+    },
+    {
+      kind: 'command_execution',
+      item: { command: 'npm run lint', input: { cwd: '/tmp/probe' }, status: 'completed' },
+      input: { cwd: '/tmp/probe', command: 'npm run lint' },
+    },
+    {
+      kind: 'file_change',
+      item: { changes: [{ path: 'src/app.ts', kind: 'update' }], status: 'completed' },
+      input: { changes: [{ path: 'src/app.ts', kind: 'update' }] },
+    },
+    {
+      kind: 'mcp_tool_call',
+      item: {
+        server: 'github',
+        tool: 'list_issues',
+        arguments: { owner: 'acme' },
+        status: 'completed',
+      },
+      input: { owner: 'acme', server: 'github' },
+    },
+    { kind: 'web_search', item: { query: 'codex jsonl' }, input: { query: 'codex jsonl' } },
+    {
+      kind: 'collab_tool_call',
+      item: { tool: 'spawn_agent', prompt: 'check finding F1', status: 'completed' },
+      input: {},
+    },
+    {
+      kind: 'todo_list',
+      item: { items: [{ text: 'inspect', completed: false }] },
+      input: {},
+    },
+  ])('records the same $kind tool input on the protocol and the JSONL path', (row) => {
+    const line = JSON.stringify({
+      type: 'item.completed',
+      item: { id: 'item_9', type: row.kind, ...row.item },
+    });
+    const [event] = codexProtocolEvents(line);
+    expect(event?.type === 'tool-use' ? event.input : event).toEqual(row.input);
+    expect(parseJsonlLine(line).toolUseDone?.[0]?.input).toEqual(row.input);
   });
 
   it('projects session, assistant text, usage, and a required terminal result', () => {

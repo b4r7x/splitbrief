@@ -2,6 +2,7 @@ import type { TokenDelta } from '../../../../core/schemas/tokens.js';
 import { error } from '../../../../utils/error.js';
 import { isRecord, optionalString } from '../../../../utils/type-guards.js';
 import { toTokenDelta } from '../../../calls/usage/normalize.js';
+import { codexToolInput } from '../../../streaming/parse/codex-item.js';
 import type { CliProtocolEvent } from '../contract.js';
 import { lastMessageGroupText } from '../final-group.js';
 
@@ -76,8 +77,6 @@ function extractAgentText(item: Record<string, unknown>): string | null {
   return text;
 }
 
-const CODEX_ITEM_INPUT_FIELDS = ['command', 'cwd', 'changes'] as const;
-
 function codexToolEvent(
   item: Record<string, unknown>,
   terminal: 'started' | 'completed',
@@ -88,16 +87,7 @@ function codexToolEvent(
     itemType === 'collab_tool_call'
       ? (optionalString(item.tool, { trim: true, nonEmpty: true }) ?? itemType)
       : itemType;
-  // A command or a file change carries its input on the item itself, not under `input`.
-  const input = isRecord(item.input)
-    ? { ...item.input }
-    : isRecord(item.arguments)
-      ? { ...item.arguments }
-      : Object.fromEntries(
-          CODEX_ITEM_INPUT_FIELDS.flatMap((field) =>
-            item[field] === undefined ? [] : [[field, item[field]] as const],
-          ),
-        );
+  const input = codexToolInput(item);
   const id = optionalString(item.id ?? item.item_id ?? item.call_id, {
     trim: true,
     nonEmpty: true,

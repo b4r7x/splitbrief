@@ -14,22 +14,28 @@ function codexToolName(item: Record<string, unknown>): string | null {
   return itemType;
 }
 
-function codexToolInput(item: Record<string, unknown>): Record<string, unknown> {
-  const explicit = item.input ?? item.arguments ?? item.args;
-  const input: Record<string, unknown> = isRecord(explicit) ? { ...explicit } : {};
-  for (const key of [
-    'type',
-    'command',
-    'path',
-    'file',
-    'file_path',
-    'query',
-    'url',
-    'server',
-    'tool_name',
-    'status',
-  ]) {
-    if (item[key] !== undefined && input[key] === undefined) input[key] = item[key];
+// The item fields a reader of the record uses: the activity row reads the command, the file path,
+// the URL, the MCP server and tool and the query, and the isolation guard reads the command, its
+// `cwd`, the path fields and the paths of `changes`.
+const CODEX_ITEM_INPUT_FIELDS = [
+  'command',
+  'cwd',
+  'changes',
+  'path',
+  'file',
+  'file_path',
+  'url',
+  'server',
+  'tool_name',
+  'query',
+] as const;
+
+/** An item's own `input` or `arguments`, with the item fields a reader uses that it lacks. */
+export function codexToolInput(item: Record<string, unknown>): Record<string, unknown> {
+  const explicit = [item.input, item.arguments].find(isRecord);
+  const input: Record<string, unknown> = explicit === undefined ? {} : { ...explicit };
+  for (const field of CODEX_ITEM_INPUT_FIELDS) {
+    if (item[field] !== undefined && input[field] === undefined) input[field] = item[field];
   }
   return input;
 }

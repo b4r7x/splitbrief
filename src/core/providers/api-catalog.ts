@@ -1,6 +1,7 @@
 import { includes, typedEntries } from '../../utils/type-guards.js';
 import type { RunnerBillingPosture } from '../runners/billing.js';
 import type { EndpointPolicy } from './endpoint-policy.js';
+import { HIDDEN_API_PROVIDER_IDS } from './hidden.js';
 
 export const API_OFFERINGS = Object.freeze([
   'payg',
@@ -242,11 +243,8 @@ export const REMOTE_API_PROVIDER_IDS = Object.freeze(
   ),
 );
 
-// Runs when a config names it; no surface offers it.
-const UNLISTED_API_PROVIDER_IDS: readonly ApiProviderId[] = ['ollama', 'lm-studio', 'llama-cpp'];
-
 export function isListedApiProvider(id: string): boolean {
-  return !includes(UNLISTED_API_PROVIDER_IDS, id);
+  return !includes(HIDDEN_API_PROVIDER_IDS, id);
 }
 
 export const LISTED_API_PROVIDER_IDS = Object.freeze(
