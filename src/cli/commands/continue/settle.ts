@@ -11,6 +11,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import { cliError } from '../../errors.js';
 import { withHeadlessStop, writeRunStopped } from '../../headless/stop.js';
+import { ensureHooksTrusted } from '../../hook-trust-prompt.js';
 import {
   emitReadyToApply,
   emitRecoveryAndFailIfPending,
@@ -54,6 +55,13 @@ export async function settleRequestedApply(args: {
     );
   }
   const { config } = resolveRunConfig({ projectDir: opts.projectDir, opts });
+  // Apply can send the merged result back to its checks and review, which run the hooks; their
+  // trust is asked before Apply writes, so a refused command leaves the run ready to apply.
+  await ensureHooksTrusted({
+    projectDir: opts.projectDir,
+    hooks: config.hooks,
+    allowHooks: opts.allowHooks ?? false,
+  });
   if (accepted !== undefined) process.stderr.write(`${acceptedSentence(accepted)}\n`);
   const next = await settleReadyRun({
     ...settled,

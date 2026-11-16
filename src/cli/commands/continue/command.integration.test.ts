@@ -31,6 +31,7 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { readSession } from '../../../core/sessions/io.js';
 import { readActive, reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { readRunEvents } from '../../../engine/events/replay.js';
@@ -1226,6 +1227,9 @@ describe('continueCommand --action accept-as-is|apply|apply-as-is|discard|end-ru
   const ACCEPTED_SENTENCE =
     'Run accepted as is with 1 red check and 1 open finding: V1 failed · npm test · Error: 2 specs failed; missing test.';
   const APPLY_AS_IS = `splitbrief continue ${SESSION_ID} --action apply-as-is`;
+  const NO_TTY_HOOK_REFUSAL =
+    'Hook config is not trusted and no TTY available. Re-run with --allow-hooks to trust it (CI usage).';
+  const HOOK_DISCLOSURE = 'SPLITBRIEF config declares hooks this machine has not trusted:';
   const stateFile = (projectDir: string): string =>
     readFileSync(join(sessionDir(projectDir, SESSION_ID), 'state.json'), 'utf8');
 
@@ -1377,13 +1381,43 @@ describe('continueCommand --action accept-as-is|apply|apply-as-is|discard|end-ru
   async function settle(
     run: Pick<ApplyRun, 'dir'>,
     action: 'accept-as-is' | 'apply' | 'apply-as-is' | 'discard' | 'restore',
-    flags: { json?: true } = { json: true },
+    flags: { json?: true; allowHooks?: true } = { json: true },
   ): Promise<void> {
     await continueCommand(
       SESSION_ID,
       { projectDir: run.dir, ...flags, action: parseContinueActionOption(action) },
       deps,
     );
+  }
+
+  /** A config with one hook that this machine has not trusted. */
+  function writeUntrustedHooks(projectDir: string): void {
+    writeConfig(
+      projectDir,
+      makeConfig({
+        hooks: {
+          pre_task: [
+            {
+              kind: 'command',
+              command: 'node',
+              args: ['--version'],
+              timeout_ms: 5000,
+              on_failure: 'warn',
+            },
+          ],
+        },
+      }),
+    );
+  }
+
+  /** The status and the phase of the saved run, the two that say whether Apply wrote. */
+  function readySide(projectDir: string): { status: string; phase: string } | undefined {
+    const state = loadState({ projectDir, sessionId: SESSION_ID });
+    if (state === null) return undefined;
+    return {
+      status: deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind,
+      phase: state.phase,
+    };
   }
 
   it('applies a ready run: the checkout takes its files and the run closes applied', async () => {
@@ -1892,6 +1926,93 @@ describe('continueCommand --action accept-as-is|apply|apply-as-is|discard|end-ru
     expect(stateFile(projectDir)).toBe(before);
     expect(headlessRuns).toHaveLength(0);
     expect(renderRuns).toHaveLength(0);
+  });
+
+  it('refuses the headless accept of a task review too large to send with untrusted hooks and no terminal before the accept writes', async () => {
+    const projectDir = stoppedProject();
+    saveTooLargeTaskReview(projectDir);
+    writeUntrustedHooks(projectDir);
+    const before = stateFile(projectDir);
+    delete (process.stdin as { isTTY?: boolean }).isTTY;
+
+    await expect(settle({ dir: projectDir }, 'accept-as-is')).rejects.toMatchObject({
+      exitCode: 1,
+      message: NO_TTY_HOOK_REFUSAL,
+    });
+    expect(stateFile(projectDir)).toBe(before);
+    expect(headlessRuns).toHaveLength(0);
+  });
+
+  it('refuses a headless apply with untrusted hooks and no terminal before Apply writes, so the same command with --allow-hooks carries the run into its checks and review', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'ONE\ntwo\nthree\nfour\nfive\n');
+      writeFileSync(join(run.dir, 'a.txt'), 'one\ntwo\nthree\nfour\nFIVE\n');
+      saveReady(run);
+      writeUntrustedHooks(run.dir);
+      const before = stateFile(run.dir);
+      delete (process.stdin as { isTTY?: boolean }).isTTY;
+      const trustHome = useTrustHome('continue-apply-hook-trust-home');
+
+      try {
+        const refused = captureOutput();
+        try {
+          await expect(settle(run, 'apply')).rejects.toMatchObject({
+            exitCode: 1,
+            message: NO_TTY_HOOK_REFUSAL,
+          });
+        } finally {
+          refused.restore();
+        }
+        expect(readySide(run.dir)).toEqual({ status: 'ready-to-apply', phase: 'complete' });
+        expect(stateFile(run.dir)).toBe(before);
+        expect(read(run.dir, 'a.txt')).toBe('one\ntwo\nthree\nfour\nFIVE\n');
+        expect(read(run.ws, 'a.txt')).toBe('ONE\ntwo\nthree\nfour\nfive\n');
+        expect(headlessRuns).toHaveLength(0);
+
+        const output = captureOutput();
+        try {
+          await settle(run, 'apply', { json: true, allowHooks: true });
+        } finally {
+          output.restore();
+        }
+        expect(output.stderr()).toContain(HOOK_DISCLOSURE);
+        expect(output.stderr()).toContain(
+          'the merged result goes through its checks and review again.',
+        );
+        expect(headlessRuns).toHaveLength(1);
+        expect(headlessRuns[0]?.state?.applyReview).toBeDefined();
+      } finally {
+        trustHome.restore();
+      }
+    });
+  });
+
+  it('refuses an apply with no --json or --plain, untrusted hooks and no terminal before Apply writes', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'ONE\ntwo\nthree\nfour\nfive\n');
+      writeFileSync(join(run.dir, 'a.txt'), 'one\ntwo\nthree\nfour\nFIVE\n');
+      saveReady(run);
+      writeUntrustedHooks(run.dir);
+      const before = stateFile(run.dir);
+      delete (process.stdin as { isTTY?: boolean }).isTTY;
+      const output = captureOutput();
+
+      try {
+        await expect(settle(run, 'apply', {})).rejects.toMatchObject({
+          exitCode: 1,
+          message: NO_TTY_HOOK_REFUSAL,
+        });
+      } finally {
+        output.restore();
+      }
+
+      expect(readySide(run.dir)).toEqual({ status: 'ready-to-apply', phase: 'complete' });
+      expect(stateFile(run.dir)).toBe(before);
+      expect(read(run.dir, 'a.txt')).toBe('one\ntwo\nthree\nfour\nFIVE\n');
+      expect(read(run.ws, 'a.txt')).toBe('ONE\ntwo\nthree\nfour\nfive\n');
+      expect(headlessRuns).toHaveLength(0);
+      expect(renderRuns).toHaveLength(0);
+    });
   });
 
   it.each([

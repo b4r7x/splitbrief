@@ -18,7 +18,7 @@ import { resolveRunConfig } from '../../build-overrides.js';
 import { cliError } from '../../errors.js';
 import { emitReadyToApply, recordWriterFor } from '../../headless/outcome.js';
 import type { RecoveryActionOption } from '../../options/continue-action.js';
-import { assertResumeTerminal } from './resume.js';
+import { assertResumeTerminal, ensureHeadlessHooksTrusted } from './resume.js';
 import { settleReadyRun } from './settle.js';
 import type { ContinueOpts, Resumed, SwitchedSeat } from './types.js';
 
@@ -93,8 +93,11 @@ export async function endRunAction(args: Omit<RecoveryActionInput, 'action'>): P
 
 export async function acceptAsIsAction(args: RecoveryActionInput): Promise<Resumed | undefined> {
   // Only the accept of a task review leaves the run open. That run goes on, so it needs the
-  // terminal every continue that goes on needs, asked before the accept writes.
-  if (args.state.phase === 'implementing') assertResumeTerminal(args.opts);
+  // terminal and the hook trust every continue that goes on needs, asked before the accept writes.
+  if (args.state.phase === 'implementing') {
+    assertResumeTerminal(args.opts);
+    await ensureHeadlessHooksTrusted(args.opts.projectDir, args.opts);
+  }
   const resumed = await applyPendingRecoveryAction(args);
   const accepted = resumed.state.acceptedAsIs;
   if (

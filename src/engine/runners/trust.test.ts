@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { ConfigSchema } from '../../core/schemas/config.js';
 import { matches } from '../../utils/error.js';
 import { customRunnerAdmissionError } from './custom/launchability.js';
-import { checkRunnerTrust, rejectUntrustedRunners } from './trust.js';
+import { checkRunnerTrust } from './trust.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
 type ConfigOverrides = NonNullable<Parameters<typeof makeConfig>[0]>;
@@ -262,20 +262,6 @@ describe('checkRunnerTrust', () => {
     expect(checkRunnerTrust(reviewer, '/tmp/project').violations).toEqual([
       { label: 'reviewer', command },
     ]);
-    expect(() =>
-      rejectUntrustedRunners({
-        config: reviewer,
-        projectDir: '/tmp/project',
-        allowRepoRunners: false,
-      }),
-    ).toThrow(/untrusted runner/i);
-    expect(() =>
-      rejectUntrustedRunners({
-        config: reviewer,
-        projectDir: '/tmp/project',
-        allowRepoRunners: true,
-      }),
-    ).not.toThrow();
   });
 
   it('skips exact configured custom tuples for planner, default implementer, and profile rows', () => {
@@ -351,9 +337,6 @@ describe('checkRunnerTrust', () => {
     );
 
     expect(checkRunnerTrust(config, '/tmp/project')).toEqual({ violations: [] });
-    expect(() =>
-      rejectUntrustedRunners({ config, projectDir: '/tmp/project', allowRepoRunners: false }),
-    ).not.toThrow();
   });
 
   it('keeps every diverged execution tuple in the legacy trust gate', () => {
@@ -422,11 +405,6 @@ describe('checkRunnerTrust', () => {
       expect(checkRunnerTrust(config, '/tmp/project').violations, name).toEqual([
         { label: 'planner', command },
       ]);
-      expect(
-        () =>
-          rejectUntrustedRunners({ config, projectDir: '/tmp/project', allowRepoRunners: false }),
-        name,
-      ).toThrow(/untrusted runner/i);
     }
   });
 
@@ -475,9 +453,6 @@ describe('checkRunnerTrust', () => {
         },
       ],
     });
-    expect(() =>
-      rejectUntrustedRunners({ config, projectDir: '/tmp/project', allowRepoRunners: false }),
-    ).toThrow(/untrusted runner/i);
   });
 });
 
@@ -865,28 +840,5 @@ describe('checkRunnerTrust in a project whose files select the toolchain binary'
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
-});
-
-describe('rejectUntrustedRunners', () => {
-  it('throws for repo-local commands without allowRepoRunners', () => {
-    const config = makeConfig(shellConfig('./scripts/evil'));
-    expect(() =>
-      rejectUntrustedRunners({ config, projectDir: '/tmp/project', allowRepoRunners: false }),
-    ).toThrow(/untrusted runner/i);
-  });
-
-  it('allows repo-local commands when allowRepoRunners is true', () => {
-    const config = makeConfig(shellConfig('./scripts/my-runner'));
-    expect(() =>
-      rejectUntrustedRunners({ config, projectDir: '/tmp/project', allowRepoRunners: true }),
-    ).not.toThrow();
-  });
-
-  it('does not throw for a system command', () => {
-    const config = makeConfig(shellConfig('opencode'));
-    expect(() =>
-      rejectUntrustedRunners({ config, projectDir: '/tmp/project', allowRepoRunners: false }),
-    ).not.toThrow();
   });
 });

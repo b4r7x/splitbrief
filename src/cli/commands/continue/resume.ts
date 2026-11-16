@@ -12,6 +12,7 @@ import { runHeadless } from '../../headless/run.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
 import { resolveRunConfig } from '../../build-overrides.js';
+import { ensureHooksTrusted } from '../../hook-trust-prompt.js';
 import { readSeatIdentities, seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
 import { formatSeatChangeNotice, seatIdentityChanges } from '../../../core/state/seats/changes.js';
 import { labelSeatChange } from '../../../engine/providers/model/display-names.js';
@@ -71,6 +72,23 @@ export function assertResumeTerminal(opts: Pick<WorkflowOpts, 'json' | 'plain'>)
   if (opts.json !== true && opts.plain !== true) assertInteractiveTty('use --json or --plain');
 }
 
+/**
+ * A resume with `--json` or `--plain` never mounts the screen whose start settles hook trust, so
+ * it settles that trust here. `continue` asks before its recovery action writes, so a refused
+ * resume keeps its halt for the same command with `--allow-hooks`.
+ */
+export async function ensureHeadlessHooksTrusted(
+  projectDir: string,
+  opts: WorkflowOpts,
+): Promise<void> {
+  if (opts.json !== true && opts.plain !== true) return;
+  await ensureHooksTrusted({
+    projectDir,
+    hooks: resolveRunConfig({ projectDir, opts }).config.hooks,
+    allowHooks: opts.allowHooks ?? false,
+  });
+}
+
 export async function resumeSavedSession(args: {
   projectDir: string;
   sessionId: string;
@@ -86,6 +104,7 @@ export async function resumeSavedSession(args: {
   // allowed to validate or promote persisted state.
   assertResumableState(args.state, sessionId);
   assertResumeTerminal(opts);
+  await ensureHeadlessHooksTrusted(projectDir, opts);
   const { state } = args;
 
   const resolved = resolveRunConfig({ projectDir, opts });

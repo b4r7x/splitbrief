@@ -1,4 +1,6 @@
 import { ensureHeadlessConfig, setupWorkflow } from '../../setup.js';
+import { resolveRunConfig } from '../../build-overrides.js';
+import { ensureHooksTrusted } from '../../hook-trust-prompt.js';
 import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrides/from-options.js';
 import { serializeReadinessReportJson } from '../../../core/readiness/json.js';
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
@@ -24,13 +26,19 @@ export async function runHeadlessStart(
     : undefined;
   const selectedSkills = await resolveSelectedSkills(projectDir, opts.skills);
   await loadRememberedCatalog(projectDir);
+  const effectiveConfig = initialInvocation ?? resolveRunConfig({ projectDir, opts });
+  await ensureHooksTrusted({
+    projectDir,
+    hooks: effectiveConfig.config.hooks,
+    allowHooks: opts.allowHooks ?? false,
+  });
   const execution = await prepareStartExecution({
     projectDir,
     feature: enrichedFeature ?? feature,
     plannerContext,
     ...(attachedInputs !== undefined && { attachedInputs }),
     opts,
-    ...(initialInvocation !== undefined && { effectiveConfig: initialInvocation }),
+    effectiveConfig,
     transport: 'headless',
     emitReadiness: (report) => {
       if (mode === 'json') {

@@ -13,7 +13,7 @@ import { readActive } from '../../../core/sessions/active-pointer.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run/status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
-import { assertResumeTerminal, resumeSavedSession } from './resume.js';
+import { assertResumeTerminal, ensureHeadlessHooksTrusted, resumeSavedSession } from './resume.js';
 import { settleRequestedApply } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 import { closedChangesSuffix } from '../../../engine/orchestrator/run/close.js';
@@ -114,6 +114,7 @@ async function runAction(
       return restoreBackupAction({ sessionId, state, action, opts });
     default:
       assertResumeTerminal(opts);
+      await ensureHeadlessHooksTrusted(opts.projectDir, opts);
       return action === undefined
         ? { state }
         : applyPendingRecoveryAction({ sessionId, state, action, opts });

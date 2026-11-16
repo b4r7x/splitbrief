@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   makeCallbacks,
   makePlanner,
@@ -14,17 +14,19 @@ import { initializeWorkflow } from './initialize.js';
 import { createRunIsolation } from '../../isolation/create.js';
 import type { RunIsolation } from '../../isolation/types.js';
 import { markHooksConfigTrusted } from '../../../../core/hooks/trust.js';
-import { ensureHooksTrusted } from '../../../../cli/hook-trust-prompt.js';
-import { rejectUntrustedRunners } from '../../../runners/trust.js';
+import { writeConfig } from '../../../../core/config/load/io.js';
+import { runHeadlessStart } from '../../../../cli/commands/start/streaming.js';
 import type { HooksConfig } from '../../../../core/schemas/hooks.js';
-import type { Config } from '../../../../core/schemas/config.js';
 import { resolveImplementerProfiles } from '../../../../core/config/accessors/implementer-profiles.js';
 import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
 import { reactivateExistingSession } from '../../../../core/sessions/active-pointer.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { SummaryBase } from '../../summary/build.js';
 import type { SpecMetadata } from '../../../../core/sessions/spec-files.js';
-import { parsePreparedConfig } from '../../../runners/prepare-execution/prepared.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../runners/prepare-execution/prepared.js';
 
 function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
   return createRunIsolation({
@@ -52,38 +54,34 @@ let trustHome: ReturnType<typeof useTrustHome>;
 
 beforeEach(() => {
   trustHome = useTrustHome('init-hook-trust-home');
+  process.stdin.isTTY = false;
 });
 
 afterEach(() => {
+  delete (process.stdin as { isTTY?: boolean }).isTTY;
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
   trustHome.restore();
 });
 
 function setupProjectDir(prefix: string) {
-  const projectDir = createTempDir(prefix);
+  const projectDir = realpathSync(createTempDir(prefix));
   dirs.push(projectDir);
-  mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
-  mkdirSync(join(projectDir, '.git'), { recursive: true });
-  writeFileSync(join(projectDir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  createTestGitRepo(projectDir);
   return projectDir;
 }
 
 type InitCallerOptions = Readonly<{
   allowHooks?: boolean;
-  allowRepoRunners?: boolean;
-  config?: Config;
 }>;
 
 function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCallerOptions = {}) {
   const feature = 'test-feature';
   const sessionId = 'test-session';
-  const config =
-    extra.config ??
-    makeConfig({
-      validation: { endChecks: false, testCommand: 'noop' },
-      workflow: {},
-      ...(hooks !== undefined && { hooks }),
-    });
+  const config = makeConfig({
+    validation: { endChecks: false, testCommand: 'noop' },
+    workflow: {},
+    ...(hooks !== undefined && { hooks }),
+  });
   const { callbacks } = makeCallbacks();
   const summaryBase: SummaryBase = {
     feature,
@@ -103,7 +101,6 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCaller
     feature,
     config,
     allowHooks: extra.allowHooks ?? false,
-    allowRepoRunners: extra.allowRepoRunners ?? false,
     callbacks,
     sessionId,
     summaryBase,
@@ -112,22 +109,41 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCaller
   };
 }
 
+/**
+ * Reaches `initializeWorkflow` through a headless `start`, so the hook trust gate under test is
+ * the one the command runs: the config is read from disk, and only the runner preparation and the
+ * run loop are stand-ins.
+ */
 async function initializeFromCaller(args: ReturnType<typeof makeInitArgs>) {
-  const hooks = args.config.hooks;
-  await ensureHooksTrusted(
-    {
-      projectDir: args.projectDir,
-      hooks,
-      allowHooks: args.allowHooks,
+  writeConfig(args.projectDir, args.config);
+  let init: Awaited<ReturnType<typeof initializeWorkflow>> | undefined;
+  await runHeadlessStart({
+    deps: {
+      initStores: async () => {},
+      renderApp: async () => {},
+      prepareExecution: async (input) => ({
+        kind: 'prepared',
+        execution: preparedFromConfig(args, parsePreparedConfig(input.effectiveConfig)),
+      }),
+      runHeadless: async ({ prepared }) => {
+        init = await initializeFromPrepared(args, prepared);
+      },
     },
-    async () => '',
-  );
-  const config = parsePreparedConfig(hooks === undefined ? args.config : { ...args.config, hooks });
-  rejectUntrustedRunners({
-    config,
     projectDir: args.projectDir,
-    allowRepoRunners: args.allowRepoRunners,
+    feature: args.feature,
+    enrichedFeature: undefined,
+    plannerContext: undefined,
+    opts: { allowHooks: args.allowHooks },
+    mode: 'plain',
   });
+  if (init === undefined) throw new Error('the headless start never reached the run');
+  return init;
+}
+
+function preparedFromConfig(
+  args: ReturnType<typeof makeInitArgs>,
+  config: PreparedExecution['config'],
+): PreparedExecution {
   const preparationId = `hook-trust-${args.sessionId}`;
   const gates = [
     makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
@@ -140,35 +156,43 @@ async function initializeFromCaller(args: ReturnType<typeof makeInitArgs>) {
     projectDir: args.projectDir,
     sessionId: args.sessionId,
   });
+  return {
+    purpose: 'new-workflow',
+    config,
+    sourceConfig: config,
+    preparationId,
+    report: {
+      generatedAt: new Date(0).toISOString(),
+      projectDir: args.projectDir,
+      status: 'ready',
+      counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates,
+    cliSeats: testCliSeats(gates),
+    session: {
+      kind: 'existing',
+      ref: { projectDir: args.projectDir, sessionId: args.sessionId },
+      active,
+    },
+    runtime: {
+      feature: args.feature,
+      allowHooks: args.allowHooks,
+      allowRepoRunners: false,
+    },
+  };
+}
+
+function initializeFromPrepared(
+  args: ReturnType<typeof makeInitArgs>,
+  prepared: PreparedExecution,
+) {
+  const { config } = prepared;
   return initializeWorkflow({
     opts: {
-      prepared: {
-        purpose: 'new-workflow',
-        config,
-        sourceConfig: config,
-        preparationId,
-        report: {
-          generatedAt: new Date(0).toISOString(),
-          projectDir: args.projectDir,
-          status: 'ready',
-          counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
-          nextAction: { kind: 'continue', label: 'Continue', reason: 'ready' },
-          sections: [],
-          metadata: {},
-        },
-        gates,
-        cliSeats: testCliSeats(gates),
-        session: {
-          kind: 'existing',
-          ref: { projectDir: args.projectDir, sessionId: args.sessionId },
-          active,
-        },
-        runtime: {
-          feature: args.feature,
-          allowHooks: args.allowHooks,
-          allowRepoRunners: args.allowRepoRunners,
-        },
-      },
+      prepared,
       callbacks: args.callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner(),
@@ -195,47 +219,6 @@ describe('engine-level hook trust gate', () => {
   it('allows hooks when allowHooks is true', async () => {
     const projectDir = setupProjectDir('hook-trust-allow');
     const args = makeInitArgs(projectDir, HOOK, { allowHooks: true });
-
-    const init = await initializeFromCaller(args);
-    expect(init.ok).toBe(true);
-  });
-
-  it('does not let allowHooks authorize repo-local runner commands', async () => {
-    const projectDir = setupProjectDir('hook-trust-runner-block');
-    const config = makeConfig({
-      implementer: {
-        kind: 'agent',
-        command: './scripts/agent',
-        model: 'agent-default',
-      },
-      validation: { endChecks: false, testCommand: 'noop' },
-      workflow: {},
-      hooks: HOOK,
-    });
-    const args = makeInitArgs(projectDir, HOOK, { allowHooks: true, config });
-
-    await expect(initializeFromCaller(args)).rejects.toMatchObject({
-      kind: 'runner-not-trusted',
-    });
-  });
-
-  it('allows repo-local runner commands when allowRepoRunners is true', async () => {
-    const projectDir = setupProjectDir('hook-trust-runner-allow');
-    const config = makeConfig({
-      implementer: {
-        kind: 'agent',
-        command: './scripts/agent',
-        model: 'agent-default',
-      },
-      validation: { endChecks: false, testCommand: 'noop' },
-      workflow: {},
-      hooks: HOOK,
-    });
-    const args = makeInitArgs(projectDir, HOOK, {
-      allowHooks: true,
-      allowRepoRunners: true,
-      config,
-    });
 
     const init = await initializeFromCaller(args);
     expect(init.ok).toBe(true);

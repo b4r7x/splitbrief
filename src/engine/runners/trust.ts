@@ -8,7 +8,6 @@ import { argvIsRepoLocal } from '../../core/trust/command-string-classification.
 import { stripProfileMetadata } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
-import { error } from '../../utils/error.js';
 
 function commandHasRepoLocalPaths(
   command: string,
@@ -74,24 +73,4 @@ function commandRunnerViolations(config: Config, projectDir: string): RunnerTrus
 
 export function checkRunnerTrust(config: Config, projectDir: string): RunnerTrustResult {
   return { violations: commandRunnerViolations(config, projectDir) };
-}
-
-export function rejectUntrustedRunners(options: {
-  config: Config;
-  projectDir: string;
-  allowRepoRunners: boolean;
-}): void {
-  const { violations } = checkRunnerTrust(options.config, options.projectDir);
-  if (violations.length === 0) return;
-
-  if (options.allowRepoRunners) return;
-
-  const cmds = violations.map((v) => `  ${v.label}: ${v.command}`).join('\n');
-  throw error(
-    'runner-not-trusted',
-    `Refusing to execute untrusted runner commands from project config:\n${cmds}\n` +
-      `These commands can execute project-local code or shell-evaluate prompt text. ` +
-      `Re-run with --allow-repo-runners to trust them, or use system-installed commands instead.`,
-    { commands: violations.map((violation) => violation.command) },
-  );
 }
