@@ -60,6 +60,7 @@ export function RowZone({ zoneId, z, onActivate, onWheel, children }: RowZonePro
       id: zoneId,
       ...rowZoneRect(rect),
       z,
+      owner: ref,
       onClick: onActivate,
       ...(onWheel ? { onWheel } : {}),
     });

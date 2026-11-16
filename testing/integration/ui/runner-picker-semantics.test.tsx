@@ -118,10 +118,11 @@ function leftToolZoneIds(viewport: Viewport = VIEWPORT): string[] {
     .map((id) => id.slice('runner-left:'.length));
 }
 
+/** The row keys of the right column zones, without the tool key that each zone id holds. */
 function rightModelZoneIds(viewport: Viewport = VIEWPORT): string[] {
   return [...collectClickableZones(viewport).keys()]
     .filter((id) => id.startsWith('runner-right:'))
-    .map((id) => id.slice('runner-right:'.length));
+    .map((id) => id.slice('runner-right:'.length).replace(/^[^:]*:/, ''));
 }
 
 function catalogForItem(

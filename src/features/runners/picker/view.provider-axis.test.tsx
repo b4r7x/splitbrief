@@ -687,7 +687,7 @@ describe('PickerView option-axis confirm and cycle', () => {
     const ui = renderAxisPicker({ actions, initialRightIndex: 0 });
     await flushEffects();
     collectClickableZones({ cols: 140, rows: 40 }).get(
-      'runner-right:axis:gpt-5.6-luna-high::fast',
+      'runner-right:cursor:axis:gpt-5.6-luna-high::fast',
     )?.();
     await flushEffects();
 
@@ -708,7 +708,9 @@ describe('PickerView option-axis confirm and cycle', () => {
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high-fast');
     const ui = renderAxisPicker({ actions, initialRightIndex: 1, fast: 'on' });
     await flushEffects();
-    collectClickableZones({ cols: 140, rows: 40 }).get('runner-right:model:gpt-5.6-luna-high')?.();
+    collectClickableZones({ cols: 140, rows: 40 }).get(
+      'runner-right:cursor:model:gpt-5.6-luna-high',
+    )?.();
     await flushEffects();
 
     expect(confirmed).toEqual(['gpt-5.6-luna-high-fast']);
@@ -743,7 +745,9 @@ describe('PickerView option-axis confirm and cycle', () => {
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna-high');
     const ui = renderAxisPicker({ actions, initialRightIndex: 0, withSibling: true });
     await flushEffects();
-    collectClickableZones({ cols: 140, rows: 40 }).get('runner-right:model:claude-sonnet-4-6')?.();
+    collectClickableZones({ cols: 140, rows: 40 }).get(
+      'runner-right:cursor:model:claude-sonnet-4-6',
+    )?.();
     await flushEffects();
 
     expect(confirmed).toEqual(['claude-sonnet-4-6']);
@@ -815,7 +819,7 @@ describe('PickerView option-axis confirm and cycle', () => {
     pickerViewStore.expand(sparse.id, 'gpt-5-high');
     const ui = renderSparsePicker({ actions, initialRightIndex: 0 });
     await flushEffects();
-    collectClickableZones({ cols: 140, rows: 40 }).get('runner-right:axis:gpt-5::fast')?.();
+    collectClickableZones({ cols: 140, rows: 40 }).get('runner-right:cursor:axis:gpt-5::fast')?.();
     await flushEffects();
 
     // The row cannot step, so it does not own the click: it confirms, the way its

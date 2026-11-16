@@ -39,11 +39,11 @@ describe('Composer backspace bytes that share one terminal read', () => {
     unmount = ui.unmount;
     await flushEffects();
     ui.pressBytes('abcdef');
-    await flushEffects();
+    await ui.settled();
     ui.pressBytes(chunk);
-    await flushEffects();
+    await ui.settled();
     ui.pressBytes('\r');
-    await flushEffects();
+    await ui.settled();
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith(expected);
   });
 
@@ -62,13 +62,13 @@ describe('Composer backspace bytes that share one terminal read', () => {
     unmount = ui.unmount;
     await flushEffects();
     ui.pressBytes('foo bar');
-    await flushEffects();
+    await ui.settled();
     ui.pressBytes('\x1b[127;3u');
     await flushEffects();
     ui.pressBytes('X');
-    await flushEffects();
+    await ui.settled();
     ui.pressBytes('\r');
-    await flushEffects();
+    await ui.settled();
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith('foo X');
   });
 });

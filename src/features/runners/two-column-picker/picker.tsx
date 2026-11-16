@@ -107,6 +107,8 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   });
 
   const terminalPane = nav.terminalPane;
+  const rightZoneTool =
+    nav.left.currentItem === undefined ? '' : leftProps.getKey(nav.left.currentItem);
   const display = buildRightDisplay<R>(nav.right.items, rightProps.getKey, rightProps.section);
   const selectedDisplayIndex = Math.max(
     0,
@@ -237,7 +239,8 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
                 if (slot?.kind === 'row') nav.clickRight(slot.navIndex);
               }}
               onWheel={(direction) => nav.wheelRight(wheelStep(direction))}
-              rowZonePrefix="runner-right"
+              // A click acts on the row that was drawn, and a row is drawn for one tool.
+              rowZonePrefix={`runner-right:${rightZoneTool}`}
               rowZoneZ={ROW_ZONE_Z_OVERLAY}
               renderRow={(slot, isCursor, maxWidth) => {
                 if (slot.kind === 'spacer') {

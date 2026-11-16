@@ -1365,17 +1365,17 @@ describe('Composer image attach gate', () => {
     );
     await flushEffects();
     ui.pressBytes('left right');
-    await flushEffects();
+    await ui.settled();
     for (let index = 0; index < 5; index += 1) {
       ui.pressBytes('\u001b[D');
-      await flushEffects();
+      await ui.settled();
     }
     ui.pressBytes('\u001b[200~pasted \u001b[201~');
     await vi.waitFor(() => expect(ui.lastFrame()).toContain('pasted'));
     expect(feedbackStore.get().message).toBeNull();
 
     ui.pressBytes('\r');
-    await flushEffects();
+    await ui.settled();
     expect(submitted).toEqual(['left pasted right']);
   });
 
@@ -2842,7 +2842,7 @@ describe('Composer long draft wrap', () => {
     ui.pressBytes(
       '\u001b[200~Run\tmake build first then check every single output file now\u001b[201~',
     );
-    await flushEffects();
+    await ui.settled();
     expect(boxRows(ui.lastFrame() ?? '')).toHaveLength(3);
     return { ui, submitted };
   }
@@ -2850,7 +2850,7 @@ describe('Composer long draft wrap', () => {
   it('ctrl+u on the last row of a pasted draft with a tab deletes only that row', async () => {
     const { ui } = await pasteTabDraft();
     ui.pressBytes('\x15');
-    await flushEffects();
+    await ui.settled();
 
     expect(boxRows(ui.lastFrame() ?? '').map((row) => row.trim())).toEqual([
       '│ › Run    make build first then       │',
@@ -2862,7 +2862,7 @@ describe('Composer long draft wrap', () => {
     const { ui, submitted } = await pasteTabDraft();
     for (const key of [CTRL_A, 'X', '\r']) {
       ui.pressBytes(key);
-      await flushEffects();
+      await ui.settled();
     }
 
     expect(submitted).toEqual(['Run\tmake build first then check every single output file Xnow']);
@@ -3056,16 +3056,16 @@ describe('Composer Enter in the same read as an edit', () => {
     />
   );
 
-  // Two writes in one tick reach the key handlers of one render, as two reads of one poll phase do.
+  // Two writes in one tick are two reads of one poll phase.
   it('sends the letter typed in the same tick as Enter', async () => {
     const submissions: string[] = [];
-    const ui = mountFeature(composer('normal', submissions));
+    const ui = mountThroughFilteredStdin(composer('normal', submissions));
     await flushEffects();
-    ui.stdin.write('make a total helpe');
-    await flushEffects();
-    ui.stdin.write('r');
-    ui.stdin.write('\r');
-    await flushEffects();
+    ui.pressBytes('make a total helpe');
+    await ui.settled();
+    ui.pressBytes('r');
+    ui.pressBytes('\r');
+    await ui.settled();
     expect(submissions).toEqual(['make a total helper']);
     expect(composerLiveStore.get().text).toBe('');
   });
@@ -3076,9 +3076,9 @@ describe('Composer Enter in the same read as an edit', () => {
     const ui = mountThroughFilteredStdin(composer('review', submissions));
     await flushEffects();
     ui.pressBytes('use sumx');
-    await flushEffects();
+    await ui.settled();
     ui.pressBytes('\x7f\r');
-    await flushEffects();
+    await ui.settled();
     expect(submissions).toEqual(['use sum']);
   });
 
@@ -3087,8 +3087,233 @@ describe('Composer Enter in the same read as an edit', () => {
     const ui = mountThroughFilteredStdin(composer('review', submissions));
     await flushEffects();
     ui.pressBytes('nop\x7f\r');
-    await flushEffects();
+    await ui.settled();
     expect(submissions).toEqual(['no']);
     expect(composerLiveStore.get().text).toBe('');
   });
+});
+
+describe('Composer keys read together with the key before them', () => {
+  const UP = '\x1b[A';
+  const DOWN = '\x1b[B';
+  const LEFT = '\x1b[D';
+  const BS = '\x7f';
+
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  type Ui = ReturnType<typeof mountThroughFilteredStdin>;
+
+  async function press(ui: Ui, ...reads: readonly string[]): Promise<void> {
+    for (const read of reads) {
+      ui.pressBytes(read);
+      await ui.settled();
+    }
+  }
+
+  /** Each row runs once with its keys in one read and once with each key in its own read. */
+  function bothWays<T extends { keys: readonly string[] }>(rows: readonly T[]) {
+    return rows.flatMap((row) => [
+      { ...row, way: 'one read', reads: [row.keys.join('')] },
+      { ...row, way: 'separate reads', reads: row.keys },
+    ]);
+  }
+
+  const historyRows = bothWays([
+    {
+      id: 'text, then ↑',
+      sent: ['older msg'],
+      typed: '',
+      keys: ['hello', UP],
+      shows: ['older msg', 'hello'],
+    },
+    {
+      id: 'Backspace, then ↑',
+      sent: ['older msg'],
+      typed: 'draft x',
+      keys: [BS, UP],
+      shows: ['older msg', 'draft '],
+    },
+    {
+      id: '↑, then ↑',
+      sent: ['one', 'two'],
+      typed: 'mine',
+      keys: [UP, UP],
+      shows: ['one', 'two', 'mine'],
+    },
+    {
+      id: '⏎, then ↑',
+      sent: ['one', 'two'],
+      typed: 'third',
+      keys: ['\r', UP],
+      shows: ['third', ''],
+    },
+    {
+      id: '↑, then a letter',
+      sent: ['older msg'],
+      typed: 'mine',
+      keys: [UP, 'x'],
+      shows: ['older msgx', 'older msgx'],
+    },
+  ]);
+
+  it.for(historyRows)(
+    'recalls the history after $id in $way',
+    async ({ sent, typed, reads, shows }) => {
+      const ui = mountThroughFilteredStdin(
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode="normal"
+          hint=""
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />,
+        { cols: 80, rows: 24 },
+      );
+      await ui.settled();
+      for (const text of sent) await press(ui, text, '\r');
+      if (typed !== '') await press(ui, typed);
+
+      await press(ui, ...reads);
+      const drafts = [composerLiveStore.get().text];
+      for (let down = 1; down < shows.length; down++) {
+        await press(ui, DOWN);
+        drafts.push(composerLiveStore.get().text);
+      }
+
+      expect(drafts).toEqual(shows);
+    },
+  );
+
+  const command = (name: string): RuntimeCommandDef => ({
+    kind: 'noarg',
+    name,
+    label: name.slice(1),
+    description: `${name} command`,
+    category: 'navigate',
+    validScreens: ['workflow'],
+    handler: () => {},
+  });
+  const COMMANDS = [command('/alpha'), command('/apex'), command('/beta')];
+
+  const listRows = bothWays([
+    {
+      id: '/ and Backspace ⏎',
+      typed: '/',
+      keys: [BS, '\r'],
+      runs: [],
+      sends: [],
+      empty: 1,
+      draft: '',
+    },
+    {
+      id: '/ap and three Backspace, hello, ← and ⏎',
+      typed: '/ap',
+      keys: [BS, BS, BS, 'hello', LEFT, '\r'],
+      runs: [],
+      sends: ['hello'],
+      empty: 0,
+      draft: '',
+    },
+    {
+      id: '/a and ↓ ⏎',
+      typed: '/a',
+      keys: [DOWN, '\r'],
+      runs: ['/apex'],
+      sends: [],
+      empty: 0,
+      draft: '',
+    },
+    {
+      id: '/apx and Backspace ⏎',
+      typed: '/apx',
+      keys: [BS, '\r'],
+      runs: ['/apex'],
+      sends: [],
+      empty: 0,
+      draft: '',
+    },
+    {
+      id: 'an empty box and /apx, Backspace, ⏎',
+      typed: '',
+      keys: ['/apx', BS, '\r'],
+      runs: ['/apex'],
+      sends: [],
+      empty: 0,
+      draft: '',
+    },
+    {
+      id: '/ap and Backspace ⏎',
+      typed: '/ap',
+      keys: [BS, '\r'],
+      runs: ['/alpha'],
+      sends: [],
+      empty: 0,
+      draft: '',
+    },
+  ]);
+
+  it.for(listRows)('runs the command that the list shows after $id in $way', async (row) => {
+    const runs: string[] = [];
+    const sends: string[] = [];
+    let empty = 0;
+    const ui = mountThroughFilteredStdin(
+      <Composer
+        commands={COMMANDS}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => sends.push(submission.message.text)}
+        onEmptySubmit={() => {
+          empty += 1;
+        }}
+        onRuntimeCommand={(line) => runs.push(line)}
+      />,
+      { cols: 80, rows: 24 },
+    );
+    await ui.settled();
+    if (row.typed !== '') await press(ui, row.typed);
+
+    await press(ui, ...row.reads);
+
+    expect({ runs, sends, empty, draft: composerLiveStore.get().text }).toEqual({
+      runs: row.runs,
+      sends: row.sends,
+      empty: row.empty,
+      draft: row.draft,
+    });
+  });
+
+  it.for(bothWays([{ keys: [DOWN, '\r'] }]))(
+    'puts the file that ↓ selects in the @ list in $way',
+    async ({ reads }) => {
+      configStore.__testReset({ projectDir: '/at-list-project', config: null });
+      const ui = mountThroughFilteredStdin(
+        <Box flexDirection="column" height={20} justifyContent="flex-end">
+          <Composer
+            commands={[]}
+            currentScreen="workflow"
+            mode="normal"
+            hint=""
+            onSubmit={() => {}}
+            onRuntimeCommand={() => {}}
+            listProjectFiles={async () => ['src/first.ts', 'src/second.ts']}
+          />
+        </Box>,
+        { cols: 80, rows: 24 },
+      );
+      await ui.settled();
+      await press(ui, '@');
+      await vi.waitFor(() =>
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('src/second.ts'),
+      );
+
+      await press(ui, ...reads);
+
+      expect(composerLiveStore.get().text).toBe('@src/second.ts');
+    },
+  );
 });

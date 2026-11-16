@@ -1,5 +1,9 @@
 import { hitTopmostZone } from '../../src/lib/terminal/mouse-zones.js';
-import type { FilteredStdin, MouseEvent } from '../../src/lib/terminal/filtered-stdin/types.js';
+import type {
+  FilteredStdin,
+  MouseEvent,
+  MouseListener,
+} from '../../src/lib/terminal/filtered-stdin/types.js';
 
 export function collectClickableZones({
   cols,
@@ -18,12 +22,17 @@ export function collectClickableZones({
   return zones;
 }
 
+/**
+ * A bridge with no input queue: `read` gives the action of a mouse event, and `emit` runs that
+ * action at once.
+ */
 export function createMockFilteredStdin() {
-  let listener: ((event: MouseEvent) => void) | undefined;
+  let listener: MouseListener | undefined;
+  const read = (event: MouseEvent) => listener?.(event);
   return {
     filtered: {
       stdin: process.stdin as unknown as NodeJS.ReadStream,
-      onMouse: (next: (event: MouseEvent) => void) => {
+      onMouse: (next: MouseListener) => {
         listener = next;
         return () => {
           listener = undefined;
@@ -31,9 +40,11 @@ export function createMockFilteredStdin() {
       },
       activate: () => {},
       isPasteActive: () => false,
+      holdInput: () => () => {},
       disable: () => {},
     } satisfies FilteredStdin,
-    emit: (event: MouseEvent) => listener?.(event),
+    read,
+    emit: (event: MouseEvent) => read(event)?.(),
   };
 }
 

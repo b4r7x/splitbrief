@@ -53,7 +53,7 @@ describe('a send the queue refuses', () => {
 
   async function press(ui: ReturnType<typeof renderThroughFilteredStdin>, bytes: string) {
     ui.pressBytes(bytes);
-    await flushEffects();
+    await ui.settled();
   }
 
   function renderWorkflowComposer(enqueue: () => Promise<QueueSubmissionResult | null>) {

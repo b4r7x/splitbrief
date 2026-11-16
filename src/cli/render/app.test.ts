@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { createElement, Fragment } from 'react';
+import { createElement, Fragment, isValidElement } from 'react';
 import { withFullScreen } from 'fullscreen-ink';
 import { render } from 'ink';
 import { terminalBackgroundStore } from '../../stores/ui/terminal-background.js';
@@ -14,7 +14,9 @@ import {
 } from '../../lib/terminal/editor-handover.js';
 import { getActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active.js';
 import { warnError, warnStderr } from '../../lib/warn.js';
+import type { FilteredStdin } from '../../lib/terminal/filtered-stdin/types.js';
 import { renderApp } from './app.js';
+import { InputTurns } from './input-turns.js';
 import { __testResetProbeActivity, trackProbe } from '../../engine/probe-activity.js';
 import { watchSlowProbeLines } from '../slow-probe-line.js';
 
@@ -242,6 +244,93 @@ describe('renderApp key input', () => {
         });
         input.write('ab\x7f\x7f');
         await vi.waitFor(() => expect(reads).toEqual(['ab', '\b', '\b']));
+      } finally {
+        inkExit.resolve();
+        await rendering;
+        stdout.mockRestore();
+        vi.restoreAllMocks();
+        input.destroy();
+      }
+    },
+  );
+});
+
+describe('renderApp input turns', () => {
+  function turnsOf(node: unknown): {
+    holdInput: (hold: (release: () => void) => void) => () => void;
+  } {
+    const children = isValidElement<{ children?: unknown }>(node) ? node.props.children : undefined;
+    const turns = (Array.isArray(children) ? children : [children]).find(
+      (child) => isValidElement(child) && child.type === InputTurns,
+    );
+    if (!isValidElement<{ holdInput: FilteredStdin['holdInput'] }>(turns)) {
+      throw new Error('the app mounts no input turns');
+    }
+    return turns.props;
+  }
+
+  it.each(['fullscreen', 'inline', 'fallback'] as const)(
+    'gives Ink the next key once the app has taken the one before it on the %s path',
+    async (path) => {
+      const input = Object.assign(new PassThrough(), {
+        isTTY: false,
+        isRaw: false,
+        setRawMode: () => input,
+        ref: () => input,
+        unref: () => input,
+      });
+      vi.spyOn(process, 'stdin', 'get').mockReturnValue(input as unknown as typeof process.stdin);
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const inkExit = Promise.withResolvers<void>();
+      const mounted: Array<{ node: unknown; stdin: NodeJS.ReadStream | undefined }> = [];
+      vi.mocked(render).mockImplementationOnce((node, options) => {
+        mounted.push({
+          node,
+          stdin: options !== undefined && 'stdin' in options ? options.stdin : undefined,
+        });
+        return inkInstance(() => inkExit.promise);
+      });
+      vi.mocked(withFullScreen).mockImplementationOnce((node, options) => {
+        if (path === 'fullscreen') {
+          mounted.push({
+            node,
+            stdin: options !== undefined && 'stdin' in options ? options.stdin : undefined,
+          });
+        }
+        return {
+          start: () =>
+            path === 'fallback'
+              ? Promise.reject(new Error('fullscreen unavailable'))
+              : Promise.resolve(),
+          waitUntilExit: () => inkExit.promise,
+          instance: inkInstance(() => inkExit.promise),
+        };
+      });
+      const rendering = renderApp(
+        createElement(Fragment),
+        { fullscreen: path !== 'inline', mouse: false },
+        { exit: vi.fn() },
+      );
+      try {
+        const ink = await vi.waitFor(() => {
+          const last = mounted.at(-1);
+          if (last?.stdin === undefined) throw new Error('Ink has no stdin');
+          return { node: last.node, stdin: last.stdin };
+        });
+        const releases: Array<() => void> = [];
+        turnsOf(ink.node).holdInput((release) => releases.push(release));
+        const reads: string[] = [];
+        ink.stdin.setEncoding('utf8');
+        ink.stdin.on('readable', () => {
+          for (let read = ink.stdin.read(); read !== null; read = ink.stdin.read())
+            reads.push(read);
+        });
+        input.write('ab\x7f\x7f');
+        await vi.waitFor(() => expect(reads).toEqual(['ab']));
+        releases.shift()?.();
+        expect(reads).toEqual(['ab', '\b']);
+        releases.shift()?.();
+        expect(reads).toEqual(['ab', '\b', '\b']);
       } finally {
         inkExit.resolve();
         await rendering;

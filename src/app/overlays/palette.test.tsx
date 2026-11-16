@@ -38,6 +38,8 @@ import {
 } from '#testing/helpers/filtered-stdin-harness.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
+import { stepBytes } from '#testing/helpers/input-steps.js';
+import { wireAppMouse } from '../mouse.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { glyph } from '../../lib/glyphs.js';
 import { Composer } from '../../components/composer/view.js';
@@ -1152,6 +1154,47 @@ describe('CommandPaletteOverlay', () => {
   });
 });
 
+describe('CommandPaletteOverlay click read together with the Esc that closes it', () => {
+  const VIEW = { cols: 120, rows: 40 };
+
+  it.for([
+    ['one read', true],
+    ['separate reads', false],
+  ] as const)(
+    'runs no row of the palette that Esc closed before the click (%s)',
+    async ([, oneRead]) => {
+      overlayStore.reset();
+      const ui = renderThroughFilteredStdin(
+        <HomeUnderPalette commands={createTestCommands()} />,
+        VIEW,
+      );
+      const disposeMouse = wireAppMouse(ui.filtered);
+      try {
+        await ui.settled();
+        overlayStore.open('command-palette');
+        await ui.settled();
+        const click = stepBytes(VIEW, { click: 'palette:command:/help' });
+
+        if (oneRead) {
+          ui.pressBytes(ESC + click);
+        } else {
+          ui.pressBytes(ESC);
+          await tick(80);
+          await ui.settled();
+          ui.pressBytes(click);
+        }
+        await ui.settled();
+
+        expect(overlayStore.get().active).toBe('none');
+        expect(commandPaletteMruStore.get().ids).toEqual([]);
+      } finally {
+        disposeMouse();
+        ui.unmount();
+      }
+    },
+  );
+});
+
 describe('CommandPaletteOverlay over a typed draft', () => {
   const DRAFT = 'keep this draft';
   const CTRL_A = '\u0001';
@@ -1165,7 +1208,7 @@ describe('CommandPaletteOverlay over a typed draft', () => {
 
   async function press(ui: FilteredStdinHarness, bytes: string): Promise<void> {
     ui.pressBytes(bytes);
-    await flushEffects();
+    await ui.settled();
   }
 
   async function prefillCrewOverDraft(): Promise<FilteredStdinHarness> {
@@ -1187,6 +1230,32 @@ describe('CommandPaletteOverlay over a typed draft', () => {
     expect(composerLiveStore.get().text).toBe('/crew ');
     return ui;
   }
+
+  it.for([
+    ['one read', [`${ENTER}\u001b[D`, 'x']],
+    ['two writes', [ENTER, '\u001b[D', 'x']],
+  ] as const)(
+    'moves the caret in the command that Enter fills in from the palette (%s)',
+    async ([, reads]) => {
+      overlayStore.reset();
+      const ui = renderThroughFilteredStdin(<HomeUnderPalette commands={createTestCommands()} />, {
+        cols: 120,
+        rows: 40,
+      });
+      mounted = ui;
+      await flushEffects();
+      overlayStore.open('command-palette');
+      await flushEffects();
+      ui.pressBytes('/crew');
+      await ui.settled();
+      for (const read of reads) {
+        ui.pressBytes(read);
+        await ui.settled();
+      }
+      expect(overlayStore.get().active).toBe('none');
+      expect(composerLiveStore.get().text).toBe('/crewx ');
+    },
+  );
 
   it('brings the draft back once the filled-in command is sent', async () => {
     const ui = await prefillCrewOverDraft();

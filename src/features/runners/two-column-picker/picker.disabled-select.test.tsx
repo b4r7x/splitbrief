@@ -384,9 +384,10 @@ describe('TwoColumnPicker model column when the parent reorders the tools', () =
       );
       await flushEffects();
 
+      // ⏎ acts on the frame on screen, where Alpha is the highlighted tool, before the reorder renders.
       expect(commits.find((c) => c.order === 'alpha,beta,gamma')).toEqual({
         order: 'alpha,beta,gamma',
-        logAtRender: ['left alpha'],
+        logAtRender: ['left alpha', 'confirm alpha:m-1'],
         log: ['left alpha', 'confirm alpha:m-1'],
       });
       expect(log).toEqual(['left alpha', 'confirm alpha:m-1']);

@@ -45,12 +45,12 @@ describe('bracketed paste into a mounted input', () => {
       unmount = ui.unmount;
       await flushEffects();
       ui.pressBytes(`\u001b[200~${text}\u001b[201~`);
-      await flushEffects();
+      await ui.settled();
       expect(onSubmit).not.toHaveBeenCalled();
       ui.pressBytes('X');
-      await flushEffects();
+      await ui.settled();
       ui.pressBytes('\r');
-      await flushEffects();
+      await ui.settled();
       expect(onSubmit).toHaveBeenCalledExactlyOnceWith(`draft${text.normalize('NFC')}X`);
     },
   );
@@ -62,15 +62,15 @@ describe('bracketed paste into a mounted input', () => {
     unmount = ui.unmount;
     await flushEffects();
     ui.pressBytes('\u001b[D');
-    await flushEffects();
+    await ui.settled();
     ui.pressBytes('\u001b[200~e\u0301\u001b[201~');
-    await flushEffects();
+    await ui.settled();
     expect(onPaste).toHaveBeenCalledExactlyOnceWith('e\u0301', 4);
     ui.pressBytes('ordinary');
-    await flushEffects();
+    await ui.settled();
     expect(onPaste).toHaveBeenCalledTimes(1);
     ui.pressBytes('\r');
-    await flushEffects();
+    await ui.settled();
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith('drafordinaryt');
   });
 
@@ -80,9 +80,9 @@ describe('bracketed paste into a mounted input', () => {
     unmount = ui.unmount;
     await flushEffects();
     ui.pressBytes('A\u001b[200~\n\u001b[201~B');
-    await flushEffects();
+    await ui.settled();
     ui.pressBytes('\r');
-    await flushEffects();
+    await ui.settled();
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith('draftA\nB');
   });
 
@@ -97,7 +97,7 @@ describe('bracketed paste into a mounted input', () => {
     await flushEffects();
 
     ui.pressBytes('\u001b[200~"/tmp/pasted-image.png"\u001b[201~');
-    await flushEffects();
+    await ui.settled();
 
     expect(onFileDrop).toHaveBeenCalledExactlyOnceWith('/tmp/pasted-image.png');
     expect(onPaste).not.toHaveBeenCalled();
@@ -120,12 +120,12 @@ describe('bracketed paste into a mounted input', () => {
     unmount = ui.unmount;
     await flushEffects();
     ui.pressBytes(`\u001b[200~${text}\u001b[201~`);
-    await flushEffects();
+    await ui.settled();
     expect(onFileDrop).not.toHaveBeenCalled();
     expect(onPaste).toHaveBeenCalledExactlyOnceWith(text, 'draft'.length);
     expect(onSubmit).not.toHaveBeenCalled();
     ui.pressBytes('\r');
-    await flushEffects();
+    await ui.settled();
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith(`draft${text}`);
   });
 
@@ -149,11 +149,11 @@ describe('input read in one chunk', () => {
       unmount = ui.unmount;
       await flushEffects();
       ui.pressBytes(bytes);
-      await flushEffects();
+      await ui.settled();
       ui.pressBytes('X');
-      await flushEffects();
+      await ui.settled();
       ui.pressBytes('\r');
-      await flushEffects();
+      await ui.settled();
       expect(onSubmit).toHaveBeenCalledExactlyOnceWith('draftX');
     },
   );
@@ -170,9 +170,9 @@ describe('input read in one chunk', () => {
     unmount = ui.unmount;
     await flushEffects();
     ui.pressBytes(bytes);
-    await flushEffects();
+    await ui.settled();
     ui.pressBytes('\r');
-    await flushEffects();
+    await ui.settled();
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith(`draft${inserted}`);
   });
 });

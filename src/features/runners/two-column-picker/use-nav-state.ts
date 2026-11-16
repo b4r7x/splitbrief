@@ -1,10 +1,8 @@
-import { useLayoutEffect, useState } from 'react';
-import { useInput, type Key } from 'ink';
-import { useRef } from 'react';
+import { useState } from 'react';
+import { useInput } from 'ink';
 import { filterByFields, type FilterableItem } from '../../../components/pickers/filtering.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { clampIndex } from '../../../utils/indexing.js';
-import { assertNever } from '../../../utils/type-guards.js';
 import { escapeAction, handleKeyboardInput } from './keyboard.js';
 import type { LeftColumnProps, RightColumnProps, TwoColumnNavState } from './types.js';
 import { useColumnState } from './use-column-state.js';
@@ -18,16 +16,6 @@ import {
 import { overlayAllowsPickerKeys } from '../../../core/navigation/types.js';
 
 const noop = () => {};
-
-/**
- * A click is the row that was drawn (tool key and row key); when an earlier entry took that row
- * out of the list, the click does nothing.
- */
-type PickerInput =
-  | { kind: 'key'; input: string; key: Key }
-  | { kind: 'wheel-left' | 'wheel-right'; direction: 1 | -1 }
-  | { kind: 'click-left'; rowKey: string }
-  | { kind: 'click-right'; leftKey: string; rowKey: string };
 
 interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: string }> {
   leftProps: LeftColumnProps<L>;
@@ -105,7 +93,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const isDisabled = leftCol.currentItem
     ? (isLeftItemDisabled?.(leftCol.currentItem) ?? false)
     : false;
-  // The queue runs each key on the committed render: no render may keep the keys in a hidden list.
+  // Each key runs on the committed render: no render may keep the keys in a hidden list.
   if (activeColumn === 'right' && (isDisabled || terminalPane !== undefined)) {
     setActiveColumn('left');
     setSelectedLeftKey(null);
@@ -170,78 +158,43 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
 
   const isActive = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
 
-  const rightRowKey = (row: RightItemOrVirtual<R>) =>
-    isRealRightItem(row) ? rightProps.getKey(row) : CUSTOM_ROW_ID;
-
-  const run = (entry: PickerInput) => {
-    switch (entry.kind) {
-      case 'key':
-        // The entry before this one can give the keys to another overlay.
-        if (!isActive) return;
-        handleKeyboardInput(entry.input, entry.key, {
-          leftActive: activeColumn === 'left',
-          rightActive,
-          isTerminal: terminalPane !== undefined,
-          isDisabled,
-          hasSelectableRight,
-          currentRightIsCustom,
-          leftCurrentItem: leftCol.currentItem,
-          leftFiltered: leftCol.items,
-          filteredRight,
-          leftFilter: leftCol.filter,
-          rightFilter: rightCol.filter,
-          rightVirtualCount: virtualCount,
-          leftEffectiveIndex: leftCol.effectiveIndex,
-          rightEffectiveIndex,
-          isRightItemCustom,
-          onDeleteRight,
-          onCancel,
-          onRefresh: params.onRefresh,
-          maxVisible: params.maxVisible,
-          setActiveColumn,
-          setSelectedLeftKey,
-          setLeftFilter: leftCol.setFilter,
-          setRightFilter: rightCol.setFilter,
-          setLeftIndex: leftCol.setIndex,
-          setRightIndex: rightCol.setIndex,
-          resetRight,
-          activateLeft,
-          activateRight,
-          cycleRight,
-          isExpanded: expandedOnScreen,
-          onCollapse: collapseRight,
-        });
-        return;
-      case 'wheel-left':
-        moveLeft(entry.direction);
-        return;
-      case 'wheel-right':
-        moveRight(entry.direction);
-        return;
-      case 'click-left': {
-        const at = leftCol.items.findIndex((item) => leftGetKey(item) === entry.rowKey);
-        if (at >= 0) activateLeft(at);
-        return;
-      }
-      case 'click-right': {
-        const left = leftCol.currentItem;
-        if (left === undefined || leftGetKey(left) !== entry.leftKey) return;
-        const at = filteredRight.findIndex((row) => rightRowKey(row) === entry.rowKey);
-        if (at < 0) return;
-        // A row that steps its own value is a control, not a choice: a
-        // click on it must not confirm the picker and dismiss it. A row that
-        // only holds the space key is still a choice, so it stays clickable.
-        if (cycleRight(at) === 'stepped') return;
-        activateRight(at);
-        return;
-      }
-      default:
-        return assertNever(entry);
-    }
-  };
-
-  const enqueue = useInputQueue(run);
-  useInput((input, key) => enqueue({ kind: 'key', input, key }), { isActive });
+  useInput(
+    (input, key) =>
+      handleKeyboardInput(input, key, {
+        leftActive: activeColumn === 'left',
+        rightActive,
+        isTerminal: terminalPane !== undefined,
+        isDisabled,
+        hasSelectableRight,
+        currentRightIsCustom,
+        leftCurrentItem: leftCol.currentItem,
+        leftFiltered: leftCol.items,
+        filteredRight,
+        leftFilter: leftCol.filter,
+        rightFilter: rightCol.filter,
+        rightVirtualCount: virtualCount,
+        leftEffectiveIndex: leftCol.effectiveIndex,
+        rightEffectiveIndex,
+        isRightItemCustom,
+        onDeleteRight,
+        onCancel,
+        onRefresh: params.onRefresh,
+        maxVisible: params.maxVisible,
+        setActiveColumn,
+        setSelectedLeftKey,
+        setLeftFilter: leftCol.setFilter,
+        setRightFilter: rightCol.setFilter,
+        setLeftIndex: leftCol.setIndex,
+        setRightIndex: rightCol.setIndex,
+        resetRight,
+        activateLeft,
+        activateRight,
+        cycleRight,
+        isExpanded: expandedOnScreen,
+        onCollapse: collapseRight,
+      }),
+    { isActive },
+  );
 
   return {
     activeColumn,
@@ -269,40 +222,15 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     }),
     isOnCustomItem: rightActive && isOnVirtual,
     currentRightIsCustom,
-    wheelLeft: (direction) => enqueue({ kind: 'wheel-left', direction }),
-    wheelRight: (direction) => enqueue({ kind: 'wheel-right', direction }),
-    clickLeft: (index) => {
-      const item = leftCol.items[index];
-      if (item) enqueue({ kind: 'click-left', rowKey: leftGetKey(item) });
-    },
+    wheelLeft: moveLeft,
+    wheelRight: moveRight,
+    clickLeft: activateLeft,
     clickRight: (index) => {
-      const row = filteredRight[index];
-      const left = leftCol.currentItem;
-      if (row && left) {
-        enqueue({ kind: 'click-right', leftKey: leftGetKey(left), rowKey: rightRowKey(row) });
-      }
+      // A row that steps its own value is a control, not a choice: a
+      // click on it must not confirm the picker and dismiss it. A row that
+      // only holds the space key is still a choice, so it stays clickable.
+      if (cycleRight(index) === 'stepped') return;
+      activateRight(index);
     },
-  };
-}
-
-/**
- * Runs one queued entry at a time: the next entry runs only after the state change of the entry
- * before it has committed, so each entry meets the state that the entry before it left.
- */
-export function useInputQueue<T>(run: (entry: T) => void): (entry: T) => void {
-  const pending = useRef<T[]>([]);
-  const [tick, setTick] = useState(0);
-
-  useLayoutEffect(() => {
-    const entry = pending.current.shift();
-    if (entry === undefined) return;
-    run(entry);
-    // A direct state update here chains synchronous renders, and React stops a chain of more than 50.
-    if (pending.current.length > 0) queueMicrotask(() => setTick((n) => n + 1));
-  }, [tick]);
-
-  return (entry) => {
-    pending.current.push(entry);
-    setTick((n) => n + 1);
   };
 }

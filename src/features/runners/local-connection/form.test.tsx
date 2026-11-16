@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { ToolModelPicker } from '../../../app/overlays/runners.js';
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { __testResetProbeActivity, trackProbe } from '../../../engine/probe-activity.js';
@@ -446,5 +447,122 @@ describe('LocalConnectionForm', () => {
     // The server answered, so the instruction for starting one stands down.
     expect(frame).not.toContain('Run `ollama serve`');
     ui.unmount();
+  });
+});
+
+describe('LocalConnectionForm keys read together with the key before them', () => {
+  const BS = '\x7f';
+  const LEFT = '\x1b[D';
+
+  beforeEach(() => {
+    configStore.__testReset({ projectDir: '/local-connection-keys', config: plannerOnOllama() });
+    detectionStore.reset();
+    modelCacheStore.reset();
+    overlayStore.reset();
+    feedbackStore.reset();
+    pickerViewStore.reset();
+    terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: true });
+    __testResetProbeActivity();
+  });
+
+  const mounted: Array<() => void> = [];
+  afterEach(() => {
+    for (const unmount of mounted.splice(0)) unmount();
+  });
+
+  type Ui = ReturnType<typeof renderThroughFilteredStdin>;
+
+  async function press(ui: Ui, ...reads: readonly string[]): Promise<void> {
+    for (const read of reads) {
+      ui.pressBytes(read);
+      await ui.settled();
+    }
+  }
+
+  /** Each row runs once with its keys in one read and once with each key in its own read. */
+  function bothWays<T extends { keys: readonly string[] }>(rows: readonly T[]) {
+    return rows.flatMap((row) => [
+      { ...row, way: 'one read', reads: [row.keys.join('')] },
+      { ...row, way: 'separate reads', reads: row.keys },
+    ]);
+  }
+
+  function open() {
+    const checks: LocalConnectionProbeInput[] = [];
+    const saves: LocalConnectionSave[] = [];
+    const ui = renderThroughFilteredStdin(
+      <LocalConnectionForm
+        role="planner"
+        provider="ollama"
+        seat={{ apiBase: OLLAMA_DEFAULT }}
+        check={async (input) => {
+          checks.push(input);
+          return listing([{ id: 'model-one' }, { id: 'model-two' }]);
+        }}
+        onSave={(input) => saves.push(input)}
+      />,
+      { cols: 100, rows: 30 },
+    );
+    mounted.push(ui.unmount);
+    return { ui, checks, saves };
+  }
+
+  /** The field drops keys for 50ms after a line kill, so the value follows the wait. */
+  async function retype(ui: Ui, value: string): Promise<void> {
+    await press(ui, CTRL_U);
+    await tick(60);
+    await press(ui, value);
+  }
+
+  it.for(
+    bothWays([
+      { id: 'Backspace ⏎', typed: `${SECOND_SERVER}x`, keys: [BS, ENTER], checked: SECOND_SERVER },
+      {
+        id: 'Backspace, 6, ← and ⏎',
+        typed: 'http://localhost:11435',
+        keys: [BS, '6', LEFT, ENTER],
+        checked: 'http://localhost:11436/v1',
+      },
+    ]),
+  )('checks the address that $id leave in $way', async ({ typed, reads, checked }) => {
+    const { ui, checks } = open();
+    await ui.settled();
+    await retype(ui, typed);
+
+    await press(ui, ...reads);
+
+    expect(checks.map((check) => check.apiBase)).toEqual([checked]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Ollama answered · 2 listed');
+  });
+
+  it.for(bothWays([{ keys: [BS, ENTER] }]))(
+    'checks the token that Backspace ⏎ leave in $way',
+    async ({ reads }) => {
+      const { ui, checks } = open();
+      await ui.settled();
+      await press(ui, DOWN, 'env:OLLAMA_LOCAL_API_KEYx');
+
+      await press(ui, ...reads);
+
+      expect(checks.map((check) => check.apiKey)).toEqual(['env:OLLAMA_LOCAL_API_KEY']);
+    },
+  );
+
+  it.for(
+    bothWays([
+      { id: 'the Check row and ↓ ⏎', downs: 2, keys: [DOWN, ENTER], saved: 'model-one' },
+      { id: 'the first model and ↓ ⏎', downs: 3, keys: [DOWN, ENTER], saved: 'model-two' },
+      { id: 'the token field and ↓ ↓ ⏎', downs: 1, keys: [DOWN, DOWN, ENTER], saved: 'model-one' },
+    ]),
+  )('saves the model that the cursor reaches from $id in $way', async ({ downs, reads, saved }) => {
+    const { ui, checks, saves } = open();
+    await ui.settled();
+    await press(ui, ENTER);
+    await press(ui, ...Array.from({ length: downs }, () => DOWN));
+
+    await press(ui, ...reads);
+
+    expect(checks).toHaveLength(1);
+    expect(saves.map((save) => save.model)).toEqual([saved]);
   });
 });

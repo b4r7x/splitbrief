@@ -1,7 +1,15 @@
 import { PassThrough } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { setTerminalInputModes } from '../control.js';
-import type { FilteredStdin, HeldPrefix, MouseEvent, MouseListener, PasteState } from './types.js';
+import { drain, emitText } from './deliver.js';
+import type {
+  FilterState,
+  FilteredStdin,
+  FilteredStdinOptions,
+  MouseAction,
+  MouseEvent,
+  MouseListener,
+} from './types.js';
 import {
   EMPTY_BUFFER,
   appendPaste,
@@ -12,31 +20,12 @@ import {
 } from './paste.js';
 import { ESC_BYTE, clearHeldPrefixTimer, readEscape, scheduleHeldPrefixFlush } from './escape.js';
 
-const BACKSPACE_BYTE = /([\b\x7f])/;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: an Alt+Backspace key begins with ESC.
+const BACKSPACE_KEY = /(\x1b?[\b\x7f])/;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: an Alt+Backspace key begins with ESC.
+const DEL_KEY = /^(\x1b?)\x7f$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: a kitty CSI-u key begins with ESC.
 const KITTY_BACKSPACE = /^\x1b\[127((?:;[\d:;]*)?u)$/;
-
-interface FilteredStdinOptions {
-  activate?: boolean | undefined;
-  mouse?: boolean | undefined;
-  hover?: boolean | undefined;
-  paste?: boolean | undefined;
-  handleMouse?: ((event: MouseEvent, dispatch: MouseListener) => void) | undefined;
-  filterInput?: ((text: string) => string) | undefined;
-  onPaste?: (() => void) | undefined;
-}
-
-interface FilterState {
-  filtered: NodeJS.ReadStream;
-  decoder: StringDecoder;
-  options: FilteredStdinOptions | undefined;
-  mouseEnabled: boolean;
-  mouseListeners: MouseListener[];
-  held: HeldPrefix;
-  paste: PasteState;
-  active: boolean;
-  disabled: boolean;
-}
 
 function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.ReadStream {
   Object.defineProperty(filtered, 'isTTY', {
@@ -66,16 +55,6 @@ function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.Read
   return filtered as unknown as NodeJS.ReadStream;
 }
 
-function emitText(filtered: NodeJS.ReadStream, text: string): void {
-  if (text.length === 0) return;
-  filtered.write(text, 'utf8');
-  // Ink consumes stdin through its `readable` listener. Flush each wire
-  // segment before a following paste event can be emitted; otherwise Node's
-  // readable buffer joins bytes on both sides of a paste and loses their
-  // insertion order at the editor boundary.
-  filtered.emit('readable');
-}
-
 // Ink parses one read as one key unless an ESC starts the next one, so `\x7f\x7f` would reach a
 // text field as one unknown key and delete nothing. Each backspace byte is written as its own key.
 // Ink names DEL and the kitty codepoint 127 `delete`, the name of the forward Delete key, so the
@@ -84,16 +63,11 @@ function writeKeyBytes(state: FilterState, bytes: Buffer): void {
   if (bytes.length === 0) return;
   const text = state.decoder.write(bytes);
   const keys = state.options?.filterInput ? state.options.filterInput(text) : text;
-  for (const key of keys.split(BACKSPACE_BYTE)) {
-    emitText(state.filtered, key === '\x7f' ? '\b' : key.replace(KITTY_BACKSPACE, '\x1b[8$1'));
+  for (const key of keys.split(BACKSPACE_KEY)) {
+    if (key.length === 0) continue;
+    const named = key.replace(DEL_KEY, '$1\b').replace(KITTY_BACKSPACE, '\x1b[8$1');
+    state.queue.push({ kind: 'key', text: named });
   }
-}
-
-function reportPaste(state: FilterState, text: string): void {
-  state.options?.onPaste?.();
-  // A focused text field consumes the paste before Ink can interpret a lone
-  // newline or tab as a key. Other views retain their plain-text fallback.
-  if (!state.filtered.emit('paste', text)) emitText(state.filtered, text);
 }
 
 function writeSegment(state: FilterState, bytes: Buffer): void {
@@ -104,13 +78,26 @@ function writeSegment(state: FilterState, bytes: Buffer): void {
   writeKeyBytes(state, bytes);
 }
 
-function dispatchMouse(state: FilterState, event: MouseEvent | undefined): void {
+// A click acts on what the frame on screen shows, so the listeners read it now. What they do
+// waits for its turn behind the input read before it.
+function readMouse(state: FilterState, event: MouseEvent | undefined): void {
   if (!event) return;
-  const dispatch: MouseListener = (next) => {
-    for (const listener of state.mouseListeners) listener(next);
+  const actions: MouseAction[] = [];
+  const dispatch = (next: MouseEvent) => {
+    for (const listener of state.mouseListeners) {
+      const action = listener(next);
+      if (action !== undefined) actions.push(action);
+    }
   };
   if (state.options?.handleMouse) state.options.handleMouse(event, dispatch);
   else dispatch(event);
+  if (actions.length === 0) return;
+  const wheel = event.type === 'wheel-up' || event.type === 'wheel-down';
+  state.queue.push({ kind: wheel ? 'wheel' : 'mouse', actions });
+}
+
+function isCarriedEscape(source: Buffer, textStart: number, cursor: number): boolean {
+  return cursor - textStart === 1 && source.readUInt8(textStart) === ESC_BYTE;
 }
 
 function processBytes(state: FilterState, source: Buffer): void {
@@ -123,10 +110,13 @@ function processBytes(state: FilterState, source: Buffer): void {
       continue;
     }
 
-    if (cursor > textStart) writeSegment(state, source.subarray(textStart, cursor));
-
     const tail = source.subarray(cursor);
     const decision = readEscape(tail, state.paste.active, state.mouseEnabled);
+    // Ink joins a lone ESC with the key after it in the same read (Alt and that key), so the two
+    // stay one key.
+    const altKey = decision.kind === 'text' && isCarriedEscape(source, textStart, cursor);
+    if (cursor > textStart && !altKey) writeSegment(state, source.subarray(textStart, cursor));
+
     switch (decision.kind) {
       case 'hold':
         state.held.bytes = Buffer.from(tail);
@@ -136,11 +126,11 @@ function processBytes(state: FilterState, source: Buffer): void {
         cursor += decision.length;
         break;
       case 'paste-end':
-        reportPaste(state, endPaste(state.paste));
+        state.queue.push({ kind: 'paste', text: endPaste(state.paste) });
         cursor += decision.length;
         break;
       case 'mouse':
-        dispatchMouse(state, decision.event);
+        readMouse(state, decision.event);
         cursor += decision.length;
         break;
       case 'skip':
@@ -151,7 +141,15 @@ function processBytes(state: FilterState, source: Buffer): void {
         cursor += decision.length;
         break;
       case 'text':
-        writeKeyBytes(state, source.subarray(cursor, cursor + decision.length));
+        if (decision.length === 1) {
+          if (!altKey) textStart = cursor;
+          cursor += 1;
+          continue;
+        }
+        writeKeyBytes(
+          state,
+          source.subarray(altKey ? textStart : cursor, cursor + decision.length),
+        );
         cursor += decision.length;
         break;
     }
@@ -167,13 +165,17 @@ function flushHeldPrefix(state: FilterState): void {
   state.held.bytes = EMPTY_BUFFER;
   if (state.paste.active) return;
   writeKeyBytes(state, held);
+  drain(state);
 }
 
 function readChunk(state: FilterState, chunk: Buffer): void {
   clearHeldPrefixTimer(state.held);
   const source = state.held.bytes.length > 0 ? Buffer.concat([state.held.bytes, chunk]) : chunk;
   state.held.bytes = EMPTY_BUFFER;
+  // A click is read against the frame on screen, so the whole read is parsed before its first
+  // input reaches the app.
   processBytes(state, source);
+  drain(state);
   if (state.paste.active) return;
   scheduleHeldPrefixFlush(state.held, () => {
     if (!state.disabled) flushHeldPrefix(state);
@@ -197,6 +199,10 @@ export function createFilteredStdin(
     paste: { active: false, chunks: [], pendingCr: false },
     active: false,
     disabled: false,
+    queue: [],
+    hold: null,
+    waiting: false,
+    delivering: false,
   };
   const dataHandler = (chunk: Buffer) => readChunk(state, chunk);
 
@@ -223,16 +229,28 @@ export function createFilteredStdin(
         state.mouseListeners = state.mouseListeners.filter((candidate) => candidate !== listener);
       };
     },
-    isPasteActive: () => state.paste.active,
+    // A key that waited behind others was read before the paste that is open now.
+    isPasteActive: () => state.paste.active && !state.delivering,
+    holdInput: (hold) => {
+      state.hold = hold;
+      return () => {
+        state.hold = null;
+        state.waiting = false;
+        drain(state);
+      };
+    },
     disable: () => {
       if (state.disabled) return;
       state.disabled = true;
+      state.hold = null;
+      state.waiting = false;
       clearHeldPrefixTimer(state.held);
       if (state.active) {
         state.active = false;
         stdin.off('data', dataHandler);
         setTerminalInputModes('disable', { mouse: mouseEnabled, paste: pasteEnabled });
       }
+      drain(state);
       flushHeldPrefix(state);
       emitText(state.filtered, state.decoder.end());
       state.held.bytes = EMPTY_BUFFER;

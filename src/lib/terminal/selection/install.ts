@@ -1,14 +1,14 @@
 import XtermHeadless from '@xterm/headless';
 import { UnicodeGraphemesAddon } from './grapheme-addon.js';
 import type { CopyOutcome } from '../../clipboard/copy.js';
-import type { MouseEvent, MouseListener } from '../filtered-stdin/types.js';
+import type { MouseDispatch, MouseEvent } from '../filtered-stdin/types.js';
 import { filterInput } from './copy.js';
 import { handleMouse } from './gesture.js';
 import { clear, flushOutput, handleResize, interceptWrite, resume, suspend } from './output.js';
 import type { SelectionState } from './types.js';
 
 export interface TerminalSelection {
-  handleMouse: (event: MouseEvent, dispatch: MouseListener) => void;
+  handleMouse: (event: MouseEvent, dispatch: MouseDispatch) => void;
   filterInput: (text: string) => string;
   clear: () => void;
   suspend: () => void;

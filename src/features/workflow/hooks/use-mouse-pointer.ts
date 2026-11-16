@@ -1,5 +1,5 @@
-import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
-import { hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
+import type { MouseAction, MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
+import { clickAt } from '../../../lib/terminal/mouse-zones.js';
 import { hoverStore } from '../../../stores/ui/hover.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { completionStore } from '../../../stores/ui/completion.js';
@@ -82,7 +82,8 @@ function handleHover(sgrX: number, sgrY: number): void {
   hoverStore.set(hit.index);
 }
 
-function activateConversationRow(windowIndex: number): void {
+/** The key of the transcript row that the frame on screen shows at `windowIndex`. */
+function drawnConversationRowKey(windowIndex: number): string | undefined {
   const snapshot = readConversationScrollSnapshot();
   const scroll = conversationScrollStore.get();
   const computed = computeConversationRowScroll({
@@ -97,9 +98,11 @@ function activateConversationRow(windowIndex: number): void {
     heightAtScroll: scroll.heightAtScroll,
     tail: readTranscriptTail(),
   });
-  const clickedRow = windowIndex >= 0 ? computed.rows[windowIndex] : undefined;
-  if (clickedRow === undefined) return;
-  const action = readConversationRowActions().get(clickedRow.key);
+  return windowIndex >= 0 ? computed.rows[windowIndex]?.key : undefined;
+}
+
+function activateConversationRow(rowKey: string): void {
+  const action = readConversationRowActions().get(rowKey);
   if (action === undefined) return;
   if (action.type === 'toggle-diff') conversationScrollStore.toggleDiff(action.key);
   else toggleFoldedRows(action.key);
@@ -117,22 +120,18 @@ export function handleWorkflowMouseMove(event: MouseEvent): void {
   handleHover(event.x, event.y);
 }
 
-export function handleWorkflowPromptMousePress(event: MouseEvent): void {
-  hitTopmostZone(event.x, event.y, { minZ: PROMPT_ZONE_Z })?.onClick?.();
+export function handleWorkflowPromptMousePress(event: MouseEvent): MouseAction | undefined {
+  return clickAt(event.x, event.y, { minZ: PROMPT_ZONE_Z });
 }
 
-export function handleWorkflowMousePress(event: MouseEvent): void {
-  if (completionStore.get().open) return;
-  const zone = hitTopmostZone(event.x, event.y);
-  if (zone) {
-    zone.onClick?.();
-    return;
-  }
+/** Reads a press against the frame on screen; the action acts on what that frame showed there. */
+export function handleWorkflowMousePress(event: MouseEvent): MouseAction | undefined {
+  if (completionStore.get().open) return undefined;
+  const click = clickAt(event.x, event.y);
+  if (click) return click;
   const hit = resolveWorkflowHit(event.x, event.y, readConversationHoverSnapshot());
-  if (!hit) return;
-  if (hit.surface === 'rail') {
-    scrollToRailStage(hit.index);
-    return;
-  }
-  activateConversationRow(hit.index);
+  if (!hit) return undefined;
+  if (hit.surface === 'rail') return () => scrollToRailStage(hit.index);
+  const rowKey = drawnConversationRowKey(hit.index);
+  return rowKey === undefined ? undefined : () => activateConversationRow(rowKey);
 }

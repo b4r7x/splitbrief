@@ -1,4 +1,4 @@
-import type { MouseEvent, MouseListener } from '../filtered-stdin/types.js';
+import type { MouseDispatch, MouseEvent } from '../filtered-stdin/types.js';
 import { renderSelection, snapshotTerminalFrame, type TerminalFrame } from './frame.js';
 import { copySelection, reportCopyError } from './copy.js';
 import { clear, reconcile, redraw } from './output.js';
@@ -24,7 +24,7 @@ function paint(state: SelectionState, current: SelectionGesture): void {
 export function handleMouse(
   state: SelectionState,
   event: MouseEvent,
-  dispatch: MouseListener,
+  dispatch: MouseDispatch,
 ): void {
   if (state.disposed || state.suspended) {
     dispatch(event);

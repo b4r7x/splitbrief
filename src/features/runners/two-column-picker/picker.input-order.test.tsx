@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { Text } from 'ink';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { deliverSteps, type InputStep } from '#testing/helpers/input-steps.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { wireAppMouse } from '../../../app/mouse.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { _resetMouseZones } from '../../../lib/terminal/mouse-zones.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { TwoColumnPicker } from './picker.js';
 
@@ -143,21 +145,30 @@ function unmountAll() {
   _resetMouseZones();
 }
 
+/** The picker under the input bridge, with the clicks and wheel steps routed as the app routes them. */
+function mount(element: ReactElement) {
+  const ui = renderThroughFilteredStdin(element, VIEWPORT);
+  const disposeMouse = wireAppMouse(ui.filtered);
+  mounted.push(() => {
+    disposeMouse();
+    ui.unmount();
+  });
+  return ui;
+}
+
 async function run(
   row: Case,
   delivery: 'steady' | 'burst',
 ): Promise<{ start: Snapshot; end: Snapshot }> {
   const log: string[] = [];
-  const ui = renderFeature(<Harness log={log} column={row.column} />, VIEWPORT);
-  mounted.push(ui.unmount);
-  await flushEffects();
+  const ui = mount(<Harness log={log} column={row.column} />);
+  await ui.settled();
   await deliverSteps(ui, VIEWPORT, row.setup ?? [], 'steady');
-  const start = { log: [...log], frame: stripAnsiStyles(ui.lastFrame()) };
+  const start = { log: [...log], frame: stripAnsiStyles(ui.lastFrame() ?? '') };
   expect(start.frame).toContain(row.start);
 
   await deliverSteps(ui, VIEWPORT, row.steps, delivery);
-  if (delivery === 'burst') await flushEffects();
-  const end = { log: log.slice(start.log.length), frame: stripAnsiStyles(ui.lastFrame()) };
+  const end = { log: log.slice(start.log.length), frame: stripAnsiStyles(ui.lastFrame() ?? '') };
   unmountAll();
   return { start, end };
 }
@@ -165,7 +176,7 @@ async function run(
 const R = 'right';
 const L = 'left';
 const toolClick = (id: string) => ({ click: `runner-left:${id}` });
-const rowClick = (id: string) => ({ click: `runner-right:${id}` });
+const rowClick = (id: string, tool = 'alpha') => ({ click: `runner-right:${tool}:${id}` });
 const OPEN_FAMILY = [DOWN, DOWN, ENTER];
 
 const TWINS: Case[] = [
@@ -431,7 +442,7 @@ const TWINS: Case[] = [
     name: 'wheel down on the model list, ⏎',
     column: R,
     start: '>auto',
-    steps: [{ wheel: 'runner-right:auto' }, ENTER],
+    steps: [{ wheel: 'runner-right:alpha:auto' }, ENTER],
   },
   {
     id: 'A46',
@@ -563,7 +574,7 @@ const CLICKS: Array<
     name: '⏎, then 2 wheel steps down on the model list',
     column: R,
     start: '>auto',
-    steps: [ENTER, { wheel: 'runner-right:auto' }, { wheel: 'runner-right:auto' }],
+    steps: [ENTER, { wheel: 'runner-right:alpha:auto' }, { wheel: 'runner-right:alpha:auto' }],
     log: ['confirm alpha:auto'],
     shows: '>family',
   },
@@ -585,6 +596,8 @@ describe('TwoColumnPicker input order', () => {
     resetAllStores();
     _resetMouseZones();
     terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });
+    // The picker lives in a seat picker overlay, which routes the wheel to its rows.
+    overlayStore.open('planner-picker');
   });
 
   afterEach(unmountAll);
@@ -595,8 +608,8 @@ describe('TwoColumnPicker input order', () => {
     expect(burst).toEqual(steady);
   });
 
-  // A zone id names no tool, so a click after another step has no steady twin: the row it names
-  // is the row that was drawn when the burst began. A row whose click comes first runs steady too.
+  // A click after another step has no steady twin: it acts on the row that was drawn when the
+  // burst began, or on nothing. A row whose click comes first runs steady too.
   it.for(CLICKS)('$id acts on the drawn row or on nothing: $name', async (row) => {
     for (const delivery of row.deliveries ?? ['burst']) {
       const { end } = await run(row, delivery);
@@ -629,7 +642,16 @@ describe('TwoColumnPicker input order', () => {
   it.for(['steady', 'burst'] as const)(
     'D01 runs a wheel step into the model column, two cycles, an open and an Esc close and ⏎ in order (%s)',
     async (delivery) => {
-      const steps = [{ wheel: 'runner-right:auto' }, SPACE, SPACE, DOWN, ENTER, ESC, UP, ENTER];
+      const steps = [
+        { wheel: 'runner-right:alpha:auto' },
+        SPACE,
+        SPACE,
+        DOWN,
+        ENTER,
+        ESC,
+        UP,
+        ENTER,
+      ];
       const { end } = await run(
         { id: 'D01', name: '', column: L, start: '>Alpha', steps },
         delivery,
@@ -662,15 +684,13 @@ describe('TwoColumnPicker input order', () => {
 
   it('D02 runs → ↓ space → space ↓ ⏎ ↑ ⏎ ↑ ⏎ of one stdin read in order', async () => {
     const log: string[] = [];
-    const ui = renderFeature(<Harness log={log} column={L} />, VIEWPORT);
-    mounted.push(ui.unmount);
-    await flushEffects();
+    const ui = mount(<Harness log={log} column={L} />);
+    await ui.settled();
     // Ink gives the plain text of one read as one input, so a key stands between the two spaces.
     const keys = [RIGHT, DOWN, SPACE, RIGHT, SPACE, DOWN, ENTER, UP, ENTER, UP, ENTER];
-    ui.stdin.write(keys.join(''));
-    // The picker takes one entry per render, so each key needs its own render.
-    for (const _ of keys) await flushEffects();
+    ui.pressBytes(keys.join(''));
+    await ui.settled();
     expect(log).toEqual(DRAFT_LOG);
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('>effort high');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('>effort high');
   });
 });

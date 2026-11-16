@@ -93,6 +93,7 @@ describe('wireAppMouse', () => {
       top: 5,
       bottom: 5,
       z: ROW_ZONE_Z_SCREEN,
+      owner: {},
       onClick: screenClick,
     });
     const overlayClick = vi.fn();
@@ -103,6 +104,7 @@ describe('wireAppMouse', () => {
       top: 5,
       bottom: 5,
       z: ROW_ZONE_Z_OVERLAY,
+      owner: {},
       onClick: overlayClick,
     });
     overlayStore.open('command-palette');
@@ -126,6 +128,7 @@ describe('wireAppMouse', () => {
       top: 5,
       bottom: 5,
       z: ROW_ZONE_Z_SCREEN,
+      owner: {},
       onClick: click,
     });
     const mock = createMockFilteredStdin();
@@ -154,6 +157,7 @@ describe('wireAppMouse', () => {
       top: 6,
       bottom: 6,
       z: 5,
+      owner: {},
       onClick: composerClick,
     });
     const promptClick = vi.fn();
@@ -164,6 +168,7 @@ describe('wireAppMouse', () => {
       top: 2,
       bottom: 2,
       z: PROMPT_ZONE_Z,
+      owner: {},
       onClick: promptClick,
     });
     const mock = createMockFilteredStdin();
@@ -190,6 +195,21 @@ describe('wireAppMouse', () => {
     _resetHoverThrottle();
     controlsStore.setInputMode('question');
     mock.emit(pointerEvent('move', left, top));
+
+    expect(hoverStore.get()).toBeNull();
+    dispose();
+  });
+
+  it('routes a pointer move at its turn, behind the input that opened an overlay', () => {
+    routerStore.init(WORKFLOW_ROUTE);
+    seedConversation();
+    const { left, top } = readConversationScrollSnapshot().contentRect;
+    const mock = createMockFilteredStdin();
+    const dispose = wireAppMouse(mock.filtered);
+
+    const move = mock.read(pointerEvent('move', left, top));
+    overlayStore.open('help');
+    move?.();
 
     expect(hoverStore.get()).toBeNull();
     dispose();
@@ -247,6 +267,7 @@ describe('wireAppMouse', () => {
       top: 3,
       bottom: 3,
       z: ROW_ZONE_Z_OVERLAY,
+      owner: {},
       onClick: activate,
       onWheel: wheel,
     });
@@ -258,6 +279,54 @@ describe('wireAppMouse', () => {
 
     expect(wheel.mock.calls.map(([direction]) => direction)).toEqual(['down', 'up']);
     expect(activate).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it('lets the next wheel step share the turn only after a step that wrote a store', () => {
+    const mock = createMockFilteredStdin();
+    const dispose = wireAppMouse(mock.filtered);
+    const wheel = () => mock.emit(pointerEvent('wheel-up', 8, 3));
+
+    const onHome = wheel();
+    routerStore.init(WORKFLOW_ROUTE);
+    seedConversation();
+    const onRunScreen = wheel();
+    approvalPromptStore.__testReset({
+      status: 'pending',
+      request: makePendingApprovalRequest(),
+      resolve: () => {},
+    });
+    const underApproval = wheel();
+    approvalPromptStore.__testReset();
+    overlayStore.open('planner-picker');
+    registerMouseZone({
+      id: 'picker-row',
+      left: 1,
+      right: 20,
+      top: 3,
+      bottom: 3,
+      z: ROW_ZONE_Z_OVERLAY,
+      owner: {},
+      onWheel: () => {},
+    });
+    const onPickerRow = wheel();
+    overlayStore.close();
+    editorStore.openRaw({
+      filePath: 'spec.md',
+      value: 'line',
+      ownerToken: 1,
+      layout: { columns: 80, rows: 5 },
+    });
+    overlayStore.open('editor');
+    const inEditor = wheel();
+
+    expect({ onHome, onRunScreen, underApproval, onPickerRow, inEditor }).toEqual({
+      onHome: false,
+      onRunScreen: true,
+      underApproval: false,
+      onPickerRow: false,
+      inEditor: true,
+    });
     dispose();
   });
 

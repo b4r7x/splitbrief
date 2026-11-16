@@ -69,7 +69,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     fakeStdin.emit('data', Buffer.from('hello\u001b[<64;10'));
     fakeStdin.emit('data', Buffer.from(';20Mworld'));
@@ -142,7 +144,9 @@ describe('createFilteredStdin input filtering', () => {
       },
     });
     filtered.stdin.on('paste', (text: string) => ordering.push(text));
-    filtered.onMouse((event) => mouse.push(event));
+    filtered.onMouse((event) => {
+      mouse.push(event);
+    });
     const clean = readFiltered(filtered.stdin, 'ab\u001bOA'.length);
 
     fakeStdin.emit('data', Buffer.from('a\u001b[99;'));
@@ -160,7 +164,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     fakeStdin.emit('data', Buffer.from('a\u001b[<65;1;1Mb'));
 
@@ -178,7 +184,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     fakeStdin.emit(
       'data',
@@ -215,7 +223,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     fakeStdin.emit('data', Buffer.from('hello world'));
 
@@ -231,7 +241,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     fakeStdin.emit('data', Buffer.from('a\u001b[<0;3;4Mb\u001b[<2;5;6Mc'));
 
@@ -250,7 +262,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     fakeStdin.emit(
       'data',
@@ -271,7 +285,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     fakeStdin.emit('data', Buffer.from('\u001b[<64;1;1M\u001b[<65;2;2Mtail'));
 
@@ -290,7 +306,9 @@ describe('createFilteredStdin input filtering', () => {
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
     const collected: string[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from('prefix\u001b[<64;'));
@@ -314,7 +332,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     const cleanPromise = readFiltered(filtered.stdin, 'leftright'.length);
     fakeStdin.emit('data', Buffer.from('left\u001b[<0;5'));
@@ -414,7 +434,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     const cleanPromise = readFiltered(filtered.stdin, 'tail'.length);
     fakeStdin.emit('data', Buffer.from('\u001b'));
@@ -432,7 +454,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     const cleanPromise = readFiltered(filtered.stdin, 'tail'.length);
     fakeStdin.emit('data', Buffer.from('\u001b'));
@@ -454,7 +478,9 @@ describe('createFilteredStdin input filtering', () => {
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
     const collected: string[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from('left\u001b['));
@@ -479,7 +505,9 @@ describe('createFilteredStdin input filtering', () => {
     const events: MouseEvent[] = [];
     const collected: string[] = [];
     const report = x10MouseSequence(65, 3, 4);
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
     fakeStdin.emit('data', Buffer.from(`left${report.slice(0, 3)}`));
@@ -517,8 +545,12 @@ describe('createFilteredStdin input filtering', () => {
     const filtered = createFilteredStdin(fakeStdin);
     const a: MouseEvent[] = [];
     const b: MouseEvent[] = [];
-    const unsubA = filtered.onMouse((e) => a.push(e));
-    filtered.onMouse((e) => b.push(e));
+    const unsubA = filtered.onMouse((e) => {
+      a.push(e);
+    });
+    filtered.onMouse((e) => {
+      b.push(e);
+    });
 
     fakeStdin.emit('data', Buffer.from('\u001b[<64;1;1M'));
     unsubA();
@@ -534,7 +566,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     filtered.disable();
     fakeStdin.emit('data', Buffer.from('\u001b[<64;1;1M'));
@@ -585,7 +619,9 @@ describe('createFilteredStdin input filtering', () => {
     const fakeStdin = makeFakeStdin();
     const filtered = createFilteredStdin(fakeStdin, { mouse: false });
     const events: MouseEvent[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
 
     const cleanPromise = readFiltered(filtered.stdin, 'ok'.length);
     fakeStdin.emit('data', Buffer.from('\u001b[200~o\x03k\u001b[<64;1;1M\u001b[201~'));
@@ -854,7 +890,9 @@ describe('createFilteredStdin bracketed paste handling', () => {
     const filtered = createFilteredStdin(fakeStdin);
     const events: MouseEvent[] = [];
     const collected: string[] = [];
-    filtered.onMouse((e) => events.push(e));
+    filtered.onMouse((e) => {
+      events.push(e);
+    });
     filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
 
     fakeStdin.emit(
@@ -1133,5 +1171,238 @@ describe('createFilteredStdin step and dispose order', () => {
     expect(pasted).toEqual(['abc']);
     expect(filtered.isPasteActive()).toBe(false);
     filtered.disable();
+  });
+});
+
+describe('createFilteredStdin: one input at a time under a hold', () => {
+  let originalWrite: typeof process.stdout.write;
+
+  beforeEach(() => {
+    originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalWrite;
+  });
+
+  /** `joins` is what each mouse action returns: `true` says that the action only wrote a store. */
+  function holdAndLog(joins?: boolean) {
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source);
+    const log: string[] = [];
+    const releases: Array<() => void> = [];
+    filtered.stdin.setEncoding('utf8');
+    filtered.stdin.on('readable', () => {
+      for (let read = filtered.stdin.read(); read !== null; read = filtered.stdin.read()) {
+        log.push(`key ${JSON.stringify(read)} paste=${filtered.isPasteActive()}`);
+      }
+    });
+    filtered.stdin.on('paste', (text: string) => log.push(`paste ${JSON.stringify(text)}`));
+    // The listener reads the click when its bytes arrive; the action it returns is the click's turn.
+    filtered.onMouse((event) => {
+      log.push(`read ${event.type} ${event.x},${event.y}`);
+      return () => {
+        log.push(`mouse ${event.type} ${event.x},${event.y}`);
+        return joins;
+      };
+    });
+    const unhold = filtered.holdInput((release) => releases.push(release));
+    const releaseNext = () => {
+      const release = releases.shift();
+      if (release === undefined) throw new Error('no input waits for a turn');
+      release();
+    };
+    return { source, filtered, log, releases, unhold, releaseNext };
+  }
+
+  it('gives Ink the next key only after the hold releases the one before it', () => {
+    const { source, filtered, log, releases, releaseNext } = holdAndLog();
+
+    source.emit('data', Buffer.from('a\x1b[Ab\x7f\r'));
+    expect(log).toEqual(['key "a" paste=false']);
+    expect(releases).toHaveLength(1);
+
+    releaseNext();
+    expect(log).toEqual(['key "a" paste=false', 'key "\\u001b[A" paste=false']);
+    releaseNext();
+    releaseNext();
+    releaseNext();
+    expect(log).toEqual([
+      'key "a" paste=false',
+      'key "\\u001b[A" paste=false',
+      'key "b" paste=false',
+      'key "\\b" paste=false',
+      'key "\\r" paste=false',
+    ]);
+    filtered.disable();
+  });
+
+  it('reads a click before the inputs of its read reach the app and acts on it behind the keys and the paste before it', () => {
+    const { source, filtered, log, releaseNext } = holdAndLog();
+
+    source.emit('data', Buffer.from('a\x1b[200~p\x1b[201~\x1b[<0;3;4Mb'));
+    expect(log).toEqual(['read press 3,4', 'key "a" paste=false']);
+    for (let turn = 0; turn < 3; turn++) releaseNext();
+
+    expect(log).toEqual([
+      'read press 3,4',
+      'key "a" paste=false',
+      'paste "p"',
+      'mouse press 3,4',
+      'key "b" paste=false',
+    ]);
+    filtered.disable();
+  });
+
+  it('reads a click against the state from before the keys of its read', () => {
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source);
+    let typed = '';
+    const clicks: string[] = [];
+    filtered.stdin.setEncoding('utf8');
+    filtered.stdin.on('readable', () => {
+      for (let read = filtered.stdin.read(); read !== null; read = filtered.stdin.read()) {
+        typed += read;
+      }
+    });
+    filtered.onMouse((event) => {
+      clicks.push(`${event.type} read with typed=${JSON.stringify(typed)}`);
+      return () => {};
+    });
+    filtered.holdInput(() => {});
+
+    source.emit('data', Buffer.from('a\x1b[<0;3;4M'));
+
+    expect(clicks).toEqual(['press read with typed=""']);
+    filtered.disable();
+  });
+
+  it('runs a row of wheel steps whose actions only wrote a store in one turn', () => {
+    const { source, filtered, log, releases } = holdAndLog(true);
+
+    source.emit('data', Buffer.from('\x1b[<64;1;1M\x1b[<65;2;2M\x1b[<64;3;3M'));
+
+    expect(log.filter((line) => line.startsWith('mouse'))).toEqual([
+      'mouse wheel-up 1,1',
+      'mouse wheel-down 2,2',
+      'mouse wheel-up 3,3',
+    ]);
+    expect(releases).toHaveLength(1);
+    filtered.disable();
+  });
+
+  it.each([
+    [
+      'a wheel step whose action did not say that it only wrote a store',
+      undefined,
+      '\x1b[<64;1;1M\x1b[<64;2;2M',
+      ['mouse wheel-up 1,1', 'mouse wheel-up 2,2'],
+    ],
+    [
+      'a key behind a wheel step',
+      true,
+      '\x1b[<64;1;1Ma\x1b[<64;2;2M',
+      ['mouse wheel-up 1,1', 'key "a" paste=false', 'mouse wheel-up 2,2'],
+    ],
+    [
+      'a click behind a wheel step',
+      true,
+      '\x1b[<64;1;1M\x1b[<0;2;2M',
+      ['mouse wheel-up 1,1', 'mouse press 2,2'],
+    ],
+  ])('gives %s its own turn', (_label, joins, bytes, inputs) => {
+    const { source, filtered, log, releaseNext } = holdAndLog(joins);
+    const acted = () => log.filter((line) => !line.startsWith('read'));
+
+    source.emit('data', Buffer.from(bytes));
+    const turns = [acted()];
+    for (let turn = 1; turn < inputs.length; turn++) {
+      releaseNext();
+      turns.push(acted());
+    }
+
+    expect(turns).toEqual(inputs.map((_, turn) => inputs.slice(0, turn + 1)));
+    filtered.disable();
+  });
+
+  it('gives no turn to a mouse event that no listener acts on', () => {
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source);
+    const turns: Array<() => void> = [];
+    filtered.holdInput((release) => turns.push(release));
+    const read: string[] = [];
+    filtered.onMouse((event) => {
+      read.push(event.type);
+    });
+
+    source.emit('data', Buffer.from('\x1b[<35;3;4M'));
+
+    expect(read).toEqual(['move']);
+    expect(turns).toHaveLength(0);
+    filtered.disable();
+  });
+
+  it('answers that no paste is open for a key read before the paste that is open now', () => {
+    const { source, filtered, log, releaseNext } = holdAndLog();
+
+    source.emit('data', Buffer.from('a\x1b[Ab\x1b[200~p'));
+    releaseNext();
+    releaseNext();
+
+    expect(log).toEqual([
+      'key "a" paste=false',
+      'key "\\u001b[A" paste=false',
+      'key "b" paste=false',
+    ]);
+    expect(filtered.isPasteActive()).toBe(true);
+    filtered.disable();
+  });
+
+  it.each([
+    [
+      'Alt and a letter',
+      '\x1bx\x1b[A',
+      ['key "\\u001bx" paste=false', 'key "\\u001b[A" paste=false'],
+    ],
+    ['Alt and Backspace', '\x1b\x7fa', ['key "\\u001b\\b" paste=false', 'key "a" paste=false']],
+    ['Alt and Up', '\x1b\x1b[Aa', ['key "\\u001b\\u001b[A" paste=false', 'key "a" paste=false']],
+  ])('keeps %s as one key', (_label, bytes, keys) => {
+    const { source, filtered, log, releaseNext } = holdAndLog();
+
+    source.emit('data', Buffer.from(bytes));
+    releaseNext();
+
+    expect(log).toEqual(keys);
+    filtered.disable();
+  });
+
+  it('gives Ink each waiting input at once when the hold goes', () => {
+    const { source, filtered, log, unhold } = holdAndLog();
+
+    source.emit('data', Buffer.from('ab\x7f'));
+    unhold();
+    expect(log).toEqual(['key "ab" paste=false', 'key "\\b" paste=false']);
+    source.emit('data', Buffer.from('c'));
+
+    expect(log).toEqual(['key "ab" paste=false', 'key "\\b" paste=false', 'key "c" paste=false']);
+    filtered.disable();
+  });
+
+  it('gives Ink each waiting input before the stream ends on disable', () => {
+    const { source, filtered, log } = holdAndLog();
+    filtered.stdin.on('end', () => log.push('end'));
+
+    source.emit('data', Buffer.from('ab\x7fc'));
+    filtered.disable();
+
+    return once(filtered.stdin, 'end').then(() =>
+      expect(log).toEqual([
+        'key "ab" paste=false',
+        'key "\\b" paste=false',
+        'key "c" paste=false',
+        'end',
+      ]),
+    );
   });
 });

@@ -185,11 +185,6 @@ function joinDrafts(front: DraftState, back: DraftState): DraftState {
 
 interface PasteDrafts {
   document: DraftDocument;
-  /**
-   * The draft as the last edit left it. A key of the same read as that edit runs a handler of the
-   * last render, so the send reads this, not `document`.
-   */
-  liveDocument: () => DraftDocument;
   view: DraftView;
   /** True when the edit emptied the box and the held draft came back in its place. */
   applyEdit: (edit: InputRange) => boolean;
@@ -268,7 +263,6 @@ export function usePasteDrafts(options?: {
 
   return {
     document: state.document,
-    liveDocument: () => currentState.current.document,
     view,
     applyEdit,
     setText: (value) =>

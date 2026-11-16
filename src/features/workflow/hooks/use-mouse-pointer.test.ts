@@ -215,7 +215,7 @@ function dispatchWorkflowPointer(event: MouseEvent): void {
     handleWorkflowMouseMove(event);
     return;
   }
-  if (event.type === 'press') handleWorkflowMousePress(event);
+  if (event.type === 'press') handleWorkflowMousePress(event)?.();
 }
 
 describe('workflow pointer handling', () => {
@@ -264,6 +264,7 @@ describe('workflow pointer handling', () => {
       top: 28,
       bottom: 28,
       z: 10,
+      owner: {},
       onClick: () => overlayStore.open('help'),
     });
     dispatchWorkflowPointer(pointerEvent('press', 65, 28));
@@ -282,7 +283,16 @@ describe('workflow pointer handling', () => {
     const x = snapshot.contentRect.left;
     const y = snapshot.contentRect.top + windowIndex;
     const onClick = vi.fn();
-    registerMouseZone({ id: 'covered', left: x, right: x, top: y, bottom: y, z: 5, onClick });
+    registerMouseZone({
+      id: 'covered',
+      left: x,
+      right: x,
+      top: y,
+      bottom: y,
+      z: 5,
+      owner: {},
+      onClick,
+    });
     hoverStore.set(windowIndex);
     completionStore.setOpen(true);
 
@@ -297,7 +307,7 @@ describe('workflow pointer handling', () => {
   it('ignores a release event so X10 button-3 releases do not click a zone', () => {
     routerStore.init(WORKFLOW_ROUTE);
     const onClick = vi.fn();
-    registerMouseZone({ id: 'z', left: 1, right: 80, top: 5, bottom: 5, z: 5, onClick });
+    registerMouseZone({ id: 'z', left: 1, right: 80, top: 5, bottom: 5, z: 5, owner: {}, onClick });
     dispatchWorkflowPointer(pointerEvent('release', 10, 5));
 
     expect(onClick).not.toHaveBeenCalled();
@@ -524,6 +534,32 @@ describe('workflow pointer handling', () => {
     );
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(true);
+  });
+
+  it('expands the batch that the frame showed under a press when a scroll runs before its action', () => {
+    routerStore.init(WORKFLOW_ROUTE);
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
+    seedLiveDisclosureTranscript();
+    const snapshot = readConversationScrollSnapshot();
+    const drawnRows = transcriptViewportRows();
+    const windowIndex = drawnRows.findIndex((row) => row.kind === 'activity-more');
+    expect(windowIndex).toBeGreaterThanOrEqual(0);
+    const batchKey = (drawnRows[windowIndex]?.key ?? '').replace(/-hidden$/, '');
+
+    const action = handleWorkflowMousePress(
+      pointerEvent('press', snapshot.contentRect.left, snapshot.contentRect.top + windowIndex),
+    );
+    conversationScrollStore.scrollUp({
+      renderableCount: snapshot.renderableCount,
+      totalHeight: snapshot.totalHeight,
+      step: 3,
+      maxOffset: snapshot.maxOffset,
+    });
+    expect(transcriptViewportRows()[windowIndex]?.key).not.toBe(drawnRows[windowIndex]?.key);
+    action?.();
+
+    expect([...conversationScrollStore.get().expandedActivityBatches]).toEqual([batchKey]);
   });
 
   it('click on a plain transcript row sets no focus and toggles nothing', () => {

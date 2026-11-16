@@ -661,7 +661,7 @@ describe('TwoColumnPicker rows that cycle in place', () => {
     await flushEffects();
     expect(ui.lastFrame()).toContain('>Alpha');
 
-    collectClickableZones({ cols: 120, rows: 40 }).get('runner-right:effort')?.();
+    collectClickableZones({ cols: 120, rows: 40 }).get('runner-right:alpha:effort')?.();
     await flushEffects();
 
     expect(cycled).toEqual(['effort']);
@@ -704,7 +704,7 @@ describe('TwoColumnPicker rows that cycle in place', () => {
     renderLadder({ initialIndex: 0, cycled, collapses, confirms });
     await flushEffects();
 
-    collectClickableZones({ cols: 120, rows: 40 }).get('runner-right:family')?.();
+    collectClickableZones({ cols: 120, rows: 40 }).get('runner-right:alpha:family')?.();
     await flushEffects();
 
     expect(confirms).toEqual(['family']);

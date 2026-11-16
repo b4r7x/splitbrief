@@ -63,6 +63,7 @@ function createSentinelFilteredStdin(): FilteredStdin {
     activate: () => {},
     onMouse: () => () => {},
     isPasteActive: () => false,
+    holdInput: () => () => {},
     disable: () => {},
   };
 }

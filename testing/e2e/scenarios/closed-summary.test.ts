@@ -1,8 +1,8 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
-import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
+import { SESSION_LOG_FILE, SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
 import { toEngineEventEntry } from '../../../src/core/sessions/log/writer.js';
 import { saveState } from '../../../src/core/state/persistence.js';
@@ -22,6 +22,15 @@ import {
 const AT = '2026-09-14T09:41:00.000Z';
 const SESSION = 'closed-summary';
 const CTRL_A = '\u0001';
+const WHEEL_UP = '\u001b[<64;40;20M';
+const WHEEL_DOWN = '\u001b[<65;40;20M';
+const SHIFT_UP = '\u001b[1;2A';
+const SHIFT_DOWN = '\u001b[1;2B';
+
+/** A click on column `x` of row `y`, both from 1. */
+function click(x: number, y: number): string {
+  return `\u001b[<0;${x};${y}M\u001b[<0;${x};${y}m`;
+}
 
 let fixture: StopContinueFixture | undefined;
 
@@ -53,10 +62,25 @@ function seedAppliedRun(target: StopContinueFixture): void {
   );
 }
 
+/** The stdin reads of the CLI, one line of its key log for each read. */
+function stdinReads(target: StopContinueFixture): string[] {
+  const dir = join(target.projectDir, SPLITBRIEF_DIR, 'debug');
+  return readdirSync(dir).flatMap((name) =>
+    readFileSync(join(dir, name), 'utf8')
+      .split('\n')
+      .filter((line) => line.startsWith('RAW ')),
+  );
+}
+
+type AppliedRunScreen = ClosedRunScreen & {
+  /** Waits until the key log shows that the CLI got `bytes` in one stdin read. */
+  waitForOneRead: (bytes: string) => Promise<void>;
+};
+
 /** Opens the seeded run from the sessions list, as a user does, and hands its screen to `read`. */
 async function openAppliedRun<T>(
   viewport: { cols: number; rows: number },
-  read: (run: ClosedRunScreen) => Promise<T>,
+  read: (run: AppliedRunScreen) => Promise<T>,
 ): Promise<T> {
   const target = createStopContinueFixture(() => '', { isolation: 'none' });
   fixture = target;
@@ -66,12 +90,27 @@ async function openAppliedRun<T>(
   return openClosedRun(
     {
       argv: ['dist/cli.js', '--project', target.projectDir],
-      env: { ...safeChildEnvironment(home), XDG_STATE_HOME: target.stateHome },
+      env: {
+        ...safeChildEnvironment(home),
+        XDG_STATE_HOME: target.stateHome,
+        SPLITBRIEF_DEBUG_KEYS: '1',
+      },
       viewport,
     },
     async (run) => {
       await run.waitForText('● Applied to your checkout');
-      return read(run);
+      return read({
+        ...run,
+        waitForOneRead: async (bytes) => {
+          await vi.waitFor(
+            () =>
+              expect(stdinReads(target)).toContainEqual(
+                expect.stringContaining(bytes.replaceAll('\u001b', '\\x1b')),
+              ),
+            { timeout: 30_000 },
+          );
+        },
+      });
     },
   );
 }
@@ -165,4 +204,63 @@ it('keeps the outcome and the fold of a long applied run on a very short termina
   // ctrl+a opens the whole record under the same outcome row.
   expect(opened).toContain('● Applied to your checkout');
   expect(opened).toContain('├ collapse · ctrl+a');
+});
+
+// Sixty keys of one read, one turn each, pass the limit of nested React updates unless each turn
+// ends in a transition. The wheel steps of one read share one turn.
+it.each([
+  ['wheel steps', WHEEL_UP, WHEEL_DOWN],
+  ['Shift+↑ keys', SHIFT_UP, SHIFT_DOWN],
+])(
+  'scrolls a long applied run by 60 %s of one read and keeps taking input',
+  async (_label, up, down) => {
+    const { above, scrolled, after } = await openAppliedRun(
+      { cols: 160, rows: 45 },
+      async ({ screen, write, waitForText, waitForOneRead }) => {
+        const above = Number(/(\d+) lines above/u.exec(screen())?.[1]);
+        write(up.repeat(60));
+        await waitForOneRead(up.repeat(60));
+        await waitForText('60 lines below');
+        const scrolled = screen();
+        write(down);
+        await waitForText('59 lines below');
+        return { above, scrolled, after: screen() };
+      },
+    );
+
+    expect(above).toBeGreaterThan(60);
+    expect(scrolled).toContain(`${above - 60} lines above`);
+    expect(after).toContain(`${above - 59} lines above`);
+  },
+);
+
+it('opens no fold for a wheel step and a click of one write on the row that the fold reaches', async () => {
+  const clicked = await openAppliedRun(
+    { cols: 160, rows: 45 },
+    async ({ screen, write, waitForText, waitForOneRead }) => {
+      const lines = screen().split('\n');
+      const index = lines.findIndex((line) => line.includes('+15 briefs'));
+      const x = (lines[index]?.indexOf('+15 briefs') ?? 0) + 1;
+      const y = index + 1;
+      expect(lines[index + 1]).toContain('└ Session');
+
+      write(WHEEL_UP + click(x, y + 1));
+      write(WHEEL_UP);
+      await waitForOneRead(WHEEL_UP + click(x, y + 1));
+      await vi.waitFor(() => expect(screen()).toMatch(/2 lines below|collapse/u), {
+        timeout: 30_000,
+      });
+      expect(screen()).toContain('2 lines below');
+      expect(screen()).not.toContain('collapse');
+
+      // One step down puts the fold back on the clicked row, and a click there opens it.
+      write(WHEEL_DOWN);
+      await waitForText('1 line below');
+      write(click(x, y + 1));
+      await waitForText('collapse');
+      return screen();
+    },
+  );
+
+  expect(clicked).toContain('├ collapse · ctrl+a');
 });

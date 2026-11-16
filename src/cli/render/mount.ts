@@ -1,6 +1,6 @@
 import { render, type Instance } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
-import type { createElement } from 'react';
+import { createElement, Fragment } from 'react';
 import { warnError } from '../../lib/warn.js';
 import { isBrokenOutputError } from '../../lib/terminal/control.js';
 import {
@@ -11,6 +11,7 @@ import { setActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active
 import { createFilteredStdin } from '../../lib/terminal/filtered-stdin/create.js';
 import type { FilteredStdin } from '../../lib/terminal/filtered-stdin/types.js';
 import type { detectKittyKeyboardFlags } from '../../lib/terminal/kitty-keyboard.js';
+import { InputTurns } from './input-turns.js';
 import { disableTuiInput } from './stdin.js';
 import type { EditorOutput, TuiInput } from './types.js';
 
@@ -49,6 +50,15 @@ export function prepareInlineFallbackAfterFullscreenFailure(deps: {
   return deps.createInlineStdin();
 }
 
+function withInputTurns(appElement: AppElement, input: FilteredStdin): AppElement {
+  return createElement(
+    Fragment,
+    null,
+    appElement,
+    createElement(InputTurns, { holdInput: input.holdInput }),
+  );
+}
+
 function unmountWhenSignalled(
   instance: Instance,
   signal: AbortSignal | undefined,
@@ -84,7 +94,7 @@ function renderInline(appElement: AppElement, mount: TuiMount): Instance {
     beforeResume: output.resume,
     keyboardPush: output.keyboardPush,
   });
-  const instance = render(appElement, {
+  const instance = render(withInputTurns(appElement, input.stdin), {
     exitOnCtrlC: false,
     maxFps: 30,
     kittyKeyboard: mount.kittyKeyboard,
@@ -118,7 +128,7 @@ async function mountFullscreen(appElement: AppElement, mount: TuiMount): Promise
   const fullscreenStdin = input.stdin;
   let ink: ReturnType<typeof withFullScreen>;
   try {
-    const fullscreenInk = withFullScreen(appElement, {
+    const fullscreenInk = withFullScreen(withInputTurns(appElement, fullscreenStdin), {
       exitOnCtrlC: false,
       kittyKeyboard: mount.kittyKeyboard,
       stdout: output.stdout,

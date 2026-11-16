@@ -5,7 +5,10 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { PINNED_CLAUDE_CODE_OPTIONS } from '#testing/helpers/factories/model-cache.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { flushEffects, renderFeature, type RenderFeatureResult } from '#testing/helpers/ink.js';
+import {
+  type FilteredStdinHarness,
+  renderThroughFilteredStdin,
+} from '#testing/helpers/filtered-stdin-harness.js';
 import { deliverSteps, type InputStep } from '#testing/helpers/input-steps.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { deriveCrewRows } from '../../core/crew/rows.js';
@@ -16,6 +19,7 @@ import {
   type PickerEffectDeps,
 } from '../../features/runners/picker/use-actions.js';
 import { glyph } from '../../lib/glyphs.js';
+import { wireAppMouse } from '../mouse.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { type ConfigSaveResult, configStore } from '../../stores/project/config.js';
@@ -69,8 +73,8 @@ function unmountAll() {
   _resetMouseZones();
 }
 
-const cursorLines = (ui: RenderFeatureResult) =>
-  stripAnsiStyles(ui.lastFrame())
+const cursorLines = (ui: FilteredStdinHarness) =>
+  stripAnsiStyles(ui.lastFrame() ?? '')
     .split('\n')
     .filter((line) => line.includes(glyph('liveBar')))
     .map((line) => line.replace(/\s+/g, ' ').trim());
@@ -98,7 +102,7 @@ async function run(row: Case, delivery: 'steady' | 'burst') {
   if (plan === undefined) throw new Error('No plan seat row.');
   crewActivate({ target: { kind: 'crew', row: plan }, config: CONFIG });
   const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async () => SAVED);
-  const ui = renderFeature(
+  const ui = renderThroughFilteredStdin(
     <ToolModelPicker
       slot="seat"
       role="planner"
@@ -106,16 +110,20 @@ async function run(row: Case, delivery: 'steady' | 'burst') {
     />,
     VIEWPORT,
   );
-  mounted.push(ui.unmount);
+  const disposeMouse = wireAppMouse(ui.filtered);
+  mounted.push(() => {
+    disposeMouse();
+    ui.unmount();
+  });
   await vi.waitFor(() => expect(cursorLines(ui).join('\n')).toContain(ON_EFFORT));
-  await flushEffects();
+  await ui.settled();
   await deliverSteps(ui, VIEWPORT, row.setup ?? [], 'steady');
   expect(cursorLines(ui).join('\n')).toContain(row.start);
 
   await deliverSteps(ui, VIEWPORT, row.steps, delivery);
   // The save is a promise: two more turns let it settle after either delivery.
-  await flushEffects();
-  await flushEffects();
+  await ui.settled();
+  await ui.settled();
 
   const { view, expandedModelId, effortDraft } = pickerViewStore.get();
   const end = {
@@ -132,9 +140,9 @@ async function run(row: Case, delivery: 'steady' | 'burst') {
 type Snapshot = Awaited<ReturnType<typeof run>>;
 
 const toolClick = (id: string) => ({ click: `runner-left:${id}` });
-const rowClick = (id: string) => ({ click: `runner-right:${id}` });
+const rowClick = (tool: string, id: string) => ({ click: `runner-right:${tool}:${id}` });
 const TOOL_WHEEL = { wheel: 'runner-left:claude-code' };
-const MODEL_WHEEL = { wheel: 'runner-right:model:auto' };
+const MODEL_WHEEL = { wheel: 'runner-right:claude-code:model:auto' };
 
 const TWINS: Case[] = [
   {
@@ -224,7 +232,7 @@ const CLICKS: Array<
     id: 'RB01',
     name: 'wheel to the next tool, click the auto row drawn for Claude Code',
     start: ON_EFFORT,
-    steps: [TOOL_WHEEL, rowClick('model:auto')],
+    steps: [TOOL_WHEEL, rowClick('claude-code', 'model:auto')],
     expected: {
       saves: [],
       overlay: 'planner-picker',
@@ -236,7 +244,7 @@ const CLICKS: Array<
     id: 'RB02',
     name: 'click the Codex tool, click the auto row drawn for Claude Code',
     start: ON_EFFORT,
-    steps: [toolClick('codex'), rowClick('model:auto')],
+    steps: [toolClick('codex'), rowClick('claude-code', 'model:auto')],
     expected: {
       saves: [],
       overlay: 'planner-picker',
@@ -248,7 +256,7 @@ const CLICKS: Array<
     id: 'RB03',
     name: 'click the auto row, click the Codex tool',
     start: ON_EFFORT,
-    steps: [rowClick('model:auto'), toolClick('codex')],
+    steps: [rowClick('claude-code', 'model:auto'), toolClick('codex')],
     expected: {
       saves: [{ tool: 'claude-code', model: 'auto', effort: 'max' }],
       overlay: 'none',
@@ -259,14 +267,14 @@ const CLICKS: Array<
     name: '⏎ on the custom-model launcher of Codex, click a model row',
     setup: [toolClick('codex'), UP],
     start: '▌ + Add custom model…',
-    steps: [ENTER, rowClick('model:auto')],
+    steps: [ENTER, rowClick('codex', 'model:auto')],
     expected: { saves: [], overlay: 'planner-picker', view: 'custom-model' },
   },
   {
     id: 'RB05',
     name: 'click the Codex tool, click the custom-model launcher drawn for Claude Code',
     start: ON_EFFORT,
-    steps: [toolClick('codex'), rowClick('__custom__')],
+    steps: [toolClick('codex'), rowClick('claude-code', '__custom__')],
     expected: { saves: [], overlay: 'planner-picker', view: 'picker' },
   },
   {
@@ -283,7 +291,7 @@ const CLICKS: Array<
     id: 'RB06',
     name: 'wheel to the next tool, click the sonnet row drawn for Claude Code',
     start: ON_EFFORT,
-    steps: [TOOL_WHEEL, rowClick('model:sonnet')],
+    steps: [TOOL_WHEEL, rowClick('claude-code', 'model:sonnet')],
     expected: {
       saves: [],
       overlay: 'planner-picker',
@@ -318,8 +326,8 @@ describe('ToolModelPicker input order', () => {
     expect(burst).toEqual(steady);
   });
 
-  // A zone id names no tool, so a click after another step has no steady twin: the row it names
-  // is the row that was drawn when the burst began. A row whose click comes first runs steady too.
+  // A click after another step has no steady twin: it acts on the row that was drawn when the
+  // burst began, or on nothing. A row whose click comes first runs steady too.
   it.for(CLICKS)('$id acts on the drawn row or on nothing: $name', async (row) => {
     for (const delivery of row.deliveries ?? ['burst']) {
       expect.soft(await run(row, delivery), delivery).toMatchObject(row.expected);

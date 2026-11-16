@@ -956,7 +956,7 @@ describe('TwoColumnPicker', () => {
     );
     await tick(20);
 
-    collectClickableZones({ cols: 140, rows: 40 }).get('runner-right:a-2')?.();
+    collectClickableZones({ cols: 140, rows: 40 }).get('runner-right:alpha:a-2')?.();
     await tick(20);
 
     expect(confirms).toEqual([{ l: 'alpha', r: 'a-2' }]);
@@ -995,7 +995,7 @@ describe('TwoColumnPicker', () => {
     for (let y = 1; y <= 40 && !wheelZone; y += 1) {
       for (let x = 1; x <= 140 && !wheelZone; x += 1) {
         const zone = hitTopmostZone(x, y);
-        if (zone?.id === 'runner-right:model-0') wheelZone = zone;
+        if (zone?.id === 'runner-right:alpha:model-0') wheelZone = zone;
       }
     }
     expect(wheelZone?.onWheel).toBeDefined();

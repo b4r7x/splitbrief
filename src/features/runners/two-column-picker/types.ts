@@ -106,7 +106,6 @@ export interface TwoColumnNavState<L, R> {
   isOnCustomItem: boolean;
   currentRightIsCustom: boolean;
   escape: EscapeAction;
-  /** Each one queues the input behind the keys, clicks and wheel steps that came before it. */
   wheelLeft: (direction: 1 | -1) => void;
   wheelRight: (direction: 1 | -1) => void;
   clickLeft: (index: number) => void;

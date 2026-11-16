@@ -51,7 +51,7 @@ describe('Editor overlay backspace through the terminal input filter', () => {
     await flushEffects();
     for (const key of keys) {
       ui.pressBytes(key);
-      await flushEffects();
+      await ui.settled();
     }
     expect(editorStore.get()).toMatchObject({ value: expected });
   });

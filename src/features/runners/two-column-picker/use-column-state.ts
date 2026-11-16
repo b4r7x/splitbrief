@@ -60,7 +60,7 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
 
   const items = getItems(filter);
   // Follow the selected key across a reorder in the render itself: a render on the row that took
-  // its place reaches the caller's rules and a queued key that runs in the same commit.
+  // its place reaches the caller's rules and the key that runs on this render.
   const remembered = notifiedKey.current;
   const storedItem = itemAt(clampIndex(storedIndex, items.length + virtualCount), items);
   const realIndex =
@@ -76,8 +76,7 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
     onCurrentItemChange?.(item);
   };
 
-  // Clamp and notify only when the selected key is gone. A key queued in this commit reads the index
-  // set here: `useNavState` declares its input queue, and so its layout effect, after this hook.
+  // Clamp and notify only when the selected key is gone.
   useLayoutEffect(() => {
     if (index !== storedIndex) setIndexState(index);
     if (currentItem === undefined) return;

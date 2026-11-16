@@ -281,7 +281,7 @@ function ComposerInput({
     supportsImages,
     currentScreen,
     mode,
-    liveDocument: draft.liveDocument,
+    document,
     commandsOnly,
     submitKeepsDraft,
     emptyAnswerNotice,
