@@ -1173,3 +1173,49 @@ it.each([
     ui.unmount();
   },
 );
+
+it('puts the keys typed right after the next question opens at the end of its draft', async () => {
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  store.setQuestions([
+    { id: 'q1', type: 'input', text: 'Which file?' },
+    { id: 'q2', type: 'input', text: 'Which test?' },
+  ]);
+  store.answer(plainUserMessage('first'));
+  store.setFocus('answer', 'hello');
+  store.previous();
+  const ui = renderFeature(
+    <PlannerQuestion
+      width={80}
+      height={12}
+      disabled={false}
+      onAnswer={(text) => store.answer(plainUserMessage(text))}
+      onCompose={() => {}}
+      onDecide={() => {}}
+      onPrevious={() => {}}
+    />,
+  );
+  await flushEffects();
+  now += 200;
+  ui.stdin.write('a');
+  await flushEffects();
+  // Ink writes each frame inside its commit. A key written in a microtask of that write is read
+  // right after the commit, before any later task: the first moment a terminal can deliver it.
+  let fired = 0;
+  const push = ui.frames.push.bind(ui.frames);
+  ui.frames.push = (...frames: string[]) => {
+    if (fired === 0 && frames.every((frame) => frame.includes('Which test?'))) {
+      fired += 1;
+      queueMicrotask(() => ui.stdin.write('y'));
+    }
+    return push(...frames);
+  };
+  ui.stdin.write('\r');
+  await flushEffects();
+  ui.stdin.write('z');
+  await flushEffects();
+  expect(fired).toBe(1);
+  expect(store.get().index).toBe(1);
+  expect(store.get().drafts.map((draft) => draft.text)).toEqual(['a', 'helloyz']);
+  ui.unmount();
+});

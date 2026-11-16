@@ -47,7 +47,6 @@ export function FieldRow(props: {
           focus={props.focused}
           onBoundaryNavigate={(direction) => {
             props.onLeave(direction);
-            return true;
           }}
           keyBindings={{ submit: (key) => key.return, newline: () => false }}
         />

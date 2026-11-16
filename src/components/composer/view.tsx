@@ -281,7 +281,7 @@ function ComposerInput({
     supportsImages,
     currentScreen,
     mode,
-    document,
+    liveDocument: draft.liveDocument,
     commandsOnly,
     submitKeepsDraft,
     emptyAnswerNotice,
@@ -302,12 +302,12 @@ function ComposerInput({
     mode === 'review' && key.ctrl && input === 'e';
 
   const handleInputBoundaryNavigate = (direction: 'up' | 'down') => {
-    if (showCommandSuggestions || showReferenceSuggestions) return true;
+    if (showCommandSuggestions || showReferenceSuggestions) return;
     if (mode !== 'normal') {
       if (mode === 'review' && !reviewCommenting) onReviewBoundaryNavigate?.(direction);
-      return true;
+      return;
     }
-    return handleBoundaryNavigate(direction);
+    handleBoundaryNavigate(direction);
   };
 
   const hintBoxWidth = width ?? cols;
@@ -388,7 +388,7 @@ function ComposerInput({
           </Text>
           <Box flexGrow={1} flexBasis={0} overflow="hidden">
             <MultilineInput
-              key={`${command.inputKey}:${reference.inputKey}:${inputEpoch}`}
+              resetKey={`${command.inputKey}:${reference.inputKey}:${inputEpoch}`}
               value={view.text}
               atoms={view.atoms}
               {...(caretSeed?.epoch === inputEpoch ? { initialCursorIndex: caretSeed.index } : {})}

@@ -44,8 +44,14 @@ interface MultilineInputProps extends ControlledMultilineInputProps {
   onPaste?: ((text: string, caret: number) => boolean) | undefined;
   /** Spans of `value` that are one unit to the caret and to every delete. */
   atoms?: readonly InputAtom[] | undefined;
-  /** Where the caret starts on a fresh mount; the end of the value when unset. */
+  /** Where the caret starts on a mount and on a new start; the end of the value when unset. */
   initialCursorIndex?: number | undefined;
+  /**
+   * A new value starts the field again, as a mount does: the caret, the key suppression and the
+   * scroll of the paint. The field keeps its key listener, so a key read before the next effects
+   * reaches the new start.
+   */
+  resetKey?: string | number | undefined;
   onCursorChange?: ((index: number) => void) | undefined;
   keyBindings?: {
     submit?: (key: Key) => boolean;
@@ -53,11 +59,10 @@ interface MultilineInputProps extends ControlledMultilineInputProps {
     shortcut?: (input: string, key: Key) => boolean;
   };
   onShortcut?: () => void;
-  highlightPastedText?: boolean;
   focus?: boolean;
   isActive?: boolean;
   shouldHandleInput?: ((input: string, key: Key) => boolean) | undefined;
-  onBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
+  onBoundaryNavigate?: ((direction: 'up' | 'down') => void) | undefined;
 }
 
 export function MultilineInput({
@@ -69,36 +74,43 @@ export function MultilineInput({
   onShortcut,
   atoms,
   initialCursorIndex,
+  resetKey,
   onCursorChange,
   columns,
   keyBindings,
   showCursor = true,
-  highlightPastedText = false,
   focus = true,
   isActive = focus,
   shouldHandleInput,
   onBoundaryNavigate,
   ...controlledProps
 }: MultilineInputProps) {
+  const [startKey, setStartKey] = useState(resetKey);
   const [rawCursorIndex, setCursorIndex] = useState(initialCursorIndex ?? value.length);
-  const [pasteLength, setPasteLength] = useState(0);
   // Suppress rapid-fire key events after delete-line-backward (Cmd+Backspace
   // in non-Kitty terminals sends multiple raw bytes parsed as separate events)
   const suppressUntilRef = useRef(0);
   const { stdin } = useStdin();
 
   const atomList = atoms ?? NO_ATOMS;
-  const cursorIndex = snapCaretOutOfAtoms(
-    atomList,
-    Math.min(rawCursorIndex, value.length),
-    'backward',
-  );
+  const caretAt = (index: number) =>
+    snapCaretOutOfAtoms(atomList, Math.min(index, value.length), 'backward');
+  const cursorIndex = caretAt(rawCursorIndex);
   const valueRef = useRef(value);
   const propValueRef = useRef(value);
   const cursorRef = useRef(cursorIndex);
   if (propValueRef.current !== value) {
     propValueRef.current = value;
     if (valueRef.current !== value) valueRef.current = value;
+  }
+  // A key read before the next effects runs the handler of the last render, which reads the value
+  // and the caret from the refs, so the new start writes the refs in this render.
+  if (startKey !== resetKey) {
+    setStartKey(resetKey);
+    setCursorIndex(initialCursorIndex ?? value.length);
+    valueRef.current = value;
+    cursorRef.current = caretAt(initialCursorIndex ?? value.length);
+    suppressUntilRef.current = 0;
   }
 
   useEffect(() => {
@@ -124,7 +136,6 @@ export function MultilineInput({
     valueRef.current = merged;
     cursorRef.current = nextCursorIndex;
     setCursorIndex(nextCursorIndex);
-    setPasteLength(0);
     onChange(merged, edit);
   };
 
@@ -132,7 +143,6 @@ export function MultilineInput({
     const nextCursorIndex = snapCaretOutOfAtoms(atomList, index, prefer);
     cursorRef.current = nextCursorIndex;
     setCursorIndex(nextCursorIndex);
-    setPasteLength(0);
   };
 
   useEffect(() => {
@@ -151,7 +161,6 @@ export function MultilineInput({
         currentValue.slice(0, currentCursor) + normalized + currentValue.slice(currentCursor),
         currentCursor + normalized.length,
       );
-      setPasteLength(normalized.length);
     };
     stdin.on('paste', handlePaste);
     return () => {
@@ -232,9 +241,7 @@ export function MultilineInput({
         moveCaret(newIndex, 'backward');
         return;
       }
-      if (onBoundaryNavigate?.('up')) {
-        setPasteLength(0);
-      }
+      onBoundaryNavigate?.('up');
     } else if (key.downArrow) {
       const newIndex = navigateVertically({
         direction: 'down',
@@ -245,9 +252,7 @@ export function MultilineInput({
         moveCaret(newIndex, 'forward');
         return;
       }
-      if (onBoundaryNavigate?.('down')) {
-        setPasteLength(0);
-      }
+      onBoundaryNavigate?.('down');
     } else if (key.leftArrow) {
       moveCaret(prevGraphemeBoundary(currentValue, currentCursor), 'backward');
     } else if (key.rightArrow) {
@@ -268,24 +273,18 @@ export function MultilineInput({
         const newValue =
           currentValue.slice(0, currentCursor) + normalized + currentValue.slice(currentCursor);
         commit(newValue, currentCursor + normalized.length);
-        setPasteLength(normalized.length > 1 ? normalized.length : 0);
       }
     }
   };
 
   useInput(handleInput, { isActive });
 
-  const highlight =
-    highlightPastedText && pasteLength > 1
-      ? { start: Math.max(0, cursorIndex - pasteLength), end: cursorIndex }
-      : undefined;
-
   return (
     <ControlledMultilineInput
+      key={resetKey}
       {...controlledProps}
       value={value}
       cursorIndex={cursorIndex}
-      highlight={highlight}
       columns={columns}
       showCursor={showCursor}
       focus={focus}

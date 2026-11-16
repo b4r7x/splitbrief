@@ -20,7 +20,6 @@ export interface ControlledMultilineInputProps {
   value: string;
   rows?: number | undefined;
   maxRows?: number | undefined;
-  highlightStyle?: TextStyle | undefined;
   textStyle?: TextStyle | undefined;
   placeholder?: string | undefined;
   keepPlaceholderWhileFocused?: boolean | undefined;
@@ -28,7 +27,6 @@ export interface ControlledMultilineInputProps {
   showCursor?: boolean | undefined;
   focus?: boolean | undefined;
   cursorIndex?: number | undefined;
-  highlight?: { start: number; end: number } | undefined;
   columns: number;
   onVisibleRowsChange?: ((rows: number) => void) | undefined;
 }
@@ -37,7 +35,6 @@ export function ControlledMultilineInput({
   value,
   rows,
   maxRows,
-  highlightStyle,
   textStyle,
   placeholder = '',
   keepPlaceholderWhileFocused,
@@ -45,7 +42,6 @@ export function ControlledMultilineInput({
   showCursor = true,
   focus = true,
   cursorIndex = 0,
-  highlight,
   columns,
   onVisibleRowsChange,
 }: ControlledMultilineInputProps) {
@@ -60,7 +56,6 @@ export function ControlledMultilineInput({
     keepPlaceholderWhileFocused,
     showCursor,
     mask,
-    highlight,
   });
 
   // The paint wraps its own rows, so each row fits `columns` and Ink never wraps one. The caret
@@ -106,17 +101,10 @@ export function ControlledMultilineInput({
     scrollOffsetRef.current = scrollOffset;
   }, [scrollOffset]);
 
-  const resolvedHighlightStyle: TextStyle = highlightStyle ?? {
-    backgroundColor: t.highlight.bg,
-    color: t.highlight.fg,
-  };
-
   const getStyle = (type: SegmentType): TextStyle => {
     switch (type) {
       case 'placeholder':
         return { ...textStyle, color: t.textDim };
-      case 'highlight':
-        return resolvedHighlightStyle;
       case 'cursor':
         return showCursor && focus
           ? { ...textStyle, backgroundColor: t.cursor.bg, color: t.cursor.fg }

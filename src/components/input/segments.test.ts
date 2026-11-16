@@ -18,35 +18,6 @@ describe('buildSegments', () => {
     ]);
     expect(result.postCursor).toEqual([]);
   });
-
-  it('does not synthesize a current-line highlight when no highlight is requested', () => {
-    const result = buildSegments({
-      value: 'first line wraps visually into another row',
-      cursorIndex: 'first line'.length,
-      placeholder: '',
-      focus: true,
-      showCursor: true,
-    });
-
-    expect(
-      [...result.preCursor, ...result.postCursor].some((segment) => segment.type === 'highlight'),
-    ).toBe(false);
-  });
-
-  it('keeps explicit highlight ranges for pasted text', () => {
-    const result = buildSegments({
-      value: 'hello pasted text',
-      cursorIndex: 'hello pasted'.length,
-      placeholder: '',
-      focus: true,
-      showCursor: true,
-      highlight: { start: 'hello '.length, end: 'hello pasted'.length },
-    });
-
-    expect(
-      [...result.preCursor, ...result.postCursor].some((segment) => segment.type === 'highlight'),
-    ).toBe(true);
-  });
 });
 
 function renderedText(value: string): string {

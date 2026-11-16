@@ -24,7 +24,7 @@ interface UseSendParams {
   supportsImages: boolean;
   currentScreen: Screen;
   mode: InputMode;
-  document: DraftDocument;
+  liveDocument: () => DraftDocument;
   commandsOnly: boolean | undefined;
   submitKeepsDraft: boolean | undefined;
   emptyAnswerNotice: string | undefined;
@@ -44,7 +44,7 @@ export function useSend({
   supportsImages,
   currentScreen,
   mode,
-  document,
+  liveDocument,
   commandsOnly,
   submitKeepsDraft,
   emptyAnswerNotice,
@@ -96,6 +96,7 @@ export function useSend({
   const handleSubmit = (deliverNow?: UseSendParams['onSendNow']) => {
     if (refuseSubmit()) return;
     if (completionOpen) return;
+    const document = liveDocument();
     const trimmed = trimDraftDocument(document);
     // A command runs in every mode: typed under a question or a recovery menu, it is never the answer.
     if (isCommandDraft(trimmed)) {

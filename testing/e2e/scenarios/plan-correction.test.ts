@@ -327,3 +327,70 @@ it(
     });
   },
 );
+
+it(
+  'sends the correction typed right after Enter on the empty change request',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(renamedPlan, async (run, { screen, write }) => {
+      write(DOWN);
+      await expect.poll(screen, PATIENCE).toContain(REQUEST_ACTIVE);
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain('⏎ send');
+      write(PTY_SUBMIT_INPUT);
+      write('no');
+      await expect.poll(screen, PATIENCE).toContain('› no');
+      write(PTY_SUBMIT_INPUT);
+
+      await vi.waitFor(() => expect(plannerCalls(run)).toBe(2), PATIENCE);
+      expect(planPrompt(run, 2)).toContain('The user asked for changes to the plan:\n\nno');
+      await expect.poll(screen, PATIENCE).toContain('Add a sum helper with its test.');
+    });
+  },
+);
+
+// A normal terminal sends Backspace as DEL and Enter as CR. The input bridge splits one read at
+// each Backspace byte, so the Enter of the same read is its own key.
+const BACKSPACE = '\x7f';
+const ENTER = '\r';
+
+// The plan card holds; the second planner call is the revision of the typed change request.
+async function expectRevisedFor(run: Run, screen: () => string, correction: string) {
+  await vi.waitFor(() => expect(plannerCalls(run)).toBeGreaterThanOrEqual(2), PATIENCE);
+  const asked = planPrompt(run, 2).split('The user asked for changes to the plan:\n\n')[1];
+  expect(asked?.split('\n')[0]).toBe(correction);
+  await expect.poll(screen, PATIENCE).toContain('Add a sum helper with its test.');
+  await expect.poll(screen, PATIENCE).toContain(APPROVE_ACTIVE);
+  expect(plannerCalls(run)).toBe(2);
+  expect(savedRun(run).phase).toBe('reviewing-plan');
+  expect(savedRun(run).tasks.map((task) => task.status)).toEqual(['pending']);
+}
+
+it(
+  'takes a change request that one write types and corrects on the plan card, and starts no build',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(renamedPlan, async (run, { screen, write }) => {
+      write(`use sumx${BACKSPACE}${ENTER}`);
+      await expectRevisedFor(run, screen, 'use sum');
+    });
+  },
+);
+
+it(
+  'sends an open change request without the letter that the same write deleted',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(renamedPlan, async (run, tui) => {
+      const { screen, write } = tui;
+      write(DOWN);
+      await expect.poll(screen, PATIENCE).toContain(REQUEST_ACTIVE);
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain('⏎ send');
+      write('use sumx');
+      await expect.poll(screen, PATIENCE).toContain('› use sumx');
+      write(`${BACKSPACE}${ENTER}`);
+      await expectRevisedFor(run, screen, 'use sum');
+    });
+  },
+);

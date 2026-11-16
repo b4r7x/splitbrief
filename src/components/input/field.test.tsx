@@ -703,3 +703,81 @@ describe('MultilineInput image atoms', () => {
     );
   });
 });
+
+describe('MultilineInput new start', () => {
+  const FIELD = { columns: 10, rows: 1, maxRows: 2 } as const;
+
+  // Enter sends the text, and the parent puts `next` in the box and starts the field again, as the
+  // composer does when ↓ walks from a long entry to a shorter one.
+  function Restarting({ next }: { next: string }) {
+    const [field, setField] = useState({ value: '', resetKey: 0 });
+    return (
+      <MultilineInput
+        {...FIELD}
+        value={field.value}
+        resetKey={field.resetKey}
+        onChange={(value) => setField((current) => ({ ...current, value }))}
+        onSubmit={() => setField((current) => ({ value: next, resetKey: current.resetKey + 1 }))}
+        keyBindings={{ submit: (key) => key.return }}
+      />
+    );
+  }
+
+  it('paints a new start as a fresh mount of the same value', async () => {
+    const next = 'one two three four five';
+    const fresh = renderFeature(<MultilineInput {...FIELD} value={next} onChange={() => {}} />);
+    await flushEffects();
+    const expected = fresh.lastFrame();
+    fresh.unmount();
+
+    const ui = renderFeature(<Restarting next={next} />);
+    await flushEffects();
+    ui.stdin.write('aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj kkkk llll');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(ui.lastFrame()).toBe(expected);
+    ui.unmount();
+  });
+
+  it('takes the first key after a new start that Ctrl+U began, as a fresh mount does', async () => {
+    // Ctrl+U empties the box, and the parent starts the field again over a held draft that reads
+    // as the text Ctrl+U took.
+    function Held() {
+      const [field, setField] = useState({ value: 'ab', resetKey: 0 });
+      return (
+        <Box flexDirection="column">
+          <Text>value:{field.value}</Text>
+          <MultilineInput
+            value={field.value}
+            resetKey={field.resetKey}
+            onChange={(value) =>
+              setField((current) =>
+                value === ''
+                  ? { value: 'ab', resetKey: current.resetKey + 1 }
+                  : { ...current, value },
+              )
+            }
+            showCursor={false}
+            rows={1}
+            columns={DEFAULT_RENDER_VIEWPORT.cols}
+          />
+        </Box>
+      );
+    }
+    const ui = renderFeature(<Held />);
+    await flushEffects();
+    // A frozen clock holds the window that Ctrl+U opens, so the next key arrives inside it.
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now());
+    try {
+      ui.stdin.write(CTRL_U);
+      await flushEffects();
+      ui.stdin.write('x');
+      await flushEffects();
+      expect(ui.lastFrame()).toContain('value:abx');
+    } finally {
+      now.mockRestore();
+      ui.unmount();
+    }
+  });
+});

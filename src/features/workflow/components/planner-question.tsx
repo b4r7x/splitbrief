@@ -197,7 +197,7 @@ export function PlannerQuestion({
           <Text color={writing ? t.accent : t.textDim}>› </Text>
           <Box width={answerWidth} flexDirection="column">
             <MultilineInput
-              key={state.index}
+              resetKey={state.index}
               value={state.drafts[state.index]?.text ?? ''}
               onChange={(text) => questionPromptStore.setFocus('answer', text)}
               onSubmit={onAnswer}
@@ -221,10 +221,9 @@ export function PlannerQuestion({
               onBoundaryNavigate={(direction) => {
                 if (direction === 'down') {
                   questionPromptStore.setFocus('composer');
-                  return true;
+                  return;
                 }
                 questionPromptStore.setFocus('menu');
-                return true;
               }}
             />
           </Box>

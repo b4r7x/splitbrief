@@ -7,7 +7,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
-import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, type RenderFeatureResult } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { renderDockedComposer } from '#testing/helpers/composer.js';
 import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
@@ -2866,5 +2866,229 @@ describe('Composer long draft wrap', () => {
     }
 
     expect(submitted).toEqual(['Run\tmake build first then check every single output file Xnow']);
+  });
+});
+
+describe('Composer keys typed right after the input starts again', () => {
+  const SAMPLE: RuntimeCommandDef = {
+    kind: 'arg',
+    name: '/sample',
+    label: 'Sample',
+    description: 'Sample command',
+    category: 'navigate',
+    args: { kind: 'free', hint: '<text>' },
+    validScreens: ['workflow'],
+    handler: () => {},
+  };
+
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  const composer = (mode: InputMode, submissions: string[], questionEpoch?: number) => (
+    <Composer
+      commands={[SAMPLE]}
+      currentScreen="workflow"
+      mode={mode}
+      hint=""
+      questionEpoch={questionEpoch}
+      onSubmit={(submission) => submissions.push(submission.message.text)}
+      onRuntimeCommand={() => {}}
+    />
+  );
+
+  // Ink writes each frame inside its commit. A key written in a microtask of that write is read
+  // right after the commit, before any later task: the first moment a terminal can deliver it.
+  function keyAfterFrame(
+    ui: RenderFeatureResult,
+    key: string,
+    { frame = 1, when = () => true }: { frame?: number; when?: (frame: string) => boolean } = {},
+  ): { fired: number } {
+    const hook = { fired: 0 };
+    let seen = 0;
+    const push = ui.frames.push.bind(ui.frames);
+    ui.frames.push = (...frames: string[]) => {
+      if (hook.fired === 0 && frames.every(when) && ++seen === frame) {
+        hook.fired += 1;
+        queueMicrotask(() => ui.stdin.write(key));
+      }
+      return push(...frames);
+    };
+    return hook;
+  }
+
+  async function typeThenSend(ui: RenderFeatureResult, text: string) {
+    ui.stdin.write(text);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+  }
+
+  it.each(['review', 'question'] as const)(
+    'keeps the order of the first two letters after Enter on an empty box in %s mode',
+    async (mode) => {
+      const submissions: string[] = [];
+      const ui = mountFeature(composer(mode, submissions));
+      await flushEffects();
+      const hook = keyAfterFrame(ui, 'n');
+      ui.stdin.write('\r');
+      await flushEffects();
+      await typeThenSend(ui, 'o');
+      expect(hook.fired).toBe(1);
+      expect(submissions).toEqual(['', 'no']);
+    },
+  );
+
+  it('keeps the order of the first two letters after a new question clears an empty answer box', async () => {
+    const submissions: string[] = [];
+    const ui = mountFeature(composer('question', submissions, 1));
+    await flushEffects();
+    // The new question commits first, and its effect clears the stale answer in the next commit.
+    const hook = keyAfterFrame(ui, 'n', { frame: 2 });
+    ui.rerender(composer('question', submissions, 2));
+    await flushEffects();
+    await typeThenSend(ui, 'o');
+    expect(hook.fired).toBe(1);
+    expect(submissions).toEqual(['no']);
+  });
+
+  it('keeps the order of the next two letters after ↑ recalls the text that the box holds', async () => {
+    const submissions: string[] = [];
+    const ui = mountFeature(composer('normal', submissions));
+    await flushEffects();
+    await typeThenSend(ui, 'ab');
+    ui.stdin.write('ab');
+    await flushEffects();
+    const hook = keyAfterFrame(ui, 'X');
+    ui.stdin.write('\u001b[A');
+    await flushEffects();
+    await typeThenSend(ui, 'Y');
+    expect(hook.fired).toBe(1);
+    expect(submissions).toEqual(['ab', 'abXY']);
+  });
+
+  it('keeps the order of the next two letters after Tab completes a command typed in full', async () => {
+    const ui = mountFeature(composer('normal', []));
+    await flushEffects();
+    ui.stdin.write('/sample');
+    await flushEffects();
+    const hook = keyAfterFrame(ui, ' ');
+    ui.stdin.write('\t');
+    await flushEffects();
+    ui.stdin.write('a');
+    await flushEffects();
+    expect(hook.fired).toBe(1);
+    expect(composerLiveStore.get().text).toBe('/sample a');
+  });
+
+  it('keeps the order of the first two letters after a sent text clears the box', async () => {
+    const submissions: string[] = [];
+    const ui = mountFeature(composer('normal', submissions));
+    await flushEffects();
+    ui.stdin.write('first');
+    await flushEffects();
+    const hook = keyAfterFrame(ui, 'n', { when: (frame) => !frame.includes('first') });
+    ui.stdin.write('\r');
+    await flushEffects();
+    await typeThenSend(ui, 'o');
+    expect(hook.fired).toBe(1);
+    expect(submissions).toEqual(['first', 'no']);
+  });
+
+  it('keeps the order of the first two letters after a second send of the same text', async () => {
+    const submissions: string[] = [];
+    const ui = mountFeature(composer('normal', submissions));
+    await flushEffects();
+    await typeThenSend(ui, 'ab');
+    ui.stdin.write('ab');
+    await flushEffects();
+    const hook = keyAfterFrame(ui, 'n', { when: (frame) => !frame.includes('ab') });
+    ui.stdin.write('\r');
+    await flushEffects();
+    await typeThenSend(ui, 'o');
+    expect(hook.fired).toBe(1);
+    expect(submissions).toEqual(['ab', 'ab', 'no']);
+  });
+
+  it('keeps the order of the next two letters after ↑ recalls another text', async () => {
+    const submissions: string[] = [];
+    const ui = mountFeature(composer('normal', submissions));
+    await flushEffects();
+    await typeThenSend(ui, 'first');
+    const hook = keyAfterFrame(ui, 'X', { when: (frame) => frame.includes('first') });
+    ui.stdin.write('\u001b[A');
+    await flushEffects();
+    await typeThenSend(ui, 'Y');
+    expect(hook.fired).toBe(1);
+    expect(submissions).toEqual(['first', 'firstXY']);
+  });
+
+  it('keeps the order of the first two letters after a sent draft of spaces clears the box', async () => {
+    const submissions: string[] = [];
+    const ui = mountFeature(composer('review', submissions));
+    await flushEffects();
+    ui.stdin.write('   ');
+    await flushEffects();
+    const hook = keyAfterFrame(ui, 'n');
+    ui.stdin.write('\r');
+    await flushEffects();
+    await typeThenSend(ui, 'o');
+    expect(hook.fired).toBe(1);
+    expect(submissions).toEqual(['', 'no']);
+  });
+});
+
+describe('Composer Enter in the same read as an edit', () => {
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  const composer = (mode: InputMode, submissions: string[]) => (
+    <Composer
+      commands={[]}
+      currentScreen="workflow"
+      mode={mode}
+      hint=""
+      onSubmit={(submission) => submissions.push(submission.message.text)}
+      onRuntimeCommand={() => {}}
+    />
+  );
+
+  // Two writes in one tick reach the key handlers of one render, as two reads of one poll phase do.
+  it('sends the letter typed in the same tick as Enter', async () => {
+    const submissions: string[] = [];
+    const ui = mountFeature(composer('normal', submissions));
+    await flushEffects();
+    ui.stdin.write('make a total helpe');
+    await flushEffects();
+    ui.stdin.write('r');
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(submissions).toEqual(['make a total helper']);
+    expect(composerLiveStore.get().text).toBe('');
+  });
+
+  // The input bridge splits one read at each Backspace byte, so the Enter after it is its own key.
+  it('sends no letter that a Backspace of the same read deleted', async () => {
+    const submissions: string[] = [];
+    const ui = mountThroughFilteredStdin(composer('review', submissions));
+    await flushEffects();
+    ui.pressBytes('use sumx');
+    await flushEffects();
+    ui.pressBytes('\x7f\r');
+    await flushEffects();
+    expect(submissions).toEqual(['use sum']);
+  });
+
+  it('sends the text that one read typed into an empty box in review mode', async () => {
+    const submissions: string[] = [];
+    const ui = mountThroughFilteredStdin(composer('review', submissions));
+    await flushEffects();
+    ui.pressBytes('nop\x7f\r');
+    await flushEffects();
+    expect(submissions).toEqual(['no']);
+    expect(composerLiveStore.get().text).toBe('');
   });
 });

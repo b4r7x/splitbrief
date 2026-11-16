@@ -65,8 +65,9 @@ export function useAttachImage({
       return null;
     }
     onReviewInteraction?.();
-    // The image is a part of the draft at the caret, so the caret has to land after it on remount.
-    // The seed is spent by the epoch it was made for; a later remount starts at the end as usual.
+    // The image is a part of the draft at the caret, so the caret has to land after it when the
+    // input starts again. The seed is spent by the epoch it was made for; a later new start puts
+    // the caret at the end as usual.
     noteEdit();
     const inserted = insertImage(result.attachment, at);
     bumpEpoch();

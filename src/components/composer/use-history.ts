@@ -15,7 +15,7 @@ interface UseHistoryParams {
 interface ComposerHistory {
   inputEpoch: number;
   bumpEpoch: () => void;
-  handleBoundaryNavigate: (direction: 'up' | 'down') => boolean;
+  handleBoundaryNavigate: (direction: 'up' | 'down') => void;
   resetHistory: () => void;
   /** An edit means the draft is the operator's again, not the entry they walked back to. */
   noteEdit: () => void;
@@ -48,7 +48,7 @@ export function useHistory({
 
   const handleBoundaryNavigate = (direction: 'up' | 'down') => {
     if (disabled) {
-      return false;
+      return;
     }
 
     const result = stepDocumentHistory({
@@ -57,12 +57,11 @@ export function useHistory({
       direction,
       currentValue: document,
     });
-    if (!result.changed) return false;
+    if (!result.changed) return;
 
     setDocument(result.nextValue);
     setHistoryState(result.nextState);
     setInputEpoch((epoch) => epoch + 1);
-    return true;
   };
 
   const resetHistory = () => {

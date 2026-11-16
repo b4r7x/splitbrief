@@ -27,7 +27,6 @@ export interface BuildSegmentsParams {
   keepPlaceholderWhileFocused?: boolean | undefined;
   showCursor: boolean;
   mask?: string | undefined;
-  highlight?: { start: number; end: number } | undefined;
 }
 
 type FormatText = (text: string, isPlaceholder?: boolean) => string;
@@ -48,61 +47,9 @@ function buildPlainSegments(
   };
 }
 
-interface HighlightSegmentArgs {
-  highlight: { start: number; end: number };
-  textBefore: string;
-  textAfter: string;
-  cursorIndex: number;
-  showCursor: boolean;
-  valueLength: number;
-  formatText: FormatText;
-}
-
-function buildSegmentsWithHighlight(args: HighlightSegmentArgs): SegmentResult {
-  const { highlight, textBefore, textAfter, cursorIndex, showCursor, valueLength, formatText } =
-    args;
-  const hasValidHighlight =
-    highlight.end > highlight.start && highlight.start >= 0 && highlight.end <= valueLength;
-
-  if (!hasValidHighlight) {
-    return buildPlainSegments(textBefore, textAfter, showCursor, formatText);
-  }
-
-  const hlStartAfter = Math.max(highlight.start - cursorIndex, 0);
-  const hlEndAfter = Math.max(highlight.end - cursorIndex, 0);
-
-  return {
-    preCursor: [
-      { value: formatText(textBefore.slice(0, highlight.start)) },
-      {
-        value: formatText(textBefore.slice(highlight.start, Math.min(highlight.end, cursorIndex))),
-        type: 'highlight',
-      },
-      { value: formatText(textBefore.slice(highlight.end)) },
-      { value: showCursor ? ' ' : '', type: 'cursor' },
-    ],
-    postCursor: [
-      { value: formatText(textAfter.slice(0, hlStartAfter)) },
-      {
-        value: formatText(textAfter.slice(hlStartAfter, hlEndAfter)),
-        type: 'highlight',
-      },
-      { value: formatText(textAfter.slice(hlEndAfter)) },
-    ],
-  };
-}
-
 export function buildSegments(params: BuildSegmentsParams): SegmentResult {
-  const {
-    value,
-    cursorIndex,
-    placeholder,
-    focus,
-    keepPlaceholderWhileFocused,
-    showCursor,
-    mask,
-    highlight,
-  } = params;
+  const { value, cursorIndex, placeholder, focus, keepPlaceholderWhileFocused, showCursor, mask } =
+    params;
 
   const formatText: FormatText = (text, isPlaceholder = false) => {
     const normalized = normalizeLineEndings(text);
@@ -136,18 +83,6 @@ export function buildSegments(params: BuildSegmentsParams): SegmentResult {
       preCursor: [{ value: formatText(value) }],
       postCursor: [],
     };
-  }
-
-  if (highlight) {
-    return buildSegmentsWithHighlight({
-      highlight,
-      textBefore,
-      textAfter,
-      cursorIndex,
-      showCursor,
-      valueLength: value.length,
-      formatText,
-    });
   }
 
   return buildPlainSegments(textBefore, textAfter, showCursor, formatText);
