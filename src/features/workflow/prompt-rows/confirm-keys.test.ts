@@ -1,5 +1,6 @@
 import type { Key } from 'ink';
 import { describe, expect, it } from 'vitest';
+import { makeKey } from '#testing/helpers/factories/key.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import { CONFIRM_REASON_UNSTATED } from './approval.js';
 import {
@@ -10,32 +11,6 @@ import {
   confirmKeyStep,
   confirmRowStep,
 } from './confirm-keys.js';
-
-function key(overrides: Partial<Key> = {}): Key {
-  return {
-    upArrow: false,
-    downArrow: false,
-    leftArrow: false,
-    rightArrow: false,
-    pageDown: false,
-    pageUp: false,
-    home: false,
-    end: false,
-    return: false,
-    escape: false,
-    ctrl: false,
-    shift: false,
-    tab: false,
-    backspace: false,
-    delete: false,
-    meta: false,
-    super: false,
-    hyper: false,
-    capsLock: false,
-    numLock: false,
-    ...overrides,
-  };
-}
 
 // Options: destructive [Confirm (no key), r, x]; package_change [y, r, x]; runner_trust [y, x].
 const DESTRUCTIVE: ConfirmKeyPanel = { actionClass: 'destructive', optionRows: 3 };
@@ -68,7 +43,7 @@ function press(
   let result: ConfirmKeyResult = { kind: 'state', state: INITIAL_CONFIRM_KEY_STATE };
   for (const [input, overrides] of keys) {
     if (result.kind === 'answer') return result;
-    result = confirmKeyStep(result.state, input, key(overrides), panel);
+    result = confirmKeyStep(result.state, input, makeKey(overrides), panel);
   }
   return result;
 }
@@ -198,13 +173,13 @@ describe('confirmKeyStep in the choose step', () => {
       expected: next({ selectedIndex: 1, nudged: true }),
     },
   ])('$name', ({ panel, from, input, key: overrides, expected }) => {
-    expect(confirmKeyStep(state(from), input, key(overrides), panel)).toEqual(expected);
+    expect(confirmKeyStep(state(from), input, makeKey(overrides), panel)).toEqual(expected);
   });
 
   it('gives back the same state when ⏎ finds no option row on the panel', () => {
     const from = state();
     expect(
-      confirmKeyStep(from, '\r', key({ return: true }), { ...DESTRUCTIVE, optionRows: 0 }),
+      confirmKeyStep(from, '\r', makeKey({ return: true }), { ...DESTRUCTIVE, optionRows: 0 }),
     ).toEqual({ kind: 'state', state: from });
   });
 
@@ -214,7 +189,7 @@ describe('confirmKeyStep in the choose step', () => {
     { name: '→', panel: REVERSIBLE, input: '' },
   ])('gives back the same state for $name', ({ panel, input }) => {
     const from = state({ selectedIndex: 1 });
-    const result = confirmKeyStep(from, input, key({ rightArrow: input === '' }), panel);
+    const result = confirmKeyStep(from, input, makeKey({ rightArrow: input === '' }), panel);
     expect(result).toEqual({ kind: 'state', state: from });
     expect(result.kind === 'state' && result.state).toBe(from);
   });
@@ -261,7 +236,7 @@ describe('confirmKeyStep in the reason step', () => {
       expected: next({ step: 'reason', reason: 'pin Y x' }),
     },
   ])('$name', ({ from, input, key: overrides, expected }) => {
-    expect(confirmKeyStep(reason(from), input, key(overrides), DESTRUCTIVE)).toEqual(expected);
+    expect(confirmKeyStep(reason(from), input, makeKey(overrides), DESTRUCTIVE)).toEqual(expected);
   });
 
   it.each([
@@ -271,7 +246,7 @@ describe('confirmKeyStep in the reason step', () => {
     { name: 'meta+a', input: 'a', key: { meta: true } },
   ])('gives back the same state for $name', ({ input, key: overrides }) => {
     const from = reason('kept');
-    const result = confirmKeyStep(from, input, key(overrides), DESTRUCTIVE);
+    const result = confirmKeyStep(from, input, makeKey(overrides), DESTRUCTIVE);
     expect(result.kind === 'state' && result.state).toBe(from);
   });
 });

@@ -14,6 +14,10 @@ export function describeHermeticEnvironment(): void {
       expect(Object.keys(process.env).filter(isTestCredentialEnvironmentName)).toEqual([]);
     });
 
+    it('turns the tsx disk cache off for the children that inherit the test environment', () => {
+      expect(process.env.TSX_DISABLE_CACHE).toBe('1');
+    });
+
     it('keeps PTY shims first and puts only node, npm and npx before the system directories', () => {
       const root = mkdtempSync(join(tmpdir(), 'hermetic-pty-path-'));
       const shim = join(root, 'bin');

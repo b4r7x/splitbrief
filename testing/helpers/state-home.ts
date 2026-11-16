@@ -16,6 +16,11 @@ import { cleanupTempDir, createdTempDirs } from './temp-dir.js';
 const stateHome = join(tmpdir(), `splitbrief-test-state-${randomUUID()}`);
 process.env.XDG_STATE_HOME = stateHome;
 
+// A tsx child lists the shared disk cache folder of the temp folder at start and scans that list
+// for each module it loads, so a large cache makes each start take seconds. Every child that
+// inherits the test environment compiles in memory instead.
+process.env.TSX_DISABLE_CACHE = '1';
+
 afterAll(async () => {
   cleanupTempDir(stateHome);
   // Imported only now: a static import here would load the module graph before

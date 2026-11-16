@@ -656,7 +656,8 @@ describe('useRuntimeCommands', () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     projectDir = createTempDir('command-composer-steer');
     configStore.__testReset({ projectDir, config: makeConfig() });
-    const path = `${projectDir}/context.txt`;
+    // The typed path is relative to the project, so the draft fits one row for any temp folder.
+    const path = './context.txt';
     const document = createDraftDocument(`/steer use @${path}`);
     const pending = {
       id: 'pending',
@@ -693,7 +694,7 @@ describe('useRuntimeCommands', () => {
     expect(resumed).toEqual([]);
     expect(ui.lastFrame()).toContain(`/steer use @${path}`);
 
-    writeFileSync(path, 'context body');
+    writeFileSync(join(projectDir, 'context.txt'), 'context body');
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(resumed).toEqual([`use @${path}\n\n--- @${path} ---\ncontext body`]);

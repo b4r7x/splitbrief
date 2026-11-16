@@ -174,8 +174,12 @@ describe('createSandboxEnv', () => {
       expect(tmp.startsWith(realpathSync(projectDir))).toBe(false);
       expect(existsSync(join(projectDir, SANDBOX_DIR, 'tmp'))).toBe(false);
       // tsx binds `<TMPDIR>/tsx-<uid>/<pid>.pipe`, and macOS refuses a unix
-      // socket path over 104 bytes with EADDRINUSE.
-      expect(`${tmp}/tsx-4294967295/4194304.pipe`.length).toBeLessThanOrEqual(104);
+      // socket path over 104 bytes with EADDRINUSE. The folder sits in the system
+      // temp folder, so its own part is measured under the macOS per-user temp
+      // folder, not under the TMPDIR of the test run.
+      const macosTemp = `/private/var/folders/xx/${'x'.repeat(30)}/T`;
+      const ownPart = tmp.slice(realpathSync(tmpdir()).length);
+      expect(`${macosTemp}${ownPart}/tsx-4294967295/4194304.pipe`.length).toBeLessThanOrEqual(104);
       expect(statSync(tmp).isDirectory()).toBe(true);
       expect(statSync(tmp).mode & 0o777).toBe(0o700);
     },

@@ -5,11 +5,10 @@ import { getSplitbriefVersion } from './core/version.js';
 
 const ROOT = join(import.meta.dirname, '..');
 const CLI_ENTRY = join(ROOT, 'src', 'cli.ts');
-const TSX = join(ROOT, 'node_modules', '.bin', 'tsx');
 
 describe('SPLITBRIEF CLI identity', () => {
   it('prints the canonical version', () => {
-    const result = spawnSync(TSX, [CLI_ENTRY, '--version'], {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', CLI_ENTRY, '--version'], {
       cwd: ROOT,
       timeout: 60_000,
       encoding: 'utf-8',
@@ -20,7 +19,7 @@ describe('SPLITBRIEF CLI identity', () => {
   }, 60_000);
 
   it('uses the canonical executable and display identity in help', () => {
-    const result = spawnSync(TSX, [CLI_ENTRY, '--help'], {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', CLI_ENTRY, '--help'], {
       cwd: ROOT,
       timeout: 60_000,
       encoding: 'utf-8',

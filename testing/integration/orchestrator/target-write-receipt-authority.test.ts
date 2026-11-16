@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/target-writes.js';
 import {
   applyTargetBundle,
   cleanupTargetWriteFixtures,
   createTargetWriteProject,
+  type FixtureActor,
   startOperatorReplacementWhenWritten,
   TARGET_WRITE_FILE,
   TARGET_WRITE_SESSION_ID,
@@ -15,10 +16,28 @@ import {
 
 /** Marks the direct response's bytes; the operator actor waits for this exact head. */
 const CANDIDATE_MARKER = 'direct-response-marker\n';
-/** Enough bytes that the verification's hash outlasts the operator's reaction by design. */
-const CANDIDATE_BYTES = 32 * 1024 * 1024;
+
+// The verification reads the target back after the write. While a case holds an operator, a
+// read of the written response waits until the operator has replaced it, so the replacement
+// always lands between the write and the read-back, however late the operator reacts.
+const readBack = vi.hoisted(() => ({ operator: undefined as FixtureActor | undefined }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  const readFile = async (...args: Parameters<typeof actual.readFile>) => {
+    const operator = readBack.operator;
+    if (
+      operator !== undefined &&
+      (await actual.readFile(args[0], 'utf8')).startsWith(CANDIDATE_MARKER)
+    ) {
+      await operator.done();
+    }
+    return actual.readFile(...args);
+  };
+  return { ...actual, readFile, default: { ...actual, readFile } };
+});
 
 afterEach(() => {
+  readBack.operator = undefined;
   cleanupTargetWriteFixtures();
 });
 
@@ -26,15 +45,15 @@ describe('current receipt authority', () => {
   it('does not claim a direct API save an operator replaced before verification', async () => {
     const { projectDir, task } = createTargetWriteProject();
     writePromotedReceipt({ projectDir, task, content: 'old-worker' });
-    // The response is large enough that the verification's own hashing is still ahead when
-    // the operator overwrites the file the moment the write lands. The read-back then finds
-    // neither the response nor the baseline, so no save can be claimed.
-    const content = `${CANDIDATE_MARKER}${'x'.repeat(CANDIDATE_BYTES)}`;
+    // The operator overwrites the file once the write lands. The read-back then finds neither
+    // the response nor the baseline, so no save can be claimed.
+    const content = `${CANDIDATE_MARKER}direct-response`;
     const operator = startOperatorReplacementWhenWritten({
       targetPath: join(projectDir, TARGET_WRITE_FILE),
       writtenPrefix: CANDIDATE_MARKER,
       replacement: 'operator',
     });
+    readBack.operator = operator;
     await operator.ready;
     const result = await applyTargetBundle({ projectDir, task, content });
     await operator.done();

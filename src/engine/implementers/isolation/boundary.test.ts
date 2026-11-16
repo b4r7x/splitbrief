@@ -753,13 +753,15 @@ describe('isolation boundary around a linked node_modules', () => {
     await withLinkedWorktree((boundary, dir) => {
       const file = join(dir, 'checkout', 'src', 'a.ts');
       const { guard, reads } = loggingGuard(boundary);
+      // The padding takes the command past its 200-character excerpt before the temp path starts.
+      const needle = 'x'.repeat(200);
       expect(
-        guard({ name: 'Bash', input: { command: `grep -rn needle ${boundary.checkoutDir}` } }),
+        guard({ name: 'Bash', input: { command: `grep -rn ${needle} ${boundary.checkoutDir}` } }),
       ).toBeNull();
       expect(guard({ name: 'Read', input: { file_path: file } })).toBeNull();
       expect(guard({ name: 'Bash', input: { command: 'ls /home/probe' } })).toBeNull();
       expect(reads).toEqual([
-        `searched ../checkout (your checkout) with Bash: grep -rn needle ${boundary.checkoutDir}`,
+        `searched ../checkout (your checkout) with Bash: grep -rn ${'x'.repeat(190)}…`,
         'read ../checkout/src/a.ts (your checkout) with Read',
         'listed ~ (outside the workspace) with Bash: ls ~',
       ]);

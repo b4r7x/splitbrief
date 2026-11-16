@@ -12,6 +12,7 @@ import {
   type TieredApprovalResponse,
 } from '../../../src/core/approval/types.js';
 import {
+  CONFIRM_QUESTION,
   CONFIRM_REASON_UNSTATED,
   PROMPT_COMMAND_LEGEND,
   formatApprovalActionDescription,
@@ -481,15 +482,15 @@ describe('WorkflowScreen key ownership', () => {
       const mouse = createMockFilteredStdin();
       const disposeMouse = wireAppMouse(mouse.filtered);
       const ui = mountWorkflow(rows);
-      await tick(20);
       let settled: TieredApprovalResponse | undefined;
       void openApprovalPrompt(request).then((response) => {
         settled = response;
       });
-      await tick(PAST_GRACE);
-      await flushEffects();
       const lines = () => stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
       const rowOf = (text: string) => lines().findIndex((line) => line.includes(text)) + 1;
+      // Every confirm panel paints its Deny row, so a click lands only once the panel is drawn.
+      await vi.waitFor(() => expect(rowOf('x   Deny')).toBeGreaterThan(0));
+      await flushEffects();
       // The panel sits between the header rule and the rule above the composer.
       const panelRows = () => {
         const rules = lines().flatMap((line, index) => (/^-{40,}$/.test(line) ? [index] : []));
@@ -497,6 +498,7 @@ describe('WorkflowScreen key ownership', () => {
         return Array.from({ length: bottom - top - 1 }, (_, offset) => top + offset + 2);
       };
       return {
+        ui,
         settled: () => settled,
         rowOf,
         panelRows,
@@ -515,6 +517,24 @@ describe('WorkflowScreen key ownership', () => {
       const panel = await openPanel(24, trustRequest);
       panel.click(panel.rowOf(row));
       await vi.waitFor(() => expect(panel.settled()).toMatchObject(expected), 1000);
+      panel.close();
+    });
+
+    it('on the painted reason row asks for the reason, and confirms with the typed one', async () => {
+      const panel = await openPanel(24, confirmRequest());
+      panel.click(panel.rowOf('r   Confirm with a reason'));
+      await waitPastGrace(panel.ui, CONFIRM_QUESTION);
+      expect(panel.settled()).toBeUndefined();
+      panel.ui.stdin.write('pin the lockfile');
+      await vi.waitFor(() => expect(panel.rowOf('pin the lockfile')).toBeGreaterThan(0));
+      panel.ui.stdin.write('\r');
+      await vi.waitFor(() =>
+        expect(panel.settled()).toEqual({
+          decision: 'confirm',
+          phrase: CONFIRM_PHRASE,
+          reason: 'pin the lockfile',
+        }),
+      );
       panel.close();
     });
 

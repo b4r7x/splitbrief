@@ -44,6 +44,13 @@ import { Composer } from '../../components/composer/view.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { CommandPaletteOverlay } from './palette.js';
 
+// The composer lists the project files with a git child. Each test deletes its project folder at
+// the end, and a git child that reads its working folder after that scans the whole temp folder.
+vi.mock('../../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
+  listTrackedAndUntrackedFiles: async () => null,
+}));
+
 async function write(instance: ReturnType<typeof render>, chars: string): Promise<void> {
   await flushEffects();
   instance.stdin.write(chars);

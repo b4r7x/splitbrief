@@ -1,36 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { makeKey } from '#testing/helpers/factories/key.js';
 import type { Key } from 'ink';
 import {
   handleConversationScroll,
   handleReviewScroll,
   handleWorkflowCtrlChords,
 } from './keyboard.js';
-
-function key(overrides: Partial<Key>): Key {
-  return {
-    upArrow: false,
-    downArrow: false,
-    leftArrow: false,
-    rightArrow: false,
-    pageDown: false,
-    pageUp: false,
-    home: false,
-    end: false,
-    return: false,
-    escape: false,
-    ctrl: false,
-    shift: false,
-    tab: false,
-    backspace: false,
-    delete: false,
-    meta: false,
-    super: false,
-    hyper: false,
-    capsLock: false,
-    numLock: false,
-    ...overrides,
-  };
-}
 
 describe('handleConversationScroll', () => {
   const base = {
@@ -65,7 +40,7 @@ describe('handleConversationScroll', () => {
   };
 
   it('ignores the plain printable g and G keys so they reach the composer as text', () => {
-    const neutral = key({});
+    const neutral = makeKey({});
     expect(handleConversationScroll({ ...base, input: 'g', key: neutral })).toEqual({
       type: 'none',
     });
@@ -307,7 +282,7 @@ describe('handleWorkflowCtrlChords', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'a',
-        key: key({ ctrl: true }),
+        key: makeKey({ ctrl: true }),
         composerFocus: true,
         getRowActions: () =>
           new Map([['row', { type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' }]]),
@@ -319,7 +294,7 @@ describe('handleWorkflowCtrlChords', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'a',
-        key: key({ meta: true }),
+        key: makeKey({ meta: true }),
         composerFocus: true,
         getRowActions: () =>
           new Map([['row', { type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' }]]),
@@ -331,7 +306,7 @@ describe('handleWorkflowCtrlChords', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'e',
-        key: key({ ctrl: true }),
+        key: makeKey({ ctrl: true }),
         composerFocus: true,
         getRowActions: () => new Map([]),
       }),
@@ -342,7 +317,7 @@ describe('handleWorkflowCtrlChords', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'e',
-        key: key({ ctrl: true }),
+        key: makeKey({ ctrl: true }),
         getRowActions: () => new Map([]),
       }),
     ).toEqual({ type: 'none' });
@@ -352,7 +327,7 @@ describe('handleWorkflowCtrlChords', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'd',
-        key: key({ ctrl: true }),
+        key: makeKey({ ctrl: true }),
         getRowActions: () =>
           new Map([['row', { type: 'toggle-diff', key: 'implementer_generate_done:1' }]]),
       }),
@@ -363,7 +338,7 @@ describe('handleWorkflowCtrlChords', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'd',
-        key: key({ ctrl: true }),
+        key: makeKey({ ctrl: true }),
         getRowActions: () =>
           new Map([['row', { type: 'toggle-activity-batch', key: 'activity_batch:1' }]]),
       }),
@@ -374,7 +349,7 @@ describe('handleWorkflowCtrlChords', () => {
     expect(
       handleWorkflowCtrlChords({
         input: 'g',
-        key: key({ ctrl: true }),
+        key: makeKey({ ctrl: true }),
         getRowActions: () => new Map([]),
       }),
     ).toEqual({ type: 'none' });
@@ -385,7 +360,7 @@ describe('handleWorkflowCtrlChords', () => {
       expect(
         handleWorkflowCtrlChords({
           input,
-          key: key({}),
+          key: makeKey({}),
           getRowActions: () =>
             new Map([['row', { type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' }]]),
         }),

@@ -491,7 +491,18 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         },
         afterMount: async () => {
           const bus = createRecoveryBus({ ...record.ref, sink: () => {} });
-          await endRunAtRest({ ...record.ref, bus }, saved);
+          // The close dates the run with `new Date()`, which the fixed `Date.now` of the capture
+          // does not reach, so a new Date with no value reads that clock during the close.
+          const SystemDate = Date;
+          globalThis.Date = new Proxy(SystemDate, {
+            construct: (target, args, newTarget) =>
+              Reflect.construct(target, args.length === 0 ? [SystemDate.now()] : args, newTarget),
+          });
+          try {
+            await endRunAtRest({ ...record.ref, bus }, saved);
+          } finally {
+            globalThis.Date = SystemDate;
+          }
         },
       };
     };

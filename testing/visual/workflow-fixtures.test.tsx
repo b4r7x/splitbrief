@@ -1670,6 +1670,11 @@ describe('workflow visual fixtures', () => {
     }
   });
 
+  it('dates the close of the run another process ended by the capture clock', async () => {
+    const closed = await captureGalleryFrame('workflow-at-rest-closed-elsewhere');
+    expect(closed.frame).toContain('Run closed · Jul 13, 16:00');
+  });
+
   it.each(REQUIRED_VIEWPORTS)(
     'keeps the settled review and fix brief reachable by scrolling at $cols x $rows',
     async (renderViewport) => {

@@ -13,7 +13,6 @@ import { listSessions } from './sessions/io.js';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const CLI_ENTRY = join(ROOT, 'src', 'cli.ts');
-const TSX = join(ROOT, 'node_modules', '.bin', 'tsx');
 const REQUIRED_COMMANDS = ['start', 'spec', 'init', 'status', 'resume'] as const;
 const SUPERSEDED_POSITIONING = [
   'claude',
@@ -40,7 +39,7 @@ const SWEPT_SURFACES = ['src', 'docs', 'package.json', 'README.md', 'CLAUDE.md']
 const SWEPT_EXTENSIONS = new Set(['.ts', '.tsx', '.md', '.json']);
 
 function helpHeader(args: readonly string[]): string {
-  const result = spawnSync(TSX, [CLI_ENTRY, ...args], {
+  const result = spawnSync(process.execPath, ['--import', 'tsx', CLI_ENTRY, ...args], {
     cwd: ROOT,
     timeout: 60_000,
     encoding: 'utf-8',
@@ -88,7 +87,7 @@ describe('SPLITBRIEF identity', () => {
   });
 
   it('advertises every required command under the identity usage line', () => {
-    const result = spawnSync(TSX, [CLI_ENTRY, '--help'], {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', CLI_ENTRY, '--help'], {
       cwd: ROOT,
       timeout: 60_000,
       encoding: 'utf-8',

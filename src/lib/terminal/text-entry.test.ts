@@ -1,33 +1,6 @@
-import type { Key } from 'ink';
 import { describe, expect, it } from 'vitest';
+import { makeKey } from '#testing/helpers/factories/key.js';
 import { isTerminalControlRun, isTextEntryInput, isUnmodifiedYInput } from './text-entry.js';
-
-const BASE_KEY: Key = {
-  upArrow: false,
-  downArrow: false,
-  leftArrow: false,
-  rightArrow: false,
-  pageDown: false,
-  pageUp: false,
-  home: false,
-  end: false,
-  return: false,
-  escape: false,
-  ctrl: false,
-  shift: false,
-  tab: false,
-  backspace: false,
-  delete: false,
-  meta: false,
-  super: false,
-  hyper: false,
-  capsLock: false,
-  numLock: false,
-};
-
-function key(overrides: Partial<Key> = {}): Key {
-  return { ...BASE_KEY, ...overrides };
-}
 
 describe('isTerminalControlRun', () => {
   it.each([
@@ -57,7 +30,7 @@ describe('isTextEntryInput', () => {
     { name: 'DEL', input: '\x7f', expected: false, key: {} },
     { name: 'two Ctrl+C read together', input: '\x03\x03', expected: false, key: {} },
   ])('classifies $name', ({ input, expected, key: keyOverrides }) => {
-    expect(isTextEntryInput(input, key(keyOverrides))).toBe(expected);
+    expect(isTextEntryInput(input, makeKey(keyOverrides))).toBe(expected);
   });
 
   it.each([
@@ -66,7 +39,7 @@ describe('isTextEntryInput', () => {
     { name: 'super', key: { super: true } },
     { name: 'hyper', key: { hyper: true } },
   ])('rejects the $name modifier', ({ key: keyOverrides }) => {
-    expect(isTextEntryInput('a', key(keyOverrides))).toBe(false);
+    expect(isTextEntryInput('a', makeKey(keyOverrides))).toBe(false);
   });
 
   it.each([
@@ -84,7 +57,7 @@ describe('isTextEntryInput', () => {
     { name: 'backspace', key: { backspace: true } },
     { name: 'delete', key: { delete: true } },
   ])('rejects the $name key', ({ key: keyOverrides }) => {
-    expect(isTextEntryInput('a', key(keyOverrides))).toBe(false);
+    expect(isTextEntryInput('a', makeKey(keyOverrides))).toBe(false);
   });
 });
 
@@ -98,6 +71,6 @@ describe('isUnmodifiedYInput', () => {
     { name: 'Super+y', input: 'y', key: { super: true }, expected: false },
     { name: 'Hyper+y', input: 'y', key: { hyper: true }, expected: false },
   ])('classifies $name', ({ input, key: keyOverrides, expected }) => {
-    expect(isUnmodifiedYInput(input, key(keyOverrides))).toBe(expected);
+    expect(isUnmodifiedYInput(input, makeKey(keyOverrides))).toBe(expected);
   });
 });
