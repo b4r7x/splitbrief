@@ -353,11 +353,19 @@ describe('prepareArtifactStageLease', () => {
   itUnix('rejects a nonregular socket entry', async () => {
     const fixture = await createFixture();
     writeArtifact(fixture, 'valid result');
-    const server = await listenUnixSocket(join(fixture.root, 'late.sock'));
+    // A relative name keeps the socket address short under any TMPDIR. The close removes the
+    // socket by that name, so the server closes before the working folder changes back.
+    const previousCwd = process.cwd();
+    process.chdir(fixture.root);
     try {
-      await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
+      const server = await listenUnixSocket('late.sock');
+      try {
+        await expectInvalid(() => fixture.lease.readAfterChild({ declaredRedactionValues: [] }));
+      } finally {
+        await closeServer(server);
+      }
     } finally {
-      await closeServer(server);
+      process.chdir(previousCwd);
     }
   });
 
