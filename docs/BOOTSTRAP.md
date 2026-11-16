@@ -35,8 +35,7 @@ Two things about this flow are load-bearing:
 
 | File | Holds |
 |---|---|
-| `init.ts` | The entries callers import (`bootstrapStoresSync`, `bootstrapStoresHooks`, `initStoresForTuiMount`, `initStores`, `teardownStores`) and `initUIChrome` |
-| `project.ts` | `loadProjectState` and the input-history teardown |
+| `init.ts` | The entries callers import (`bootstrapStoresSync`, `bootstrapStoresHooks`, `initStoresForTuiMount`, `initStores`, `teardownStores`), `initUIChrome`, `loadProjectState` and the input-history teardown |
 | `discovery.ts` | `loadDiscovery` and `awaitBackgroundDiscovery` |
 
 `bootstrapStoresSync()` initializes UI chrome and project state. `initStoresForTuiMount()` then awaits `bootstrapStoresHooks()` and returns the `awaitDiscovery` promise without awaiting it. `runInteractiveStart()` mounts Ink while discovery continues. The separate `initStores()` entry awaits discovery for callers that require it.
@@ -131,8 +130,8 @@ I/O for a store's state (hydrate from disk + debounced save) lives **next to the
 
 ```
 src/stores/ui/
-├── input-history.ts       # store — in-memory state + hydrate()/pushDocumentSubmission() actions
-└── persistence.ts         # installHistoryPersistence() — fs I/O, debounced write
+├── input-history.ts              # store — in-memory state + hydrate()/pushDocumentSubmission() actions
+└── input-history-persistence.ts  # installHistoryPersistence() — fs I/O, debounced write
 ```
 
 `initStores()` calls `installHistoryPersistence()` from `stores/ui/input-history-persistence.js`. The CLI layer knows about the step, but the I/O logic is a store concern.

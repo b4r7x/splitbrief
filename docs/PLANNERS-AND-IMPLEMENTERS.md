@@ -187,25 +187,25 @@ Here is what a single brief looks like in `tasks.md`:
 ````markdown
 ---
 id: T001
-title: Add provider guard tests
+title: Add region guard tests
 action: modify
-file: src/core/schemas/enums.test.ts
+file: src/billing/regions.test.ts
 depends_on: []
 ---
 
 ### Description
-Add focused Vitest coverage for the provider guard helpers
-in `src/core/schemas/enums.ts`.
+Add focused Vitest coverage for the region guard helpers
+in `src/billing/regions.ts`.
 
 ### Signature
 ```typescript
-export function isProviderId(id: string): id is ProviderId
+export function isRegion(id: string): id is Region
 ```
 
 ### Type Definitions
 ```typescript
-export const PROVIDER_IDS = [...] as const;
-export type ProviderId = (typeof PROVIDER_IDS)[number];
+export const REGIONS = [...] as const;
+export type Region = (typeof REGIONS)[number];
 ```
 
 ### Current Code
@@ -214,16 +214,16 @@ export type ProviderId = (typeof PROVIDER_IDS)[number];
 ```
 
 ### Pattern
-Follow existing test style: import from `./enums.js`, group
+Follow existing test style: import from `./regions.js`, group
 with `describe`, use `it.each`.
 
 ### Implementation Steps
 1. Update imports to include the guard function
-2. Add `describe('isProviderId')` block with positive and negative cases
+2. Add `describe('isRegion')` block with positive and negative cases
 
 ### Tests
-- `isProviderId('ollama')` returns true
-- `isProviderId('bogus')` returns false
+- `isRegion('eu')` returns true
+- `isRegion('bogus')` returns false
 
 ### Scope
 **In bounds:**
@@ -235,7 +235,7 @@ with `describe`, use `it.each`.
 - Stop and ask if the test file structure has diverged
 
 ### Evidence
-- `npm test -- src/core/schemas/enums.test.ts` passes
+- `npm test -- src/billing/regions.test.ts` passes
 
 ### Constraints
 - ESM imports with `.js` extensions
@@ -599,7 +599,7 @@ These researched CLIs have **blocked verdicts** — they do not appear in the ad
 |---|---|---|---|---|
 | — | — | — | — | — |
 
-No CLI candidate currently sits on an OMIT verdict. `CURSOR_CLI_ADMISSION_VERDICT`, `COMMAND_CODE_CLI_ADMISSION_VERDICT` and `ANTIGRAVITY_CLI_ADMISSION_VERDICT` are all `PASS` in `cli-tool-catalog.ts`. Candidate runtime adapter sources must remain absent while a verdict is OMIT. No unverified-auth override can promote an omitted candidate.
+No CLI candidate currently sits on an OMIT verdict. `CURSOR_CLI_ADMISSION_VERDICT`, `COMMAND_CODE_CLI_ADMISSION_VERDICT` and `ANTIGRAVITY_CLI_ADMISSION_VERDICT` are all `PASS` in the CLI tool catalog. Candidate runtime adapter sources must remain absent while a verdict is OMIT. No unverified-auth override can promote an omitted candidate.
 
 ##### Excluded researched candidates
 

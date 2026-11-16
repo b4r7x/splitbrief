@@ -705,7 +705,7 @@ Cost is reported in tokens, not dollars: the event stream carries token counts, 
 
 **When:** a `--json` or `--plain` run stopped on a recovery issue in CI, and you want to resolve it from the shell instead of opening the recovery panel.
 
-**Run:** the halt tells you the command. Every headless run that stops on a recovery writes three lines to stderr and exits `1`:
+**Run:** the halt tells you the command. Every headless run that stops on a recovery writes the halt, the recommended action and the command to stderr, and exits `1`:
 
 ```
 Needs you (retry-exhausted): T002 failed
@@ -713,7 +713,7 @@ Recommended: skip-current-task
 Continue with: splitbrief continue 2026-09-13-rate-limiter --action skip [--plain|--json]
 ```
 
-Paste the last line, choosing the rendering you want:
+Paste the `Continue with:` line, choosing the rendering you want:
 
 ```bash
 splitbrief continue 2026-09-13-rate-limiter --action skip --plain
@@ -758,7 +758,7 @@ Discard with: splitbrief continue 2026-09-13-rate-limiter --action discard
 
 The second command prints the same sentence first, and the word is the confirmation. Apply then runs as it does for `--action apply`. On an accepted run, `--action apply` exits `1` and names `--action apply-as-is`. A checkout run has no Apply: the first command closes it and prints `Run <id> closed.`.
 
-**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` with `Recovery action "<action>" is not available for <reason>.` With `--json`, the `recovery_required` record of the halt lists the actions that the halt offers in `availableActions`. A value that is not a continue action exits `2` with `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], accept-as-is, end-run, apply, apply-as-is, or discard.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Continue`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
+**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same lines and exits `1`. A halt that offers Accept as is prints one more line, `Accept as is: splitbrief continue <session> --action accept-as-is [--plain|--json]`. An action the issue does not allow exits `1` with `Recovery action "<action>" is not available for <reason>.` With `--json`, the `recovery_required` record of the halt lists the actions that the halt offers in `availableActions`. A value that is not a continue action exits `2` with `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], accept-as-is, end-run, apply, apply-as-is, or discard.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Continue`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
 
 **See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-continue), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 

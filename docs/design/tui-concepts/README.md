@@ -7,7 +7,7 @@ See the complete set in [`overview.png`](overview.png).
 
 ## Direction
 
-- Use the dark and light palettes from [`src/core/theme/palette.ts`](../../../src/core/theme/palette.ts).
+- Use the dark and light palettes of the theme (`PALETTES`).
   The theme keeps secondary text readable and reserves distinct colours for seats, severity and links.
 - Improve hierarchy with spacing, alignment, restrained rules, and consistent label columns.
 - Use one straight phase rail. Do not introduce branches, git-like graphs, or a visual metaphor.
@@ -27,20 +27,14 @@ See the complete set in [`overview.png`](overview.png).
 
 ## Implementation map
 
-- Shared workflow chrome: `src/features/workflow/components/header.tsx`,
-  `src/features/workflow/components/rail.tsx`, and
-  `src/features/workflow/components/chrome.tsx`.
-- Workflow split and task facts: `src/features/workflow/components/body.tsx` and
-  `src/features/workflow/components/sidebar/panel.tsx`.
-- Review layout: `src/features/workflow/components/review/view.tsx` and the approval prompt
-  components under `src/features/workflow/components/approval-prompt/`.
-- Home: `src/app/screens/home.tsx` and `src/features/home/`.
+- Shared workflow chrome: `Header`, `Rail`, `WorkflowHeader` and `WorkflowFooter`.
+- Workflow split and task facts: `WorkflowBody` and `Sidebar`.
+- Review layout: `ReviewView` and the approval prompt components of the workflow feature.
+- Home: `HomeScreen` and the home feature.
 - Summary: the summary screen is removed;
   the closed-run block replaced it. A closed run now states its outcome at the tail of its own
-  transcript: `src/features/workflow/closed/block.ts` (`closedTranscriptBlock`),
-  `src/features/workflow/closed/view-model.ts` (`deriveSummaryView`), and
-  `src/features/workflow/closed/copy/`.
-- Command palette: `src/app/overlays/palette.tsx` and `src/features/palette/`.
+  transcript: `closedTranscriptBlock`, `deriveSummaryView` and the copy of the closed run.
+- Command palette: `CommandPaletteOverlay` and the palette feature.
 
 The catalog's `frame.txt` and `frame.cells.json` remain canonical for copy, terminal-cell geometry,
 and behavior. Image generation can approximate glyph metrics, so implement the layout decisions

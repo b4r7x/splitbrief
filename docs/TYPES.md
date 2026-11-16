@@ -141,7 +141,7 @@ Types should live where their domain meaning is created — not in a central `ty
 
 ## Schemas — `src/core/schemas/`
 
-`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." The sole current folder exception is `src/core/schemas/recovery/`, which keeps the coupled recovery schemas and fact helpers together. A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
+`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." Four domain folders are the exceptions, and each keeps coupled schemas together: `recovery/` (the recovery schemas and fact helpers), `review/` (the review packet, the verdict, the review changes and the seat switch), `runner/` (the runner config of each seat and its refinements) and `workflow/` (the workflow state and the records it holds). A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
 
 **Inferred types co-locate with their schema.** Each file exports the schema *and* the inferred type:
 
@@ -162,7 +162,7 @@ Consumers import whichever they need (or both). They do **not** import `Task` fr
 
 **Enforcement — `core/types/` MUST NOT contain `z.infer`.** Inferred types live next to their schema in `core/schemas/`. `core/types/` is only for TS-only types with no runtime schema backing (e.g., `WorkflowOpts`, `SessionRef`, `UserMessageInput`). Anything derived from a Zod schema via `z.infer<>` belongs in the schema file.
 
-**Why the root is mostly flat**: schemas are a cohesive cross-cutting concern. Grouping unrelated domains further (e.g., `schemas/config/` vs `schemas/workflow/`) adds depth without separating them — every consumer of one schema tends to consume others. `src/core/schemas/recovery/` is the intentional exception because its schemas and fact helpers form one coupled recovery boundary. Keep other schema leaves flat unless they earn the same cohesive boundary.
+**Why the root is mostly flat**: schemas are a cohesive cross-cutting concern. Grouping unrelated domains further (e.g., a `schemas/config/` folder beside the config schema) adds depth without separating them — every consumer of one schema tends to consume others. The four domain folders are the intentional exceptions because the schemas of each form one coupled boundary. Keep other schema leaves flat unless they earn the same cohesive boundary.
 
 ---
 
@@ -222,7 +222,7 @@ If it turns out a type or value from `features/workflow/` is needed in `engine/`
 ## Worked examples
 
 **Q: I'm adding a `ReviewAction` type used only by `features/workflow/review-gate/input-handler.ts`.**
-A: Inline into `review-parser.ts` (Case A).
+A: Inline into `input-handler.ts` (Case A).
 
 **Q: I'm adding a `CliToolDetection` type produced in `core/discovery/detection/tool.ts` and consumed across `engine/detection/`, `stores/project/`, and `features/runners/`.**
 A: Keep it with its producer in `core/discovery/detection/tool.ts`; cross-folder consumers `import type` from there. (Case C — placing the contract in `core/` keeps `engine/`/`stores/`/`features/` from importing each other.)
@@ -280,7 +280,7 @@ src/stores/navigation/
 // src/core/schemas/task.ts
 export const TaskSchema = z.object({ ... });
 
-// core/types/task.ts
+// a file in core/types/
 import type { TaskSchema } from '../schemas/task.js';
 export type Task = z.infer<typeof TaskSchema>;
 ```

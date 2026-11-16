@@ -51,7 +51,7 @@ A feature folder contains the internals a surface needs, and nothing else — it
 
 **Full-screen feature** (e.g. `features/workflow/`; entry page `app/screens/workflow.tsx`).
 
-There is no `features/summary/` and no `app/screens/summary.tsx`. A run that stops stays on the run screen; `features/workflow/closed/` is its summary, rendered as the last rows of the same transcript.
+There is no summary feature folder and no summary page. A run that stops stays on the run screen; `features/workflow/closed/` is its summary, rendered as the last rows of the same transcript.
 
 The page `app/screens/workflow.tsx` holds the composition (layout math + `ScreenShell` JSX) and delegates state to `useWorkflowScreen()` in `hooks/workflow-screen/use-model.ts`.
 
@@ -75,9 +75,9 @@ Rules:
 
 The `editor` surface is a headless pure editing kernel feeding one thin Ink surface: a full-surface editor for the plan card's `plan.json`, whose save runs the plan checks (`use-session.ts`). Its decision logic lives in pure `src/core/` modules so the Ink glue carries no branch logic.
 
-The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`). It draws its top rule with the shared `Divider` from `src/components/`, a features→components import that the boundaries allow. The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
+The raw editor overlay and `ReviewView` share `FramePanel`, a shared component in `src/components/` that draws its top rule with the shared `Divider`. The overlay consumes it page→components (`app/overlays/editor.tsx`), and `ReviewView` consumes it features→components; the boundaries allow both imports. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the review file handoff (`openReviewFileExternally`) (`features/editor → store ← workflow effect`, gate 9 clean).
 
-Colocated tests sit next to each source file (`editor-state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `editor-line-segments.test.ts`, `editor-buffer-view.test.tsx`, `external-edit-request.test.ts`, `frame-panel.test.tsx`). The editor keymap (`resolveEditorKeyAction`) is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-planjson) is asserted against it by the keymap's colocated test so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor): the overlay pre-saves the buffer (owner-token guarded) then hands off.
+Colocated tests sit next to each source file (`state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `line-segments.test.ts`, `buffer-view.test.tsx`, `external-edit-request.test.ts`, `frame-panel.test.tsx`). The editor keymap (`resolveEditorKeyAction`) is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-planjson) is asserted against it by the keymap's colocated test so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor): the overlay pre-saves the buffer (owner-token guarded) then hands off.
 
 ## File placement decision tree
 
@@ -166,7 +166,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 
 `src/components/` holds UI that is not tied to any single feature:
 
-- **Primitives** — `theme.tsx`, `divider.tsx`, `rule-header.tsx`, `scroll-indicator.tsx`, `scrollbar.ts`, `scrollable-document.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `list-row.tsx`, `list-columns.ts`, `row-leading.ts`, `session-row.tsx`, `task-summary.tsx`. The spinner is a shared hook, `useSpinnerFrame`, not a component.
+- **Primitives** — `theme.tsx`, `divider.tsx`, `rule-header.tsx`, `scroll-indicator.tsx`, `scrollbar.ts`, `scrollable-document/`, `screen-shell.tsx`, `filter-input.tsx`, `frame-panel.tsx`, `list-row/`, `list-columns.ts`, `row-leading.ts`, `session-row.tsx`. The spinner is a shared hook, `useSpinnerFrame`, not a component.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
 - **Shared overlays** — `overlays/panel.tsx`. The runner picker's text input overlay has one consumer, so it lives in the runners feature. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/items.ts`) stay in the feature folder.
 - **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/filtering.ts`, `pickers/row-zone.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `useStaticSelector` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
@@ -285,7 +285,7 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | Import the app shell from a page (`app/screens/home` imports `app/router`) | Pages must not reach into `app/{root,router,provider,layout}`; gate 9's shell guard blocks it. `app/keys.ts` / `app/command-context.ts` are allowed. |
 | Create a `shared/` or `common/` folder under `src/features/` | That is `src/components/`, `src/hooks/`, `src/utils/`. Do not nest shared under features. |
 | Keep a top-level `screens/` folder | Screens are FLAT pages in `src/app/screens/`; they compose a feature, not live in one. |
-| Nest a page (`app/screens/home/home.tsx`) | Pages must be flat depth-3 files or they escape the gate-9 `sliceRoot` page predicate. Feature-local nesting lives under `src/features/<x>/`. |
+| Nest a page (`app/screens/<name>/<name>.tsx`) | Pages must be flat depth-3 files or they escape the gate-9 `sliceRoot` page predicate. Feature-local nesting lives under `src/features/<x>/`. |
 | Add a primitive to a top-level `ui/` folder | There is no such folder. Shared primitives go in `src/components/`. |
 | Create `features/{f}/index.ts` as a re-export barrel | Barrels are forbidden per [`NO-BARRELS.md`](./NO-BARRELS.md). Use the named page entry (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`) and import feature internals directly. |
 | Put pure functions under a feature's `hooks/` subfolder | Hooks imply React lifecycle. Pure fns go at the feature root (`keyboard.ts`, `layout.ts`). |
@@ -352,7 +352,7 @@ The cut rule tells when and where to cut a production source file or a function.
 
 Every LLM prompt template (system prompts, task prompts, retry prompts, review prompts) lives in a dedicated folder. Currently `src/engine/spec/prompts/`.
 
-Never inline prompt strings into orchestrator or runner code. This rule is universal across comparable projects (cline `core/prompts/`, continue `core/promptFiles/`, codex has its own `prompts/`). Keeping prompts separate makes them reviewable, testable, and swappable without touching control flow.
+Never inline prompt strings into orchestrator or runner code. This rule is universal across comparable projects (cline and continue keep a prompts folder in their core, and codex has its own `prompts/`). Keeping prompts separate makes them reviewable, testable, and swappable without touching control flow.
 
 ## No decorative comments
 

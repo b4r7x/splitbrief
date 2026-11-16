@@ -84,9 +84,9 @@ Example, `src/features/workflow/`:
 | `run-requests/registry.ts` | Engine↔UI bridge. Module-scoped handler registry and the state of the run requests; the other `run-requests/` files read and write that state through its functions. |
 | `keyboard.ts` | Pure keyboard-action dispatchers (workflow-scope). |
 | `layout/snapshot.ts` | Pure geometry snapshots that read from multiple stores. |
-| `usage-details-model.ts` | Derives token counts, cost amounts and rows for the usage overlay. |
+| `usage/derive.ts`, `usage/rows.ts` | Derive the token counts and cost amounts of the usage overlay, and its rows. |
 
-Tests live next to each file, such as `layout/snapshot.test.ts` and `usage-details-model.test.ts`.
+Tests live next to each file, such as `layout/snapshot.test.ts` and `usage/rows.test.ts`.
 
 ## Consumption patterns
 
@@ -127,7 +127,7 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 | Wrap another hook in a thin hook that adds ≤5 lines | Inline. If the wrapper carries only one transformation, it is not earning its keep. |
 | Write tests that assert "hook calls `useState` internally" | Tests should assert observable behavior. Internal hook calls are implementation details. See [`test-behavior-not-implementation`](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md). |
 | Create a `use-*` hook to hold state that should cross components | Use a store. Hooks for per-component or per-subtree lifecycle; stores for cross-tree shared state. |
-| Add a barrel (`hooks/index.ts`) | Forbidden project-wide. See [`NO-BARRELS.md`](./NO-BARRELS.md). |
+| Add a barrel (an `index.ts` in `hooks/`) | Forbidden project-wide. See [`NO-BARRELS.md`](./NO-BARRELS.md). |
 
 ## Rules of thumb
 

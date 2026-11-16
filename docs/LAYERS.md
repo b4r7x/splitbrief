@@ -228,13 +228,13 @@ The demotions cost one import-path rewrite each; the benefit is that `src/compon
 
 | Symptom | Problem | Fix |
 |---|---|---|
-| `utils/foo.ts` imports from `core/types/...` | `utils/` is supposed to be a leaf | Move `foo.ts` to `core/` or `lib/` |
-| `lib/bar.ts` contains `"claude-code"` | Infra wrapper knows domain | Extract the domain part to `core/` or `engine/` |
-| `core/baz.ts` imports from `engine/` | Wrong direction | Invert: `engine/` should depend on `core/`, not the other way |
-| `features/A/x.ts` imports from `features/B/y.ts` | Features must be independent | Promote the shared code to `core/`, `stores/`, `components/`, or `hooks/` |
+| `utils/<file>.ts` imports from `core/types/...` | `utils/` is supposed to be a leaf | Move the file to `core/` or `lib/` |
+| `lib/<file>.ts` contains `"claude-code"` | Infra wrapper knows domain | Extract the domain part to `core/` or `engine/` |
+| `core/<file>.ts` imports from `engine/` | Wrong direction | Invert: `engine/` should depend on `core/`, not the other way |
+| `features/<a>/<file>.ts` imports from `features/<b>/<file>.ts` | Features must be independent | Promote the shared code to `core/`, `stores/`, `components/`, or `hooks/` |
 | `src/engine/**` importing from `src/features/**` | Engine must be UI-agnostic | Resolved 2026-04-19 via event bus (bridge sink deleted — zero engine→features imports remain) — see [ENGINE.md §Design decisions](./ENGINE.md#design-decisions--why-eventbus) |
 | New `utils/` file with 1 consumer | Not shared yet | Keep it inside the consumer until ≥2 users exist |
-| Re-export barrel (`utils/index.ts`) | Indirection with no added value | Delete it — consumers import from source |
+| Re-export barrel (an `index.ts` in `utils/`) | Indirection with no added value | Delete it — consumers import from source |
 
 ---
 
@@ -292,7 +292,7 @@ Canonical examples in this codebase:
 engine/planners/
 ├── types.ts          # PORT — declares Planner, PlannerCapabilities
 ├── base.ts           # shared scaffolding used by adapters
-├── claude-code.ts    # ADAPTER — Claude Code subprocess
+├── claude-code/      # ADAPTER — Claude Code subprocess
 ├── cli.ts            # ADAPTER — every other CLI tool, through the CLI adapter registry
 ├── api.ts            # ADAPTER — OpenAI-compatible HTTP
 └── command-invoke.ts # ADAPTER — shell command or file-writing agent

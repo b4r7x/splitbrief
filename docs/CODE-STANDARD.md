@@ -28,7 +28,7 @@ A file should be describable in one sentence with no "and". If the description n
 
 - **Junk-drawer `shared.ts`.** A file named `shared.ts` / `helpers.ts` attracts unrelated code. `planning/shared.ts` once held a planner-call loop *and* a briefs-approval loop *and* task-file IO *and* one-line glue. The name is the smell — split by concern into intent-named siblings and the bucket disappears.
 - **Non-component logic under `components/`.** A `.ts` (no JSX) doing file IO + engine routing + store reads under `features/*/components/` is misplaced. `components/` holds view code; pure formatters go to a feature-root `*-format.ts`, IO/routing goes to a feature service or behind an engine facade.
-- **Engine-domain logic under `features/`.** A React-free module that re-runs engine work (route + prompt assembly + token estimate) sitting in `features/` because its only consumer is a preview panel. It is engine work — move the compute into a domain-named `engine/` home (e.g. `engine/routing-preview.ts`, never an `engine/facades/`-style tech-layer folder) and let the feature call one function.
+- **Engine-domain logic under `features/`.** A React-free module that re-runs engine work (route + prompt assembly + token estimate) sitting in `features/` because its only consumer is a preview panel. It is engine work — move the compute into a domain-named `engine/` home (e.g. `engine/routing-preview.ts`, never a tech-layer folder such as `facades/` under `engine/`) and let the feature call one function.
 - **A function that both transforms and does IO.** `buildSummary` mixing pure aggregation with five disk reads, `review-packet/sections.ts` mixing pure section builders with git/fs. Extract the IO into a sibling so the transform stays pure and unit-testable without temp dirs.
 
 SRP is judged on the **function/file responsibility**, not line count. A cohesive 400-line file with no seam stays whole with a written reason (the exceptions of the [cut rule](./STRUCTURE.md#the-cut-rule)); a 120-line file doing four things is not fine.
@@ -129,7 +129,7 @@ When a function immediately fans its positional args into an options object for 
 
 ## 5. Naming & file naming
 
-- **kebab-case** files and folders (`models-dev.ts`, `lm-studio.ts`); single word where natural (`pricing.ts`).
+- **kebab-case** files and folders (`models-dev/`, `lm-studio.ts`); single word where natural (`pricing.ts`).
 - **ESM with `.js` extension** in every import: `'./config.js'`, not `'./config'`.
 - **File name matches its primary export / responsibility.** `platform.ts` exporting only `assertNotWindows` oversells; `format.ts` holding one generic `capitalize` is mislocated and misnamed. A single-export file reads `verb-of-noun` (`build-routing-event-fields.ts` → `buildRoutingEventFields`).
 - **No `dir/dir.ts` stutter.** A folder's entry file names its responsibility, not the folder: `run/workflow.ts`, `escalation/handle.ts`, `commands/dispatch.ts`/`registry.ts` — never `run/run.ts`, `escalation/escalation.ts`, or `commands/commands.ts`.
@@ -158,7 +158,7 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 | Screaming architecture — folder names say what the code does in the domain (`planning/`, `escalation/`, `validation/`), never which technical layer (`services/`, `use-cases/`, `controllers/`) | [STRUCTURE.md](./STRUCTURE.md#screaming-folders) | review |
 | Deep modules — small public surface, large hidden implementation; aim for a folder with 5+ internal files and one entry point | [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) | review |
 | Folder colocation for internal helpers — when a file passes a size trigger, cut it at a seam; a folder replaces a prefix group, no file in it repeats the folder name, and the entry file names its role (`planning/run.ts` + siblings); no underscore prefix | [STRUCTURE.md](./STRUCTURE.md#deep-modules-and-folder-colocation) | review |
-| Ports + adapters in the same folder — an interface (`types.ts`) and its implementations (`cli.ts`, `api.ts`, `shell.ts`, …) live together; never move the port to a separate `ports/` folder | [LAYERS.md](./LAYERS.md#ports-and-adapters) | review |
+| Ports + adapters in the same folder — an interface (`types.ts`) and its implementations (`cli.ts`, `api.ts`, `command-invoke.ts`, …) live together; never move the port to a separate `ports/` folder | [LAYERS.md](./LAYERS.md#ports-and-adapters) | review |
 | Runtime vs compile-time split — Zod schemas (runtime validation) in `src/core/schemas/`; TypeScript types (compile-time only) inline or in a folder-local `types.ts`; a type inferred from a schema (`z.infer<>`) lives with the schema | [TYPES.md](./TYPES.md) | INVARIANTS #2 |
 | Type placement, three-case rule — one consumer → inline; several consumers in one folder → `types.ts` in that folder; cross-folder → with the producer (the file that creates values of the type) | [TYPES.md](./TYPES.md#three-case-rule--where-does-a-typescript-type-go) | review |
 | Screaming types — a type lives where its domain meaning is created, not in a central `core/types/` grab-bag; only truly cross-cutting types (fan-in > 30, ≥3 top-level folders) stay in `core/types/` | [TYPES.md](./TYPES.md#screaming-types) | review |
