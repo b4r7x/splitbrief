@@ -1,4 +1,3 @@
-import { resolveImplementerProfiles } from '../../../src/core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow/state.js';
 import type { ActiveSessionReceipt } from '../../../src/core/sessions/active-pointer.js';
@@ -7,16 +6,7 @@ import {
   type PreparedExecution,
   type RunnerGate,
 } from '../../../src/engine/runners/prepare-execution/prepared.js';
-import { makeRunnerGate, testCliSeats } from '../runner-gate.js';
-
-function seatGates(config: Config, preparationId: string): ReadonlyArray<RunnerGate> {
-  return [
-    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(config).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-  ];
-}
+import { preparedGates, testCliSeats } from '../runner-gate.js';
 
 export function makePreparedExecution(input: {
   projectDir: string;
@@ -33,9 +23,10 @@ export function makePreparedExecution(input: {
 }): PreparedExecution {
   const config = parsePreparedConfig(input.config);
   const preparationId = input.preparationId ?? `${input.sessionId}-preparation`;
-  const gates = input.gates?.(preparationId) ?? seatGates(config, preparationId);
+  const purpose = input.purpose ?? (input.resumeState === undefined ? 'new-workflow' : 'resume');
+  const gates = input.gates?.(preparationId) ?? preparedGates(config, purpose, preparationId);
   return {
-    purpose: input.purpose ?? (input.resumeState === undefined ? 'new-workflow' : 'resume'),
+    purpose,
     config,
     sourceConfig: config,
     preparationId,

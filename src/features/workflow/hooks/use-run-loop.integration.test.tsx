@@ -3664,6 +3664,7 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
         where,
       });
       expect(continued).toEqual({ waited: false, seatWait: undefined });
+      expect(errorMessages()).toEqual([expect.stringContaining('is not available')]);
     },
     20_000,
   );

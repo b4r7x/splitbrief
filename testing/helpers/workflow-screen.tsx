@@ -2,8 +2,7 @@ import { WorkflowScreen } from '../../src/app/screens/workflow.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { renderFeature } from '#testing/helpers/ink.js';
-import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
-import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
 import {
@@ -14,7 +13,6 @@ import { reactivateExistingSession } from '../../src/core/sessions/active-pointe
 import {
   parsePreparedConfig,
   type PreparedExecution,
-  type RunnerGate,
 } from '../../src/engine/runners/prepare-execution/prepared.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
@@ -37,12 +35,8 @@ export function prepareWorkflowExecution({
 }): PreparedExecution {
   const preparedConfig = parsePreparedConfig(config);
   const preparationId = `workflow-screen-${sessionId}`;
-  const gates: readonly RunnerGate[] = [
-    makeRunnerGate(preparedConfig.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(preparedConfig).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-  ];
+  const purpose = resumeState === undefined ? 'new-workflow' : 'resume';
+  const gates = preparedGates(preparedConfig, purpose, preparationId);
   const report = {
     generatedAt: '2026-08-04T00:00:00.000Z',
     projectDir,
@@ -75,7 +69,7 @@ export function prepareWorkflowExecution({
   }
 
   return {
-    purpose: resumeState === undefined ? 'new-workflow' : 'resume',
+    purpose,
     config: preparedConfig,
     sourceConfig: preparedConfig,
     preparationId,

@@ -1,9 +1,12 @@
 import type { RunnerConfig } from '../../src/core/config/accessors/runner-config.js';
 import type { CliToolId } from '../../src/core/runners/cli-tool/types.js';
+import type { Config } from '../../src/core/schemas/config.js';
 import type {
+  PreparedExecution,
   RunnerGate,
   RunnerSlot,
 } from '../../src/engine/runners/prepare-execution/prepared.js';
+import { runnerCandidates } from '../../src/engine/runners/prepare-execution/runner-candidates.js';
 import type { CliStartGate } from '../../src/engine/runners/start-gate.js';
 import {
   createCliSeatGates,
@@ -59,4 +62,15 @@ export function makeRunnerGate(
     case 'agent':
       return { ...base, kind: 'agent', command: { kind: 'validated-config' } };
   }
+}
+
+/** One gate for each seat that preparation admits for `purpose`, as `runnerCandidates` names them. */
+export function preparedGates(
+  config: Config,
+  purpose: PreparedExecution['purpose'],
+  preparationId: string,
+): RunnerGate[] {
+  return runnerCandidates(config, purpose).candidates.map((candidate) =>
+    makeRunnerGate(candidate.runner, candidate.slot, preparationId),
+  );
 }

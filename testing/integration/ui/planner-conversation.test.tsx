@@ -134,9 +134,8 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     ui = mountWorkflowScreen({ deps: { runWorkflow }, projectDir, rows: 40 });
     const screen = ui;
     try {
-      await vi.waitFor(
-        () => expect(stripAnsiStyles(screen.lastFrame())).toContain('Question 1 of 1'),
-        { timeout: 3000 },
+      await vi.waitFor(() =>
+        expect(stripAnsiStyles(screen.lastFrame())).toContain('Question 1 of 1'),
       );
       await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
       // The default is the first row; the second row opens an empty field for an answer of one's own.
@@ -952,7 +951,7 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     ui = mountRoutedWorkflow(runWorkflow);
     const screen = ui;
     const frame = () => stripAnsiStyles(screen.lastFrame());
-    await vi.waitFor(() => expect(frame()).toContain('Question 1 of 1'), { timeout: 3000 });
+    await vi.waitFor(() => expect(frame()).toContain('Question 1 of 1'));
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
     screen.stdin.write('\u001b');
     await vi.waitFor(() => expect(frame()).not.toContain('Question 1 of 1'));
