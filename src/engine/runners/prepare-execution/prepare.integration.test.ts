@@ -6,7 +6,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence/detect.js';
-import type { CliProbeContract } from '../cli-tools/probe/contract.js';
+import type { CliDeclaredProbeContract } from '../cli-tools/probe/contract.js';
 import { resolveCustomExecutable } from '../cli-executable/custom.js';
 import { collectRunnerAdmissionChecks, prepareExecution } from './prepare.js';
 import type { PrepareExecutionDependencies } from './types.js';
@@ -61,7 +61,7 @@ async function nodeExecutable(projectDir: string) {
  * A Codex stand-in whose `--version` never answers: each spawn appends a line to `spawnLog` and
  * creates `started`, then holds. Its status command reports a sign-in at once.
  */
-function hungVersionProbe(spawnLog: string, started: string): CliProbeContract {
+function hungVersionProbe(spawnLog: string, started: string): CliDeclaredProbeContract {
   const command = (script: string) =>
     ({
       command: ['node', '-e', script] as const,
@@ -79,17 +79,13 @@ function hungVersionProbe(spawnLog: string, started: string): CliProbeContract {
   );
   const auth = command("console.log('verified')");
   return {
-    version,
-    declared: {
-      kind: 'declared',
-      version: {
-        ...version,
-        kind: 'version',
-        parse: () => ({ kind: 'success', value: testedVersion }),
-      },
-      auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
-      catalog: { kind: 'not-run' },
+    version: {
+      ...version,
+      kind: 'version',
+      parse: () => ({ kind: 'success', value: testedVersion }),
     },
+    auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
+    catalog: { kind: 'not-run' },
   };
 }
 

@@ -1,9 +1,9 @@
 import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
-import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
+import type { AuthFact, RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { matches } from '../../../utils/error.js';
 import type { CliRunnerDiscoveryContext } from '../cli-context.js';
-import { runnerEvidenceBase, executableFactFromResolved } from './facts.js';
+import { runnerEvidenceBase, executableFactFromResolved, credentialFromCliAuth } from './facts.js';
 
 export function unresolvedCliEvidence(
   context: CliRunnerDiscoveryContext,
@@ -87,23 +87,22 @@ export function probeFailureEvidence(
   };
 }
 
-export function unsupportedCatalogEvidence(
+export function cancelledProbeEvidence(
   context: CliRunnerDiscoveryContext,
   observedAt: number,
-  executable: CliExecutableIdentity,
+  auth: AuthFact,
 ): RunnerEvidence {
   const base = runnerEvidenceBase(context, observedAt);
   return {
     ...base,
     installation: 'installed',
-    executable: executableFactFromResolved(executable),
+    executable: { kind: 'identity-drifted' },
     compatibility: {
       kind: 'unknown',
       installedVersion: null,
       testedVersion: CLI_TOOL_CATALOG[context.id].compatibility.testedVersion,
     },
-    credential: context.credentialPresent ? 'present' : 'unknown',
-    auth: 'not-run',
-    catalog: { kind: 'unsupported' },
+    credential: credentialFromCliAuth(context, auth),
+    auth,
   };
 }

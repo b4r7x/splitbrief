@@ -10,11 +10,7 @@ import { itUnix } from '#testing/helpers/planner-command-invoke.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import type { AuthFact } from '../../../../core/discovery/runner-evidence.js';
-import {
-  isDeclaredCliProbeContract,
-  type CliProbeContract,
-  type CliProbeOutput,
-} from './contract.js';
+import type { CliDeclaredProbeContract, CliProbeOutput } from './contract.js';
 import { providerOracleAuthFact } from './provider-oracle.js';
 import { probeCliReadiness } from './readiness.js';
 import { probeDeclaredCliReadinessEvidence } from './declared-readiness.js';
@@ -57,16 +53,6 @@ async function stubCodexSessionHome(directory: string): Promise<void> {
   vi.stubEnv('CODEX_HOME', '');
 }
 
-function probe(versionScript = "console.log('codex 0.40.0')"): CliProbeContract {
-  return {
-    version: {
-      command: ['node', '-e', versionScript],
-      cwd: 'neutral',
-      maxOutputBytes: 1_024,
-    },
-  };
-}
-
 function declaredProbe(
   options: {
     versionScript?: string;
@@ -76,7 +62,7 @@ function declaredProbe(
     parseAuth?: (input: CliProbeOutput) => AuthFact;
     authNotRun?: boolean;
   } = {},
-): CliProbeContract {
+): CliDeclaredProbeContract {
   const version = {
     command: ['node', '-e', options.versionScript ?? "console.log('codex 0.40.0')"] as const,
     cwd: 'neutral' as const,
@@ -95,42 +81,38 @@ function declaredProbe(
     maxOutputBytes: 1_024,
   };
   return {
-    version,
-    declared: {
-      kind: 'declared',
-      version: {
-        ...version,
-        kind: 'version',
-        parse: ({ stdout }) =>
-          stdout.includes('0.40.0') ? { kind: 'success', value: '0.40.0' } : { kind: 'malformed' },
-      },
-      auth: options.authNotRun
-        ? { kind: 'not-run' }
-        : {
-            ...auth,
-            kind: 'auth-status',
-            parse:
-              options.parseAuth ??
-              (({ stdout }) => {
-                const state = stdout.trim();
-                if (state === 'verified') return 'verified';
-                if (state === 'invalid') return 'invalid';
-                if (state === 'unknown') return 'unknown';
-                return 'malformed';
-              }),
-          },
-      catalog: {
-        ...catalog,
-        kind: 'catalog',
-        parse: ({ stdout }) => ({
-          kind: 'success',
-          value: stdout
-            .trim()
-            .split('\n')
-            .filter((model) => model.length > 0)
-            .map((id) => ({ id })),
-        }),
-      },
+    version: {
+      ...version,
+      kind: 'version',
+      parse: ({ stdout }) =>
+        stdout.includes('0.40.0') ? { kind: 'success', value: '0.40.0' } : { kind: 'malformed' },
+    },
+    auth: options.authNotRun
+      ? { kind: 'not-run' }
+      : {
+          ...auth,
+          kind: 'auth-status',
+          parse:
+            options.parseAuth ??
+            (({ stdout }) => {
+              const state = stdout.trim();
+              if (state === 'verified') return 'verified';
+              if (state === 'invalid') return 'invalid';
+              if (state === 'unknown') return 'unknown';
+              return 'malformed';
+            }),
+        },
+    catalog: {
+      ...catalog,
+      kind: 'catalog',
+      parse: ({ stdout }) => ({
+        kind: 'success',
+        value: stdout
+          .trim()
+          .split('\n')
+          .filter((model) => model.length > 0)
+          .map((id) => ({ id })),
+      }),
     },
   };
 }
@@ -158,7 +140,7 @@ async function fakeOpencode(dir: string, oracleBody: string): Promise<CliExecuta
   };
 }
 
-function opencodeProbe(options: { authNotRun?: boolean } = {}): CliProbeContract {
+function opencodeProbe(options: { authNotRun?: boolean } = {}): CliDeclaredProbeContract {
   const version = {
     command: ['opencode', '--version'] as const,
     cwd: 'neutral' as const,
@@ -170,27 +152,23 @@ function opencodeProbe(options: { authNotRun?: boolean } = {}): CliProbeContract
     maxOutputBytes: 1_024,
   };
   return {
-    version,
-    declared: {
-      kind: 'declared',
-      version: {
-        ...version,
-        kind: 'version',
-        parse: ({ stdout }) =>
-          stdout.includes(OPENCODE_TESTED_VERSION)
-            ? { kind: 'success', value: OPENCODE_TESTED_VERSION }
-            : { kind: 'malformed' },
-      },
-      auth: options.authNotRun
-        ? { kind: 'not-run' }
-        : { ...auth, kind: 'auth-status', parse: providerOracleAuthFact },
-      catalog: {
-        command: ['opencode', 'models'] as const,
-        cwd: 'neutral' as const,
-        maxOutputBytes: 1_024,
-        kind: 'catalog',
-        parse: () => ({ kind: 'success', value: [] }),
-      },
+    version: {
+      ...version,
+      kind: 'version',
+      parse: ({ stdout }) =>
+        stdout.includes(OPENCODE_TESTED_VERSION)
+          ? { kind: 'success', value: OPENCODE_TESTED_VERSION }
+          : { kind: 'malformed' },
+    },
+    auth: options.authNotRun
+      ? { kind: 'not-run' }
+      : { ...auth, kind: 'auth-status', parse: providerOracleAuthFact },
+    catalog: {
+      command: ['opencode', 'models'] as const,
+      cwd: 'neutral' as const,
+      maxOutputBytes: 1_024,
+      kind: 'catalog',
+      parse: () => ({ kind: 'success', value: [] }),
     },
   };
 }
@@ -274,7 +252,7 @@ describe('CLI readiness probe', () => {
           size: identity.fingerprint.size + 1,
         },
       },
-      probe: probe(),
+      probe: declaredProbe(),
     });
 
     expect(result.status).toBe('untrusted');
@@ -319,22 +297,13 @@ describe('CLI readiness probe', () => {
           probeCliReadiness({
             tool: 'codex',
             executable,
-            probe: {
-              ...probe(),
-              version: {
-                command: [
-                  'node',
-                  '-e',
-                  [
-                    'const { spawn } = require("node:child_process");',
-                    `const child = spawn(process.execPath, ["-e", ${JSON.stringify(`require("node:fs").writeFileSync(${JSON.stringify(descendantMarker)}, "descendant")`)}], { stdio: "ignore" });`,
-                    `require("node:fs").writeFileSync(${JSON.stringify(leaderMarker)}, String(child.pid));`,
-                  ].join(' '),
-                ],
-                cwd: 'neutral',
-                maxOutputBytes: 1_024,
-              },
-            },
+            probe: declaredProbe({
+              versionScript: [
+                'const { spawn } = require("node:child_process");',
+                `const child = spawn(process.execPath, ["-e", ${JSON.stringify(`require("node:fs").writeFileSync(${JSON.stringify(descendantMarker)}, "descendant")`)}], { stdio: "ignore" });`,
+                `require("node:fs").writeFileSync(${JSON.stringify(leaderMarker)}, String(child.pid));`,
+              ].join(' '),
+            }),
           }),
         ).rejects.toMatchObject({
           kind: 'platform-limitation',
@@ -345,27 +314,6 @@ describe('CLI readiness probe', () => {
       } finally {
         Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
       }
-    });
-  });
-
-  it('does not infer authentication from a version command or credential presence', async () => {
-    await withTempDir('readiness-probe-inference', async (directory) => {
-      const executable = await nodeExecutable();
-      await stubCodexSessionHome(directory);
-      const legacyOptions = {
-        tool: 'codex',
-        executable,
-        probe: probe(),
-      } as const;
-
-      const legacy = await probeCliReadiness(legacyOptions);
-      const declared = await probeCliReadiness({
-        ...legacyOptions,
-        probe: declaredProbe(),
-      });
-
-      expect(legacy).toMatchObject({ auth: 'unknown', status: 'unverified' });
-      expect(declared).toMatchObject({ auth: 'authenticated', status: 'ready' });
     });
   });
 
@@ -400,12 +348,10 @@ describe('CLI readiness probe', () => {
       const probe = declaredProbe({
         authScript: `require('node:fs').writeFileSync(${JSON.stringify(authMarker)}, ''); process.stdout.write('verified');`,
       });
-      if (!isDeclaredCliProbeContract(probe)) throw new Error('expected a declared probe');
-
       const evidence = await probeDeclaredCliReadinessEvidence({
         tool: 'codex',
         executable,
-        probe: probe.declared,
+        probe,
       });
 
       expect(evidence).toEqual({ version: { kind: 'success', value: '0.40.0' }, auth: 'missing' });
@@ -435,13 +381,12 @@ describe('CLI readiness probe', () => {
             'process.stdout.write("model-must-not-run");',
           ].join(' '),
         });
-        if (!isDeclaredCliProbeContract(probe)) return;
         await stubCodexSessionHome(directory);
 
         const direct = {
           tool: 'codex' as const,
           executable,
-          probe: probe.declared,
+          probe,
           includeCatalog: true,
           catalogRefresh: 'manual',
         };
@@ -525,7 +470,9 @@ describe('CLI readiness probe', () => {
     const result = await probeCliReadiness({
       tool: 'codex',
       executable,
-      probe: probe("process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000)"),
+      probe: declaredProbe({
+        versionScript: "process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000)",
+      }),
     });
 
     expect(result.status).toBe('unverified');
@@ -544,14 +491,14 @@ describe('CLI readiness probe', () => {
           tool: 'codex',
           executable,
           signal: controller.signal,
-          probe: probe(
-            [
+          probe: declaredProbe({
+            versionScript: [
               'const { spawn } = require("node:child_process");',
               `const child = spawn(process.execPath, ["-e", ${JSON.stringify(`require("node:fs").writeFileSync(${JSON.stringify(descendantPidFile)}, String(process.pid)); process.on("SIGTERM", () => {}); setInterval(() => {}, 1_000)`)}], { stdio: "ignore" });`,
               'child.unref();',
               'setInterval(() => {}, 1_000);',
             ].join(' '),
-          ),
+          }),
         });
 
         await vi.waitFor(
@@ -587,14 +534,14 @@ describe('CLI readiness probe', () => {
           executable,
           // The descendant starts its own session, so the group kill cannot reach
           // it and the leader's stdio never closes: the probe must still answer.
-          probe: probe(
-            [
+          probe: declaredProbe({
+            versionScript: [
               'const { spawn } = require("node:child_process");',
               `const escaped = spawn(process.execPath, ["-e", ${JSON.stringify(descendant)}], { detached: true, stdio: ["ignore", "inherit", "inherit"] });`,
               'escaped.unref();',
               'setInterval(() => {}, 1_000);',
             ].join(' '),
-          ),
+          }),
         });
 
         expect(result.status).toBe('unverified');
@@ -633,18 +580,9 @@ describe('CLI readiness probe', () => {
             probeCliReadiness({
               tool: 'codex',
               executable,
-              probe: {
-                ...probe(),
-                version: {
-                  command: [
-                    'node',
-                    '-e',
-                    `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1_000)`,
-                  ],
-                  cwd: 'neutral',
-                  maxOutputBytes: 1_024,
-                },
-              },
+              probe: declaredProbe({
+                versionScript: `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1_000)`,
+              }),
             }),
           ).rejects.toMatchObject({
             kind: 'platform-limitation',
@@ -698,19 +636,6 @@ describe('CLI readiness probe', () => {
       });
     },
   );
-
-  it('does not promote an ambient API key from a version-only probe', async () => {
-    const executable = await nodeExecutable();
-    vi.stubEnv('OPENAI_API_KEY', 'ambient-key');
-
-    const result = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      probe: probe(),
-    });
-
-    expect(result).toMatchObject({ auth: 'unknown', status: 'unverified' });
-  });
 
   it('bridges only an allowlisted session snapshot and never exposes the host home', async () => {
     await withTempDir('readiness-session-state', async (hostHome) => {
@@ -979,24 +904,6 @@ describe('CLI readiness probe', () => {
     });
   });
 
-  it('keeps a legacy version check that timed out as a timeout', async () => {
-    await withTempDir('readiness-probe-legacy-version-timeout', async (directory) => {
-      const versionStarted = join(directory, 'version-started');
-      const executable = await nodeExecutable();
-
-      const pending = probeCliReadiness({
-        tool: 'codex',
-        executable,
-        probe: probe(
-          `require('node:fs').writeFileSync(${JSON.stringify(versionStarted)}, ''); setInterval(() => {}, 1_000)`,
-        ),
-      });
-      await expireDeadlineAfterFile(versionStarted);
-
-      expect(await pending).toMatchObject({ installedVersion: null, compatibility: 'timeout' });
-    });
-  });
-
   it('keeps a sign-in check that timed out as a timeout', async () => {
     await withTempDir('readiness-probe-auth-timeout', async (directory) => {
       await stubCodexSessionHome(directory);
@@ -1077,11 +984,10 @@ async function probeOpencodeRelease(release: Readonly<{ versionLine: string; maj
     const log = join(root, 'argv.log');
     const executable = await fakeOpencodeRelease(root, release, log);
     const probe = lookupCliReadinessProbe({ tool: 'opencode', role: 'planner' });
-    if (!isDeclaredCliProbeContract(probe)) throw new Error('expected the declared opencode probe');
     const evidence = await probeDeclaredCliReadinessEvidence({
       tool: 'opencode',
       executable,
-      probe: probe.declared,
+      probe,
     });
     return { evidence, argv: readFileSync(log, 'utf8').trim().split('\n') };
   });

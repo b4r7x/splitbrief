@@ -111,13 +111,6 @@ export function legacyAuthState(auth: AuthFact): CliAuthState {
   }
 }
 
-export function extractVersion(output: CliProbeOutput): string | null {
-  const match = `${output.stdout}\n${output.stderr}`.match(
-    /(?:^|\s|v)(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)(?:\s|$)/,
-  );
-  return match?.[1] ?? null;
-}
-
 export function readinessExecutable(executable: CliExecutableIdentity): CliExecutableIdentity {
   return {
     path: executable.path,

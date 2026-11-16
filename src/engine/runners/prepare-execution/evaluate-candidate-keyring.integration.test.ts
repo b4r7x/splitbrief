@@ -5,7 +5,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence/detect.js';
-import type { CliProbeContract } from '../cli-tools/probe/contract.js';
+import type { CliDeclaredProbeContract } from '../cli-tools/probe/contract.js';
 import { resolveCustomExecutable } from '../cli-executable/custom.js';
 import { evaluateCandidate } from './evaluate-candidate.js';
 import type { RunnerCandidate } from './runner-candidates.js';
@@ -37,7 +37,7 @@ async function nodeExecutable(projectDir: string) {
 }
 
 /** A Codex stand-in at the tested version whose status command reports a sign-in. */
-function codexProbe(): CliProbeContract {
+function codexProbe(): CliDeclaredProbeContract {
   const command = (script: string) =>
     ({
       command: ['node', '-e', script] as const,
@@ -48,17 +48,13 @@ function codexProbe(): CliProbeContract {
   const version = command(`console.log('codex ${testedVersion}')`);
   const auth = command("console.log('verified')");
   return {
-    version,
-    declared: {
-      kind: 'declared',
-      version: {
-        ...version,
-        kind: 'version',
-        parse: () => ({ kind: 'success', value: testedVersion }),
-      },
-      auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
-      catalog: { kind: 'not-run' },
+    version: {
+      ...version,
+      kind: 'version',
+      parse: () => ({ kind: 'success', value: testedVersion }),
     },
+    auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
+    catalog: { kind: 'not-run' },
   };
 }
 

@@ -1,22 +1,29 @@
-import { describe, it, expect, vi } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, onTestFinished, vi } from 'vitest';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { projectRunnerCallEvents } from '../../calls/event-projection.js';
+import { createRunnerCallId } from '../../calls/id.js';
 import { boundEngineEventForConsumer } from '../../events/bound.js';
 import { spawnAndCollect } from './collect.js';
 import { spawnCollectError } from './cancellation.js';
-import { parseJsonlLine } from '../parse/jsonl.js';
 import { createCustomRunnerRedactor } from '../../runners/custom/redaction.js';
 import { CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE } from '../../runners/custom/tool-input-redaction.js';
 import { createRunnerSandboxEnv } from '../../runners/sandbox/env.js';
+import { expireDeadlineAfterFile } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
-import type { RunnerCallEvent } from '../../calls/types.js';
+import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 import {
   replayRunnerCallEventsIntoOperations,
   runnerCallErrors,
   runnerCallLogEntry,
   runnerCallTerminals,
 } from '#testing/helpers/runner-call-events.js';
+
+const callContext = (): RunnerCallContext => ({
+  callId: createRunnerCallId('call'),
+  role: 'implementer',
+  backendKind: 'cli',
+});
 
 describe('spawnAndCollect', () => {
   it('redacts selected environment credentials from result and live callbacks', async () => {
@@ -25,6 +32,7 @@ describe('spawnAndCollect', () => {
     const output: string[] = [];
     const stderr: string[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: [
         '-e',
@@ -46,6 +54,7 @@ describe('spawnAndCollect', () => {
     const failureEvents: RunnerCallEvent[] = [];
     await expect(
       spawnAndCollect({
+        callContext: callContext(),
         command: 'node',
         args: ['-e', `process.stderr.write(${JSON.stringify(credential)});process.exit(2)`],
         cwd: '.',
@@ -63,6 +72,7 @@ describe('spawnAndCollect', () => {
 
     try {
       await spawnAndCollect({
+        callContext: callContext(),
         command: process.execPath,
         args: ['-e', 'process.stdout.write(process.env.CUSTOM_PUBLIC_VALUE)'],
         cwd: process.cwd(),
@@ -102,6 +112,7 @@ describe('spawnAndCollect', () => {
     const callbacks: string[] = [];
     const events: RunnerCallEvent[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -184,6 +195,7 @@ describe('spawnAndCollect', () => {
       { type: 'result', result: 'runner failed', is_error: true },
     ];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -281,6 +293,7 @@ describe('spawnAndCollect', () => {
       { type: 'result', result: 'done' },
     ];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -369,6 +382,7 @@ describe('spawnAndCollect', () => {
 
     try {
       result = await spawnAndCollect({
+        callContext: callContext(),
         command: process.execPath,
         args: ['-e', program],
         cwd: process.cwd(),
@@ -457,6 +471,7 @@ describe('spawnAndCollect', () => {
 
     try {
       await spawnAndCollect({
+        callContext: callContext(),
         command: process.execPath,
         args: [
           '-e',
@@ -508,6 +523,7 @@ describe('spawnAndCollect', () => {
           );
           const events: RunnerCallEvent[] = [];
           const result = await spawnAndCollect({
+            callContext: callContext(),
             command: 'node',
             args: [
               '-e',
@@ -531,11 +547,11 @@ describe('spawnAndCollect', () => {
   it('collects parsed text from lines', async () => {
     const outputChunks: string[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'echo',
       args: ['collected'],
       cwd: '.',
       notFoundMessage: 'echo not found',
-      parseLine: (line) => (line.trim() ? { text: line + '\n' } : {}),
       onText: (text) => outputChunks.push(text),
     });
 
@@ -546,24 +562,21 @@ describe('spawnAndCollect', () => {
 
   it('accumulates usage from parsed lines', async () => {
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
-      args: ['-e', 'console.log("line1"); console.log("line2")'],
+      args: [
+        '-e',
+        'console.log("a"); console.log("Tokens: 10 sent, 5 received"); console.log("b"); console.log("Tokens: 20 sent, 10 received")',
+      ],
       cwd: '.',
       notFoundMessage: 'node not found',
       // Ambient credentials would redact any parsed text that prefixes one, so
       // an exact-text assertion states its own redaction inputs.
       credentialValues: [],
-      parseLine: (line) => {
-        if (line.includes('line1'))
-          return { text: 'a', usage: { inputTokens: 10, outputTokens: 5 } };
-        if (line.includes('line2'))
-          return { text: 'b', usage: { inputTokens: 20, outputTokens: 10 } };
-        return {};
-      },
       onText: () => {},
     });
 
-    expect(result.text).toBe('ab');
+    expect(result.text).toBe('a\nb\n');
     expect(result.usage).toEqual({ inputTokens: 30, outputTokens: 15 });
   });
 
@@ -572,6 +585,7 @@ describe('spawnAndCollect', () => {
 
     await expect(
       spawnAndCollect({
+        callContext: callContext(),
         command: 'nonexistent-command-xyz',
         args: [],
         cwd: process.cwd(),
@@ -602,10 +616,10 @@ describe('spawnAndCollect', () => {
 
     await expect(
       spawnAndCollect({
+        callContext: callContext(),
         command: 'node',
         args: ['-e', 'console.log("partial"); process.exit(2)'],
         cwd: process.cwd(),
-        parseLine: (line) => (line.trim() ? { text: line } : {}),
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({ kind: 'process-output' });
@@ -634,6 +648,7 @@ describe('spawnAndCollect', () => {
 
     await expect(
       spawnAndCollect({
+        callContext: callContext(),
         command: process.execPath,
         args: ['-e', 'process.stdout.write("ready\\n"); setInterval(() => {}, 60_000)'],
         cwd: process.cwd(),
@@ -654,6 +669,7 @@ describe('spawnAndCollect', () => {
   it('buffers stderr chunks without promoting them to result warnings by default', async () => {
     const stderrChunks: string[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: [
         '-e',
@@ -669,6 +685,7 @@ describe('spawnAndCollect', () => {
 
   it('flushes warning-like trailing stderr as a bounded status warning', async () => {
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: ['-e', 'process.stderr.write("trailing warning")'],
       cwd: process.cwd(),
@@ -692,6 +709,7 @@ describe('spawnAndCollect', () => {
   it('keeps a warning frame that trails a successful result in a stream-json run', async () => {
     const events: RunnerCallEvent[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -734,6 +752,7 @@ describe('spawnAndCollect', () => {
     ].join('');
     try {
       const result = await spawnAndCollect({
+        callContext: callContext(),
         command: 'node',
         args: ['-e', program],
         cwd: process.cwd(),
@@ -777,6 +796,7 @@ describe('spawnAndCollect', () => {
 
   it('parses a stream-json line above 1 MiB and completes on the terminal result', async () => {
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: [
         '-e',
@@ -797,6 +817,7 @@ describe('spawnAndCollect', () => {
   it('returns a plain-text stdout line above 1 MiB whole', async () => {
     const lineBytes = 1024 * 1024 + 100;
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: [
         '-e',
@@ -827,6 +848,7 @@ describe('spawnAndCollect', () => {
     ].join('');
     try {
       const result = await spawnAndCollect({
+        callContext: callContext(),
         command: 'node',
         args: ['-e', program],
         cwd: process.cwd(),
@@ -872,6 +894,7 @@ describe('spawnAndCollect', () => {
     try {
       const events: RunnerCallEvent[] = [];
       const promise = spawnAndCollect({
+        callContext: callContext(),
         command: 'node',
         args: ['-e', 'setTimeout(() => { console.log("late output"); }, 50)'],
         cwd: process.cwd(),
@@ -910,6 +933,7 @@ describe('spawnAndCollect', () => {
       'setInterval(() => {}, 60_000);',
     ].join('');
     const promise = spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: ['-e', leaderProgram],
       cwd: process.cwd(),
@@ -973,6 +997,7 @@ describe('spawnAndCollect', () => {
     ].join('');
     const startedAt = Date.now();
     const pending = spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: ['-e', program],
       cwd: process.cwd(),
@@ -1033,6 +1058,7 @@ describe('spawnAndCollect', () => {
     vi.useFakeTimers();
     try {
       const result = await spawnAndCollect({
+        callContext: callContext(),
         command: process.execPath,
         args: ['-e', 'process.stdout.write("done\\n")'],
         cwd: process.cwd(),
@@ -1067,6 +1093,7 @@ describe('spawnAndCollect', () => {
       'setInterval(() => process.stdout.write("chatty\\n"), 5);',
     ].join('');
     const pending = spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: ['-e', program],
       cwd: process.cwd(),
@@ -1161,6 +1188,7 @@ describe('spawnAndCollect redacted stream', () => {
     const callbacks: string[] = [];
     const events: RunnerCallEvent[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -1215,6 +1243,7 @@ describe('spawnAndCollect redacted stream', () => {
     const prefix = declaredValue.slice(0, 'subagent-final-'.length);
     const events: RunnerCallEvent[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -1245,6 +1274,7 @@ describe('spawnAndCollect redacted stream', () => {
     const prefix = declaredValue.slice(0, 'held-main-'.length);
     const events: RunnerCallEvent[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -1268,63 +1298,6 @@ describe('spawnAndCollect redacted stream', () => {
       `assistant:${prefix}`,
       'assistant@toolu_sub:sub line',
       'assistant:notes',
-      'call_completed',
-    ]);
-  });
-
-  it('flushes held main-loop text before a streamed line that ends the call with an error', async () => {
-    const declaredValue = 'error-flush-value-canary-a6d2';
-    const prefix = declaredValue.slice(0, 'error-flush-'.length);
-    const events: RunnerCallEvent[] = [];
-    const result = await spawnAndCollect({
-      command: process.execPath,
-      args: [
-        '-e',
-        streamJsonProgram([
-          { text: `main tail ${prefix}`, channel: 'stdout' },
-          { text: 'boom', channel: 'stdout', isError: true },
-        ]),
-      ],
-      cwd: process.cwd(),
-      parseLine: (line) => (line.trim() ? JSON.parse(line) : {}),
-      credentialValues: [],
-      redact: createCustomRunnerRedactor([declaredValue]),
-      onCallEvent: (event) => events.push(event),
-    });
-
-    expect(result.status).toBe('failed');
-    expect(streamOrder(events)).toEqual([
-      'stdout:main tail ',
-      'stdout:***REDACTED***',
-      'stdout:boom',
-      'call_error',
-    ]);
-  });
-
-  it('releases a text on a channel that does not stream whole, after the held main-loop text', async () => {
-    const declaredValue = 'system-flush-value-canary-e3b7';
-    const prefix = declaredValue.slice(0, 'system-flush-'.length);
-    const events: RunnerCallEvent[] = [];
-    await spawnAndCollect({
-      command: process.execPath,
-      args: [
-        '-e',
-        streamJsonProgram([
-          { text: `main tail ${prefix}`, channel: 'stdout' },
-          { text: `note ${prefix}`, channel: 'system' },
-        ]),
-      ],
-      cwd: process.cwd(),
-      parseLine: (line) => (line.trim() ? JSON.parse(line) : {}),
-      credentialValues: [],
-      redact: createCustomRunnerRedactor([declaredValue]),
-      onCallEvent: (event) => events.push(event),
-    });
-
-    expect(streamOrder(events)).toEqual([
-      'stdout:main tail ',
-      'stdout:***REDACTED***',
-      'system:note ***REDACTED***',
       'call_completed',
     ]);
   });
@@ -1354,6 +1327,7 @@ describe('spawnAndCollect redacted stream', () => {
       let failure: unknown;
       try {
         result = await spawnAndCollect({
+          callContext: callContext(),
           command: process.execPath,
           args: [
             '-e',
@@ -1415,6 +1389,7 @@ describe('spawnAndCollect redacted stream', () => {
       const stderr: string[] = [];
       const events: RunnerCallEvent[] = [];
       const result = await spawnAndCollect({
+        callContext: callContext(),
         command: process.execPath,
         args: [
           '-e',
@@ -1481,6 +1456,7 @@ describe('spawnAndCollect redacted stream', () => {
       let failure: unknown;
       try {
         await spawnAndCollect({
+          callContext: callContext(),
           command: process.execPath,
           args: [
             '-e',
@@ -1515,24 +1491,6 @@ describe('spawnAndCollect redacted stream', () => {
     });
   });
 
-  it('redacts a credential in the session id before the session callback', async () => {
-    const credential = 'session-id-credential-canary-58d1';
-    const sessionIds: string[] = [];
-    await spawnAndCollect({
-      command: process.execPath,
-      args: [
-        '-e',
-        streamJsonProgram([{ type: 'result', result: 'done', session_id: `s-${credential}` }]),
-      ],
-      cwd: process.cwd(),
-      format: 'stream-json',
-      credentialValues: [credential],
-      onSessionId: (id) => sessionIds.push(id),
-    });
-
-    expect(sessionIds).toEqual(['s-***REDACTED***']);
-  });
-
   it('holds a credential split across two main-loop text deltas when no declared value is set', async () => {
     const credential = 'split-credential-canary-6b2e';
     const prefix = credential.slice(0, 'split-credential-'.length);
@@ -1540,6 +1498,7 @@ describe('spawnAndCollect redacted stream', () => {
     const texts: string[] = [];
     const events: RunnerCallEvent[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -1565,6 +1524,7 @@ describe('spawnAndCollect redacted stream', () => {
     const prefix = declaredValue.slice(0, 'error-drain-'.length);
     const events: RunnerCallEvent[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: process.execPath,
       args: [
         '-e',
@@ -1591,6 +1551,184 @@ describe('spawnAndCollect redacted stream', () => {
   });
 });
 
+describe('spawnAndCollect thrown call', () => {
+  it('returns the session id of a call that its tool-call limit stops', async () => {
+    const toolResult = (id: string) => ({
+      type: 'user',
+      session_id: 'ses-limit-stop',
+      message: { content: [{ type: 'tool_result', tool_use_id: id }] },
+    });
+    const result = await spawnAndCollect({
+      callContext: callContext(),
+      command: process.execPath,
+      args: [
+        '-e',
+        `${streamJsonProgram([toolResult('toolu_a'), toolResult('toolu_b')])}setInterval(() => {}, 60_000);`,
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      maxToolCalls: 1,
+    });
+
+    expect(result.status).toBe('truncated');
+    expect(result.sessionId).toBe('ses-limit-stop');
+  });
+
+  it('rethrows a stop by the user under the aborted operation code', async () => {
+    const controller = new AbortController();
+
+    await expect(
+      spawnAndCollect({
+        callContext: callContext(),
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write("ready\\n"); setInterval(() => {}, 60_000)'],
+        cwd: process.cwd(),
+        signal: controller.signal,
+        onText: () => controller.abort(),
+      }),
+    ).rejects.toMatchObject({ kind: 'operation-aborted' });
+  });
+
+  it('redacts a declared value in the command of a call that its hard deadline stops', async () => {
+    await withTempDir('splitbrief-collect-timeout-command', async (dir) => {
+      const declaredValue = 'deadline-command-value-canary-8e3d';
+      const command = join(dir, `node-${declaredValue}`);
+      symlinkSync(process.execPath, command);
+      const events: RunnerCallEvent[] = [];
+      let failure: unknown;
+      try {
+        await spawnAndCollect({
+          command,
+          args: ['-e', 'setInterval(() => {}, 60_000)'],
+          cwd: process.cwd(),
+          credentialValues: [],
+          redact: createCustomRunnerRedactor([declaredValue]),
+          timeoutMs: 200,
+          callContext: {
+            callId: 'deadline-command',
+            role: 'implementer',
+            backendKind: 'cli',
+            runnerName: 'custom',
+            axes: [],
+          },
+          onCallEvent: (event) => events.push(event),
+        });
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toMatchObject({
+        kind: 'command-timeout',
+        data: { command: join(dir, 'node-***REDACTED***'), label: 'Custom runner' },
+      });
+      expect(runnerCallErrors(events)).toEqual([expect.objectContaining({ status: 'timeout' })]);
+      expect(JSON.stringify({ events, failure })).not.toContain(declaredValue);
+    });
+  });
+
+  it('keeps the recorded error line and rethrows the deadline stop as it came when the tool outlives the deadline after the line', async () => {
+    await withTempDir('splitbrief-collect-terminal-deadline', async (dir) => {
+      const recorded = join(dir, 'recorded');
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      onTestFinished(() => {
+        vi.useRealTimers();
+      });
+      const events: RunnerCallEvent[] = [];
+      const running = spawnAndCollect({
+        callContext: callContext(),
+        command: process.execPath,
+        args: [
+          '-e',
+          `${streamJsonProgram([{ type: 'result', is_error: true, result: 'tool failed' }])}setInterval(() => {}, 60_000);`,
+        ],
+        cwd: process.cwd(),
+        format: 'stream-json',
+        timeoutMs: 500,
+        onCallEvent: (event) => {
+          events.push(event);
+          if (event.type === 'call_error') writeFileSync(recorded, '');
+        },
+      }).then(
+        () => undefined,
+        (failure: unknown) => failure,
+      );
+      await expireDeadlineAfterFile(recorded);
+      const failure = await running;
+
+      expect(failure).toMatchObject({
+        kind: 'runner_process_error',
+        message: 'Runner hard deadline exceeded.',
+      });
+      expect(runnerCallErrors(events)).toEqual([
+        expect.objectContaining({
+          status: 'failed',
+          error: expect.objectContaining({ message: 'tool failed' }),
+        }),
+      ]);
+    });
+  });
+
+  it('returns the result of a limit stop when a later line of the same output chunk exceeds the tool-input capacity', async () => {
+    const toolInput = (index: number) => ({
+      type: 'stream_event',
+      event: {
+        type: 'content_block_delta',
+        index,
+        delta: { type: 'input_json_delta', partial_json: 'x' },
+      },
+    });
+    const toolResult = (id: string) => ({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: id }] },
+    });
+    const lines = (records: readonly unknown[]): string =>
+      `${records.map((record) => JSON.stringify(record)).join('\n')}\n`;
+
+    await withTempDir('splitbrief-collect-c16', async (dir) => {
+      const openRead = join(dir, 'open-read');
+      const events: RunnerCallEvent[] = [];
+      const open = Array.from({ length: CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE }, (_, index) =>
+        toolInput(index),
+      );
+      const last = [
+        toolResult('toolu_a'),
+        toolResult('toolu_b'),
+        toolInput(CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE),
+      ];
+      let deltas = 0;
+      const result = await spawnAndCollect({
+        callContext: callContext(),
+        command: process.execPath,
+        args: [
+          '-e',
+          [
+            `process.stdout.write(${JSON.stringify(lines(open))});`,
+            "const fs = require('node:fs');",
+            `const wait = setInterval(() => { if (!fs.existsSync(${JSON.stringify(openRead)})) return; clearInterval(wait);`,
+            `process.stdout.write(${JSON.stringify(lines(last))});`,
+            'setInterval(() => {}, 60_000); }, 5);',
+          ].join(''),
+        ],
+        cwd: process.cwd(),
+        format: 'stream-json',
+        credentialValues: [],
+        redact: createCustomRunnerRedactor(['declared-value-c16']),
+        maxToolCalls: 1,
+        onCallEvent: (event) => {
+          events.push(event);
+          if (event.type !== 'call_tool_use_delta') return;
+          deltas += 1;
+          if (deltas === CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE) writeFileSync(openRead, '');
+        },
+      });
+
+      expect(deltas).toBe(CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE);
+      expect(events.filter((event) => event.type === 'call_tool_use_done')).toHaveLength(2);
+      expect(result.status).toBe('truncated');
+    });
+  });
+});
+
 describe('CLI implementer JSONL parsing', () => {
   it('parses codex-style JSONL into human-readable text', async () => {
     const jsonlOutput = [
@@ -1612,10 +1750,11 @@ describe('CLI implementer JSONL parsing', () => {
 
     const collected: string[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: ['-e', script],
       cwd: process.cwd(),
-      parseLine: parseJsonlLine,
+      format: 'jsonl',
       onText: (text) => collected.push(text),
     });
 
@@ -1628,10 +1767,11 @@ describe('CLI implementer JSONL parsing', () => {
 
   it('collects malformed JSONL lines as per-call warnings', async () => {
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: ['-e', 'process.stdout.write("not json {{\\n")'],
       cwd: process.cwd(),
-      parseLine: parseJsonlLine,
+      format: 'jsonl',
     });
 
     expect(result.warnings).toEqual([
@@ -1654,6 +1794,7 @@ describe('CLI implementer JSONL parsing', () => {
 
     const collected: string[] = [];
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: ['-e', script],
       cwd: process.cwd(),

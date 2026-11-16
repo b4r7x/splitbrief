@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { isDeclaredCliProbeContract } from '../runners/cli-tools/probe/contract.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
 
 describe('OpenCode catalog probe parsing', () => {
@@ -7,7 +6,7 @@ describe('OpenCode catalog probe parsing', () => {
     'returns a successful empty read through the %s declared probe',
     (role) => {
       const contract = lookupCliReadinessProbe({ tool: 'opencode', role });
-      if (!isDeclaredCliProbeContract(contract) || contract.declared.catalog.kind !== 'catalog') {
+      if (contract.catalog.kind !== 'catalog') {
         throw new Error('Expected an OpenCode catalog probe');
       }
       const output = {
@@ -18,9 +17,9 @@ describe('OpenCode catalog probe parsing', () => {
         outputExceeded: false,
       };
 
-      expect(contract.declared.catalog.parse(output)).toEqual({ kind: 'success', value: [] });
+      expect(contract.catalog.parse(output)).toEqual({ kind: 'success', value: [] });
       for (const stdout of ['{"data": [', '{"models": []}', '{"data": null}']) {
-        expect(contract.declared.catalog.parse({ ...output, stdout })).toEqual({
+        expect(contract.catalog.parse({ ...output, stdout })).toEqual({
           kind: 'malformed',
         });
       }

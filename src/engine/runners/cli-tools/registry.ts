@@ -20,15 +20,14 @@ import { cursorImplementerAdapter, cursorPlannerAdapter } from './cursor/adapter
 import { kiloImplementerAdapter, kiloPlannerAdapter } from './kilo-code.js';
 import { opencodeImplementerAdapter, opencodePlannerAdapter } from './opencode/adapter.js';
 import type { CliImplementerAdapter, CliPlannerAdapter } from './contract.js';
-import type {
-  CliDeclaredProbeContract,
-  CliProbeContract,
-  CliVersionProbe,
-} from './probe/contract.js';
+import type { CliDeclaredProbeContract, CliVersionProbe } from './probe/contract.js';
 import { parseVersion } from './probe/version.js';
 import { declaredAuthProbe } from './probe/auth.js';
-import { frozenProbeContract } from './probe/declared.js';
+import { frozenDeclaredProbe } from './probe/declared.js';
 import { declaredCatalogProbe } from './probe/catalog.js';
+
+/** An adapter as the registry admits it: its probe is the declared probe built from its version command. */
+type Admitted<Adapter> = Omit<Adapter, 'probe'> & Readonly<{ probe: CliDeclaredProbeContract }>;
 
 function declaredProbe(
   adapter: CliPlannerAdapter | CliImplementerAdapter,
@@ -41,30 +40,26 @@ function declaredProbe(
     parse: (output) => parseVersion(tool, command, output),
   };
   return {
-    kind: 'declared',
     version,
     auth: declaredAuthProbe(tool, command),
     catalog: declaredCatalogProbe(tool),
   };
 }
 
-function withDeclaredPlannerProbe(adapter: CliPlannerAdapter): CliPlannerAdapter {
-  const declared = declaredProbe(adapter);
-  return Object.freeze({
-    ...adapter,
-    probe: frozenProbeContract(adapter.probe, declared),
-  });
+function withDeclaredPlannerProbe(adapter: CliPlannerAdapter): Admitted<CliPlannerAdapter> {
+  return Object.freeze({ ...adapter, probe: frozenDeclaredProbe(declaredProbe(adapter)) });
 }
 
-function withDeclaredImplementerProbe(adapter: CliImplementerAdapter): CliImplementerAdapter {
-  const declared = declaredProbe(adapter);
-  return Object.freeze({
-    ...adapter,
-    probe: frozenProbeContract(adapter.probe, declared),
-  });
+function withDeclaredImplementerProbe(
+  adapter: CliImplementerAdapter,
+): Admitted<CliImplementerAdapter> {
+  return Object.freeze({ ...adapter, probe: frozenDeclaredProbe(declaredProbe(adapter)) });
 }
 
-function assembleImplementerAdapters(): Record<ImplementerCliToolId, CliImplementerAdapter> {
+function assembleImplementerAdapters(): Record<
+  ImplementerCliToolId,
+  Admitted<CliImplementerAdapter>
+> {
   const adapters = {
     'claude-code': withDeclaredImplementerProbe(claudeCodeImplementerAdapter),
     codex: withDeclaredImplementerProbe(codexImplementerAdapter),
@@ -74,12 +69,12 @@ function assembleImplementerAdapters(): Record<ImplementerCliToolId, CliImplemen
     cursor: withDeclaredImplementerProbe(cursorImplementerAdapter),
     'command-code': withDeclaredImplementerProbe(commandCodeImplementerAdapter),
     antigravity: withDeclaredImplementerProbe(antigravityImplementerAdapter),
-  } satisfies Record<ImplementerCliToolId, CliImplementerAdapter>;
+  } satisfies Record<ImplementerCliToolId, Admitted<CliImplementerAdapter>>;
 
   return Object.freeze(adapters);
 }
 
-function assemblePlannerAdapters(): Record<PlannerCliToolId, CliPlannerAdapter> {
+function assemblePlannerAdapters(): Record<PlannerCliToolId, Admitted<CliPlannerAdapter>> {
   return Object.freeze({
     'claude-code': withDeclaredPlannerProbe(claudeCodePlannerAdapter),
     codex: withDeclaredPlannerProbe(codexPlannerAdapter),
@@ -95,14 +90,14 @@ function assemblePlannerAdapters(): Record<PlannerCliToolId, CliPlannerAdapter> 
 export const CLI_PLANNER_ADAPTERS = assemblePlannerAdapters();
 export const CLI_IMPLEMENTER_ADAPTERS = assembleImplementerAdapters();
 
-export function lookupCliPlannerAdapter(toolId: string): CliPlannerAdapter {
+export function lookupCliPlannerAdapter(toolId: string): Admitted<CliPlannerAdapter> {
   if (!includes(PLANNER_CLI_TOOL_IDS, toolId)) {
     throw runnerConfigError.missingToolConfig(toolId, 'planner');
   }
   return CLI_PLANNER_ADAPTERS[toolId];
 }
 
-export function lookupCliImplementerAdapter(toolId: string): CliImplementerAdapter {
+export function lookupCliImplementerAdapter(toolId: string): Admitted<CliImplementerAdapter> {
   if (!includes(IMPLEMENTER_CLI_TOOL_IDS, toolId)) {
     throw runnerConfigError.missingToolConfig(toolId, 'implementer');
   }
@@ -130,7 +125,7 @@ export function lookupCliReadinessProbe(
     tool: CliToolId;
     role: RunnerRole;
   }>,
-): CliProbeContract {
+): CliDeclaredProbeContract {
   return input.role === 'planner'
     ? lookupCliPlannerAdapter(input.tool).probe
     : lookupCliImplementerAdapter(input.tool).probe;
@@ -150,12 +145,9 @@ export function isCanonicalCliDeclaredProbe(
 ): boolean {
   const declared =
     input.role === 'planner'
-      ? [CLI_PLANNER_ADAPTERS[input.tool].probe.declared]
+      ? [CLI_PLANNER_ADAPTERS[input.tool].probe]
       : input.role === 'implementer'
-        ? [CLI_IMPLEMENTER_ADAPTERS[input.tool].probe.declared]
-        : [
-            CLI_PLANNER_ADAPTERS[input.tool].probe.declared,
-            CLI_IMPLEMENTER_ADAPTERS[input.tool].probe.declared,
-          ];
+        ? [CLI_IMPLEMENTER_ADAPTERS[input.tool].probe]
+        : [CLI_PLANNER_ADAPTERS[input.tool].probe, CLI_IMPLEMENTER_ADAPTERS[input.tool].probe];
   return declared.some((candidate) => candidate === input.probe);
 }

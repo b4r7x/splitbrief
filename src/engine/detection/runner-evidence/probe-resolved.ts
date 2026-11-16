@@ -5,29 +5,22 @@ import {
   CLI_TOOL_CATALOG,
   signInOutranksUnreadVersion,
 } from '../../../core/runners/cli-tool/catalog.js';
-import { classifyCliAdmittedVersion } from '../../../core/runners/cli-tool/version.js';
 import { throwIfAborted } from '../../../utils/abort.js';
-import { isDeclaredCliProbeContract } from '../../runners/cli-tools/probe/contract.js';
-import { probeCliReadiness } from '../../runners/cli-tools/probe/readiness.js';
 import {
   type AuthProbeRun,
   probeDeclaredCliReadinessEvidence,
 } from '../../runners/cli-tools/probe/declared-readiness.js';
-import {
-  lookupCliReadinessProbe,
-  isCanonicalCliDeclaredProbe,
-} from '../../runners/cli-tools/registry.js';
+import { lookupCliReadinessProbe } from '../../runners/cli-tools/registry.js';
 import { probeContextCatalog } from '../catalog-probe/probe.js';
 import type { CliRunnerDiscoveryContext } from '../cli-context.js';
 import {
-  evidenceFromLegacyReadiness,
   runnerEvidenceBase,
   credentialFromCliAuth,
   executableFactFromResolved,
   compatibilityFromVersion,
   modelRunFromCatalog,
 } from './facts.js';
-import { unsupportedCatalogEvidence, probeFailureEvidence } from './outcomes.js';
+import { probeFailureEvidence, cancelledProbeEvidence } from './outcomes.js';
 import type { DetectRunnerEvidenceOptions, ProbeDeclaredCliReadinessEvidence } from './types.js';
 
 /**
@@ -53,45 +46,12 @@ export async function probeResolvedCliEvidence(
     tool: context.id,
     role: context.role,
   });
-  if (
-    catalogRequested &&
-    (!isDeclaredCliProbeContract(probe) ||
-      !isCanonicalCliDeclaredProbe({
-        tool: context.id,
-        role: context.role,
-        probe: probe.declared,
-      }))
-  ) {
-    return unsupportedCatalogEvidence(context, observedAt, executable);
-  }
-  if (!isDeclaredCliProbeContract(probe)) {
-    try {
-      const readiness = await probeCliReadiness({
-        tool: context.id,
-        executable,
-        probe,
-        ...(signal !== undefined ? { signal } : {}),
-        now: () => observedAt,
-        classifyVersion: ({ installedVersion }) =>
-          classifyCliAdmittedVersion({
-            installedVersion,
-            minimumAdmittedVersion:
-              CLI_TOOL_CATALOG[context.id].compatibility.minimumAdmittedVersion,
-            versionScheme: CLI_TOOL_CATALOG[context.id].compatibility.versionScheme,
-          }),
-      });
-      return evidenceFromLegacyReadiness(context, observedAt, readiness);
-    } catch {
-      throwIfAborted(signal);
-      return probeFailureEvidence(context, observedAt, executable);
-    }
-  }
 
   let authProbeRun: AuthProbeRun | undefined;
   const declaredProbeOptions = {
     tool: context.id,
     executable,
-    probe: probe.declared,
+    probe,
     ...(signal !== undefined ? { signal } : {}),
     versionProbes: options.versionProbes,
     // A tool whose auth oracle is its model listing (`agy models`) is spawned once per pass.
@@ -115,19 +75,7 @@ export async function probeResolvedCliEvidence(
   }
 
   if (declaredEvidence.version.kind === 'cancelled' || declaredEvidence.auth === 'cancelled') {
-    const base = runnerEvidenceBase(context, observedAt);
-    return {
-      ...base,
-      installation: 'installed',
-      executable: { kind: 'identity-drifted' },
-      compatibility: {
-        kind: 'unknown',
-        installedVersion: null,
-        testedVersion: CLI_TOOL_CATALOG[context.id].compatibility.testedVersion,
-      },
-      credential: credentialFromCliAuth(context, declaredEvidence.auth),
-      auth: declaredEvidence.auth,
-    };
+    return cancelledProbeEvidence(context, observedAt, declaredEvidence.auth);
   }
 
   const executableFact = executableFactFromResolved(executable);
@@ -159,7 +107,7 @@ export async function probeResolvedCliEvidence(
       catalog = await probeContextCatalog({
         context,
         executable,
-        probe: probe.declared,
+        probe,
         version: declaredEvidence.version,
         refresh: options.catalogRefresh ?? 'automatic',
         projectDir: options.projectDir ?? process.cwd(),

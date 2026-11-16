@@ -13,7 +13,6 @@ const context = {
 function createHarness() {
   const events: RunnerCallEvent[] = [];
   const text: string[] = [];
-  const sessionIds: string[] = [];
   const recorder = createRunnerCallRecorder({
     context,
     startedAt: 1,
@@ -22,9 +21,8 @@ function createHarness() {
   const parsed = createParsedLineRecorder({
     recorder,
     onText: (chunk) => text.push(chunk),
-    onSessionId: (id) => sessionIds.push(id),
   });
-  return { events, parsed, recorder, text, sessionIds };
+  return { events, parsed, recorder, text };
 }
 
 describe('createParsedLineRecorder', () => {
@@ -188,7 +186,7 @@ describe('createParsedLineRecorder', () => {
   });
 
   it('records the model of an init frame after a hook frame of the same session', () => {
-    const { events, parsed, sessionIds } = createHarness();
+    const { events, parsed } = createHarness();
 
     parsed.apply({ sessionId: 's1' });
     parsed.apply({ sessionId: 's1', resolvedModel: 'claude-opus-5-5' });
@@ -201,7 +199,6 @@ describe('createParsedLineRecorder', () => {
         resolvedModel: 'claude-opus-5-5',
       }),
     );
-    expect(sessionIds).toEqual(['s1']);
   });
 
   it('preserves parsed tool ids in structured tool events', () => {

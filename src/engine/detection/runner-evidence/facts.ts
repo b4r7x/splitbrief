@@ -10,11 +10,9 @@ import type {
   CompatibilityFact,
   AuthFact,
   CredentialPresence,
-  RunnerEvidence,
 } from '../../../core/discovery/runner-evidence.js';
 import type { CliCompatibility } from '../../../core/runners/cli-tool/types.js';
 import { classifyCliAdmittedVersion } from '../../../core/runners/cli-tool/version.js';
-import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { runnerDiscoveryContextKey } from '../context-key.js';
 import type { RunnerEvidenceBase } from './types.js';
@@ -122,82 +120,4 @@ export function modelRunFromCatalog(
     };
   }
   return base.modelRun;
-}
-
-function legacyAuthFact(auth: CliReadinessResult['auth']): AuthFact {
-  switch (auth) {
-    case 'authenticated':
-      return 'unknown';
-    case 'unauthenticated':
-      return 'missing';
-    case 'keyring':
-      return 'keyring';
-    case 'unknown':
-      return 'unknown';
-    case 'timeout':
-      return 'timeout';
-    case 'not-required':
-      return 'not-required';
-    case 'not-checked':
-      return 'not-run';
-    default:
-      return assertNever(auth);
-  }
-}
-
-function compatibilityFromLegacy(readiness: CliReadinessResult): CompatibilityFact {
-  switch (readiness.compatibility) {
-    case 'compatible':
-    case 'incompatible':
-      return readiness.installedVersion === null
-        ? {
-            kind: 'unknown',
-            installedVersion: null,
-            testedVersion: readiness.testedVersion,
-          }
-        : {
-            kind: readiness.compatibility,
-            installedVersion: readiness.installedVersion,
-            testedVersion: readiness.testedVersion,
-          };
-    case 'unverified':
-    case 'not-checked':
-      return {
-        kind: 'unknown',
-        installedVersion: readiness.installedVersion,
-        testedVersion: readiness.testedVersion,
-      };
-    case 'timeout':
-      return { kind: 'timeout', installedVersion: null, testedVersion: readiness.testedVersion };
-    default:
-      return assertNever(readiness.compatibility);
-  }
-}
-
-function executableFactFromLegacyReadiness(readiness: CliReadinessResult): ExecutableFact {
-  if (readiness.trust === 'untrusted') return { kind: 'untrusted' };
-  if (readiness.executable === null) {
-    return readiness.installation === 'unavailable' ? { kind: 'missing' } : { kind: 'unknown' };
-  }
-  return readiness.trust === 'trusted'
-    ? executableFactFromResolved(readiness.executable)
-    : { kind: 'unknown' };
-}
-
-export function evidenceFromLegacyReadiness(
-  context: RunnerDiscoveryContext,
-  observedAt: number,
-  readiness: CliReadinessResult,
-): RunnerEvidence {
-  const base = runnerEvidenceBase(context, observedAt);
-  const auth = legacyAuthFact(readiness.auth);
-  return {
-    ...base,
-    installation: readiness.installation === 'installed' ? 'installed' : 'missing',
-    executable: executableFactFromLegacyReadiness(readiness),
-    compatibility: compatibilityFromLegacy(readiness),
-    credential: credentialFromCliAuth(context, auth),
-    auth,
-    ...(readiness.providerAuth !== undefined && { providerAuth: readiness.providerAuth }),
-  };
 }

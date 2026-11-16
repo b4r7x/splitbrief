@@ -1,32 +1,19 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type { CliProviderAuth } from '../../../../core/discovery/detection/auth.js';
 import type { CliExecutableIdentity } from '../../../../core/discovery/detection/executable.js';
-import type { CliAuthState } from '../../../../core/discovery/detection/tool.js';
 import { deriveCliReadiness } from '../../../../core/readiness/cli-remediation.js';
 import { CLI_TOOL_CATALOG } from '../../../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../../core/runners/cli-tool/types.js';
 import type { CliReadinessResult } from '../../../../core/schemas/readiness.js';
 import { throwIfAborted } from '../../../../utils/abort.js';
-import { trackProbe } from '../../../probe-activity.js';
 import { revalidateCliExecutableIdentity } from '../../cli-executable/identity.js';
-import { removeSandboxTempDirs } from '../../sandbox/state/paths.js';
-import { type CliProbeContract, isDeclaredCliProbeContract } from './contract.js';
+import type { CliDeclaredProbeContract } from './contract.js';
 import { probeDeclaredCliReadinessEvidence } from './declared-readiness.js';
-import {
-  untrustedResult,
-  legacyAuthState,
-  extractVersion,
-  readinessExecutable,
-} from './evidence.js';
-import { probeEnvironment, runProbe } from './process.js';
+import { untrustedResult, legacyAuthState, readinessExecutable } from './evidence.js';
 import { providerOracleCommand } from './provider-oracle.js';
 
 export interface ProbeCliReadinessOptions {
   tool: CliToolId;
   executable: CliExecutableIdentity | null;
-  probe: CliProbeContract;
+  probe: CliDeclaredProbeContract;
   enabled?: boolean | undefined;
   now?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
@@ -65,49 +52,17 @@ export async function probeCliReadiness(
     return untrustedResult({ base, executable: options.executable, installedVersion: null });
   }
 
-  let installedVersion: string | null;
-  let versionTimedOut: boolean;
-  let auth: CliAuthState;
-  let providerAuth: CliProviderAuth | undefined;
-  if (isDeclaredCliProbeContract(options.probe)) {
-    const evidence = await probeDeclaredCliReadinessEvidence({
-      tool: options.tool,
-      executable: options.executable,
-      probe: options.probe.declared,
-      enabled: base.enabled,
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
-    });
-    installedVersion = evidence.version.kind === 'success' ? evidence.version.value : null;
-    versionTimedOut = evidence.version.kind === 'timeout';
-    auth = legacyAuthState(evidence.auth);
-    providerAuth = evidence.providerAuth;
-  } else {
-    const executable = options.executable;
-    const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-readiness-'));
-    try {
-      const environment = await probeEnvironment({
-        executable,
-        neutralDir,
-        tool: options.tool,
-        channel: undefined,
-      });
-      const versionProbe = await trackProbe({ tool: options.tool, check: 'version' }, () =>
-        runProbe({
-          executable,
-          command: options.probe.version,
-          cwd: neutralDir,
-          env: environment.env,
-          signal: options.signal,
-        }),
-      );
-      installedVersion = extractVersion(versionProbe);
-      versionTimedOut = versionProbe.timedOut;
-      auth = 'unknown';
-    } finally {
-      await rm(neutralDir, { recursive: true, force: true });
-      removeSandboxTempDirs(neutralDir);
-    }
-  }
+  const evidence = await probeDeclaredCliReadinessEvidence({
+    tool: options.tool,
+    executable: options.executable,
+    probe: options.probe,
+    enabled: base.enabled,
+    ...(options.signal !== undefined ? { signal: options.signal } : {}),
+  });
+  const installedVersion = evidence.version.kind === 'success' ? evidence.version.value : null;
+  const versionTimedOut = evidence.version.kind === 'timeout';
+  const auth = legacyAuthState(evidence.auth);
+  const providerAuth = evidence.providerAuth;
   if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {
     return untrustedResult({
       base,

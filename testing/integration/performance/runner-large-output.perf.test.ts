@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { RunnerCallEvent } from '../../../src/engine/calls/types.js';
+import { createRunnerCallId } from '../../../src/engine/calls/id.js';
+import type { RunnerCallContext, RunnerCallEvent } from '../../../src/engine/calls/types.js';
 import { spawnAndCollect } from '../../../src/engine/streaming/spawn-collect/collect.js';
+
+const callContext = (): RunnerCallContext => ({
+  callId: createRunnerCallId('call'),
+  role: 'implementer',
+  backendKind: 'cli',
+});
 
 function forceGc(): void {
   globalThis.gc?.();
@@ -35,6 +42,7 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('runner large output perf',
     forceGc();
     const startedAt = performance.now();
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: ['-e', script],
       cwd: process.cwd(),
@@ -66,6 +74,7 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('runner large output perf',
     forceGc();
     const startedAt = performance.now();
     const result = await spawnAndCollect({
+      callContext: callContext(),
       command: 'node',
       args: ['-e', script],
       cwd: process.cwd(),

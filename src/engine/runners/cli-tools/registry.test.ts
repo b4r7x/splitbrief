@@ -20,7 +20,6 @@ import {
 } from './registry.js';
 import { codexPlannerAdapter } from './codex/adapter.js';
 import { CODEX_NATIVE_MODEL_CATALOG_PROBE } from './codex/adapter.js';
-import { isDeclaredCliProbeContract } from './probe/contract.js';
 import {
   parseCopilotHelpConfigCatalog,
   parseCursorModels,
@@ -135,25 +134,18 @@ describe('admitted readiness probe contracts', () => {
       expect(Object.isFrozen(probe)).toBe(true);
       expect(Object.isFrozen(probe.version)).toBe(true);
       expect(Object.isFrozen(probe.version.command)).toBe(true);
-      expect(isDeclaredCliProbeContract(probe)).toBe(true);
-      if (!isDeclaredCliProbeContract(probe)) continue;
-
-      const { declared } = probe;
-      expect(Object.isFrozen(declared)).toBe(true);
-      expect(Object.isFrozen(declared.version)).toBe(true);
-      expect(Object.isFrozen(declared.version.command)).toBe(true);
-      expect(Object.isFrozen(declared.version.parse)).toBe(true);
-      expect(Object.isFrozen(declared.auth)).toBe(true);
-      if (declared.auth.kind !== 'not-run') {
-        expect(Object.isFrozen(declared.auth.command)).toBe(true);
-        expect(Object.isFrozen(declared.auth.parse)).toBe(true);
+      expect(Object.isFrozen(probe.version.parse)).toBe(true);
+      expect(Object.isFrozen(probe.auth)).toBe(true);
+      if (probe.auth.kind !== 'not-run') {
+        expect(Object.isFrozen(probe.auth.command)).toBe(true);
+        expect(Object.isFrozen(probe.auth.parse)).toBe(true);
       }
-      expect(Object.isFrozen(declared.catalog)).toBe(true);
-      if (declared.catalog.kind !== 'not-run') {
-        expect(Object.isFrozen(declared.catalog.command)).toBe(true);
-        expect(Object.isFrozen(declared.catalog.parse)).toBe(true);
-        if (declared.catalog.manualCommand !== undefined) {
-          expect(Object.isFrozen(declared.catalog.manualCommand)).toBe(true);
+      expect(Object.isFrozen(probe.catalog)).toBe(true);
+      if (probe.catalog.kind !== 'not-run') {
+        expect(Object.isFrozen(probe.catalog.command)).toBe(true);
+        expect(Object.isFrozen(probe.catalog.parse)).toBe(true);
+        if (probe.catalog.manualCommand !== undefined) {
+          expect(Object.isFrozen(probe.catalog.manualCommand)).toBe(true);
         }
       }
     }
@@ -163,10 +155,7 @@ describe('admitted readiness probe contracts', () => {
     const declaredKinds = Object.fromEntries(
       CLI_TOOL_IDS.map((tool) => {
         const probe = lookupCliReadinessProbe({ tool, role: 'planner' });
-        if (!isDeclaredCliProbeContract(probe)) {
-          throw new Error(`${tool} exposes no declared probe contract`);
-        }
-        return [tool, probe.declared.catalog.kind];
+        return [tool, probe.catalog.kind];
       }),
     );
 
@@ -179,12 +168,9 @@ describe('admitted readiness probe contracts', () => {
 
   it('owns and freezes every reachable declared catalog operation', () => {
     const probe = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
-    expect(isDeclaredCliProbeContract(probe)).toBe(true);
-    if (!isDeclaredCliProbeContract(probe)) return;
 
-    const { declared } = probe;
-    if (declared.catalog.kind === 'not-run') return;
-    const catalog = declared.catalog;
+    if (probe.catalog.kind === 'not-run') return;
+    const catalog = probe.catalog;
     const originalParser = catalog.parse;
     const originalCommand = [...catalog.command];
 
@@ -196,24 +182,20 @@ describe('admitted readiness probe contracts', () => {
     expect(Reflect.set(catalog.command, 0, 'attacker')).toBe(false);
     expect(Reflect.set(catalog, 'manualCommand', ['attacker', 'refresh'])).toBe(false);
     expect(Reflect.set(catalog, 'parse', () => ({ kind: 'success', value: [] }))).toBe(false);
-    expect(Reflect.set(declared, 'catalog', { kind: 'not-run' })).toBe(false);
+    expect(Reflect.set(probe, 'catalog', { kind: 'not-run' })).toBe(false);
 
     expect(catalog.command).toEqual(originalCommand);
     expect(catalog.parse).toBe(originalParser);
 
     const kiloProbe = lookupCliReadinessProbe({ tool: 'kilo-code', role: 'planner' });
-    expect(isDeclaredCliProbeContract(kiloProbe)).toBe(true);
-    if (!isDeclaredCliProbeContract(kiloProbe)) return;
-    const manualCatalog = kiloProbe.declared.catalog;
+    const manualCatalog = kiloProbe.catalog;
     if (manualCatalog.kind === 'not-run' || manualCatalog.manualCommand === undefined) return;
 
     expect(Reflect.set(manualCatalog.manualCommand, 0, 'attacker')).toBe(false);
     expect(manualCatalog.manualCommand).toEqual(['kilo', 'models', '--verbose', '--refresh']);
 
     const manualProbe = lookupCliReadinessProbe({ tool: 'opencode', role: 'planner' });
-    expect(isDeclaredCliProbeContract(manualProbe)).toBe(true);
-    if (!isDeclaredCliProbeContract(manualProbe)) return;
-    const manualAuth = manualProbe.declared.auth;
+    const manualAuth = manualProbe.auth;
     if (manualAuth.kind === 'not-run' || manualAuth.legacy === undefined) return;
     expect(Reflect.set(manualAuth.legacy.command, 0, 'attacker')).toBe(false);
     expect(Reflect.set(manualAuth, 'legacy', undefined)).toBe(false);
@@ -226,28 +208,22 @@ describe('admitted readiness probe contracts', () => {
 
     expect(planner).toBe(CLI_PLANNER_ADAPTERS.codex.probe);
     expect(implementer).toBe(CLI_IMPLEMENTER_ADAPTERS.codex.probe);
-    expect(isDeclaredCliProbeContract(planner)).toBe(true);
-    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Codex probe');
 
-    expect(planner.declared.version.command).toEqual(['codex', '--version']);
-    expect(planner.declared.auth).toMatchObject({
+    expect(planner.version.command).toEqual(['codex', '--version']);
+    expect(planner.auth).toMatchObject({
       kind: 'auth-status',
       command: ['codex', 'login', 'status'],
       cwd: 'neutral',
     });
-    if (planner.declared.auth.kind === 'not-run')
-      throw new Error('expected Codex auth status probe');
+    if (planner.auth.kind === 'not-run') throw new Error('expected Codex auth status probe');
   });
 
   it('codex positive login status is verified', () => {
     const planner = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
-    expect(isDeclaredCliProbeContract(planner)).toBe(true);
-    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Codex probe');
-    if (planner.declared.auth.kind === 'not-run')
-      throw new Error('expected Codex auth status probe');
+    if (planner.auth.kind === 'not-run') throw new Error('expected Codex auth status probe');
 
     expect(
-      planner.declared.auth.parse({
+      planner.auth.parse({
         stdout: 'Logged in using ChatGPT',
         stderr: '',
         exitCode: 0,
@@ -265,13 +241,10 @@ describe('admitted readiness probe contracts', () => {
     ['no recognizable auth keywords', 'malformed'],
   ] as const)('codex negative login status maps %s to %s', (stdout, expected) => {
     const planner = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
-    expect(isDeclaredCliProbeContract(planner)).toBe(true);
-    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Codex probe');
-    if (planner.declared.auth.kind === 'not-run')
-      throw new Error('expected Codex auth status probe');
+    if (planner.auth.kind === 'not-run') throw new Error('expected Codex auth status probe');
 
     expect(
-      planner.declared.auth.parse({
+      planner.auth.parse({
         stdout,
         stderr: '',
         exitCode: 1,
@@ -307,11 +280,9 @@ describe('admitted readiness probe contracts', () => {
     ['command-code', '1.39.2\n2.0.0', { kind: 'malformed' }],
   ] as const)('parses only one canonical %s version descriptor', (tool, stdout, expected) => {
     const probe = lookupCliReadinessProbe({ tool, role: 'planner' });
-    expect(isDeclaredCliProbeContract(probe)).toBe(true);
-    if (!isDeclaredCliProbeContract(probe)) return;
 
     expect(
-      probe.declared.version.parse({
+      probe.version.parse({
         stdout,
         stderr: '',
         exitCode: 0,
@@ -326,39 +297,28 @@ describe('admitted readiness probe contracts', () => {
     const kilo = lookupCliReadinessProbe({ tool: 'kilo-code', role: 'planner' });
     const codex = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
 
-    expect(isDeclaredCliProbeContract(opencode)).toBe(true);
-    expect(isDeclaredCliProbeContract(kilo)).toBe(true);
-    expect(isDeclaredCliProbeContract(codex)).toBe(true);
-    if (
-      !isDeclaredCliProbeContract(opencode) ||
-      !isDeclaredCliProbeContract(kilo) ||
-      !isDeclaredCliProbeContract(codex)
-    ) {
-      throw new Error('expected admitted declared probes');
-    }
-
-    expect(codex.declared.catalog).toMatchObject({
+    expect(codex.catalog).toMatchObject({
       kind: 'catalog',
       command: ['codex', 'debug', 'models'],
     });
-    expect(opencode.declared.catalog).toMatchObject({
+    expect(opencode.catalog).toMatchObject({
       kind: 'catalog',
       command: ['opencode', 'api', 'GET', '/api/model', '--standalone'],
     });
-    expect(kilo.declared.catalog).toMatchObject({
+    expect(kilo.catalog).toMatchObject({
       kind: 'catalog',
       command: ['kilo', 'models', '--verbose'],
       manualCommand: ['kilo', 'models', '--verbose', '--refresh'],
     });
     if (
-      codex.declared.catalog.kind === 'not-run' ||
-      opencode.declared.catalog.kind === 'not-run' ||
-      kilo.declared.catalog.kind === 'not-run'
+      codex.catalog.kind === 'not-run' ||
+      opencode.catalog.kind === 'not-run' ||
+      kilo.catalog.kind === 'not-run'
     ) {
       throw new Error('expected native catalog probes');
     }
     expect(
-      codex.declared.catalog.parse({
+      codex.catalog.parse({
         stdout: JSON.stringify({ models: [{ id: 'gpt-5.6-sol' }] }),
         stderr: '',
         exitCode: 0,
@@ -370,18 +330,18 @@ describe('admitted readiness probe contracts', () => {
     // as the auth probe; unparseable output falls back to bridged presence.
     // opencode releases below 2.0.0 reject the private-server flag and keep
     // the boxed listing.
-    expect(opencode.declared.auth).toMatchObject({
+    expect(opencode.auth).toMatchObject({
       kind: 'auth-status',
       command: ['opencode', 'auth', 'list', '--standalone', '--format', 'json'],
       legacy: { belowVersion: '2.0.0', command: ['opencode', 'auth', 'list'] },
       cwd: 'neutral',
     });
-    expect(kilo.declared.auth).toMatchObject({
+    expect(kilo.auth).toMatchObject({
       kind: 'auth-status',
       command: ['kilo', 'auth', 'list'],
       cwd: 'neutral',
     });
-    if (opencode.declared.auth.kind === 'not-run' || kilo.declared.auth.kind === 'not-run') {
+    if (opencode.auth.kind === 'not-run' || kilo.auth.kind === 'not-run') {
       throw new Error('expected provider oracle auth probes');
     }
     const oracleOutput = (stdout: string) => ({
@@ -392,18 +352,14 @@ describe('admitted readiness probe contracts', () => {
       outputExceeded: false,
     });
     expect(
-      kilo.declared.auth.parse(
+      kilo.auth.parse(
         oracleOutput(
           '┌  Credentials ~/.local/share/kilo/auth.json\n│\n●  GitHub Copilot \u001b[90moauth\n│\n└  1 credentials\n',
         ),
       ),
     ).toBe('verified');
-    expect(kilo.declared.auth.parse(oracleOutput('┌  Credentials\n│\n└  0 credentials\n'))).toBe(
-      'missing',
-    );
-    expect(kilo.declared.auth.parse(oracleOutput('kilo: unknown command "auth"'))).toBe(
-      'malformed',
-    );
+    expect(kilo.auth.parse(oracleOutput('┌  Credentials\n│\n└  0 credentials\n'))).toBe('missing');
+    expect(kilo.auth.parse(oracleOutput('kilo: unknown command "auth"'))).toBe('malformed');
   });
 
   it('binds Cursor to declared version, auth, and catalog probes', () => {
@@ -412,25 +368,23 @@ describe('admitted readiness probe contracts', () => {
 
     expect(planner).toBe(CLI_PLANNER_ADAPTERS.cursor.probe);
     expect(implementer).toBe(CLI_IMPLEMENTER_ADAPTERS.cursor.probe);
-    expect(isDeclaredCliProbeContract(planner)).toBe(true);
-    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Cursor probe');
 
-    expect(planner.declared.version.command).toEqual(['cursor-agent', '--version']);
-    expect(planner.declared.auth).toMatchObject({
+    expect(planner.version.command).toEqual(['cursor-agent', '--version']);
+    expect(planner.auth).toMatchObject({
       kind: 'auth-status',
       command: ['cursor-agent', 'status'],
       cwd: 'neutral',
     });
-    expect(planner.declared.catalog).toMatchObject({
+    expect(planner.catalog).toMatchObject({
       kind: 'catalog',
       command: ['cursor-agent', '--list-models'],
     });
-    if (planner.declared.auth.kind === 'not-run' || planner.declared.catalog.kind === 'not-run') {
+    if (planner.auth.kind === 'not-run' || planner.catalog.kind === 'not-run') {
       throw new Error('expected Cursor auth and catalog probes');
     }
 
     expect(
-      planner.declared.auth.parse({
+      planner.auth.parse({
         stdout: '✓ Logged in as operator@example.com',
         stderr: '',
         exitCode: 0,
@@ -439,7 +393,7 @@ describe('admitted readiness probe contracts', () => {
       }),
     ).toBe('verified');
     expect(
-      planner.declared.catalog.parse({
+      planner.catalog.parse({
         stdout: CURSOR_LIST_MODELS_FIXTURE,
         stderr: '',
         exitCode: 0,
@@ -455,21 +409,18 @@ describe('admitted readiness probe contracts', () => {
 
     expect(planner).toBe(CLI_PLANNER_ADAPTERS['command-code'].probe);
     expect(implementer).toBe(CLI_IMPLEMENTER_ADAPTERS['command-code'].probe);
-    expect(isDeclaredCliProbeContract(planner)).toBe(true);
-    if (!isDeclaredCliProbeContract(planner))
-      throw new Error('expected declared Command Code probe');
 
-    expect(planner.declared.version.command).toEqual(['cmd', '--version', '--no-auto-update']);
-    expect(planner.declared.auth).toMatchObject({
+    expect(planner.version.command).toEqual(['cmd', '--version', '--no-auto-update']);
+    expect(planner.auth).toMatchObject({
       kind: 'auth-status',
       command: ['cmd', 'status', '--json', '--no-auto-update'],
       cwd: 'neutral',
     });
-    expect(planner.declared.catalog).toMatchObject({
+    expect(planner.catalog).toMatchObject({
       kind: 'catalog',
       command: ['cmd', '--list-models', '--no-auto-update'],
     });
-    if (planner.declared.catalog.kind === 'not-run') {
+    if (planner.catalog.kind === 'not-run') {
       throw new Error('expected Command Code catalog probe');
     }
 
@@ -477,7 +428,7 @@ describe('admitted readiness probe contracts', () => {
     if (catalog === null) throw new Error('command code list-models fixture failed to parse');
 
     expect(
-      planner.declared.catalog.parse({
+      planner.catalog.parse({
         stdout: COMMAND_CODE_LIST_MODELS_FIXTURE,
         stderr: '',
         exitCode: 0,
@@ -492,21 +443,19 @@ describe('admitted readiness probe contracts', () => {
 
   it('binds Copilot to its own help-config listing as the declared catalog probe', () => {
     const planner = lookupCliReadinessProbe({ tool: 'copilot', role: 'planner' });
-    expect(isDeclaredCliProbeContract(planner)).toBe(true);
-    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Copilot probe');
 
-    expect(planner.declared.catalog).toMatchObject({
+    expect(planner.catalog).toMatchObject({
       kind: 'catalog',
       command: ['copilot', 'help', 'config'],
     });
-    if (planner.declared.catalog.kind === 'not-run') {
+    if (planner.catalog.kind === 'not-run') {
       throw new Error('expected Copilot catalog probe');
     }
 
     const catalog = parseCopilotHelpConfigCatalog(COPILOT_HELP_CONFIG_FIXTURE);
     if (catalog === null) throw new Error('copilot help-config fixture failed to parse');
 
-    const parsed = planner.declared.catalog.parse({
+    const parsed = planner.catalog.parse({
       stdout: COPILOT_HELP_CONFIG_FIXTURE,
       stderr: '',
       exitCode: 0,
@@ -526,15 +475,12 @@ describe('admitted readiness probe contracts', () => {
 
   it('treats a Command Code exit code 3 as missing and the recorded status payload as verified', () => {
     const planner = lookupCliReadinessProbe({ tool: 'command-code', role: 'planner' });
-    expect(isDeclaredCliProbeContract(planner)).toBe(true);
-    if (!isDeclaredCliProbeContract(planner))
-      throw new Error('expected declared Command Code probe');
-    if (planner.declared.auth.kind === 'not-run') {
+    if (planner.auth.kind === 'not-run') {
       throw new Error('expected Command Code auth probe');
     }
 
     expect(
-      planner.declared.auth.parse({
+      planner.auth.parse({
         stdout: '',
         stderr: 'Not authenticated',
         exitCode: 3,
@@ -543,7 +489,7 @@ describe('admitted readiness probe contracts', () => {
       }),
     ).toBe('missing');
     expect(
-      planner.declared.auth.parse({
+      planner.auth.parse({
         stdout: COMMAND_CODE_STATUS_FIXTURE,
         stderr: '',
         exitCode: 0,
@@ -557,15 +503,13 @@ describe('admitted readiness probe contracts', () => {
     'reads a negated %s status line as missing, not verified',
     (tool) => {
       const planner = lookupCliReadinessProbe({ tool, role: 'planner' });
-      expect(isDeclaredCliProbeContract(planner)).toBe(true);
-      if (!isDeclaredCliProbeContract(planner)) throw new Error(`expected declared ${tool} probe`);
-      if (planner.declared.auth.kind === 'not-run') {
+      if (planner.auth.kind === 'not-run') {
         throw new Error(`expected ${tool} auth probe`);
       }
 
       for (const stderr of ['Not authenticated', 'Not signed in', 'No active session']) {
         expect(
-          planner.declared.auth.parse({
+          planner.auth.parse({
             stdout: '',
             stderr,
             exitCode: 1,
@@ -586,14 +530,12 @@ describe('admitted readiness probe contracts', () => {
     { name: 'signed-out → missing', stdout: 'Not logged in', expected: 'missing' },
   ] as const)('$name', ({ stdout, expected }) => {
     const planner = lookupCliReadinessProbe({ tool: 'cursor', role: 'planner' });
-    expect(isDeclaredCliProbeContract(planner)).toBe(true);
-    if (!isDeclaredCliProbeContract(planner)) throw new Error('expected declared Cursor probe');
-    if (planner.declared.auth.kind === 'not-run') {
+    if (planner.auth.kind === 'not-run') {
       throw new Error('expected Cursor auth probe');
     }
 
     expect(
-      planner.declared.auth.parse({
+      planner.auth.parse({
         stdout,
         stderr: '',
         exitCode: 0,

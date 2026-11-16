@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { spawnWithTimeout } from './progress.js';
 import { spawnWithStdin } from './line-stream.js';
+import { DEFAULT_PROCESS_OUTPUT_MAX_BYTES, DEFAULT_PROCESS_STDERR_MAX_BYTES } from './types.js';
+
+const TRUNCATION_MARKER = '\n[... output truncated ...]\n';
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -77,57 +80,58 @@ describe('spawnWithStdin', () => {
   }, async () => {
     const lines: string[] = [];
     const stderrChunks: string[] = [];
+    const lineBytes = DEFAULT_PROCESS_OUTPUT_MAX_BYTES;
+    const stdoutBytes = 'line1\n'.length + lineBytes;
+    const stderrBytes = DEFAULT_PROCESS_STDERR_MAX_BYTES + 80;
     const result = await spawnWithStdin({
       command: 'node',
       args: [
         '-e',
         [
           'process.stdout.write("line1\\n");',
-          'process.stdout.write("x".repeat(80));',
-          'process.stderr.write("e".repeat(80));',
+          `process.stdout.write("x".repeat(${lineBytes}));`,
+          `process.stderr.write("e".repeat(${stderrBytes}));`,
         ].join(''),
       ],
       cwd: '.',
       onLine: (line) => lines.push(line),
       onStderr: (chunk) => stderrChunks.push(chunk),
-      outputMaxBytes: 20,
-      stderrMaxBytes: 10,
     });
 
     expect(result.code).toBe(0);
-    expect(lines).toEqual(['line1', 'x'.repeat(80)]);
+    expect(lines.map((line) => line.length)).toEqual(['line1'.length, lineBytes]);
     expect(result.textMetadata).toMatchObject({
-      bytesSeen: 86,
-      bytesStored: 20,
-      omittedBytes: 86,
+      bytesSeen: stdoutBytes,
+      bytesStored: DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+      omittedBytes: stdoutBytes - (DEFAULT_PROCESS_OUTPUT_MAX_BYTES - TRUNCATION_MARKER.length),
       truncated: true,
     });
     expect(result.stderrMetadata).toMatchObject({
-      bytesSeen: 80,
-      bytesStored: 10,
-      omittedBytes: 80,
+      bytesSeen: stderrBytes,
+      bytesStored: DEFAULT_PROCESS_STDERR_MAX_BYTES,
+      omittedBytes: stderrBytes - (DEFAULT_PROCESS_STDERR_MAX_BYTES - TRUNCATION_MARKER.length),
       truncated: true,
-      maxBytes: 10,
+      maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
     });
   });
 
   it('caps retained text on byte overflow while exiting cleanly', { timeout: 60_000 }, async () => {
     const lines: string[] = [];
+    const lineBytes = DEFAULT_PROCESS_OUTPUT_MAX_BYTES * 8;
     const result = await spawnWithStdin({
       command: 'node',
-      args: ['-e', 'process.stdout.write("x".repeat(8192))'],
+      args: ['-e', `process.stdout.write("x".repeat(${lineBytes}))`],
       cwd: '.',
       notFoundMessage: 'node not found',
-      outputMaxBytes: 1024,
       onLine: (line) => lines.push(line),
     });
 
     expect(result.code).toBe(0);
-    expect(lines).toEqual(['x'.repeat(8192)]);
+    expect(lines.map((line) => line.length)).toEqual([lineBytes]);
     expect(result.textMetadata).toMatchObject({
-      bytesSeen: 8192,
-      bytesStored: 1024,
-      maxBytes: 1024,
+      bytesSeen: lineBytes,
+      bytesStored: DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+      maxBytes: DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
       truncated: true,
     });
   });
@@ -142,22 +146,26 @@ describe('spawnWithStdin', () => {
         '-e',
         [
           'process.stderr.write("stderr-head\\n");',
-          'process.stderr.write("e".repeat(4096));',
+          `process.stderr.write("e".repeat(${DEFAULT_PROCESS_STDERR_MAX_BYTES * 32}));`,
           'process.stderr.write("\\nstderr-tail\\n");',
         ].join(''),
       ],
       cwd: '.',
       onLine: () => {},
       onStderr: (chunk) => stderrChunks.push(chunk),
-      stderrMaxBytes: 128,
     });
 
     expect(result.code).toBe(0);
     expect(stderrChunks.join('')).toContain('stderr-head');
     expect(stderrChunks.join('')).toContain('stderr-tail');
     expect(result.stderrOutput).toContain('stderr-tail');
-    expect(result.stderrMetadata).toMatchObject({ truncated: true, maxBytes: 128 });
-    expect(result.stderrMetadata?.bytesStored ?? 0).toBeLessThanOrEqual(128);
+    expect(result.stderrMetadata).toMatchObject({
+      truncated: true,
+      maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    });
+    expect(result.stderrMetadata?.bytesStored ?? 0).toBeLessThanOrEqual(
+      DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    );
   });
 
   it('rejects with notFoundMessage for missing command', { timeout: 60_000 }, async () => {

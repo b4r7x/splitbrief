@@ -2,7 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { realpathSync, statSync } from 'node:fs';
 import { PassThrough } from 'node:stream';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { settleUnderFakeTimers } from '#testing/helpers/fake-timers.js';
 import type { RunningCall } from '../../../calls/steering.js';
 import { createOpencodeSteering } from './steering.js';
 import {
@@ -23,15 +24,18 @@ let sidecarOutput: string;
 let terminationFails: boolean;
 let sidecarChild: ChildProcess | undefined;
 let abortStartup: (() => void) | undefined;
+let sidecarSpawnError: Error | undefined;
 
 beforeEach(() => {
   terminationFails = false;
   sidecarChild = undefined;
   abortStartup = undefined;
+  sidecarSpawnError = undefined;
   sidecarOutput =
     'server listening on http://127.0.0.1:1234\nserver password password-1234567890\n';
   vi.mocked(spawn).mockImplementation((_command, args) => {
     const isSidecar = Array.isArray(args) && args[0] === 'serve';
+    if (isSidecar && sidecarSpawnError !== undefined) throw sidecarSpawnError;
     const stdin = new PassThrough();
     const stdout = new PassThrough();
     const stderr = new PassThrough();
@@ -460,5 +464,214 @@ describe('OpenCode steering HTTP acknowledgement', () => {
     expect(await Promise.all([first, second])).toEqual(['uncertain', 'deferred']);
     response.resolve(Response.json({ data: { id: 'msg-1' } }));
     await session.close();
+  });
+});
+
+describe('OpenCode steering sidecar lifecycle', () => {
+  function useFakeTimeouts() {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+  }
+
+  it('fails the start with the startup timeout when the sidecar prints no URL and password', async () => {
+    useFakeTimeouts();
+    sidecarOutput = '';
+
+    const failure = await settleUnderFakeTimers(
+      openSession().then(
+        () => undefined,
+        (cause: unknown) => cause,
+      ),
+    );
+
+    expect(failure).toMatchObject({
+      kind: 'steering-transport-error',
+      message: 'OpenCode sidecar did not print its URL and password within 5 seconds',
+    });
+    expect(sidecarChild?.signalCode).toBe('SIGTERM');
+  });
+
+  it('keeps the call alive past the startup timeout once the sidecar is ready', async () => {
+    useFakeTimeouts();
+    const { session } = await openSession();
+    try {
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(session.failureSignal?.aborted).toBe(false);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it('refuses a sidecar URL off the loopback host and leaves no startup timer behind', async () => {
+    useFakeTimeouts();
+    sidecarOutput = 'server listening on http://example.com:1234\nserver password p-1\n';
+
+    await expect(openSession()).rejects.toMatchObject({ state: 'callback-failure' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('fails the start with the spawn error of a sidecar that cannot start', async () => {
+    useFakeTimeouts();
+    sidecarSpawnError = new Error('spawn refused');
+
+    await expect(openSession()).rejects.toThrow('spawn refused');
+  });
+
+  it.each([
+    { exit: 'its process exits', end: (child: ChildProcess) => child.emit('exit', 1, null) },
+    {
+      exit: 'its output closes',
+      end: (child: ChildProcess) => {
+        child.stdout?.push(null);
+        child.stderr?.push(null);
+        child.emit('close', 1, null);
+      },
+    },
+  ])(
+    'fails the call and settles each pending steer when $exit during the call',
+    async ({ end }) => {
+      const post = Promise.withResolvers<Response>();
+      let posted = false;
+      vi.stubGlobal('fetch', () => {
+        posted = true;
+        return post.promise;
+      });
+      const { session, send } = await openSession();
+      const delivery = send({ id: 'one', text: 'one' });
+      await vi.waitFor(() => expect(posted).toBe(true));
+      if (sidecarChild === undefined) throw new Error('no sidecar');
+
+      end(sidecarChild);
+
+      await vi.waitFor(() => expect(session.failureSignal?.aborted).toBe(true));
+      expect(session.failureSignal?.reason).toMatchObject({
+        kind: 'steering-transport-error',
+        message: 'OpenCode sidecar exited before the call finished',
+      });
+      expect(await delivery).toBe('uncertain');
+      expect(await send({ id: 'two', text: 'two' })).toBe('deferred');
+      post.resolve(Response.json({ data: { id: 'msg-1' } }));
+      await session.close();
+    },
+  );
+
+  it('aborts the open requests before it stops the sidecar, and settles only after the in-flight steer', async () => {
+    const order: string[] = [];
+    const post = Promise.withResolvers<Response>();
+    vi.stubGlobal('fetch', (_url: string, opts: RequestInit) => {
+      opts.signal?.addEventListener('abort', () => order.push('requests aborted'));
+      order.push('posted');
+      return post.promise;
+    });
+    const { session, send } = await openSession();
+    const sidecar = sidecarChild;
+    if (sidecar === undefined) throw new Error('no sidecar');
+    sidecar.once('exit', () => order.push('sidecar stopped'));
+    const delivery = send({ id: 'one', text: 'one' });
+    await vi.waitFor(() => expect(order).toEqual(['posted']));
+
+    const closing = session.close().then(() => order.push('closed'));
+    expect(await delivery).toBe('uncertain');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toEqual(['posted', 'requests aborted', 'sidecar stopped']);
+    post.resolve(Response.json({ data: { id: 'msg-1' } }));
+    await closing;
+    expect(order).toEqual(['posted', 'requests aborted', 'sidecar stopped', 'closed']);
+  });
+
+  it('waits for an inbox read in flight before the close settles, and looks up no message after the admission closed', async () => {
+    const inbox = Promise.withResolvers<Response>();
+    const requests: string[] = [];
+    let closed = false;
+    vi.stubGlobal('fetch', (url: string, opts: RequestInit) => {
+      requests.push(opts.method === 'POST' ? 'post' : url.endsWith('/inbox') ? 'inbox' : 'lookup');
+      if (opts.method === 'POST') return Promise.resolve(Response.json({ data: { id: 'msg-1' } }));
+      if (url.endsWith('/inbox')) return inbox.promise;
+      return Promise.resolve(Response.json({ data: { id: 'msg-1' } }));
+    });
+    const { session, send } = await openSession();
+    const delivery = send({ id: 'one', text: 'one' });
+    await vi.waitFor(() => expect(requests).toEqual(['post', 'inbox']));
+
+    const closing = session.close().then(() => {
+      closed = true;
+    });
+    expect(await delivery).toBe('uncertain');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    inbox.resolve(Response.json({ data: [] }));
+    await closing;
+    expect(requests).toEqual(['post', 'inbox']);
+  });
+
+  it('posts no queued steer after the admission closes', async () => {
+    const post = Promise.withResolvers<Response>();
+    let posts = 0;
+    vi.stubGlobal('fetch', (_url: string, opts: RequestInit) => {
+      if (opts.method === 'POST') posts += 1;
+      return post.promise;
+    });
+    const { session, send } = await openSession();
+    const first = send({ id: 'first', text: 'one' });
+    const second = send({ id: 'second', text: 'two' });
+    await vi.waitFor(() => expect(posts).toBe(1));
+
+    session.onAdmissionClosed?.();
+    post.resolve(Response.json({ data: { id: 'msg-1' } }));
+    expect(await Promise.all([first, second])).toEqual(['uncertain', 'deferred']);
+    await session.close();
+    expect(posts).toBe(1);
+  });
+
+  async function openUnattached(ready: RunningCall['send'][]) {
+    const path = realpathSync(process.execPath);
+    const info = statSync(path);
+    return createOpencodeSteering(opencodeProtocolEvents).open({
+      invocation: {
+        executable: {
+          path,
+          fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+        },
+        args: ['run', '--standalone'],
+        promptTransport: { kind: 'stdin' },
+        environment: {},
+        cwd: process.cwd(),
+        signal: undefined,
+      },
+      prompt: 'initial',
+      onReady: (send) => {
+        ready.push(send);
+      },
+      onAdmissionClosed: () => {},
+    });
+  }
+  const sessionLine = (id: string) => JSON.stringify({ type: 'step_start', sessionID: id });
+
+  it('attaches the run to the first session line only', async () => {
+    const ready: RunningCall['send'][] = [];
+    const session = await openUnattached(ready);
+    try {
+      for (const line of [sessionLine('ses-1'), sessionLine('ses-2')]) {
+        expect(session.onLine(line, session.parse(line))).toBe(false);
+      }
+      expect(ready).toHaveLength(1);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it('attaches no run after the admission closes', async () => {
+    const ready: RunningCall['send'][] = [];
+    const session = await openUnattached(ready);
+    try {
+      session.onAdmissionClosed?.();
+      const line = sessionLine('ses-1');
+      session.onLine(line, session.parse(line));
+      expect(ready).toHaveLength(0);
+    } finally {
+      await session.close();
+    }
   });
 });

@@ -36,7 +36,7 @@ type RedactedStreamState = {
  * The redacted output of one runner call. Each redactor holds a tail that can start a protected
  * value until more text or the close of the call releases it.
  */
-type RedactedStream = {
+export type RedactedStream = {
   readonly redact: CustomRunnerRedactor | undefined;
   readonly redactCredential: (value: string) => string;
   readonly protectedValues: readonly string[];
@@ -167,7 +167,7 @@ function applyRedactedParsed(stream: RedactedStream, parsed: ParsedLine): void {
     drainSubagentText(stream);
     parsedRecorder.apply({ ...redacted, text: terminal.value });
     return;
-  } else if (redacted.isError === true || !isStreamingText) {
+  } else if (!isStreamingText) {
     flushText(stream);
   }
   if (parsedText === undefined) {
@@ -183,9 +183,8 @@ function applyRedactedParsed(stream: RedactedStream, parsed: ParsedLine): void {
       { continues: true },
     );
   }
-  const tail = isStreamingText ? '' : stdoutRedactor.flush();
   drainSubagentText(stream, released.held.length > 0 || released.value.length > 0);
-  parsedRecorder.apply({ ...redacted, text: released.value + tail });
+  parsedRecorder.apply({ ...redacted, text: released.value });
 }
 
 function flushToolInput(stream: RedactedStream): void {

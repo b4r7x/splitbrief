@@ -18,8 +18,8 @@ export type RouteCatalog = Readonly<{
 export type RouteCatalogReads = Map<CliToolId, Promise<RouteCatalog | undefined>>;
 
 export function listsProjectProvidersOnRequest(tool: CliToolId): boolean {
-  const catalog = lookupCliReadinessProbe({ tool, role: 'implementer' }).declared?.catalog;
-  return catalog?.kind === 'catalog' && catalog.directoryHeader !== undefined;
+  const catalog = lookupCliReadinessProbe({ tool, role: 'implementer' }).catalog;
+  return catalog.kind === 'catalog' && catalog.directoryHeader !== undefined;
 }
 
 /**

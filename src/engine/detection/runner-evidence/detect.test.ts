@@ -215,3 +215,42 @@ describe('a start after a version check that timed out', () => {
     },
   );
 });
+
+describe('a declared probe that a cancellation cut short', () => {
+  it.each([
+    { check: 'version', version: { kind: 'cancelled' }, auth: 'missing', credential: 'absent' },
+    {
+      check: 'auth',
+      version: { kind: 'success', value: TESTED_VERSION },
+      auth: 'cancelled',
+      credential: 'unknown',
+    },
+  ] as const)(
+    'reports a drifted executable and no read version when the $check check was cancelled',
+    async ({ version, auth, credential }) => {
+      const evidence = await detect({
+        context: cliContext({ authChannel: 'session' }),
+        resolveExecutable: stableResolver(),
+        probeDeclaredReadiness: async () => ({ version, auth }),
+      });
+
+      expect(evidence).toEqual({
+        runner: { id: 'codex', kind: 'cli', locality: 'unknown', enabled: 'enabled' },
+        context: { key: evidence.context.key, observedAt: 1_000, source: 'fresh' },
+        endpoint: { kind: 'not-run' },
+        catalog: { kind: 'not-run' },
+        modelRun: {
+          kind: 'unknown',
+          selectionId: 'unselected',
+          observedAt: 1_000,
+          contextKey: evidence.context.key,
+        },
+        installation: 'installed',
+        executable: { kind: 'identity-drifted' },
+        compatibility: { kind: 'unknown', installedVersion: null, testedVersion: TESTED_VERSION },
+        credential,
+        auth,
+      });
+    },
+  );
+});

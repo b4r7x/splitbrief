@@ -1,19 +1,13 @@
 import type {
-  CliProbeCommand,
   CliVersionProbe,
   CliAuthProbe,
   CliCatalogProbe,
   CliDeclaredProbeContract,
-  CliProbeContract,
 } from './contract.js';
 import { ownedProbeCommand } from './safety.js';
 
 function frozenParser<Parser extends object>(parser: Parser): Parser {
   return Object.freeze(parser);
-}
-
-function frozenProbeCommand(probe: CliProbeCommand): CliProbeCommand {
-  return Object.freeze({ ...probe, command: ownedProbeCommand(probe.command) });
 }
 
 function frozenVersionProbe(probe: CliVersionProbe): CliVersionProbe {
@@ -53,21 +47,10 @@ function frozenCatalogProbe(probe: CliCatalogProbe): CliCatalogProbe {
   });
 }
 
-function frozenDeclaredProbe(probe: CliDeclaredProbeContract): CliDeclaredProbeContract {
+export function frozenDeclaredProbe(probe: CliDeclaredProbeContract): CliDeclaredProbeContract {
   return Object.freeze({
-    kind: 'declared' as const,
     version: frozenVersionProbe(probe.version),
     auth: frozenAuthProbe(probe.auth),
     catalog: frozenCatalogProbe(probe.catalog),
-  });
-}
-
-export function frozenProbeContract(
-  probe: CliProbeContract,
-  declared: CliDeclaredProbeContract,
-): CliProbeContract {
-  return Object.freeze({
-    version: frozenProbeCommand(probe.version),
-    declared: frozenDeclaredProbe(declared),
   });
 }

@@ -19,10 +19,7 @@ import type { CliAuthChannelId } from '../../core/runners/cli-tool/auth-channels
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { deriveCliReadiness } from '../../core/readiness/cli-remediation.js';
 import { error } from '../../utils/error.js';
-import {
-  isDeclaredCliProbeContract,
-  type CliProbeContract,
-} from '../runners/cli-tools/probe/contract.js';
+import type { CliDeclaredProbeContract } from '../runners/cli-tools/probe/contract.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
 import type { CliReadinessProbeEvidence } from '../runners/cli-tools/probe/evidence.js';
 import type { ProbeCliReadinessOptions } from '../runners/cli-tools/probe/readiness.js';
@@ -84,7 +81,7 @@ function readinessEvidence(auth: AuthFact): CliReadinessProbeEvidence {
   };
 }
 
-function declaredCatalogProbe(): CliProbeContract {
+function declaredCatalogProbe(): CliDeclaredProbeContract {
   const version = {
     command: ['codex', '--version'] as const,
     cwd: 'neutral' as const,
@@ -101,33 +98,19 @@ function declaredCatalogProbe(): CliProbeContract {
     maxOutputBytes: 1_024,
   };
   return {
-    version,
-    declared: {
-      kind: 'declared',
-      version: {
-        ...version,
-        kind: 'version',
-        parse: () => ({
-          kind: 'success',
-          value: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
-        }),
-      },
-      auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
-      catalog: {
-        ...catalog,
-        kind: 'catalog',
-        parse: () => ({ kind: 'success', value: [] }),
-      },
-    },
-  };
-}
-
-function legacyVersionOnlyProbe(): CliProbeContract {
-  return {
     version: {
-      command: ['codex', '--version'],
-      cwd: 'neutral',
-      maxOutputBytes: 1_024,
+      ...version,
+      kind: 'version',
+      parse: () => ({
+        kind: 'success',
+        value: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+      }),
+    },
+    auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
+    catalog: {
+      ...catalog,
+      kind: 'catalog',
+      parse: () => ({ kind: 'success', value: [] }),
     },
   };
 }
@@ -965,12 +948,8 @@ describe('context-bound runner evidence', () => {
         const shim = await installCodexShim(directory, catalogShim(marker));
         await stubSignInHome(join(directory, 'home'), ['codex']);
         const probe = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
-        expect(isDeclaredCliProbeContract(probe)).toBe(true);
-        if (!isDeclaredCliProbeContract(probe)) return;
-
-        const { declared } = probe;
-        if (declared.catalog.kind === 'not-run') return;
-        const catalog = declared.catalog;
+        if (probe.catalog.kind === 'not-run') return;
+        const catalog = probe.catalog;
         let calls = 0;
         let mutationResults: readonly boolean[] = [];
         const now = () => {
@@ -982,7 +961,7 @@ describe('context-bound runner evidence', () => {
           mutationResults = [
             Reflect.set(catalog.command, 0, 'attacker'),
             Reflect.set(catalog, 'parse', () => ({ kind: 'success', value: [] })),
-            Reflect.set(declared, 'catalog', { kind: 'not-run' }),
+            Reflect.set(probe, 'catalog', { kind: 'not-run' }),
           ];
           return 1_001;
         };
@@ -1069,45 +1048,6 @@ describe('context-bound runner evidence', () => {
         } finally {
           vi.unstubAllEnvs();
         }
-      });
-    },
-    20_000,
-  );
-
-  it.runIf(platform !== 'win32')(
-    'keeps a version-only legacy shim authentication-unknown',
-    async () => {
-      await withTempDir('detect-version-only', async (directory) => {
-        const unexpectedAuthMarker = join(directory, 'unexpected-auth-probe');
-        const shim = await installCodexShim(
-          directory,
-          [
-            '#!/bin/sh',
-            'if [ "$1" = "--version" ]; then',
-            `  printf '%s\\n' 'codex ${CLI_TOOL_CATALOG.codex.compatibility.testedVersion}'`,
-            '  exit 0',
-            'fi',
-            `touch '${unexpectedAuthMarker}'`,
-            'exit 1',
-            '',
-          ].join('\n'),
-        );
-        const evidence = await detectRunnerEvidence({
-          context: cliContext({ authChannel: 'session', credentialPresent: true }),
-          projectDir: directory,
-          resolveExecutable: async () => shim,
-          lookupProbe: () => legacyVersionOnlyProbe(),
-          now: () => 106,
-        });
-
-        expect(evidence).toMatchObject({
-          compatibility: {
-            kind: 'compatible',
-            installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
-          },
-          auth: 'unknown',
-        });
-        expect(existsSync(unexpectedAuthMarker)).toBe(false);
       });
     },
     20_000,

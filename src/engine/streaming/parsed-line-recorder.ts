@@ -19,7 +19,6 @@ export interface ParsedLineRecorder {
 export function createParsedLineRecorder(opts: {
   recorder: RunnerCallRecorder;
   onText?: ((text: string, marks?: TextChunkMarks) => void) | undefined;
-  onSessionId?: ((id: string) => void) | undefined;
 }): ParsedLineRecorder {
   let usage: TokenDelta | null = null;
   let sessionId: string | null = null;
@@ -108,10 +107,7 @@ export function createParsedLineRecorder(opts: {
       }
 
       if (parsed.sessionId) {
-        if (parsed.sessionId !== sessionId) {
-          sessionId = parsed.sessionId;
-          opts.onSessionId?.(parsed.sessionId);
-        }
+        sessionId = parsed.sessionId;
         opts.recorder.sessionId({
           nativeSessionId: parsed.sessionId,
           ...(parsed.resolvedModel !== undefined && { resolvedModel: parsed.resolvedModel }),

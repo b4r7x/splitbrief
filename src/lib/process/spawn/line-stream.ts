@@ -28,8 +28,6 @@ export async function spawnWithStdin(opts: {
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
   idle?: SpawnIdleOptions | undefined;
-  outputMaxBytes?: number | undefined;
-  stderrMaxBytes?: number | undefined;
 }): Promise<{
   text: string;
   stderrOutput: string;
@@ -37,14 +35,12 @@ export async function spawnWithStdin(opts: {
   textMetadata?: BoundedOutputMetadata | undefined;
   stderrMetadata?: BoundedOutputMetadata | undefined;
 }> {
-  const stdoutMaxBytes = opts.outputMaxBytes ?? DEFAULT_PROCESS_OUTPUT_MAX_BYTES;
-  const stderrMaxBytes = opts.stderrMaxBytes ?? DEFAULT_PROCESS_STDERR_MAX_BYTES;
   const rawText = createBoundedOutput({
-    maxBytes: stdoutMaxBytes,
+    maxBytes: DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
     policy: 'prefix-tail',
   });
   const stderrOutput = createBoundedOutput({
-    maxBytes: stderrMaxBytes,
+    maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
     policy: 'tail',
   });
   const stdoutBuf = createLineBuffer((line) => {
@@ -73,8 +69,6 @@ export async function spawnWithStdin(opts: {
     stdin: opts.stdin,
     signal: opts.signal,
     idle: opts.idle,
-    partialStdoutMaxBytes: stdoutMaxBytes,
-    partialStderrMaxBytes: stderrMaxBytes,
     onStdout: (chunk) => {
       rawText.append(chunk);
       const callbackResult = stdoutBuf.push(chunk);

@@ -6,7 +6,7 @@ import { CLI_TOOL_CATALOG } from '../../../../core/runners/cli-tool/catalog.js';
 import { detectRunnerEvidence } from '../../../detection/runner-evidence/detect.js';
 import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import type { CliProbeContract } from './contract.js';
+import type { CliDeclaredProbeContract } from './contract.js';
 import { providerOracleAuthFact } from './provider-oracle.js';
 import { probeCliReadiness } from './readiness.js';
 
@@ -26,7 +26,7 @@ async function nodeExecutable(): Promise<CliExecutableIdentity> {
 
 function sessionProbe(
   options: { authScript?: string; authNotRun?: boolean; versionScript?: string } = {},
-): CliProbeContract {
+): CliDeclaredProbeContract {
   const command = (script: string) =>
     ({
       command: ['node', '-e', script] as const,
@@ -36,30 +36,26 @@ function sessionProbe(
   const version = command(options.versionScript ?? "console.log('tool 1.0.0')");
   const auth = command(options.authScript ?? "console.log('verified')");
   return {
-    version,
-    declared: {
-      kind: 'declared',
-      version: {
-        ...version,
-        kind: 'version',
-        parse: () => ({ kind: 'success', value: '1.0.0' }),
-      },
-      auth: options.authNotRun
-        ? { kind: 'not-run' }
-        : {
-            ...auth,
-            kind: 'auth-status',
-            // Mirrors the shipped `parseStatusAuth`: a status command that says
-            // it is signed out is a `missing` credential, and anything else it
-            // could not classify is `invalid`.
-            parse: ({ stdout }) => {
-              const text = stdout.trim();
-              if (text === 'verified') return 'verified';
-              return text === 'missing' ? 'missing' : 'invalid';
-            },
-          },
-      catalog: { kind: 'not-run' },
+    version: {
+      ...version,
+      kind: 'version',
+      parse: () => ({ kind: 'success', value: '1.0.0' }),
     },
+    auth: options.authNotRun
+      ? { kind: 'not-run' }
+      : {
+          ...auth,
+          kind: 'auth-status',
+          // Mirrors the shipped `parseStatusAuth`: a status command that says
+          // it is signed out is a `missing` credential, and anything else it
+          // could not classify is `invalid`.
+          parse: ({ stdout }) => {
+            const text = stdout.trim();
+            if (text === 'verified') return 'verified';
+            return text === 'missing' ? 'missing' : 'invalid';
+          },
+        },
+    catalog: { kind: 'not-run' },
   };
 }
 
@@ -625,7 +621,7 @@ function reportBody(tool: OracleToolId): string {
   return `cat <<'SPLITBRIEF_ORACLE'\n${ORACLE_TOOLS[tool].report}SPLITBRIEF_ORACLE\nexit 0`;
 }
 
-function oracleContract(tool: OracleToolId): CliProbeContract {
+function oracleContract(tool: OracleToolId): CliDeclaredProbeContract {
   const argv = ORACLE_TOOLS[tool].argv;
   const auth = {
     command: argv,
@@ -638,20 +634,16 @@ function oracleContract(tool: OracleToolId): CliProbeContract {
     maxOutputBytes: 1_024,
   };
   return {
-    version,
-    declared: {
-      kind: 'declared',
-      version: {
-        ...version,
-        kind: 'version',
-        parse: () => ({
-          kind: 'success',
-          value: CLI_TOOL_CATALOG[tool].compatibility.testedVersion,
-        }),
-      },
-      auth: { ...auth, kind: 'auth-status', parse: providerOracleAuthFact },
-      catalog: { kind: 'not-run' },
+    version: {
+      ...version,
+      kind: 'version',
+      parse: () => ({
+        kind: 'success',
+        value: CLI_TOOL_CATALOG[tool].compatibility.testedVersion,
+      }),
     },
+    auth: { ...auth, kind: 'auth-status', parse: providerOracleAuthFact },
+    catalog: { kind: 'not-run' },
   };
 }
 

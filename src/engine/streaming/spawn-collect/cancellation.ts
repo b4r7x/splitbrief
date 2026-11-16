@@ -14,7 +14,7 @@ export const spawnCollectError = {
 
 type InvocationCancellationSource = 'none' | 'external' | 'timeout';
 
-type InvocationCancellation = Readonly<{
+export type InvocationCancellation = Readonly<{
   signal: AbortSignal | undefined;
   source: () => InvocationCancellationSource;
   cleanup: () => void;

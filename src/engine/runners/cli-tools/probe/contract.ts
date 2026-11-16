@@ -78,24 +78,12 @@ export type CliCatalogProbe =
       }>);
 
 export type CliDeclaredProbeContract = Readonly<{
-  kind: 'declared';
   version: CliVersionProbe;
   auth: CliAuthProbe;
   catalog: CliCatalogProbe;
 }>;
 
-/**
- * The legacy version command remains while detection migrates to
- * adapter-declared parser contracts. It carries no parser, so it cannot
- * establish authentication.
- */
+/** The version command an adapter declares; the registry builds the declared probe from it. */
 export type CliProbeContract = Readonly<{
   version: CliProbeCommand;
-  declared?: CliDeclaredProbeContract | undefined;
 }>;
-
-export function isDeclaredCliProbeContract(
-  probe: CliProbeContract,
-): probe is CliProbeContract & Readonly<{ declared: CliDeclaredProbeContract }> {
-  return probe.declared !== undefined && probe.declared.kind === 'declared';
-}

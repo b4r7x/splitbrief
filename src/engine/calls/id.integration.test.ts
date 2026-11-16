@@ -38,7 +38,6 @@ await invoke({ callContext: createPlannerCallContext({}, 'review') });
 await invoke({ callContext: createImplementerCallContext({
   config: makeConfig(), taskId: makeTask().id, attempt: 1,
 }) });
-await spawnAndCollect({ command, args: [], cwd: projectDir, stdin: 'brief', onCallEvent });
 await invokeCommandRunner({
   source: { kind: 'config', runner: { command }, env: process.env, notFoundMessage: 'not found' },
   prompt: 'brief', cwd: projectDir, callContext: createPlannerCallContext({}, 'planner'), onCallEvent,
@@ -64,7 +63,7 @@ it('keeps every call distinct in the same session after a new process resumes it
 
     runProcess();
     const before = resolveCallUsageEvidence({ projectDir, sessionId: SESSION_ID });
-    expect(before).toHaveLength(7);
+    expect(before).toHaveLength(6);
     expect(before?.slice(0, 2)).toEqual([
       expect.objectContaining({ role: 'planner', callId: expect.stringMatching(/^planner-/) }),
       expect.objectContaining({ role: 'review', callId: expect.stringMatching(/^review-/) }),
@@ -72,9 +71,9 @@ it('keeps every call distinct in the same session after a new process resumes it
 
     runProcess();
     const resumed = resolveCallUsageEvidence({ projectDir, sessionId: SESSION_ID });
-    expect(resumed).toHaveLength(14);
-    expect(new Set(resumed?.map((call) => call.callId)).size).toBe(14);
-    expect(resumed?.slice(0, 7).map((call) => call.callId)).toEqual(
+    expect(resumed).toHaveLength(12);
+    expect(new Set(resumed?.map((call) => call.callId)).size).toBe(12);
+    expect(resumed?.slice(0, 6).map((call) => call.callId)).toEqual(
       before?.map((call) => call.callId),
     );
   });
