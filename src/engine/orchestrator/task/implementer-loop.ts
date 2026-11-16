@@ -1,20 +1,12 @@
 import { briefContinuation, changedDeclaredFiles, changedDeclaredFilesNote } from '../kept-work.js';
-import type { Task } from '../../../core/schemas/task.js';
-import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { lineageAttemptsOf } from '../../../core/state/lineage.js';
-import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
-import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
+import type { WorkflowPersistenceContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
-import type { AttemptWorkspace } from '../isolation/types.js';
-import type { StreamingFeed } from './streaming-feed.js';
-import type { ImplementerLoopState } from './types.js';
-import type { ContinuationSeed } from '../continuation/holder.js';
+import type { ImplementerLoopInput, ImplementerLoopState } from './types.js';
 import { withContinuationLoop, type ContinuationLoopBodyArgs } from '../continuation/loop.js';
-import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-files.js';
-import { persistApprovalEvidence } from '../evidence/decisions.js';
-import { resolveDependsOnFiles } from './resolve-deps.js';
+import { approveWrite } from './gates/write.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat/call.js';
 import { unfinishedGuidance } from '../escalation/consult-guidance.js';
@@ -28,20 +20,6 @@ import {
 } from '../queue/build-corrections.js';
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
 import { withAttemptRestoreScope } from './restore-scope.js';
-
-/** What the implementer calls of one brief read and never change. */
-type ImplementerLoopInput = {
-  wctx: WorkflowContext;
-  task: Task;
-  taskStartSnapshot: ChangedFilesSnapshot;
-  setTrackedState: (s: WorkflowState) => void;
-  recordApprovalDenial: (decision: GateChangedFilesDenial, message: string) => void;
-  textHandler: ImplementerOptions['onOutput'];
-  workspace: AttemptWorkspace;
-  streamingFeed: StreamingFeed;
-  step: StepRef;
-  seed: ContinuationSeed | undefined;
-};
 
 /** Records a steer as a correction of the brief, once for each message. */
 export function recordCorrection(
@@ -180,40 +158,6 @@ function implementerCall(
     lineageAttempt: lineageAttemptsOf(shared.state, task) + 1,
     approveWrite: (file) => approveWrite(input, shared, file),
   };
-}
-
-async function approveWrite(
-  input: ImplementerLoopInput,
-  shared: ImplementerLoopState,
-  file: string,
-): Promise<{ allow: boolean; reason?: string | undefined }> {
-  const { wctx, task } = input;
-  const { projectDir, sessionId, callbacks, config } = wctx;
-  const decision = await gateChangedFiles({
-    changedFiles: [file],
-    task,
-    dependsOnFiles: resolveDependsOnFiles(shared.state.tasks, task),
-    projectDir,
-    sessionId,
-    phase: shared.state.phase,
-    taskId: task.id,
-    bus: wctx.bus,
-    callbacks,
-    config,
-  });
-  if (decision.cancelled) return { allow: false, reason: decision.reason };
-  if (!decision.allow) {
-    shared.preApplyApprovalDenied = true;
-    const files = decision.changedFiles.join(', ');
-    input.recordApprovalDenial(
-      decision,
-      `Task changed files blocked by approval gate: ${decision.reason ?? 'denied'} (${files})`,
-    );
-    return { allow: false, reason: decision.reason ?? 'write denied by approval gate' };
-  }
-  shared.preApplyApprovedFiles.push(...decision.changedFiles);
-  persistApprovalEvidence({ wctx, state: shared.state, decision, taskId: task.id });
-  return { allow: true };
 }
 
 function creationOwnership(

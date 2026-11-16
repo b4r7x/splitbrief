@@ -1,10 +1,30 @@
 import type { Task } from '../../../core/schemas/task.js';
+import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
+import type { ImplementerOptions } from '../../implementers/types.js';
+import type { GateChangedFilesDenial } from '../approval/gate-files.js';
+import type { ContinuationSeed } from '../continuation/holder.js';
 import type { BlockedReport, RetryAttemptFailure } from '../escalation/types.js';
+import type { AttemptWorkspace } from '../isolation/types.js';
 import type { WorkflowContext } from '../types.js';
+import type { StreamingFeed } from './streaming-feed.js';
+
+/** What the implementer calls of one brief read and never change. */
+export type ImplementerLoopInput = {
+  wctx: WorkflowContext;
+  task: Task;
+  taskStartSnapshot: ChangedFilesSnapshot;
+  setTrackedState: (s: WorkflowState) => void;
+  recordApprovalDenial: (decision: GateChangedFilesDenial, message: string) => void;
+  textHandler: ImplementerOptions['onOutput'];
+  workspace: AttemptWorkspace;
+  streamingFeed: StreamingFeed;
+  step: StepRef;
+  seed: ContinuationSeed | undefined;
+};
 
 /**
  * What the implementer calls of one brief share. The steps change it in place: the write gate and
