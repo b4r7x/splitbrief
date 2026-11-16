@@ -16,6 +16,7 @@ import type { CliSeat } from '../../../src/engine/runners/seat-gates.js';
 import type { ImplementerPublisher, InvokeOpts } from '../../../src/engine/implementers/types.js';
 import { createImplementerPublisher } from '../../../src/engine/orchestrator/publish/runner.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions/apply.js';
+import { summarizeText } from '../../../src/engine/orchestrator/recovery/builders/issue.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
@@ -102,7 +103,7 @@ const OPENCODE_STREAM = join(import.meta.dirname, '../../fixtures/opencode/strea
  * run writes the brief's file where it was started and ends on the captured
  * stream of a completed opencode run.
  */
-function installEscapingOpencodeShim(checkoutFile: string): void {
+function installEscapingOpencodeShim(command: string): void {
   const shimDir = createTempDir('isolation-halt-shim');
   dirs.push(shimDir);
   const toolUse = JSON.stringify({
@@ -112,7 +113,7 @@ function installEscapingOpencodeShim(checkoutFile: string): void {
       type: 'tool',
       callID: 'call_1',
       tool: 'bash',
-      state: { status: 'running', input: { command: `printf x > ${checkoutFile}` } },
+      state: { status: 'running', input: { command } },
     },
   });
   writeFileSync(
@@ -146,7 +147,8 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
     const sessionId = 'sess-isolation-tripwire';
     ensureSessionDir(projectDir, sessionId);
     const checkoutFile = join(projectDir, 'validate.mjs');
-    installEscapingOpencodeShim(checkoutFile);
+    // The padding takes the command past its 200-character excerpt before the temp path starts.
+    installEscapingOpencodeShim(`printf ${'x'.repeat(200)} > ${checkoutFile}`);
     const config: Config = makeNoValidationConfig({
       implementer: opencodeConfig(),
     });
@@ -172,15 +174,16 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
     const { state } = await taskLoop(makeImplState([greetTask()]));
 
     expect(Date.now() - started).toBeLessThan(45_000);
+    const evidence = `OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf ${'x'.repeat(192)}…`;
     expect(state.pendingRecovery).toMatchObject({
       reason: 'implementer-left-isolation',
       taskId: 'T001',
-      message: `T001 left the isolation directory · OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
+      message: `T001 left the isolation directory · ${evidence}`,
       availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       recommendedAction: 'retry-same-worker',
     });
     expect(state.pendingRecovery?.details).toEqual([
-      `OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
+      summarizeText(evidence),
       "Your checkout gets the run's changes only through Apply.",
     ]);
     expect(events).toContainEqual(
