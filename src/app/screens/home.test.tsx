@@ -89,9 +89,6 @@ const HOME_HINT = '/help · /crew · /settings · /skills · ctrl+r recent · ct
 const RECENT_SESSIONS_HINT = '↑↓ select · ⏎ open · y copy · esc back';
 const CHECKING_STATUS = 'Checking tools · esc cancel';
 const FOCUS_BAR = '▌';
-// Real session-file I/O (saveSummary + load/loadAll) can outlive vi.waitFor's 1s default
-// under full-suite load; filter-settle polls need more headroom.
-const SESSION_FILTER_WAIT_MS = 5000;
 const DISCOVERY_CONTEXTS = {
   readiness: 'home:readiness',
   modelsDev: 'home:models-dev',
@@ -383,7 +380,7 @@ describe('HomeScreen', () => {
       });
       await flushEffects();
       ui.stdin.write(ENTER);
-      await vi.waitFor(() => expect(ui.lastFrame()).toContain('Try again'), SESSION_FILTER_WAIT_MS);
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain('Try again'));
       const feature = `read @${textPath} [image:home-image]\n\nImages referenced above, in attachment order:\n[image:home-image] = attached image 1`;
       const plannerContext = `--- @${textPath} ---\nOutside body\n`;
       const attachedInputs = [
@@ -398,10 +395,7 @@ describe('HomeScreen', () => {
       writeFileSync(textPath, 'Changed after submission');
       await flushEffects();
       ui.stdin.write('r');
-      await vi.waitFor(
-        () => expect(prepareExecutionMock).toHaveBeenCalledTimes(2),
-        SESSION_FILTER_WAIT_MS,
-      );
+      await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledTimes(2));
       expect(prepareExecutionMock.mock.calls[1]?.[0]).toMatchObject({
         feature,
         plannerContext,
@@ -423,10 +417,7 @@ describe('HomeScreen', () => {
     ui.stdin.write('plain feature');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     const input = prepareExecutionMock.mock.calls[0]?.[0];
     expect(input).toHaveProperty('plannerContext', undefined);
     expect(input).not.toHaveProperty('attachedInputs');
@@ -444,10 +435,7 @@ describe('HomeScreen', () => {
     ui.stdin.write('plain feature');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     expect(prepareExecutionMock.mock.calls[0]?.[0].effectiveConfig?.workflow.compactionFormat).toBe(
       'structured',
     );
@@ -461,10 +449,7 @@ describe('HomeScreen', () => {
     ui.stdin.write('start this feature');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     await flushEffects();
     ui.unmount();
 
@@ -472,10 +457,7 @@ describe('HomeScreen', () => {
     await flushEffects();
     expect(kept.lastFrame()).toContain('start this feature');
     kept.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(routerStore.get().screen).toBe('workflow'),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(routerStore.get().screen).toBe('workflow'));
     kept.unmount();
 
     routerStore.navigate({ to: 'home' });
@@ -1072,7 +1054,7 @@ describe('HomeScreen', () => {
 
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain('The configured planner could not be verified.');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     expect(prepareExecutionMock).toHaveBeenCalledOnce();
     expect(prepareExecutionMock.mock.calls[0]?.[0]).toMatchObject({
       projectDir,
@@ -1104,20 +1086,14 @@ describe('HomeScreen', () => {
     await flushEffects();
     ui.stdin.write(ENTER);
 
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     expect(detectionStore.get().refresh.readiness.refreshing).toBe(true);
     const input = prepareExecutionMock.mock.calls[0]?.[0];
     if (!input) throw new Error('Expected a preparation input.');
     const exactExecution = preparedExecution(input);
     pending.resolve({ kind: 'prepared', execution: exactExecution });
 
-    await vi.waitFor(
-      () => expect(routerStore.get().screen).toBe('workflow'),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(routerStore.get().screen).toBe('workflow'));
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
     if (route.screen === 'workflow') {
@@ -1169,7 +1145,7 @@ describe('HomeScreen', () => {
       expect(frame).toContain('A configured runner must be fixed');
       expect(frame.indexOf('must be fixed')).toBeLessThan(frame.indexOf('Warnings'));
       expect(frame).toContain('r retry · esc back · s settings');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     expect(routerStore.get()).toEqual({ screen: 'home' });
     expect(existsSync(join(projectDir, '.splitbrief', 'sessions'))).toBe(false);
 
@@ -1179,10 +1155,7 @@ describe('HomeScreen', () => {
     await tick();
     ui.stdin.write('s');
     await flushEffects();
-    await vi.waitFor(
-      () => expect(overlayStore.get().active).toBe('settings'),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('settings'));
     overlayStore.close();
     await flushEffects();
     ui.stdin.write(ESC);
@@ -1190,7 +1163,7 @@ describe('HomeScreen', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain(DEFAULT_HOME_HINT);
       expect(frame).not.toContain('Tool preparation');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     expect(routerStore.get()).toEqual({ screen: 'home' });
     ui.unmount();
   });
@@ -1210,10 +1183,7 @@ describe('HomeScreen', () => {
     await flushEffects();
     ui.stdin.write(ENTER);
 
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     await flushEffects();
     const submittedRows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     expect(submittedRows.join('\n')).toContain('background preparation');
@@ -1234,7 +1204,7 @@ describe('HomeScreen', () => {
     await vi.waitFor(() => {
       const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
       expect(rows[hintRow]).toContain(DEFAULT_HOME_HINT);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     const settledRows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     expect(settledRows.join('\n')).toContain('|____/| .__/');
     expect(settledRows.join('\n')).toContain('background preparation');
@@ -1254,10 +1224,7 @@ describe('HomeScreen', () => {
     ui.stdin.write('background preparation');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     feedbackStore.setError(warning);
     await flushEffects();
 
@@ -1279,10 +1246,7 @@ describe('HomeScreen', () => {
     ui.stdin.write('background preparation');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
 
     const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 12_000);
     const signIn = Promise.withResolvers<void>();
@@ -1318,10 +1282,7 @@ describe('HomeScreen', () => {
       ui.stdin.write('background preparation');
       await flushEffects();
       ui.stdin.write(ENTER);
-      await vi.waitFor(
-        () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-        SESSION_FILTER_WAIT_MS,
-      );
+      await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
 
       const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() - 59_000);
       const models = Promise.withResolvers<void>();
@@ -1358,15 +1319,12 @@ describe('HomeScreen', () => {
     await flushEffects();
     ui.stdin.write(ENTER);
 
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('restore this draft');
       expect(frame).not.toContain('Checking your tools…');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     ui.stdin.write(ESC);
     await vi.waitFor(() => {
@@ -1374,7 +1332,7 @@ describe('HomeScreen', () => {
       expect(frame).toContain('restore this draft');
       expect(frame).toContain(DEFAULT_HOME_HINT);
       expect(frame).not.toContain('Checking your tools…');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     expect(routerStore.get()).toEqual({ screen: 'home' });
     ui.unmount();
   });
@@ -1392,7 +1350,7 @@ describe('HomeScreen', () => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain('keep this draft');
       expect(frame).not.toContain('Checking your tools…');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     await flushEffects();
     ui.stdin.write(ENTER);
@@ -1401,7 +1359,7 @@ describe('HomeScreen', () => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain('keep this draft');
       expect(frame).not.toContain('Describe your feature…');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     expect(prepareExecutionMock).toHaveBeenCalledOnce();
 
     await flushEffects();
@@ -1410,7 +1368,7 @@ describe('HomeScreen', () => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain('keep this draft');
       expect(frame).toContain(DEFAULT_HOME_HINT);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     expect(routerStore.get()).toEqual({ screen: 'home' });
     ui.unmount();
   });
@@ -1428,18 +1386,15 @@ describe('HomeScreen', () => {
     ui.stdin.write('cancel preparation');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('cancel preparation');
       expect(frame).not.toContain('Checking your tools…');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     ui.stdin.write(ESC);
-    await vi.waitFor(() => expect(signal?.aborted).toBe(true), SESSION_FILTER_WAIT_MS);
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
     expect(routerStore.get()).toEqual({ screen: 'home' });
     const input = prepareExecutionMock.mock.calls[0]?.[0];
     if (!input) throw new Error('Expected a preparation input.');
@@ -1453,7 +1408,7 @@ describe('HomeScreen', () => {
     expect(existsSync(lateSessionDir)).toBe(true);
     pending.resolve({ kind: 'prepared', execution: lateExecution });
 
-    await vi.waitFor(() => expect(existsSync(lateSessionDir)).toBe(false), SESSION_FILTER_WAIT_MS);
+    await vi.waitFor(() => expect(existsSync(lateSessionDir)).toBe(false));
     expect(routerStore.get()).toEqual({ screen: 'home' });
     expect(existsSync(join(projectDir, '.splitbrief', 'active'))).toBe(false);
     ui.unmount();
@@ -1472,10 +1427,7 @@ describe('HomeScreen', () => {
     ui.stdin.write('escape under an overlay');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     overlayStore.open('help');
     await flushEffects();
 
@@ -1510,9 +1462,8 @@ describe('HomeScreen', () => {
     ui.stdin.write('escape on the approval');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(ui.lastFrame() ?? '').toContain('Run the configured custom tool'),
-      SESSION_FILTER_WAIT_MS,
+    await vi.waitFor(() =>
+      expect(ui.lastFrame() ?? '').toContain('Run the configured custom tool'),
     );
 
     ui.stdin.write(ESC);
@@ -1538,10 +1489,7 @@ describe('HomeScreen', () => {
     ui.stdin.write('unmount preparation');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
 
     ui.unmount();
     expect(signal?.aborted).toBe(true);
@@ -1556,7 +1504,7 @@ describe('HomeScreen', () => {
     );
     expect(existsSync(lateSessionDir)).toBe(true);
     pending.resolve({ kind: 'prepared', execution: lateExecution });
-    await vi.waitFor(() => expect(existsSync(lateSessionDir)).toBe(false), SESSION_FILTER_WAIT_MS);
+    await vi.waitFor(() => expect(existsSync(lateSessionDir)).toBe(false));
     expect(routerStore.get()).toEqual({ screen: 'home' });
   });
 
@@ -1573,12 +1521,9 @@ describe('HomeScreen', () => {
     ui.stdin.write('cleanup failure');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
     ui.stdin.write(ESC);
-    await vi.waitFor(() => expect(signal?.aborted).toBe(true), SESSION_FILTER_WAIT_MS);
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
 
     const input = prepareExecutionMock.mock.calls[0]?.[0];
     if (!input) throw new Error('Expected a preparation input.');
@@ -1593,9 +1538,8 @@ describe('HomeScreen', () => {
     unlinkSync(ownershipFile);
     pending.resolve({ kind: 'prepared', execution: lateExecution });
 
-    await vi.waitFor(
-      () => expect(feedbackStore.get().message).toContain('Could not clean up tool preparation'),
-      SESSION_FILTER_WAIT_MS,
+    await vi.waitFor(() =>
+      expect(feedbackStore.get().message).toContain('Could not clean up tool preparation'),
     );
     expect(ui.lastFrame() ?? '').toContain('Could not clean up tool preparation');
     expect(routerStore.get()).toEqual({ screen: 'home' });
@@ -1626,7 +1570,7 @@ describe('HomeScreen', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('Run the configured custom tool');
       expect(frame).not.toContain('Preparing your tools');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     closeApprovalPrompt();
     pending.resolve({ kind: 'aborted' });
     await flushEffects();
@@ -1652,9 +1596,8 @@ describe('HomeScreen', () => {
     ui.stdin.write('leave during approval');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => expect(ui.lastFrame() ?? '').toContain('Run the configured custom tool'),
-      SESSION_FILTER_WAIT_MS,
+    await vi.waitFor(() =>
+      expect(ui.lastFrame() ?? '').toContain('Run the configured custom tool'),
     );
 
     ui.unmount();
@@ -1689,10 +1632,7 @@ describe('HomeScreen', () => {
     const ui = renderHome();
     await flushEffects();
     const selection = continueRunInPlace({ record, state, deps });
-    await vi.waitFor(
-      () => expect(approvalPromptStore.get().status).toBe('pending'),
-      SESSION_FILTER_WAIT_MS,
-    );
+    await vi.waitFor(() => expect(approvalPromptStore.get().status).toBe('pending'));
     expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
 
     ui.unmount();
@@ -1723,7 +1663,7 @@ describe('HomeScreen', () => {
     ui.stdin.write('custom tool approval');
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Deny'), SESSION_FILTER_WAIT_MS);
+    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Deny'));
 
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     const card = overlayRect({ cols: 120, rows: 40, density: 'roomy' });
@@ -1768,10 +1708,7 @@ describe('HomeScreen', () => {
       ui.stdin.write('custom tool approval');
       await flushEffects();
       ui.stdin.write(ENTER);
-      await vi.waitFor(
-        () => expect(ui.lastFrame() ?? '').toContain('Deny'),
-        SESSION_FILTER_WAIT_MS,
-      );
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Deny'));
       await flushEffects();
       const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
       const rowOf = (text: string) => lines.findIndex((line) => line.includes(text)) + 1;
@@ -1894,12 +1831,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
       expectLineContains(ui.lastFrame() ?? '', target.feature, FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     for (const viewport of [
       { cols: 80, rows: 24, isSmall: true },
@@ -1920,7 +1857,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     // Choosing a run opens it at rest on its own screen; continuing it is the next keystroke.
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
@@ -1945,7 +1882,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       expect(frame).toContain('Type to filter…');
       expect(frame).toContain(RECENT_SESSIONS_HINT);
       expect(frame).toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     ui.unmount();
   });
 
@@ -2002,13 +1939,13 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expectLineContains(ui.lastFrame() ?? '', 'focus feature 2', FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
       expectLineContains(ui.lastFrame() ?? '', 'focus feature 1', FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     ui.unmount();
   });
 
@@ -2036,14 +1973,14 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
     ui.stdin.write('ancient');
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('ancient hidden focus target');
       expectLineContains(frame, 'ancient hidden focus target', FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     ui.unmount();
   });
@@ -2056,7 +1993,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
 
     ui.stdin.write(ESC);
@@ -2064,7 +2001,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain(FOCUS_BAR);
       expect(frame).toContain(HOME_HINT);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     ui.unmount();
   });
 
@@ -2076,7 +2013,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
 
     ui.stdin.write(ARROW_UP);
@@ -2084,7 +2021,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain(FOCUS_BAR);
       expect(frame).toContain(HOME_HINT);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     ui.unmount();
   });
 
@@ -2109,13 +2046,13 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('Type to filter…');
       expect(frame).toContain('invisible feature');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
 
     ui.stdin.write('zzznomatch');
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').not.toContain('invisible feature');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     await flushEffects();
     ui.stdin.write(ENTER);
@@ -2146,13 +2083,13 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('Type to filter…');
       expect(frame).toContain('invisible copy feature');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
 
     ui.stdin.write('zzznomatch');
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').not.toContain('invisible copy feature');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     await flushEffects();
     ui.stdin.write('y');
@@ -2185,12 +2122,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
@@ -2221,12 +2158,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     const route = routerStore.get();
     if (route.screen === 'workflow') {
@@ -2256,12 +2193,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     const route = routerStore.get();
     if (route.screen === 'workflow') {

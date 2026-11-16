@@ -172,7 +172,7 @@ describe('composer @ files', () => {
           listProjectFiles={listFiles}
         />,
       );
-      await vi.waitFor(() => expect(reviewStore.get().source).not.toBeNull(), { timeout: 5000 });
+      await vi.waitFor(() => expect(reviewStore.get().source).not.toBeNull());
       expect(prompts).toHaveLength(1);
       expect(prompts[0]).toContain(`--- @${path} ---\n${content}`);
       expect(eventsStore.get().events.find((event) => event.type === 'user_message')).toMatchObject(
@@ -199,9 +199,8 @@ describe('composer @ files', () => {
       makePlanProposal(),
     ]);
     ui = mountWorkflowScreen({ deps, projectDir, rows: 40, listProjectFiles: listFiles });
-    await vi.waitFor(
-      () => expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Question 1 of 1'),
-      { timeout: 5000 },
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Question 1 of 1'),
     );
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
     // The second row under the default opens an empty field for an answer of one's own.
@@ -212,7 +211,7 @@ describe('composer @ files', () => {
     ui.stdin.write(`Please use @${path}`);
     await flushEffects();
     ui.stdin.write('\r');
-    await vi.waitFor(() => expect(reviewStore.get().source).not.toBeNull(), { timeout: 5000 });
+    await vi.waitFor(() => expect(reviewStore.get().source).not.toBeNull());
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain(`--- @${path} ---\nPELICAN-42`);
     await expectPublished(`1. ${question}\nPlease use @${path}`, path);
@@ -223,17 +222,16 @@ describe('composer @ files', () => {
     writeFileSync(path, 'PELICAN-42');
     const { prompts, deps } = engine([makePlanProposal(), makePlanProposal()]);
     ui = mountWorkflowScreen({ deps, projectDir, rows: 40, listProjectFiles: listFiles });
-    await vi.waitFor(
-      () => expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Type a comment…'),
-      { timeout: 5000 },
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Type a comment…'),
     );
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
     ui.stdin.write(`@${path}`);
     await flushEffects();
     await vi.waitFor(() => expect(composerLiveStore.get().text).toBe(`@${path}`));
     ui.stdin.write('\r');
-    await vi.waitFor(() => expect(prompts).toHaveLength(2), { timeout: 5000 });
-    await vi.waitFor(() => expect(reviewStore.get().source).not.toBeNull(), { timeout: 5000 });
+    await vi.waitFor(() => expect(prompts).toHaveLength(2));
+    await vi.waitFor(() => expect(reviewStore.get().source).not.toBeNull());
     expect(prompts[1]).toContain(`--- @${path} ---\nPELICAN-42`);
     await expectPublished(`@${path}`, path);
   });

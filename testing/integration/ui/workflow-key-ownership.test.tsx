@@ -503,6 +503,16 @@ describe('WorkflowScreen key ownership', () => {
         rowOf,
         panelRows,
         click: (row: number) => mouse.emit(pointerEvent('press', 10, row)),
+        // The panel handles a ↓ typed after the clicks after them, so once the frame moves the
+        // cursor to the second option, or an answer comes, the clicks before it were handled too.
+        pressDownAfterClicks: async (second: string) => {
+          const cursorOnSecond = () =>
+            lines().some((line) => line.includes(`${glyph('liveBar')} ${second}`));
+          await waitPastGrace(ui, second);
+          expect(cursorOnSecond()).toBe(false);
+          ui.stdin.write('\u001b[B');
+          await vi.waitFor(() => expect(settled !== undefined || cursorOnSecond()).toBe(true));
+        },
         close: () => {
           disposeMouse();
           ui.unmount();
@@ -542,7 +552,7 @@ describe('WorkflowScreen key ownership', () => {
       const panel = await openPanel(24, trustRequest);
       panel.click(panel.rowOf('x   Deny') + 1);
       panel.click(panel.rowOf('↑↓ select'));
-      await tick(20);
+      await panel.pressDownAfterClicks('x   Deny');
       expect(panel.settled()).toBeUndefined();
       panel.click(panel.rowOf('x   Deny'));
       await vi.waitFor(() => expect(panel.settled()).toMatchObject({ decision: 'deny' }), 1000);
@@ -573,7 +583,7 @@ describe('WorkflowScreen key ownership', () => {
           for (const row of panel.panelRows()) {
             if (!optionRows.includes(row)) panel.click(row);
           }
-          await tick(20);
+          await panel.pressDownAfterClicks(options[1]);
           expect(panel.settled()).toBeUndefined();
           expect(options.map(panel.rowOf)).toEqual(optionRows);
           panel.click(panel.rowOf('y   Confirm'));

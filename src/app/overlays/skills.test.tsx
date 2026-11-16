@@ -48,25 +48,16 @@ describe('SkillsPicker', () => {
     ui.stdin.write(PAGE_DOWN);
     // The hint flips to 'space toggle' in the same commit that moves the cursor,
     // so waiting on it guarantees Space acts on the post-PageDown cursor row.
-    await vi.waitFor(
-      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('space toggle'),
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('space toggle'));
     await flushEffects();
     ui.stdin.write(SPACE);
-    await vi.waitFor(
-      () =>
-        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-          'Skills for every seat · 1 selected',
-        ),
-      { timeout: 5000 },
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills for every seat · 1 selected'),
     );
 
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(() => expect([...skillsStore.get().selected]).toEqual(['skill-7']), {
-      timeout: 5000,
-    });
+    await vi.waitFor(() => expect([...skillsStore.get().selected]).toEqual(['skill-7']));
     ui.unmount();
   });
 
@@ -99,12 +90,8 @@ describe('SkillsPicker', () => {
     ui.stdin.write(ARROW_DOWN);
     await flushEffects();
     ui.stdin.write(SPACE);
-    await vi.waitFor(
-      () =>
-        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-          'Skills for every seat · 1 selected',
-        ),
-      { timeout: 5000 },
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills for every seat · 1 selected'),
     );
     await flushEffects();
     ui.stdin.write(ENTER);
@@ -435,12 +422,8 @@ describe('SkillsPicker row activation', () => {
 
     const zones = collectClickableZones({ cols: 100, rows: 28 });
     zones.get('list-row:bravo')?.();
-    await vi.waitFor(
-      () =>
-        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-          'Skills for every seat · 1 selected',
-        ),
-      { timeout: 5000 },
+    await vi.waitFor(() =>
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills for every seat · 1 selected'),
     );
     expect(skillsStore.get().selected.size).toBe(0);
 

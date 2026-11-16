@@ -19,9 +19,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
-import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import type { TypedCallContext } from '../../../src/engine/planners/types.js';
 import type { TypedSeatCall } from '../../../src/engine/runners/typed-output.js';
 import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
@@ -42,24 +40,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
-
-function plannerCliGates(preparationId: string): ReadonlyArray<RunnerGate> {
-  return [
-    {
-      kind: 'cli',
-      slot: { role: 'planner' },
-      preparationId,
-      tool: 'claude-code',
-      executable: executableReceipt(),
-    },
-    {
-      kind: 'agent',
-      slot: { role: 'implementer', profile: 'default' },
-      preparationId,
-      command: { kind: 'validated-config' },
-    },
-  ];
-}
 
 const BASE_WIDGET = "export const render = () => 'widget';\n";
 const FIXED_WIDGET = [
@@ -173,7 +153,6 @@ describe('review fix cycle', { timeout: 90_000 }, () => {
         sessionId,
         feature: 'review triage fix cycle',
         config,
-        gates: plannerCliGates,
       }),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,

@@ -146,15 +146,12 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
       screen.stdin.write('src/auth.ts; preserve the public API.');
       await flushEffects();
       screen.stdin.write('\r');
-      await vi.waitFor(
-        () => {
-          const frame = stripAnsiStyles(screen.lastFrame());
-          expect(frame).toContain('Answered · 1 question');
-          expect(frame).toContain('1. Which module should change?');
-          expect(frame).toContain('src/auth.ts; preserve the public API.');
-        },
-        { timeout: 3000 },
-      );
+      await vi.waitFor(() => {
+        const frame = stripAnsiStyles(screen.lastFrame());
+        expect(frame).toContain('Answered · 1 question');
+        expect(frame).toContain('1. Which module should change?');
+        expect(frame).toContain('src/auth.ts; preserve the public API.');
+      });
       const userMessages = eventsStore
         .get()
         .events.filter((event) => event.type === 'user_message');

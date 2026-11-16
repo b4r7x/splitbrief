@@ -3493,10 +3493,9 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
     entries: number,
     waitsBefore: number,
   ): Promise<void> {
-    await vi.waitFor(() => expect(run.entered).toHaveLength(entries), { timeout: 5000 });
-    await vi.waitFor(
-      () => expect(run.returned() === run.entered.length || seatWaits() > waitsBefore).toBe(true),
-      { timeout: 5000 },
+    await vi.waitFor(() => expect(run.entered).toHaveLength(entries));
+    await vi.waitFor(() =>
+      expect(run.returned() === run.entered.length || seatWaits() > waitsBefore).toBe(true),
     );
   }
 
@@ -3609,11 +3608,11 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
     );
     let inst = mount({ sessionId, config: input.run, state, captureRunner, run });
     if (entry === 'retry-at') await answerRecoveryPanel(captureRunner, 'l');
-    await vi.waitFor(() => expect(seatWaits()).toBe(1), { timeout: 5000 });
+    await vi.waitFor(() => expect(seatWaits()).toBe(1));
     expect(loadState(ref)?.seatWait).toBeDefined();
 
     requestStopNow();
-    await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+    await vi.waitFor(() => expect(settledRun()).not.toBeNull());
     writeConfig(projectDir, input.continued);
     const enteredBefore = run.entered.length;
     let waitsBefore = seatWaits();
@@ -3636,7 +3635,7 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
     const seatWait = loadState(ref)?.seatWait;
     if (waited) {
       requestStopNow();
-      await vi.waitFor(() => expect(run.returned()).toBe(run.entered.length), { timeout: 5000 });
+      await vi.waitFor(() => expect(run.returned()).toBe(run.entered.length));
     }
     inst.unmount();
     return { waited, seatWait };
@@ -3772,11 +3771,11 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
         captureRunner: { current: null },
         run,
       });
-      await vi.waitFor(() => expect(run.entered).toHaveLength(1), { timeout: 5000 });
-      await vi.waitFor(() => expect(seatWaits()).toBe(1), { timeout: 5000 });
+      await vi.waitFor(() => expect(run.entered).toHaveLength(1));
+      await vi.waitFor(() => expect(seatWaits()).toBe(1));
       expect(run.returned()).toBe(0);
       requestStopNow();
-      await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+      await vi.waitFor(() => expect(settledRun()).not.toBeNull());
       expect(seatWaitEnds()).toEqual([true]);
       expect(loadState(ref)?.seatWait?.seat).toBe('build');
       inst.unmount();
@@ -3811,11 +3810,11 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
       writeConfig(projectDir, configs.tool);
       configStore.__testReset({ projectDir, config: configs.tool });
       await answerRecoveryPanel(captureRunner, 'l');
-      await vi.waitFor(() => expect(seatWaits()).toBe(1), { timeout: 5000 });
+      await vi.waitFor(() => expect(seatWaits()).toBe(1));
       expect(run.entered).toHaveLength(1);
       expect(run.returned()).toBe(0);
       requestStopNow();
-      await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+      await vi.waitFor(() => expect(settledRun()).not.toBeNull());
       expect(seatWaitEnds()).toEqual([true]);
       expect(loadState(ref)?.seatWait?.seat).toBe(seat);
       inst.unmount();
@@ -3900,8 +3899,8 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
 
   async function stopWait(run: ReturnType<typeof recordedEngine>): Promise<void> {
     requestStopNow();
-    await vi.waitFor(() => expect(run.returned()).toBe(run.entered.length), { timeout: 5000 });
-    await vi.waitFor(() => expect(settledRun()).not.toBeNull(), { timeout: 5000 });
+    await vi.waitFor(() => expect(run.returned()).toBe(run.entered.length));
+    await vi.waitFor(() => expect(settledRun()).not.toBeNull());
   }
 
   /**
@@ -4286,9 +4285,7 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
       'version: 3\nplanner: [unclosed\n',
     );
     await answerRecoveryPanel(captureRunner, 'l');
-    await vi.waitFor(() => expect(feedbackStore.get().message).toContain('Malformed YAML'), {
-      timeout: 5000,
-    });
+    await vi.waitFor(() => expect(feedbackStore.get().message).toContain('Malformed YAML'));
     expect(run.entered).toHaveLength(0);
     expect(loadState(ref)?.pendingRecovery?.reason).toBe('runner-usage-limit');
     expect(loadState(ref)?.seatWait).toBeUndefined();

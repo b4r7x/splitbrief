@@ -8,14 +8,12 @@ import {
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { loadState } from '../../../../core/state/persistence.js';
 import type { Config } from '../../../../core/schemas/config.js';
 import type { SpecMetadata } from '../../../../core/sessions/spec-files.js';
 import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
 import { reactivateExistingSession } from '../../../../core/sessions/active-pointer.js';
-import { resolveImplementerProfiles } from '../../../../core/config/accessors/implementer-profiles.js';
-import { configuredReviewerRunner } from '../../../../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { EngineEvent, EventBus } from '../../../events/types.js';
 import { createEventBus } from '../../../events/bus.js';
@@ -53,16 +51,7 @@ async function preparedTestExecution(
     hooks === undefined ? input.inputConfig : { ...input.inputConfig, hooks },
   );
   const preparationId = `initialize-usage-${input.sessionId}`;
-  const configuredReviewer = configuredReviewerRunner(config);
-  const gates = [
-    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(config).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-    ...(configuredReviewer === undefined
-      ? []
-      : [makeRunnerGate(configuredReviewer, { role: 'reviewer' }, preparationId)]),
-  ];
+  const gates = preparedGates(config, 'new-workflow', preparationId);
   ensureSessionDir(input.projectDir, input.sessionId);
   const active = reactivateExistingSession({
     projectDir: input.projectDir,

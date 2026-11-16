@@ -203,7 +203,7 @@ describe('spawnPipe lifecycle termination', () => {
         },
       );
 
-      await vi.waitFor(() => expect(warnings).toBe(1), { timeout: 5_000, interval: 10 });
+      await vi.waitFor(() => expect(warnings).toBe(1), { interval: 10 });
       // Several warn windows pass in silence: one warning, and no cut.
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(warnings).toBe(1);
@@ -211,7 +211,7 @@ describe('spawnPipe lifecycle termination', () => {
       expect(settled).toBe(false);
 
       writeFileSync(go, '');
-      await vi.waitFor(() => expect(clears).toBe(1), { timeout: 5_000, interval: 10 });
+      await vi.waitFor(() => expect(clears).toBe(1), { interval: 10 });
       expect(settled).toBe(false);
 
       controller.abort(new DOMException('test finished', 'AbortError'));

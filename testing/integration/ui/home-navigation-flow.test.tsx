@@ -34,7 +34,6 @@ const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
 const FOCUS_BAR = '▌';
-const SESSION_FILTER_WAIT_MS = 5000;
 const workflowDeps = { runWorkflow: () => new Promise<never>(() => {}) };
 
 // Ink lays out at stdout.columns, so a mount that ignores the seeded viewport
@@ -133,7 +132,7 @@ describe('home navigation flow (through real App)', () => {
         route: { screen: 'workflow' },
         error: null,
       });
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     const route = routerStore.get();
     if (route.screen !== 'workflow' || route.execution.kind !== 'at-rest') {
@@ -204,7 +203,7 @@ describe('home navigation flow (through real App)', () => {
 
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     const route = routerStore.get();
     if (route.screen !== 'workflow' || route.execution.kind !== 'at-rest') {
       throw new Error('expected a workflow route at rest');
@@ -232,12 +231,12 @@ describe('home navigation flow (through real App)', () => {
       expect(frame).not.toContain('esc back');
       expect(frame).not.toContain(FOCUS_BAR);
       expect(frame).toContain('ctrl+k commands');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     await flushEffects();
     ui.stdin.write('hello');
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain('hello');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     ui.unmount();
   });
@@ -290,7 +289,7 @@ describe('home navigation flow (through real App)', () => {
         screen: 'workflow',
         error: null,
       });
-    }, SESSION_FILTER_WAIT_MS);
+    });
     const orphan = routerStore.get();
     if (orphan.screen !== 'workflow' || orphan.execution.kind !== 'at-rest') {
       throw new Error('expected a workflow route at rest');
@@ -301,7 +300,7 @@ describe('home navigation flow (through real App)', () => {
     ui.stdin.write(ESC);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('home');
-    }, SESSION_FILTER_WAIT_MS);
+    });
 
     await focusRecentSessions(ui);
     await flushEffects();
@@ -311,7 +310,7 @@ describe('home navigation flow (through real App)', () => {
 
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
-    }, SESSION_FILTER_WAIT_MS);
+    });
     const route = routerStore.get();
     if (route.screen !== 'workflow' || route.execution.kind !== 'at-rest') {
       throw new Error('expected a workflow route at rest');

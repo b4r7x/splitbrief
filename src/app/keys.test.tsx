@@ -12,7 +12,6 @@ import {
   parsePreparedConfig,
   type PreparationOutcome,
   type PreparedExecution,
-  type RunnerGate,
 } from '../engine/runners/prepare-execution/prepared.js';
 import { createInitialState } from '../core/state/machine.js';
 import { routerStore } from '../stores/navigation/router.js';
@@ -42,7 +41,7 @@ import { reviewKeysStore } from '../stores/ui/review-keys.js';
 import { recoveryNoticeStore } from '../stores/workflow/recovery-notice.js';
 import { departureStore } from '../stores/workflow/departure.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { testCliSeats } from '#testing/helpers/runner-gate.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
 // so the deferred arm flushes without copying that module-private literal here.
@@ -72,22 +71,7 @@ function localExecution(feature: string): { kind: 'local'; prepared: PreparedExe
     }),
   );
 
-  const gates: RunnerGate[] = [
-    {
-      kind: 'api',
-      slot: { role: 'planner' },
-      preparationId,
-      provider: 'custom-endpoint',
-      endpointOrigin: 'https://api.example.test',
-    },
-    {
-      kind: 'api',
-      slot: { role: 'implementer', profile: 'default' },
-      preparationId,
-      provider: 'ollama',
-      endpointOrigin: 'http://localhost:11434',
-    },
-  ];
+  const gates = preparedGates(config, 'new-workflow', preparationId);
   return {
     kind: 'local',
     prepared: {

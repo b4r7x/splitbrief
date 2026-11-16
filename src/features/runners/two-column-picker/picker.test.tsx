@@ -322,33 +322,24 @@ describe('TwoColumnPicker', () => {
         onCancel={() => {}}
       />,
     );
-    await vi.waitFor(
-      () => {
-        expect(leftChanges.at(-1)).toBe('alpha');
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('alpha');
+    });
     await flushEffects();
 
     ui.stdin.write('\u001B[B'); // down -> 'beta' (disabled)
-    await vi.waitFor(
-      () => {
-        expect(leftChanges.at(-1)).toBe('beta');
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('beta');
+    });
     await flushEffects();
 
     ui.stdin.write('\r'); // Enter on disabled - no-op
     await flushEffects();
     ui.stdin.write('\u001B[B'); // down -> 'gamma'; reaching it proves the Enter above was processed
-    await vi.waitFor(
-      () => {
-        expect(leftChanges.at(-1)).toBe('gamma');
-        expect(ui.lastFrame()).toContain('Gamma');
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('gamma');
+      expect(ui.lastFrame()).toContain('Gamma');
+    });
     expect(confirms).toEqual([]);
     ui.unmount();
   });

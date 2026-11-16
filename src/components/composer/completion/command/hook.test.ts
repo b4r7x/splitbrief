@@ -197,20 +197,14 @@ describe('useCommandCompletion submit routing', () => {
     await flushEffects();
     ui.stdin.write('/nope');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain('/nope');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('/nope');
+    });
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual(['/nope']);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/nope']);
+    });
 
     expect(submits).toEqual([]);
     ui.unmount();
@@ -222,20 +216,14 @@ describe('useCommandCompletion submit routing', () => {
     await flushEffects();
     ui.stdin.write(typed);
     await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain(typed);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain(typed);
+    });
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual([typed]);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual([typed]);
+    });
 
     expect(submits).toEqual([]);
     ui.unmount();
@@ -249,20 +237,14 @@ describe('useCommandCompletion submit routing', () => {
       await flushEffects();
       ui.stdin.write(typed);
       await tick(20);
-      await vi.waitFor(
-        () => {
-          expect(ui.lastFrame()).toContain(typed);
-        },
-        { timeout: 5000 },
-      );
+      await vi.waitFor(() => {
+        expect(ui.lastFrame()).toContain(typed);
+      });
       await flushEffects();
       ui.stdin.write(ENTER);
-      await vi.waitFor(
-        () => {
-          expect(submits).toEqual([typed]);
-        },
-        { timeout: 5000 },
-      );
+      await vi.waitFor(() => {
+        expect(submits).toEqual([typed]);
+      });
 
       expect(commandCalls).toEqual([]);
       expect(ui.lastFrame()).not.toContain('Unknown command');
@@ -276,20 +258,14 @@ describe('useCommandCompletion submit routing', () => {
     await flushEffects();
     ui.stdin.write('/cop');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain('/cop');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('/cop');
+    });
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual(['/copy']);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/copy']);
+    });
     ui.unmount();
   });
 });
@@ -373,23 +349,17 @@ describe('useCommandCompletion suppression', () => {
     await flushEffects();
     ui.stdin.write(ARROW_UP);
     await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain('/sidebar');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('/sidebar');
+    });
     expect(ui.lastFrame()).not.toContain('Toggle the sidebar');
 
     await flushEffects();
     ui.stdin.write(ARROW_UP);
     await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain('older-a');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('older-a');
+    });
     ui.unmount();
   });
 });
@@ -405,37 +375,28 @@ describe('useCommandCompletion closed arguments', () => {
     await flushEffects();
     ui.stdin.write('/mode ');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame();
-        expect(frame).toContain('instant');
-        expect(frame).toContain('quick');
-        expect(frame).toContain('standard');
-        expect(frame).toContain('speckit');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame();
+      expect(frame).toContain('instant');
+      expect(frame).toContain('quick');
+      expect(frame).toContain('standard');
+      expect(frame).toContain('speckit');
+    });
 
     await flushEffects();
     ui.stdin.write('sp');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame();
-        expect(frame).toContain('speckit');
-        expect(frame).not.toContain('instant');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame();
+      expect(frame).toContain('speckit');
+      expect(frame).not.toContain('instant');
+    });
 
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual(['/mode speckit']);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/mode speckit']);
+    });
     ui.unmount();
   });
 
@@ -445,21 +406,15 @@ describe('useCommandCompletion closed arguments', () => {
     await flushEffects();
     ui.stdin.write('/mode ');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain('instant');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('instant');
+    });
 
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual(['/mode instant']);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/mode instant']);
+    });
     ui.unmount();
   });
 
@@ -469,21 +424,15 @@ describe('useCommandCompletion closed arguments', () => {
     await flushEffects();
     ui.stdin.write('/scroll ');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame()).toContain('top');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('top');
+    });
 
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual(['/scroll top']);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/scroll top']);
+    });
     ui.unmount();
   });
 
@@ -521,14 +470,11 @@ describe('useCommandCompletion closed arguments', () => {
     await flushEffects();
     ui.stdin.write('/skills ');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame();
-        expect(frame).toContain('Reviews alpha conventions');
-        expect(frame).toContain('Drafts bravo notes');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame();
+      expect(frame).toContain('Reviews alpha conventions');
+      expect(frame).toContain('Drafts bravo notes');
+    });
     ui.unmount();
   });
 
@@ -538,14 +484,11 @@ describe('useCommandCompletion closed arguments', () => {
     await flushEffects();
     ui.stdin.write('/mode ');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame() ?? '';
-        expect(rowContaining(frame, 'standard')).toContain('current');
-        expect(rowContaining(frame, 'quick')).not.toContain('current');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(rowContaining(frame, 'standard')).toContain('current');
+      expect(rowContaining(frame, 'quick')).not.toContain('current');
+    });
     ui.unmount();
   });
 
@@ -555,14 +498,11 @@ describe('useCommandCompletion closed arguments', () => {
     await flushEffects();
     ui.stdin.write('/mode ');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame();
-        expect(frame).toContain('instant');
-        expect(frame).not.toContain('Workflow mode');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame();
+      expect(frame).toContain('instant');
+      expect(frame).not.toContain('Workflow mode');
+    });
     ui.unmount();
   });
 });
@@ -578,14 +518,11 @@ describe('useCommandCompletion fuzzy multi arguments', () => {
     await flushEffects();
     ui.stdin.write('/skills sec');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame();
-        expect(frame).toContain('Audits security surfaces');
-        expect(frame).not.toContain('Drafts bravo notes');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame();
+      expect(frame).toContain('Audits security surfaces');
+      expect(frame).not.toContain('Drafts bravo notes');
+    });
     ui.unmount();
   });
 
@@ -595,14 +532,11 @@ describe('useCommandCompletion fuzzy multi arguments', () => {
     await flushEffects();
     ui.stdin.write('/skills brv');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame();
-        expect(frame).toContain('Drafts bravo notes');
-        expect(frame).not.toContain('Audits security surfaces');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame();
+      expect(frame).toContain('Drafts bravo notes');
+      expect(frame).not.toContain('Audits security surfaces');
+    });
     ui.unmount();
   });
 
@@ -612,23 +546,17 @@ describe('useCommandCompletion fuzzy multi arguments', () => {
     await flushEffects();
     ui.stdin.write('/skills alpha b');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame();
-        expect(frame).toContain('Drafts bravo notes');
-        expect(frame).not.toContain('Audits security surfaces');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame();
+      expect(frame).toContain('Drafts bravo notes');
+      expect(frame).not.toContain('Audits security surfaces');
+    });
 
     await flushEffects();
     ui.stdin.write(ENTER);
-    await vi.waitFor(
-      () => {
-        expect(commandCalls).toEqual(['/skills alpha bravo']);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/skills alpha bravo']);
+    });
     ui.unmount();
   });
 
@@ -638,15 +566,12 @@ describe('useCommandCompletion fuzzy multi arguments', () => {
     await flushEffects();
     ui.stdin.write('/skills alpha ');
     await tick(20);
-    await vi.waitFor(
-      () => {
-        const frame = ui.lastFrame();
-        expect(frame).toContain('Reviews alpha conventions');
-        expect(frame).toContain('Drafts bravo notes');
-        expect(frame).toContain('Audits security surfaces');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame();
+      expect(frame).toContain('Reviews alpha conventions');
+      expect(frame).toContain('Drafts bravo notes');
+      expect(frame).toContain('Audits security surfaces');
+    });
     ui.unmount();
   });
 });

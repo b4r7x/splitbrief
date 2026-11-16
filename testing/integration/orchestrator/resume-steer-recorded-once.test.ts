@@ -25,13 +25,11 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { appendEngineEvent, appendMessage } from '../../../src/core/sessions/log/writer.js';
 import { reactivateExistingSession } from '../../../src/core/sessions/active-pointer.js';
 import { createPlannerBase } from '../../../src/engine/planners/base.js';
-import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
-  type RunnerGate,
 } from '../../../src/engine/runners/prepare-execution/prepared.js';
-import { testCliSeats } from '#testing/helpers/runner-gate.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const dirs: string[] = [];
 
@@ -123,21 +121,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
       sessionId,
       generation: '9a999999-9999-4999-8999-999999999999',
     };
-    const gates: RunnerGate[] = [
-      {
-        kind: 'cli',
-        slot: { role: 'planner' },
-        preparationId,
-        tool: 'claude-code',
-        executable: executableReceipt(),
-      },
-      {
-        kind: 'agent',
-        slot: { role: 'implementer', profile: 'default' },
-        preparationId,
-        command: { kind: 'validated-config' },
-      },
-    ];
+    const gates = preparedGates(config, 'resume', preparationId);
     const prepared: PreparedExecution = {
       purpose: 'resume',
       config,

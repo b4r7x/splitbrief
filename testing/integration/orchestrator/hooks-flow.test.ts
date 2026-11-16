@@ -19,9 +19,8 @@ import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
 import {
   parsePreparedConfig,
   type PreparedExecution,
-  type RunnerGate,
 } from '../../../src/engine/runners/prepare-execution/prepared.js';
-import { testCliSeats } from '#testing/helpers/runner-gate.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 
 const DENY_PRE_TASK_HOOKS: HooksConfig = {
   pre_task: [
@@ -103,20 +102,7 @@ function preparedExecution(
       ],
     },
   );
-  const gates: RunnerGate[] = [
-    {
-      kind: 'shell',
-      slot: { role: 'planner' },
-      preparationId,
-      command: { kind: 'validated-config' },
-    },
-    {
-      kind: 'shell',
-      slot: { role: 'implementer', profile: 'default' },
-      preparationId,
-      command: { kind: 'validated-config' },
-    },
-  ];
+  const gates = preparedGates(config, 'resume', preparationId);
   return {
     purpose: 'resume',
     config,
@@ -190,7 +176,7 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
         const payload = await readFile(marker, 'utf8');
         expect(payload).toBe('T001');
       },
-      { timeout: 5_000, interval: 20 },
+      { interval: 20 },
     );
   }, 90_000);
 });

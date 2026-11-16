@@ -34,7 +34,7 @@ import { taskFromSpec } from '../../spec/plan/tasks.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { WorkflowStateSchema, type WorkflowState } from '../../../core/schemas/workflow/state.js';
@@ -87,8 +87,7 @@ import type { RunWorkflowOptions } from './init/options.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
-import { parsePreparedConfig, type RunnerGate } from '../../runners/prepare-execution/prepared.js';
-import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { parsePreparedConfig } from '../../runners/prepare-execution/prepared.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { shutdownWorkflow } from '../session-lifecycle/shutdown.js';
 import { boundEngineEventForConsumer } from '../../events/bound.js';
@@ -305,13 +304,8 @@ async function runWorkflow(input: WorkflowTestOptions) {
   }
   const active = reactivateExistingSession({ projectDir, sessionId });
   const preparationId = `workflow-test-${sessionId}`;
-  const gates: RunnerGate[] = [
-    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(config).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-  ];
   const purpose = requestedPurpose ?? (input.savedState === undefined ? 'new-workflow' : 'resume');
+  const gates = preparedGates(config, purpose, preparationId);
   return runTrackedWorkflow({
     ...options,
     prepared: {
@@ -457,14 +451,7 @@ describe('runWorkflow — smoke', () => {
       command: '/changed/after/preparation',
     };
 
-    const gates: RunnerGate[] = [
-      makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-      makeRunnerGate(
-        config.implementer,
-        { role: 'implementer', profile: 'default' },
-        preparationId,
-      ),
-    ];
+    const gates = preparedGates(config, 'new-workflow', preparationId);
     const summary = await runTrackedWorkflow({
       prepared: {
         purpose: 'new-workflow',

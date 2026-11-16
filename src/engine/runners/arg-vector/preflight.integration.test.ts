@@ -71,14 +71,11 @@ describe('collectArgVectorPreflightChecks — abort', () => {
       () => 'rejected',
     );
     await started;
-    const pids = await vi.waitFor(
-      () => {
-        const recorded = existsSync(pidFile) ? readFileSync(pidFile, 'utf8') : '';
-        expect(recorded).toMatch(/^\d+ \d+\n$/u);
-        return recorded.trim().split(' ').map(Number);
-      },
-      { timeout: 5_000 },
-    );
+    const pids = await vi.waitFor(() => {
+      const recorded = existsSync(pidFile) ? readFileSync(pidFile, 'utf8') : '';
+      expect(recorded).toMatch(/^\d+ \d+\n$/u);
+      return recorded.trim().split(' ').map(Number);
+    });
     fakePids.push(...pids);
 
     controller.abort();

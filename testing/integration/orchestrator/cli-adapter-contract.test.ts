@@ -844,7 +844,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         () => {
           expect(readFileSync(descendantPidFile, 'utf8').trim()).not.toBe('');
         },
-        { timeout: 4_000, interval: 25 },
+        { interval: 25 },
       );
       expect(existsSync(startedMarker)).toBe(true);
       const descendantPid = Number.parseInt(readFileSync(descendantPidFile, 'utf8'), 10);

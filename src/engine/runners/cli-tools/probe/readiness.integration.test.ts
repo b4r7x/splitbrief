@@ -505,7 +505,7 @@ describe('CLI readiness probe', () => {
           () => {
             expect(readFileSync(descendantPidFile, 'utf8').trim()).not.toBe('');
           },
-          { timeout: 6_000, interval: 25 },
+          { interval: 25 },
         );
         controller.abort();
 
@@ -547,7 +547,7 @@ describe('CLI readiness probe', () => {
         expect(result.status).toBe('unverified');
         expect(existsSync(exited)).toBe(false);
         await writeFile(release, '');
-        await vi.waitFor(() => expect(existsSync(exited)).toBe(true), { timeout: 6_000 });
+        await vi.waitFor(() => expect(existsSync(exited)).toBe(true));
       });
     },
   );

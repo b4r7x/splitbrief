@@ -2,10 +2,8 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../src/core/paths.js';
-import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
-import { configuredReviewerRunner } from '../../src/core/config/accessors/reviewer-runner.js';
 import { loadConfig } from '../../src/core/config/load/io.js';
 import { reactivateExistingSession } from '../../src/core/sessions/active-pointer.js';
 import type { WorkflowState } from '../../src/core/schemas/workflow/state.js';
@@ -25,18 +23,10 @@ export function preparedHeadlessExecution(input: {
   const config = parsePreparedConfig(loadConfig(input.projectDir).config);
   const active = reactivateExistingSession(ref);
   const preparationId = `headless-test-${input.sessionId}`;
-  const configuredReviewer = configuredReviewerRunner(config);
-  const gates = [
-    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(config).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-    ...(configuredReviewer === undefined
-      ? []
-      : [makeRunnerGate(configuredReviewer, { role: 'reviewer' }, preparationId)]),
-  ];
+  const purpose = input.purpose ?? (input.resumeState === undefined ? 'new-workflow' : 'resume');
+  const gates = preparedGates(config, purpose, preparationId);
   return {
-    purpose: input.purpose ?? (input.resumeState === undefined ? 'new-workflow' : 'resume'),
+    purpose,
     config,
     sourceConfig: config,
     preparationId,

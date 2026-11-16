@@ -17,7 +17,6 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
-import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
@@ -128,22 +127,6 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
       config,
       preparationId,
       active,
-      gates: () => [
-        {
-          kind: 'cli',
-          slot: { role: 'planner' },
-          preparationId,
-          tool: 'claude-code',
-          executable: executableReceipt(),
-        },
-        {
-          kind: 'api',
-          slot: { role: 'implementer', profile: 'default' },
-          preparationId,
-          provider: 'custom-endpoint',
-          endpointOrigin: 'https://api.example.test',
-        },
-      ],
     });
 
     const summary = await runWorkflow({

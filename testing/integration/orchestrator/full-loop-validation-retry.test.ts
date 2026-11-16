@@ -24,9 +24,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
-import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import {
   guidanceConsult,
   planFromTasks,
@@ -51,24 +49,6 @@ function setupProject(expectedMarker = 'from-retry'): string {
   createTestGitRepo(projectDir);
   seedValidationProject(projectDir, expectedMarker);
   return projectDir;
-}
-
-function plannerCliGates(preparationId: string): ReadonlyArray<RunnerGate> {
-  return [
-    {
-      kind: 'cli',
-      slot: { role: 'planner' },
-      preparationId,
-      tool: 'claude-code',
-      executable: executableReceipt(),
-    },
-    {
-      kind: 'agent',
-      slot: { role: 'implementer', profile: 'default' },
-      preparationId,
-      command: { kind: 'validated-config' },
-    },
-  ];
 }
 
 describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
@@ -161,7 +141,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         sessionId,
         feature,
         config,
-        gates: plannerCliGates,
       }),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
@@ -330,7 +309,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         sessionId,
         feature,
         config,
-        gates: plannerCliGates,
       }),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
@@ -461,7 +439,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         sessionId,
         feature: 'run a second consult',
         config,
-        gates: plannerCliGates,
       }),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,

@@ -90,21 +90,15 @@ describe('TwoColumnPicker Enter on a disabled left row', () => {
         leftChanges.push(item.id);
       },
     });
-    await vi.waitFor(
-      () => {
-        expect(leftChanges.at(-1)).toBe('alpha');
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('alpha');
+    });
     await flushEffects();
 
     ui.stdin.write(ARROW_DOWN); // -> beta (disabled)
-    await vi.waitFor(
-      () => {
-        expect(leftChanges.at(-1)).toBe('beta');
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('beta');
+    });
     await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
@@ -124,22 +118,16 @@ describe('TwoColumnPicker Enter on a disabled left row', () => {
         leftChanges.push(item.id);
       },
     });
-    await vi.waitFor(
-      () => {
-        expect(leftChanges.at(-1)).toBe('alpha');
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('alpha');
+    });
     await flushEffects();
     expect(ui.lastFrame()).toContain('←→ column · ↑↓ select · ⏎ confirm · esc cancel');
 
     ui.stdin.write(ARROW_DOWN); // -> beta (disabled)
-    await vi.waitFor(
-      () => {
-        expect(leftChanges.at(-1)).toBe('beta');
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      expect(leftChanges.at(-1)).toBe('beta');
+    });
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('↑↓ select · esc cancel');

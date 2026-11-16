@@ -234,7 +234,7 @@ describe('run-loop stop completion', () => {
   }
 
   async function expectParked(prepared: PreparedExecution) {
-    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'), { timeout: 3000 });
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'));
     expect(registeredProcessCount()).toBe(0);
     const saved = loadState(prepared.session.ref);
     expect(saved?.closed).toBeUndefined();
@@ -391,9 +391,7 @@ describe('run-loop stop completion', () => {
     };
     const prepared = prepare(state);
     mount(prepared);
-    await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'), {
-      timeout: 5000,
-    });
+    await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
     expect(requestStopNow()).toBe(true);
     await expectParked(prepared);
     expect(loadState(prepared.session.ref)?.pendingPlannerConversation).toMatchObject({
@@ -405,13 +403,10 @@ describe('run-loop stop completion', () => {
   it('aborts a real shell planner, waits for its process to exit, and keeps the run open', async () => {
     const prepared = prepare();
     mount(prepared);
-    await vi.waitFor(
-      () => {
-        expect(existsSync(join(projectDir, 'planner-started'))).toBe(true);
-        expect(registeredProcessCount()).toBeGreaterThan(0);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(existsSync(join(projectDir, 'planner-started'))).toBe(true);
+      expect(registeredProcessCount()).toBeGreaterThan(0);
+    });
     requestStopNow();
     await expectParked(prepared);
   });
@@ -426,17 +421,13 @@ describe('run-loop stop completion', () => {
       registerProcess(outside, { group: true });
       const prepared = prepare();
       mount(prepared);
-      await vi.waitFor(
-        () => {
-          expect(existsSync(join(projectDir, 'planner-started'))).toBe(true);
-          expect(registeredProcessCount()).toBeGreaterThan(1);
-        },
-        { timeout: 5000 },
-      );
+      await vi.waitFor(() => {
+        expect(existsSync(join(projectDir, 'planner-started'))).toBe(true);
+        expect(registeredProcessCount()).toBeGreaterThan(1);
+      });
       expect(how === 'stop' ? requestStopNow() : requestEndRun()).toBe(true);
-      await vi.waitFor(
-        () => expect(stopStore.get().phase).toBe(how === 'stop' ? 'parked' : 'ended'),
-        { timeout: 5000 },
+      await vi.waitFor(() =>
+        expect(stopStore.get().phase).toBe(how === 'stop' ? 'parked' : 'ended'),
       );
       expect(registeredProcessCount()).toBe(1);
       expect(outside.exitCode).toBeNull();
@@ -465,15 +456,12 @@ describe('run-loop stop completion', () => {
   it('ends a real run during planning without a stop row or a cut step', async () => {
     const prepared = prepare();
     mount(prepared);
-    await vi.waitFor(
-      () => {
-        expect(existsSync(join(projectDir, 'planner-started'))).toBe(true);
-        expect(registeredProcessCount()).toBeGreaterThan(0);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(existsSync(join(projectDir, 'planner-started'))).toBe(true);
+      expect(registeredProcessCount()).toBeGreaterThan(0);
+    });
     expect(requestEndRun()).toBe(true);
-    await vi.waitFor(() => expect(stopStore.get().phase).toBe('ended'), { timeout: 5000 });
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('ended'));
     expect(registeredProcessCount()).toBe(0);
     const saved = loadState(prepared.session.ref);
     expect(saved?.closed?.as).toBe('ended');
@@ -520,11 +508,8 @@ describe('run-loop stop completion', () => {
     );
     await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
     expect(requestStopNow()).toBe(true);
-    await vi.waitFor(
-      () => expect(routerStore.get()).toMatchObject({ execution: { kind: 'at-rest' } }),
-      {
-        timeout: 3000,
-      },
+    await vi.waitFor(() =>
+      expect(routerStore.get()).toMatchObject({ execution: { kind: 'at-rest' } }),
     );
     expect(stopStore.get().phase).toBe('parked');
 
@@ -551,7 +536,7 @@ describe('run-loop stop completion', () => {
     inputMode?.resolve(plainAnswer('src/core'));
     await vi.waitFor(() => expect(answers).toEqual([plainUserMessage('src/core')]));
     expect(requestStopNow()).toBe(true);
-    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'), { timeout: 3000 });
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'));
     expect(engine).toHaveBeenCalledTimes(2);
   });
 
@@ -570,7 +555,7 @@ describe('run-loop stop completion', () => {
     mount(prepared, engine);
     await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
     requestStopNow();
-    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'), { timeout: 3000 });
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'));
     expect(registeredProcessCount()).toBe(0);
     const saved = loadState(prepared.session.ref);
     expect(saved?.closed).toBeUndefined();

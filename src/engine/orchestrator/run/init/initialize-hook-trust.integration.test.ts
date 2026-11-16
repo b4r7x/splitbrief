@@ -9,7 +9,7 @@ import {
   makeImplementer,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { initializeWorkflow } from './initialize.js';
 import { createRunIsolation } from '../../isolation/create.js';
 import type { RunIsolation } from '../../isolation/types.js';
@@ -17,7 +17,6 @@ import { markHooksConfigTrusted } from '../../../../core/hooks/trust.js';
 import { writeConfig } from '../../../../core/config/load/io.js';
 import { runHeadlessStart } from '../../../../cli/commands/start/streaming.js';
 import type { HooksConfig } from '../../../../core/schemas/hooks.js';
-import { resolveImplementerProfiles } from '../../../../core/config/accessors/implementer-profiles.js';
 import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
 import { reactivateExistingSession } from '../../../../core/sessions/active-pointer.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
@@ -145,12 +144,7 @@ function preparedFromConfig(
   config: PreparedExecution['config'],
 ): PreparedExecution {
   const preparationId = `hook-trust-${args.sessionId}`;
-  const gates = [
-    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(config).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-  ];
+  const gates = preparedGates(config, 'new-workflow', preparationId);
   ensureSessionDir(args.projectDir, args.sessionId);
   const active = reactivateExistingSession({
     projectDir: args.projectDir,

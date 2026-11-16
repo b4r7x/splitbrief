@@ -20,7 +20,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
-import { makeRunnerGate, testCliSeats } from '#testing/helpers/runner-gate.js';
+import { preparedGates, testCliSeats } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../../core/state/machine.js';
 import type { Config } from '../../../../core/schemas/config.js';
 import type { AttachedInput } from '../../../../core/schemas/attachment.js';
@@ -29,8 +29,6 @@ import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
 import { appendMessage } from '../../../../core/sessions/log/writer.js';
 import type { ResumeContextHolder } from '../../types.js';
 import { reactivateExistingSession } from '../../../../core/sessions/active-pointer.js';
-import { resolveImplementerProfiles } from '../../../../core/config/accessors/implementer-profiles.js';
-import { configuredReviewerRunner } from '../../../../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import { taskId, type Task } from '../../../../core/schemas/task.js';
@@ -107,16 +105,7 @@ async function preparedTestExecution(
     hooks === undefined ? input.inputConfig : { ...input.inputConfig, hooks },
   );
   const preparationId = `initialize-workflow-${input.sessionId}`;
-  const configuredReviewer = configuredReviewerRunner(config);
-  const gates = [
-    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
-    ...resolveImplementerProfiles(config).profiles.map((profile) =>
-      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
-    ),
-    ...(configuredReviewer === undefined
-      ? []
-      : [makeRunnerGate(configuredReviewer, { role: 'reviewer' }, preparationId)]),
-  ];
+  const gates = preparedGates(config, 'new-workflow', preparationId);
   ensureSessionDir(input.projectDir, input.sessionId);
   const active = reactivateExistingSession({
     projectDir: input.projectDir,

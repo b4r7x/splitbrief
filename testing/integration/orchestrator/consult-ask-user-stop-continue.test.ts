@@ -9,11 +9,9 @@ import { loadState } from '../../../src/core/state/persistence.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../../src/engine/implementers/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import type { RunnerGate } from '../../../src/engine/runners/prepare-execution/prepared.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import {
@@ -34,24 +32,6 @@ beforeEach(() => resetAllStores());
 afterEach(() => {
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
-
-function gates(preparationId: string): ReadonlyArray<RunnerGate> {
-  return [
-    {
-      kind: 'cli',
-      slot: { role: 'planner' },
-      preparationId,
-      tool: 'claude-code',
-      executable: executableReceipt(),
-    },
-    {
-      kind: 'agent',
-      slot: { role: 'implementer', profile: 'default' },
-      preparationId,
-      command: { kind: 'validated-config' },
-    },
-  ];
-}
 
 const QUESTION = 'Which marker does validate.mjs expect?';
 
@@ -121,7 +101,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
     const stop = new AbortController();
     const firstAsked: PlannerConversation[] = [];
     await runWorkflow({
-      prepared: makePreparedExecution({ ...ref, feature, config, gates }),
+      prepared: makePreparedExecution({ ...ref, feature, config }),
       callbacks: makeCallbacks({
         onPlannerReply: (conversation) => {
           firstAsked.push(conversation);
@@ -147,7 +127,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
     const secondAsked: PlannerConversation[] = [];
     const resumedEvents: EngineEvent[] = [];
     await runWorkflow({
-      prepared: makePreparedExecution({ ...ref, feature, config, gates, resumeState: parked }),
+      prepared: makePreparedExecution({ ...ref, feature, config, resumeState: parked }),
       savedState: parked,
       callbacks: makeCallbacks({
         onPlannerReply: async (conversation) => {

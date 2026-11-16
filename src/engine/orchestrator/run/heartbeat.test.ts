@@ -33,7 +33,7 @@ const { writeLockfile, readLockfile, updateHeartbeat } = await import(
 // fixed number of event-loop turns can: turns are cheap, fs latency is not, so the turn
 // count that settles the chain on an idle machine is not the count that settles it on a
 // loaded one. Both tests below wait on an observable end state, not on a turn budget.
-const SETTLE_TIMEOUT_MS = 5_000;
+
 const FAILING_TICKS = 5;
 
 let testDir: string;
@@ -83,7 +83,7 @@ describe('startHeartbeat', () => {
         expect(data).not.toBeNull();
         expect(data?.lastAliveMs ?? 0).toBeGreaterThan(seeded);
       },
-      { timeout: SETTLE_TIMEOUT_MS, interval: 10 },
+      { interval: 10 },
     );
 
     stop();

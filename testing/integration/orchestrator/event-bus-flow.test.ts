@@ -67,20 +67,6 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
       resumeState,
       purpose: 'resume',
       allowHooks: true,
-      gates: () => [
-        {
-          kind: 'shell',
-          slot: { role: 'planner' },
-          preparationId,
-          command: { kind: 'validated-config' },
-        },
-        {
-          kind: 'shell',
-          slot: { role: 'implementer', profile: 'default' },
-          preparationId,
-          command: { kind: 'validated-config' },
-        },
-      ],
     });
 
     await runWorkflow({
