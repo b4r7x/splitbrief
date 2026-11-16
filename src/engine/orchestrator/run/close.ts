@@ -23,6 +23,7 @@ import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/typ
 import { APPLY_UNFINISHED_REFUSAL } from '../../../core/runtime/commands/messages.js';
 import { stagedWorkspaceRoot } from '../isolation/retention.js';
 import { removeClosedRunWorkspace } from '../isolation/closed-runs.js';
+import { removeSandboxTempDirs } from '../../runners/sandbox/state/paths.js';
 
 /**
  * Whether files the run wrote are still in the checkout. A checkout run's ledger books what each
@@ -130,6 +131,9 @@ export async function closeRunIfOpen(
       if (warning !== undefined) warn(warning, result.state.phase);
       if (workspaceToRemove !== undefined) {
         await removeClosedRunWorkspace(scope, workspaceToRemove, result.state.phase);
+        // After a project move, the temp folders of the workspace still carry the recorded path.
+        if (latest.workspace !== undefined && latest.workspace.path !== workspaceToRemove.path)
+          removeSandboxTempDirs(latest.workspace.path);
       }
       return { state: result.state, closedNow: true };
     }

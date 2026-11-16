@@ -286,6 +286,8 @@ describe('run isolation lifecycle', () => {
       'clear sign-in copies worktree',
       'remove temp dirs worktree',
       'remove worktree worktree',
+      'clear sign-in copies staged copy',
+      'remove temp dirs staged copy',
       'remove root staged copy',
       'remove resumed envs',
     ]);

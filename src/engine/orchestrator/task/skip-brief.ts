@@ -7,6 +7,7 @@ import { publishTaskSkipped } from '../publish/task.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import { persistSkippedBriefFiles } from '../evidence/persistence.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
+import { releaseRetainedWorkspace } from '../isolation/retention.js';
 import { lineageRemainder } from './booking.js';
 import {
   restoreExhaustedTaskFiles,
@@ -47,6 +48,8 @@ export async function skipBrief(
 /**
  * The recovery Skip takes the brief's files back like any skip. It returns the restore warning
  * for the caller to publish after the recovery outcome, so the choice and its outcome stay one row.
+ * A stopped attempt that the put-back cleared is not kept any more; one whose files the put-back
+ * left stays kept, so the next brief puts them back.
  */
 export async function skipHaltedBrief(
   opts: SkipBriefOptions,
@@ -55,8 +58,9 @@ export async function skipHaltedBrief(
   const own =
     taskStartSnapshot === undefined
       ? undefined
-      : (await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot }))?.message;
-  const restoreWarning = await withReplacedAttempts(opts, own);
+      : await restoreExhaustedTaskFiles({ wctx, taskStartSnapshot });
+  const restoreWarning = await withReplacedAttempts(opts, own?.message);
+  if (own === undefined || own.briefKept === 0) await releaseRetainedWorkspace(wctx);
   return { state: await recordSkip(opts), restoreWarning };
 }
 

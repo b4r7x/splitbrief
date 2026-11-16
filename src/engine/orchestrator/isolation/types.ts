@@ -109,6 +109,8 @@ export type RunIsolationState = {
   directory: RetainedWorkspace['directory'] | undefined;
   owner: WorkspaceOwner | undefined;
   retainedAttempt: RetainedWorkspace | null;
+  // The `retained` flag of the run's record: a stopped run keeps its workspace whole for Continue.
+  retained: boolean;
   ownedWorkspace: IsolatedWorkspace | undefined;
   openPromise: Promise<RunWorkspace> | undefined;
   disposePromise: Promise<void> | undefined;

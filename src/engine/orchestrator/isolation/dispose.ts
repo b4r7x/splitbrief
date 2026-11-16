@@ -1,7 +1,8 @@
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { pruneSandboxNpmCache } from '../../runners/sandbox/env.js';
 import { clearBridgedCliState } from '../../runners/sandbox/state/bridge.js';
 import { removeSandboxTempDirs } from '../../runners/sandbox/state/paths.js';
+import { stagedWorkspaceRoot, workspaceIdentityMatches } from './retention.js';
 import type { RunIsolationState } from './types.js';
 import { removeNodeModulesExclude } from './worktree/node-modules.js';
 import { removeWorktree } from './worktree/remove.js';
@@ -36,7 +37,7 @@ async function disposeWorkspace(state: RunIsolationState): Promise<void> {
     await state.pendingCleanup;
     await pruneSandboxNpmCache(projectDir);
     removeSandboxTempDirs(projectDir);
-    const { worktree } = state;
+    const { worktree, location } = state;
     if (worktree !== null) {
       await clearBridgedCliState(worktree.dir);
       removeSandboxTempDirs(worktree.dir);
@@ -50,6 +51,15 @@ async function disposeWorkspace(state: RunIsolationState): Promise<void> {
           suppressUncommittedWarning: true,
         });
       }
+    }
+    // A stopped run keeps its workspace whole for Continue, and a replaced directory is not the run's.
+    if (location?.kind === 'staged-copy' && !state.retained) {
+      const staged = join(
+        stagedWorkspaceRoot({ projectDir, sessionId }, location.leaf),
+        'workspace',
+      );
+      if (await workspaceIdentityMatches(state, staged)) await clearBridgedCliState(staged);
+      removeSandboxTempDirs(staged);
     }
   } finally {
     state.removeWorkspaceRoot?.();

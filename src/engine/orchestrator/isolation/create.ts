@@ -18,6 +18,7 @@ export function createRunIsolation(opts: RunIsolationOptions): RunIsolation {
     directory: undefined,
     owner: undefined,
     retainedAttempt: null,
+    retained: false,
     ownedWorkspace: undefined,
     openPromise: undefined,
     disposePromise: undefined,

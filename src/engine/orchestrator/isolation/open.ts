@@ -29,6 +29,7 @@ import {
   retentionError,
   stagedWorkspaceRoot,
   workspaceDirectoryIdentity,
+  workspaceIdentityMatches,
   workspaceOwner,
 } from './retention.js';
 import type { IsolatedWorkspace, RunIsolation, RunIsolationState, RunWorkspace } from './types.js';
@@ -91,19 +92,7 @@ export async function assertWorkspaceIdentity(
   state: RunIsolationState,
   dir: string,
 ): Promise<void> {
-  const { projectDir, sessionId } = state.opts;
-  const { directory, location } = state;
-  if (
-    directory === undefined ||
-    location === undefined ||
-    !(await retainedDirectoryMatches({ directory }, dir)) ||
-    (location.kind === 'staged-copy' &&
-      !(await retainedDirectoryMatches(
-        { directory: location.rootDirectory },
-        stagedWorkspaceRoot({ projectDir, sessionId }, location.leaf),
-      )))
-  )
-    throw retentionError.unavailable();
+  if (!(await workspaceIdentityMatches(state, dir))) throw retentionError.unavailable();
 }
 
 export async function saveRecord(
@@ -115,6 +104,7 @@ export async function saveRecord(
   const { owner, location } = state;
   if (owner === undefined || location === undefined) throw retentionError.unavailable();
   await retainWorkspaceRecord({ projectDir, sessionId }, { workspace, owner, location, retained });
+  state.retained = retained;
 }
 
 export function open(
@@ -179,6 +169,7 @@ async function openWorkspace(
       throw retentionError.unavailable();
     state.location = previous.location;
     state.directory = previous.directory;
+    state.retained = previous.retained;
     if (previous.retained) state.retainedAttempt = previous;
     if (previous.location.kind === 'worktree' && (await resolveWorktreeDir(state)).dir !== dir)
       throw retentionError.unavailable();

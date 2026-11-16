@@ -34,7 +34,7 @@ import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.
 import type { EventBus } from '../../events/types.js';
 import { publishWarning } from '../publish/notice.js';
 import { publishError } from '../publish/notice.js';
-import type { IsolatedWorkspace } from './types.js';
+import type { IsolatedWorkspace, RunIsolationState } from './types.js';
 
 const MAX_RECORD_BYTES = 8 * 1024 * 1024;
 export const retentionError = {
@@ -188,12 +188,36 @@ export async function retainedDirectoryMatches(
   return identity !== null && canonicalJSON(identity) === canonicalJSON(record.directory);
 }
 
+export async function workspaceIdentityMatches(
+  state: RunIsolationState,
+  dir: string,
+): Promise<boolean> {
+  const { projectDir, sessionId } = state.opts;
+  const { directory, location } = state;
+  return (
+    directory !== undefined &&
+    location !== undefined &&
+    (await retainedDirectoryMatches({ directory }, dir)) &&
+    (location.kind !== 'staged-copy' ||
+      (await retainedDirectoryMatches(
+        { directory: location.rootDirectory },
+        stagedWorkspaceRoot({ projectDir, sessionId }, location.leaf),
+      )))
+  );
+}
+
 async function writeRetainedWorkspace(ref: SessionRef, record: RetainedWorkspace): Promise<void> {
   const content = `${JSON.stringify(record)}\n`;
   if (Buffer.byteLength(content) > MAX_RECORD_BYTES) {
     throw error('isolation-retention-size', 'The workspace continuation record exceeds 8 MiB.');
   }
   await writeConfinedSecureFileAsync(ref.projectDir, recordPath(ref), content);
+}
+
+/** Ends the keep of a stopped attempt whose brief gave its files back. */
+export async function releaseRetainedWorkspace(ref: SessionRef): Promise<void> {
+  const record = await readWorkspaceRecordFile(ref);
+  if (record?.retained === true) await writeRetainedWorkspace(ref, { ...record, retained: false });
 }
 
 export async function retainWorkspaceRecord(

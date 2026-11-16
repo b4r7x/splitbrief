@@ -9,6 +9,7 @@ import { createGitClient, type GitClient } from '../../../../lib/git/client.js';
 import { getGitCommonDir } from '../../../../lib/git/repository.js';
 import { hasErrnoCode } from '../../../../utils/errno.js';
 import { clearWorkspaceRecord, stagedWorkspaceRoot, retentionError } from '../retention.js';
+import { removeSandboxTempDirs } from '../../../runners/sandbox/state/paths.js';
 import { isInsideRoot } from '../../../../lib/fs/confinement.js';
 import {
   gitignoreDiffersOnlyBySplitbriefBookkeeping,
@@ -91,6 +92,7 @@ export async function removeRunWorkspace(
     await removeEmptyRepositoryRoot(workspace.path);
   } else {
     await rm(dirname(workspace.path), { recursive: true, force: true });
+    removeSandboxTempDirs(workspace.path);
   }
   clearWorkspaceRecord(ref);
   return null;
