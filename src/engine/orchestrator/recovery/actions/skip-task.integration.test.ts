@@ -129,7 +129,7 @@ describe('a recovery Skip after the project folder moved', () => {
       expect(refused).toMatchObject({
         ok: false,
         code: 'isolation-project-moved',
-        message: `This run started in ${ref.projectDir}. Move the project back to that folder to continue the run, or end the run.`,
+        message: `This run started in ${ref.projectDir}. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.`,
       });
       expect(runFiles(moved)).toEqual(before);
 

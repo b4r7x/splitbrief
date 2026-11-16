@@ -5154,12 +5154,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-long-question-draft',
-      title: 'Workflow · a two-row draft keeps the question on a short panel',
+      title: 'Workflow · a two-row draft keeps the question and every action on a short panel',
       surface: screenSurface('workflow'),
       viewports: [viewport({ cols: 60, rows: 18 })],
       checkpoint: {
         id: 'long-question-draft',
-        title: 'Recovery menu that keeps the question over a two-row draft',
+        title: 'Recovery menu that keeps the question and every action over a two-row draft',
         kind: 'question',
         marker: 'Question: Projection',
       },

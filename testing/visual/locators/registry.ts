@@ -7,6 +7,7 @@ import { getRecoveryPromptRows } from '../../../src/features/workflow/prompt-row
 import {
   getContentTopRowIndex,
   getProgressRows,
+  WORKFLOW_CHROME_ROWS,
   WORKFLOW_GUTTER_X,
 } from '../../../src/features/workflow/layout/chrome-rows.js';
 import { deriveHomeHintLines } from '../../../src/components/composer/home-hint.js';
@@ -22,7 +23,11 @@ import {
   type WorkflowFixtureProjection,
 } from '../fixtures/workflow/projections.js';
 import { projectionChromeFacts } from '../fixtures/workflow/projection-chrome.js';
-import { workflowFixtureProjectionFor } from '../fixtures/workflow/registry.js';
+import {
+  workflowFixtureFeedback,
+  workflowFixtureProjectionFor,
+} from '../fixtures/workflow/registry.js';
+import { getFeedbackRows } from '../../../src/features/workflow/components/feedback-row.js';
 import { homeFixtureFeedback } from '../fixtures/screen-fixtures.js';
 import type { Cell, CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
@@ -199,6 +204,22 @@ function bodyTopRow(context: LocatorContext): number {
   );
 }
 
+// The rows the fixture's message takes in the footer, fitted as the feedback row fits it.
+function workflowFeedbackRows(context: LocatorContext): number {
+  const { cols } = context.grid.identity.provenance.viewport;
+  return getFeedbackRows(workflowFixtureFeedback.get(context.scenario.id) ?? null, cols);
+}
+
+// The body ends above the footer: its rule, the feedback rows, the composer and the byline.
+function workflowFooterRows(context: LocatorContext): number {
+  return (
+    WORKFLOW_CHROME_ROWS.footerDivider +
+    workflowFeedbackRows(context) +
+    DEFAULT_INPUT_ROWS +
+    WORKFLOW_CHROME_ROWS.inputFooter
+  );
+}
+
 function resolveWorkflowSidebar(context: LocatorContext): CellRect {
   const { rows } = context.grid.identity.provenance.viewport;
   const width = sidebarWidthFor(context);
@@ -209,7 +230,7 @@ function resolveWorkflowSidebar(context: LocatorContext): CellRect {
     x: WORKFLOW_GUTTER_X,
     y,
     width,
-    height: rows - y - DEFAULT_INPUT_ROWS - 3,
+    height: rows - y - workflowFooterRows(context),
   });
 }
 
@@ -225,7 +246,7 @@ function resolveWorkflowTranscript(context: LocatorContext): CellRect {
     x: 0,
     y,
     width: cols,
-    height: Math.max(0, rows - y - DEFAULT_INPUT_ROWS - 3),
+    height: Math.max(0, rows - y - workflowFooterRows(context)),
   });
 }
 
@@ -257,7 +278,11 @@ function resolveWorkflowApprovalPanel(context: LocatorContext): CellRect {
           projection.reviewArtifact ?? null,
           projection.review.confirms ?? [],
           cols,
-          getReviewPanelBudget({ rows, inputRows: DEFAULT_INPUT_ROWS }),
+          getReviewPanelBudget({
+            rows,
+            inputRows: DEFAULT_INPUT_ROWS,
+            feedbackRows: workflowFeedbackRows(context),
+          }),
         )
       : getWorkflowFixturePromptRows(projection, cols);
   const height = Math.min(promptRows, transcript.height);

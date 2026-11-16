@@ -13,21 +13,19 @@ export const WORKFLOW_GUTTER_X = ROW_LEADING.length;
 
 // The header row (which carries the phase rail inline) + the divider (1). The divider alone
 // separates the chrome from the body — no gap row below it — and the live status rides inline, so
-// no chrome row is reserved for it either.
+// no chrome row is reserved for it either. The feedback row is not fixed: a message takes the rows
+// it needs, so each caller counts them (`getFeedbackRows`).
 export const WORKFLOW_CHROME_ROWS = {
   header: 1,
   headerDivider: 1,
   progress: 0,
   footerDivider: 1,
-  feedback: 1,
   inputFooter: 1,
 } as const;
 
 const TOP_FIXED_CHROME_ROWS = WORKFLOW_CHROME_ROWS.header + WORKFLOW_CHROME_ROWS.headerDivider;
 const BOTTOM_FIXED_CHROME_ROWS =
-  WORKFLOW_CHROME_ROWS.footerDivider +
-  WORKFLOW_CHROME_ROWS.feedback +
-  WORKFLOW_CHROME_ROWS.inputFooter;
+  WORKFLOW_CHROME_ROWS.footerDivider + WORKFLOW_CHROME_ROWS.inputFooter;
 export const FIXED_CHROME_ROWS = TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROWS;
 
 function normalizeInputRows(inputRows: number): number {
@@ -75,8 +73,13 @@ export function buildProgressRowCount(contentWidth: number): number {
   return contentWidth >= getChromeContentWidth(120) ? 2 : 3;
 }
 
-export function getChromeHeight(inputRows: number, progressRows = 0): number {
-  return FIXED_CHROME_ROWS + normalizeInputRows(inputRows) + normalizeInputRows(progressRows);
+export function getChromeHeight(inputRows: number, feedbackRows: number, progressRows = 0): number {
+  return (
+    FIXED_CHROME_ROWS +
+    normalizeInputRows(inputRows) +
+    normalizeInputRows(feedbackRows) +
+    normalizeInputRows(progressRows)
+  );
 }
 
 export function getContentTopRow(): number {

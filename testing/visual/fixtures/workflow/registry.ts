@@ -809,6 +809,14 @@ export const workflowProjectionRegistry: ReadonlyMap<ScenarioId, WorkflowFixture
     ]),
   );
 
+// The feedback a workflow fixture leaves in the footer when it takes more than one row at one of the
+// scenario's viewports and the scenario crops a body element (the sidebar, the transcript or a
+// panel). The locators fit it as the row fits it, so the body ends above its rows.
+export const workflowFixtureFeedback: ReadonlyMap<string, string> = new Map([
+  ['workflow-command-image-refused', COMMAND_IMAGE_REASON],
+  ['workflow-moved-project-skip', MOVED_PROJECT_MESSAGE],
+]);
+
 export function workflowFixtureProjectionFor(
   scenario: ScenarioId,
   checkpoint: CheckpointId,
@@ -1634,7 +1642,14 @@ const checkpointPredicates = [
       planCardReady(context) &&
       includesAll(`${listRowLead('active')}Approve plan`, `${glyph('prompt')} approve`)(context),
   ],
-  [checkpointId('plan-card-confirm-words'), includesAll('Confirm with a reason', TYPED_WORDS)],
+  [
+    checkpointId('plan-card-confirm-words'),
+    // The note wraps onto a second footer row at 60 columns, so the words are read across the rows.
+    ({ output, checkpoint }) =>
+      [checkpoint.marker, 'Confirm with a reason', TYPED_WORDS].every((marker) =>
+        panelText(output).includes(marker),
+      ),
+  ],
   [
     checkpointId('plan-card-usage-refused'),
     (context) =>
@@ -2303,7 +2318,13 @@ const checkpointPredicates = [
   [checkpointId('long-question'), includesAll('T901 needs your answer', 'Question: Projection')],
   [
     checkpointId('long-question-draft'),
-    includesAll('T901 needs your answer', 'Question: Projection', 'untouched'),
+    includesAll(
+      'T901 needs your answer',
+      'Question: Projection',
+      'Skip task',
+      'End run',
+      'untouched',
+    ),
   ],
   [
     checkpointId('masked-question'),

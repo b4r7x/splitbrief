@@ -169,6 +169,7 @@ export interface WorkflowContentRectInput {
   cols: number;
   rows: number;
   inputRows: number;
+  feedbackRows: number;
   sidebarVisible: boolean;
   promptRows?: number;
   progressRows?: number;
@@ -189,44 +190,72 @@ export const REVIEW_MIN_ROWS = REVIEW_FRAME_ROWS + REVIEW_HEADER_ROWS + 1;
 // more plan rows and the "N more" footer under them. Short of that the plan takes their rows.
 export const REVIEW_DECORATION_ROWS = 5 + REVIEW_FOOTER_ROWS;
 
-function getWorkflowMiddleRows(rows: number, inputRows: number, progressRows: number): number {
-  return Math.max(0, rows - getChromeHeight(inputRows, progressRows));
+function getWorkflowMiddleRows(
+  rows: number,
+  inputRows: number,
+  feedbackRows: number,
+  progressRows: number,
+): number {
+  return Math.max(0, rows - getChromeHeight(inputRows, feedbackRows, progressRows));
 }
 
 // The rows the plan card's panel may take and still leave its document REVIEW_MIN_ROWS. No build
 // block paints while a gate is open, so the panel and the document share the whole middle.
-export function getReviewPanelBudget(input: { rows: number; inputRows: number }): number {
-  return Math.max(0, getWorkflowMiddleRows(input.rows, input.inputRows, 0) - REVIEW_MIN_ROWS);
+export function getReviewPanelBudget(input: {
+  rows: number;
+  inputRows: number;
+  feedbackRows: number;
+}): number {
+  return Math.max(
+    0,
+    getWorkflowMiddleRows(input.rows, input.inputRows, input.feedbackRows, 0) - REVIEW_MIN_ROWS,
+  );
 }
 
 export function clampWorkflowPromptRows(input: {
   rows: number;
   inputRows: number;
+  feedbackRows: number;
   promptRows: number;
   progressRows?: number;
 }): number {
-  const { rows, inputRows, promptRows, progressRows = 0 } = input;
-  return clamp(promptRows, 0, getWorkflowMiddleRows(rows, inputRows, progressRows));
+  const { rows, inputRows, feedbackRows, promptRows, progressRows = 0 } = input;
+  return clamp(promptRows, 0, getWorkflowMiddleRows(rows, inputRows, feedbackRows, progressRows));
 }
 
 export function getWorkflowViewportHeight(input: {
   rows: number;
   inputRows: number;
+  feedbackRows: number;
   promptRows?: number;
   progressRows?: number;
 }): number {
-  const { rows, inputRows, promptRows = 0, progressRows = 0 } = input;
+  const { rows, inputRows, feedbackRows, promptRows = 0, progressRows = 0 } = input;
   return Math.max(
     0,
-    getWorkflowMiddleRows(rows, inputRows, progressRows) -
-      clampWorkflowPromptRows({ rows, inputRows, promptRows, progressRows }),
+    getWorkflowMiddleRows(rows, inputRows, feedbackRows, progressRows) -
+      clampWorkflowPromptRows({ rows, inputRows, feedbackRows, promptRows, progressRows }),
   );
 }
 
 export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
-  const { cols, rows, inputRows, sidebarVisible, promptRows = 0, progressRows = 0 } = input;
+  const {
+    cols,
+    rows,
+    inputRows,
+    feedbackRows,
+    sidebarVisible,
+    promptRows = 0,
+    progressRows = 0,
+  } = input;
   const width = getWorkflowContentWidth({ cols, sidebarVisible });
-  const height = getWorkflowViewportHeight({ rows, inputRows, promptRows, progressRows });
+  const height = getWorkflowViewportHeight({
+    rows,
+    inputRows,
+    feedbackRows,
+    promptRows,
+    progressRows,
+  });
   // The pane's first painted column, past the sidebar and its gap. The rect is the hit-test truth,
   // so it must agree with the column the body actually renders at.
   const left = getWorkflowContentLeft({ cols, sidebarVisible });

@@ -117,27 +117,67 @@ describe('buildInputFooterByline', () => {
     expect(fullByline(byline)).toBe('⠋ Researching… 2:24');
   });
 
-  it('cuts a long reviewer check command, never its label or its clock', () => {
-    const lead =
-      '⠋ Reviewer check V1 · npx vitest run src/features/workflow/display/build-progress.test.ts';
-    for (const cols of [60, 80]) {
-      const line = fullByline(
-        buildInputFooterByline({
-          cols,
-          lead: [
-            { text: '⠋ Reviewer check V1', tone: 'reviewer' },
-            { text: ' · ', tone: 'textDim' },
-            { text: lead.slice('⠋ Reviewer check V1 · '.length), tone: 'textDim' },
-          ],
-          leadClock: '0:42',
-          queuedText: '2 queued',
-        }),
-      );
+  const VITEST_CHECK = 'npx vitest run src/features/workflow/display/build-progress.test.ts';
 
-      expect(line.startsWith('⠋ Reviewer check V1 · npx vitest')).toBe(true);
-      expect(line.endsWith('… 0:42')).toBe(true);
-      expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(getChromeContentWidth(cols));
-    }
+  function reviewerCheckByline(cols: number, command = VITEST_CHECK): string {
+    return fullByline(
+      buildInputFooterByline({
+        cols,
+        lead: [
+          { text: '⠋ Reviewer check V1', tone: 'reviewer' },
+          { text: ' · ', tone: 'textDim' },
+          { text: command, tone: 'textDim' },
+        ],
+        leadClock: '0:42',
+        queuedText: '2 queued',
+      }),
+    );
+  }
+
+  it('cuts a long reviewer check command, never its label or its clock', () => {
+    const line = reviewerCheckByline(60);
+
+    expect(line).toBe('⠋ Reviewer check V1 · npx vitest run … 0:42');
+    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(getChromeContentWidth(60));
+  });
+
+  it('shortens the path of a long reviewer check command from the middle so its file name shows', () => {
+    const line = reviewerCheckByline(80);
+
+    expect(line).toBe(
+      '⠋ Reviewer check V1 · npx vitest run src/…/display/build-progress.test.ts 0:42',
+    );
+    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(getChromeContentWidth(80));
+  });
+
+  it('cuts the file name of a reviewer check command in its middle so the argument after it shows', () => {
+    const line = reviewerCheckByline(80, `${VITEST_CHECK} --reporter=dot`);
+
+    expect(line).toBe(
+      '⠋ Reviewer check V1 · npx vitest run …/build-pro…s.test.ts --reporter=dot 0:42',
+    );
+    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(getChromeContentWidth(80));
+  });
+
+  it('keeps both file names of a reviewer check command with two paths whole when the later path gives up its folders', () => {
+    const line = reviewerCheckByline(
+      108,
+      'node scripts/check-user-facing-text.mjs src/features/workflow/components/recovery-menu.tsx',
+    );
+
+    expect(line).toBe(
+      '⠋ Reviewer check V1 · node scripts/check-user-facing-text.mjs src/…/components/recovery-menu.tsx 0:42',
+    );
+    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(getChromeContentWidth(108));
+  });
+
+  it.each([
+    [80, '⠋ Reviewer check V1 · curl -fsS http://localhost:3000/api/health … 0:42'],
+    [60, '⠋ Reviewer check V1 · curl -fsS … 0:42'],
+  ])('keeps a URL in a reviewer check command whole at %i columns', (cols, expected) => {
+    expect(reviewerCheckByline(cols, 'curl -fsS http://localhost:3000/api/health --retry 3')).toBe(
+      expected,
+    );
   });
 
   it('keeps the clock after the lead when the whole line fits', () => {

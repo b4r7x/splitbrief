@@ -38,6 +38,8 @@ import { splitConversationViewport } from '../conversation-rows/viewport.js';
 import { queuedBriefs } from '../conversation-rows/queued-briefs.js';
 import { resultMenuStore } from '../../../stores/workflow/result-menu.js';
 import { routeClosedAtRest } from '../at-rest.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { getFeedbackRows } from '../components/feedback-row.js';
 
 export interface ConversationScrollSnapshot {
   conversationWidth: number;
@@ -84,6 +86,7 @@ function readWorkflowPromptRows(): number {
       budgetRows: getReviewPanelBudget({
         rows: terminalSizeStore.get().rows,
         inputRows: inputHeightStore.get().rows,
+        feedbackRows: readFeedbackRows(),
       }),
     },
     recoveryIssue: recoveryPrompt ? recoveryIssue : null,
@@ -109,6 +112,11 @@ function readProgressRows(promptRows: number): number {
     atRest: route.screen === 'workflow' && route.execution.kind === 'at-rest',
     parked: stopStore.get().phase === 'parked',
   });
+}
+
+// The footer's message rows, asked from the store the row paints from.
+function readFeedbackRows(): number {
+  return getFeedbackRows(feedbackStore.get().message, terminalSizeStore.get().cols);
 }
 
 function readRailFraction(): string {
@@ -164,6 +172,7 @@ export function readReviewContentHeight(): number {
   const viewportHeight = getWorkflowViewportHeight({
     rows: terminalSizeStore.get().rows,
     inputRows: inputHeightStore.get().rows,
+    feedbackRows: readFeedbackRows(),
     promptRows,
     progressRows: readProgressRows(promptRows),
   });
@@ -181,6 +190,7 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     cols,
     rows,
     inputRows: inputHeightStore.get().rows,
+    feedbackRows: readFeedbackRows(),
     sidebarVisible,
     promptRows,
     progressRows: readProgressRows(promptRows),

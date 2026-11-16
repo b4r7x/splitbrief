@@ -6,6 +6,7 @@ const atRest = {
   cols: 100,
   rows: 30,
   inputRows: 1,
+  feedbackRows: 1,
   sidebarVisible: true,
   requestedPromptRows: 0,
   phase: 'planning' as const,
@@ -17,7 +18,7 @@ const atRest = {
 
 describe('workflowScreenLayout', () => {
   it('gives the panel the rows it asks for and the transcript the rest of the middle', () => {
-    const middle = atRest.rows - getChromeHeight(atRest.inputRows, 0);
+    const middle = atRest.rows - getChromeHeight(atRest.inputRows, atRest.feedbackRows, 0);
     expect(workflowScreenLayout({ ...atRest, requestedPromptRows: 4 })).toMatchObject({
       progressRows: 0,
       promptBoxRows: 4,
@@ -26,7 +27,7 @@ describe('workflowScreenLayout', () => {
   });
 
   it('keeps one row for an open panel while the chrome fits, and none once the chrome overflows', () => {
-    const chrome = getChromeHeight(atRest.inputRows, 0);
+    const chrome = getChromeHeight(atRest.inputRows, atRest.feedbackRows, 0);
     expect(workflowScreenLayout({ ...atRest, rows: chrome, requestedPromptRows: 4 })).toMatchObject(
       { promptBoxRows: 1, contentHeight: 0 },
     );
@@ -35,10 +36,19 @@ describe('workflowScreenLayout', () => {
     ).toMatchObject({ promptBoxRows: 0, contentHeight: 0 });
   });
 
+  it('gives the panel one row less when the feedback row takes two rows for its message', () => {
+    const tight = { ...atRest, cols: 80, rows: 24, requestedPromptRows: 99 };
+    const oneRow = workflowScreenLayout(tight);
+    const twoRows = workflowScreenLayout({ ...tight, feedbackRows: 2 });
+    expect(twoRows.promptBoxRows).toBe(oneRow.promptBoxRows - 1);
+    expect(twoRows.contentHeight).toBe(oneRow.contentHeight);
+  });
+
   it('paints the build block only while a brief builds and no panel asks for rows', () => {
     const building = { ...atRest, phase: 'implementing' as const, atRest: false };
     const blockRows = buildProgressRowCount(getChromeContentWidth(building.cols));
-    const middle = building.rows - getChromeHeight(building.inputRows, blockRows);
+    const middle =
+      building.rows - getChromeHeight(building.inputRows, building.feedbackRows, blockRows);
     expect(workflowScreenLayout(building)).toMatchObject({
       progressRows: blockRows,
       promptBoxRows: 0,

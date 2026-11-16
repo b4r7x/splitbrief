@@ -11,6 +11,8 @@ export function workflowScreenLayout(input: {
   cols: number;
   rows: number;
   inputRows: number;
+  /** The rows the feedback row takes: one, or the rows its message needs (`getFeedbackRows`). */
+  feedbackRows: number;
   sidebarVisible: boolean;
   /** The rows the panel above the composer asks for: a menu, a gate, the plan card, a question. */
   requestedPromptRows: number;
@@ -20,7 +22,7 @@ export function workflowScreenLayout(input: {
   atRest: boolean;
   parked: boolean;
 }) {
-  const { cols, rows, inputRows, sidebarVisible, requestedPromptRows } = input;
+  const { cols, rows, inputRows, feedbackRows, sidebarVisible, requestedPromptRows } = input;
   const progressRows = getProgressRows({
     phase: input.phase,
     cols,
@@ -33,12 +35,13 @@ export function workflowScreenLayout(input: {
   const promptRows = clampWorkflowPromptRows({
     rows,
     inputRows,
+    feedbackRows,
     progressRows,
     promptRows: requestedPromptRows,
   });
   // An open panel keeps a row while the chrome fits; the header gives its row up first.
   const promptBoxRows =
-    rows < getChromeHeight(inputRows, progressRows)
+    rows < getChromeHeight(inputRows, feedbackRows, progressRows)
       ? 0
       : Math.max(Math.min(1, requestedPromptRows), promptRows);
   return {
@@ -48,6 +51,7 @@ export function workflowScreenLayout(input: {
     contentHeight: getWorkflowViewportHeight({
       rows,
       inputRows,
+      feedbackRows,
       progressRows,
       promptRows: promptBoxRows,
     }),

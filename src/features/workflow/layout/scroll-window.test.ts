@@ -82,10 +82,22 @@ describe('getScrollWindowState', () => {
   it('clips to the whole caller-owned body height at every sidebar width', () => {
     const rows = 24;
     const inputRows = 3;
-    const noSidebar = getWorkflowContentRect({ cols: 80, rows, inputRows, sidebarVisible: false });
+    const noSidebar = getWorkflowContentRect({
+      cols: 80,
+      rows,
+      inputRows,
+      feedbackRows: 1,
+      sidebarVisible: false,
+    });
 
     for (const cols of [121, 120, 119, 80, 50, 40]) {
-      const rect = getWorkflowContentRect({ cols, rows, inputRows, sidebarVisible: true });
+      const rect = getWorkflowContentRect({
+        cols,
+        rows,
+        inputRows,
+        feedbackRows: 1,
+        sidebarVisible: true,
+      });
       const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
       const state = getScrollWindowState({
         totalHeight: rect.height,

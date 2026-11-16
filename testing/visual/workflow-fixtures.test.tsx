@@ -48,6 +48,8 @@ import {
   workflowFixtureProjections,
   type WorkflowFixtureProjection,
 } from './fixtures/workflow/projections.js';
+import { MOVED_PROJECT_MESSAGE } from './fixtures/workflow/at-rest-projections.js';
+import { retentionError } from '../../src/engine/orchestrator/isolation/retention.js';
 import { workflowFixtureRegistry, workflowTranscriptText } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -1982,6 +1984,85 @@ describe('workflow visual fixtures', () => {
       startsWithText(lock.frame, `${glyph('statusFailed')} Could not release the run lock`),
     ).toBe(true);
   }, 60_000);
+
+  it.each([
+    [80, 24],
+    [60, 18],
+  ])(
+    'shows the whole reason of a Skip refused after the project folder moved in the footer at %ix%i',
+    async (cols, rows) => {
+      const skip = await captureGalleryFrame('workflow-moved-project-skip', cols);
+      const lines = skip.frame.split('\n');
+      const composer = lines.findIndex((line) => line.trimStart().startsWith('╭'));
+      const divider = lines.slice(0, composer).findLastIndex((line) => line.startsWith('─'));
+      const footer = lines.slice(divider + 1, composer).join('\n');
+      expect(footer.replace(/\s+/g, ''), skip.frame).toBe(
+        `${glyph('statusFailed')}${MOVED_PROJECT_MESSAGE}`.replace(/\s+/g, ''),
+      );
+      expect(footer.replace(/\s+/g, ' ')).toContain('or end the run.');
+      // The footer rows come out of the body, so the header keeps the first row.
+      expect(lines.length, skip.frame).toBeLessThanOrEqual(rows);
+      expect(lines[0]).toContain('Build');
+      expect(skip.frame).toContain('Skip task');
+      expect(skip.frame).toContain('End run');
+      expect(skip.frame).toContain('↑↓ select · ⏎ confirm');
+    },
+  );
+
+  it.each([
+    [
+      'a 64-character path',
+      '/Users/someone/work/company-monorepo/packages/web-storefront-app',
+      'This run started in /',
+    ],
+    [
+      'a 158-character path',
+      '/private/var/folders/k8/y30tf3zs7pbg6bnv5hsd_7nr0000gn/T/ci-runner-4f2a5/work/906322be-8b36-4b7a-9e0a-12201ec2a195/e2e/splitbrief-stop-continue-he1SCS/project',
+      'This run started in /',
+    ],
+    [
+      'a 41-character folder name',
+      '/Users/me/projects/acme-internal-billing-service-v2-monorepo',
+      'This run started in …/acme-internal-bi…vice-v2-monorepo.',
+    ],
+  ])(
+    'keeps every action and the way on of a Skip refused in a moved folder with %s at 60x18',
+    async (_label, path, startedIn) => {
+      const scenario = findVisualScenario('workflow-moved-project-skip');
+      const checkpoint = scenario?.checkpoints[0];
+      if (scenario === undefined || checkpoint === undefined) throw new Error('Missing scenario');
+      const handle = await mountGalleryScenario({
+        scenario,
+        checkpoint,
+        viewport: viewport({ cols: 60, rows: 18 }),
+      });
+      let frame: string;
+      try {
+        await handle.waitForCheckpoint();
+        feedbackStore.setError(retentionError.moved(path).message);
+        await flushEffects();
+        await flushEffects();
+        frame = stripAnsiStyles(handle.lastFrame() ?? '');
+      } finally {
+        await handle.unmount();
+      }
+      const lines = frame.split('\n');
+      const composer = lines.findIndex((line) => line.trimStart().startsWith('╭'));
+      const divider = lines.slice(0, composer).findLastIndex((line) => line.startsWith('─'));
+      const footer = lines
+        .slice(divider + 1, composer)
+        .join(' ')
+        .replace(/\s+/g, ' ');
+
+      expect(footer, frame).toContain(startedIn);
+      expect(footer, frame).toContain(
+        'Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.',
+      );
+      expect(lines.length, frame).toBeLessThanOrEqual(18);
+      for (const action of ['Try again', 'Skip task', 'End run']) expect(frame).toContain(action);
+      expect(frame).not.toContain('↓ more');
+    },
+  );
 
   it('shows a mistyped command refused on Home with its line back and the command list closed', async () => {
     const reason = 'Unknown command: /setings. Did you mean /settings?';

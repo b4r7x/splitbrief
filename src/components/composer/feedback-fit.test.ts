@@ -272,6 +272,12 @@ describe('fitFeedbackMessage', () => {
       );
     });
 
+    it('ends on the whole path when the end cut does not fit after it', () => {
+      expect(fitFeedbackMessage(RELEASE, { width: 149, maxRows: 1 })).toBe(
+        `Could not release the run lock: permission denied · ${LOCK}`,
+      );
+    });
+
     it('keeps each whole part that fits after a shortened path', () => {
       const message = RELEASE.replace(`${LOCK} · `, `${LOCK} · retry · `);
 
@@ -365,6 +371,82 @@ describe('fitFeedbackMessage', () => {
         expect(rows.some((row) => row.includes('lockfile.json'))).toBe(true);
         for (const row of rows) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(width);
       }
+    });
+
+    it.each([3, 4])(
+      'shortens a long path inside a sentence so the words after it show whole on %i rows of 56 cells',
+      (maxRows) => {
+        const path =
+          '/private/var/folders/k8/y30tf3zs7pbg6bnv5hsd_7nr0000gn/T/ci-runner-4f2a5/work/906322be-8b36-4b7a-9e0a-12201ec2a195/e2e/splitbrief-stop-continue-he1SCS/project';
+        const wayOn =
+          'Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.';
+        const rows = fitFeedbackMessage(`This run started in ${path}. ${wayOn}`, {
+          width: 56,
+          maxRows,
+        }).split('\n');
+        const text = rows.join(' ');
+
+        expect(path).toHaveLength(158);
+        expect(rows.length).toBeLessThanOrEqual(maxRows);
+        for (const row of rows) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(56);
+        expect(text.endsWith(`. ${wayOn}`)).toBe(true);
+        expect(text.startsWith('This run started in /')).toBe(true);
+        // The path keeps its root and its folder name, shortened from the middle.
+        const shown = text
+          .slice('This run started in '.length, -`. ${wayOn}`.length)
+          .replace(/\s+/g, '');
+        expect(shown).toMatch(/^\/…\/(.+\/)?project$/);
+      },
+    );
+
+    it('keeps a path inside a sentence whole when shortening it cannot make the message fit', () => {
+      const message =
+        'SPLITBRIEF keeps the config it loaded before · Configuration errors in .splitbrief/config.yaml: planner.tool: Invalid option: expected one of "claude-code"|"codex"|"opencode"|"kilo-code"|"cursor"|"command-code"|"antigravity"';
+      const fitted = fitFeedbackMessage(message, { width: 50, maxRows: 3 });
+
+      expect(fitted.replace(/\s+/g, ' ')).toContain(
+        'Configuration errors in .splitbrief/config.yaml:',
+      );
+      expect(fitted.endsWith('…')).toBe(true);
+    });
+
+    it.each([
+      [
+        'acme-internal-billing-service-v2-monorepo',
+        56,
+        [
+          'This run started in …/acme-internal-bi…vice-v2-monorepo.',
+          'Move the project back to that folder and start',
+          'SPLITBRIEF there to continue the run, or end the run.',
+        ],
+      ],
+      [
+        'acme-internal-billing-and-invoicing-service-v2-monorepo-workspace',
+        76,
+        [
+          'This run started in …/acme-internal-billing-and-…vice-v2-monorepo-workspace.',
+          'Move the project back to that folder and start SPLITBRIEF there to continue',
+          'the run, or end the run.',
+        ],
+      ],
+    ])(
+      'cuts the folder name %s in its middle so the words after it show whole on 3 rows of %i cells',
+      (name, width, rows) => {
+        const message = `This run started in /Users/me/projects/${name}. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.`;
+
+        expect(fitFeedbackMessage(message, { width, maxRows: 3 }).split('\n')).toEqual(rows);
+      },
+    );
+
+    it('keeps a short file name inside a sentence whole and cuts the end of the message instead', () => {
+      const message =
+        'Config file /Users/me/projects/shop/.splitbrief/config.yaml exists but could not be read — check its permissions or delete it to use defaults.';
+
+      expect(fitFeedbackMessage(message, { width: 36, maxRows: 3 }).split('\n')).toEqual([
+        'Config file',
+        '/Users/me/projects/shop/.splitbrief/',
+        'config.yaml exists but could not …',
+      ]);
     });
   });
 

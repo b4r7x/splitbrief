@@ -54,7 +54,7 @@ describe('a run continued from a moved project folder', { timeout: 240_000 }, ()
       const resumed = await continueRun(moved);
       expect(resumed.exitCode, resumed.stderr).toBe(1);
 
-      const sentence = `${STARTED_IN} ${startedIn}. Move the project back to that folder to continue the run, or end the run.`;
+      const sentence = `${STARTED_IN} ${startedIn}. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.`;
       const output = `${resumed.stdout}\n${resumed.stderr}`;
       expect(output).toContain(sentence);
       expect(output.split(STARTED_IN)).toHaveLength(2);
@@ -101,7 +101,7 @@ describe('a run continued from a moved project folder', { timeout: 240_000 }, ()
 
     expect(retried.exitCode, retried.stderr).toBe(1);
     expect(retried.stderr).toContain(
-      `${STARTED_IN} ${startedIn}. Move the project back to that folder to continue the run, or end the run.`,
+      `${STARTED_IN} ${startedIn}. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.`,
     );
     expect(retried.stderr).not.toContain('no such file or directory');
     expect(retried.stderr).not.toContain('is gone or replaced');

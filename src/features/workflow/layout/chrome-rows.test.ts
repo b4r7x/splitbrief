@@ -40,17 +40,17 @@ describe('getChromeContentWidth', () => {
 
 describe('getChromeHeight', () => {
   it('sums top + bottom + inputRows for the baseline horizontal rail', () => {
-    expect(getChromeHeight(2)).toBe(7);
+    expect(getChromeHeight(2, 1)).toBe(7);
   });
 
   it('each additional input row increases chrome height by exactly 1', () => {
-    const base = getChromeHeight(1);
-    expect(getChromeHeight(4) - base).toBe(3);
+    const base = getChromeHeight(1, 1);
+    expect(getChromeHeight(4, 1) - base).toBe(3);
   });
 
   it('clamps malformed composer heights to the fixed chrome rows', () => {
-    expect(getChromeHeight(-4)).toBe(FIXED_CHROME_ROWS);
-    expect(getChromeHeight(Number.NaN)).toBe(FIXED_CHROME_ROWS);
+    expect(getChromeHeight(-4, 1)).toBe(FIXED_CHROME_ROWS + 1);
+    expect(getChromeHeight(Number.NaN, 1)).toBe(FIXED_CHROME_ROWS + 1);
   });
 });
 
@@ -383,6 +383,6 @@ describe('getProgressRows', () => {
   });
 
   it('leaves its rows to the chrome, so the body is measured around it', () => {
-    expect(getChromeHeight(3, 2)).toBe(getChromeHeight(3) + 2);
+    expect(getChromeHeight(3, 1, 2)).toBe(getChromeHeight(3, 1) + 2);
   });
 });

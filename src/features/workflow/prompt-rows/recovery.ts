@@ -41,47 +41,61 @@ export function getRecoveryPromptRows(issue: RecoveryIssue, cols: number): numbe
  * What a recovery menu of `width` columns keeps in a box of `boxRows`. A short panel keeps its
  * content before its chrome: the selected action, the headline (it carries the cut mark when it is
  * the only summary row), one mark row that names every side hiding actions, and the legend. Then
- * the border, a second summary row for the mark, the other actions, and the divider, in that
- * order. A cut that would hide the row the halt asks the user to read puts that row first, whole
- * while it fits, and the rows after it give way. The summary then takes the divider's row, or a
- * list row on a panel with no divider. The list scrolls, so every action stays reachable.
+ * the border and the other actions: every action shows before a second summary row does. Then a
+ * second summary row for the mark, the divider, and the rest of the summary, in that order. A cut
+ * that would hide the row the halt asks the user to read puts that row first, whole while it fits,
+ * and the rows after it give way; the summary then takes the divider's row. When the border leaves
+ * no room for that row, the border gives way before it. The list scrolls, so every action stays
+ * reachable.
  */
 export function fitRecoveryMenu(input: { issue: RecoveryIssue; width: number; boxRows: number }) {
   const { issue, width, boxRows } = input;
   const innerWidth = Math.max(MIN_TEXT_WIDTH, width - RECOVERY_PROMPT_HORIZONTAL_CHROME);
   const fullSummary = recoveryPromptSummaryRows(issue, innerWidth);
   const fullRows = promptBodyRows(fullSummary, innerWidth);
-  const minimumListRows = Math.min(4, Math.max(getRecoveryPromptActions(issue).length, 1));
-  const listFloor = Math.min(2, minimumListRows);
-  const framed = boxRows >= 1 + listFloor + 1 + RECOVERY_PROMPT_BORDER_ROWS;
-  const innerHeight = boxRows - (framed ? RECOVERY_PROMPT_BORDER_ROWS : 0);
-  const summaryShown = innerHeight >= 2;
-  const legend = innerHeight >= 4;
-  const besideList = innerHeight - listFloor - 1;
-  const fittedHeight = Math.min(
-    Math.max(1, fullRows.length),
-    Math.max(1, Math.min(2, besideList), innerHeight - minimumListRows - 2),
-  );
-  const fittedDivided = innerHeight - fittedHeight - minimumListRows - 1 > 0;
+  const actionCount = Math.max(getRecoveryPromptActions(issue).length, 1);
+  const listFloor = Math.min(2, actionCount);
   const askedRow = (row: PromptBodyLine): boolean =>
     row.kind === 'facts-line' && isAskedDetail(row.text.trimStart());
-  const askedFirst =
-    besideList > fittedHeight &&
-    fullRows.some(askedRow) &&
-    !clipPromptBodyRows(fullRows, fittedHeight).some(askedRow);
-  const summary = askedFirst
-    ? recoveryPromptSummaryRows(issue, innerWidth, fittedHeight - 1)
-    : fullSummary;
-  const takesSummaryRow = askedFirst && countPromptBodyRows(summary, innerWidth) > fittedHeight;
-  const summaryRows = summaryShown ? fittedHeight + (takesSummaryRow ? 1 : 0) : 0;
-  const divided = fittedDivided && !takesSummaryRow;
-  return {
-    innerWidth,
-    framed,
-    summary,
-    summaryRows,
-    legend,
-    divided,
-    listRows: innerHeight - summaryRows - (legend ? 1 : 0) - (divided ? 1 : 0),
+  const fitted = (framed: boolean) => {
+    const innerHeight = boxRows - (framed ? RECOVERY_PROMPT_BORDER_ROWS : 0);
+    const summaryShown = innerHeight >= 2;
+    const legend = innerHeight >= 4;
+    const actionRows = Math.max(
+      1,
+      Math.min(actionCount, innerHeight - (summaryShown ? 1 : 0) - (legend ? 1 : 0)),
+    );
+    // The rows above the list: the headline and a second summary row, then the divider, then more.
+    const aboveList = innerHeight - (legend ? 1 : 0) - actionRows;
+    const fittedHeight = Math.min(
+      Math.max(1, fullRows.length),
+      Math.max(1, aboveList > 2 ? aboveList - 1 : aboveList),
+    );
+    const fittedDivided = aboveList - fittedHeight > 0;
+    const askedFirst =
+      fittedDivided &&
+      fullRows.some(askedRow) &&
+      !clipPromptBodyRows(fullRows, fittedHeight).some(askedRow);
+    const summary = askedFirst
+      ? recoveryPromptSummaryRows(issue, innerWidth, fittedHeight - 1)
+      : fullSummary;
+    const takesSummaryRow = askedFirst && countPromptBodyRows(summary, innerWidth) > fittedHeight;
+    const summaryRows = summaryShown ? fittedHeight + (takesSummaryRow ? 1 : 0) : 0;
+    const divided = fittedDivided && !takesSummaryRow;
+    return {
+      innerWidth,
+      framed,
+      summary,
+      summaryRows,
+      legend,
+      divided,
+      listRows: innerHeight - summaryRows - (legend ? 1 : 0) - (divided ? 1 : 0),
+    };
   };
+  const showsAsked = (menu: ReturnType<typeof fitted>): boolean =>
+    clipPromptBodyRows(promptBodyRows(menu.summary, innerWidth), menu.summaryRows).some(askedRow);
+  const menu = fitted(boxRows >= 1 + listFloor + 1 + RECOVERY_PROMPT_BORDER_ROWS);
+  if (!menu.framed || !fullRows.some(askedRow) || showsAsked(menu)) return menu;
+  const bare = fitted(false);
+  return showsAsked(bare) ? bare : menu;
 }

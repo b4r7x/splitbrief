@@ -247,7 +247,7 @@ describe('e2e: a staged-copy run with a copied sign-in', { timeout: 120_000 }, (
 
     expect(refused.exitCode, `${refused.stdout}\n${refused.stderr}`).toBe(1);
     expect(refused.stderr).toContain(
-      `This run started in ${ref.projectDir}. Move the project back to that folder to continue the run, or end the run.`,
+      `This run started in ${ref.projectDir}. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.`,
     );
     expect(refused.stderr).not.toContain('no such file or directory');
     const halt = readState(moved, ref.sessionId);

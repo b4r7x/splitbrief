@@ -77,15 +77,15 @@ describe('workflow viewport layout', () => {
   });
 
   it('subtracts chrome + input rows from viewport height and clamps at zero', () => {
-    expect(getWorkflowViewportHeight({ rows: 24, inputRows: 2 })).toBe(17);
+    expect(getWorkflowViewportHeight({ rows: 24, inputRows: 2, feedbackRows: 1 })).toBe(17);
 
-    const tall = getWorkflowViewportHeight({ rows: 30, inputRows: 4 });
+    const tall = getWorkflowViewportHeight({ rows: 30, inputRows: 4, feedbackRows: 1 });
     expect(tall).toBeGreaterThan(0);
 
-    expect(getWorkflowViewportHeight({ rows: 5, inputRows: 20 })).toBe(0);
+    expect(getWorkflowViewportHeight({ rows: 5, inputRows: 20, feedbackRows: 1 })).toBe(0);
 
-    const base = getWorkflowViewportHeight({ rows: 30, inputRows: 2 });
-    const withExtraInput = getWorkflowViewportHeight({ rows: 30, inputRows: 5 });
+    const base = getWorkflowViewportHeight({ rows: 30, inputRows: 2, feedbackRows: 1 });
+    const withExtraInput = getWorkflowViewportHeight({ rows: 30, inputRows: 5, feedbackRows: 1 });
     expect(withExtraInput).toBeLessThan(base);
     expect(base - withExtraInput).toBe(3);
   });
@@ -93,9 +93,9 @@ describe('workflow viewport layout', () => {
   it('reserves the footer divider so the body is not too tall', () => {
     const rows = 24;
     const inputRows = 2;
-    const viewport = getWorkflowViewportHeight({ rows, inputRows });
+    const viewport = getWorkflowViewportHeight({ rows, inputRows, feedbackRows: 1 });
 
-    expect(viewport).toBe(rows - getChromeHeight(inputRows));
+    expect(viewport).toBe(rows - getChromeHeight(inputRows, 1));
 
     // Legacy bottom chrome was feedback (1) + a one-row footer (1), with no divider. The modern
     // bottom adds the divider; the one-row byline hugs the terminal bottom, so the body is one row
@@ -106,14 +106,18 @@ describe('workflow viewport layout', () => {
   });
 
   it('caps prompt rows to the available middle area', () => {
-    expect(clampWorkflowPromptRows({ rows: 10, inputRows: 3, promptRows: 999 })).toBeLessThan(10);
-    expect(getWorkflowViewportHeight({ rows: 10, inputRows: 3, promptRows: 999 })).toBe(0);
+    expect(
+      clampWorkflowPromptRows({ rows: 10, inputRows: 3, feedbackRows: 1, promptRows: 999 }),
+    ).toBeLessThan(10);
+    expect(
+      getWorkflowViewportHeight({ rows: 10, inputRows: 3, feedbackRows: 1, promptRows: 999 }),
+    ).toBe(0);
   });
 
   it('uses one exact breakpoint and one body bottom row across all required widths', () => {
     const rows = 30;
     const inputRows = 3;
-    const contentHeight = getWorkflowViewportHeight({ rows, inputRows });
+    const contentHeight = getWorkflowViewportHeight({ rows, inputRows, feedbackRows: 1 });
 
     for (const cols of [400, 160, 121, 120, 119, 80, 50, 40]) {
       const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
@@ -125,18 +129,25 @@ describe('workflow viewport layout', () => {
           ? cols - sidebarWidth - WORKFLOW_SIDEBAR_GAP - WORKFLOW_GUTTER_X * 2
           : cols - WORKFLOW_GUTTER_X,
       );
-      expect(getWorkflowContentRect({ cols, rows, inputRows, sidebarVisible: true }).bottom).toBe(
-        getContentTopRow() + contentHeight - 1,
-      );
+      expect(
+        getWorkflowContentRect({ cols, rows, inputRows, feedbackRows: 1, sidebarVisible: true })
+          .bottom,
+      ).toBe(getContentTopRow() + contentHeight - 1);
     }
   });
 
   it('clamps zero, one, and starved content rows without producing a negative rectangle', () => {
     const inputRows = 4;
-    const chrome = getChromeHeight(inputRows);
+    const chrome = getChromeHeight(inputRows, 1);
     const top = getContentTopRow();
     const rectAt = (rows: number) =>
-      getWorkflowContentRect({ cols: 100, rows, inputRows, sidebarVisible: false });
+      getWorkflowContentRect({
+        cols: 100,
+        rows,
+        inputRows,
+        feedbackRows: 1,
+        sidebarVisible: false,
+      });
 
     expect(rectAt(chrome - 3)).toMatchObject({ height: 0, top, bottom: top });
     expect(rectAt(chrome)).toMatchObject({ height: 0, top, bottom: top });
@@ -163,11 +174,17 @@ describe('getWorkflowContentRect', () => {
       cols,
       rows,
       inputRows,
+      feedbackRows: 1,
       sidebarVisible,
     });
 
     expect(rect.width).toBe(getWorkflowContentWidth({ cols, sidebarVisible }));
-    const contentHeight = getWorkflowViewportHeight({ rows, inputRows, promptRows: 0 });
+    const contentHeight = getWorkflowViewportHeight({
+      rows,
+      inputRows,
+      feedbackRows: 1,
+      promptRows: 0,
+    });
     expect(rect.height).toBe(contentHeight);
 
     expect(rect.right).toBe(rect.left + rect.width - 1);
@@ -182,6 +199,7 @@ describe('getWorkflowContentRect', () => {
       cols: 100,
       rows: 30,
       inputRows: 2,
+      feedbackRows: 1,
       sidebarVisible: false,
     });
     expect(rect.left).toBe(0);
@@ -194,6 +212,7 @@ describe('getWorkflowContentRect', () => {
       cols: 0,
       rows: 0,
       inputRows: 20,
+      feedbackRows: 1,
       sidebarVisible: true,
     });
 
@@ -208,12 +227,14 @@ describe('getWorkflowContentRect', () => {
       cols: 100,
       rows: 8,
       inputRows: 2,
+      feedbackRows: 1,
       sidebarVisible: false,
     });
     const twoRows = getWorkflowContentRect({
       cols: 100,
       rows: 9,
       inputRows: 2,
+      feedbackRows: 1,
       sidebarVisible: false,
     });
 
@@ -384,12 +405,14 @@ describe('progress rows', () => {
       cols: 120,
       rows: 40,
       inputRows: 3,
+      feedbackRows: 1,
       sidebarVisible: false,
     });
     const withBlock = getWorkflowContentRect({
       cols: 120,
       rows: 40,
       inputRows: 3,
+      feedbackRows: 1,
       sidebarVisible: false,
       progressRows: 2,
     });

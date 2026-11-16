@@ -360,19 +360,43 @@ describe('FeedbackRow', () => {
     return frame;
   }
 
-  it.each([
-    [120, 'denied · .splitbrief/…/lockfile.json …'],
-    [80, 'denied · …/lockfile.json …'],
-  ])('keeps the file name of a long run lock path on one row at %i columns', (cols, tail) => {
-    expect(renderRunLockRelease(cols)).toBe(
-      `${glyph('statusFailed')} Could not release the run lock: permission ${tail}`,
+  it('shows a long run lock message whole on three rows at 120 columns', () => {
+    expect(renderRunLockRelease(120)).toBe(
+      [
+        `${glyph('statusFailed')} Could not release the run lock: permission denied ·`,
+        '  .splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/lockfile.json ·',
+        '  other SPLITBRIEF processes can see the run as running for a few more seconds',
+      ].join('\n'),
     );
   });
 
-  it('keeps the file name at 60 columns by shortening the cause', () => {
-    expect(renderRunLockRelease(60)).toBe(
-      `${glyph('statusFailed')} Could not … lock: permission denied · …/lockfile.json …`,
-    );
+  it.each([80, 60])(
+    'keeps the whole lock file path on the three rows a long run lock message takes at most at %i columns',
+    (cols) => {
+      const rows = renderRunLockRelease(cols).split('\n');
+      expect(rows).toHaveLength(3);
+      expect(rows.map((row) => row.slice(MARK_SLOT_CELLS).trim()).join('')).toContain(
+        '.splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/lockfile.json',
+      );
+    },
+  );
+
+  it('shows a refusal too long for one row whole on the rows it needs at 80 columns', () => {
+    const reason =
+      'This run started in /Users/me/projects/shop. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.';
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    feedbackStore.setError(reason);
+
+    const ui = renderFeature(<FeedbackRow />, { cols: getChromeContentWidth(80), rows: 24 });
+    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    ui.unmount();
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.startsWith(`${glyph('statusFailed')} This run started in`)).toBe(true);
+    // A row past the first keeps the mark slot empty, so its words stand on the text column too.
+    expect(rows[1]?.startsWith(' '.repeat(MARK_SLOT_CELLS))).toBe(true);
+    expect(rows[1]?.charAt(MARK_SLOT_CELLS)).not.toBe(' ');
+    expect(rows.map((row) => row.slice(MARK_SLOT_CELLS).trim()).join(' ')).toBe(reason);
   });
 
   it('shows the running legend after Esc closes a planner question', () => {

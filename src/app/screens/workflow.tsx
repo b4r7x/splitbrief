@@ -52,6 +52,8 @@ import { sessionSelectDeps } from '../prepare-resume.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/fs/listing.js';
 import { draftRefusalStore } from '../../stores/ui/session-drafts.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
+import { getFeedbackRows } from '../../features/workflow/components/feedback-row.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -81,6 +83,10 @@ export function WorkflowScreen({
   const recoveryIssue = runViewStore.use((view) => view.halt?.issue ?? null);
   const recoveryStepReadsNone = runViewStore.use(haltReadsNoWords);
   const recoveryAsking = recoveryNoticeStore.use((state) => state.asking);
+  const feedbackRows = getFeedbackRows(
+    feedbackStore.use((state) => state.message),
+    cols,
+  );
 
   const model = useWorkflowScreen({
     onRuntimeCommand,
@@ -109,7 +115,7 @@ export function WorkflowScreen({
     },
   });
   const { resultMenuOpen } = panels;
-  const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows });
+  const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows, feedbackRows });
   const requestedPromptRows = stopMenuOpen
     ? inlineMenuLayout(readStopMenuRows(), cols).height
     : resultMenuOpen
@@ -132,6 +138,7 @@ export function WorkflowScreen({
     cols,
     rows,
     inputRows,
+    feedbackRows,
     sidebarVisible,
     requestedPromptRows,
     phase: model.phase,

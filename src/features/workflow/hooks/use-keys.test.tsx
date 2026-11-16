@@ -513,7 +513,7 @@ describe('useWorkflowKeys', () => {
     lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(resolve('docs/WORKFLOW-CONVERSATION-SCROLL.md'));
     controlsStore.setInputMode('review');
-    const bodyHeight = getWorkflowViewportHeight({ rows: 25, inputRows: 3 });
+    const bodyHeight = getWorkflowViewportHeight({ rows: 25, inputRows: 3, feedbackRows: 1 });
     const ui = render(
       <>
         <Harness />

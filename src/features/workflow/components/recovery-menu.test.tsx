@@ -956,6 +956,7 @@ function panelBoxRows(terminalRows: number): number {
   return clampWorkflowPromptRows({
     rows: terminalRows,
     inputRows: 3,
+    feedbackRows: 1,
     promptRows: Number.MAX_SAFE_INTEGER,
   });
 }
@@ -1142,12 +1143,12 @@ it('names Continue in the typed-correction legend under REVIEW None', async () =
 });
 
 it.each([
-  ['Question: ', 9, FOUR_ACTIONS],
-  ['Planner said: ', 9, FOUR_ACTIONS],
-  ['Question: ', 8, FOUR_ACTIONS],
-  ['Planner said: ', 8, THREE_ACTIONS],
+  ['Question: ', 10, FOUR_ACTIONS],
+  ['Planner said: ', 10, FOUR_ACTIONS],
+  ['Question: ', 9, THREE_ACTIONS],
+  ['Planner said: ', 9, THREE_ACTIONS],
 ] as const)(
-  'keeps %s on a panel of %i rows with no divider, and marks the rest',
+  'keeps %s on a panel of %i rows with no divider once every action has its row, and marks the rest',
   async (label, box, actions) => {
     const issue = askedIssue(`${label}${LONG_ASKED_TEXT}`, [...actions], 'retry-same-worker');
     const ui = mountBox(issue, box);
@@ -1161,12 +1162,51 @@ it.each([
     expect(mark, rows.join('\n')).toBe(3);
     expect(rows.some((row) => row.includes('──────'))).toBe(false);
     expect(rows.at(-2)).toContain('↑↓ select · ⏎ confirm');
-    expectHiddenActionsMarked(rows, issue);
+    for (const action of actions)
+      expect(actionShown(rows, issue, action), rows.join('\n')).toBe(true);
     ui.unmount();
   },
 );
 
 it.each([
+  ['Question: ', 4, 8],
+  ['Question: ', 4, 9],
+  ['Planner said: ', 4, 8],
+  ['Planner said: ', 4, 9],
+  ['Question: ', 3, 8],
+] as const)(
+  'keeps %s and each of %i actions on a panel of %i rows that gives up its border for them',
+  async (label, count, box) => {
+    const actions = count === 4 ? FOUR_ACTIONS : THREE_ACTIONS;
+    const issue = askedIssue(`${label}${LONG_ASKED_TEXT}`, actions, 'retry-same-worker');
+    const ui = mountBox(issue, box);
+    await flushEffects();
+    const rows = frameRows(ui);
+
+    expect(rows).toHaveLength(box);
+    expect(
+      rows.some((row) => row.includes(label)),
+      rows.join('\n'),
+    ).toBe(true);
+    for (const action of actions)
+      expect(actionShown(rows, issue, action), rows.join('\n')).toBe(true);
+    expect(
+      rows.some((row) => /^[│|┌└╭╰+]/.test(row)),
+      rows.join('\n'),
+    ).toBe(false);
+    expect(
+      rows.some((row) => /[↑↓] more/.test(row)),
+      rows.join('\n'),
+    ).toBe(false);
+    expect(rows.at(-1)).toContain('↑↓ select · ⏎ confirm');
+    ui.unmount();
+  },
+);
+
+it.each([
+  ['retry-same-worker', 10],
+  ['skip-current-task', 10],
+  ['end-run', 10],
   ['retry-same-worker', 9],
   ['skip-current-task', 9],
   ['end-run', 9],
@@ -1181,7 +1221,8 @@ it.each([
     const ui = mountBox(issue, box, (answer) => answers.push(answer));
     await flushEffects();
     const start = FOUR_ACTIONS.indexOf(recommended);
-    const cursor = () => frameRows(ui).filter((row) => /^[│|] [▌|] /.test(row));
+    // The cursor row opens on the border of a framed panel and on the padding of a bare one.
+    const cursor = () => frameRows(ui).filter((row) => /^[│| ] [▌|] /.test(row));
     expect(frameRows(ui).some((row) => row.includes('Question: '))).toBe(true);
     for (let step = 1; step <= FOUR_ACTIONS.length; step += 1) {
       ui.stdin.write('\u001b[B');
@@ -1236,15 +1277,16 @@ it('names the changes End run keeps once a brief finished', async () => {
   expect(await row()).toContain('End run · closes this run, keeps its changes');
 });
 
-it('leaves a 7-row panel on the headline and the cut mark', async () => {
-  // The panel has no row beside the list to recover at this height, so the headline's row and the
-  // mark that names every fact are what it keeps.
+it('leaves a 7-row panel on the headline that carries the cut mark', async () => {
+  // The actions take every row but the headline's at this height, so the headline carries the mark
+  // that names every fact.
   const issue = askedIssue(`Question: ${LONG_ASKED_TEXT}`, FOUR_ACTIONS, 'retry-same-worker');
   const ui = mountBox(issue, 7);
   await flushEffects();
   const rows = frameRows(ui);
   expect(rows.some((row) => row.includes('Question: '))).toBe(false);
-  expect(rows[2]).toMatch(/… \d+ more lines/);
+  expect(rows[1]).toContain('T001 failed');
+  expect(rows[1]).toMatch(/… \d+ more lines/);
   expect(rows.some((row) => row.includes('↓ more'))).toBe(true);
   ui.unmount();
 });

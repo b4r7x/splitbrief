@@ -269,6 +269,7 @@ describe('WorkflowScreen chrome calibration', () => {
       cols,
       rows,
       inputRows,
+      feedbackRows: 1,
       sidebarVisible: true,
     });
     expect(contentRect.top).toBe(getContentTopRow());
@@ -1906,7 +1907,8 @@ describe('WorkflowScreen showing a run at rest', () => {
     ];
 
     it('takes the letter of a row in view when other rows are cut', async () => {
-      const ui = await openHalt(16, fourActions);
+      // Every action keeps its row before the summary, so a list is cut only on a terminal this low.
+      const ui = await openHalt(14, fourActions);
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toMatch(/r\s+Try again/);
       expect(frame).not.toContain('End run');

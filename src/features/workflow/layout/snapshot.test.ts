@@ -68,6 +68,7 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { configStore } from '../../../stores/project/config.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 
 beforeEach(() => {
   terminalSizeStore.reset();
@@ -79,6 +80,7 @@ beforeEach(() => {
   approvalPromptStore.reset();
   questionPromptStore.reset();
   overlayStore.reset();
+  feedbackStore.reset();
   publishTranscriptTail([]);
 });
 
@@ -126,6 +128,7 @@ describe('readConversationScrollSnapshot', () => {
       const paintedHeight = getWorkflowViewportHeight({
         rows: 18,
         inputRows: inputHeightStore.get().rows,
+        feedbackRows: 1,
         promptRows: resultMenuHeight(
           { override: false, findings: [], confirming: false, files: null },
           60,
@@ -240,6 +243,7 @@ describe('readConversationScrollSnapshot', () => {
         const expectedRows = getWorkflowViewportHeight({
           rows: 24,
           inputRows: inputHeightStore.get().rows,
+          feedbackRows: 1,
           promptRows: resultMenuHeight({ override: true, findings, confirming, files: null }, 80),
         });
         const snapshot = readConversationScrollSnapshot();
@@ -256,7 +260,11 @@ describe('readConversationScrollSnapshot', () => {
     }
     await flushEffects();
     expect(readConversationScrollSnapshot().transcriptViewportHeight).toBe(
-      getWorkflowViewportHeight({ rows: 24, inputRows: inputHeightStore.get().rows }),
+      getWorkflowViewportHeight({
+        rows: 24,
+        inputRows: inputHeightStore.get().rows,
+        feedbackRows: 1,
+      }),
     );
   });
 
@@ -308,6 +316,7 @@ describe('readConversationScrollSnapshot', () => {
     const height = getWorkflowViewportHeight({
       rows,
       inputRows: 3,
+      feedbackRows: 1,
       progressRows: getProgressRows({ phase: closed ? 'complete' : 'implementing', cols }),
     });
     let above = '';
@@ -375,6 +384,7 @@ describe('readConversationScrollSnapshot', () => {
       getWorkflowViewportHeight({
         rows: terminalSizeStore.get().rows,
         inputRows: inputHeightStore.get().rows,
+        feedbackRows: 1,
         promptRows: 0,
       }),
     );
@@ -395,6 +405,7 @@ describe('readConversationScrollSnapshot', () => {
     const fullBodyHeight = getWorkflowViewportHeight({
       rows: 40,
       inputRows: 3,
+      feedbackRows: 1,
       promptRows: 0,
     });
 
@@ -410,7 +421,7 @@ describe('readConversationScrollSnapshot', () => {
     const shortTerminal = readConversationScrollSnapshot();
     expect(shortTerminal.viewportHeight).toBeLessThan(snap.viewportHeight);
     expect(shortTerminal.viewportHeight).toBe(
-      getWorkflowViewportHeight({ rows: 20, inputRows: 3, promptRows: 0 }),
+      getWorkflowViewportHeight({ rows: 20, inputRows: 3, feedbackRows: 1, promptRows: 0 }),
     );
   });
 
@@ -445,7 +456,7 @@ describe('readConversationScrollSnapshot', () => {
     expect(progressRows).toBe(3);
     // The block rides above the transcript, so its rows leave the body and push its top row down.
     expect(snap.viewportHeight).toBe(
-      getWorkflowViewportHeight({ rows: 30, inputRows: 3, progressRows }),
+      getWorkflowViewportHeight({ rows: 30, inputRows: 3, feedbackRows: 1, progressRows }),
     );
     expect(snap.contentRect.height).toBe(snap.viewportHeight);
     expect(snap.contentRect.top).toBe(getContentTopRow() + progressRows);
@@ -469,9 +480,22 @@ describe('readConversationScrollSnapshot', () => {
       getWorkflowViewportHeight({
         rows: 30,
         inputRows: 3,
+        feedbackRows: 1,
         promptRows: getApprovalPromptRows(approvalPromptStore.get(), 80),
       }),
     );
+  });
+
+  it('measures the body with the rows a long message takes in the footer', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    const quiet = readConversationScrollSnapshot().viewportHeight;
+
+    feedbackStore.setError(
+      'This run started in /Users/me/projects/shop. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.',
+    );
+
+    expect(readConversationScrollSnapshot().viewportHeight).toBe(quiet - 1);
   });
 
   it('cancelled runs paint no block, so the body reclaims its rows', () => {
@@ -483,7 +507,9 @@ describe('readConversationScrollSnapshot', () => {
     const snap = readConversationScrollSnapshot();
 
     expect(snap.contentRect.top).toBe(getContentTopRow());
-    expect(snap.viewportHeight).toBe(getWorkflowViewportHeight({ rows: 30, inputRows: 3 }));
+    expect(snap.viewportHeight).toBe(
+      getWorkflowViewportHeight({ rows: 30, inputRows: 3, feedbackRows: 1 }),
+    );
   });
 
   it('gives the block rows back to a parked stop, which has no attempt in flight', () => {
@@ -588,7 +614,7 @@ describe('readConversationScrollSnapshot', () => {
     const visibleHeight = readReviewContentHeight();
     const keyboardBottomOffset = Math.max(0, renderedLineCount - visibleHeight);
 
-    const containerHeight = getWorkflowViewportHeight({ rows: 40, inputRows: 3 });
+    const containerHeight = getWorkflowViewportHeight({ rows: 40, inputRows: 3, feedbackRows: 1 });
     const viewContentHeight = getReviewContentLayout(
       Math.max(0, containerHeight - REVIEW_FRAME_ROWS),
       renderedLineCount,
@@ -666,7 +692,7 @@ describe('readConversationScrollSnapshot', () => {
     controlsStore.setSidebar(true);
     reviewStore.setRenderedLineCount(0);
 
-    const fullBodyHeight = getWorkflowViewportHeight({ rows, inputRows });
+    const fullBodyHeight = getWorkflowViewportHeight({ rows, inputRows, feedbackRows: 1 });
     const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
     const scroll = readConversationScrollSnapshot();
     const hover = readConversationHoverSnapshot();
@@ -707,7 +733,7 @@ describe('readConversationScrollSnapshot', () => {
     inputHeightStore.__testReset({ rows: inputRows });
     controlsStore.setSidebar(false);
 
-    const fullBodyHeight = getWorkflowViewportHeight({ rows, inputRows });
+    const fullBodyHeight = getWorkflowViewportHeight({ rows, inputRows, feedbackRows: 1 });
     const scroll = readConversationScrollSnapshot();
     const hover = readConversationHoverSnapshot();
     const pointerVisibleCount = hover.viewportHeight;
@@ -1005,7 +1031,7 @@ describe('readReviewContentHeight', () => {
 
     try {
       expect(readConversationScrollSnapshot().contentRect.height).toBe(
-        getWorkflowViewportHeight({ rows: 30, inputRows: 3, progressRows: 0 }),
+        getWorkflowViewportHeight({ rows: 30, inputRows: 3, feedbackRows: 1, progressRows: 0 }),
       );
     } finally {
       routerStore.reset();
@@ -1020,7 +1046,12 @@ describe('readReviewContentHeight', () => {
     reviewStore.setRenderedLineCount(0);
 
     const progressRows = getProgressRows({ phase: 'final-review', cols: 80 });
-    const bodyHeight = getWorkflowViewportHeight({ rows: 40, inputRows: 3, progressRows });
+    const bodyHeight = getWorkflowViewportHeight({
+      rows: 40,
+      inputRows: 3,
+      feedbackRows: 1,
+      progressRows,
+    });
 
     // The review block states no attempt and no estimate, so it is three rows at this width.
     expect(progressRows).toBe(3);

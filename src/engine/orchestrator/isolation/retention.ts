@@ -33,7 +33,7 @@ export const retentionError = {
   moved: (dir: string) =>
     error(
       'isolation-project-moved',
-      `This run started in ${dir}. Move the project back to that folder to continue the run, or end the run.`,
+      `This run started in ${dir}. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.`,
       { dir },
     ),
   failed: (dir: string, cause: unknown) =>

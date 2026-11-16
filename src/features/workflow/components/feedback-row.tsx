@@ -31,6 +31,23 @@ function summarizeDisplayLine(text: string): string {
   );
 }
 
+// A message takes the rows it needs up to this many, one less than on home, so a halt panel above
+// keeps every action at 60x18.
+const FEEDBACK_MAX_ROWS = 3;
+
+// A message keeps its first line, wrapped onto the rows it needs beside the mark slot.
+function fitMessage(message: string, terminalCols: number): string {
+  return fitFeedbackMessage(summarizeDisplayLine(message), {
+    width: getChromeContentWidth(terminalCols) - MARK_SLOT_CELLS,
+    maxRows: FEEDBACK_MAX_ROWS,
+  });
+}
+
+/** The rows the feedback row takes on a terminal `terminalCols` wide: one, or the rows its message needs. */
+export function getFeedbackRows(message: string | null, terminalCols: number): number {
+  return message === null ? 1 : fitMessage(message, terminalCols).split('\n').length;
+}
+
 export function FeedbackRow({
   inputHint = '',
   keyHint = '',
@@ -48,7 +65,8 @@ export function FeedbackRow({
   const approvalPending = approvalPromptStore.use((s) => s.status === 'pending');
   const running = lifecycleStore.use((s) => s.status === 'running');
   const stopped = useStopByline();
-  const cols = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
+  const terminalCols = terminalSizeStore.use((s) => s.cols);
+  const cols = getChromeContentWidth(terminalCols);
   const t = useTheme();
 
   // A panel that is on screen owns the legend. Anything this row could add beside it would either
@@ -59,7 +77,7 @@ export function FeedbackRow({
     approvalPending ||
     inputMode === 'review' ||
     (inputMode === 'question' && questions?.length !== 0);
-  const safeMessage = message === null ? null : summarizeDisplayLine(message);
+  const messageWord = message === null ? '' : fitMessage(message, terminalCols);
   // One cell short of the edge: a legend that ends in the last column reads as cut off even when
   // every token it names is whole. The leading is spent before the keys are fitted.
   const legendWidth = cols - 1 - KEY_LEGEND_LEADING.length;
@@ -79,15 +97,13 @@ export function FeedbackRow({
   // byline's pip, the composer's border — and every word on the text column its chevron opens on.
   // Every key legend carries the mark, whichever seat it arrived from; a message or a caller's
   // prose hint leaves the slot empty and still opens on the text column, and a failure fills it.
-  const messageWord = safeMessage ?? '';
   const keyHintFitted = keyHint === '' ? '' : fitKeyLegend(keyHint, legendWidth);
   let word = '';
   let isLegend = false;
   // A sheet under the row names its own keys, so above it the row carries a message or nothing. A
   // message keeps the row whether or not a panel owns the keys; only a fallback yields to the panel.
   if (messageWord !== '' || !owned) {
-    if (messageWord !== '')
-      word = fitFeedbackMessage(messageWord, { width: cols - MARK_SLOT_CELLS, maxRows: 1 });
+    if (messageWord !== '') word = messageWord;
     else if (!panelBelow) {
       if (stopHint !== '') {
         word = stopHint;
@@ -123,22 +139,30 @@ export function FeedbackRow({
   // then has nothing to stand on, so it leaves no blank line between the sheet and the divider.
   if (word === '' && panelBelow) return null;
 
+  // A message past one row goes on under the first, its mark slot empty, in the ink of its words.
+  const [first = '', ...more] = word.split('\n');
   return (
-    <Box height={1} flexShrink={0}>
-      {word &&
+    <Box flexDirection="column" height={1 + more.length} flexShrink={0}>
+      {first &&
         (failed ? (
           <Text wrap="truncate-end">
             <Text color={t.error}>{lead}</Text>
-            <Text color={t.text}>{word}</Text>
+            <Text color={t.text}>{first}</Text>
           </Text>
         ) : wordColor !== null ? (
-          <StateWordVoice lead={lead} text={word} color={wordColor} />
+          <StateWordVoice lead={lead} text={first} color={wordColor} />
         ) : (
           <Text color={t.textDim} wrap="truncate-end">
             {lead}
-            {word}
+            {first}
           </Text>
         ))}
+      {more.map((row, index) => (
+        <Text key={`${index}:${row}`} color={failed ? t.text : t.textDim} wrap="truncate-end">
+          {' '.repeat(MARK_SLOT_CELLS)}
+          {row}
+        </Text>
+      ))}
     </Box>
   );
 }

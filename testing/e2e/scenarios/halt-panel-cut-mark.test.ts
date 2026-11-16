@@ -180,6 +180,24 @@ describe('e2e: a halt panel too short for its text', () => {
     expect(frame).toContain('↑↓ select · ⏎ confirm');
   });
 
+  it.each([
+    [140, 16],
+    [140, 17],
+    [80, 16],
+  ])('keeps the question and every action on a %dx%d panel', async (cols, rows) => {
+    const opened = await openConsultHalt();
+
+    terminalSizeStore.__testReset({ cols, rows, isSmall: true });
+    await flushEffects();
+    const frame = stripAnsiStyles(opened.screen.lastFrame());
+
+    expect(frame, frame).toContain('Question: greet.ts needs');
+    for (const action of ['Try again', 'Decide for me', 'Skip task', 'End run'])
+      expect(frame, frame).toContain(action);
+    expect(frame, frame).toContain('↑↓ select · ⏎ confirm');
+    expect(frame, frame).not.toContain('↓ more');
+  });
+
   it('keeps the task and its files under the long question at 80x24', async () => {
     const opened = await openConsultHalt();
 

@@ -51,7 +51,7 @@ describe('retained workspace of a moved project', () => {
 
     await expect(readWorkspaceRecord(ref)).rejects.toMatchObject({
       kind: 'isolation-project-moved',
-      message: `This run started in ${startedIn}. Move the project back to that folder to continue the run, or end the run.`,
+      message: `This run started in ${startedIn}. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.`,
     });
   });
 

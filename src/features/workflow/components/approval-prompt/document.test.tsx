@@ -266,7 +266,7 @@ describe('DocumentReviewPrompt', () => {
   });
 
   describe('at 60×18, where the plan keeps one row', () => {
-    const budgetRows = getReviewPanelBudget({ rows: 18, inputRows: 3 });
+    const budgetRows = getReviewPanelBudget({ rows: 18, inputRows: 3, feedbackRows: 1 });
 
     function shortFrame(
       confirms: string[],

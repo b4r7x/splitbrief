@@ -24,13 +24,13 @@ describe('the plan card on a short terminal', () => {
       review: {
         artifact: 'plan',
         confirms,
-        budgetRows: getReviewPanelBudget({ rows, inputRows: INPUT_ROWS }),
+        budgetRows: getReviewPanelBudget({ rows, inputRows: INPUT_ROWS, feedbackRows: 1 }),
       },
       cols,
     });
 
     expect(
-      getWorkflowViewportHeight({ rows, inputRows: INPUT_ROWS, promptRows }),
+      getWorkflowViewportHeight({ rows, inputRows: INPUT_ROWS, feedbackRows: 1, promptRows }),
     ).toBeGreaterThanOrEqual(REVIEW_MIN_ROWS);
   });
 });
@@ -44,11 +44,16 @@ describe('the plan card on a standard terminal', () => {
       review: {
         artifact: 'plan',
         confirms: ['write package.json', 'write package-lock.json'],
-        budgetRows: getReviewPanelBudget({ rows, inputRows: INPUT_ROWS }),
+        budgetRows: getReviewPanelBudget({ rows, inputRows: INPUT_ROWS, feedbackRows: 1 }),
       },
       cols: 80,
     });
-    const documentRows = getWorkflowViewportHeight({ rows, inputRows: INPUT_ROWS, promptRows });
+    const documentRows = getWorkflowViewportHeight({
+      rows,
+      inputRows: INPUT_ROWS,
+      feedbackRows: 1,
+      promptRows,
+    });
 
     expect(getReviewContentLayout(documentRows - REVIEW_FRAME_ROWS, 33).contentHeight).toBe(5);
   });
