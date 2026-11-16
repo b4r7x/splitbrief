@@ -3091,6 +3091,26 @@ describe('Composer Enter in the same read as an edit', () => {
     expect(submissions).toEqual(['no']);
     expect(composerLiveStore.get().text).toBe('');
   });
+
+  it('sends the text that one read typed with its Enter', async () => {
+    const submissions: string[] = [];
+    const ui = mountThroughFilteredStdin(composer('normal', submissions));
+    await flushEffects();
+    ui.pressBytes('make a total helper\r');
+    await ui.settled();
+    expect(submissions).toEqual(['make a total helper']);
+    expect(composerLiveStore.get().text).toBe('');
+  });
+
+  it('keeps a read of 64 characters or more as a draft with its line break', async () => {
+    const submissions: string[] = [];
+    const ui = mountThroughFilteredStdin(composer('normal', submissions));
+    await flushEffects();
+    ui.pressBytes(`${'x'.repeat(70)}\ry`);
+    await ui.settled();
+    expect(submissions).toEqual([]);
+    expect(composerLiveStore.get().text).toBe(`${'x'.repeat(70)}\ny`);
+  });
 });
 
 describe('Composer keys read together with the key before them', () => {

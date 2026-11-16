@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { once } from 'node:events';
 import { PassThrough } from 'node:stream';
-import type { MouseEvent } from './types.js';
+import type { FilteredStdinOptions, MouseEvent } from './types.js';
 import { createFilteredStdin } from './create.js';
 import { terminalSequences } from '../control.js';
 
@@ -46,6 +46,26 @@ async function readFiltered(
     }, timeoutMs);
     stream.on('error', reject);
   });
+}
+
+// Ink reads the filtered stream on each `readable` event and parses one read as one key unless
+// an ESC starts the next one, so each read here is one key as Ink sees it. Each chunk is one
+// terminal read.
+function readKeys(chunks: readonly string[], options?: FilteredStdinOptions): string[] {
+  const source = makeFakeStdin();
+  const filtered = createFilteredStdin(source, options);
+  filtered.stdin.setEncoding('utf8');
+  const reads: string[] = [];
+  filtered.stdin.on('readable', () => {
+    let read: string | null = filtered.stdin.read();
+    while (read !== null) {
+      reads.push(read);
+      read = filtered.stdin.read();
+    }
+  });
+  for (const chunk of chunks) source.emit('data', Buffer.from(chunk));
+  filtered.disable();
+  return reads;
 }
 
 describe('createFilteredStdin input filtering', () => {
@@ -635,13 +655,6 @@ describe('createFilteredStdin input filtering', () => {
       terminalSequences.disableBracketedPaste,
     ]);
   });
-
-  it('writes no terminal mode without mouse and paste', () => {
-    const filtered = createFilteredStdin(makeFakeStdin(), { mouse: false, paste: false });
-    filtered.disable();
-
-    expect(written).toEqual([]);
-  });
 });
 
 describe('createFilteredStdin: lone ESC delivery', () => {
@@ -713,32 +726,13 @@ describe('createFilteredStdin: one key per backspace byte', () => {
     process.stdout.write = originalWrite;
   });
 
-  // Ink reads the filtered stream on each `readable` event and parses one read as one key unless
-  // an ESC starts the next one, so each read here is one key as Ink sees it.
-  function readKeys(chunk: string): string[] {
-    const source = makeFakeStdin();
-    const filtered = createFilteredStdin(source);
-    filtered.stdin.setEncoding('utf8');
-    const reads: string[] = [];
-    filtered.stdin.on('readable', () => {
-      let read: string | null = filtered.stdin.read();
-      while (read !== null) {
-        reads.push(read);
-        read = filtered.stdin.read();
-      }
-    });
-    source.emit('data', Buffer.from(chunk));
-    filtered.disable();
-    return reads;
-  }
-
   it.each([
     ['three DEL bytes', '\x7f\x7f\x7f', ['\b', '\b', '\b']],
     ['two BS bytes', '\b\b', ['\b', '\b']],
     ['DEL bytes after text', 'abc\x7f\x7fd', ['abc', '\b', '\b', 'd']],
     ['BS and DEL bytes mixed with text', 'x\b\x7fy\x7f', ['x', '\b', '\b', 'y', '\b']],
   ])('reads %s as one Backspace key per backspace byte', (_label, chunk, keys) => {
-    expect(readKeys(chunk)).toEqual(keys);
+    expect(readKeys([chunk])).toEqual(keys);
   });
 
   it.each([
@@ -747,11 +741,90 @@ describe('createFilteredStdin: one key per backspace byte', () => {
     ['kitty Ctrl+Backspace release', '\x1b[127;5:3u', ['\x1b[8;5:3u']],
     ['Delete', '\x1b[3~', ['\x1b[3~']],
   ])('reads %s with the Backspace codepoint Ink names backspace', (_label, chunk, keys) => {
-    expect(readKeys(chunk)).toEqual(keys);
+    expect(readKeys([chunk])).toEqual(keys);
   });
 
   it('keeps text without a backspace byte as one read', () => {
-    expect(readKeys('hello\tworld')).toEqual(['hello\tworld']);
+    expect(readKeys(['hello\tworld'])).toEqual(['hello\tworld']);
+  });
+});
+
+describe('createFilteredStdin: one key per Enter of a typed read', () => {
+  let originalWrite: typeof process.stdout.write;
+
+  beforeEach(() => {
+    originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalWrite;
+  });
+
+  const x58 = 'x'.repeat(58);
+  const x62 = 'x'.repeat(62);
+  const x63 = 'x'.repeat(63);
+  const z40 = '\u017c'.repeat(40);
+
+  it.each([
+    ['text and Enter', ['ok\r'], ['ok', '\r']],
+    ['Enter and text', ['\rok'], ['\r', 'ok']],
+    ['two Enters', ['\r\r'], ['\r', '\r']],
+    ['Ctrl+D and Enter', ['\x04\r'], ['\x04', '\r']],
+    ['a typed answer and Enter', ['fix the login\r'], ['fix the login', '\r']],
+    ['CR LF as one Enter', ['a\r\nb'], ['a', '\r', 'b']],
+    ['each Enter of a short read', ['a\rb\rc'], ['a', '\r', 'b', '\r', 'c']],
+    ['63 characters with Enter', [`${x62}\r`], [x62, '\r']],
+    ['41 characters of 81 bytes with Enter', [`${z40}\r`], [z40, '\r']],
+    ['text and Enter in one read, then text', ['line 1\r', 'line 2'], ['line 1', '\r', 'line 2']],
+  ])('reads %s as one key per Enter', (_label, chunks, keys) => {
+    expect(readKeys(chunks)).toEqual(keys);
+  });
+
+  it('reads text and Enter as two keys with the options of an inline mount', () => {
+    expect(readKeys(['ok\r'], { mouse: false })).toEqual(['ok', '\r']);
+  });
+
+  it.each([
+    ['64 characters with Enter', [`${x63}\r`], [`${x63}\r`]],
+    [
+      'a read of 64 characters with an escape key in it',
+      [`${x58}\x1b[Aok\r`],
+      [x58, '\x1b[A', 'ok\r'],
+    ],
+  ])(
+    'keeps the Enter of %s in its text, as a paste the terminal did not bracket',
+    (_label, chunks, keys) => {
+      expect(readKeys(chunks)).toEqual(keys);
+    },
+  );
+
+  it('keeps Alt+Enter as one key', () => {
+    expect(readKeys(['\x1b\r'])).toEqual(['\x1b\r']);
+  });
+
+  it.each([
+    ['a line feed', 'abc\ndef'],
+    ['two Ctrl+C bytes after text', 'fix\x03\x03'],
+  ])('keeps %s in one read', (_label, chunk) => {
+    expect(readKeys([chunk])).toEqual([chunk]);
+  });
+
+  it('gives a bracketed paste of three lines on the options of an inline mount as one paste and no key', () => {
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source, { mouse: false });
+    filtered.stdin.setEncoding('utf8');
+    const inputs: string[] = [];
+    filtered.stdin.on('readable', () => {
+      for (let read = filtered.stdin.read(); read !== null; read = filtered.stdin.read()) {
+        inputs.push(`key ${JSON.stringify(read)}`);
+      }
+    });
+    filtered.stdin.on('paste', (text: string) => inputs.push(`paste ${JSON.stringify(text)}`));
+    source.emit('data', Buffer.from('\u001b[200~line one\rline two\rline three\u001b[201~'));
+    filtered.disable();
+
+    expect(inputs).toEqual(['paste "line one\\nline two\\nline three"']);
   });
 });
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { listRowLead } from '../../../components/list-row/lead.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
@@ -14,6 +15,8 @@ import {
   setResumeHandler,
 } from '../run-requests/registry.js';
 import { consumeBoundaryPause } from '../run-requests/boundary.js';
+import { UNREAD_WORDS_MESSAGE } from '../inline-menu/use-keys.js';
+import { PASTE_END, PASTE_START } from '../../../lib/terminal/filtered-stdin/paste.js';
 import { StopSheet } from './sheet.js';
 import { stopSheetRows } from './options.js';
 
@@ -295,6 +298,51 @@ describe('StopSheet', () => {
     expect(stopStore.get().intent).toBe('none');
     expect(overlayStore.get().active).toBe('stop-sheet');
     ui.unmount();
+  });
+
+  // A word names no row: the ⏎ of the same read stops nothing and says how to choose a row.
+  it('keeps the sheet open on no and ⏎ in one read, stops nothing, and says how to choose', async () => {
+    const abort = vi.fn();
+    createAbortHandlerScope()(abort);
+    overlayStore.open('stop-sheet');
+    const ui = renderThroughFilteredStdin(
+      <StopSheet rows={stopSheetRows(RUNNING_BRIEF)} footer={null} />,
+    );
+    try {
+      await ui.settled();
+      ui.pressBytes('no\r');
+      await ui.settled();
+
+      expect(overlayStore.get().active).toBe('stop-sheet');
+      expect(abort).not.toHaveBeenCalled();
+      expect(stopStore.get().intent).toBe('none');
+      expect(feedbackStore.get().message).toBe(UNREAD_WORDS_MESSAGE);
+    } finally {
+      ui.unmount();
+    }
+  });
+
+  it('keeps the sheet open on a bracketed paste of no and ⏎, stops nothing, and says how to choose', async () => {
+    const abort = vi.fn();
+    createAbortHandlerScope()(abort);
+    overlayStore.open('stop-sheet');
+    const ui = renderThroughFilteredStdin(
+      <StopSheet rows={stopSheetRows(RUNNING_BRIEF)} footer={null} />,
+    );
+    try {
+      await ui.settled();
+      ui.pressBytes(`${PASTE_START}no${PASTE_END}`);
+      await ui.settled();
+      ui.pressBytes('\r');
+      await ui.settled();
+
+      expect(overlayStore.get().active).toBe('stop-sheet');
+      expect(abort).not.toHaveBeenCalled();
+      expect(stopStore.get().intent).toBe('none');
+      expect(feedbackStore.get().message).toBe(UNREAD_WORDS_MESSAGE);
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('tab closes the menu with no effect on the run', async () => {

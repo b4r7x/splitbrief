@@ -103,11 +103,12 @@ describe('terminal control', () => {
       return true;
     }) as typeof process.stdout.write;
 
-    setTerminalInputModes('enable', { mouse: true, paste: false, hover: true });
+    setTerminalInputModes('enable', { mouse: true, hover: true });
 
     expect(written).toEqual([
       terminalSequences.enableAnyMotionMouse,
       terminalSequences.enableSgrMouse,
+      terminalSequences.enableBracketedPaste,
     ]);
   });
 
@@ -118,8 +119,8 @@ describe('terminal control', () => {
       return true;
     }) as typeof process.stdout.write;
 
-    setTerminalInputModes('enable', { mouse: false, paste: true });
-    setTerminalInputModes('disable', { mouse: false, paste: true });
+    setTerminalInputModes('enable', { mouse: false });
+    setTerminalInputModes('disable', { mouse: false });
 
     expect(written).toEqual([
       terminalSequences.enableBracketedPaste,

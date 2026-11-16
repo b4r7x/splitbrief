@@ -111,8 +111,7 @@ async function mountInlineFallback(appElement: AppElement, mount: TuiMount): Pro
     clearTerminalHandover: () => setActiveTerminalHandover(undefined),
     clearFilteredStdin: () => setActiveFilteredStdin(undefined),
     disableFilteredStdin: () => disableTuiInput(input),
-    createInlineStdin: () =>
-      createFilteredStdin(process.stdin, { activate: false, mouse: false, paste: false }),
+    createInlineStdin: () => createFilteredStdin(process.stdin, { activate: false, mouse: false }),
   });
   const instance = renderInline(appElement, mount);
   unmountWhenSignalled(instance, mount.unmountSignal);
@@ -146,7 +145,6 @@ async function mountFullscreen(appElement: AppElement, mount: TuiMount): Promise
       handover: {
         fullscreen: true,
         mouse: input.modes.useMouse,
-        paste: input.modes.usePaste,
         hover: input.modes.useHover,
         sourceStdin: process.stdin,
         beforeSuspend: () => {

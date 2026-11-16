@@ -33,7 +33,10 @@ import {
 } from './check-fold-projections.js';
 import { cliStopContinuedProjection } from './cli-stop-continued.js';
 import { approvalDraftDeletedProjection } from './approval-draft-deleted-projection.js';
-import { approvalWordsStayProjection } from './approval-words-stay-projection.js';
+import {
+  approvalWordNudgeProjection,
+  approvalWordsStayProjection,
+} from './approval-words-stay-projection.js';
 import { taskId, type Check, type Task } from '../../../../src/core/schemas/task.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
 import { variantWithoutModelChecks } from '../../../../src/core/readiness/checks/runner/fields.js';
@@ -8561,6 +8564,17 @@ const recoveryEmptyEnterProjection: WorkflowFixtureProjection = {
   },
 };
 
+const recoveryTypedWordsProjection: WorkflowFixtureProjection = {
+  ...usageLimitRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-typed-words'),
+  get events() {
+    return usageLimitRecoveryProjection.events;
+  },
+  get resumeState() {
+    return haltedResumeState(usageLimitRecoveryIssue());
+  },
+};
+
 const finalReviewSeatChangeProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
   scenarioId: scenarioId('workflow-final-review-seat-change'),
@@ -9852,6 +9866,7 @@ const projections = [
   approvalDraftDeletedProjection,
   approvalConfirmOverDraftProjection,
   approvalWordsStayProjection,
+  approvalWordNudgeProjection,
   approvalConfirmSecretProjection,
   { ...approvalConfirmProjection, scenarioId: scenarioId('workflow-approval-confirm-short') },
   approvalConfirmLongPathProjection,
@@ -10053,6 +10068,7 @@ const projections = [
   implementationShellSeatResolvedProjection,
   usageLimitSeatSavedProjection,
   recoveryEmptyEnterProjection,
+  recoveryTypedWordsProjection,
   finalReviewSeatChangeProjection,
   reviewCheckLongCommandProjection,
   reviewLegacySuiteProjection,

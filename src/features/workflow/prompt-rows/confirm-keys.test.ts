@@ -279,6 +279,78 @@ describe('confirmKeyStep over the keys of one read', () => {
   });
 });
 
+// A text key of more than one character is a word or a paste, not a row letter.
+describe('confirmKeyStep after a text of more than one character', () => {
+  const ENTER: readonly [string, Partial<Key>] = ['\r', { return: true }];
+
+  it.each([
+    { name: 'a word', input: 'no' },
+    { name: 'a word that starts with a row letter', input: 'yes' },
+    { name: 'a pasted command', input: 'yarn add x' },
+  ])('takes no answer from $name and keeps the highlight', ({ input }) => {
+    expect(confirmKeyStep(state({ selectedIndex: 2 }), input, makeKey(), REVERSIBLE)).toEqual(
+      next({ selectedIndex: 2, unread: true }),
+    );
+  });
+
+  it.each([
+    { name: 'an irreversible write', panel: DESTRUCTIVE },
+    { name: 'a reversible write', panel: REVERSIBLE },
+    { name: 'a runner trust', panel: TRUST },
+  ])('answers ⏎ after a word on $name with the nudge on Confirm', ({ panel }) => {
+    expect(press(panel, [['no'], ENTER])).toEqual(next({ selectedIndex: 0, nudged: true }));
+  });
+
+  // The arrows chose the row: a word before ⏎ names no row, so it leaves that row in place.
+  it.each([
+    { name: 'Deny on a runner trust', panel: TRUST, downs: 1 },
+    { name: 'Deny on a reversible write', panel: REVERSIBLE, downs: 2 },
+  ])('takes $name on the ⏎ after a word', ({ panel, downs }) => {
+    const arrows = Array.from({ length: downs }, () => ['', { downArrow: true }] as const);
+    expect(press(panel, [...arrows, ['no'], ENTER])).toEqual(DENY);
+  });
+
+  it('opens the reason step of Confirm with a reason on the ⏎ after a word', () => {
+    expect(press(REVERSIBLE, [['', { downArrow: true }], ['no'], ENTER])).toMatchObject({
+      kind: 'state',
+      state: { step: 'reason', selectedIndex: 1, nudged: false },
+    });
+  });
+
+  it('confirms on the ⏎ after the nudge', () => {
+    expect(press(REVERSIBLE, [['no'], ENTER, ENTER])).toEqual(confirmed(CONFIRM_REASON_UNSTATED));
+  });
+
+  it.each([
+    {
+      name: '↓ gives ⏎ the row it moves to',
+      panel: REVERSIBLE,
+      keys: [['no'], ['', { downArrow: true }], ['', { upArrow: true }], ENTER] as const,
+      expected: confirmed(CONFIRM_REASON_UNSTATED),
+    },
+    {
+      name: 'an r with its row out of view gives ⏎ that row',
+      panel: ONE_ROW,
+      keys: [['no'], ['r'], ENTER] as const,
+      expected: { kind: 'state', state: { step: 'reason', selectedIndex: 1 } },
+    },
+    {
+      name: 'y on an irreversible write gives ⏎ the Confirm row',
+      panel: DESTRUCTIVE,
+      keys: [['no'], ['y'], ENTER] as const,
+      expected: confirmed(CONFIRM_REASON_UNSTATED),
+    },
+    {
+      name: 'n denies',
+      panel: REVERSIBLE,
+      keys: [['no'], ['n']] as const,
+      expected: DENY,
+    },
+  ])('$name after a word', ({ panel, keys, expected }) => {
+    expect(press(panel, keys)).toMatchObject(expected);
+  });
+});
+
 describe('confirmRowStep', () => {
   it.each([
     { name: 'the r row opens the reason step', row: 'r', expected: next({ step: 'reason' }) },

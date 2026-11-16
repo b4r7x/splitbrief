@@ -299,6 +299,9 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-ready-planner-accept-short', ['80x14', '80x12', '80x10', '60x12']],
   ['workflow-stop-menu-pause', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-run-lock-not-released', ['120x40', '80x24', '60x18', '140x40']],
+  ['workflow-recovery-typed-words', ['120x40', '80x24', '60x18', '140x40']],
+  ['workflow-ready-typed-words', ['120x40', '80x24', '60x18', '140x40']],
+  ['workflow-stop-sheet-typed-words', ['120x40', '80x24', '60x18', '140x40']],
 ]);
 
 afterEach(() => {

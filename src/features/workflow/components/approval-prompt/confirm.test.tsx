@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { waitPastGrace } from '#testing/helpers/typeahead-grace.js';
+import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { listRowLead } from '../../../../components/list-row/lead.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -10,7 +11,6 @@ import { openApprovalPrompt, approvalPromptStore } from '../../../../stores/prom
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../lib/terminal/typeahead-grace.js';
 import {
-  CONFIRM_NUDGE,
   CONFIRM_QUESTION,
   CONFIRM_REASON_HINTS,
   CONFIRM_REASON_OPTIONAL,
@@ -18,6 +18,7 @@ import {
   CHOOSE_HINTS,
   PROMPT_COMMAND_LEGEND,
   approvalTitle,
+  confirmNudge,
 } from '../../prompt-rows/approval.js';
 import { getApprovalPromptRows } from '../../prompt-rows/confirm-panel.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
@@ -26,12 +27,17 @@ import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { fitKeyLegend } from '../../../../components/key-legend.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
-import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
+import type {
+  TieredApprovalRequest,
+  TieredApprovalResponse,
+} from '../../../../core/approval/types.js';
 
 const ENTER = '\r';
 const ESC = '\u001b';
 const UP = '\u001b[A';
 const DOWN = '\u001b[B';
+const PASTE_START = '\u001b[200~';
+const PASTE_END = '\u001b[201~';
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 const bar = listRowLead('active');
 
@@ -201,14 +207,14 @@ describe('ApprovalPrompt confirm tier', () => {
     await tick(20);
     expect(approvalPromptStore.get().status).toBe('pending');
     const nudged = stripColor(ui.lastFrame());
-    expect(nudged).toContain(CONFIRM_NUDGE);
+    expect(nudged).toContain(confirmNudge('destructive'));
     expect(nudged).toContain(`${bar}    Confirm`);
 
     // Any arrow clears the nudge and moves the highlight.
     ui.stdin.write(DOWN);
     await tick(20);
     const cleared = stripColor(ui.lastFrame());
-    expect(cleared).not.toContain(CONFIRM_NUDGE);
+    expect(cleared).not.toContain(confirmNudge('destructive'));
     expect(cleared).toContain(CHOOSE_HINTS);
     expect(cleared).toContain(`${bar}r   Confirm with a reason`);
 
@@ -408,7 +414,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     ui.stdin.write('y');
     await tick(20);
-    const nudge = fitKeyLegend(CONFIRM_NUDGE, width);
+    const nudge = fitKeyLegend(confirmNudge('destructive'), width);
     expect(nudge).toBe('⏎ confirms this write');
     const nudged = stripColor(ui.lastFrame());
     expect(nudged).toContain(nudge);
@@ -716,5 +722,74 @@ describe('a confirm prompt in a short terminal', () => {
     ui.stdin.write(ESC);
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
+  });
+});
+
+// The input bridge gives each Enter of a short read its own key, so the keys of one read act as
+// the same keys in two reads.
+describe('text and ⏎ on the confirm panel through the input bridge', () => {
+  const CONFIRMED: TieredApprovalResponse = {
+    decision: 'confirm',
+    phrase: CONFIRM_PHRASE,
+    reason: CONFIRM_REASON_UNSTATED,
+  };
+  const DENIED: TieredApprovalResponse = { decision: 'deny', reason: 'user_denied' };
+
+  /** Sends `reads` to an open panel: the answer, or `nudge` while the panel shows its nudge. */
+  async function answerOf(
+    actionClass: TieredApprovalRequest['actionClass'],
+    reads: readonly string[],
+  ): Promise<TieredApprovalResponse | 'nudge'> {
+    const ui = renderThroughFilteredStdin(<ApprovalPrompt />);
+    let answer: TieredApprovalResponse | undefined;
+    void openApprovalPrompt(makeConfirmRequest('package.json', actionClass)).then((value) => {
+      answer = value;
+    });
+    await waitPastGrace(ui, 'package.json');
+    for (const read of reads) {
+      ui.pressBytes(read);
+      await ui.settled();
+    }
+    try {
+      return await vi.waitFor(() => {
+        if (answer !== undefined) return answer;
+        expect(stripColor(ui.lastFrame())).toContain(confirmNudge(actionClass));
+        return 'nudge' as const;
+      });
+    } finally {
+      ui.unmount();
+    }
+  }
+
+  describe.each(['package_change', 'destructive', 'runner_trust'] as const)('%s', (actionClass) => {
+    it.each([
+      { text: 'y', expected: CONFIRMED },
+      { text: 'n', expected: DENIED },
+      { text: 'x', expected: DENIED },
+      { text: 'r', expected: CONFIRMED },
+      { text: 'no', expected: 'nudge' as const },
+      { text: 'yes', expected: 'nudge' as const },
+    ])('answers $text and ⏎ in one read as in two reads', async ({ text, expected }) => {
+      expect(await answerOf(actionClass, [`${text}${ENTER}`])).toEqual(expected);
+      expect(await answerOf(actionClass, [text, ENTER])).toEqual(expected);
+    });
+  });
+
+  it('denies on n, o and ⏎ in three reads', async () => {
+    expect(await answerOf('package_change', ['n', 'o', ENTER])).toEqual(DENIED);
+  });
+
+  it('answers ⏎ after a pasted command that starts with y with the nudge', async () => {
+    expect(await answerOf('package_change', [`${PASTE_START}yarn add x${PASTE_END}`, ENTER])).toBe(
+      'nudge',
+    );
+  });
+
+  it('confirms on the ⏎ after the nudge that a word and ⏎ give', async () => {
+    expect(await answerOf('package_change', [`no${ENTER}`, ENTER])).toEqual(CONFIRMED);
+  });
+
+  it('denies on a word and ⏎ in one read once ↓ chose Deny', async () => {
+    expect(await answerOf('runner_trust', [DOWN, `no${ENTER}`])).toEqual(DENIED);
   });
 });

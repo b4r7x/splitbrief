@@ -2,19 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { resolveRenderInputConfig } from './input-config.js';
 
 describe('resolveRenderInputConfig', () => {
-  it('uses paste input in fullscreen even when mouse is disabled', () => {
+  it('uses no mouse input in fullscreen when mouse is disabled', () => {
     expect(resolveRenderInputConfig({ fullscreen: true, mouse: false })).toEqual({
       useMouse: false,
       useHover: false,
-      usePaste: true,
     });
   });
 
-  it('uses no paste or mouse input outside fullscreen', () => {
+  it('uses no mouse input outside fullscreen', () => {
     expect(resolveRenderInputConfig({ fullscreen: false, mouse: true })).toEqual({
       useMouse: false,
       useHover: false,
-      usePaste: false,
     });
   });
 
@@ -22,7 +20,6 @@ describe('resolveRenderInputConfig', () => {
     expect(resolveRenderInputConfig({ fullscreen: true, mouse: true, hover: true })).toEqual({
       useMouse: true,
       useHover: true,
-      usePaste: true,
     });
     expect(resolveRenderInputConfig({ fullscreen: true, mouse: false, hover: true }).useHover).toBe(
       false,

@@ -17,6 +17,7 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { waitForStdinRead } from '../helpers/key-log.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
@@ -24,6 +25,7 @@ const PATIENCE = { timeout: 60_000 };
 const SCENARIO_TIMEOUT = { timeout: 200_000 };
 const DRAFT = 'also fix the typo';
 const GATE_TITLE = 'Change a package manifest:';
+const NUDGE = '⏎ confirms this write · esc deny';
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';
@@ -141,11 +143,13 @@ async function inTui(
   home: string,
   drive: (tui: Tui) => Promise<void>,
   viewport: Readonly<{ cols: number; rows: number }> = VIEWPORT,
+  extraEnv: Readonly<Record<string, string>> = {},
 ): Promise<void> {
   const { target, offlinePath } = run;
   const env: Readonly<Record<string, string>> = {
     ...safeChildEnvironment(home),
     XDG_STATE_HOME: target.stateHome,
+    ...extraEnv,
   };
   await trustDeclaredRunners({
     projectDir: target.projectDir,
@@ -219,6 +223,7 @@ afterEach(() => {
 async function gateOverDraft(
   drive: (run: Run, tui: Tui) => Promise<void>,
   viewport: Readonly<{ cols: number; rows: number }> = VIEWPORT,
+  extraEnv: Readonly<Record<string, string>> = {},
 ) {
   const run = setup();
   try {
@@ -239,6 +244,7 @@ async function gateOverDraft(
         await drive(run, tui);
       },
       viewport,
+      extraEnv,
     );
   } finally {
     cleanupTempDir(run.target.tmpDir);
@@ -298,6 +304,61 @@ it('gives the gate the keys on Tab, and y confirms', SCENARIO_TIMEOUT, async () 
     write('y');
     await vi.waitFor(() => expect(approvalEvents(run)).toContain('approval_granted'), PATIENCE);
   });
+});
+
+// A word is no row letter: the ⏎ of the same read asks for a row in place of taking Confirm.
+it(
+  'answers no and ⏎ of one read with the nudge and confirms nothing',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await gateOverDraft(
+      async (run, { screen, write }) => {
+        await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
+        write('\t');
+        await expect.poll(screen, PATIENCE).toContain('▌ y   Confirm');
+        write('no\r');
+        await waitForStdinRead(run.target.projectDir, 'no\r');
+        const outcome = () => {
+          if (screen().includes(NUDGE)) return 'nudged';
+          return approvalEvents(run).includes('approval_granted') ? 'confirmed' : 'open';
+        };
+        await expect.poll(outcome, PATIENCE).not.toBe('open');
+        expect(outcome()).toBe('nudged');
+        expect(screen()).toContain('▌ y   Confirm');
+        expect(approvalEvents(run)).toEqual(['approval_prompted']);
+      },
+      VIEWPORT,
+      { SPLITBRIEF_DEBUG_KEYS: '1' },
+    );
+  },
+);
+
+// The arrows chose Deny, and a word before ⏎ names no other row.
+it('denies on no and ⏎ of one read once ↓ ↓ chose Deny', SCENARIO_TIMEOUT, async () => {
+  await gateOverDraft(
+    async (run, { screen, write }) => {
+      await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
+      write('\t');
+      await expect.poll(screen, PATIENCE).toContain('▌ y   Confirm');
+      write('\u001b[B');
+      await expect.poll(screen, PATIENCE).toContain('▌ r   Confirm with a reason');
+      write('\u001b[B');
+      await expect.poll(screen, PATIENCE).toContain('▌ x   Deny');
+      write('no\r');
+      await waitForStdinRead(run.target.projectDir, 'no\r');
+      const outcome = () => {
+        if (screen().includes(NUDGE)) return 'nudged';
+        const events = approvalEvents(run);
+        if (events.includes('approval_granted')) return 'confirmed';
+        return events.includes('approval_rejected') ? 'denied' : 'open';
+      };
+      await expect.poll(outcome, PATIENCE).not.toBe('open');
+      expect(outcome()).toBe('denied');
+      expect(approvalEvents(run)).not.toContain('approval_granted');
+    },
+    VIEWPORT,
+    { SPLITBRIEF_DEBUG_KEYS: '1' },
+  );
 });
 
 it(

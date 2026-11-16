@@ -3,8 +3,10 @@ import { defaultTheme, ThemeProvider } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
 import { resolveTheme } from '../../../core/theme/resolve.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
-import { afterEach, expect, it, vi } from 'vitest';
+import { useState } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
+import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -13,11 +15,14 @@ import { listRowLead } from '../../../components/list-row/lead.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { clampWorkflowPromptRows } from '../layout/rect.js';
 import { RecoveryMenu } from './recovery-menu.js';
 import { settleSlashHandoff, startSlashHandoff } from '../slash-handoff.js';
+import { UNREAD_WORDS_MESSAGE } from '../inline-menu/use-keys.js';
+import { PASTE_END, PASTE_START } from '../../../lib/terminal/filtered-stdin/paste.js';
 import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/review-failed.js';
 import { buildRetryExhaustedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/retry.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
@@ -29,6 +34,7 @@ import { getRecoveryPromptActions, recoveryActionKey } from '../recovery/actions
 afterEach(() => {
   composerLiveStore.reset();
   runViewStore.__testReset();
+  feedbackStore.reset();
   settleSlashHandoff();
 });
 
@@ -1625,4 +1631,101 @@ it('keeps a quoted value that spans two lines of one row masked', async () => {
     40,
   );
   expect(frame).not.toContain('CANARY');
+});
+
+// A word or a paste names no action, so the ⏎ after it takes no row and says how to choose one.
+describe('a typed word and ⏎ through the input bridge', () => {
+  const ENTER = '\r';
+  const DOWN = '\u001b[B';
+  const SHIFT_DOWN = '\u001b[1;2B';
+  const FOCUS_BACK = Symbol('the keys come back to the menu');
+  // The rows are Try again, Skip and End run; the menu opens on End run.
+  const END_RUN_FIRST = makeRecoveryIssue({ recommendedAction: 'end-run' });
+
+  async function answersOf(reads: ReadonlyArray<string | typeof FOCUS_BACK>) {
+    const answers: string[] = [];
+    let focus: (focused: boolean) => void = () => {};
+    function Menu() {
+      const [focused, setFocused] = useState(true);
+      focus = setFocused;
+      return (
+        <RecoveryMenu
+          issue={END_RUN_FIRST}
+          width={80}
+          clampedBoxRows={14}
+          focused={focused}
+          onFocusChange={setFocused}
+          onResolve={(answer) => answers.push(answer)}
+        />
+      );
+    }
+    const ui = renderThroughFilteredStdin(<Menu />);
+    try {
+      await ui.settled();
+      for (const read of reads) {
+        if (read === FOCUS_BACK) focus(true);
+        else ui.pressBytes(read);
+        await ui.settled();
+      }
+      return { answers, message: feedbackStore.get().message };
+    } finally {
+      ui.unmount();
+    }
+  }
+
+  it.each([
+    { name: 'in one read', reads: [`skip${ENTER}`] },
+    { name: 'in two reads', reads: ['skip', ENTER] },
+    { name: 'with skip in a bracketed paste', reads: [`${PASTE_START}skip${PASTE_END}`, ENTER] },
+  ])('takes no action on skip and ⏎ $name and says how to choose one', async ({ reads }) => {
+    expect(await answersOf(reads)).toEqual({ answers: [], message: UNREAD_WORDS_MESSAGE });
+  });
+
+  it('takes the highlighted action on the ⏎ after the text', async () => {
+    expect((await answersOf([`skip${ENTER}`, ENTER])).answers).toEqual([
+      recoveryActionKey('end-run'),
+    ]);
+  });
+
+  it.each([
+    { name: 'two Tab keys', read: '\t\t' },
+    { name: 'two spaces', read: '  ' },
+    { name: 'two Ctrl+A keys', read: '\u0001\u0001' },
+  ])(
+    'takes the highlighted action on ⏎ after $name in one read, with no text',
+    async ({ read }) => {
+      expect(await answersOf([read, ENTER])).toEqual({
+        answers: [recoveryActionKey('end-run')],
+        message: null,
+      });
+    },
+  );
+
+  it('takes the row that ↓ moved to after a word, with no text', async () => {
+    expect(await answersOf(['skip', DOWN, ENTER])).toEqual({
+      answers: [recoveryActionKey('retry-same-worker')],
+      message: null,
+    });
+  });
+
+  it('takes no action on ⏎ after a word and shift+↓, which chooses no row', async () => {
+    expect(await answersOf(['skip', SHIFT_DOWN, ENTER])).toEqual({
+      answers: [],
+      message: UNREAD_WORDS_MESSAGE,
+    });
+  });
+
+  it('skips on s after a word', async () => {
+    expect(await answersOf(['skip', 's'])).toEqual({
+      answers: [recoveryActionKey('skip-current-task')],
+      message: null,
+    });
+  });
+
+  it('takes the highlighted action on ⏎ after a word, Tab and the keys back, with no text', async () => {
+    expect(await answersOf(['skip', '\t', FOCUS_BACK, ENTER])).toEqual({
+      answers: [recoveryActionKey('end-run')],
+      message: null,
+    });
+  });
 });

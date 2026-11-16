@@ -744,8 +744,8 @@ const RESTORE_STEPS: Record<InkPath, string[]> = {
     'showCursor',
     'raw false',
   ],
-  inline: ['raw false'],
-  fallback: ['exitAltBuffer', 'showCursor', 'raw false'],
+  inline: ['disableBracketedPaste', 'raw false'],
+  fallback: ['disableBracketedPaste', 'exitAltBuffer', 'showCursor', 'raw false'],
 };
 
 const END_STEPS: Record<Stop, string[]> = {
@@ -950,6 +950,36 @@ describe('renderApp terminal ownership', () => {
     warnError('note after', undefined, 'feedback');
     expect(terminal.steps.slice(probed)).toEqual(['showCursor', 'hideCursor', 'stderr note after']);
   });
+
+  it.each(['fullscreen', 'inline', 'fallback'] as const)(
+    'turns bracketed paste on when the %s path reads keys, off for an editor and on again after it',
+    async (path) => {
+      const terminal = fakeTerminal();
+      const inkExit = Promise.withResolvers<void>();
+      mountInk(path, inkExit);
+      const rendering = renderApp(
+        createElement(Fragment),
+        { fullscreen: path !== 'inline', mouse: false, projectDir },
+        { exit: vi.fn() },
+      );
+      const pasteSteps = () => terminal.steps.filter((step) => step.endsWith('BracketedPaste'));
+      try {
+        await vi.waitFor(() => expect(terminal.input.listenerCount('data')).toBe(2));
+        expect(pasteSteps()).toEqual(['enableBracketedPaste']);
+        suspendTerminalForEditor();
+        expect(pasteSteps()).toEqual(['enableBracketedPaste', 'disableBracketedPaste']);
+        resumeTerminalAfterEditor();
+        expect(pasteSteps()).toEqual([
+          'enableBracketedPaste',
+          'disableBracketedPaste',
+          'enableBracketedPaste',
+        ]);
+      } finally {
+        inkExit.resolve();
+        await rendering;
+      }
+    },
+  );
 
   it.each(['an Ink exit', 'a termination signal'] as const)(
     'sends a frame that Ink writes during the cleanup after %s to the terminal at once while a drag is open',

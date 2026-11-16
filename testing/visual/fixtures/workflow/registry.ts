@@ -31,6 +31,7 @@ import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-
 import type { CheckpointId, ScenarioId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
 import { NO_CORRECTION_MESSAGE } from '../../../../src/features/workflow/recovery/actions.js';
+import { UNREAD_WORDS_MESSAGE } from '../../../../src/features/workflow/inline-menu/use-keys.js';
 import { requestSteer } from '../../../../src/features/workflow/run-requests/stop-resume.js';
 import { noWordsRefusal } from '../../../../src/core/recovery/typed-words.js';
 import { plainUserMessage } from '../../../../src/core/types/user-input.js';
@@ -233,6 +234,31 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       },
     });
   }
+  // Tab gives the gate over the words its keys; the word and ⏎ after it ask for a row.
+  if (projection.scenarioId === 'workflow-approval-confirm-word-nudge') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const approval = projection.approvalAfterMount;
+        if (approval === undefined) {
+          throw new Error('The word-nudge gate needs its after-mount approval');
+        }
+        await write.press(TYPED_WORDS);
+        void openApprovalPrompt({
+          tier: 'confirm',
+          actionClass: approval.actionClass ?? 'package_change',
+          actionDescription: approval.actionDescription,
+          taskId: WORKFLOW_FIXTURE_TASK_ID,
+          phase: 'reviewing-plan',
+        });
+        await flushEffects();
+        await write.press('\t');
+        // The word changes no frame; the ⏎ behind it draws the nudge.
+        write('no');
+        await write.press('\r');
+      },
+    });
+  }
   // The words go through the composer first, so the gate opens over a real draft.
   if (projection.scenarioId === 'workflow-approval-confirm-over-draft') {
     return () => ({
@@ -392,6 +418,20 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   }
   if (projection.scenarioId === 'workflow-ready-slash-command') {
     return () => ({ ...base(), afterMount: (write) => write.press('/settings') });
+  }
+  // The word changes no frame; the ⏎ behind it writes the feedback line.
+  if (
+    projection.scenarioId === 'workflow-recovery-typed-words' ||
+    projection.scenarioId === 'workflow-ready-typed-words'
+  ) {
+    const word = projection.scenarioId === 'workflow-ready-typed-words' ? 'discard' : 'skip';
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        write(word);
+        await write.press('\r');
+      },
+    });
   }
   if (projection.scenarioId === 'workflow-recovery-empty-enter') {
     return () => ({
@@ -1636,6 +1676,15 @@ const checkpointPredicates = [
       composerLiveStore.get().text === TYPED_WORDS &&
       excludesAll('queues the typed correction', 'queues the correction')(context),
   ],
+  [
+    checkpointId('approval-confirm-word-nudge'),
+    (context) =>
+      includesAll(
+        'Trust and run a configured runner:',
+        `${listRowLead('active')}y   Confirm`,
+        '⏎ trusts this runner · esc deny',
+      )(context) && composerLiveStore.get().text === TYPED_WORDS,
+  ],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-short'), includesAll('Confirm')],
   [checkpointId('approval-confirm-long-path'), includesAll('src/features/workflow')],
@@ -2095,6 +2144,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('ready-composer-focus'), includesAll('Ready to apply')],
   [checkpointId('ready-slash-command'), includesAll('Ready to apply', '› /settings')],
+  [checkpointId('ready-typed-words'), includesAll('Ready to apply', UNREAD_WORDS_MESSAGE)],
   [checkpointId('ready-empty-diff'), includesAll('Ready to apply')],
   [checkpointId('ready-override'), includesAll()],
   [
@@ -2192,6 +2242,7 @@ const checkpointPredicates = [
     checkpointId('recovery-empty-enter'),
     includesAll('Change BUILD tool', 'Nothing to send. Tab to choose an action.'),
   ],
+  [checkpointId('recovery-typed-words'), includesAll('Change BUILD tool', UNREAD_WORDS_MESSAGE)],
   [checkpointId('recovery-no-fallback'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-fallback-used'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-fallback-not-installed'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],

@@ -26,6 +26,15 @@ const BACKSPACE_KEY = /(\x1b?[\b\x7f])/;
 const DEL_KEY = /^(\x1b?)\x7f$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: a kitty CSI-u key begins with ESC.
 const KITTY_BACKSPACE = /^\x1b\[127((?:;[\d:;]*)?u)$/;
+// A read of fewer than 64 characters is typed keys. A longer read is a paste that the terminal
+// did not bracket, and its line breaks stay text.
+const TYPED_READ_LIMIT = 64;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: an Alt+Enter key begins with ESC.
+const ENTER_KEY = /(\x1b?\r)\n?/;
+
+function isTypedRead(bytes: Buffer): boolean {
+  return bytes.toString('utf8').length < TYPED_READ_LIMIT;
+}
 
 function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.ReadStream {
   Object.defineProperty(filtered, 'isTTY', {
@@ -58,24 +67,28 @@ function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.Read
 // Ink parses one read as one key unless an ESC starts the next one, so `\x7f\x7f` would reach a
 // text field as one unknown key and delete nothing. Each backspace byte is written as its own key.
 // Ink names DEL and the kitty codepoint 127 `delete`, the name of the forward Delete key, so the
-// Backspace key is written as BS and codepoint 8, which Ink names `backspace`.
-function writeKeyBytes(state: FilterState, bytes: Buffer): void {
+// Backspace key is written as BS and codepoint 8, which Ink names `backspace`. Ink names Enter only
+// when it stands alone, so each Enter of a typed read is written as its own key, and CR LF is one
+// Enter.
+function writeKeyBytes(state: FilterState, bytes: Buffer, typed: boolean): void {
   if (bytes.length === 0) return;
   const text = state.decoder.write(bytes);
   const keys = state.options?.filterInput ? state.options.filterInput(text) : text;
-  for (const key of keys.split(BACKSPACE_KEY)) {
-    if (key.length === 0) continue;
-    const named = key.replace(DEL_KEY, '$1\b').replace(KITTY_BACKSPACE, '\x1b[8$1');
-    state.queue.push({ kind: 'key', text: named });
+  for (const piece of keys.split(BACKSPACE_KEY)) {
+    for (const key of typed ? piece.split(ENTER_KEY) : [piece]) {
+      if (key.length === 0) continue;
+      const named = key.replace(DEL_KEY, '$1\b').replace(KITTY_BACKSPACE, '\x1b[8$1');
+      state.queue.push({ kind: 'key', text: named });
+    }
   }
 }
 
-function writeSegment(state: FilterState, bytes: Buffer): void {
+function writeSegment(state: FilterState, bytes: Buffer, typed: boolean): void {
   if (state.paste.active) {
     appendPaste(state.paste, bytes);
     return;
   }
-  writeKeyBytes(state, bytes);
+  writeKeyBytes(state, bytes, typed);
 }
 
 // A click acts on what the frame on screen shows, so the listeners read it now. What they do
@@ -100,7 +113,7 @@ function isCarriedEscape(source: Buffer, textStart: number, cursor: number): boo
   return cursor - textStart === 1 && source.readUInt8(textStart) === ESC_BYTE;
 }
 
-function processBytes(state: FilterState, source: Buffer): void {
+function processBytes(state: FilterState, source: Buffer, typed: boolean): void {
   let cursor = 0;
   let textStart = 0;
 
@@ -115,7 +128,8 @@ function processBytes(state: FilterState, source: Buffer): void {
     // Ink joins a lone ESC with the key after it in the same read (Alt and that key), so the two
     // stay one key.
     const altKey = decision.kind === 'text' && isCarriedEscape(source, textStart, cursor);
-    if (cursor > textStart && !altKey) writeSegment(state, source.subarray(textStart, cursor));
+    if (cursor > textStart && !altKey)
+      writeSegment(state, source.subarray(textStart, cursor), typed);
 
     switch (decision.kind) {
       case 'hold':
@@ -149,6 +163,7 @@ function processBytes(state: FilterState, source: Buffer): void {
         writeKeyBytes(
           state,
           source.subarray(altKey ? textStart : cursor, cursor + decision.length),
+          typed,
         );
         cursor += decision.length;
         break;
@@ -156,7 +171,7 @@ function processBytes(state: FilterState, source: Buffer): void {
     textStart = cursor;
   }
 
-  if (textStart < source.length) writeSegment(state, source.subarray(textStart));
+  if (textStart < source.length) writeSegment(state, source.subarray(textStart), typed);
 }
 
 function flushHeldPrefix(state: FilterState): void {
@@ -164,7 +179,7 @@ function flushHeldPrefix(state: FilterState): void {
   const held = state.held.bytes;
   state.held.bytes = EMPTY_BUFFER;
   if (state.paste.active) return;
-  writeKeyBytes(state, held);
+  writeKeyBytes(state, held, isTypedRead(held));
   drain(state);
 }
 
@@ -174,7 +189,7 @@ function readChunk(state: FilterState, chunk: Buffer): void {
   state.held.bytes = EMPTY_BUFFER;
   // A click is read against the frame on screen, so the whole read is parsed before its first
   // input reaches the app.
-  processBytes(state, source);
+  processBytes(state, source, isTypedRead(source));
   drain(state);
   if (state.paste.active) return;
   scheduleHeldPrefixFlush(state.held, () => {
@@ -188,7 +203,6 @@ export function createFilteredStdin(
 ): FilteredStdin {
   const mouseEnabled = opts?.mouse ?? true;
   const hoverEnabled = opts?.hover ?? false;
-  const pasteEnabled = opts?.paste ?? true;
   const state: FilterState = {
     filtered: bridgeTty(new PassThrough(), stdin),
     decoder: new StringDecoder('utf8'),
@@ -209,11 +223,7 @@ export function createFilteredStdin(
   const activate = () => {
     if (state.active || state.disabled) return;
     state.active = true;
-    setTerminalInputModes('enable', {
-      mouse: mouseEnabled,
-      paste: pasteEnabled,
-      hover: hoverEnabled,
-    });
+    setTerminalInputModes('enable', { mouse: mouseEnabled, hover: hoverEnabled });
     stdin.on('data', dataHandler);
     stdin.resume();
   };
@@ -248,7 +258,7 @@ export function createFilteredStdin(
       if (state.active) {
         state.active = false;
         stdin.off('data', dataHandler);
-        setTerminalInputModes('disable', { mouse: mouseEnabled, paste: pasteEnabled });
+        setTerminalInputModes('disable', { mouse: mouseEnabled });
       }
       drain(state);
       flushHeldPrefix(state);

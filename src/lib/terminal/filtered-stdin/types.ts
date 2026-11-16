@@ -65,7 +65,6 @@ export interface FilteredStdinOptions {
   activate?: boolean | undefined;
   mouse?: boolean | undefined;
   hover?: boolean | undefined;
-  paste?: boolean | undefined;
   handleMouse?: ((event: MouseEvent, dispatch: MouseDispatch) => void) | undefined;
   filterInput?: ((text: string) => string) | undefined;
   onPaste?: (() => void) | undefined;

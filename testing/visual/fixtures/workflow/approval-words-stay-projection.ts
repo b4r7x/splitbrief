@@ -32,3 +32,9 @@ export const approvalWordsStayProjection: WorkflowFixtureProjection = {
     },
   ],
 };
+
+// The same gate after Tab gives it the keys: a typed word and ⏎ name no row, so it asks for one.
+export const approvalWordNudgeProjection: WorkflowFixtureProjection = {
+  ...approvalWordsStayProjection,
+  scenarioId: scenarioId('workflow-approval-confirm-word-nudge'),
+};

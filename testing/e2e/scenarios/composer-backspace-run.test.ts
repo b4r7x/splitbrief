@@ -12,18 +12,25 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
+import { waitForStdinRead } from '../helpers/key-log.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 
 const VIEWPORT = { cols: 100, rows: 30 };
 const EMPTY_BOX = /^› +Describe your feature/;
-const HELP = /Help · commands & shortcuts/;
+const PREPARATION_BLOCKED = 'Tool preparation · Blocked';
 
 interface Home {
   readonly write: (keys: string) => void;
+  /** Pastes `text` as a terminal does: in brackets while the app has bracketed paste on. */
+  readonly paste: (text: string) => void;
+  /** True while the app has bracketed paste on. */
+  readonly pasteMode: () => boolean;
   readonly screen: () => string;
   /** The rows of the composer box, joined. */
   readonly box: () => string;
+  /** Waits until the key log shows that the CLI got `bytes` in one stdin read. */
+  readonly waitForOneRead: (bytes: string) => Promise<void>;
 }
 
 /** Opens SPLITBRIEF home in a PTY, runs `drive`, then quits with Ctrl+C twice. */
@@ -90,7 +97,7 @@ async function withHome(
           name: 'xterm-256color',
           ...VIEWPORT,
           cwd: fileURLToPath(new URL('../../../', import.meta.url)),
-          env: { ...environment, XDG_STATE_HOME: join(dir, 'state') },
+          env: { ...environment, XDG_STATE_HOME: join(dir, 'state'), SPLITBRIEF_DEBUG_KEYS: '1' },
         },
       },
       async (child) => {
@@ -125,7 +132,15 @@ async function withHome(
             timeout: 30_000,
           });
           await delay(PROMPT_TYPEAHEAD_GRACE_MS);
-          await drive({ write: (keys) => child.write(keys), screen, box });
+          await drive({
+            write: (keys) => child.write(keys),
+            paste: (text) =>
+              child.write(terminal.modes.bracketedPasteMode ? `\x1b[200~${text}\x1b[201~` : text),
+            pasteMode: () => terminal.modes.bracketedPasteMode,
+            screen,
+            box,
+            waitForOneRead: (bytes) => waitForStdinRead(projectDir, bytes),
+          });
 
           child.write('\x03');
           await vi.waitFor(() => expect(screen()).toContain('Press ctrl+c again to quit'));
@@ -230,17 +245,12 @@ it.for([true, false])(
     await withHome(
       'composer-deleted-command-one-read',
       fullscreen,
-      async ({ write, screen, box }) => {
+      async ({ write, screen, box, waitForOneRead }) => {
         write('/he');
         await shows(screen, '/help  Show help');
 
-        write('\x7f\x7f\x7f\r');
-        // Ink reads a ⏎ and the letters after it in one read as text, so the letters wait.
-        await vi.waitFor(
-          () => expect(box().match(EMPTY_BOX) ?? screen().match(HELP)).not.toBeNull(),
-          { timeout: 10_000 },
-        );
-        write('ok');
+        write('\x7f\x7f\x7f\rok');
+        await waitForOneRead('\x7f\x7f\x7f\rok');
         await shows(screen, /› ok|Help · commands & shortcuts/);
 
         expect(screen()).not.toContain('Help · commands & shortcuts');
@@ -269,6 +279,72 @@ it.for([true, false])(
         expect(screen()).not.toMatch(/Sessions · \d/);
         write('\x1b');
         await shows(screen, 'Describe your feature');
+      },
+      (reason) => context.skip(reason),
+    );
+  },
+);
+
+it.for([true, false])(
+  'sends the text that one read types with its ⏎, fullscreen=%s',
+  async (fullscreen, context) => {
+    await withHome(
+      'composer-text-enter-one-read',
+      fullscreen,
+      async ({ write, screen, waitForOneRead }) => {
+        write('hello\r');
+        await waitForOneRead('hello\r');
+        // The project has no commit, so the start that the sent text asks for stops at its check.
+        await shows(screen, PREPARATION_BLOCKED);
+        write('\x1b');
+        await vi.waitFor(() => expect(screen()).not.toContain(PREPARATION_BLOCKED), {
+          timeout: 10_000,
+        });
+      },
+      (reason) => context.skip(reason),
+    );
+  },
+);
+
+it.for([true, false])(
+  'turns bracketed paste on and keeps a pasted text of three lines in the composer, fullscreen=%s',
+  async (fullscreen, context) => {
+    await withHome(
+      'composer-paste-three-lines',
+      fullscreen,
+      async ({ paste, pasteMode, screen }) => {
+        await vi.waitFor(() => expect(pasteMode()).toBe(true), { timeout: 10_000 });
+        paste('line one\rline two\rline three');
+        await vi.waitFor(
+          () => {
+            const rows = screen().split('\n');
+            const first = rows.findIndex((row) => row.includes('› line one'));
+            expect(first, screen()).toBeGreaterThanOrEqual(0);
+            expect(rows[first + 1]).toContain('line two');
+            expect(rows[first + 2]).toContain('line three');
+          },
+          { timeout: 10_000 },
+        );
+        expect(screen()).not.toContain(PREPARATION_BLOCKED);
+      },
+      (reason) => context.skip(reason),
+    );
+  },
+);
+
+it.for([true, false])(
+  'folds a pasted text of four lines into one paste item, fullscreen=%s',
+  async (fullscreen, context) => {
+    await withHome(
+      'composer-paste-four-lines',
+      fullscreen,
+      async ({ paste, pasteMode, screen, box }) => {
+        await vi.waitFor(() => expect(pasteMode()).toBe(true), { timeout: 10_000 });
+        paste('line one\rline two\rline three\rline four');
+        await vi.waitFor(() => expect(box(), screen()).toContain('› [paste #1 +4 lines]'), {
+          timeout: 10_000,
+        });
+        expect(screen()).not.toContain(PREPARATION_BLOCKED);
       },
       (reason) => context.skip(reason),
     );

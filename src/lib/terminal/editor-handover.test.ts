@@ -175,7 +175,6 @@ describe('terminal handover for $EDITOR', () => {
     const config: TerminalHandoverConfig = {
       fullscreen: true,
       mouse: false,
-      paste: true,
       sourceStdin: stdin,
     };
     const written = captureStdout();
@@ -302,7 +301,12 @@ describe('terminal handover for $EDITOR', () => {
     suspendTerminalForEditor({ fullscreen: false, mouse: false, sourceStdin: stdin });
     resumeTerminalAfterEditor({ fullscreen: false, mouse: false, sourceStdin: stdin });
 
-    expect(written).toEqual([terminalSequences.showCursor, terminalSequences.hideCursor]);
+    expect(written).toEqual([
+      terminalSequences.disableBracketedPaste,
+      terminalSequences.showCursor,
+      terminalSequences.hideCursor,
+      terminalSequences.enableBracketedPaste,
+    ]);
     expect(calls).toEqual(['pause', 'resume']);
   });
 

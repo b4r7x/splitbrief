@@ -14,6 +14,8 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { UNREAD_WORDS_MESSAGE } from '../../../src/features/workflow/inline-menu/use-keys.js';
+import { waitForStdinRead } from '../helpers/key-log.js';
 import { createStopContinueFixture, readState } from '../helpers/stop-continue-fixture.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
@@ -124,11 +126,17 @@ function savedRun(run: Run) {
   return readState(run.target, sessionId);
 }
 
-async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>): Promise<void> {
+async function inTui(
+  run: Run,
+  home: string,
+  drive: (tui: Tui) => Promise<void>,
+  extraEnv: Readonly<Record<string, string>>,
+): Promise<void> {
   const { target, offlinePath } = run;
   const env: Readonly<Record<string, string>> = {
     ...safeChildEnvironment(home),
     XDG_STATE_HOME: target.stateHome,
+    ...extraEnv,
   };
   await trustDeclaredRunners({
     projectDir: target.projectDir,
@@ -198,16 +206,25 @@ afterEach(() => {
   trustHome.restore();
 });
 
-async function scenario(holdAt: HoldAt, drive: (run: Run, tui: Tui) => Promise<void>) {
+async function scenario(
+  holdAt: HoldAt,
+  drive: (run: Run, tui: Tui) => Promise<void>,
+  extraEnv: Readonly<Record<string, string>> = {},
+) {
   const run = setup(holdAt);
   try {
-    await inTui(run, trustHome.home, async (tui) => {
-      await expect.poll(tui.screen, PATIENCE).toContain('Describe your feature');
-      tui.write('add a total helper');
-      await expect.poll(tui.screen, PATIENCE).toContain('› add a total helper');
-      tui.write(PTY_SUBMIT_INPUT);
-      await drive(run, tui);
-    });
+    await inTui(
+      run,
+      trustHome.home,
+      async (tui) => {
+        await expect.poll(tui.screen, PATIENCE).toContain('Describe your feature');
+        tui.write('add a total helper');
+        await expect.poll(tui.screen, PATIENCE).toContain('› add a total helper');
+        tui.write(PTY_SUBMIT_INPUT);
+        await drive(run, tui);
+      },
+      extraEnv,
+    );
   } finally {
     cleanupTempDir(run.target.tmpDir);
   }
@@ -344,5 +361,100 @@ it(
       write('r');
       await vi.waitFor(() => expect(implementerCalls(run)).toBe(2), PATIENCE);
     });
+  },
+);
+
+// A word names no action: the ⏎ of the same read takes no row and says how to choose one.
+it(
+  'keeps the Seat down halt open on skip and ⏎ of one read and says how to choose',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(
+      'seat-down',
+      async (run, { screen, write }) => {
+        await vi.waitFor(() => expect(implementerCalls(run)).toBe(1), PATIENCE);
+        unlinkSync(run.hold);
+        await expect.poll(screen, PATIENCE).toContain('Try again');
+        await expect.poll(screen, PATIENCE).toContain('⏎ confirm');
+        writeFileSync(run.hold, '');
+
+        write('skip\r');
+        const outcome = () => {
+          if (screen().includes(UNREAD_WORDS_MESSAGE)) return 'refused';
+          const acted = implementerCalls(run) > 1 || savedRun(run).pendingRecovery === undefined;
+          return acted ? 'acted' : 'open';
+        };
+        await expect.poll(outcome, PATIENCE).not.toBe('open');
+        const seen = outcome();
+        await waitForStdinRead(run.target.projectDir, 'skip\r');
+        expect(seen).toBe('refused');
+        const saved = savedRun(run);
+        expect(saved.pendingRecovery?.reason).toBe('runner-usage-limit');
+        expect(saved.tasks.map((task) => `${task.id}:${task.status}`)).not.toContain(
+          'T001:skipped',
+        );
+        expect(implementerCalls(run)).toBe(1);
+      },
+      { SPLITBRIEF_DEBUG_KEYS: '1' },
+    );
+  },
+);
+
+it(
+  'keeps a ready run out of the checkout on discard and ⏎ of one read and says how to choose',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(
+      'final-review',
+      async (run, { screen, write }) => {
+        await vi.waitFor(() => expect(callsMade(run)).toContain('final-review'), PATIENCE);
+        unlinkSync(run.hold);
+        await expect.poll(screen, PATIENCE).toContain('Ready to apply');
+        await expect.poll(screen, PATIENCE).toContain('▌ Apply');
+
+        write('discard\r');
+        const outcome = () => {
+          if (screen().includes(UNREAD_WORDS_MESSAGE)) return 'refused';
+          return screen().includes('Applied') || checkoutHasTotal(run) ? 'applied' : 'open';
+        };
+        await expect.poll(outcome, PATIENCE).not.toBe('open');
+        const seen = outcome();
+        await waitForStdinRead(run.target.projectDir, 'discard\r');
+        expect(seen).toBe('refused');
+        expect(screen()).toContain('Ready to apply');
+        expect(checkoutHasTotal(run)).toBe(false);
+      },
+      { SPLITBRIEF_DEBUG_KEYS: '1' },
+    );
+  },
+);
+
+// Two Tab keys of one read hold no typed words, so the ⏎ after them takes the highlighted row.
+it(
+  'applies a ready run on ⏎ after two Tab keys of one read, with no line about typed words',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(
+      'final-review',
+      async (run, { screen, write }) => {
+        await vi.waitFor(() => expect(callsMade(run)).toContain('final-review'), PATIENCE);
+        unlinkSync(run.hold);
+        await expect.poll(screen, PATIENCE).toContain('Ready to apply');
+        await expect.poll(screen, PATIENCE).toContain('▌ Apply');
+
+        write('\t\t');
+        await waitForStdinRead(run.target.projectDir, '\t\t');
+        write(PTY_SUBMIT_INPUT);
+        const outcome = () => {
+          if (screen().includes(UNREAD_WORDS_MESSAGE)) return 'refused';
+          return screen().includes('Applied') || checkoutHasTotal(run) ? 'applied' : 'open';
+        };
+        await expect.poll(outcome, PATIENCE).not.toBe('open');
+        expect(outcome()).toBe('applied');
+        await expect.poll(screen, PATIENCE).toContain('Applied');
+        expect(checkoutHasTotal(run)).toBe(true);
+      },
+      { SPLITBRIEF_DEBUG_KEYS: '1' },
+    );
   },
 );

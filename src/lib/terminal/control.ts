@@ -74,7 +74,6 @@ export function writeTerminalSequence(sequence: string): boolean {
 
 export interface TerminalInputModeOptions {
   mouse?: boolean | undefined;
-  paste?: boolean | undefined;
   hover?: boolean | undefined;
 }
 
@@ -84,7 +83,6 @@ export function setTerminalInputModes(
 ): void {
   const enabled = mode === 'enable';
   const mouse = opts?.mouse ?? true;
-  const paste = opts?.paste ?? true;
   const hover = opts?.hover ?? false;
   if (mouse) {
     if (enabled) {
@@ -99,11 +97,9 @@ export function setTerminalInputModes(
       writeTerminalSequence(terminalSequences.disableSgrMouse);
     }
   }
-  if (paste) {
-    writeTerminalSequence(
-      enabled ? terminalSequences.enableBracketedPaste : terminalSequences.disableBracketedPaste,
-    );
-  }
+  writeTerminalSequence(
+    enabled ? terminalSequences.enableBracketedPaste : terminalSequences.disableBracketedPaste,
+  );
 }
 
 export function restoreTerminalControl(opts: { fullscreen: boolean }): void {

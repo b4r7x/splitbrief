@@ -1317,6 +1317,14 @@ If the clipboard offers both text and an image, [Zed pastes the text](https://gi
 
 Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain readable attachments. See [Image attachments](./FEATURES.md#image-attachments) for paste, drop, and removal behavior.
 
+### Symptom: a paste sends the text before its first line break
+
+**Likely cause:** Your terminal does not mark the paste as a paste. SPLITBRIEF turns on bracketed paste in fullscreen and with `--no-fullscreen`. A terminal that does not do bracketed paste, or has it turned off, sends a paste as typed keys. In a paste of fewer than 64 characters, each line break then acts as Enter. The composer sends the text before the line break, and on the plan card a pasted `ok` and a line break approves the plan. A longer paste can also act this way at a line break, because the terminal can send it in short parts.
+
+**Fix:** Turn on bracketed paste in the settings of your terminal, or use a terminal that does bracketed paste. Then a paste stays text in the composer, and a paste of 4 or more lines shows as one `[paste #n +N lines]` item.
+
+**See also:** [Input footer](./FEATURES.md#input-footer).
+
 ### Symptom: TUI layout is broken — overlapping panes, truncated text
 
 **Likely cause:** Terminal width below 60 columns. Ink can render but SPLITBRIEF's layout assumes a minimum width.

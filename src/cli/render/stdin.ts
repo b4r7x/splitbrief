@@ -39,7 +39,6 @@ export function openTuiInput(fullscreen: boolean, modes: TuiInput['modes']): Tui
       activate: false,
       mouse: modes.useMouse,
       hover: modes.useHover,
-      paste: modes.usePaste,
       handleMouse: selection?.handleMouse,
       filterInput: selection?.filterInput,
       onPaste: selection?.clear,

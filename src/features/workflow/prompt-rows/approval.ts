@@ -38,9 +38,15 @@ export const IRREVERSIBLE_NOTE = 'this cannot be undone';
 
 // The refusal replaces the legend rather than adding a row, so it has to carry the way out with
 // it: the moment a user mis-keys on the most dangerous panel is not the moment to hide `esc`.
-export const CONFIRM_NUDGE = `⏎ confirms this write${SOFT_SEP}${formatKeyHints([DENY_HINT])}`;
+export function confirmNudge(actionClass: ActionClass): string {
+  const confirm = actionClass === 'runner_trust' ? '⏎ trusts this runner' : '⏎ confirms this write';
+  return `${confirm}${SOFT_SEP}${formatKeyHints([DENY_HINT])}`;
+}
+
 /** The legends of the choose step: too narrow a row sheds their trailing keys. */
-export const CHOOSE_LEGENDS = [CHOOSE_HINTS, CONFIRM_NUDGE];
+export function chooseLegends(actionClass: ActionClass): string[] {
+  return [CHOOSE_HINTS, confirmNudge(actionClass)];
+}
 
 // A prompt that leaves the keys in the composer names what ⏎ does down there. A slash command
 // runs; plain words only queue where the phase takes them; a blank draft takes ⏎ back to the

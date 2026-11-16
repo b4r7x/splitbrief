@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CONFIRM_NUDGE,
   CONFIRM_REASON_HINTS,
   CHOOSE_HINTS,
   approvalKeyColumnWidth,
@@ -8,6 +7,7 @@ import {
   getApprovalConfirmLabel,
   getConfirmOptions,
   getConfirmPrimaryKey,
+  confirmNudge,
 } from './approval.js';
 import { CONFIRM_HINT } from '../../../components/key-legend.js';
 
@@ -66,7 +66,14 @@ describe('confirm gate keys and legends', () => {
     expect(CHOOSE_HINTS).toBe('↑↓ select · ⏎ confirm · esc deny');
   });
 
-  it('keeps the way out on the refusal a stray y earns', () => {
-    expect(CONFIRM_NUDGE).toBe('⏎ confirms this write · esc deny');
-  });
+  it.each([
+    ['destructive', '⏎ confirms this write · esc deny'],
+    ['package_change', '⏎ confirms this write · esc deny'],
+    ['runner_trust', '⏎ trusts this runner · esc deny'],
+  ] as const)(
+    'keeps the way out on the nudge of %s and names what ⏎ does',
+    (actionClass, nudge) => {
+      expect(confirmNudge(actionClass)).toBe(nudge);
+    },
+  );
 });

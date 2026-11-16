@@ -9,7 +9,7 @@ import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import {
   getConfirmOptions,
   approvalOptionRows,
-  CHOOSE_LEGENDS,
+  chooseLegends,
   CONFIRM_QUESTION,
   CONFIRM_REASON_OPTIONAL,
   CONFIRM_REASON_HINTS,
@@ -41,7 +41,7 @@ function confirmPanelRows(actionClass: ActionClass, width: number): ConfirmPanel
   const options = getConfirmOptions(actionClass);
   const optionRows = approvalOptionRows(options, width);
   const chooseLegend = Math.max(
-    ...CHOOSE_LEGENDS.map((legend) => wrappedRows(fitKeyLegend(legend, width), width)),
+    ...chooseLegends(actionClass).map((legend) => wrappedRows(fitKeyLegend(legend, width), width)),
   );
   const chooseAnswer = optionRows.reduce((rows, optionRow) => rows + optionRow, 0);
   const reason = options.some((option) => option.key === 'r');
@@ -265,8 +265,9 @@ export function confirmCardFits(
   regionRows: number,
 ): boolean {
   return (
-    CHOOSE_LEGENDS.every((legend) => fitKeyLegend(legend, frame.width) === legend) &&
-    confirmPanelMinRows(request, frame) <= regionRows
+    chooseLegends(request.actionClass).every(
+      (legend) => fitKeyLegend(legend, frame.width) === legend,
+    ) && confirmPanelMinRows(request, frame) <= regionRows
   );
 }
 

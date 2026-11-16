@@ -14,6 +14,11 @@ export interface ConfirmKeyState {
   selectedIndex: number;
   reason: string;
   nudged: boolean;
+  /**
+   * A text key of more than one character came after the last row key: ⏎ on the Confirm row
+   * asks again.
+   */
+  unread: boolean;
 }
 
 export const INITIAL_CONFIRM_KEY_STATE: ConfirmKeyState = {
@@ -21,6 +26,7 @@ export const INITIAL_CONFIRM_KEY_STATE: ConfirmKeyState = {
   selectedIndex: 0,
   reason: '',
   nudged: false,
+  unread: false,
 };
 
 export interface ConfirmKeyPanel {
@@ -74,13 +80,18 @@ export function confirmKeyStep(
   if (key.upArrow || key.downArrow) {
     const direction = key.upArrow ? 'up' : 'down';
     const selectedIndex = navigateIndex(direction, state.selectedIndex, options.length);
-    return { kind: 'state', state: { ...state, selectedIndex, nudged: false } };
+    return { kind: 'state', state: { ...state, selectedIndex, nudged: false, unread: false } };
   }
   if (key.return) {
+    if (state.unread && state.selectedIndex === 0) {
+      return { kind: 'state', state: { ...state, nudged: true, unread: false } };
+    }
     const option = options[state.selectedIndex];
     if (option !== undefined && panel.optionRows > 0) return confirmRowStep(state, option.key);
     return { kind: 'state', state };
   }
+  // A word or a paste names no row, and its first letter must not act for it.
+  if (input.length > 1) return { kind: 'state', state: { ...state, unread: true } };
 
   const letter = input.toLowerCase();
   const letterRow = options.findIndex((option) => option.key === letter);
@@ -99,7 +110,7 @@ export function confirmKeyStep(
   // A control-plane write costs the highlighted row, so `y` moves the highlight back to
   // Confirm and reports the miss instead of silently doing nothing.
   if (isIrreversibleActionClass(panel.actionClass) || !inView) {
-    return { kind: 'state', state: { ...state, selectedIndex: 0, nudged: true } };
+    return { kind: 'state', state: { ...state, selectedIndex: 0, nudged: true, unread: false } };
   }
   return confirmWith(CONFIRM_REASON_UNSTATED);
 }

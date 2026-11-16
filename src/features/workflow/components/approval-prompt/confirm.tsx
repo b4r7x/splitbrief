@@ -9,7 +9,6 @@ import { withMark } from '../prompt-body.js';
 import { closeApprovalPrompt } from '../../../../stores/prompts/approval.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
-  CONFIRM_NUDGE,
   CONFIRM_QUESTION,
   CONFIRM_REASON_HINTS,
   CONFIRM_REASON_OPTIONAL,
@@ -19,6 +18,7 @@ import {
   approvalOptionKeyCell,
   approvalOptionLabelText,
   approvalTitle,
+  confirmNudge,
   formatApprovalActionDescription,
   getApprovalConfirmLabel,
   getConfirmOptions,
@@ -199,7 +199,9 @@ export function ConfirmApprovalPrompt({
           <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
           {fit.legend &&
             (keys.nudged ? (
-              <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, frame.width)}</Text>
+              <Text color={t.warning}>
+                {fitKeyLegend(confirmNudge(request.actionClass), frame.width)}
+              </Text>
             ) : (
               <Text color={t.textDim}>
                 {fitKeyLegend(focused ? CHOOSE_HINTS : unfocusedLegend, frame.width)}

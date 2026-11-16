@@ -13,7 +13,6 @@ interface TerminalHandoverStdin {
 export interface TerminalHandoverConfig {
   fullscreen: boolean;
   mouse: boolean;
-  paste?: boolean | undefined;
   hover?: boolean | undefined;
   sourceStdin: TerminalHandoverStdin;
   beforeSuspend?: (() => void) | undefined;
@@ -112,9 +111,7 @@ export function suspendTerminalForEditor(config?: TerminalHandoverConfig): void 
     stdin.readableFlowing = null;
     stdin.pause();
     if (handover) {
-      const paste = handover.paste ?? handover.mouse;
-      if (handover.mouse || paste)
-        setTerminalInputModes('disable', { mouse: handover.mouse, paste });
+      setTerminalInputModes('disable', { mouse: handover.mouse });
       if (handover.keyboardPush?.() !== undefined)
         writeTerminalSequence(terminalSequences.popKittyKeyboard);
       if (handover.fullscreen) writeTerminalSequence(terminalSequences.exitAltBuffer);
@@ -148,9 +145,7 @@ export function resumeTerminalAfterEditor(config?: TerminalHandoverConfig): void
       const keyboardPush = handover.keyboardPush?.();
       if (keyboardPush !== undefined) writeTerminalSequence(keyboardPush);
       process.stdout.emit('resize');
-      const paste = handover.paste ?? handover.mouse;
-      if (handover.mouse || paste)
-        setTerminalInputModes('enable', { mouse: handover.mouse, paste, hover: handover.hover });
+      setTerminalInputModes('enable', { mouse: handover.mouse, hover: handover.hover });
     }
   } finally {
     const snapshot = endHandover();

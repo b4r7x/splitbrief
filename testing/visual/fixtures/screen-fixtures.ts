@@ -1332,6 +1332,18 @@ function createDraftPathFixture(): FixtureLifecycle {
   };
 }
 
+function createDraftPasteFoldFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: home.setup,
+    teardown: home.teardown,
+    afterMount: (write) =>
+      write.press(
+        'The CSV export drops the header row.\rSteps:\r1. Open Reports and pick CSV.\r2. Open the file: the first row is data.',
+      ),
+  };
+}
+
 function createLongDraftFixture(): FixtureLifecycle {
   const home = createHomeFixture();
   return {
@@ -1771,6 +1783,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     }),
   ],
   [scenarioId('home-draft-path'), createDraftPathFixture],
+  [scenarioId('home-draft-paste-fold'), createDraftPasteFoldFixture],
   [scenarioId('home-draft-long'), createLongDraftFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],
   [scenarioId('home-recent-sessions'), createRecentSessionsFixture],

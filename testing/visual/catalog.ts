@@ -300,6 +300,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Feature composer' },
       ],
     }),
+    defineScenario({
+      id: 'home-draft-paste-fold',
+      title: 'Home · a pasted text of four lines folded in the draft',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Draft holding the fold of the pasted lines',
+        kind: 'ready',
+        marker: '[paste #1 +4 lines]',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
     // A check running behind a live composer: the status borrows the hint's row and the draft the
     // operator submitted is still theirs to edit.
     defineScenario({
@@ -2390,6 +2405,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-approval-confirm-word-nudge',
+      title: 'Workflow · trust gate that answers a typed word and ⏎ with its nudge',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-confirm-word-nudge',
+        title: 'Runner trust gate that asks for a row',
+        kind: 'review',
+        marker: '⏎ trusts this runner',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'approval-panel', title: 'Trust panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-approval-confirm-short',
       title: 'Workflow · destructive confirm gate in a short terminal',
       surface: screenSurface('workflow'),
@@ -3872,6 +3903,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-typed-words',
+      title: 'Workflow · a typed word and ⏎ at the result menu',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 140, rows: 40 })],
+      checkpoint: {
+        id: 'ready-typed-words',
+        title: 'The feedback line says how to choose an action',
+        kind: 'ready',
+        marker: 'Ready to apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-ready-empty-diff',
       title: 'Workflow · Show diff with no changes',
       surface: screenSurface('workflow'),
@@ -4622,6 +4670,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'recovery-empty-enter',
         title: 'The feedback line names what the composer takes',
+        kind: 'question',
+        marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // A typed word names no action: the ⏎ after it takes no row and says how to choose one.
+    defineScenario({
+      id: 'workflow-recovery-typed-words',
+      title: 'Workflow · a typed word and ⏎ at a halt',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 140, rows: 40 })],
+      checkpoint: {
+        id: 'recovery-typed-words',
+        title: 'The feedback line says how to choose an action',
         kind: 'question',
         marker: 'Change BUILD tool',
       },
@@ -7758,6 +7824,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'workflow-stop-sheet-after-denial',
         title: 'Workflow · stop options after a denial took back every write',
         marker: 'keep the run open',
+      },
+      {
+        id: 'workflow-stop-sheet-typed-words',
+        title: 'Workflow · a typed word and ⏎ at the stop options',
+        marker: 'Typed words choose no action',
+        viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 140, rows: 40 })],
       },
     ],
   }).concat(

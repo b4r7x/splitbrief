@@ -3197,6 +3197,17 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
   [scenarioId('workflow-stop-sheet-short'), () => createStopSheetFixture()],
   [
+    scenarioId('workflow-stop-sheet-typed-words'),
+    () => ({
+      ...createStopSheetFixture(),
+      // The word changes no frame; the ⏎ behind it writes the feedback line.
+      afterMount: async (write) => {
+        write('no');
+        await write.press('\r');
+      },
+    }),
+  ],
+  [
     scenarioId('workflow-stop-sheet-seat-wait'),
     () =>
       createOverlayFixture({

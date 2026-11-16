@@ -6,10 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { RedCheck } from '../../../core/schemas/workflow/review-record.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inlineMenuLayout } from '../inline-menu/layout.js';
+import { UNREAD_WORDS_MESSAGE } from '../inline-menu/use-keys.js';
+import { PASTE_END, PASTE_START } from '../../../lib/terminal/filtered-stdin/paste.js';
 import { ResultMenu } from './menu.js';
 import { resultMenuRows } from './options.js';
 
@@ -20,7 +24,12 @@ const DOWN = '\x1b[B';
 const V1: RedCheck = { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' };
 const K004: RedCheck = { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' };
 
-function renderMenu(
+function renderMenu(input: Parameters<typeof menuElement>[0] = {}) {
+  const menu = menuElement(input);
+  return { ui: renderFeature(menu.element), ...menu };
+}
+
+function menuElement(
   input: {
     override?: boolean;
     findings?: string[];
@@ -52,8 +61,7 @@ function renderMenu(
       />
     );
   }
-  const ui = renderFeature(<ControlledMenu />);
-  return { ui, onCommand, onShowDiff, onFocusChange };
+  return { element: <ControlledMenu />, onCommand, onShowDiff, onFocusChange };
 }
 
 describe('ResultMenu', () => {
@@ -444,5 +452,40 @@ describe('ResultMenu', () => {
     expect(ui.lastFrame()).toContain(paint(defaultTheme.warning, 'Apply with 1 open finding?'));
     expect(ui.lastFrame()).toContain(paint(defaultTheme.text, '- Finding stays open'));
     ui.unmount();
+  });
+
+  // A word names no row: the ⏎ of the same read takes no action and says how to choose one.
+  it('takes no action on discard and ⏎ in one read, and applies on the ⏎ after it', async () => {
+    const menu = menuElement();
+    const ui = renderThroughFilteredStdin(menu.element);
+    try {
+      await ui.settled();
+      ui.pressBytes('discard\r');
+      await ui.settled();
+      expect(menu.onCommand).not.toHaveBeenCalled();
+      expect(feedbackStore.get().message).toBe(UNREAD_WORDS_MESSAGE);
+
+      ui.pressBytes('\r');
+      await ui.settled();
+      expect(menu.onCommand).toHaveBeenCalledExactlyOnceWith('/run accept');
+    } finally {
+      ui.unmount();
+    }
+  });
+
+  it('takes no action on a bracketed paste of discard and ⏎, and says how to choose one', async () => {
+    const menu = menuElement();
+    const ui = renderThroughFilteredStdin(menu.element);
+    try {
+      await ui.settled();
+      ui.pressBytes(`${PASTE_START}discard${PASTE_END}`);
+      await ui.settled();
+      ui.pressBytes('\r');
+      await ui.settled();
+      expect(menu.onCommand).not.toHaveBeenCalled();
+      expect(feedbackStore.get().message).toBe(UNREAD_WORDS_MESSAGE);
+    } finally {
+      ui.unmount();
+    }
   });
 });
