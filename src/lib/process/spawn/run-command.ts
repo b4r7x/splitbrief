@@ -13,8 +13,6 @@ export async function runCommand(
     timeout?: number | undefined;
     label?: string | undefined;
     signal?: AbortSignal | undefined;
-    outputMaxBytes?: number | undefined;
-    stderrMaxBytes?: number | undefined;
   },
 ): Promise<{
   stdout: string;
@@ -25,11 +23,11 @@ export async function runCommand(
 }> {
   const timeout = options?.timeout;
   const stdout = createBoundedOutput({
-    maxBytes: options?.outputMaxBytes ?? DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+    maxBytes: DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
     policy: 'prefix-tail',
   });
   const stderr = createBoundedOutput({
-    maxBytes: options?.stderrMaxBytes ?? DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
     policy: 'tail',
   });
   const timeoutSignal = timeout === undefined ? undefined : AbortSignal.timeout(timeout);

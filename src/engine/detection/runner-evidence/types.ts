@@ -2,15 +2,9 @@ import type { RunnerDiscoveryContext } from '../../../core/config/accessors/runn
 import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
 import type { CliExecutableResolver } from '../../runners/cli-executable/types.js';
-import type {
-  probeDeclaredCliReadinessEvidence,
-  VersionProbeReads,
-} from '../../runners/cli-tools/probe/declared-readiness.js';
-import type { lookupCliReadinessProbe } from '../../runners/cli-tools/registry.js';
+import type { VersionProbeReads } from '../../runners/cli-tools/probe/declared-readiness.js';
 
 type ResolveCliExecutable = CliExecutableResolver;
-export type ProbeDeclaredCliReadinessEvidence = typeof probeDeclaredCliReadinessEvidence;
-type LookupCliReadinessProbe = typeof lookupCliReadinessProbe;
 
 export type RunnerEvidenceBase = Pick<
   RunnerEvidence,
@@ -22,10 +16,6 @@ export interface DetectRunnerEvidenceOptions {
   projectDir?: string | undefined;
   /** A test resolver may select only a real receipt; catalog work revalidates it before every run. */
   resolveExecutable?: ResolveCliExecutable | undefined;
-  /** Readiness-only test seam. It is ignored whenever catalog discovery is requested. */
-  lookupProbe?: LookupCliReadinessProbe | undefined;
-  /** Readiness-only test seam. It is ignored whenever catalog discovery is requested. */
-  probeDeclaredReadiness?: ProbeDeclaredCliReadinessEvidence | undefined;
   includeCatalog?: boolean | undefined;
   catalogRefresh?: 'automatic' | 'manual' | undefined;
   /**

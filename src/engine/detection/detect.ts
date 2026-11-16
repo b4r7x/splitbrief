@@ -30,8 +30,6 @@ import { trackToolCheck } from '../probe-activity.js';
 import { readHostModelSelection } from '../runners/host-model-selection.js';
 
 type ResolveCliExecutable = CliExecutableResolver;
-type ProbeCliReadiness = typeof probeCliReadiness;
-type LookupCliReadinessProbe = typeof lookupCliReadinessProbe;
 
 export interface DetectCliToolsOptions {
   projectDir?: string | undefined;
@@ -40,10 +38,6 @@ export interface DetectCliToolsOptions {
   role?: RunnerRole | undefined;
   /** Readiness-only resolver seam; this API cannot request native catalog work. */
   resolveExecutable?: ResolveCliExecutable | undefined;
-  /** Readiness-only seam; native catalog work is not reachable through this API. */
-  probeReadiness?: ProbeCliReadiness | undefined;
-  /** Readiness-only declaration seam; native catalog work is not reachable through this API. */
-  lookupProbe?: LookupCliReadinessProbe | undefined;
   now?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
 }
@@ -74,8 +68,6 @@ export function cliDetectionFromReadiness(result: CliReadinessResult): CliToolDe
 interface DetectCliToolDependencies {
   projectDir: string;
   resolveExecutable: ResolveCliExecutable;
-  probeReadiness: ProbeCliReadiness;
-  lookupProbe: LookupCliReadinessProbe;
   role: RunnerRole;
   now: () => number;
   signal: AbortSignal | undefined;
@@ -146,10 +138,10 @@ async function detectCliToolReadiness(
 
   return trackToolCheck(tool, async () => {
     try {
-      const result = await options.probeReadiness({
+      const result = await probeCliReadiness({
         tool,
         executable,
-        probe: options.lookupProbe({ tool, role: options.role }),
+        probe: lookupCliReadinessProbe({ tool, role: options.role }),
         now: options.now,
         signal: options.signal,
         classifyVersion: ({ installedVersion }) =>
@@ -216,8 +208,6 @@ export async function detectAvailableCliReadiness(
   const dependencies = {
     projectDir: options.projectDir ?? process.cwd(),
     resolveExecutable: options.resolveExecutable ?? resolveCliExecutable,
-    probeReadiness: options.probeReadiness ?? probeCliReadiness,
-    lookupProbe: options.lookupProbe ?? lookupCliReadinessProbe,
     role: options.role ?? 'planner',
     now: options.now ?? Date.now,
     signal: options.signal,
@@ -232,8 +222,6 @@ export async function detectAvailableCliTools(
   const dependencies = {
     projectDir: options.projectDir ?? process.cwd(),
     resolveExecutable: options.resolveExecutable ?? resolveCliExecutable,
-    probeReadiness: options.probeReadiness ?? probeCliReadiness,
-    lookupProbe: options.lookupProbe ?? lookupCliReadinessProbe,
     role: options.role ?? 'planner',
     now: options.now ?? Date.now,
     signal: options.signal,

@@ -2,7 +2,11 @@ import type { ChildProcess } from 'node:child_process';
 import { describe, it, expect, vi } from 'vitest';
 import { runCommand } from './run-command.js';
 import { spawnPipe } from './lifecycle.js';
-import type { SpawnPipeFatalOutcome } from './types.js';
+import {
+  DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+  DEFAULT_PROCESS_STDERR_MAX_BYTES,
+  type SpawnPipeFatalOutcome,
+} from './types.js';
 import { killProcess, setProcessLedger } from '../registry.js';
 import { processError, processOutputCapture } from '../errors.js';
 
@@ -170,28 +174,31 @@ describe('runCommand', () => {
   it('retains bounded stdout and stderr snapshots for large command output', {
     timeout: 60_000,
   }, async () => {
-    const result = await runCommand(
-      'node',
+    const stdoutBytes = DEFAULT_PROCESS_OUTPUT_MAX_BYTES + 100;
+    const stderrBytes = DEFAULT_PROCESS_STDERR_MAX_BYTES + 100;
+    const result = await runCommand('node', [
+      '-e',
       [
-        '-e',
-        ['process.stdout.write("a".repeat(80));', 'process.stderr.write("b".repeat(80));'].join(''),
-      ],
-      { outputMaxBytes: 20, stderrMaxBytes: 10 },
-    );
+        `process.stdout.write("a".repeat(${stdoutBytes}));`,
+        `process.stderr.write("b".repeat(${stderrBytes}));`,
+      ].join(''),
+    ]);
 
-    expect(result.stdout).toHaveLength(20);
-    expect(result.stderr).toHaveLength(10);
+    expect(Buffer.byteLength(result.stdout, 'utf8')).toBeLessThanOrEqual(
+      DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+    );
+    expect(result.stdout).toContain('output truncated');
+    expect(Buffer.byteLength(result.stderr, 'utf8')).toBe(DEFAULT_PROCESS_STDERR_MAX_BYTES);
     expect(result.stdoutMetadata).toMatchObject({
-      bytesSeen: 80,
-      bytesStored: 20,
-      omittedBytes: 80,
+      bytesSeen: stdoutBytes,
+      maxBytes: DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
       truncated: true,
       policy: 'prefix-tail',
     });
     expect(result.stderrMetadata).toMatchObject({
-      bytesSeen: 80,
-      bytesStored: 10,
-      omittedBytes: 80,
+      bytesSeen: stderrBytes,
+      bytesStored: DEFAULT_PROCESS_STDERR_MAX_BYTES,
+      maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
       truncated: true,
       policy: 'tail',
     });
@@ -272,42 +279,26 @@ describe('runCommand', () => {
     ).rejects.toThrow('typecheck validation timed out');
   });
 
-  it('caps retained stdout and reports truncation metadata', { timeout: 60_000 }, async () => {
-    const result = await runCommand(
-      'node',
-      ['-e', 'process.stdout.write("A".repeat(1024 * 1024 + 100))'],
-      { outputMaxBytes: 1024 },
-    );
-
-    expect(Buffer.byteLength(result.stdout, 'utf8')).toBeLessThanOrEqual(1024);
-    expect(result.stdout).toContain('output truncated');
-    expect(result.stdoutMetadata).toMatchObject({
-      bytesSeen: 1024 * 1024 + 100,
-      maxBytes: 1024,
-      truncated: true,
-    });
-  });
-
   it('uses bounded stderr and stdout in process-output errors', { timeout: 60_000 }, async () => {
     try {
-      await runCommand(
-        'node',
+      await runCommand('node', [
+        '-e',
         [
-          '-e',
-          [
-            'process.stdout.write("O".repeat(100_000));',
-            'process.stderr.write("E".repeat(100_000));',
-            'process.exit(2);',
-          ].join(''),
-        ],
-        { outputMaxBytes: 512, stderrMaxBytes: 256 },
-      );
+          `process.stdout.write("O".repeat(${DEFAULT_PROCESS_OUTPUT_MAX_BYTES + 100}));`,
+          `process.stderr.write("E".repeat(${DEFAULT_PROCESS_STDERR_MAX_BYTES + 100}));`,
+          'process.exitCode = 2;',
+        ].join(''),
+      ]);
       throw new Error('expected command to fail');
     } catch (err: unknown) {
       expect(processError.isExitCode(err)).toBe(true);
       if (!processError.isExitCode(err)) return;
-      expect(Buffer.byteLength(err.data.output, 'utf8')).toBeLessThanOrEqual(512);
-      expect(Buffer.byteLength(err.data.stderr, 'utf8')).toBeLessThanOrEqual(256);
+      expect(Buffer.byteLength(err.data.output, 'utf8')).toBeLessThanOrEqual(
+        DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+      );
+      expect(Buffer.byteLength(err.data.stderr, 'utf8')).toBeLessThanOrEqual(
+        DEFAULT_PROCESS_STDERR_MAX_BYTES,
+      );
       expect(err.data.output).toContain('output truncated');
       expect(err.data.stderr).toContain('output truncated');
       expect(processOutputCapture(err.data).complete).toBe(false);

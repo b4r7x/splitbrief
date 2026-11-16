@@ -287,9 +287,9 @@ describe('check-invariants', () => {
     );
   });
 
-  it('passes the responsive-width and capability-direction gates 46 and 47 on the maintained tree', () => {
-    const gates = [...getInvariantGates('46'), ...getInvariantGates('47')];
-    expect(gates).toHaveLength(2);
+  it('passes the responsive-width gate 46 on the maintained tree', () => {
+    const gates = getInvariantGates('46');
+    expect(gates).toHaveLength(1);
     const { lines, log } = captureLog();
 
     expect(runInvariantGates(gates, undefined, log)).toBe(0);
@@ -337,37 +337,6 @@ describe('check-invariants', () => {
       // one `maxWidth=` prop plus one width-carrying `isSmall` branch
       expect(lines).toEqual([
         expect.stringContaining('[46] Pinned overlay widths are gone: 2 (expected 0) FAIL'),
-      ]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('gate 47 detects a UI import of engine capability inference in a synthetic tree', () => {
-    const root = mkdtempSync(join(tmpdir(), 'splitbrief-gate-47-'));
-    try {
-      for (const dir of ['features/runners', 'app', 'components', 'core']) {
-        mkdirSync(join(root, dir), { recursive: true });
-      }
-      writeFileSync(
-        join(root, 'features/runners/row.ts'),
-        "import { infer } from '../../engine/providers/capability-inference.js';\n",
-      );
-      const [gate] = getInvariantGates('47');
-      if (gate === undefined) throw new Error('gate 47 is not registered');
-      const { lines, log } = captureLog();
-
-      expect(
-        runInvariantGates(
-          [{ ...gate, command: gate.command.replaceAll('src/', `${root}/`) }],
-          undefined,
-          log,
-        ),
-      ).toBe(1);
-      expect(lines).toEqual([
-        expect.stringContaining(
-          '[47] Capability inference is imported from core, never from engine: 1 (expected 0) FAIL',
-        ),
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });

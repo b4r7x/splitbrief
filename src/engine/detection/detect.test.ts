@@ -6,27 +6,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { expireDeadlineAfterFile, freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
+import {
+  CODEX_VERSION_LINES,
+  installToolShim,
+  signInCodexShim,
+} from '#testing/helpers/tool-shim.js';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
-import type {
-  CliAuthState,
-  CliToolDetection,
-  ProviderDetection,
-} from '../../core/discovery/detection/tool.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
-import type { AuthFact } from '../../core/discovery/runner-evidence.js';
-import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool/catalog.js';
 import type { CliAuthChannelId } from '../../core/runners/cli-tool/auth-channels.js';
-import type { CliToolId } from '../../core/runners/cli-tool/types.js';
-import { deriveCliReadiness } from '../../core/readiness/cli-remediation.js';
 import { error } from '../../utils/error.js';
-import type { CliDeclaredProbeContract } from '../runners/cli-tools/probe/contract.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
-import type { CliReadinessProbeEvidence } from '../runners/cli-tools/probe/evidence.js';
-import type { ProbeCliReadinessOptions } from '../runners/cli-tools/probe/readiness.js';
 import { resolveCliExecutable } from '../runners/cli-executable/resolve.js';
 import { detectAll, detectAvailableCliReadiness, detectAvailableCliTools } from './detect.js';
 import { detectRunnerEvidence } from './runner-evidence/detect.js';
-import * as readinessProbeModule from '../runners/cli-tools/probe/declared-readiness.js';
 
 const executable: CliExecutableIdentity = {
   path: '/trusted/bin/tool',
@@ -72,54 +66,6 @@ function apiContext(source: 'env' | 'inline'): RunnerDiscoveryContext {
     },
     configGeneration: 'test-config-generation',
   };
-}
-
-function readinessEvidence(auth: AuthFact): CliReadinessProbeEvidence {
-  return {
-    version: { kind: 'success', value: CLI_TOOL_CATALOG.codex.compatibility.testedVersion },
-    auth,
-  };
-}
-
-function declaredCatalogProbe(): CliDeclaredProbeContract {
-  const version = {
-    command: ['codex', '--version'] as const,
-    cwd: 'neutral' as const,
-    maxOutputBytes: 1_024,
-  };
-  const auth = {
-    command: ['codex', 'login', 'status'] as const,
-    cwd: 'neutral' as const,
-    maxOutputBytes: 1_024,
-  };
-  const catalog = {
-    command: ['codex', 'models', 'list'] as const,
-    cwd: 'neutral' as const,
-    maxOutputBytes: 1_024,
-  };
-  return {
-    version: {
-      ...version,
-      kind: 'version',
-      parse: () => ({
-        kind: 'success',
-        value: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
-      }),
-    },
-    auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
-    catalog: {
-      ...catalog,
-      kind: 'catalog',
-      parse: () => ({ kind: 'success', value: [] }),
-    },
-  };
-}
-
-async function installCodexShim(directory: string, script: string): Promise<CliExecutableIdentity> {
-  const shim = join(directory, 'codex');
-  await writeFile(shim, script);
-  await chmod(shim, 0o755);
-  return resolveCliExecutable({ command: shim, projectDir: '/neutral/project' });
 }
 
 function catalogShim(marker: string, argvLog?: string): string {
@@ -168,43 +114,6 @@ function failingVersionCatalogShim(
   ].join('\n');
 }
 
-/**
- * A `codex` that logs each argv and answers `login status` like the tool: signed in when its
- * staged HOME holds the sign-in file or its environment holds `OPENAI_API_KEY`. Like the tool, it
- * keeps its own state beside the sign-in file, under `$HOME/.codex`.
- */
-function signInCodexShim(
-  input: Readonly<{ argvLog: string; versionLines: readonly string[] }>,
-): string {
-  return [
-    '#!/bin/sh',
-    `printf '%s\\n' "$*" >> ${JSON.stringify(input.argvLog)}`,
-    'mkdir -p "$HOME/.codex/log" && printf "%s\\n" "$*" >> "$HOME/.codex/log/codex.log"',
-    'if [ "$1" = "--version" ]; then',
-    ...input.versionLines.map((line) => `  ${line}`),
-    'fi',
-    'if [ "$1" = "login" ] && [ "$2" = "status" ]; then',
-    '  if [ -n "$OPENAI_API_KEY" ] || [ -f "$HOME/.codex/auth.json" ]; then',
-    "    printf '%s\\n' 'Logged in'",
-    '    exit 0',
-    '  fi',
-    "  printf '%s\\n' 'Not logged in' >&2",
-    '  exit 1',
-    'fi',
-    'if [ "$1" = "debug" ] && [ "$2" = "models" ] && [ -z "$3" ]; then',
-    `  printf '%s\\n' ${JSON.stringify(JSON.stringify({ models: [{ id: 'model-a' }] }))}`,
-    '  exit 0',
-    'fi',
-    'exit 1',
-    '',
-  ].join('\n');
-}
-
-const CODEX_VERSION_LINES = [
-  `printf '%s\\n' 'codex-cli ${CLI_TOOL_CATALOG.codex.compatibility.testedVersion}'`,
-  'exit 0',
-] as const;
-
 function sequenceClock(values: readonly number[]): () => number {
   let index = 0;
   return () => values[Math.min(index++, values.length - 1)] ?? 0;
@@ -217,50 +126,13 @@ describe('legacy CLI detection presentation', () => {
     vi.unstubAllEnvs();
   });
 
-  it.each([
-    ['detectAvailableCliTools', detectAvailableCliTools],
-    ['detectAvailableCliReadiness', detectAvailableCliReadiness],
-  ] as const)('%s probes each listed CLI and reports the probe auth', async (_name, detect) => {
-    const probed = new Set<CliToolId>();
-    const results: readonly Readonly<{ auth: CliAuthState }>[] = await detect({
-      projectDir: '/neutral/project',
-      resolveExecutable: async () => executable,
-      probeReadiness: async (options) => {
-        probed.add(options.tool);
-        return deriveProbe(options, 'authenticated');
-      },
-      now: () => 1_700_000_000_000,
-    });
-
-    expect(probed).toEqual(new Set(LISTED_CLI_TOOL_IDS));
-    expect(results.map((result) => result.auth)).toEqual(
-      LISTED_CLI_TOOL_IDS.map(() => 'authenticated'),
-    );
-  });
-
-  it('keeps an unreadable credential oracle listing of a tool probed on its catalog channel', async () => {
-    const [result] = await detectAvailableCliTools({
-      tools: ['opencode'],
-      resolveExecutable: async () => executable,
-      probeReadiness: async (options) => ({
-        ...deriveProbe(options),
-        providerAuth: { kind: 'unreadable', reason: 'not-probed' },
-      }),
-      now: () => 10,
-    });
-
-    expect(result).toMatchObject({
-      tool: 'opencode',
-      providerAuth: { kind: 'unreadable', reason: 'not-probed' },
-    });
-  });
-
   it.runIf(platform !== 'win32')(
     'codex positive login status is ready and authenticated',
     async () => {
       await withTempDir('detect-codex-positive-login', async (directory) => {
-        const shim = await installCodexShim(
+        const shim = await installToolShim(
           directory,
+          'codex',
           [
             '#!/bin/sh',
             'if [ "$1" = "--version" ]; then',
@@ -295,34 +167,6 @@ describe('legacy CLI detection presentation', () => {
       });
     },
     20_000,
-  );
-
-  it.each([
-    ['stores no credential', 'unauthenticated', 'ollama/llama3'],
-    ['is signed in', 'authenticated', undefined],
-  ] as const)(
-    'carries the model an OpenCode that %s selects in its own config only when its route decides the seat',
-    async (_case, auth, selectedModel) => {
-      await withTempDir('detect-selected-model', async (configHome) => {
-        await mkdir(join(configHome, 'opencode'));
-        await writeFile(join(configHome, 'opencode', 'opencode.json'), '{"model":"ollama/llama3"}');
-        vi.stubEnv('XDG_CONFIG_HOME', configHome);
-        const [result] = await detectAvailableCliTools({
-          tools: ['opencode'],
-          resolveExecutable: async () => executable,
-          probeReadiness: async (options) => ({
-            ...deriveProbe(options, auth),
-            providerAuth: { kind: 'empty' },
-          }),
-          now: () => 11,
-        });
-
-        expect(result?.diagnostic.state).toBe(
-          auth === 'authenticated' ? 'ready' : 'unauthenticated',
-        );
-        expect(result?.selectedModel).toBe(selectedModel);
-      });
-    },
   );
 
   it('retains unavailable and untrusted resolver facts separately', async () => {
@@ -376,7 +220,7 @@ describe('context-bound runner evidence', () => {
     async () => {
       await withTempDir('detect-contextless-catalog', async (directory) => {
         const marker = join(directory, 'catalog-ran');
-        const shim = await installCodexShim(directory, catalogShim(marker));
+        const shim = await installToolShim(directory, 'codex', catalogShim(marker));
         vi.stubEnv('HOME', directory);
         vi.stubEnv('CODEX_HOME', join(directory, '.codex'));
 
@@ -402,72 +246,12 @@ describe('context-bound runner evidence', () => {
     20_000,
   );
 
-  it('does not promote a metadata-only resolver result to a trusted executable fact', async () => {
-    const evidence = await detectRunnerEvidence({
-      context: cliContext({ authChannel: 'session' }),
-      resolveExecutable: async () => executable,
-      probeDeclaredReadiness: async () => readinessEvidence('verified'),
-      now: () => 99,
-    });
-
-    expect(evidence.executable).toEqual({ kind: 'unknown' });
-  });
-
-  it.each([
-    ['the inclusive Codex minimum', '0.40.0', 'compatible'],
-    ['an admitted Codex patch', '0.40.7', 'compatible'],
-    ['a newer Codex minor than the tested release', '0.41.0', 'compatible'],
-    ['a current Codex release far above the tested minimum', '0.146.0', 'compatible'],
-    ['a lower Codex release', '0.39.9', 'incompatible'],
-    ['an earlier pre-1.0 Codex minor', '0.1.0', 'incompatible'],
-    ['a Codex prerelease', '0.40.0-rc.1', 'unknown'],
-    ['a malformed Codex version', '0.40', 'unknown'],
-  ] as const)(
-    "classifies %s through Codex's minimum admitted version",
-    async (_label, version, kind) => {
-      const evidence = await detectRunnerEvidence({
-        context: cliContext({ authChannel: 'session' }),
-        resolveExecutable: async () => executable,
-        probeDeclaredReadiness: async () => ({
-          version: { kind: 'success', value: version },
-          auth: 'verified',
-        }),
-        now: () => 102,
-      });
-
-      expect(evidence.compatibility).toMatchObject({
-        kind,
-        installedVersion: version,
-        testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
-      });
-    },
-  );
-
-  it.each([
-    ['missing', 'absent'],
-    ['invalid', 'present'],
-    ['policy-denied', 'unknown'],
-    ['offline', 'unknown'],
-    ['timeout', 'unknown'],
-    ['malformed', 'unknown'],
-  ] as const)('preserves the %s authentication fact', async (auth, credential) => {
-    const evidence = await detectRunnerEvidence({
-      context: cliContext({ authChannel: 'session' }),
-      resolveExecutable: async () => executable,
-      probeDeclaredReadiness: async () => readinessEvidence(auth),
-      now: () => 102,
-    });
-
-    expect(evidence.auth).toBe(auth);
-    expect(evidence.credential).toBe(credential);
-  });
-
   it.runIf(platform !== 'win32')(
     'publishes catalog evidence only through the context-bound detector',
     async () => {
       await withTempDir('detect-context-catalog', async (directory) => {
         const marker = join(directory, 'catalog-ran');
-        const shim = await installCodexShim(directory, catalogShim(marker));
+        const shim = await installToolShim(directory, 'codex', catalogShim(marker));
         await stubSignInHome(join(directory, 'home'), ['codex']);
         const options = {
           context: cliContext({ model: 'model-a' }),
@@ -496,7 +280,7 @@ describe('context-bound runner evidence', () => {
     async (_label, authChannel) => {
       await withTempDir('detect-catalog-channel', async (directory) => {
         const marker = join(directory, 'catalog-ran');
-        const shim = await installCodexShim(directory, catalogShim(marker));
+        const shim = await installToolShim(directory, 'codex', catalogShim(marker));
         await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const evidence = await detectRunnerEvidence({
@@ -520,7 +304,7 @@ describe('context-bound runner evidence', () => {
     async () => {
       await withTempDir('detect-catalog-signed-out', async (directory) => {
         const marker = join(directory, 'catalog-ran');
-        const shim = await installCodexShim(directory, catalogShim(marker));
+        const shim = await installToolShim(directory, 'codex', catalogShim(marker));
         await stubSignInHome(join(directory, 'home'), []);
 
         const evidence = await detectRunnerEvidence({
@@ -544,7 +328,11 @@ describe('context-bound runner evidence', () => {
     async (_label, versionLines) => {
       await withTempDir('detect-signed-out-shell-key', async (directory) => {
         const argvLog = join(directory, 'argv.log');
-        const shim = await installCodexShim(directory, signInCodexShim({ argvLog, versionLines }));
+        const shim = await installToolShim(
+          directory,
+          'codex',
+          signInCodexShim({ argvLog, versionLines }),
+        );
         await stubSignInHome(join(directory, 'home'), []);
         vi.stubEnv('OPENAI_API_KEY', 'sk-shell-key-canary');
 
@@ -568,8 +356,9 @@ describe('context-bound runner evidence', () => {
       await withTempDir('detect-signed-in-version-timeout', async (directory) => {
         const argvLog = join(directory, 'argv.log');
         const versionStarted = join(directory, 'version-started');
-        const shim = await installCodexShim(
+        const shim = await installToolShim(
           directory,
+          'codex',
           signInCodexShim({
             argvLog,
             versionLines: [`: > ${JSON.stringify(versionStarted)}`, 'exec tail -f /dev/null'],
@@ -601,8 +390,9 @@ describe('context-bound runner evidence', () => {
     async () => {
       await withTempDir('detect-host-home-unchanged', async (directory) => {
         const argvLog = join(directory, 'argv.log');
-        const shim = await installCodexShim(
+        const shim = await installToolShim(
           directory,
+          'codex',
           signInCodexShim({ argvLog, versionLines: CODEX_VERSION_LINES }),
         );
         const home = join(directory, 'home');
@@ -636,7 +426,7 @@ describe('context-bound runner evidence', () => {
     async () => {
       await withTempDir('detect-context-scope', async (directory) => {
         const marker = join(directory, 'catalog-ran');
-        const shim = await installCodexShim(directory, catalogShim(marker));
+        const shim = await installToolShim(directory, 'codex', catalogShim(marker));
         await stubSignInHome(join(directory, 'home'), ['codex']);
         const exact = {
           ...cliContext({ model: 'model-a' }),
@@ -699,145 +489,62 @@ describe('context-bound runner evidence', () => {
   );
 
   it.runIf(platform !== 'win32')(
-    'ignores an injected declaration and preserves canonical version-to-catalog ordering',
+    'does not let a callback or a failed version check authorize catalog work',
     async () => {
-      await withTempDir('detect-invented-declared-probe', async (directory) => {
-        const marker = join(directory, 'catalog-ran');
+      await withTempDir('detect-failed-version-catalog', async (directory) => {
         const argvLog = join(directory, 'argv.log');
-        const shim = await installCodexShim(directory, catalogShim(marker, argvLog));
+        const catalogCredentialMarker = join(directory, 'catalog-credential');
+        const catalogMarker = join(directory, 'catalog-ran');
+        const credentialLog = join(directory, 'credential.log');
+        const shim = await installToolShim(
+          directory,
+          'codex',
+          failingVersionCatalogShim({
+            argvLog,
+            catalogCredentialMarker,
+            catalogMarker,
+            credentialLog,
+          }),
+        );
         await stubSignInHome(join(directory, 'home'), ['codex']);
-
-        const evidence = await detectRunnerEvidence({
-          context: cliContext({ model: 'model-a' }),
-          resolveExecutable: async () => shim,
-          lookupProbe: () => declaredCatalogProbe(),
-          includeCatalog: true,
-          now: () => 107,
-        });
-
-        expect(evidence.catalog).toEqual({
-          kind: 'success',
-          value: [{ id: 'model-a', nativeOrder: 0 }],
-        });
-        expect(existsSync(marker)).toBe(true);
-        expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toEqual([
-          '--version',
-          'login status',
-          'debug models',
-        ]);
-      });
-    },
-  );
-
-  it.runIf(platform !== 'win32')(
-    'does not let injected readiness facts or callbacks authorize catalog work',
-    async () => {
-      type DeclaredReadinessSeam = typeof readinessProbeModule.probeDeclaredCliReadinessEvidence;
-      const variants = [
-        {
-          label: 'compatible version and verified authentication',
-          create:
-            (seamMarker: string): DeclaredReadinessSeam =>
-            async () => {
-              await writeFile(seamMarker, 'called');
-              return readinessEvidence('verified');
+        const originalOpenAiApiKey = env.OPENAI_API_KEY;
+        let observedMutation = true;
+        env.OPENAI_API_KEY = 'r5-injected-secret';
+        try {
+          const evidence = await detectRunnerEvidence({
+            context: cliContext(),
+            resolveExecutable: async () => shim,
+            includeCatalog: true,
+            onResolvedCliExecutable: (resolved) => {
+              observedMutation = Reflect.set(resolved, 'path', '/injected/catalog-path');
             },
-        },
-        {
-          label: 'unsupported version and unsupported authentication',
-          create:
-            (seamMarker: string): DeclaredReadinessSeam =>
-            async () => {
-              await writeFile(seamMarker, 'called');
-              return { version: { kind: 'unsupported' }, auth: 'not-run' };
-            },
-        },
-        {
-          label: 'malformed version and malformed authentication',
-          create:
-            (seamMarker: string): DeclaredReadinessSeam =>
-            async () => {
-              await writeFile(seamMarker, 'called');
-              return { version: { kind: 'malformed' }, auth: 'malformed' };
-            },
-        },
-        {
-          label: 'a wrapper around the canonical readiness implementation',
-          create:
-            (seamMarker: string): DeclaredReadinessSeam =>
-            async (options) => {
-              await writeFile(seamMarker, 'called');
-              const evidence =
-                await readinessProbeModule.probeDeclaredCliReadinessEvidence(options);
-              return { ...evidence, ...readinessEvidence('verified') };
-            },
-        },
-      ] as const;
+            now: () => 108,
+          });
 
-      for (const variant of variants) {
-        await withTempDir(`detect-injected-readiness-${variant.label}`, async (directory) => {
-          const argvLog = join(directory, 'argv.log');
-          const catalogCredentialMarker = join(directory, 'catalog-credential');
-          const catalogMarker = join(directory, 'catalog-ran');
-          const credentialLog = join(directory, 'credential.log');
-          const seamMarker = join(directory, 'readiness-seam-called');
-          const shim = await installCodexShim(
-            directory,
-            failingVersionCatalogShim({
-              argvLog,
-              catalogCredentialMarker,
-              catalogMarker,
-              credentialLog,
-            }),
-          );
-          await stubSignInHome(join(directory, 'home'), ['codex']);
-          const originalOpenAiApiKey = env.OPENAI_API_KEY;
-          let observedMutation = true;
-          env.OPENAI_API_KEY = 'r5-injected-secret';
-          try {
-            const evidence = await detectRunnerEvidence({
-              context: cliContext(),
-              resolveExecutable: async () => shim,
-              lookupProbe: () => {
-                throw error(
-                  'cli-executable-unavailable',
-                  'Injected lookup must never authorize catalog work.',
-                );
-              },
-              probeDeclaredReadiness: variant.create(seamMarker),
-              includeCatalog: true,
-              onResolvedCliExecutable: (resolved) => {
-                observedMutation = Reflect.set(resolved, 'path', '/injected/catalog-path');
-              },
-              now: () => 108,
-            });
-
-            expect(evidence.catalog).toEqual({ kind: 'not-run' });
-            expect(evidence.compatibility).toMatchObject({
-              kind: 'unknown',
-              installedVersion: null,
-            });
-            expect(observedMutation).toBe(false);
-            expect(existsSync(seamMarker)).toBe(false);
-            expect(existsSync(catalogMarker)).toBe(false);
-            expect(existsSync(catalogCredentialMarker)).toBe(false);
-            expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toEqual([
-              '--version',
-              'login status',
-            ]);
-            expect(readFileSync(credentialLog, 'utf8').trim().split('\n')).toEqual([
-              'unset',
-              'unset',
-            ]);
-          } finally {
-            if (originalOpenAiApiKey === undefined) {
-              Reflect.deleteProperty(env, 'OPENAI_API_KEY');
-            } else {
-              env.OPENAI_API_KEY = originalOpenAiApiKey;
-            }
+          expect(evidence.catalog).toEqual({ kind: 'not-run' });
+          expect(evidence.compatibility).toMatchObject({
+            kind: 'unknown',
+            installedVersion: null,
+          });
+          expect(observedMutation).toBe(false);
+          expect(existsSync(catalogMarker)).toBe(false);
+          expect(existsSync(catalogCredentialMarker)).toBe(false);
+          expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toEqual([
+            '--version',
+            'login status',
+          ]);
+          expect(readFileSync(credentialLog, 'utf8').trim().split('\n')).toEqual([
+            'unset',
+            'unset',
+          ]);
+        } finally {
+          if (originalOpenAiApiKey === undefined) {
+            Reflect.deleteProperty(env, 'OPENAI_API_KEY');
+          } else {
+            env.OPENAI_API_KEY = originalOpenAiApiKey;
           }
-        });
-      }
+        }
+      });
     },
   );
 
@@ -923,7 +630,7 @@ describe('context-bound runner evidence', () => {
       for (const testCase of cases) {
         await withTempDir(`detect-catalog-clock-${testCase.label}`, async (directory) => {
           const marker = join(directory, 'catalog-ran');
-          const shim = await installCodexShim(directory, catalogShim(marker));
+          const shim = await installToolShim(directory, 'codex', catalogShim(marker));
           await stubSignInHome(join(directory, 'home'), ['codex']);
 
           const evidence = await detectRunnerEvidence({
@@ -945,7 +652,7 @@ describe('context-bound runner evidence', () => {
     async () => {
       await withTempDir('detect-catalog-immutable-operation', async (directory) => {
         const marker = join(directory, 'catalog-ran');
-        const shim = await installCodexShim(directory, catalogShim(marker));
+        const shim = await installToolShim(directory, 'codex', catalogShim(marker));
         await stubSignInHome(join(directory, 'home'), ['codex']);
         const probe = lookupCliReadinessProbe({ tool: 'codex', role: 'planner' });
         if (probe.catalog.kind === 'not-run') return;
@@ -1007,8 +714,9 @@ describe('context-bound runner evidence', () => {
     async () => {
       await withTempDir('detect-runner-evidence', async (directory) => {
         const rawProbeText = 'raw-probe-output-must-not-escape';
-        const shim = await installCodexShim(
+        const shim = await installToolShim(
           directory,
+          'codex',
           [
             '#!/bin/sh',
             'if [ "$1" = "--version" ]; then',
@@ -1113,23 +821,3 @@ describe('detectAll', () => {
     expect(result).toEqual({ providers: [], cliTools: [], configuredProviderOutcomes });
   });
 });
-
-function deriveProbe(options: ProbeCliReadinessOptions, auth: CliAuthState = 'not-checked') {
-  const testedVersion = CLI_TOOL_CATALOG[options.tool].compatibility.testedVersion;
-  const compatibility = options.classifyVersion?.({
-    installedVersion: testedVersion,
-    testedVersion,
-  });
-  return deriveCliReadiness({
-    tool: options.tool,
-    enabled: true,
-    installation: 'installed',
-    executable: options.executable,
-    trust: 'trusted',
-    installedVersion: testedVersion,
-    testedVersion,
-    compatibility: compatibility ?? 'unverified',
-    auth,
-    probedAt: options.now?.() ?? Date.now(),
-  });
-}

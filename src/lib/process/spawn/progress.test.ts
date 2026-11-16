@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { spawnWithTimeout } from './progress.js';
+import { DEFAULT_PROCESS_OUTPUT_MAX_BYTES } from './types.js';
 
 describe('spawnWithTimeout', () => {
   it('captures stdout and returns exit code 0', async () => {
@@ -33,45 +34,26 @@ describe('spawnWithTimeout', () => {
     expect(stderrChunks.join('')).toContain('err');
   });
 
-  it('streams every stdout chunk while retaining only bounded output', async () => {
-    const chunks: string[] = [];
-    const result = await spawnWithTimeout({
-      command: 'node',
-      args: ['-e', 'process.stdout.write("x".repeat(100))'],
-      cwd: process.cwd(),
-      timeout: 5000,
-      outputMaxBytes: 12,
-      onProgress: (chunk) => chunks.push(chunk),
-    });
-
-    expect(chunks.join('')).toHaveLength(100);
-    expect(result.output).toHaveLength(12);
-    expect(result.outputMetadata).toMatchObject({
-      bytesSeen: 100,
-      bytesStored: 12,
-      omittedBytes: 100,
-      truncated: true,
-    });
-  });
-
   it('caps retained output while still forwarding progress chunks', async () => {
+    const written = DEFAULT_PROCESS_OUTPUT_MAX_BYTES + 100_000;
     let progressBytes = 0;
     const result = await spawnWithTimeout({
       command: 'node',
-      args: ['-e', 'process.stdout.write("x".repeat(100_000))'],
+      args: ['-e', `process.stdout.write("x".repeat(${written}))`],
       cwd: process.cwd(),
       timeout: 5000,
-      outputMaxBytes: 1024,
       onProgress: (chunk) => {
         progressBytes += Buffer.byteLength(chunk, 'utf8');
       },
     });
 
-    expect(progressBytes).toBe(100_000);
-    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(1024);
+    expect(progressBytes).toBe(written);
+    expect(Buffer.byteLength(result.output, 'utf8')).toBeLessThanOrEqual(
+      DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+    );
     expect(result.outputMetadata).toMatchObject({
-      bytesSeen: 100_000,
-      maxBytes: 1024,
+      bytesSeen: written,
+      maxBytes: DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
       truncated: true,
     });
   });

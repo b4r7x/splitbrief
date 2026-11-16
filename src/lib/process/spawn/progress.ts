@@ -28,17 +28,15 @@ export interface SpawnOptions {
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
   idle?: SpawnIdleOptions | undefined;
-  outputMaxBytes?: number | undefined;
-  stderrMaxBytes?: number | undefined;
 }
 
 export async function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
   const output = createBoundedOutput({
-    maxBytes: opts.outputMaxBytes ?? DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
+    maxBytes: DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
     policy: 'prefix-tail',
   });
   const stderrOutput = createBoundedOutput({
-    maxBytes: opts.stderrMaxBytes ?? DEFAULT_PROCESS_STDERR_MAX_BYTES,
+    maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
     policy: 'tail',
   });
   const timeoutSignal = opts.timeout === undefined ? undefined : AbortSignal.timeout(opts.timeout);

@@ -180,6 +180,19 @@ export async function readWorkspaceRecord(ref: SessionRef): Promise<RetainedWork
   return record;
 }
 
+/**
+ * Throws the moved error when the project folder is not the folder that the run started in. The
+ * record of a worktree or a staged copy names that folder; a run in the checkout keeps no record,
+ * and its workspace is that folder.
+ */
+export async function assertProjectNotMoved(
+  ref: SessionRef,
+  workspace: WorkflowState['workspace'],
+): Promise<void> {
+  if (workspace?.kind !== 'checkout') await readWorkspaceRecord(ref);
+  else if (workspace.path !== ref.projectDir) throw retentionError.moved(workspace.path);
+}
+
 export async function retainedDirectoryMatches(
   record: Pick<RetainedWorkspace, 'directory'>,
   dir: string,

@@ -3,10 +3,12 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
+import {
+  CODEX_VERSION_LINES,
+  installToolShim,
+  signInCodexShim,
+} from '#testing/helpers/tool-shim.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence/detect.js';
-import type { CliDeclaredProbeContract } from '../cli-tools/probe/contract.js';
-import { resolveCustomExecutable } from '../cli-executable/custom.js';
 import { evaluateCandidate } from './evaluate-candidate.js';
 import type { RunnerCandidate } from './runner-candidates.js';
 import type { PreparationContext } from './types.js';
@@ -22,40 +24,6 @@ function tempDir(prefix: string): string {
   const directory = createTempDir(prefix);
   tempDirs.push(directory);
   return directory;
-}
-
-/** The real node binary with the digest-bound identity the start gate trusts. */
-async function nodeExecutable(projectDir: string) {
-  const resolved = await resolveCustomExecutable({
-    command: 'node',
-    projectDir,
-    pathEnv: process.env.PATH,
-    pathExt: '',
-  });
-  if (resolved.kind !== 'resolved') throw new Error('Node executable did not resolve');
-  return resolved.executable;
-}
-
-/** A Codex stand-in at the tested version whose status command reports a sign-in. */
-function codexProbe(): CliDeclaredProbeContract {
-  const command = (script: string) =>
-    ({
-      command: ['node', '-e', script] as const,
-      cwd: 'neutral' as const,
-      maxOutputBytes: 1_024,
-    }) as const;
-  const testedVersion = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
-  const version = command(`console.log('codex ${testedVersion}')`);
-  const auth = command("console.log('verified')");
-  return {
-    version: {
-      ...version,
-      kind: 'version',
-      parse: () => ({ kind: 'success', value: testedVersion }),
-    },
-    auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
-    catalog: { kind: 'not-run' },
-  };
 }
 
 function notCalled(name: string): () => never {
@@ -78,7 +46,12 @@ describe('evaluateCandidate on a Codex host that keeps its sign-in in the keyrin
       vi.stubEnv('CODEX_HOME', '');
       vi.stubEnv('OPENAI_API_KEY', '');
       const projectDir = tempDir('evaluate-candidate-keyring-project');
-      const executable = await nodeExecutable(projectDir);
+      const shimDir = tempDir('evaluate-candidate-keyring-codex');
+      const executable = await installToolShim(
+        shimDir,
+        'codex',
+        signInCodexShim({ argvLog: join(shimDir, 'argv.log'), versionLines: CODEX_VERSION_LINES }),
+      );
       const config = makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-mini' } });
       const candidate: RunnerCandidate = {
         slot: { role: 'planner' },
@@ -105,7 +78,6 @@ describe('evaluateCandidate on a Codex host that keeps its sign-in in the keyrin
             detectRunnerEvidence({
               ...options,
               resolveExecutable: async () => executable,
-              lookupProbe: () => codexProbe(),
             }),
           collectReadiness: notCalled('collectReadiness'),
           collectArgVectorPreflightChecks: notCalled('collectArgVectorPreflightChecks'),

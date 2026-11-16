@@ -3,11 +3,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { installToolShim, signInCodexShim } from '#testing/helpers/tool-shim.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
-import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence/detect.js';
-import type { CliDeclaredProbeContract } from '../cli-tools/probe/contract.js';
-import { resolveCustomExecutable } from '../cli-executable/custom.js';
 import { collectRunnerAdmissionChecks, prepareExecution } from './prepare.js';
 import type { PrepareExecutionDependencies } from './types.js';
 import {
@@ -45,48 +43,19 @@ function tempDir(prefix: string): string {
   return directory;
 }
 
-/** The real node binary with the digest-bound identity the start gate trusts. */
-async function nodeExecutable(projectDir: string) {
-  const resolved = await resolveCustomExecutable({
-    command: 'node',
-    projectDir,
-    pathEnv: process.env.PATH,
-    pathExt: '',
-  });
-  if (resolved.kind !== 'resolved') throw new Error('Node executable did not resolve');
-  return resolved.executable;
-}
-
 /**
- * A Codex stand-in whose `--version` never answers: each spawn appends a line to `spawnLog` and
- * creates `started`, then holds. Its status command reports a sign-in at once.
+ * A signed-in `codex` whose `--version` never answers: each check logs its argv to `argvLog`, and
+ * each version check creates `started`, then holds.
  */
-function hungVersionProbe(spawnLog: string, started: string): CliDeclaredProbeContract {
-  const command = (script: string) =>
-    ({
-      command: ['node', '-e', script] as const,
-      cwd: 'neutral' as const,
-      maxOutputBytes: 1_024,
-    }) as const;
-  const testedVersion = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
-  const version = command(
-    [
-      "const fs = require('node:fs');",
-      `fs.appendFileSync(${JSON.stringify(spawnLog)}, 'version\\n');`,
-      `fs.writeFileSync(${JSON.stringify(started)}, '');`,
-      'setInterval(() => {}, 1_000_000);',
-    ].join(' '),
+function hungVersionCodex(probeDir: string, argvLog: string, started: string) {
+  return installToolShim(
+    probeDir,
+    'codex',
+    signInCodexShim({
+      argvLog,
+      versionLines: [`: > ${JSON.stringify(started)}`, 'exec tail -f /dev/null'],
+    }),
   );
-  const auth = command("console.log('verified')");
-  return {
-    version: {
-      ...version,
-      kind: 'version',
-      parse: () => ({ kind: 'success', value: testedVersion }),
-    },
-    auth: { ...auth, kind: 'auth-status', parse: () => 'verified' },
-    catalog: { kind: 'not-run' },
-  };
 }
 
 function readyReport(projectDir: string): ReadinessReport {
@@ -144,16 +113,15 @@ describe('three seats on one CLI whose --version hangs', () => {
     async (entry) => {
       const projectDir = tempDir('prepare-execution-project');
       const probeDir = tempDir('prepare-execution-probe');
-      const spawnLog = join(probeDir, 'version-spawns');
+      const argvLog = join(probeDir, 'argv.log');
       const started = join(probeDir, 'version-started');
-      const executable = await nodeExecutable(projectDir);
+      const executable = await hungVersionCodex(probeDir, argvLog, started);
       const config = makeConfig({ planner: seat, implementer: seat, reviewer: seat });
       const deps: Partial<PrepareExecutionDependencies> = {
         detectRunnerEvidence: (options) =>
           detectRunnerEvidence({
             ...options,
             resolveExecutable: async () => executable,
-            lookupProbe: () => hungVersionProbe(spawnLog, started),
           }),
         collectReadiness: async () => ({ report: readyReport(projectDir), config }),
       };
@@ -195,7 +163,11 @@ describe('three seats on one CLI whose --version hangs', () => {
               started,
             );
 
-      expect(readFileSync(spawnLog, 'utf8').split('\n').filter(Boolean)).toHaveLength(1);
+      expect(
+        readFileSync(argvLog, 'utf8')
+          .split('\n')
+          .filter((line) => line === '--version'),
+      ).toHaveLength(1);
       expect(Date.now() - armedAt).toBe(60_000);
       expect(checks).toContainEqual(
         expect.objectContaining({

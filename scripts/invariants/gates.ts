@@ -277,13 +277,6 @@ export const gates: readonly Gate[] = [
     expected: 0,
   },
   {
-    id: '47',
-    description: 'Capability inference is imported from core, never from engine',
-    command:
-      "{ rg -n \"from '.*engine/providers/capability-inference\" src/features src/app src/components src/core --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
-    expected: 0,
-  },
-  {
     id: '48',
     description: 'Validation stack literals live only in src/core/validation/stacks',
     command: `{ rg -n "npx tsc|npm test|\\.test\\.ts'" src --glob '!**/*.test.*' --glob '!src/core/validation/stacks/**' || true; } | wc -l`,

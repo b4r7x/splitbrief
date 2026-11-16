@@ -16,6 +16,7 @@ export type RecoveryActionBlockedCode =
   | 'unsafe-continue'
   | 'missing-current-task'
   | 'skip-evidence-failed'
+  | 'isolation-project-moved'
   | 'profile-not-found'
   | 'seat-swap-unavailable'
   | 'fallback-read-failed'

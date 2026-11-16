@@ -4,11 +4,13 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { evidenceLedgerPath } from '../../../src/core/evidence/ledger-storage.js';
 import { sessionDir, sessionsRoot, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
@@ -213,6 +215,48 @@ describe('e2e: a staged-copy run with a copied sign-in', { timeout: 120_000 }, (
       basename(sandboxTempDir(sandboxRoot(workspace, 'implementer', 'command-code'))),
     );
 
+    const skipped = await cli(target, ['continue', ref.sessionId, '--action', 'skip']);
+    expect(skipped.exitCode, `${skipped.stdout}\n${skipped.stderr}`).toBe(0);
+
+    const state = readState(target, ref.sessionId);
+    expect(state.tasks.map((task) => task.status)).toEqual(['skipped']);
+    expect(deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind).toBe(
+      'ready-to-apply',
+    );
+    expect(existsSync(join(workspace, MARKER_FILE))).toBe(false);
+    expect(signInFilesUnder(sandbox)).toEqual([]);
+    expect(sandboxTempFolders(temp).filter((name) => kept.includes(name))).toEqual([]);
+    expect(readFileSync(hostAuth, 'utf8')).toBe(HOST_SIGN_IN);
+  });
+
+  it('refuses Skip after the project folder moved, and the same Skip finishes the run after the move back', async () => {
+    const { target, hostAuth, temp } = commandCodeProject(() => SEAT_DOWN_CALL);
+
+    const halted = await cli(target, ['start', 'smoke']);
+    expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+
+    const { ref, workspace, sandbox } = stagedWorkspace(target);
+    const kept = sandboxTempFolders(temp);
+    const moved = { ...target, projectDir: join(target.tmpDir, 'moved-project') };
+    renameSync(target.projectDir, moved.projectDir);
+    const ledger = evidenceLedgerPath({ ...ref, projectDir: moved.projectDir });
+    const ledgerBytes = () => (existsSync(ledger) ? readFileSync(ledger, 'utf8') : null);
+    const ledgerBefore = ledgerBytes();
+
+    const refused = await cli(moved, ['continue', ref.sessionId, '--action', 'skip']);
+
+    expect(refused.exitCode, `${refused.stdout}\n${refused.stderr}`).toBe(1);
+    expect(refused.stderr).toContain(
+      `This run started in ${ref.projectDir}. Move the project back to that folder to continue the run, or end the run.`,
+    );
+    expect(refused.stderr).not.toContain('no such file or directory');
+    const halt = readState(moved, ref.sessionId);
+    expect(halt.tasks.map((task) => task.status)).toEqual(['in_progress']);
+    expect(halt.pendingRecovery).toMatchObject({ status: 'awaiting-user' });
+    expect(halt.pendingRecovery?.selectedAction).toBeUndefined();
+    expect(ledgerBytes()).toBe(ledgerBefore);
+
+    renameSync(moved.projectDir, target.projectDir);
     const skipped = await cli(target, ['continue', ref.sessionId, '--action', 'skip']);
     expect(skipped.exitCode, `${skipped.stdout}\n${skipped.stderr}`).toBe(0);
 

@@ -418,7 +418,6 @@ describe('session-state presence readiness', () => {
             configGeneration: 'keyring-chain',
           },
           resolveExecutable: async () => executable,
-          lookupProbe: () => sessionProbe(),
           now: () => 1,
         });
 

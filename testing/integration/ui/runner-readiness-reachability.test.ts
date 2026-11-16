@@ -1,19 +1,28 @@
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cliReadinessFactsFor, PROBE_EXECUTABLE } from '#testing/helpers/factories/detection.js';
+import {
+  cliDetectionsFor,
+  cliReadinessFactsFor,
+  PROBE_EXECUTABLE,
+} from '#testing/helpers/factories/detection.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { installToolShim, signInCodexShim } from '#testing/helpers/tool-shim.js';
 import {
   CLI_READINESS_STATES,
   type CliReadinessState,
+  type CliToolDetection,
 } from '../../../src/core/discovery/detection/tool.js';
-import type { CliExecutableIdentity } from '../../../src/core/discovery/detection/executable.js';
 import {
   CLI_TOOL_CATALOG,
   LISTED_CLI_TOOL_IDS,
 } from '../../../src/core/runners/cli-tool/catalog.js';
 import { deriveCliReadinessStatus } from '../../../src/core/schemas/readiness.js';
-import { deriveCliReadiness } from '../../../src/core/readiness/cli-remediation.js';
-import { detectAll, detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
+import {
+  detectAll,
+  detectAvailableCliReadiness,
+  detectAvailableCliTools,
+} from '../../../src/engine/detection/detect.js';
 import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import {
   assemblePickerDescriptors,
@@ -25,27 +34,13 @@ import { error } from '../../../src/utils/error.js';
 /**
  * Reachability is a property of the whole chain, so every step below is the
  * production one: `detectAll` → `detectAvailableCliTools` → `detectionStore`
- * → `buildPickerOptions`. Only the
- * two process-touching seams `detectAvailableCliTools` already exposes are
- * substituted, so the run needs no installed tool and no subprocess.
+ * → `buildPickerOptions`. A probed state comes from the real probe of a fake
+ * `codex`; a refused executable runs no probe.
  */
-type ProbeOverrides = Readonly<{
-  resolveExecutable?: () => Promise<CliExecutableIdentity>;
-  state?: CliReadinessState;
-}>;
-
 async function cliPickerOptions(
   role: 'planner' | 'implementer',
-  overrides: ProbeOverrides = {},
+  detectCliTools: () => Promise<CliToolDetection[]>,
 ): Promise<PickerOption[]> {
-  const state = overrides.state ?? 'ready';
-  const resolveExecutable = overrides.resolveExecutable ?? (async () => PROBE_EXECUTABLE);
-  const detectCliTools = () =>
-    detectAvailableCliTools({
-      resolveExecutable,
-      probeReadiness: async ({ tool }) => deriveCliReadiness(cliReadinessFactsFor(state, tool)),
-    });
-
   const detection = await detectAll({
     detectProviders: async () => [],
     detectCliTools,
@@ -69,6 +64,37 @@ async function cliPickerOptions(
  */
 const UNREACHABLE_PICKER_STATES: readonly CliReadinessState[] = ['disabled'];
 
+/** The `--version` answer and the sign-in of a fake `codex` that its real probe reads as `state`. */
+const PROBED_CODEX: Partial<
+  Record<CliReadinessState, Readonly<{ version: string; signedIn: boolean }>>
+> = {
+  ready: { version: CLI_TOOL_CATALOG.codex.compatibility.testedVersion, signedIn: true },
+  unauthenticated: { version: CLI_TOOL_CATALOG.codex.compatibility.testedVersion, signedIn: false },
+  incompatible: { version: '0.39.9', signedIn: true },
+  unverified: { version: '0.40.0-rc.1', signedIn: true },
+};
+
+/** The real detection of one fake `codex` whose probe reads as `state`. */
+async function probedCodex(state: CliReadinessState): Promise<() => Promise<CliToolDetection[]>> {
+  const shape = PROBED_CODEX[state];
+  if (shape === undefined) throw new Error(`no fake codex reads as ${state}`);
+  const directory = createTempDir('reachability-codex');
+  shimDirs.push(directory);
+  const executable = await installToolShim(
+    directory,
+    'codex',
+    signInCodexShim({
+      argvLog: join(directory, 'argv.log'),
+      versionLines: [`printf '%s\\n' 'codex-cli ${shape.version}'`, 'exit 0'],
+    }),
+  );
+  await stubSignInHome(join(directory, 'home'), shape.signedIn ? ['codex'] : []);
+  return () =>
+    detectAvailableCliTools({ tools: ['codex'], resolveExecutable: async () => executable });
+}
+
+const shimDirs: string[] = [];
+
 describe('CLI readiness reachability from the real detection producer', () => {
   let configHome: string;
 
@@ -82,10 +108,13 @@ describe('CLI readiness reachability from the real detection producer', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     cleanupTempDir(configHome);
+    for (const directory of shimDirs.splice(0)) cleanupTempDir(directory);
   });
 
   it('admits every listed CLI tool as ready and selectable on a best-case probe', async () => {
-    const options = await cliPickerOptions('planner');
+    const options = await cliPickerOptions('planner', async () =>
+      cliDetectionsFor('ready', LISTED_CLI_TOOL_IDS),
+    );
     const byId = new Map(options.map((option) => [option.id, option]));
 
     expect([...byId.keys()].toSorted()).toEqual([...LISTED_CLI_TOOL_IDS].toSorted());
@@ -100,21 +129,25 @@ describe('CLI readiness reachability from the real detection producer', () => {
   it.each(CLI_READINESS_STATES.filter((state) => !UNREACHABLE_PICKER_STATES.includes(state)))(
     'reaches picker status %s through the real detection chain',
     async (state) => {
-      const resolveExecutable =
+      const refusal =
         state === 'unavailable'
-          ? async () => {
-              throw error('cli-executable-unavailable', 'not installed');
-            }
+          ? error('cli-executable-unavailable', 'not installed')
           : state === 'untrusted'
-            ? async () => {
-                throw error('cli-executable-untrusted', 'project-local shadow');
-              }
+            ? error('cli-executable-untrusted', 'project-local shadow')
             : undefined;
 
-      const options = await cliPickerOptions('implementer', {
-        state,
-        ...(resolveExecutable !== undefined && { resolveExecutable }),
-      });
+      const options =
+        refusal === undefined
+          ? (await cliPickerOptions('implementer', await probedCodex(state))).filter(
+              (option) => option.id === 'codex',
+            )
+          : await cliPickerOptions('implementer', () =>
+              detectAvailableCliTools({
+                resolveExecutable: async () => {
+                  throw refusal;
+                },
+              }),
+            );
 
       expect(options.length).toBeGreaterThan(0);
       for (const option of options) {
@@ -131,19 +164,14 @@ describe('CLI readiness reachability from the real detection producer', () => {
     expect(deriveCliReadinessStatus(facts)).toBe('ready');
     expect(deriveCliReadinessStatus({ ...facts, enabled: false })).toBe('disabled');
 
-    // … and detection never hands the probe an `enabled` fact to falsify, so no
-    // detection path can reach it. Wiring one makes this fail, which is the
+    // … and detection never hands the probe an `enabled` fact to falsify, so each
+    // probe it runs reads as enabled. Wiring one makes this fail, which is the
     // prompt to move the state out of UNREACHABLE_PICKER_STATES.
-    const enabledArguments: (boolean | undefined)[] = [];
-    await detectAvailableCliTools({
+    const results = await detectAvailableCliReadiness({
       resolveExecutable: async () => PROBE_EXECUTABLE,
-      probeReadiness: async (options) => {
-        enabledArguments.push(options.enabled);
-        return deriveCliReadiness(cliReadinessFactsFor('ready', options.tool));
-      },
     });
 
-    expect(enabledArguments.length).toBe(LISTED_CLI_TOOL_IDS.length);
-    expect(enabledArguments.every((enabled) => enabled === undefined)).toBe(true);
+    expect(results).toHaveLength(LISTED_CLI_TOOL_IDS.length);
+    expect(results.every((result) => result.enabled && result.status !== 'disabled')).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js
 import { toErrorMessage } from '../../../../utils/format/errors.js';
 import { publishWarning } from '../../publish/notice.js';
 import { publishRecoveryResolved } from '../../publish/recovery.js';
+import { assertProjectNotMoved, retentionError } from '../../isolation/retention.js';
 import { runCodeDir } from '../../kept-work.js';
 import { transitionAndSave } from '../../state-ops/transition.js';
 import { skipHaltedBrief } from '../../task/skip-brief.js';
@@ -27,6 +28,20 @@ export async function applySkipCurrentTaskRecoveryAction(
       code: 'missing-current-task',
       message:
         'Skip current task requires the pending recovery task to match the current task index.',
+      publishSelected: true,
+    });
+  }
+
+  // The Skip works in the run's recorded workspace, so a moved project is refused before a write.
+  try {
+    await assertProjectNotMoved(opts, opts.state.workspace);
+  } catch (err) {
+    if (!retentionError.isMoved(err)) throw err;
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'isolation-project-moved',
+      message: err.message,
       publishSelected: true,
     });
   }

@@ -10,6 +10,7 @@ import {
   type AuthProbeRun,
   probeDeclaredCliReadinessEvidence,
 } from '../../runners/cli-tools/probe/declared-readiness.js';
+import type { CliReadinessProbeEvidence } from '../../runners/cli-tools/probe/evidence.js';
 import { lookupCliReadinessProbe } from '../../runners/cli-tools/registry.js';
 import { probeContextCatalog } from '../catalog-probe/probe.js';
 import type { CliRunnerDiscoveryContext } from '../cli-context.js';
@@ -21,7 +22,7 @@ import {
   modelRunFromCatalog,
 } from './facts.js';
 import { probeFailureEvidence, cancelledProbeEvidence } from './outcomes.js';
-import type { DetectRunnerEvidenceOptions, ProbeDeclaredCliReadinessEvidence } from './types.js';
+import type { DetectRunnerEvidenceOptions } from './types.js';
 
 /**
  * The probe work behind one resolved executable: version, auth and — only when
@@ -40,12 +41,7 @@ export async function probeResolvedCliEvidence(
   const now = options.now ?? Date.now;
   const catalogRequested = options.includeCatalog === true;
 
-  const probe = (
-    catalogRequested ? lookupCliReadinessProbe : (options.lookupProbe ?? lookupCliReadinessProbe)
-  )({
-    tool: context.id,
-    role: context.role,
-  });
+  const probe = lookupCliReadinessProbe({ tool: context.id, role: context.role });
 
   let authProbeRun: AuthProbeRun | undefined;
   const declaredProbeOptions = {
@@ -63,12 +59,9 @@ export async function probeResolvedCliEvidence(
         }
       : {}),
   };
-  const declaredReadiness = catalogRequested
-    ? probeDeclaredCliReadinessEvidence
-    : (options.probeDeclaredReadiness ?? probeDeclaredCliReadinessEvidence);
-  let declaredEvidence: Awaited<ReturnType<ProbeDeclaredCliReadinessEvidence>>;
+  let declaredEvidence: CliReadinessProbeEvidence;
   try {
-    declaredEvidence = await declaredReadiness(declaredProbeOptions);
+    declaredEvidence = await probeDeclaredCliReadinessEvidence(declaredProbeOptions);
   } catch {
     throwIfAborted(signal);
     return probeFailureEvidence(context, observedAt, executable);

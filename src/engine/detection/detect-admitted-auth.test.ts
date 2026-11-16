@@ -5,7 +5,6 @@ import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import { error } from '../../utils/error.js';
-import { probeCliReadiness } from '../runners/cli-tools/probe/readiness.js';
 import { resolveCliExecutable } from '../runners/cli-executable/resolve.js';
 import { detectAvailableCliTools } from './detect.js';
 
@@ -22,15 +21,9 @@ freezeProbeDeadlines();
 
 describe('all-admitted-tools auth detection', () => {
   it('keeps an unresolvable tool unavailable without any auth probe', async () => {
-    const probedTools: string[] = [];
-
     const results = await detectAvailableCliTools({
       resolveExecutable: async () => {
         throw error('cli-executable-unavailable', 'not installed');
-      },
-      probeReadiness: async (options) => {
-        probedTools.push(options.tool);
-        return probeCliReadiness(options);
       },
       now: () => 11,
     });
@@ -44,7 +37,6 @@ describe('all-admitted-tools auth detection', () => {
     ).toEqual(
       LISTED_CLI_TOOL_IDS.map((tool) => ({ tool, state: 'unavailable', auth: 'not-checked' })),
     );
-    expect(probedTools).toEqual([]);
   });
 
   it.runIf(process.platform !== 'win32')(
@@ -151,7 +143,6 @@ describe('all-admitted-tools auth detection', () => {
         const [result] = await detectAvailableCliTools({
           tools: ['claude-code'],
           resolveExecutable: async () => executable,
-          probeReadiness: probeCliReadiness,
         });
 
         expect(result).toMatchObject({
