@@ -14,8 +14,6 @@ export interface ProbeCliReadinessOptions {
   tool: CliToolId;
   executable: CliExecutableIdentity | null;
   probe: CliDeclaredProbeContract;
-  enabled?: boolean | undefined;
-  now?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
   classifyVersion?:
     | ((input: {
@@ -30,14 +28,14 @@ export async function probeCliReadiness(
 ): Promise<CliReadinessResult> {
   throwIfAborted(options.signal);
   const descriptor = CLI_TOOL_CATALOG[options.tool];
-  const probedAt = (options.now ?? Date.now)();
+  const probedAt = Date.now();
   const base = {
     tool: options.tool,
-    enabled: options.enabled ?? true,
+    enabled: true,
     testedVersion: descriptor.compatibility.testedVersion,
     probedAt,
   } as const;
-  if (!base.enabled || options.executable === null) {
+  if (options.executable === null) {
     return deriveCliReadiness({
       ...base,
       installation: 'unavailable',
@@ -56,7 +54,6 @@ export async function probeCliReadiness(
     tool: options.tool,
     executable: options.executable,
     probe: options.probe,
-    enabled: base.enabled,
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
   });
   const installedVersion = evidence.version.kind === 'success' ? evidence.version.value : null;

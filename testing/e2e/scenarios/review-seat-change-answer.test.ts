@@ -191,7 +191,6 @@ it('runs the review again on the REVIEW seat that the user saved while the first
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      role: 'planner',
     });
     expect(tools[0]?.diagnostic.state).toBe('ready');
     await rememberDetectedTools(target.projectDir, tools);
@@ -380,7 +379,6 @@ it('keeps the review on the REVIEW seat of the run when the user saves another s
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      role: 'planner',
     });
     expect(tools[0]?.diagnostic.state).toBe('ready');
     await rememberDetectedTools(target.projectDir, tools);

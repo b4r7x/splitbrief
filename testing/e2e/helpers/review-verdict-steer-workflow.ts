@@ -126,7 +126,6 @@ if (call === 1) {
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      role: 'planner',
     });
     if (tools[0]?.diagnostic.state !== 'ready') {
       throw new Error(`Codex shim is not ready: ${JSON.stringify(tools[0]?.diagnostic)}`);

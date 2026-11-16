@@ -121,7 +121,6 @@ export async function runSteeringCli(
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['claude-code', 'opencode', 'codex'],
-      role: 'implementer',
     });
     for (const tool of tools) {
       if (tool.diagnostic.state !== 'ready')

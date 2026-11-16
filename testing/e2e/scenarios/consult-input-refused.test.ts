@@ -192,7 +192,6 @@ async function runWithPlanner(seat: PlanSeat) {
   const tools = await detectAvailableCliTools({
     projectDir: target.projectDir,
     tools: [seat.tool],
-    role: 'planner',
   });
   expect(tools[0]?.diagnostic.state, JSON.stringify(tools[0]?.diagnostic)).toBe('ready');
   await rememberDetectedTools(target.projectDir, tools);

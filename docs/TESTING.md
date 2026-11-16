@@ -86,7 +86,7 @@ To run one unit file, use `npm test -- <path>`. To run one integration file, use
 
 A SPLITBRIEF run on this repository follows the same split. A brief's `test` check runs `npm test -- <file>`, so it finds only unit files. Name an integration test as a `cmd` check: `npm run test:integration -- <file>`. The planner names the project gate in the plan, for example `npm test`, `npm run test:integration` or `npm run test:e2e`, and SPLITBRIEF runs it before the final review.
 
-Invariant gate 58 (`scripts/unit-test-launches.ts`) rejects unit files with integration helpers, direct `git` launches, the simple-git client, or node shim markers. The gate's marker also matches the same text in comments and strings. The gate does not detect every integration operation, so use the rule above to name each test.
+Invariant gate 58 (`scripts/unit-test-launches.ts`) rejects unit files with integration helpers, direct `git` launches, the simple-git client, node shim markers, or a shell shim: a `sh` or `bash` script that reads its own arguments, as a stand-in tool does. The gate's marker also matches the same text in comments and strings. The gate does not detect every integration operation, so use the rule above to name each test.
 
 ## Performance harnesses
 

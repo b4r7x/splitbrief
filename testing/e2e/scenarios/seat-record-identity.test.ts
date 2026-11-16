@@ -82,7 +82,6 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100,
   const tools = await detectAvailableCliTools({
     projectDir: target.projectDir,
     tools: ['codex'],
-    role: 'implementer',
   });
   expect(tools[0]?.diagnostic.state).toBe('ready');
   await saveDetectionCache({

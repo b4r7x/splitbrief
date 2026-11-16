@@ -103,7 +103,6 @@ process.exit(0);`,
   const tools = await detectAvailableCliTools({
     projectDir: target.projectDir,
     tools: ['codex'],
-    role: 'planner',
   });
   expect(tools[0]?.diagnostic.state).toBe('ready');
   await rememberDetectedTools(target.projectDir, tools);

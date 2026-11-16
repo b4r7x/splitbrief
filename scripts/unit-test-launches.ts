@@ -5,8 +5,9 @@ import config from '../vitest.config.js';
 
 // Helpers build a real git repository or worktree, drive the run loop or Apply.
 // Other markers launch git, use simple-git or create node shims and fake CLIs.
+// A shell shim is a shell script that reads its own arguments, as a stand-in tool does.
 const LAUNCH_MARKER =
-  /\b(createTestGitRepo|setupGitSessionProject|setupTaskProject|makeTaskWorkflowContext|createHeadlessGitProject|startApplyRun|withApplyRun|makeCopyingIsolation|makeWorktreeIsolation|makeWctx|createRunIsolation|installClaude\w*Shim|writeFakeCli|writeFakeNodeCli|writeCommandShim|writeContractShim|writeConflictProbeShim|installCompatibleCliShim|effectScenario|createCommandInvokeTestFixtures)\b|\b(runWorkflow|runTrackedWorkflow)\(|\b(execFileSync|execFile|execSync|spawnSync|spawn)\(\s*['"`]git\b|#!\/usr\/bin\/env node|#!\$\{process\.execPath\}|from 'simple-git'/;
+  /\b(createTestGitRepo|setupGitSessionProject|setupTaskProject|makeTaskWorkflowContext|createHeadlessGitProject|startApplyRun|withApplyRun|makeCopyingIsolation|makeWorktreeIsolation|makeWctx|createRunIsolation|installClaude\w*Shim|writeFakeCli|writeFakeNodeCli|writeCommandShim|writeContractShim|writeConflictProbeShim|installCompatibleCliShim|installToolShim|signInCodexShim|effectScenario|createCommandInvokeTestFixtures)\b|\b(runWorkflow|runTrackedWorkflow)\(|\b(execFileSync|execFile|execSync|spawnSync|spawn)\(\s*['"`]git\b|#!\/usr\/bin\/env node|#!\$\{process\.execPath\}|#!\/bin\/(?:ba)?sh\b(?=[\s\S]{0,400}?(?:"\$[1-9@]"|\$\*|\$\{[1-9@]))|from 'simple-git'/;
 
 type VitestProject = Readonly<{ name: string; include: string[]; exclude: string[] }>;
 

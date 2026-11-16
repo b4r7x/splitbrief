@@ -1,3 +1,4 @@
+import type { CliExecutableIdentity } from '../../core/discovery/detection/executable.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import {
   CLI_TOOL_CATALOG,
@@ -6,7 +7,6 @@ import {
 } from '../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import { classifyCliAdmittedVersion } from '../../core/runners/cli-tool/version.js';
-import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import type { CliReadinessResult } from '../../core/schemas/readiness.js';
 import { cliReadinessCheckId } from '../../core/schemas/readiness.js';
 import {
@@ -19,26 +19,16 @@ import { includes } from '../../utils/type-guards.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { detectAvailableProviders } from '../providers/catalog-detection.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
-import {
-  resolveCliExecutable,
-  resolveCliExecutableAliases,
-} from '../runners/cli-executable/resolve.js';
-import type { CliExecutableResolver } from '../runners/cli-executable/types.js';
+import { resolveCliExecutableAliases } from '../runners/cli-executable/resolve.js';
 import { lookupCliReadinessProbe } from '../runners/cli-tools/registry.js';
 import { probeCliReadiness } from '../runners/cli-tools/probe/readiness.js';
 import { trackToolCheck } from '../probe-activity.js';
 import { readHostModelSelection } from '../runners/host-model-selection.js';
 
-type ResolveCliExecutable = CliExecutableResolver;
-
 export interface DetectCliToolsOptions {
   projectDir?: string | undefined;
   /** Limit a live probe to the tools selected by a start configuration. */
   tools?: readonly CliToolId[] | undefined;
-  role?: RunnerRole | undefined;
-  /** Readiness-only resolver seam; this API cannot request native catalog work. */
-  resolveExecutable?: ResolveCliExecutable | undefined;
-  now?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
 }
 
@@ -67,9 +57,6 @@ export function cliDetectionFromReadiness(result: CliReadinessResult): CliToolDe
 
 interface DetectCliToolDependencies {
   projectDir: string;
-  resolveExecutable: ResolveCliExecutable;
-  role: RunnerRole;
-  now: () => number;
   signal: AbortSignal | undefined;
 }
 
@@ -120,19 +107,17 @@ async function detectCliToolReadiness(
 ): Promise<CliReadinessResult> {
   throwIfAborted(options.signal);
   const descriptor = CLI_TOOL_CATALOG[tool];
-  let executable: Awaited<ReturnType<ResolveCliExecutable>>;
+  let executable: CliExecutableIdentity;
   try {
     executable = (
       await resolveCliExecutableAliases({
         commands: descriptor.executableAliases,
         projectDir: options.projectDir,
-        resolveExecutable: options.resolveExecutable,
       })
     ).executable;
   } catch (cause) {
     const untrusted = matches('cli-executable-untrusted')(cause);
-    const probedAt = options.now();
-    return unresolvedReadiness(tool, probedAt, untrusted);
+    return unresolvedReadiness(tool, Date.now(), untrusted);
   }
   throwIfAborted(options.signal);
 
@@ -141,8 +126,7 @@ async function detectCliToolReadiness(
       const result = await probeCliReadiness({
         tool,
         executable,
-        probe: lookupCliReadinessProbe({ tool, role: options.role }),
-        now: options.now,
+        probe: lookupCliReadinessProbe({ tool, role: 'planner' }),
         signal: options.signal,
         classifyVersion: ({ installedVersion }) =>
           classifyCliAdmittedVersion({
@@ -176,7 +160,7 @@ async function detectCliToolReadiness(
         testedVersion: descriptor.compatibility.testedVersion,
         compatibility: 'unverified',
         auth: 'not-checked',
-        probedAt: options.now(),
+        probedAt: Date.now(),
       });
     }
   });
@@ -207,9 +191,6 @@ export async function detectAvailableCliReadiness(
 ): Promise<CliReadinessResult[]> {
   const dependencies = {
     projectDir: options.projectDir ?? process.cwd(),
-    resolveExecutable: options.resolveExecutable ?? resolveCliExecutable,
-    role: options.role ?? 'planner',
-    now: options.now ?? Date.now,
     signal: options.signal,
   };
   const tools = options.tools ?? LISTED_CLI_TOOL_IDS;
@@ -221,9 +202,6 @@ export async function detectAvailableCliTools(
 ): Promise<CliToolDetection[]> {
   const dependencies = {
     projectDir: options.projectDir ?? process.cwd(),
-    resolveExecutable: options.resolveExecutable ?? resolveCliExecutable,
-    role: options.role ?? 'planner',
-    now: options.now ?? Date.now,
     signal: options.signal,
   };
   const tools = options.tools ?? LISTED_CLI_TOOL_IDS;

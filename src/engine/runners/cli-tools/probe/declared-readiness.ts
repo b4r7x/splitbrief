@@ -35,7 +35,6 @@ export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
   tool: CliToolId;
   executable: CliExecutableIdentity | null;
   probe: CliDeclaredProbeContract;
-  enabled?: boolean | undefined;
   signal?: AbortSignal | undefined;
   /** Receives the auth status run, so a catalog probe with the same argv can reuse its output. */
   onAuthProbeRun?: ((run: AuthProbeRun) => void) | undefined;
@@ -191,7 +190,7 @@ export async function probeDeclaredCliReadinessEvidence(
   options: ProbeDeclaredCliReadinessEvidenceOptions,
 ): Promise<CliReadinessProbeEvidence> {
   throwIfAborted(options.signal);
-  if (options.enabled === false || options.executable === null) {
+  if (options.executable === null) {
     return { version: { kind: 'not-run' }, auth: 'not-run' };
   }
   if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {

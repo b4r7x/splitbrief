@@ -253,7 +253,6 @@ async function routeFixture({
   const cliTools = await detectAvailableCliTools({
     projectDir: target.projectDir,
     tools: ['opencode', 'claude-code'],
-    role: 'implementer',
   });
   expect(Object.fromEntries(cliTools.map((tool) => [tool.tool, tool.diagnostic.state]))).toEqual({
     opencode: localOnly ? 'unauthenticated' : 'ready',

@@ -145,7 +145,6 @@ if (!corrected) throw new Error('Checks ran before the BUILD correction pass');
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      role: 'implementer',
     });
     expect(tools[0]?.diagnostic.state).toBe('ready');
     await rememberDetectedTools(target.projectDir, tools);

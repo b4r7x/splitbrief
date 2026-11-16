@@ -183,7 +183,6 @@ async function codexSeatFixture(haltedCallWrote: boolean, implementerModel: stri
   const cliTools = await detectAvailableCliTools({
     projectDir: target.projectDir,
     tools: ['codex', 'claude-code'],
-    role: 'implementer',
   });
   expect(Object.fromEntries(cliTools.map((tool) => [tool.tool, tool.diagnostic.state]))).toEqual({
     codex: 'ready',

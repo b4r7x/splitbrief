@@ -152,7 +152,6 @@ it('gives each parallel sub-agent of a Claude Code BUILD seat its own row', asyn
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['claude-code'],
-      role: 'implementer',
     });
     expect(tools[0]?.diagnostic.state, JSON.stringify(tools[0]?.diagnostic)).toBe('ready');
     await rememberDetectedTools(target.projectDir, tools);

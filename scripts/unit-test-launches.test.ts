@@ -9,6 +9,8 @@ const gitRepoHelper = ['createTest', 'GitRepo'].join('');
 const gitLaunch = ['execFileSync(', "'git"].join('');
 const execPathShim = ['#!$', '{process.execPath}'].join('');
 const trackedWorkflow = ['runTracked', 'Workflow('].join('');
+const shellShebang = ['#!', '/bin/sh'].join('');
+const toolShimHelper = ['install', 'ToolShim'].join('');
 
 describe('unit test launches', () => {
   let root: string;
@@ -60,6 +62,27 @@ describe('unit test launches', () => {
     write('src/tracked.test.ts', `${trackedWorkflow}ctx);\n`);
 
     expect(findLaunchingUnitTests(root)).toEqual([`src/tracked.test.ts: ${trackedWorkflow}`]);
+  });
+
+  it('reports a shell script that reads its arguments and the tool shim helper', () => {
+    write(
+      'src/argv.test.ts',
+      `const script = ['${shellShebang}', 'if [ "$1" = "--version" ]; then', 'fi'];\n`,
+    );
+    write('src/log.test.ts', `const script = '${shellShebang}\\nprintf "%s" "$*" >> log';\n`);
+    write('src/helper.test.ts', `await ${toolShimHelper}(dir, 'codex', script);\n`);
+
+    expect(findLaunchingUnitTests(root)).toEqual([
+      `src/argv.test.ts: ${shellShebang}`,
+      `src/helper.test.ts: ${toolShimHelper}`,
+      `src/log.test.ts: ${shellShebang}`,
+    ]);
+  });
+
+  it('ignores a shell script that reads no argument', () => {
+    write('src/data.test.ts', `writeFileSync(file, '${shellShebang}\\nexit 0\\n');\n`);
+
+    expect(findLaunchingUnitTests(root)).toEqual([]);
   });
 
   it('names a missing project in its error', () => {

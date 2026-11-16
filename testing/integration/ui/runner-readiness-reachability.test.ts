@@ -1,10 +1,7 @@
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  cliDetectionsFor,
-  cliReadinessFactsFor,
-  PROBE_EXECUTABLE,
-} from '#testing/helpers/factories/detection.js';
+import { makeExecutable } from '#testing/helpers/cli-executable.js';
+import { cliDetectionsFor, cliReadinessFactsFor } from '#testing/helpers/factories/detection.js';
 import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { installToolShim, signInCodexShim } from '#testing/helpers/tool-shim.js';
@@ -29,7 +26,6 @@ import {
   buildPickerOptions,
   type PickerOption,
 } from '../../../src/features/runners/model-catalog/options.js';
-import { error } from '../../../src/utils/error.js';
 
 /**
  * Reachability is a property of the whole chain, so every step below is the
@@ -80,7 +76,7 @@ async function probedCodex(state: CliReadinessState): Promise<() => Promise<CliT
   if (shape === undefined) throw new Error(`no fake codex reads as ${state}`);
   const directory = createTempDir('reachability-codex');
   shimDirs.push(directory);
-  const executable = await installToolShim(
+  await installToolShim(
     directory,
     'codex',
     signInCodexShim({
@@ -89,8 +85,24 @@ async function probedCodex(state: CliReadinessState): Promise<() => Promise<CliT
     }),
   );
   await stubSignInHome(join(directory, 'home'), shape.signedIn ? ['codex'] : []);
-  return () =>
-    detectAvailableCliTools({ tools: ['codex'], resolveExecutable: async () => executable });
+  vi.stubEnv('PATH', directory);
+  return () => detectAvailableCliTools({ tools: ['codex'] });
+}
+
+/**
+ * The real detection of every listed tool over a PATH that finds none of them (`unavailable`)
+ * or finds each as a file inside the project (`untrusted`). A refused executable runs no probe.
+ */
+function refusedTools(state: 'unavailable' | 'untrusted'): () => Promise<CliToolDetection[]> {
+  const projectDir = createTempDir('reachability-project');
+  shimDirs.push(projectDir);
+  if (state === 'untrusted') {
+    for (const tool of LISTED_CLI_TOOL_IDS) {
+      makeExecutable(join(projectDir, CLI_TOOL_CATALOG[tool].command));
+    }
+  }
+  vi.stubEnv('PATH', projectDir);
+  return () => detectAvailableCliTools({ projectDir });
 }
 
 const shimDirs: string[] = [];
@@ -129,24 +141,11 @@ describe('CLI readiness reachability from the real detection producer', () => {
   it.each(CLI_READINESS_STATES.filter((state) => !UNREACHABLE_PICKER_STATES.includes(state)))(
     'reaches picker status %s through the real detection chain',
     async (state) => {
-      const refusal =
-        state === 'unavailable'
-          ? error('cli-executable-unavailable', 'not installed')
-          : state === 'untrusted'
-            ? error('cli-executable-untrusted', 'project-local shadow')
-            : undefined;
-
       const options =
-        refusal === undefined
-          ? (await cliPickerOptions('implementer', await probedCodex(state))).filter(
+        state === 'unavailable' || state === 'untrusted'
+          ? await cliPickerOptions('implementer', refusedTools(state))
+          : (await cliPickerOptions('implementer', await probedCodex(state))).filter(
               (option) => option.id === 'codex',
-            )
-          : await cliPickerOptions('implementer', () =>
-              detectAvailableCliTools({
-                resolveExecutable: async () => {
-                  throw refusal;
-                },
-              }),
             );
 
       expect(options.length).toBeGreaterThan(0);
@@ -164,12 +163,13 @@ describe('CLI readiness reachability from the real detection producer', () => {
     expect(deriveCliReadinessStatus(facts)).toBe('ready');
     expect(deriveCliReadinessStatus({ ...facts, enabled: false })).toBe('disabled');
 
-    // … and detection never hands the probe an `enabled` fact to falsify, so each
-    // probe it runs reads as enabled. Wiring one makes this fail, which is the
-    // prompt to move the state out of UNREACHABLE_PICKER_STATES.
-    const results = await detectAvailableCliReadiness({
-      resolveExecutable: async () => PROBE_EXECUTABLE,
-    });
+    // … and detection has no `enabled` fact to falsify, so each result reads as
+    // enabled. Wiring one makes this fail, which is the prompt to move the state
+    // out of UNREACHABLE_PICKER_STATES.
+    const emptyPathDir = createTempDir('reachability-empty-path');
+    shimDirs.push(emptyPathDir);
+    vi.stubEnv('PATH', emptyPathDir);
+    const results = await detectAvailableCliReadiness();
 
     expect(results).toHaveLength(LISTED_CLI_TOOL_IDS.length);
     expect(results.every((result) => result.enabled && result.status !== 'disabled')).toBe(true);

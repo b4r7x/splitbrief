@@ -98,7 +98,6 @@ describe('e2e: End run after a checkout brief halted on a signed-out seat and ke
     const cliTools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      role: 'implementer',
     });
     expect(cliTools.map((tool) => [tool.tool, tool.diagnostic.state])).toEqual([
       ['codex', 'ready'],

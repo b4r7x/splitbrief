@@ -167,7 +167,6 @@ it('runs the review after the answer on the REVIEW seat saved while a continued 
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['codex'],
-      role: 'planner',
     });
     expect(tools[0]?.diagnostic.state).toBe('ready');
     await rememberDetectedTools(target.projectDir, tools);

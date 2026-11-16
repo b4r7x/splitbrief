@@ -76,7 +76,6 @@ symlinkSync(${JSON.stringify(outside)}, '.splitbrief');
     const tools = await detectAvailableCliTools({
       projectDir: target.projectDir,
       tools: ['claude-code'],
-      role: 'planner',
     });
     expect(tools[0]?.diagnostic.state, JSON.stringify(tools[0]?.diagnostic)).toBe('ready');
     await rememberDetectedTools(target.projectDir, tools);
