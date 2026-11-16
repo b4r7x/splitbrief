@@ -316,22 +316,16 @@ describe('MultilineInput astral-plane editing', () => {
     await flushEffects();
 
     ui.stdin.write(`a${EMOJI}`);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}]`);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}]`);
+    });
 
     await flushEffects();
     ui.stdin.write(BACKSPACE);
-    await vi.waitFor(
-      () => {
-        // The emoji is gone entirely — no half-surrogate residue.
-        expect(ui.lastFrame() ?? '').toContain('value:[a]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      // The emoji is gone entirely — no half-surrogate residue.
+      expect(ui.lastFrame() ?? '').toContain('value:[a]');
+    });
   });
 
   it('left then right arrow steps over the full emoji code point', async () => {
@@ -347,24 +341,18 @@ describe('MultilineInput astral-plane editing', () => {
     ui.stdin.write(LEFT);
     await flushEffects();
     ui.stdin.write('x');
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}]`);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}]`);
+    });
 
     // Right steps over the whole emoji; typing lands after it.
     await flushEffects();
     ui.stdin.write(RIGHT);
     await flushEffects();
     ui.stdin.write('y');
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}y]`);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}y]`);
+    });
   });
 
   it('delete removes the next whole emoji instead of backspacing', async () => {
@@ -373,12 +361,9 @@ describe('MultilineInput astral-plane editing', () => {
     await flushEffects();
 
     ui.stdin.write(`a${EMOJI}b`);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}b]`);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}b]`);
+    });
 
     await flushEffects();
     ui.stdin.write(LEFT);
@@ -386,12 +371,9 @@ describe('MultilineInput astral-plane editing', () => {
     ui.stdin.write(LEFT);
     await flushEffects();
     ui.stdin.write(DELETE);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('value:[ab]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[ab]');
+    });
   });
 
   it('keeps Ctrl+B, Ctrl+F, and Ctrl+E as composer text editing chords', async () => {
@@ -400,34 +382,25 @@ describe('MultilineInput astral-plane editing', () => {
     await flushEffects();
 
     ui.stdin.write('ab');
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('value:[ab]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[ab]');
+    });
 
     await flushEffects();
     ui.stdin.write(CTRL_B);
     await flushEffects();
     ui.stdin.write('X');
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('value:[aXb]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[aXb]');
+    });
 
     await flushEffects();
     ui.stdin.write(CTRL_F);
     await flushEffects();
     ui.stdin.write('Y');
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('value:[aXbY]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[aXbY]');
+    });
 
     await flushEffects();
     ui.stdin.write(CTRL_B);
@@ -437,12 +410,9 @@ describe('MultilineInput astral-plane editing', () => {
     ui.stdin.write(CTRL_E);
     await flushEffects();
     ui.stdin.write('!');
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('value:[aXbY!]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:[aXbY!]');
+    });
   });
 
   it('lets callers override Ctrl+E with an explicit shortcut binding', async () => {
@@ -457,24 +427,18 @@ describe('MultilineInput astral-plane editing', () => {
     await flushEffects();
 
     ui.stdin.write('ab');
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('value:ab');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('value:ab');
+    });
 
     await flushEffects();
     ui.stdin.write(CTRL_E);
     await flushEffects();
     ui.stdin.write('!');
-    await vi.waitFor(
-      () => {
-        expect(shortcut).toHaveBeenCalledTimes(1);
-        expect(ui.lastFrame() ?? '').toContain('value:ab!');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(shortcut).toHaveBeenCalledTimes(1);
+      expect(ui.lastFrame() ?? '').toContain('value:ab!');
+    });
   });
 
   it('runs an explicit shortcut inside the suppression window that follows Ctrl+U', async () => {
@@ -489,7 +453,7 @@ describe('MultilineInput astral-plane editing', () => {
     await flushEffects();
 
     ui.stdin.write('ab');
-    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('value:ab'), { timeout: 5000 });
+    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('value:ab'));
 
     // A frozen clock holds the window that Ctrl+U opens, so every later key arrives inside it.
     const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now());
@@ -500,7 +464,7 @@ describe('MultilineInput astral-plane editing', () => {
       ui.stdin.write('x');
       await flushEffects();
       ui.stdin.write(CTRL_E);
-      await vi.waitFor(() => expect(shortcut).toHaveBeenCalledTimes(1), { timeout: 5000 });
+      await vi.waitFor(() => expect(shortcut).toHaveBeenCalledTimes(1));
       expect(ui.lastFrame() ?? '').toContain('value:');
       expect(ui.lastFrame() ?? '').not.toContain('value:ab');
       expect(ui.lastFrame() ?? '').not.toContain('value:x');
@@ -601,12 +565,9 @@ describe('MultilineInput image atoms', () => {
       await flushEffects();
     }
     ui.stdin.write('Z');
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain(`parts:[Ze\u0301${EMOJI}|${ATOM_LABEL}|x]`);
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(`parts:[Ze\u0301${EMOJI}|${ATOM_LABEL}|x]`);
+    });
   });
 
   it('takes the whole atom on backspace instead of leaving a shortened label', async () => {
@@ -619,13 +580,10 @@ describe('MultilineInput image atoms', () => {
     ui.stdin.write(LEFT);
     await flushEffects();
     ui.stdin.write(BACKSPACE);
-    await vi.waitFor(
-      () => {
-        // Not `Image`, not `Image1` minus a digit: the span went whole and the text closed over it.
-        expect(ui.lastFrame() ?? '').toContain('parts:[ab||]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      // Not `Image`, not `Image1` minus a digit: the span went whole and the text closed over it.
+      expect(ui.lastFrame() ?? '').toContain('parts:[ab||]');
+    });
   });
 
   it('takes the whole atom on a forward delete from the text before it', async () => {
@@ -640,12 +598,9 @@ describe('MultilineInput image atoms', () => {
       await flushEffects();
     }
     ui.stdin.write(DELETE);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('parts:[ab||]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('parts:[ab||]');
+    });
   });
 
   // A word delete stops at a space, and the collapsed-paste label has spaces in it — so without the
@@ -658,12 +613,9 @@ describe('MultilineInput image atoms', () => {
     await flushEffects();
 
     ui.stdin.write(CTRL_W);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('parts:[see ||]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('parts:[see ||]');
+    });
   });
 
   it('keeps the label whole when the line wraps around it', async () => {
@@ -695,12 +647,9 @@ describe('MultilineInput image atoms', () => {
     await flushEffects();
 
     ui.stdin.write(CTRL_U);
-    await vi.waitFor(
-      () => {
-        expect(ui.lastFrame() ?? '').toContain('parts:[helloworld||]');
-      },
-      { timeout: 5000 },
-    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('parts:[helloworld||]');
+    });
   });
 });
 
