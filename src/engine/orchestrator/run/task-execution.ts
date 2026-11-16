@@ -6,6 +6,7 @@ import { transitionAndSave } from '../state-ops/transition.js';
 import { ensureRunBaselineSnapshot } from './snapshots.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import { createSnapshot } from '../../snapshots/create.js';
+import { assertProjectNotMoved } from '../isolation/retention.js';
 import { reconcileWorkspaceToBase } from '../isolation/run-base/reader.js';
 import { error } from '../../../utils/error.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
@@ -79,6 +80,7 @@ export async function runTasksAndReview(
     });
     setTrackedState(state);
   } else {
+    await assertProjectNotMoved(ref, state.workspace);
     const opened = await initialWctx.isolation.open({
       config: initialWctx.config,
       recorded: state.workspace.kind,

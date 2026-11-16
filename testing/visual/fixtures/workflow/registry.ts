@@ -68,7 +68,6 @@ import { overlayStore } from '../../../../src/stores/ui/overlay.js';
 import { openApprovalPrompt } from '../../../../src/stores/prompts/approval.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../src/lib/terminal/typeahead-grace.js';
 import {
-  MOVED_PROJECT_MESSAGE,
   WORKFLOW_FIXTURE_TASK_ID,
   WORKFLOW_FIXTURE_TEXT,
   crewWideReviewNoneEndProjection,
@@ -80,6 +79,7 @@ import {
   OUTPUT_LIMIT_READ_FILE,
   OUTPUT_LIMIT_TOOL_OUTPUT_MESSAGE,
 } from './output-limit-projection.js';
+import { MOVED_PROJECT_MESSAGE } from './at-rest-projections.js';
 import { seatMovedModelLineProjection } from './seat-moved-model-line.js';
 import { createWorkflowFixtureFactory } from './setup.js';
 
@@ -395,6 +395,21 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       afterMount: async (write) => {
         await write.press('\t');
         await write.press('\r');
+      },
+    });
+  }
+  // The Skip goes through the screen's own recovery driver, so the refusal on screen is the real one.
+  if (projection.scenarioId === 'workflow-moved-project-skip') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const refused = Promise.withResolvers<void>();
+        const off = feedbackStore.subscribe(() => {
+          if (feedbackStore.get().message === MOVED_PROJECT_MESSAGE) refused.resolve();
+        });
+        await write.press('s');
+        await refused.promise;
+        off();
       },
     });
   }
@@ -1867,6 +1882,13 @@ const checkpointPredicates = [
         )
       );
     },
+  ],
+  [
+    checkpointId('moved-project-skip'),
+    (context) =>
+      includesTranscript('Recovery  Skip task blocked')(context) &&
+      workflowTranscriptText().replace(/\s+/g, ' ').includes(MOVED_PROJECT_MESSAGE) &&
+      context.output.includes('Needs you'),
   ],
   [
     checkpointId('cli-stop-continued'),

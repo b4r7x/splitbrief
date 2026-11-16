@@ -333,9 +333,12 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
       const consultAnswer =
         projection.scenarioId === 'workflow-consult-answer-default' ||
         projection.scenarioId === 'workflow-consult-answer-typed';
+      // The refused Skip publishes the chosen action and its block.
+      const refusedSkip = projection.scenarioId === 'workflow-moved-project-skip';
       const drivenEvents =
         (projection.resumeState?.pendingRecovery === undefined ? 0 : 1) +
         (consultAnswer ? 1 : 0) +
+        (refusedSkip ? 2 : 0) +
         (projection.resumedRun?.events.length ?? 0) +
         (projection.nextPassEvents?.length ?? 0);
       expect(eventsStore.get().events).toHaveLength(

@@ -3,7 +3,6 @@ import { join, relative, resolve } from 'node:path';
 import { replacedFilesSavedIn } from '../../../../src/core/runtime/commands/messages.js';
 import { redactSecrets } from '../../../../src/utils/redact/secrets.js';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity/project.js';
-import { retentionError } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
 import {
   buildPromptTooLargeProjection,
@@ -184,6 +183,7 @@ import { fallbackBlockedReason } from '../../../../src/core/crew/fallback.js';
 import { configWithSwitchedSeat } from '../../../../src/engine/orchestrator/recovery/seat/switch/config.js';
 import type { ScopedCliCatalogAttempt } from '../../../../src/engine/detection/cli-catalog-outcomes.js';
 import {
+  MOVED_PROJECT_STARTED_IN,
   atRestProjections,
   reviewTaskCadenceProjection,
   reviewTaskOutOfScopeProjection,
@@ -3646,43 +3646,6 @@ const failureProjection: WorkflowFixtureProjection = {
   ],
 };
 
-export const MOVED_PROJECT_MESSAGE = retentionError.moved('old-shop').message;
-
-/** The run stopped in one folder and was continued after the project moved to another. */
-const movedProjectRunProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-moved-project-run'),
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'implementing',
-      feature: WORKFLOW_FEATURE,
-    },
-    {
-      type: 'task_started',
-      ts: FIXED_TS + 100,
-      phase: 'implementing',
-      taskId: WORKFLOW_FIXTURE_TASK_ID,
-      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
-      index: 0,
-      total: 1,
-      file: WORKFLOW_FIXTURE_REVIEW_FILE,
-      action: 'modify',
-      tool: 'ollama',
-      model: FIXED_RUNNER_MODEL,
-    },
-    {
-      type: 'error',
-      ts: FIXED_TS + 300,
-      phase: 'implementing',
-      message: MOVED_PROJECT_MESSAGE,
-    },
-  ],
-};
-
 /** The fallback a seat declares in config: a seat that cannot work moves to it. */
 const SEAT_FALLBACK = {
   tool: 'opencode',
@@ -4209,6 +4172,27 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   events: [],
   config: AGY_CREW,
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
+};
+
+/**
+ * The halt of a run in the checkout, opened after its project folder moved. The screen's own
+ * recovery driver refuses Skip task and names the folder the run started in.
+ */
+const movedProjectSkipProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-moved-project-skip'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [],
+  config: { workflow: { isolation: 'none' } },
+  resumeState: {
+    ...haltedResumeState(retryExhaustedRecoveryIssue),
+    workspace: {
+      kind: 'checkout',
+      path: MOVED_PROJECT_STARTED_IN,
+      base: { snapshotId: 'baseline', head: null },
+    },
+  },
 };
 
 /** The brief after a skipped one waits on it: its halt offers Skip task and End run, no correction. */
@@ -9946,7 +9930,7 @@ const projections = [
   stoppingProjection,
   stopSteerRefusedProjection,
   failureProjection,
-  movedProjectRunProjection,
+  movedProjectSkipProjection,
   plannerCommandsRefusedProjection,
   touchedNotSuggestedProjection,
   betweenBriefsProjection,

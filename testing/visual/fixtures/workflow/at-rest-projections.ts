@@ -62,6 +62,7 @@ import {
 import { scenarioId } from '../../contracts/identifiers.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { VISUAL_FIXTURE_PROJECT_DIR, visualConfig } from '../screen-fixtures.js';
+import { retentionError } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import type { FixtureAtRestRoute, WorkflowFixtureProjection } from './projections.js';
 
 export const AT_REST_FIXTURE_FEATURE = 'Add email validation with tests';
@@ -3405,6 +3406,68 @@ const FAILED_UNSAVED = record({
   }),
 });
 
+/** The folder a run started in, before its project moved to the fixture's folder. */
+export const MOVED_PROJECT_STARTED_IN = '/Users/me/projects/shop';
+
+export const MOVED_PROJECT_MESSAGE = retentionError.moved(MOVED_PROJECT_STARTED_IN).message;
+
+const MOVED_PROJECT_STEP = { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 } as const;
+const MOVED_PROJECT_TS = CRASH_TS + 300_000;
+
+/** The user stopped the build, moved the project folder, and continued: the Continue stopped on the move. */
+const MOVED_PROJECT_LOG: readonly EngineEvent[] = [
+  ...CRASHED_BUILD_LOG,
+  {
+    type: 'turn_interrupted',
+    ts: CRASH_TS + 72_000,
+    phase: 'implementing',
+    source: 'user',
+    at: 'mid-step',
+    step: MOVED_PROJECT_STEP,
+  },
+  { type: 'workflow_resumed', ts: MOVED_PROJECT_TS, phase: 'implementing' },
+  {
+    type: 'error',
+    ts: MOVED_PROJECT_TS + 100,
+    phase: 'implementing',
+    message: MOVED_PROJECT_MESSAGE,
+  },
+  {
+    type: 'run_failed',
+    ts: MOVED_PROJECT_TS + 100,
+    phase: 'implementing',
+    step: MOVED_PROJECT_STEP,
+    message: MOVED_PROJECT_MESSAGE,
+  },
+];
+
+const MOVED_PROJECT_RUN = record({
+  sessionId: 'visual-moved-project-run',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'failed' } },
+    resumeAt: MOVED_PROJECT_STEP,
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'in_progress' },
+    ],
+    workspace: {
+      kind: 'checkout',
+      path: MOVED_PROJECT_STARTED_IN,
+      base: { snapshotId: 'baseline', head: null },
+    },
+    lastFailure: {
+      step: MOVED_PROJECT_STEP,
+      message: MOVED_PROJECT_MESSAGE,
+      at: new Date(MOVED_PROJECT_TS + 100).toISOString(),
+    },
+  }),
+});
+
 const PLAN_UNSAVED_MESSAGE =
   'Could not save a run file: permission denied · .splitbrief/sessions/visual-at-rest-plan-unsaved/plan.json';
 
@@ -3625,6 +3688,13 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-at-rest-failed-unsaved',
     route: { record: FAILED_UNSAVED, log: FAILED_UNSAVED_LOG },
   }),
+  {
+    ...atRestProjection({
+      id: 'workflow-moved-project-run',
+      route: { record: MOVED_PROJECT_RUN, log: MOVED_PROJECT_LOG },
+    }),
+    config: { workflow: { isolation: 'none' } },
+  },
   atRestProjection({
     id: 'workflow-at-rest-plan-unsaved',
     route: { record: PLAN_UNSAVED, log: PLAN_UNSAVED_LOG },

@@ -366,6 +366,39 @@ describe('runTasksAndReview workspace', () => {
       await options.wctx.isolation.dispose();
     }
   });
+
+  it('a continued in-place run in a moved project stops with the folder that the run started in', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const { options, implementer } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState([makeTask()], head, 0),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+    options.wctx.isolation = makeCheckoutIsolation({ projectDir, sessionId });
+    try {
+      const opened = await options.wctx.isolation.open({ config: options.wctx.config });
+      expect(opened.kind).toBe('checkout');
+      const startedIn = `${opened.projectDir}-before-the-move`;
+      const state: WorkflowState = {
+        ...options.state,
+        workspace: {
+          kind: opened.kind,
+          path: startedIn,
+          base: { snapshotId: 'baseline', head: opened.head },
+        },
+      };
+
+      await expect(runTasksAndReview({ ...options, state })).rejects.toMatchObject({
+        kind: 'isolation-project-moved',
+        message: `This run started in ${startedIn}. Move the project back to that folder to continue the run, or end the run.`,
+      });
+      expect(implementer.implement).not.toHaveBeenCalled();
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
 });
 
 describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {

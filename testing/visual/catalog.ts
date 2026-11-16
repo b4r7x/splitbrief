@@ -4502,6 +4502,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-moved-project-skip',
+      title: 'Workflow · Skip task refused at a halt after the project folder moved',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'moved-project-skip',
+        title: 'The refused Skip names the folder the run started in, and the halt stays',
+        kind: 'failure',
+        marker: 'This run started in',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Refused Skip card' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-cli-stop-continued',
       title: 'Workflow · a brief continued after a stop cut its CLI call',
       surface: screenSurface('workflow'),
