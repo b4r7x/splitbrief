@@ -28,5 +28,9 @@ afterAll(async () => {
   const { disposeNodeRuntime } = await import('./compatible-cli-shim.js');
   disposeNodeRuntime();
   const { removeSandboxTempDirs } = await import('../../src/engine/runners/sandbox/state/paths.js');
-  for (const dir of createdTempDirs) removeSandboxTempDirs(dir);
+  for (const dir of createdTempDirs) {
+    removeSandboxTempDirs(dir);
+    cleanupTempDir(dir);
+  }
+  createdTempDirs.clear();
 });
