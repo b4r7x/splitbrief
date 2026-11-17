@@ -163,7 +163,7 @@ The event schema defines the type-dispatched event contract as `EngineEventSchem
 
 **Recovery:**
 
-`recovery/builders/apply.ts` builds the `apply-conflict` and `apply-partial` halts. Their actions are `accept-as-is` and `restore-backup`. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) owns their policy and behavior.
+`recovery/builders/apply.ts` builds the `apply-conflict` and `apply-partial` halts. An `apply-conflict` halt offers `retry-same-worker` and `end-run`. An `apply-partial` halt offers `retry-same-worker` and `restore-backup`. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) owns their policy and behavior.
 
 The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, `APPLY_RECHECK_START`, `APPLY_START`, `APPLY_DONE` and `APPLY_RESTORED`. `CLOSE_RUN` also accepts `as: 'discarded'`. `RECORD_REJECT` drops the paths a reject that left files behind put back from the stop's `interruptedStep.kept`. It sets each passed task that booked one of those paths back to `pending`. When the first such task comes before the current one, the run moves back before it and clears its `pendingRecovery`. Their effects are in [WORKFLOW.md](./WORKFLOW.md#apply).
 

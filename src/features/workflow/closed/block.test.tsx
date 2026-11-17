@@ -303,8 +303,8 @@ describe('closedTranscriptBlock', () => {
     const narrow = blockRows(accepted, { viewportRows: 8, crewNamed: false, width: 56 }).map(
       rowText,
     );
-    expect(narrow.find((text) => text.startsWith('Review '))).toMatch(
-      /^Review {3}failed · accepted as is · .*1m 5s$/u,
+    expect(narrow.find((text) => text.startsWith('Review '))).toBe(
+      'Review   failed · accepted as is · 3 blocking · 1m 5s',
     );
   });
 
