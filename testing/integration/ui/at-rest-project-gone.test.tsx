@@ -133,12 +133,15 @@ async function openRunAtRest({
 
 /** The project folder moves away under the open screen, and the screen answers the move. */
 async function moveProjectAway(): Promise<void> {
+  const messages: (string | null)[] = [];
+  const off = feedbackStore.subscribe(() => messages.push(feedbackStore.get().message));
   renameSync(projectDir, join(root, 'moved'));
+  // The screen polls the state file and the session log apart, and each one answers the move.
   await vi.waitFor(() => {
-    expect(feedbackStore.get().message !== null || frame().includes('Saved state unreadable')).toBe(
-      true,
-    );
+    const gone = messages.filter((message) => message === projectGoneMessage(projectDir));
+    expect(gone.length === 2 || frame().includes('Saved state unreadable')).toBe(true);
   });
+  off();
 }
 
 /** Records each footer message from now on, after the sentence that answered the move. */
