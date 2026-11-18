@@ -10,6 +10,7 @@ import { buildActivityBatchViewModel } from '../../../src/features/workflow/conv
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { flushEffects } from '#testing/helpers/ink.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome as createTrustHome } from '#testing/helpers/trust-home.js';
 import { openHaltedRun, settleOpenedRuns } from '../helpers/halted-run-screen.js';
@@ -44,9 +45,24 @@ const CRASHING_REVIEW_CONSULT = `(prompt) => {
 }`;
 
 /** Opens the halted run, scrolls up until the frame shows `row`, and returns that frame. */
-async function haltedRunFrame(target: StopContinueFixture, row: string): Promise<string> {
-  const opened = await openHaltedRun(target, { heading: 'Final review reached no verdict' });
+async function haltedRunFrame(
+  target: StopContinueFixture,
+  row: string,
+  cliOutput: Awaited<ReturnType<typeof cli>>,
+): Promise<string> {
+  const opened = await openHaltedRun(target, {
+    heading: 'Final review reached no verdict',
+    cliOutput,
+  });
   try {
+    expect(opened.state).toMatchObject({
+      phase: 'final-review',
+      pendingRecovery: {
+        seat: 'review',
+        reason: 'review-failed',
+        facts: { reviewScope: 'final' },
+      },
+    });
     for (let press = 0; press < 80; press += 1) {
       if (stripAnsiStyles(opened.screen.lastFrame()).includes(row)) break;
       opened.screen.stdin.write('\x1b[1;2A');
@@ -148,7 +164,7 @@ console.log(JSON.stringify({ type: 'assistant.message', data: { text: 'Searched 
   try {
     const run = await cli(target, ['start', 'smoke', '--allow-unverified-auth']);
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
-    const frame = await haltedRunFrame(target, 'Search  renewalWindow · src/loans · *.ts');
+    const frame = await haltedRunFrame(target, 'Search  renewalWindow · src/loans · *.ts', run);
     expect(frame).toContain('Search  renewalWindow · src/loans · *.ts');
     expect(frame).toContain('Search  renewalWindow · src/loans/rules');
     expect(frame.match(/Search {2}renewalWindow *$/gm)).toHaveLength(1);
@@ -224,7 +240,7 @@ console.log(JSON.stringify({ type: 'step_finish', part: { type: 'step-finish', t
   try {
     const run = await cli(target, ['start', 'smoke', '--allow-unverified-auth']);
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
-    const frame = await haltedRunFrame(target, 'Search  renewalWindow · src/loans · *.ts');
+    const frame = await haltedRunFrame(target, 'Search  renewalWindow · src/loans · *.ts', run);
     expect(frame).toContain('Search  renewalWindow · src/loans · *.ts');
     expect(frame).toContain('Search  renewalWindow · src/loans · *.md');
   } finally {
@@ -276,13 +292,15 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', sessionId: 'com
     implementer: { kind: 'cli', tool: 'command-code', contextLength: 200_000 },
   });
   try {
+    await stubSignInHome(join(target.tmpDir, 'home'), ['command-code']);
     const run = await cli(target, ['start', 'smoke', '--allow-unverified-auth']);
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
-    const frame = await haltedRunFrame(target, 'Read    ');
+    const frame = await haltedRunFrame(target, 'Read    ', run);
     expect(frame).toContain(`Read    ${GREET_FILE}${SOFT_SEP}${MARKER_FILE}`);
     expect(frame).not.toContain('Read    file');
   } finally {
     restorePath();
+    vi.unstubAllEnvs();
     cleanupTempDir(target.tmpDir);
   }
 });

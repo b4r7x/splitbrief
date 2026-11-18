@@ -44,15 +44,6 @@ async function nodeExecutable(): Promise<CliExecutableIdentity> {
   };
 }
 
-/** A HOME that holds a Codex sign-in file, so the session status command runs on every platform. */
-async function stubCodexSessionHome(directory: string): Promise<void> {
-  const home = join(directory, 'home');
-  await mkdir(join(home, '.codex'), { recursive: true });
-  await writeFile(join(home, '.codex', 'auth.json'), '{"session":"fixture"}');
-  vi.stubEnv('HOME', home);
-  vi.stubEnv('CODEX_HOME', '');
-}
-
 function declaredProbe(
   options: {
     versionScript?: string;
@@ -321,7 +312,7 @@ describe('CLI readiness probe', () => {
     await withTempDir('readiness-probe-catalog-channel', async (directory) => {
       const executable = await nodeExecutable();
       const authMarker = join(directory, 'auth-ran');
-      await stubCodexSessionHome(directory);
+      await stubSignInHome(join(directory, 'home'), ['codex']);
 
       const result = await probeCliReadiness({
         tool: 'codex',
@@ -381,7 +372,7 @@ describe('CLI readiness probe', () => {
             'process.stdout.write("model-must-not-run");',
           ].join(' '),
         });
-        await stubCodexSessionHome(directory);
+        await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const direct = {
           tool: 'codex' as const,
@@ -436,7 +427,7 @@ describe('CLI readiness probe', () => {
             mtimeMs: info.mtimeMs,
           },
         };
-        await stubCodexSessionHome(directory);
+        await stubSignInHome(join(directory, 'home'), ['codex']);
 
         const exact = await probeCliReadiness({
           tool: 'codex',
@@ -463,20 +454,31 @@ describe('CLI readiness probe', () => {
   );
 
   it('reaps a hanging probe before returning an unverified result', async () => {
-    vi.useRealTimers();
-    probeLimit.ms = 250;
-    const executable = await nodeExecutable();
-    const startedAt = Date.now();
-    const result = await probeCliReadiness({
-      tool: 'codex',
-      executable,
-      probe: declaredProbe({
-        versionScript: "process.on('SIGTERM', () => {}); setInterval(() => {}, 1_000)",
-      }),
-    });
+    await withTempDir('readiness-probe-hanging', async (directory) => {
+      const executable = await nodeExecutable();
+      await stubSignInHome(join(directory, 'home'), ['codex']);
+      const ready = join(directory, 'ready.pid');
+      const pending = probeCliReadiness({
+        tool: 'codex',
+        executable,
+        probe: declaredProbe({
+          versionScript: [
+            'const fs = require("node:fs");',
+            'process.on("SIGTERM", () => {});',
+            'setInterval(() => {}, 1_000);',
+            `fs.writeFileSync(${JSON.stringify(ready + '.tmp')}, String(process.pid));`,
+            `fs.renameSync(${JSON.stringify(ready + '.tmp')}, ${JSON.stringify(ready)});`,
+          ].join(' '),
+        }),
+      });
 
-    expect(result.status).toBe('unverified');
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1_900);
+      await expireDeadlineAfterFile(ready);
+      await vi.advanceTimersToNextTimerAsync(); // The leader ignores SIGTERM, so expire its grace period.
+
+      expect((await pending).status).toBe('unverified');
+      const pid = Number(readFileSync(ready, 'utf8'));
+      expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+    });
   });
 
   it.runIf(process.platform !== 'win32')(
@@ -521,15 +523,26 @@ describe('CLI readiness probe', () => {
   it.runIf(process.platform !== 'win32')(
     'settles when a descendant escapes the probe group holding the inherited pipes',
     async () => {
-      vi.useRealTimers();
-      probeLimit.ms = 250;
       await withTempDir('readiness-escaped-descendant', async (directory) => {
+        await stubSignInHome(join(directory, 'home'), ['codex']);
+        const ready = join(directory, 'descendant.ready');
         const release = join(directory, 'release');
         const exited = join(directory, 'exited');
         const executable = await nodeExecutable();
-        // The descendant leaves when the test releases it (or after 4 s) and marks its exit.
-        const descendant = `const fs = require("node:fs"); const leave = () => { fs.writeFileSync(${JSON.stringify(exited)}, ""); process.exit(0); }; setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) leave(); }, 25); setTimeout(leave, 4_000);`;
-        const result = await probeCliReadiness({
+        const descendant = [
+          'const fs = require("node:fs");',
+          `const release = ${JSON.stringify(release)};`,
+          `const exited = ${JSON.stringify(exited)};`,
+          'const watcher = setInterval(() => {',
+          `  try { process.kill(${process.pid}, 0); } catch { process.exit(1); }`,
+          '  if (!fs.existsSync(release)) return;',
+          '  clearInterval(watcher);',
+          '  process.on("exit", () => fs.writeFileSync(exited, ""));',
+          '}, 25);',
+          `fs.writeFileSync(${JSON.stringify(ready + '.tmp')}, process.ppid + "\\n" + process.pid);`,
+          `fs.renameSync(${JSON.stringify(ready + '.tmp')}, ${JSON.stringify(ready)});`,
+        ].join('\n');
+        const pending = probeCliReadiness({
           tool: 'codex',
           executable,
           // The descendant starts its own session, so the group kill cannot reach
@@ -544,10 +557,23 @@ describe('CLI readiness probe', () => {
           }),
         });
 
-        expect(result.status).toBe('unverified');
-        expect(existsSync(exited)).toBe(false);
-        await writeFile(release, '');
-        await vi.waitFor(() => expect(existsSync(exited)).toBe(true));
+        try {
+          await expireDeadlineAfterFile(ready);
+          const [leaderPid, descendantPid] = readFileSync(ready, 'utf8').split('\n').map(Number);
+          if (leaderPid === undefined || descendantPid === undefined) {
+            throw new Error('The escaped descendant recorded no process IDs');
+          }
+
+          expect((await pending).status).toBe('unverified');
+          expect(() => process.kill(leaderPid, 0)).toThrow(
+            expect.objectContaining({ code: 'ESRCH' }),
+          );
+          expect(process.kill(descendantPid, 0)).toBe(true);
+        } finally {
+          vi.useRealTimers();
+          await writeFile(release, '');
+          await vi.waitFor(() => expect(existsSync(exited)).toBe(true));
+        }
       });
     },
   );
@@ -608,7 +634,7 @@ describe('CLI readiness probe', () => {
       await withTempDir('readiness-probe-descendant', async (directory) => {
         const executable = await nodeExecutable();
         const pidFile = join(directory, 'descendant.pid');
-        await stubCodexSessionHome(directory);
+        await stubSignInHome(join(directory, 'home'), ['codex']);
         // Long enough for the grandchild to record its pid before the reap, on a machine
         // running the whole suite at once; the elapsed assertion below still holds.
         probeLimit.ms = 8_000;
@@ -683,7 +709,7 @@ describe('CLI readiness probe', () => {
   it('does not promote a failed declared auth command when its parser claims verification', async () => {
     await withTempDir('readiness-probe-failed-auth', async (directory) => {
       const executable = await nodeExecutable();
-      await stubCodexSessionHome(directory);
+      await stubSignInHome(join(directory, 'home'), ['codex']);
 
       const result = await probeCliReadiness({
         tool: 'codex',
@@ -701,7 +727,7 @@ describe('CLI readiness probe', () => {
   it('a help-only binary is readiness-unverified', async () => {
     await withTempDir('readiness-probe-help-only', async (directory) => {
       const executable = await nodeExecutable();
-      await stubCodexSessionHome(directory);
+      await stubSignInHome(join(directory, 'home'), ['codex']);
       const result = await probeCliReadiness({
         tool: 'codex',
         executable,
@@ -906,7 +932,7 @@ describe('CLI readiness probe', () => {
 
   it('keeps a sign-in check that timed out as a timeout', async () => {
     await withTempDir('readiness-probe-auth-timeout', async (directory) => {
-      await stubCodexSessionHome(directory);
+      await stubSignInHome(join(directory, 'home'), ['codex']);
       const authStarted = join(directory, 'auth-started');
       const executable = await nodeExecutable();
 

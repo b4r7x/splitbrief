@@ -59,6 +59,7 @@ export async function openHaltedRun(
   target: Pick<StopContinueFixture, 'projectDir' | 'stateHome'>,
   options: Readonly<{
     heading: string;
+    cliOutput?: Readonly<{ stdout: string; stderr: string }>;
     draft?: string | undefined;
     runWorkflow?: RunWorkflowFn | undefined;
     prepare?:
@@ -69,7 +70,14 @@ export async function openHaltedRun(
   vi.stubEnv('XDG_STATE_HOME', target.stateHome);
   const projectDir = await canonicalizeProjectDir({ project: target.projectDir });
   const sessionId = readActive(projectDir);
-  if (sessionId === null) throw new Error('The halted run saved no session');
+  if (sessionId === null) {
+    const output = options.cliOutput;
+    throw new Error(
+      output === undefined
+        ? 'The halted run saved no session'
+        : `The halted run saved no session\nstdout:\n${output.stdout}\nstderr:\n${output.stderr}`,
+    );
+  }
   const ref = { projectDir, sessionId };
   const state = loadState(ref);
   if (state === null) throw new Error('The halted run saved no state');

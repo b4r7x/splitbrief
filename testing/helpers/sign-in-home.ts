@@ -1,16 +1,17 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { vi } from 'vitest';
 import type { CliToolId } from '../../src/core/runners/cli-tool/types.js';
 
-/** The file under HOME that holds the sign-in of each tool that keeps one in a file. */
+/** Sign-in paths relative to HOME, or to XDG_CONFIG_HOME for Cursor. */
 const SIGN_IN_FILES = {
   'claude-code': '.claude/.credentials.json',
   codex: '.codex/auth.json',
   opencode: '.local/share/opencode/auth.json',
   copilot: '.copilot/config.json',
   'kilo-code': '.local/share/kilo/auth.json',
-  cursor: '.config/cursor/auth.json',
+  cursor: 'cursor/auth.json',
   'command-code': '.commandcode/auth.json',
 } as const satisfies Partial<Record<CliToolId, string>>;
 
@@ -26,6 +27,20 @@ const MACHINE_SIGN_IN_ENV = [
   'GH_TOKEN',
   'GITHUB_TOKEN',
 ] as const;
+
+export function seedSignInFile(
+  home: string,
+  tool: keyof typeof SIGN_IN_FILES,
+  {
+    contents = '{"session":"fixture"}\n',
+    xdgConfigHome = join(home, '.config'),
+  }: { contents?: string; xdgConfigHome?: string | undefined } = {},
+): string {
+  const path = join(tool === 'cursor' ? xdgConfigHome : home, SIGN_IN_FILES[tool]);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(path, contents, { mode: 0o600 });
+  return path;
+}
 
 /**
  * Points HOME and the XDG folders at `home` and clears the other sign-in variables, so a probe
@@ -44,9 +59,5 @@ export async function stubSignInHome(
   for (const name of Object.keys(process.env)) {
     if (name.endsWith('_API_KEY')) vi.stubEnv(name, undefined);
   }
-  for (const tool of signedIn) {
-    const path = join(home, SIGN_IN_FILES[tool]);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, '{"session":"fixture"}\n');
-  }
+  for (const tool of signedIn) seedSignInFile(home, tool);
 }

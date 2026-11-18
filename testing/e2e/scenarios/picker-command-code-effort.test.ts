@@ -12,6 +12,7 @@ import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-g
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { seedSignInFile } from '#testing/helpers/sign-in-home.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
 import { wholeFrames } from '../helpers/whole-frames.js';
@@ -56,7 +57,7 @@ type Screen = Readonly<{
 type SeatFixture = Readonly<{
   tool: CliToolId;
   model: string;
-  prepareHome: (home: string) => void;
+  prepareHome: (home: string, xdgConfigHome: string | undefined) => void;
   fakeBody: string;
 }>;
 
@@ -77,7 +78,6 @@ async function inBuildSeatPicker(
     mkdirSync(join(projectDir, '.git', 'objects'), { recursive: true });
     mkdirSync(join(projectDir, '.git', 'refs', 'heads'), { recursive: true });
     writeFileSync(join(projectDir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
-    input.prepareHome(home);
     const runnerPath = join(dir, 'runner.mjs');
     writeFileSync(
       runnerPath,
@@ -108,6 +108,7 @@ async function inBuildSeatPicker(
     } finally {
       restorePath();
     }
+    input.prepareHome(home, environment.XDG_CONFIG_HOME);
     const result = await runWithPtyChild(
       {
         requirement: process.env.SPLITBRIEF_REQUIRE_PTY === '1' ? 'required' : 'optional',
@@ -184,8 +185,7 @@ const CODEX_SEAT: SeatFixture = {
   tool: 'codex',
   model: 'gpt-6-sol',
   prepareHome: (home) => {
-    mkdirSync(join(home, '.codex'));
-    writeFileSync(join(home, '.codex', 'auth.json'), '{"tokens":{"refresh_token":"e2e"}}\n');
+    seedSignInFile(home, 'codex', { contents: '{"tokens":{"refresh_token":"e2e"}}\n' });
   },
   fakeBody: `const args = process.argv.slice(2).join(' ');
 if (args === '--version') {
@@ -222,8 +222,7 @@ describe('e2e: the seat picker offers the effort levels each model publishes', {
       tool: 'command-code',
       model: 'deepseek/deepseek-v4.1-flash-fast',
       prepareHome: (home) => {
-        mkdirSync(join(home, '.commandcode'));
-        writeFileSync(join(home, '.commandcode', 'auth.json'), '{"apiKey":"e2e-session"}\n');
+        seedSignInFile(home, 'command-code', { contents: '{"apiKey":"e2e-session"}\n' });
       },
       // cmd 1.88.5 writes its catalog cache under HOME while `--list-models` runs.
       fakeBody: `const fs = require('node:fs');
@@ -323,7 +322,9 @@ describe('e2e: a saved custom model with nothing to open confirms from the crew 
       prefix: 'picker-custom-no-children',
       tool: 'cursor',
       model: 'zz-custom-model',
-      prepareHome: () => {},
+      prepareHome: (home, xdgConfigHome) => {
+        seedSignInFile(home, 'cursor', { xdgConfigHome, contents: '{"accessToken":"e2e"}' });
+      },
       fakeBody: `const args = process.argv.slice(2);
 if (args.includes('--version')) {
   console.log(${JSON.stringify(CLI_TOOL_CATALOG.cursor.compatibility.testedVersion)});

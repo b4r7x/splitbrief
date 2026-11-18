@@ -14,6 +14,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
+import { seedSignInFile } from '#testing/helpers/sign-in-home.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome as createTrustHome } from '#testing/helpers/trust-home.js';
 import { spawnCli } from '../helpers/live-cli-harness.js';
@@ -105,12 +106,6 @@ console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false
   return { target, seen, hostHome: trustHome.home };
 }
 
-function seedFile(path: string, content: string): string {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, content);
-  return path;
-}
-
 function builtCli(
   target: StopContinueFixture,
   args: readonly string[],
@@ -137,10 +132,9 @@ describe.runIf(process.platform === 'linux')(
   () => {
     it('reads ~/.config/cursor/auth.json as the sign-in and keeps a token Cursor rotates', async () => {
       const { target, seen, hostHome } = cursorProject('default');
-      const hostAuth = seedFile(
-        join(hostHome, '.config', 'cursor', 'auth.json'),
-        '{"accessToken":"host-e2e"}',
-      );
+      const hostAuth = seedSignInFile(hostHome, 'cursor', {
+        contents: '{"accessToken":"host-e2e"}',
+      });
 
       const doctor = await builtCli(target, ['doctor']);
       expect(stripVTControlCharacters(doctor.stdout), doctor.stderr).toContain(SIGNED_IN);
@@ -158,7 +152,10 @@ describe.runIf(process.platform === 'linux')(
 
     it('reads $XDG_CONFIG_HOME/cursor/auth.json as the sign-in', async () => {
       const { target, hostHome } = cursorProject('set');
-      seedFile(join(hostHome, 'xdg', 'cursor', 'auth.json'), '{"accessToken":"host-e2e"}');
+      seedSignInFile(hostHome, 'cursor', {
+        xdgConfigHome: join(hostHome, 'xdg'),
+        contents: '{"accessToken":"host-e2e"}',
+      });
 
       const doctor = await builtCli(target, ['doctor']);
       expect(stripVTControlCharacters(doctor.stdout), doctor.stderr).toContain(SIGNED_IN);
@@ -166,7 +163,9 @@ describe.runIf(process.platform === 'linux')(
 
     it('does not read the Cursor UI state file as a sign-in', async () => {
       const { target, seen, hostHome } = cursorProject('default');
-      seedFile(join(hostHome, '.cursor', 'agent-cli-state.json'), '{"version":1}');
+      const uiState = join(hostHome, '.cursor', 'agent-cli-state.json');
+      mkdirSync(dirname(uiState), { recursive: true });
+      writeFileSync(uiState, '{"version":1}');
 
       const doctor = await builtCli(target, ['doctor']);
       const out = stripVTControlCharacters(doctor.stdout);
