@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
@@ -7,7 +7,6 @@ import { loadState } from '../../../src/core/state/persistence.js';
 import { GREET_SOURCE } from '../helpers/stop-continue-fixture.js';
 import { steeringPaths } from '../helpers/steer-e2e-shims.js';
 import {
-  buildSteeringCli,
   readSteeringCaptures,
   readSteeringLog,
   runSteeringCli,
@@ -15,8 +14,6 @@ import {
 } from '../helpers/steer-e2e-workflow.js';
 
 const MESSAGE = 'BUILD_MESSAGE_FOR_FALLBACK_ONLY';
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('steers the fallback BUILD tool after an account refusal without delivering to the old tool', async () => {
   await runSteeringCli(

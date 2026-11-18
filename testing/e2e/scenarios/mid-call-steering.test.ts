@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { expect, beforeAll, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { readSessionSummary } from '../../../src/core/sessions/run/record-io.js';
@@ -8,14 +8,11 @@ import { loadState } from '../../../src/core/state/persistence.js';
 import { GREET_SOURCE } from '../helpers/stop-continue-fixture.js';
 import { steeringPaths } from '../helpers/steer-e2e-shims.js';
 import {
-  buildSteeringCli,
   readSteeringCaptures,
   readSteeringLog,
   runSteeringCli,
   STEERING_WAIT,
 } from '../helpers/steer-e2e-workflow.js';
-
-beforeAll(buildSteeringCli, 120_000);
 
 it.each(['claude-code', 'opencode'] as const)(
   'delivers a BUILD message through %s native steering before the call finishes',

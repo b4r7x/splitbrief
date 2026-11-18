@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { loadState } from '../../../src/core/state/persistence.js';
@@ -8,15 +8,9 @@ import {
   readReviewVerdictCalls,
   runReviewVerdictCli,
 } from '../helpers/review-verdict-steer-workflow.js';
-import {
-  buildSteeringCli,
-  readSteeringLog,
-  STEERING_WAIT as WAIT,
-} from '../helpers/steer-e2e-workflow.js';
+import { readSteeringLog, STEERING_WAIT as WAIT } from '../helpers/steer-e2e-workflow.js';
 
 const CORRECTION = 'REVIEW_MESSAGE_FOR_VERDICT_REPAIR';
-
-beforeAll(buildSteeringCli, 120_000);
 
 it.each([false, true])(
   'delivers a queued REVIEW message to its one verdict repair with valid repair=%s',

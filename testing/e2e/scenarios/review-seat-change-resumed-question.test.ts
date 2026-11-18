@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
-import { beforeAll, expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
@@ -21,7 +21,6 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
-import { buildSteeringCli } from '../helpers/steer-e2e-workflow.js';
 import {
   createStopContinueFixture,
   GREET_FILE,
@@ -117,8 +116,6 @@ type Terminal = Readonly<{
   shows: (expected: string | RegExp) => Promise<void>;
   outcome: () => PtyExitEvent | undefined;
 }>;
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('runs the review after the answer on the REVIEW seat saved while a continued run asks its question again', {
   timeout: 240_000,

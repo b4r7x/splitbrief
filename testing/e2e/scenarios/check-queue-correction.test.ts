@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -8,7 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
@@ -47,14 +46,6 @@ const ShimCallSchema = z.object({
   marker: z.string(),
 });
 const CheckCallSchema = z.object({ buildCalls: z.number() });
-
-beforeAll(() => {
-  execFileSync(process.execPath, ['node_modules/typescript/bin/tsc'], {
-    cwd: REPO_ROOT,
-    timeout: 120_000,
-    stdio: 'pipe',
-  });
-}, 120_000);
 
 function readLog(projectDir: string, sessionId: string) {
   const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);

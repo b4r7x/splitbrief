@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
@@ -25,7 +25,7 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
-import { buildSteeringCli, readSteeringLog as readLog } from '../helpers/steer-e2e-workflow.js';
+import { readSteeringLog as readLog } from '../helpers/steer-e2e-workflow.js';
 import {
   createStopContinueFixture,
   GREET_FILE,
@@ -43,8 +43,6 @@ const PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
 const LINE = '/steer fix the layout';
 const REFUSAL = 'A command sends no image. Remove the command, then press ctrl+⏎.';
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('refuses a command line that holds an image and keeps the line and the image', {
   timeout: 200_000,

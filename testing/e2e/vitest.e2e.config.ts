@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -13,6 +14,7 @@ export default defineConfig({
         ? ['testing/helpers/hermetic-env.test.ts']
         : []),
     ],
+    globalSetup: [fileURLToPath(new URL('./build-cli.ts', import.meta.url))],
     setupFiles: ['./testing/helpers/state-home.ts'],
     environment: 'node',
     globals: false,

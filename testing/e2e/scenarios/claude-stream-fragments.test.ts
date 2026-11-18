@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { PLAN_JSON_FILE, sessionDir, sessionsRoot } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
@@ -13,7 +13,6 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { installClaudeStreamFragmentsShim } from '../helpers/claude-stream-fragments-shim.js';
 import { spawnCli } from '../helpers/live-cli-harness.js';
-import { buildSteeringCli } from '../helpers/steer-e2e-workflow.js';
 import {
   createStopContinueFixture,
   GREET_FILE,
@@ -21,8 +20,6 @@ import {
   MARKER_FILE,
   MARKER_SOURCE,
 } from '../helpers/stop-continue-fixture.js';
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('emits every Claude planner tool fragment and one subagent answer through the built CLI', async () => {
   const target = createStopContinueFixture(

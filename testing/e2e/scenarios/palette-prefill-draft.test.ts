@@ -14,6 +14,7 @@ import { cleanupTempDir, withTempDir } from '#testing/helpers/temp-dir.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { waitForLastStdinReads } from '../helpers/key-log.js';
 import {
   cli,
   createStopContinueFixture,
@@ -94,7 +95,11 @@ describe('e2e: a command taken from the palette over a typed home draft', {
               name: 'xterm-256color',
               ...viewport,
               cwd: fileURLToPath(new URL('../../../', import.meta.url)),
-              env: { ...environment, XDG_STATE_HOME: join(dir, 'state') },
+              env: {
+                ...environment,
+                XDG_STATE_HOME: join(dir, 'state'),
+                SPLITBRIEF_DEBUG_KEYS: '1',
+              },
             },
           },
           async (child) => {
@@ -150,9 +155,10 @@ describe('e2e: a command taken from the palette over a typed home draft', {
                 expect(text()).not.toContain('plan now');
               }
               if (action === 'cleared' || action === 'picked again over typed text') {
-                for (let i = 0; i < '/crew '.length; i++) {
-                  child.write('\x7f');
-                  await delay(50);
+                const backspaces = Array<string>('/crew '.length).fill('\x7f');
+                for (const [index, key] of backspaces.entries()) {
+                  child.write(key);
+                  await waitForLastStdinReads(projectDir, backspaces.slice(0, index + 1));
                 }
               } else if (action === 'cleared by a held Backspace') {
                 // Key repeat: more presses than the command has characters, at the repeat rate.
@@ -160,7 +166,6 @@ describe('e2e: a command taken from the palette over a typed home draft', {
                   child.write('\x7f');
                   await delay(33);
                 }
-                await delay(300);
               } else {
                 child.write('\r');
                 await shows('PLAN · tool, model, effort');

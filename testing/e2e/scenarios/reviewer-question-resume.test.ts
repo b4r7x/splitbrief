@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
@@ -18,7 +18,7 @@ import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import type { PtyExitEvent, PtyProcess } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
-import { buildSteeringCli, STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
+import { STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
 import {
   applyRun,
   createStopContinueFixture,
@@ -189,8 +189,6 @@ async function withCli(
 
 /** The question prompt counts its questions; no transcript row replayed on resume reads so. */
 const QUESTION_PROMPT = 'Question 1 of 1';
-
-beforeAll(buildSteeringCli, 120_000);
 
 afterEach(() => {
   vi.unstubAllEnvs();

@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import { join, resolve } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
@@ -27,7 +27,7 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
-import { buildSteeringCli, readSteeringLog as readLog } from '../helpers/steer-e2e-workflow.js';
+import { readSteeringLog as readLog } from '../helpers/steer-e2e-workflow.js';
 import {
   createStopContinueFixture,
   GREET_FILE,
@@ -51,8 +51,6 @@ const RequestSchema = z.object({
     z.object({ role: z.string(), content: z.union([z.string(), z.array(PartSchema)]) }),
   ),
 });
-
-beforeAll(buildSteeringCli, 120_000);
 
 it.each([true, false])(
   'delivers a queued PNG through the built API BUILD seat with vision=%s',

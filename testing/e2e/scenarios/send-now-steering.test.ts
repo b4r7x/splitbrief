@@ -1,21 +1,18 @@
 import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { steeringPaths } from '../helpers/steer-e2e-shims.js';
 import {
-  buildSteeringCli,
   readSteeringCaptures,
   readSteeringLog,
   runSteeringCli,
   STEERING_WAIT,
 } from '../helpers/steer-e2e-workflow.js';
 import { GREET_SOURCE } from '../helpers/stop-continue-fixture.js';
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('stops BUILD on Ctrl+Enter and continues the same brief with the full message and attachment', async () => {
   const message =

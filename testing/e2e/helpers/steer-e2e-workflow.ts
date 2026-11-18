@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
@@ -47,14 +46,6 @@ const CaptureSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('refusal'), tool: z.string(), pid: z.number(), text: z.string() }),
   z.object({ kind: z.literal('finished'), tool: z.string(), pid: z.number() }),
 ]);
-
-export function buildSteeringCli() {
-  execFileSync(process.execPath, ['node_modules/typescript/bin/tsc'], {
-    cwd: REPO_ROOT,
-    timeout: 120_000,
-    stdio: 'pipe',
-  });
-}
 
 function readLines(file: string): unknown[] {
   if (!existsSync(file)) return [];

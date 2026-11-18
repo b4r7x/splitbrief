@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
@@ -12,7 +12,6 @@ import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { spawnCli } from '../helpers/live-cli-harness.js';
-import { buildSteeringCli } from '../helpers/steer-e2e-workflow.js';
 import {
   createStopContinueFixture,
   GREET_FILE,
@@ -125,8 +124,6 @@ if (args.includes('--input-format')) {
 `,
   );
 }
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('gives each parallel sub-agent of a Claude Code BUILD seat its own row', async () => {
   const target = createStopContinueFixture(() => '', { isolation: 'none' });

@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
@@ -22,7 +22,7 @@ import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { buildSteeringCli, readSteeringLog as readLog } from '../helpers/steer-e2e-workflow.js';
+import { readSteeringLog as readLog } from '../helpers/steer-e2e-workflow.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
@@ -37,8 +37,6 @@ import {
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const CORRECTION = 'QUEUE_CORRECTION_FOR_T001';
 const WAIT = { timeout: 45_000, interval: 20 };
-
-beforeAll(buildSteeringCli, 120_000);
 
 const CaptureSchema = z.object({
   call: z.number(),

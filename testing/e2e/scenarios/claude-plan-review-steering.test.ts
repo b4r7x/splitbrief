@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
@@ -20,7 +20,7 @@ import {
   installClaudePlannerSteerShim,
   readClaudePlannerSteers,
 } from '../helpers/claude-planner-steer-shim.js';
-import { buildSteeringCli, readSteeringLog, STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
+import { readSteeringLog, STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
 import {
   createStopContinueFixture,
   GREET_FILE,
@@ -30,8 +30,6 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('delivers PLAN and REVIEW messages to the running Claude calls before their verdicts finish', async () => {
   const target = createStopContinueFixture(

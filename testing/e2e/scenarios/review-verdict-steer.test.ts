@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { loadState } from '../../../src/core/state/persistence.js';
@@ -10,14 +10,8 @@ import {
   readReviewVerdictCalls,
   runReviewVerdictCli,
 } from '../helpers/review-verdict-steer-workflow.js';
-import {
-  buildSteeringCli,
-  readSteeringLog,
-  STEERING_WAIT as WAIT,
-} from '../helpers/steer-e2e-workflow.js';
+import { readSteeringLog, STEERING_WAIT as WAIT } from '../helpers/steer-e2e-workflow.js';
 import { GREET_FILE } from '../helpers/stop-continue-fixture.js';
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('replaces a held valid failing REVIEW verdict after a queued correction and attachment, then completes with the second verdict', async () => {
   const message =

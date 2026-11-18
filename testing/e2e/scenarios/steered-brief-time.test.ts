@@ -1,13 +1,12 @@
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { steeringPaths } from '../helpers/steer-e2e-shims.js';
 import {
-  buildSteeringCli,
   readSteeringCaptures,
   readSteeringLog,
   runSteeringCli,
@@ -17,8 +16,6 @@ import { cli } from '../helpers/stop-continue-fixture.js';
 
 /** How long the steered call works before the stop: long enough to tell its stretch apart. */
 const STEERED_WORK_MS = 1_500;
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('counts the stretch a steer continued in process when the brief later stops and continues', async () => {
   await runSteeringCli(

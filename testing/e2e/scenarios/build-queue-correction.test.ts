@@ -1,7 +1,6 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
 import { SESSION_LOG_FILE, sessionDir, sessionsRoot } from '../../../src/core/paths.js';
@@ -30,14 +29,6 @@ import {
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const CORRECTION = 'QUEUE_CORRECTION_FOR_T001';
 const WAIT = { timeout: 45_000, interval: 20 };
-
-beforeAll(() => {
-  execFileSync(process.execPath, ['node_modules/typescript/bin/tsc'], {
-    cwd: REPO_ROOT,
-    timeout: 120_000,
-    stdio: 'pipe',
-  });
-}, 120_000);
 
 function readLog(projectDir: string, sessionId: string) {
   const file = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);

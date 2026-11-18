@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
@@ -13,7 +13,7 @@ import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
-import { buildSteeringCli, STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
+import { STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
 import {
   createStopContinueFixture,
   GREET_FILE,
@@ -52,8 +52,6 @@ function askingReview(): string {
     : undefined;
 }`;
 }
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('keeps the question next to the empty answer of a one-row planner question panel', {
   timeout: 240_000,

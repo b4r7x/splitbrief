@@ -83,7 +83,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -92,7 +92,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap socat
-      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/3
+      - run: npm run test:e2e -- --shard=${{ matrix.shard }}/8
         env:
           SPLITBRIEF_REQUIRE_PTY: '1'
 

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../src/core/queue/state.js';
@@ -18,15 +18,13 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
-import { buildSteeringCli, readSteeringLog, STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
+import { readSteeringLog, STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const MESSAGE = 'Keep the pending BUILD correction';
 const COLS = 120;
 const ROWS = 40;
-
-beforeAll(buildSteeringCli, 120_000);
 
 it('ends a BUILD run without a queue byline and keeps its pending-message history', async () => {
   const target = createStopContinueFixture(() => '', { isolation: 'none' });

@@ -33,6 +33,7 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 const APPLY_RAIL = '● Plan → ● Build → ● Review → ● Apply';
+const APPLY_SIGTERM_MARKER = 'apply-sigterm';
 
 let fixture: StopContinueFixture | undefined;
 
@@ -55,6 +56,7 @@ import { basename, dirname } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 globalThis.fetch = async () => { throw new Error('Network disabled in Apply E2E'); };
+process.once('SIGTERM', () => writeFileSync(${JSON.stringify(join(target.tmpDir, APPLY_SIGTERM_MARKER))}, ''));
 for (const call of ['link', 'rename']) {
   const original = fs[call];
   fs[call] = async (...args) => {
@@ -156,8 +158,8 @@ async function openRunFromSessions<T>(
  */
 async function applyWhileHeld(
   keys: readonly string[],
+  shown: readonly string[],
   settle: (screen: () => string, exited: Promise<PtyExitEvent>) => Promise<void>,
-  shown: readonly string[] = [],
 ) {
   const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
   fixture = target;
@@ -188,7 +190,6 @@ async function applyWhileHeld(
           await delay(PROMPT_TYPEAHEAD_GRACE_MS);
         }
         for (const text of shown) await waitForText(text);
-        await delay(1_000);
         const held = screen();
         const heldStatus = readState(target, ready.ref.sessionId);
         rmSync(holdPath);
@@ -221,6 +222,7 @@ function expectApplied(target: StopContinueFixture, sessionId: string) {
 it('keeps the run screen while Apply writes and quits on Ctrl+C only after Apply finishes', async () => {
   const { applying, held, heldStatus, target, ready, exitedEarly } = await applyWhileHeld(
     ['\x03', '\x03'],
+    ['Quits when Apply finishes'],
     async (_screen, exited) => {
       const exit = await Promise.race([exited, delay(30_000, null)]);
       expect(exit).toMatchObject({ exitCode: 0 });
@@ -237,6 +239,7 @@ it('keeps the run screen while Apply writes and quits on Ctrl+C only after Apply
 it('keeps the run screen on Esc while Apply writes, then goes home and lists the run as applied', async () => {
   const { applying, held, target, ready, exitedEarly } = await applyWhileHeld(
     ['\x1b', '\x1b'],
+    ['Returns home when Apply finishes'],
     async (screen) => {
       await vi.waitFor(
         () => {
@@ -257,6 +260,7 @@ it('keeps the run screen on Esc while Apply writes, then goes home and lists the
 it('keeps the run screen on a typed /home while Apply writes, then goes home once Apply applies the run', async () => {
   const { applying, held, target, ready, exitedEarly } = await applyWhileHeld(
     ['/home', '\r'],
+    ['Returns home when Apply finishes'],
     async (screen) => {
       await vi.waitFor(
         () => {
@@ -275,7 +279,12 @@ it('keeps the run screen on a typed /home while Apply writes, then goes home onc
 });
 
 it('gives a refused /steer back to the composer while Apply writes', async () => {
-  const { held } = await applyWhileHeld(['/steer also fix the typo', '\r'], async () => {});
+  const line = '/steer also fix the typo';
+  const { held } = await applyWhileHeld(
+    [line, '\r'],
+    ['Apply is still writing to your checkout.', `› ${line}`],
+    async () => {},
+  );
   expectApplyingScreen(held);
   expect(held).toContain('Apply is still writing to your checkout.');
   expect(held).toContain('› /steer also fix the typo');
@@ -284,7 +293,7 @@ it('gives a refused /steer back to the composer while Apply writes', async () =>
 it('gives a /skills line that names no known skill back to the composer while Apply writes', async () => {
   const line = '/skills zzz-typo';
   const reason = 'Unknown skill: zzz-typo';
-  const { held } = await applyWhileHeld([line, '\r'], async () => {}, [reason, `› ${line}`]);
+  const { held } = await applyWhileHeld([line, '\r'], [reason, `› ${line}`], async () => {});
   expectApplyingScreen(held);
   expect(held).toContain(reason);
   expect(held).toContain(`› ${line}`);
@@ -466,13 +475,17 @@ it('finishes a headless Apply a SIGTERM reaches, exits 143 and leaves the run no
       pid = spawned;
     },
   });
-  await vi.waitFor(() => expect(existsSync(blockedPath)).toBe(true), { timeout: 60_000 });
-  if (pid === undefined) throw new Error('the CLI reported no pid to signal');
-  process.kill(pid, 'SIGTERM');
-  await delay(500);
-  rmSync(holdPath);
-
-  const outcome = await run;
+  let outcome: Awaited<typeof run>;
+  try {
+    await vi.waitFor(() => expect(existsSync(blockedPath)).toBe(true), { timeout: 60_000 });
+    if (pid === undefined) throw new Error('the CLI reported no pid to signal');
+    process.kill(pid, 'SIGTERM');
+    const sigtermPath = join(target.tmpDir, APPLY_SIGTERM_MARKER);
+    await vi.waitFor(() => expect(existsSync(sigtermPath), 'CLI received SIGTERM').toBe(true));
+  } finally {
+    rmSync(holdPath);
+    outcome = await run;
+  }
 
   expect(outcome.exitCode, outcome.stderr).toBe(143);
   expect(outcome.stderr.split('\n')).toContain('Applied 2 files to your checkout.');

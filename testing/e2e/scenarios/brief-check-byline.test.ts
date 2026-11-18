@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
-import { beforeAll, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
@@ -12,7 +12,7 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
-import { buildSteeringCli, readSteeringLog, STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
+import { readSteeringLog, STEERING_WAIT } from '../helpers/steer-e2e-workflow.js';
 import {
   createStopContinueFixture,
   GREET_FILE,
@@ -24,8 +24,6 @@ import {
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const COLS = 120;
 const ROWS = 40;
-
-beforeAll(buildSteeringCli, 120_000);
 
 /** The brief writes both declared files at once and finishes. */
 function implementer(): string {

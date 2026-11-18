@@ -170,12 +170,12 @@ it('says Apply is writing while a live Re-run Apply writes, and Esc goes home on
     target,
     ref,
     home.home,
-    async ({ screen, write }, release) => {
+    async ({ screen, write, waitForText }, release) => {
       const applying = screen();
       write('\x1b');
       await delay(PROMPT_TYPEAHEAD_GRACE_MS);
       write('\x1b');
-      await delay(1_000);
+      await waitForText('Returns home when Apply finishes');
       const held = screen();
       const heldState = readState(target, ref.sessionId);
       release();
