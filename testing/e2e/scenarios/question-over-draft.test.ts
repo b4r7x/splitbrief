@@ -53,9 +53,8 @@ const QUESTIONS = {
 
 type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
 
-// The first planner call holds until the test deletes the hold file, then asks one question. Each
-// call saves its prompt before it is counted, so a counted call always has its prompt on disk.
-function plannerScript(callsPath: string, dir: string, hold: string): string {
+// Each call saves its prompt before it is counted, then waits for its hold file to be removed if present.
+function plannerScript(callsPath: string, dir: string, holdPaths: readonly string[]): string {
   return `import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
@@ -63,9 +62,10 @@ const prompt = Buffer.concat(chunks).toString('utf8');
 const n = readFileSync(${JSON.stringify(callsPath)}, 'utf8').split('\\n').filter((line) => line.startsWith('plan')).length + 1;
 writeFileSync(${JSON.stringify(dir)} + '/plan-prompt-' + n + '.txt', prompt);
 appendFileSync(${JSON.stringify(callsPath)}, 'plan ' + n + '\\n');
-if (n === 1) {
+const hold = ${JSON.stringify(holdPaths)}[n - 1];
+if (hold !== undefined) {
   const deadline = Date.now() + 150000;
-  while (existsSync(${JSON.stringify(hold)}) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+  while (existsSync(hold) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
 }
 process.stdout.write(JSON.stringify({ result: n === 1 ? ${JSON.stringify(QUESTIONS)} : ${JSON.stringify(plan)} }));
 `;
@@ -83,12 +83,13 @@ function setup() {
   const target = createStopContinueFixture(() => '');
   const calls = join(target.tmpDir, 'calls.txt');
   const hold = join(target.tmpDir, 'hold');
+  const planHold = join(target.tmpDir, 'hold-plan');
   const plannerPath = join(target.tmpDir, 'planner.mjs');
   const implementerPath = join(target.tmpDir, 'implementer.mjs');
   const offlinePath = join(target.tmpDir, 'offline.mjs');
   writeFileSync(calls, '');
   writeFileSync(hold, '');
-  writeFileSync(plannerPath, plannerScript(calls, target.tmpDir, hold));
+  writeFileSync(plannerPath, plannerScript(calls, target.tmpDir, [hold, planHold]));
   writeFileSync(implementerPath, implementerScript(calls));
   writeFileSync(offlinePath, "globalThis.fetch = async () => { throw new Error('offline'); };\n");
   const config = loadConfig(target.projectDir).config;
@@ -101,7 +102,7 @@ function setup() {
     implementer: { ...config.implementer, args: [implementerPath] },
     workflow: { ...config.workflow, approve: 'plan' },
   });
-  return { target, hold, offlinePath, calls };
+  return { target, hold, planHold, offlinePath, calls };
 }
 
 type Run = ReturnType<typeof setup>;
@@ -254,6 +255,7 @@ it(
 
 // ⏎ runs the /steer line that the composer holds over the waiting question.
 async function steerAnswersQuestion(run: Run, { screen, write }: Tui) {
+  writeFileSync(run.planHold, '');
   write(PTY_SUBMIT_INPUT);
   await vi.waitFor(
     () => expect(planCalls(run) === 2 || screen().includes(STOPPED)).toBe(true),
@@ -269,6 +271,7 @@ async function steerAnswersQuestion(run: Run, { screen, write }: Tui) {
   const answered = screen();
   expect(answered).toContain('Answered · 1 question');
   expect(answered).toContain(DRAFT);
+  unlinkSync(run.planHold);
 
   await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
   expect(screen()).not.toContain(STOPPED);
