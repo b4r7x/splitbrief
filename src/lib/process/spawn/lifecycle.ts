@@ -7,6 +7,7 @@ import {
   type SpawnPipeCallbackResult,
   DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
   DEFAULT_PROCESS_STDERR_MAX_BYTES,
+  type SpawnClose,
   type SpawnPipeOptions,
   type SpawnRun,
 } from './types.js';
@@ -15,8 +16,10 @@ import { armIdleTimers, clearIdleTimers } from './idle-timers.js';
 import { onStdinError, promptIncomplete, startStdin } from './stdin.js';
 import {
   cleanup,
+  finishClose,
   invokeGuarded,
   invokeVoidGuarded,
+  reapDeferredFatal,
   terminate,
   terminateFatal,
   watchAbort,
@@ -24,7 +27,8 @@ import {
 
 function acceptsChunk(callback: () => SpawnPipeCallbackResult): boolean {
   try {
-    return callback() === undefined;
+    const result = callback();
+    return result === undefined || (isFatalSignal(result) && result.drainOutput === true);
   } catch {
     return false;
   }
@@ -35,13 +39,6 @@ function fail<T>(run: SpawnRun<T>, err: unknown): void {
   run.phase = 'settled';
   cleanup(run);
   run.reject(err);
-}
-
-function done<T>(run: SpawnRun<T>, value: T): void {
-  if (run.phase !== 'active') return;
-  run.phase = 'settled';
-  cleanup(run);
-  run.resolve(value);
 }
 
 function outputBudgetSpent<T>(run: SpawnRun<T>): boolean {
@@ -69,7 +66,8 @@ function armIdle<T>(run: SpawnRun<T>): void {
 
 function noteIdleOutput<T>(run: SpawnRun<T>): boolean {
   const idle = run.opts.idle;
-  if (idle === undefined || run.phase !== 'active') return run.phase === 'active';
+  if (run.phase !== 'active') return false;
+  if (idle === undefined || run.fatalDrain !== undefined) return true;
   if (run.idleTimers.warned) {
     run.idleTimers.warned = false;
     if (idle.onClear !== undefined && !invokeVoidGuarded(run, () => idle.onClear?.())) return false;
@@ -118,8 +116,9 @@ function onProcessError<T>(run: SpawnRun<T>, err: NodeJS.ErrnoException): void {
 }
 
 function onClose<T>(run: SpawnRun<T>, code: number | null, signal: NodeJS.Signals | null): void {
+  const closed = { code, signal };
   run.exit = { code };
-  run.closed.resolve();
+  run.closed.resolve(closed);
   clearIdleTimers(run.idleTimers);
   if (run.phase !== 'active') {
     unregisterProcess(run.proc);
@@ -129,23 +128,8 @@ function onClose<T>(run: SpawnRun<T>, code: number | null, signal: NodeJS.Signal
     terminate(run, { kind: 'stdin-incomplete' });
     return;
   }
-  unregisterProcess(run.proc);
-  const failAfterClose = (err: unknown) => {
-    if (run.phase !== 'active') return;
-    if (isFatalSignal(err)) {
-      terminateFatal(run, err);
-      return;
-    }
-    terminate(run, { kind: 'error', error: err });
-  };
-  try {
-    Promise.resolve(run.opts.onClose(code, signal)).then(
-      (value) => done(run, value),
-      failAfterClose,
-    );
-  } catch (err: unknown) {
-    failAfterClose(err);
-  }
+  if (run.fatalDrain !== undefined) reapDeferredFatal(run);
+  else finishClose(run, closed);
 }
 
 function startRun<T>(run: SpawnRun<T>): void {
@@ -170,7 +154,7 @@ function startRun<T>(run: SpawnRun<T>): void {
   proc.on('close', (code, signal) => onClose(run, code, signal));
   stdin.on('error', (err: NodeJS.ErrnoException) => onStdinError(run, err));
 
-  if (opts.signal !== undefined && watchAbort(run, opts.signal)) return;
+  if (watchAbort(run)) return;
   if (opts.onSpawned !== undefined && !invokeVoidGuarded(run, () => opts.onSpawned?.(proc))) return;
   armIdle(run);
   startStdin(run, stdin);
@@ -210,7 +194,8 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       proc,
       phase: 'active',
       exit: undefined,
-      closed: Promise.withResolvers<void>(),
+      closed: Promise.withResolvers<SpawnClose>(),
+      fatalDrain: undefined,
       stdinWriteComplete: opts.stdin === undefined,
       stdinEndComplete: false,
       outputBytesSeen: 0,

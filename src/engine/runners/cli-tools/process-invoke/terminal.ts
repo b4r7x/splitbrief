@@ -11,23 +11,30 @@ import type { ProcessCall, ProcessClose } from './types.js';
  */
 export function closedCallFinish(call: ProcessCall, closed: ProcessClose): () => RunnerCallResult {
   const { adapter, protocolEvents, state } = call;
+  const diagnoseHalt = (stdoutTail?: readonly string[]) =>
+    haltFailure(closed.stderr, stdoutTail, state.recognizedHalt);
+  const stdoutTail =
+    state.recognizedHalt === undefined ? [state.stdoutLastLine, state.stdoutTailCarry] : [];
   // The process can finish on its own before the guard's abort reaches it.
   if (state.guardFailure !== null) {
     const failure = state.guardFailure;
     return () => fail({ recorder: state.recorder, status: 'failed', error: failure });
   }
 
-  if (closed.signal !== null) {
-    return () =>
-      fail({
-        recorder: state.recorder,
-        status: 'failed',
-        error: haltFailure(state.stderr, [state.stdoutLastLine, state.stdoutTailCarry]) ?? {
-          code: 'signal-exit',
-          message: `CLI exited from signal ${closed.signal}`,
-        },
-      });
-  }
+  const finishSignal =
+    closed.signal === null
+      ? null
+      : () =>
+          fail({
+            recorder: state.recorder,
+            status: 'failed',
+            error: diagnoseHalt(stdoutTail) ?? {
+              code: 'signal-exit',
+              message: `CLI exited from signal ${closed.signal}`,
+            },
+          });
+  if (finishSignal !== null && (!closed.stoppedForDrain || !state.terminalSeen))
+    return finishSignal;
   if (adapter.outputContract.kind === 'structured-terminal' && !state.terminalSeen) {
     // Without a parsed terminal the exit code is the only diagnosis available.
     if (closed.exitCode !== 0) {
@@ -35,7 +42,7 @@ export function closedCallFinish(call: ProcessCall, closed: ProcessClose): () =>
         fail({
           recorder: state.recorder,
           status: 'failed',
-          error: haltFailure(state.stderr, [state.stdoutLastLine, state.stdoutTailCarry]) ?? {
+          error: diagnoseHalt(stdoutTail) ?? {
             code: 'non-zero-exit',
             message: `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
           },
@@ -43,7 +50,7 @@ export function closedCallFinish(call: ProcessCall, closed: ProcessClose): () =>
     }
     // The tool printed no terminal, so its diagnostic channel decides. Only stderr counts
     // here: stdout frames can restate the model's prose.
-    const stderrHalt = haltFailure(closed.stderr);
+    const stderrHalt = diagnoseHalt();
     if (stderrHalt !== null) {
       return () => fail({ recorder: state.recorder, status: 'failed', error: stderrHalt });
     }
@@ -68,6 +75,7 @@ export function closedCallFinish(call: ProcessCall, closed: ProcessClose): () =>
       signal: closed.signal,
     });
   } catch {
+    if (finishSignal !== null) return finishSignal;
     return () =>
       fail({
         recorder: state.recorder,
@@ -76,10 +84,17 @@ export function closedCallFinish(call: ProcessCall, closed: ProcessClose): () =>
       });
   }
 
+  const terminalNamesHalt = terminal.status !== 'completed' && namesHalt(terminal.error);
+  if (finishSignal !== null && !terminalNamesHalt) return finishSignal;
+
   // A failure exit preserves a text-exit answer only when it ends the stream without a halt.
   // Parsed failures keep their diagnosis; structured success against a failure exit fails closed.
-  if (isFailureExit(adapter.outputContract, closed.exitCode) && terminal.status === 'completed') {
-    const halt = haltFailure(state.stderr, [state.stdoutLastLine, state.stdoutTailCarry]);
+  const refusedBeforeResult = !state.terminalSeen && state.recognizedHalt !== undefined;
+  if (
+    terminal.status === 'completed' &&
+    (refusedBeforeResult || isFailureExit(adapter.outputContract, closed.exitCode))
+  ) {
+    const halt = diagnoseHalt(stdoutTail);
     if (halt !== null)
       return () => fail({ recorder: state.recorder, status: 'failed', error: halt });
     const last = protocolEvents.events().at(-1);
@@ -121,7 +136,7 @@ export function closedCallFinish(call: ProcessCall, closed: ProcessClose): () =>
       });
   }
   // A failed terminal that names no halt of its own leaves the diagnosis to stderr.
-  const stderrHalt = namesHalt(terminal.error) ? null : haltFailure(closed.stderr);
+  const stderrHalt = terminalNamesHalt ? null : diagnoseHalt();
   // A tool refuses an oversized prompt or a model it cannot serve as an ordinary failed result
   // (Claude Code: "Prompt is too long"; OpenCode: `provider.no-route`). No later reader looks at
   // those words again, so the refusal takes the halt's code here.

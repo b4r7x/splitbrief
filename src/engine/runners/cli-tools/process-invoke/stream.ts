@@ -93,8 +93,7 @@ function readLine(
   state.stdoutLastLine = parsed.length === 0 ? '' : line;
   const turnBoundary = state.steeringSession?.onLine(line, parsed) ?? false;
   for (const event of parsed) applyProtocolEvent(call, event, turnBoundary);
-  // A steered tool keeps running after its result: a background task can open a new turn on
-  // its own. The call settles on that result at once, and SPLITBRIEF stops the tool unread.
+  // A steered tool can open a new turn on its own. Request settlement at once.
   if (state.steeringSession !== undefined && state.terminalSeen) call.settle.abort(call.settled);
   else if (holdsTerminal(call)) {
     state.graceTimer ??= setTimeout(() => call.settle.abort(call.settled), TERMINAL_EXIT_GRACE_MS);
@@ -117,11 +116,11 @@ function readStderr(call: ProcessCall, chunk: string): SpawnPipeCallbackResult {
   const { state } = call;
   state.stderr += chunk;
   state.recorder.stderr({ text: chunk });
-  if (state.terminalSeen) return undefined;
+  if (state.terminalSeen || state.recognizedHalt !== undefined) return undefined;
   const halt = haltFailure(state.stderr);
   if (halt !== null && (halt.code === 'usage-limit' || halt.code === 'unauthenticated')) {
-    state.storedHalt = halt;
-    return { state: 'protocol-failure', remediation: halt.message };
+    state.recognizedHalt = halt.code;
+    return { state: 'protocol-failure', remediation: '', drainOutput: true };
   }
   return undefined;
 }
@@ -131,11 +130,12 @@ function closeOutput(
   lines: OutputLines,
   exitCode: number | null,
   signal: string | null,
+  stoppedForDrain: boolean,
 ): ProcessClose {
   closeAdmission(call);
   lines.flush();
   call.state.stdoutTailCarry = '';
-  return { exitCode, signal, stderr: call.state.stderr };
+  return { exitCode, signal, stderr: call.state.stderr, stoppedForDrain };
 }
 
 /** The output callbacks of the spawned tool. An open steering session owns the parser. */
@@ -148,6 +148,7 @@ export function processOutput(
   return {
     onStdout: (chunk) => readStdout(call, lines, chunk),
     onStderr: (chunk) => readStderr(call, chunk),
-    onClose: (exitCode, signal) => closeOutput(call, lines, exitCode, signal),
+    onClose: (exitCode, signal, stoppedForDrain) =>
+      closeOutput(call, lines, exitCode, signal, stoppedForDrain),
   };
 }

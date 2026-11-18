@@ -22,6 +22,10 @@ export const CURSOR_MODEL_REFUSAL_FORMS = [
   ],
 ] as const;
 
+export const CURSOR_REFUSAL_CHUNKS = CURSOR_MODEL_REFUSAL_FORMS[1][1]
+  .split('\n')
+  .map((line) => `${line}\n`);
+
 /**
  * A `cursor-agent` shim: every call starts a session on stdout, prints the refusal on stderr and
  * exits 1. With `firstFailure`, the first call prints those words instead, so the refusal comes
@@ -29,7 +33,7 @@ export const CURSOR_MODEL_REFUSAL_FORMS = [
  */
 export function writeCursorRefusalShim(
   dir: string,
-  opts: Readonly<{ stderr?: string; firstFailure?: string }> = {},
+  opts: Readonly<{ stderr?: string; firstFailure?: string; stderrBody?: string | undefined }> = {},
 ): void {
   const quote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
   const refusal = quote(opts.stderr ?? CURSOR_MODEL_REFUSAL);
@@ -37,7 +41,7 @@ export function writeCursorRefusalShim(
   const body = [
     `printf '%s\\n' '{"type":"system","subtype":"init","session_id":"s1"}'`,
     ...(opts.firstFailure === undefined
-      ? [`printf '%s\\n' ${refusal} >&2`]
+      ? [opts.stderrBody ?? `printf '%s\\n' ${refusal} >&2`]
       : [
           `if [ ! -e ${quote(counter)} ]; then`,
           `  touch ${quote(counter)}`,

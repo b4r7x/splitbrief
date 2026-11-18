@@ -4,6 +4,7 @@ import { SIGKILL_DELAY_MS } from '../termination.js';
 import { abortError, defaultFatalRemediation, isFatalSignal, spawnPipeError } from './fatal.js';
 import { clearIdleTimers } from './idle-timers.js';
 import type {
+  SpawnClose,
   SpawnPipeCallbackResult,
   SpawnPipeFatalOutcome,
   SpawnPipeFatalSignal,
@@ -17,6 +18,8 @@ type TerminationReason =
 
 export function cleanup<T>(run: SpawnRun<T>): void {
   clearIdleTimers(run.idleTimers);
+  if (run.fatalDrain?.kind === 'grace') clearTimeout(run.fatalDrain.timer);
+  run.fatalDrain = undefined;
   run.removeAbortListener?.();
   run.removeAbortListener = undefined;
 }
@@ -36,6 +39,7 @@ function fatalOutcome<T>(run: SpawnRun<T>, signal: SpawnPipeFatalSignal): SpawnP
 }
 
 function closedWithin<T>(run: SpawnRun<T>, graceMs: number): Promise<void> {
+  if (run.exit !== undefined) return Promise.resolve();
   return new Promise<void>((resolveGrace) => {
     const grace = setTimeout(resolveGrace, graceMs);
     void run.closed.promise.then(() => {
@@ -43,6 +47,74 @@ function closedWithin<T>(run: SpawnRun<T>, graceMs: number): Promise<void> {
       resolveGrace();
     });
   });
+}
+
+function pauseOutput<T>(run: SpawnRun<T>): void {
+  run.proc.stdout?.pause();
+  run.proc.stderr?.pause();
+}
+
+function rejectRun<T>(run: SpawnRun<T>, err: unknown, unregister: boolean): void {
+  if (run.phase === 'settled') return;
+  run.phase = 'settled';
+  cleanup(run);
+  if (unregister) unregisterProcess(run.proc);
+  run.reject(err);
+}
+
+export function finishClose<T>(run: SpawnRun<T>, { code, signal }: SpawnClose): void {
+  unregisterProcess(run.proc);
+  const stoppedForDrain =
+    run.fatalDrain?.kind === 'reaping' &&
+    run.fatalDrain.stoppingChild &&
+    (signal === 'SIGTERM' || signal === 'SIGKILL');
+  const failAfterClose = (err: unknown) => {
+    if (run.phase !== 'active') return;
+    if (isFatalSignal(err)) terminateFatal(run, err);
+    else terminate(run, { kind: 'error', error: err });
+  };
+  try {
+    Promise.resolve(run.opts.onClose(code, signal, stoppedForDrain)).then((value) => {
+      if (run.phase !== 'active') return;
+      run.phase = 'settled';
+      cleanup(run);
+      run.resolve(value);
+    }, failAfterClose);
+  } catch (err: unknown) {
+    failAfterClose(err);
+  }
+}
+
+export function reapDeferredFatal<T>(run: SpawnRun<T>): void {
+  if (run.phase !== 'active' || run.fatalDrain?.kind !== 'grace') return;
+  clearTimeout(run.fatalDrain.timer);
+  run.fatalDrain = {
+    kind: 'reaping',
+    stoppingChild: run.proc.exitCode === null && run.proc.signalCode === null,
+  };
+  // Keep delivering both pipes through close. While the group is being reaped,
+  // an abort, callback failure or output budget breach can still end delivery.
+  void killProcess(run.proc, { group: run.opts.detached ?? false })
+    .then(async () => {
+      await closedWithin(run, SIGKILL_DELAY_MS);
+      if (run.phase !== 'active') return undefined;
+      // A descendant that left the group can keep an inherited descriptor open.
+      if (run.exit === undefined) {
+        run.proc.stdout?.destroy();
+        run.proc.stderr?.destroy();
+      }
+      return run.closed.promise;
+    })
+    .then(
+      (closed) => {
+        if (run.phase === 'active' && closed !== undefined) finishClose(run, closed);
+      },
+      (err) => {
+        if (run.phase !== 'active') return;
+        pauseOutput(run);
+        rejectRun(run, err, false);
+      },
+    );
 }
 
 export function terminate<T>(run: SpawnRun<T>, reason: TerminationReason): void {
@@ -53,16 +125,7 @@ export function terminate<T>(run: SpawnRun<T>, reason: TerminationReason): void 
   // so its output keeps reaching the callbacks until it closes.
   const draining = reason.kind === 'stdin-incomplete';
   run.phase = draining ? 'draining' : 'terminating';
-  if (!draining) {
-    run.proc.stdout?.pause();
-    run.proc.stderr?.pause();
-  }
-  const settleTermination = (err: unknown, unregister: boolean) => {
-    if (run.phase === 'settled') return;
-    run.phase = 'settled';
-    if (unregister) unregisterProcess(run.proc);
-    run.reject(err);
-  };
+  if (!draining) pauseOutput(run);
   // A reaping failure is the one outcome that must replace the first cause:
   // the tree could not be verified dead, and the caller has to know that
   // rather than trusting a terminal classification.
@@ -70,7 +133,8 @@ export function terminate<T>(run: SpawnRun<T>, reason: TerminationReason): void 
     .then(() => (draining ? closedWithin(run, SIGKILL_DELAY_MS) : undefined))
     .then(
       () =>
-        settleTermination(
+        rejectRun(
+          run,
           reason.kind === 'fatal'
             ? fatalOutcome(run, reason.signal)
             : reason.kind === 'stdin-incomplete'
@@ -78,7 +142,7 @@ export function terminate<T>(run: SpawnRun<T>, reason: TerminationReason): void 
               : reason.error,
           true,
         ),
-      (err) => settleTermination(err, false),
+      (err) => rejectRun(run, err, false),
     );
 }
 
@@ -98,6 +162,15 @@ export function invokeGuarded<T>(
     const result = callback();
     if (result === undefined) return true;
     if (isFatalSignal(result)) {
+      if (result.drainOutput === true) {
+        if (run.phase !== 'active') return false;
+        clearIdleTimers(run.idleTimers);
+        run.fatalDrain ??= {
+          kind: 'grace',
+          timer: setTimeout(() => reapDeferredFatal(run), SIGKILL_DELAY_MS),
+        };
+        return true;
+      }
       terminateFatal(run, result);
       return false;
     }
@@ -116,28 +189,37 @@ export function invokeVoidGuarded<T>(run: SpawnRun<T>, callback: () => void): bo
   });
 }
 
-/** Stops the child when the signal aborts; true when the signal had already aborted. */
-export function watchAbort<T>(run: SpawnRun<T>, signal: AbortSignal): boolean {
+/** Watches for cancellation and settlement. Returns true if the child is already stopping. */
+export function watchAbort<T>(run: SpawnRun<T>): boolean {
+  const { signal, settlementSignal } = run.opts;
+  const settlement = settlementSignal === undefined ? undefined : new AbortController();
+  const stop =
+    settlement === undefined
+      ? signal
+      : AbortSignal.any([...(signal === undefined ? [] : [signal]), settlement.signal]);
+  if (stop === undefined) return false;
+
+  const onSettlement = () => {
+    if (run.fatalDrain === undefined) settlement?.abort(settlementSignal?.reason);
+  };
   const onAbort = () => {
     if (run.phase !== 'active') return;
     run.phase = 'terminating';
     cleanup(run);
-    run.proc.stdout?.pause();
-    run.proc.stderr?.pause();
-    const settleAbort = (err: unknown, unregister: boolean) => {
-      if (run.phase !== 'terminating') return;
-      run.phase = 'settled';
-      if (unregister) unregisterProcess(run.proc);
-      run.reject(err);
-    };
-    void abortProcess(run.proc, signal, { group: run.opts.detached ?? false }).then(
-      () => settleAbort(signal.reason ?? abortError(), true),
-      (err) => settleAbort(err, false),
+    pauseOutput(run);
+    void abortProcess(run.proc, stop, { group: run.opts.detached ?? false }).then(
+      () => rejectRun(run, stop.reason ?? abortError(), true),
+      (err) => rejectRun(run, err, false),
     );
   };
-  signal.addEventListener('abort', onAbort, { once: true });
-  run.removeAbortListener = () => signal.removeEventListener('abort', onAbort);
-  if (!signal.aborted) return false;
+  if (settlementSignal?.aborted) onSettlement();
+  else settlementSignal?.addEventListener('abort', onSettlement, { once: true });
+  stop.addEventListener('abort', onAbort, { once: true });
+  run.removeAbortListener = () => {
+    stop.removeEventListener('abort', onAbort);
+    settlementSignal?.removeEventListener('abort', onSettlement);
+  };
+  if (!stop.aborted) return false;
   onAbort();
   return true;
 }

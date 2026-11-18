@@ -18,8 +18,11 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   CURSOR_MODEL_REFUSAL_FORMS,
+  CURSOR_REFUSAL_CHUNKS,
   writeCursorRefusalShim,
 } from '#testing/helpers/cursor-refusal.js';
+import { stderrHandshake } from '#testing/helpers/stderr-handshake.js';
+import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { cliToolCheckError } from '../runners/seat-gates.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
@@ -38,7 +41,8 @@ import { saveState } from '../../core/state/persistence.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { runPlanningPhase } from '../orchestrator/planning/run.js';
 import { diagnosePlannerCallFailure } from '../orchestrator/recovery/planner-call-failure.js';
-import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
+import { admittedCliSeat, testCliSeats } from '#testing/helpers/runner-gate.js';
+import { createReviewer } from '../runners/factory.js';
 
 const invokeCliAdapterDeadlines = vi.hoisted(() => [] as Array<number | undefined>);
 
@@ -1426,6 +1430,58 @@ describe('createCliPlanner — a Cursor seat that refuses the account', () => {
       expect(diagnosis.failure).toBe('usage-limit');
       expect(diagnosis.seatDown?.classification).toEqual({ class: 'account', cause: 'access' });
       expect(diagnosis.words).toContain('Buy credits or switch to a Grok model to continue.');
+    },
+  );
+
+  itUnix.each(['plan', 'review'] as const)(
+    'quotes an acknowledged two-chunk refusal for the %s seat',
+    async (seat) => {
+      const handshake = stderrHandshake(shimDir, CURSOR_REFUSAL_CHUNKS);
+      try {
+        writeCursorRefusalShim(shimDir, { stderrBody: handshake.body });
+        const config = makeConfig({ planner: cursorPlanner, reviewer: cursorPlanner });
+        const callbacks = { onOutput: () => {}, onCallEvent: handshake.onEvent };
+        const invoke = async () => {
+          if (seat === 'plan') {
+            return callPlanner(createCliPlanner(config), {
+              prompt: 'plan a change',
+              projectDir,
+              callbacks,
+            });
+          }
+          const slot = { role: 'reviewer' } as const;
+          const preparationId = 'cursor-review';
+          const gates = [
+            {
+              kind: 'cli',
+              tool: 'cursor',
+              executable: executableReceipt(join(shimDir, 'cursor-agent')),
+              slot,
+              preparationId,
+            },
+          ] as const;
+          const reviewer = await createReviewer(config, {
+            slot,
+            preparationId,
+            preparedConfig: config,
+            gates,
+            cliSeats: testCliSeats(gates),
+          });
+          return reviewer.review('review the change', projectDir, callbacks);
+        };
+        const err = await invoke().catch((caught: unknown) => caught);
+        const diagnosis = diagnosePlannerCallFailure({
+          err,
+          label: 'Planning failed',
+          runner: cursorPlanner,
+          seat,
+        });
+        expect(diagnosis.failure).toBe('usage-limit');
+        expect(diagnosis.seatDown?.classification).toEqual({ class: 'account', cause: 'access' });
+        expect(diagnosis.words).toContain(CURSOR_MODEL_REFUSAL_FORMS[1][1]);
+      } finally {
+        handshake.close();
+      }
     },
   );
 });

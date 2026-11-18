@@ -13,7 +13,11 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
+import { CURSOR_REFUSAL_CHUNKS } from '#testing/helpers/cursor-refusal.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
+import { makeFifo } from '#testing/helpers/stderr-handshake.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome as createTrustHome } from '#testing/helpers/trust-home.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
@@ -38,6 +42,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { heldUntilAborted, openHaltedRun, settleOpenedRuns } from '../helpers/halted-run-screen.js';
+import { spawnCli } from '../helpers/live-cli-harness.js';
 import {
   cli,
   continueWithCorrection,
@@ -219,6 +224,80 @@ function recordedCalls(callsPath: string): unknown[] {
 }
 
 describe('e2e: seat down without a fallback, switched by hand', { timeout: 240_000 }, () => {
+  it('records the whole BUILD Cursor refusal in --json and session.jsonl', async () => {
+    const target = createStopContinueFixture(undefined, { isolation: 'none' });
+    fixture = target;
+    trustHome = createTrustHome('e2e-cursor-refusal-home');
+    await stubSignInHome(trustHome.home, ['cursor']);
+    const binDir = join(target.tmpDir, 'bin');
+    mkdirSync(binDir);
+    const hold = makeFifo(join(target.tmpDir, 'cursor-hold'));
+    const model = 'claude-haiku-5-5-thinking-high';
+    const [first, second] = CURSOR_REFUSAL_CHUNKS;
+    writeFakeNodeCli(
+      binDir,
+      'cursor-agent',
+      `const { open, writeSync } = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === '--version') {
+  console.log(${JSON.stringify(CLI_TOOL_CATALOG.cursor.compatibility.testedVersion)});
+  process.exit(0);
+}
+if (args[0] === 'status') {
+  console.log('Logged in as fixture@example.com');
+  process.exit(0);
+}
+if (args[0] === '--list-models') {
+  console.log(${JSON.stringify(`${model} - Claude Haiku 5.5`)});
+  process.exit(0);
+}
+if (!args.includes('--print')) throw new Error('Unexpected Cursor invocation: ' + args.join(' '));
+${nodeCliScript(`process.on('SIGTERM', () => {
+  writeSync(2, ${JSON.stringify(second)});
+  process.exit(1);
+});
+open(${JSON.stringify(hold)}, 'r', (err) => { if (err) throw err; });
+writeSync(2, ${JSON.stringify(first)});`)}`,
+    );
+    restorePath = activateSafeCliShimPath(binDir);
+    const config = loadConfig(target.projectDir).config;
+    writeConfig(target.projectDir, {
+      ...config,
+      implementer: { kind: 'cli', tool: 'cursor', model, contextLength: 200_000 },
+    });
+    const halted = await spawnCli({
+      args: [
+        'dist/cli.js',
+        'start',
+        'smoke',
+        '--json',
+        '--allow-repo-runners',
+        '--project',
+        target.projectDir,
+      ],
+      stateHome: target.stateHome,
+      timeoutMs: 90_000,
+      reapProjectDir: target.projectDir,
+    });
+
+    expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+    const sessions = readdirSync(sessionsRoot(target.projectDir));
+    expect(sessions).toHaveLength(1);
+    const sessionId = sessions[0] ?? '';
+    const recovery = halted.stdout
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { type: string })
+      .find((record) => record.type === 'recovery_required');
+    const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    const issue = events.find((event) => event.type === 'recovery_prompted')?.issue;
+    const providerMessage = CURSOR_REFUSAL_CHUNKS.join('').trim();
+    expect({ recovery, issue }).toMatchObject({
+      recovery: { sessionId, reason: 'runner-usage-limit', providerMessage },
+      issue: { seat: 'build', reason: 'runner-usage-limit', facts: { providerMessage } },
+    });
+  });
+
   it('halts BUILD on an account refusal, then finishes the run on the tool switch-seat names', async () => {
     const { target, halted, sessionId, codexCalls, claudeCalls, options } =
       await codexHaltFixture();

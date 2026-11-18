@@ -9,6 +9,8 @@ export type SpawnPipeFatalState = 'output-budget-breach' | 'protocol-failure' | 
 export interface SpawnPipeFatalSignal {
   state: SpawnPipeFatalState;
   remediation: string;
+  /** Give the tool a chance to close, then reap it while continuing to deliver output. */
+  drainOutput?: true;
 }
 
 export interface SpawnPipeFatalOutcome extends SpawnPipeFatalSignal {
@@ -22,6 +24,8 @@ export type SpawnPipeCallbackResult = SpawnPipeFatalSignal | undefined;
 
 /** How a child that broke its prompt closed; absent when it did not close within the grace. */
 export type SpawnPipeExit = Readonly<{ code: number | null }>;
+
+export type SpawnClose = SpawnPipeExit & Readonly<{ signal: NodeJS.Signals | null }>;
 
 export interface SpawnIdleOptions {
   warnMs: number;
@@ -48,13 +52,15 @@ export interface SpawnPipeOptions<T> {
   stdinOptional?: boolean | undefined;
   onStdinReady?: ((writer: SpawnStdinWriter) => void) | undefined;
   signal?: AbortSignal | undefined;
+  /** Requests a stop on the caller's result. An active output drain takes priority. */
+  settlementSignal?: AbortSignal | undefined;
   idle?: SpawnIdleOptions | undefined;
   outputBudgetBytes?: number | undefined;
   partialStdoutMaxBytes?: number | undefined;
   partialStderrMaxBytes?: number | undefined;
   onStdout: (chunk: string) => SpawnPipeCallbackResult;
   onStderr: (chunk: string) => SpawnPipeCallbackResult;
-  onClose: (code: number | null, signal: string | null) => T | Promise<T>;
+  onClose: (code: number | null, signal: string | null, stoppedForDrain: boolean) => T | Promise<T>;
   onError?: ((err: NodeJS.ErrnoException) => Error | null) | undefined;
   onSpawned?: ((proc: ChildProcess) => void) | undefined;
 }
@@ -71,7 +77,11 @@ export interface SpawnRun<T> {
   proc: ChildProcess;
   phase: 'active' | 'draining' | 'terminating' | 'settled';
   exit: SpawnPipeExit | undefined;
-  closed: PromiseWithResolvers<void>;
+  closed: PromiseWithResolvers<SpawnClose>;
+  fatalDrain:
+    | { kind: 'grace'; timer: NodeJS.Timeout }
+    | { kind: 'reaping'; stoppingChild: boolean }
+    | undefined;
   stdinWriteComplete: boolean;
   stdinEndComplete: boolean;
   outputBytesSeen: number;

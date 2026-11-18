@@ -9,6 +9,7 @@ import type {
   CliProtocolEvent,
   CliSteeringSession,
 } from '../contract.js';
+import type { StderrHaltCode } from './failures.js';
 
 /**
  * Inspects one tool call as the stream reports it: once when its start and its
@@ -49,6 +50,7 @@ export type ProcessClose = Readonly<{
   exitCode: number | null;
   signal: string | null;
   stderr: string;
+  stoppedForDrain: boolean;
 }>;
 
 /**
@@ -67,8 +69,7 @@ type ProcessCallState = {
   /** The stdout text after the last line break; the close flushes it and empties it. */
   stdoutTailCarry: string;
   stderr: string;
-  /** A usage limit or a sign-out on stderr that stopped the tool before its terminal result. */
-  storedHalt: Readonly<{ code: string; message: string }> | undefined;
+  recognizedHalt: StderrHaltCode | undefined;
   terminalSeen: boolean;
   graceTimer: NodeJS.Timeout | undefined;
   guardFailure: ReturnType<ToolUseGuard>;

@@ -31,16 +31,20 @@ export const HALT_FAILURES: Readonly<
   spawn: { code: 'implementer-recipe-invalid', phrases: HALT_SIGNATURES.spawnFailure },
 };
 
+export type StderrHaltCode = 'usage-limit' | 'unauthenticated';
+
 /**
  * The diagnosis of a failed CLI call. The last line the tool printed on stdout can be the model's
  * prose, where a path under `billing/` or a shelled-out `permission denied` is task output, so it
  * matches only the halt phrases. Stderr is the tool's diagnostic channel: when it names no halt
  * phrase, the seat failure classifier reads all of it, and an account refusal or a limit keeps the
- * whole diagnostic as the words the halt quotes.
+ * whole diagnostic as the words the halt quotes. A code recognized early is a fallback if later
+ * output moves the diagnostic out of the classifier's match.
  */
 export function haltFailure(
   stderr: string,
   stdoutTail: readonly string[] = [],
+  recognizedCode?: StderrHaltCode,
 ): { code: string; message: string } | null {
   const lines = [...stderr.split('\n'), ...stdoutTail];
   const kind = classifyHaltSignature(lines);
@@ -58,7 +62,7 @@ export function haltFailure(
     return { code: seat.cause === 'auth' ? 'unauthenticated' : 'usage-limit', message: diagnostic };
   }
   if (seat.class === 'rate-limited') return { code: 'usage-limit', message: diagnostic };
-  return null;
+  return recognizedCode === undefined ? null : { code: recognizedCode, message: diagnostic };
 }
 
 const HALT_CODES: ReadonlySet<string> = new Set(

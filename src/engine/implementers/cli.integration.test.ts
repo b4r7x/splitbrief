@@ -23,8 +23,10 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   CURSOR_MODEL_REFUSAL_FORMS,
+  CURSOR_REFUSAL_CHUNKS,
   writeCursorRefusalShim,
 } from '#testing/helpers/cursor-refusal.js';
+import { stderrHandshake } from '#testing/helpers/stderr-handshake.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
@@ -1340,21 +1342,43 @@ describe('createCliImplementer (cursor account refusal)', () => {
     temperature: 0.3,
   };
 
-  it.each(CURSOR_MODEL_REFUSAL_FORMS)(
+  it.each([
+    ...CURSOR_MODEL_REFUSAL_FORMS,
+    ['two acknowledged chunks', CURSOR_MODEL_REFUSAL_FORMS[1][1]],
+  ] as const)(
     'a model refusal in the %s form on stderr with exit 1 is a usage limit in the tool words',
-    async (_form, refusal) => {
-      writeCursorRefusalShim(shimDir, { stderr: refusal });
+    async (form, refusal) => {
+      const handshake =
+        form === 'two acknowledged chunks'
+          ? stderrHandshake(shimDir, CURSOR_REFUSAL_CHUNKS)
+          : undefined;
+      try {
+        writeCursorRefusalShim(shimDir, { stderr: refusal, stderrBody: handshake?.body });
+        const publisher: ImplementerPublisher | undefined =
+          handshake === undefined
+            ? undefined
+            : {
+                publishRunning: () => {},
+                publishDone: () => {},
+                publishFailed: () => {},
+                publishWarning: () => {},
+                publishCallEvent: ({ event }) => handshake.onEvent(event),
+              };
 
-      const result = await createCliImplementer(cursorImplementer).implement({
-        task: makeTask(),
-        projectDir,
-        config: makeConfig({ implementer: cursorImplementer }),
-        context: { ...defaultContext, dir: projectDir },
-        onOutput: () => {},
-      });
+        const result = await createCliImplementer(cursorImplementer, { publisher }).implement({
+          task: makeTask(),
+          projectDir,
+          config: makeConfig({ implementer: cursorImplementer }),
+          context: { ...defaultContext, dir: projectDir },
+          onOutput: () => {},
+          phase: 'implementing',
+        });
 
-      expect(result).toMatchObject({ success: false, outcome: 'usage-limit' });
-      expect(result.error).toContain(refusal);
+        expect(result).toMatchObject({ success: false, outcome: 'usage-limit' });
+        expect(result.error).toContain(refusal);
+      } finally {
+        handshake?.close();
+      }
     },
   );
 });

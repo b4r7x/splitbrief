@@ -79,7 +79,7 @@ export async function invokeProcessCli(
       stdoutLastLine: '',
       stdoutTailCarry: '',
       stderr: '',
-      storedHalt: undefined,
+      recognizedHalt: undefined,
       terminalSeen: false,
       graceTimer: undefined,
       guardFailure: null,
@@ -236,10 +236,9 @@ async function runProcess(call: ProcessCall): Promise<() => RunnerCallResult> {
     detached: process.platform !== 'win32',
     stdin: prepared.stdin,
     onStdinReady: state.steeringSession?.onStdinReady,
-    signal: AbortSignal.any([call.signal, call.settle.signal]),
-    // The recorder owns every retained byte of this call and nothing here
-    // reads the spawn-level stdout snapshot, so a rolling megabyte tail of a
-    // multi-megabyte protocol stream would be pure cost.
+    signal: call.signal,
+    settlementSignal: call.settle.signal,
+    // The recorder owns retained stdout, so the spawn snapshot would duplicate it.
     partialStdoutMaxBytes: 0,
     partialStderrMaxBytes: RUNNER_CALL_STDERR_MAX_BYTES,
     ...(context.idle !== undefined && {
@@ -272,7 +271,7 @@ async function runProcess(call: ProcessCall): Promise<() => RunnerCallResult> {
     // The stop after the result is SPLITBRIEF's, so it is not a failed exit of the tool. An idle
     // cut inside the grace stopped the tool group the same way.
     if (cause === call.settled || (holdsTerminal(call) && processError.isIdleTimeout(cause))) {
-      return { exitCode: 0, signal: null, stderr: state.stderr };
+      return { exitCode: 0, signal: null, stderr: state.stderr, stoppedForDrain: false };
     }
     throw cause;
   });

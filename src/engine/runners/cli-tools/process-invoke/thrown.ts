@@ -88,19 +88,20 @@ export function thrownCallResult(call: ProcessCall, cause: unknown): RunnerCallR
     // answered a cut prompt, and a tool SPLITBRIEF had to stop gave no exit, so for
     // these the pipe stays the cause.
     const ownExitCode = cause.data?.code;
+    const { stderr } = state;
+    const diagnostic = stderr.trim();
     return failCall(
       call,
       'failed',
-      haltFailure(state.stderr, [state.stdoutLastLine, state.stdoutTailCarry]) ??
+      haltFailure(stderr, [state.stdoutLastLine, state.stdoutTailCarry], state.recognizedHalt) ??
         (typeof ownExitCode === 'number' && ownExitCode !== 0
           ? { code: 'non-zero-exit', message: `CLI exited with code ${ownExitCode}` }
           : {
               code: 'prompt-transport-error',
-              message: `CLI prompt could not be fully delivered through stdin${state.stderr.trim() === '' ? '' : `: ${state.stderr.trim()}`}`,
+              message: `CLI prompt could not be fully delivered through stdin${diagnostic === '' ? '' : `: ${diagnostic}`}`,
             }),
     );
   }
-  if (state.storedHalt !== undefined) return failCall(call, 'failed', state.storedHalt);
   const fatalState = fatalStateOf(cause);
   if (fatalState !== null) {
     return failCall(call, 'failed', { code: fatalState, message: errorMessage(cause) });

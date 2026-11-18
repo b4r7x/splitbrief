@@ -35,13 +35,20 @@ export function freezeProbeDeadlines(): void {
  * The clock stays held after it, so neither the reap of this child nor the next child races it.
  * `vi.waitFor` cannot do this wait: it moves a fake clock on every poll.
  */
-export async function expireDeadlineAfterFile(path: string): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const poll = setInterval(() => {
-      if (!existsSync(path)) return;
-      clearInterval(poll);
-      resolve();
-    }, 5);
-  });
-  await vi.advanceTimersToNextTimerAsync();
+export async function expireDeadlineAfterFile(
+  path: string,
+  until?: Promise<unknown>,
+): Promise<void> {
+  const ready = Promise.withResolvers<boolean>();
+  const poll = setInterval(() => {
+    if (existsSync(path)) ready.resolve(true);
+  }, 5);
+  try {
+    const reached = await (until === undefined
+      ? ready.promise
+      : Promise.race([ready.promise, until.then(() => false)]));
+    if (reached) await vi.advanceTimersToNextTimerAsync();
+  } finally {
+    clearInterval(poll);
+  }
 }
