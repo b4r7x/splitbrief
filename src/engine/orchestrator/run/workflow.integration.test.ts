@@ -11,8 +11,10 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { loggedDiagnostics } from '#testing/helpers/debug-log.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -64,8 +66,8 @@ import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-s
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { listSessions, readSession, saveSummary } from '../../../core/sessions/io.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
+import { markExited } from '../../../core/sessions/lock/file.js';
 import { loadOwnerWorkflowState } from '../../../core/state/resume-hydration.js';
-import { forgetCachedState, statePath } from '../../../core/state/file.js';
 import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import {
   reactivateExistingSession,
@@ -75,6 +77,7 @@ import {
 import { generateSessionId } from '../../../core/sessions/id.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
 import { applyRecoveryAction } from '../recovery/actions/apply.js';
+import { readStateHead } from '../state-ops/head.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { canSignalProcess } from '../../../lib/process/liveness.js';
@@ -275,7 +278,7 @@ type WorkflowTestOptions = Omit<RunWorkflowOptions, 'prepared'> & {
   purpose?: Exclude<PreparedExecution['purpose'], 'spec'> | undefined;
 };
 
-async function runWorkflow(input: WorkflowTestOptions) {
+function prepareWorkflow(input: WorkflowTestOptions): RunWorkflowOptions {
   const {
     feature,
     projectDir,
@@ -306,7 +309,7 @@ async function runWorkflow(input: WorkflowTestOptions) {
   const preparationId = `workflow-test-${sessionId}`;
   const purpose = requestedPurpose ?? (input.savedState === undefined ? 'new-workflow' : 'resume');
   const gates = preparedGates(config, purpose, preparationId);
-  return runTrackedWorkflow({
+  return {
     ...options,
     prepared: {
       purpose,
@@ -324,7 +327,11 @@ async function runWorkflow(input: WorkflowTestOptions) {
         allowHooks: true,
       },
     },
-  });
+  };
+}
+
+function runWorkflow(input: WorkflowTestOptions) {
+  return runTrackedWorkflow(prepareWorkflow(input));
 }
 
 type WorkflowRef = { projectDir: string; sessionId: string };
@@ -945,6 +952,23 @@ describe('runWorkflow — smoke', () => {
       },
     );
 
+    it('a state file the disk refuses on the first read', () => {
+      const projectDir = setupProject();
+      const sessionId = 'cold-unreadable-state-sid';
+      const ref = { projectDir, sessionId };
+      ensureSessionDir(projectDir, sessionId);
+      writeRawState(ref, createInitialState('state write'));
+      const path = stateFile(ref);
+      chmodSync(path, 0o000);
+      try {
+        expect(() => readStateHead(ref)).toThrow(
+          `Could not read the run state: permission denied · .splitbrief/sessions/${sessionId}/state.json`,
+        );
+      } finally {
+        chmodSync(path, 0o600);
+      }
+    });
+
     it('a state file the disk no longer lets it read', async () => {
       const projectDir = setupProject();
       const sessionId = 'unreadable-state-sid';
@@ -1304,9 +1328,6 @@ describe('runWorkflow — smoke', () => {
             ).changedFilesBaseline?.activeTaskSnapshot?.restoreFiles;
             if (fails === 'unconfirmed') expect(onDisk).toContain('docs/notes.md');
             else expect(onDisk ?? []).not.toContain('docs/notes.md');
-            // A new process holds nothing of this one in memory.
-            if (continuedIn === 'a new') forgetCachedState(statePath(ref));
-
             let beforeSecondCall: Record<string, string | null> = {};
             let ignoredBeforeSecondCall: string | null = null;
             const second = vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
@@ -1315,17 +1336,46 @@ describe('runWorkflow — smoke', () => {
               ignoredBeforeSecondCall = existsSync(ignored) ? readFileSync(ignored, 'utf8') : null;
               return { success: true, output: '', usage: null };
             });
-            const kept = loadOwnerWorkflowState(ref);
-            const again = await runWithStateWrite(sessionId, undefined, 'start', {
-              projectDir,
-              config,
-              savedState: kept.kind === 'loaded' ? kept.state : undefined,
-              purpose: 'resume',
-              _implementer: makeImplementer({ implement: second }),
-            });
+            if (continuedIn === 'a new') {
+              // The failed exit update left this test process's live PID in the lock.
+              await markExited(sessionDir(projectDir, sessionId), 1);
+              const { prepared } = prepareWorkflow({
+                ...ref,
+                feature: 'state write',
+                config,
+                purpose: 'resume',
+                callbacks: makeCallbacks().callbacks,
+                sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+              });
+              const observer = fileURLToPath(
+                new URL(
+                  '../../../../testing/helpers/observe-restore-on-resume.ts',
+                  import.meta.url,
+                ),
+              );
+              const output = join(projectDir, SPLITBRIEF_DIR, 'resumed-files.json');
+              await promisify(execFile)(process.execPath, [
+                '--import',
+                'tsx',
+                observer,
+                JSON.stringify({ prepared, watched, output }),
+              ]);
+              const observed = JSON.parse(readFileSync(output, 'utf8'));
+              expect(observed).toHaveLength(1);
+              ({ beforeSecondCall, ignoredBeforeSecondCall } = observed[0]);
+            } else {
+              const kept = loadOwnerWorkflowState(ref);
+              const again = await runWithStateWrite(sessionId, undefined, 'start', {
+                projectDir,
+                config,
+                savedState: kept.kind === 'loaded' ? kept.state : undefined,
+                purpose: 'resume',
+                _implementer: makeImplementer({ implement: second }),
+              });
 
-            expect(again.thrown).toBeUndefined();
-            expect(second).toHaveBeenCalledTimes(1);
+              expect(again.thrown).toBeUndefined();
+              expect(second).toHaveBeenCalledTimes(1);
+            }
             // A new process restores from the disk only: the declared file goes back, the
             // undeclared writes of the failed save stay as the call left them.
             expect(beforeSecondCall).toEqual(

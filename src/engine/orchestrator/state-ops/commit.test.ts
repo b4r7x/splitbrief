@@ -1,4 +1,4 @@
-import { chmodSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { makeQueuedMessage, setupProject } from '#testing/helpers/state-ops.js';
@@ -6,11 +6,31 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { sessionDir } from '../../../core/paths.js';
 import { resumeStep } from '../../../core/sessions/run/status.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { statePath } from '../../../core/state/file.js';
 import { saveState } from '../../../core/state/persistence.js';
+import { commitWorkflowState } from './commit.js';
 import { stateOpsError } from './errors.js';
 import { transitionAndSave, transitionsAndSave } from './transition.js';
 
 describe('a state write that fails', () => {
+  it('keeps the published revision when a commit expects an older revision', () => {
+    const ref = setupProject();
+    try {
+      const first = { ...createInitialState('feature'), stateRevision: 16 };
+      saveState(ref, first);
+      const published = commitWorkflowState({ ref, expected: first, next: first });
+      expect(published).toMatchObject({ kind: 'committed', state: { stateRevision: 17 } });
+      const path = statePath(ref);
+      const bytes = readFileSync(path);
+      expect(
+        commitWorkflowState({ ref, expected: first, next: { ...first, feature: 'stale' } }).kind,
+      ).toBe('conflict');
+      expect(readFileSync(path)).toEqual(bytes);
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
   it('names state.json and the cause in plain words', () => {
     const ref = setupProject();
     const dir = sessionDir(ref.projectDir, ref.sessionId);

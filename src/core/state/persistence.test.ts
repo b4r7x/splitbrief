@@ -12,20 +12,19 @@ import { enableDebugLog, loggedDiagnostics } from '#testing/helpers/debug-log.js
 import { resetLoggerForTests } from '../../lib/logger.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 
-const fsControl = vi.hoisted(() => ({ throwEnoentOnStatOnce: false }));
+const fsControl = vi.hoisted(() => ({ disappearOnOpen: undefined as string | undefined }));
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
   return {
     ...actual,
-    statSync: (...args: Parameters<typeof actual.statSync>) => {
-      if (fsControl.throwEnoentOnStatOnce) {
-        fsControl.throwEnoentOnStatOnce = false;
-        const err = new Error('ENOENT: no such file or directory') as NodeJS.ErrnoException;
-        err.code = 'ENOENT';
-        throw err;
+    openSync: (...args: Parameters<typeof actual.openSync>) => {
+      const [path] = args;
+      if (path === fsControl.disappearOnOpen) {
+        fsControl.disappearOnOpen = undefined;
+        actual.unlinkSync(path);
       }
-      return actual.statSync(...args);
+      return actual.openSync(...args);
     },
   };
 });
@@ -34,7 +33,7 @@ let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
 
 afterEach(() => {
-  fsControl.throwEnoentOnStatOnce = false;
+  fsControl.disappearOnOpen = undefined;
   resetLoggerForTests();
   if (tmp) cleanupTempDir(tmp);
 });
@@ -165,7 +164,7 @@ describe('saveState / loadState roundtrip', () => {
   });
 });
 
-describe('loadState mtime cache', () => {
+describe('loadState freshness', () => {
   it('re-reads from disk when the file changes out of band', () => {
     const dir = makeTmp();
     const original = createInitialState('cache-feature');
@@ -178,6 +177,7 @@ describe('loadState mtime cache', () => {
 
     const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
     expect(loaded?.feature).toBe('cache-feature-renamed');
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBe(loaded);
   });
 });
 
@@ -446,12 +446,11 @@ describe('loadState', () => {
   it('returns null without throwing when the file disappears after the existence check', () => {
     const dir = makeTmp();
     saveState({ projectDir: dir, sessionId: SESSION_ID }, createInitialState('vanishing'));
+    enableDebugLog(dir);
 
-    // Simulate the TOCTOU window: the file passes existsSync, then statSync
-    // raises ENOENT because the file was removed before loadState stats it.
-    // loadState must swallow that into null rather than propagating the throw.
-    fsControl.throwEnoentOnStatOnce = true;
+    fsControl.disappearOnOpen = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'state.json');
     expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+    expect(loggedDiagnostics(dir).join('\n')).toContain('state.json: it could not be read');
   });
 });
 

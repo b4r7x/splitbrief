@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
@@ -13,6 +14,7 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { guidanceConsult } from '#testing/helpers/typed-planner.js';
+import { spawnCli } from '../helpers/live-cli-harness.js';
 import {
   cli,
   createStopContinueFixture,
@@ -138,8 +140,7 @@ function patchFiles(ref: { projectDir: string; sessionId: string }): string[] {
     .sort();
 }
 
-async function runToReady(target: StopContinueFixture) {
-  const run = await cli(target, ['start', 'booking'], { timeoutMs: RUN_TIMEOUT_MS });
+function readReadyRun(target: StopContinueFixture, run: Awaited<ReturnType<typeof cli>>) {
   expect(run.exitCode, run.stderr).toBe(0);
   const sessionId = readdirSync(sessionsRoot(target.projectDir))[0];
   if (sessionId === undefined) throw new Error('the run left no session');
@@ -197,7 +198,31 @@ describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 
       { [alpha.title]: alphaFiles, [rewritten.title]: alphaFiles },
     );
 
-    const { ref, files } = await runToReady(target);
+    const stamp = join(target.tmpDir, 'rewrite-dispatch.json');
+    const preload = fileURLToPath(
+      new URL('../helpers/rewrite-dispatch-timestamp.cjs', import.meta.url),
+    );
+    vi.stubEnv('SPLITBRIEF_TEST_REWRITE_DISPATCH', stamp);
+    vi.stubEnv('NODE_OPTIONS', `${process.env.NODE_OPTIONS} --require="${preload}"`);
+    const run = await spawnCli({
+      args: [
+        'dist/cli.js',
+        'start',
+        'booking',
+        '--plain',
+        '--allow-repo-runners',
+        '--project',
+        target.projectDir,
+      ],
+      stateHome: target.stateHome,
+      timeoutMs: RUN_TIMEOUT_MS,
+    });
+    const { taskStart, dispatch } = JSON.parse(readFileSync(stamp, 'utf8'));
+    expect(dispatch).toEqual({ ...taskStart, revision: taskStart.revision + 1 });
+    expect(`${run.stdout}\n${run.stderr}`).not.toContain(
+      'the file changed on disk before SPLITBRIEF could save it',
+    );
+    const { ref, files } = readReadyRun(target, run);
     const rows = resultMenuRows({ override: false, findings: [], confirming: false, files });
     const applied = await cli(target, ['continue', ref.sessionId, '--action', 'apply'], {
       timeoutMs: RUN_TIMEOUT_MS,
@@ -208,6 +233,9 @@ describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 
     expect(files).toBe(2);
     expect(rows.map((row) => row.consequence)).not.toContain('close the run; it changed no files');
     expect(bookedFiles(ref)).toEqual(['src/alpha.mjs', 'src/alpha.test.mjs']);
+    expect(readFileSync(join(target.projectDir, 'src/alpha.mjs'), 'utf8')).toBe(
+      alphaFiles['src/alpha.mjs'],
+    );
   });
 
   it('agrees on one file set across Ready, the closed Files list and run.patch after a split', async () => {
@@ -267,7 +295,8 @@ describe('e2e: the booking of a brief the planner rewrote or split', { timeout: 
       },
     );
 
-    const { ref, files } = await runToReady(target);
+    const run = await cli(target, ['start', 'booking'], { timeoutMs: RUN_TIMEOUT_MS });
+    const { ref, files } = readReadyRun(target, run);
     const ended = await cli(target, ['continue', ref.sessionId, '--action', 'end-run'], {
       timeoutMs: RUN_TIMEOUT_MS,
     });

@@ -1,4 +1,12 @@
-import { existsSync, readFileSync, realpathSync, statSync, type BigIntStats } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../schemas/workflow/state.js';
 import { WorkflowStateSchema, WORKFLOW_STATE_VERSION } from '../schemas/workflow/state.js';
@@ -12,16 +20,12 @@ import { SPLITBRIEF_DIR, SESSIONS_DIR, STATE_FILE, sessionDir } from '../paths.j
 import { narrowRecord } from '../../utils/type-guards.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { rejectSymlinkTarget } from '../../lib/fs/secure.js';
+import { revisionFromStat } from '../../lib/fs/atomic-write/revision.js';
 import type { ConfigRevision } from '../../lib/fs/atomic-write/types.js';
 import { assertExistingPathConfined } from '../../lib/fs/confinement.js';
 import { assertSessionDirConfined } from '../sessions/confinement.js';
 
-type StateCacheEntry = { mtimeMs: number; size: number; state: WorkflowState };
-
-const STATE_CACHE_MAX_ENTRIES = 64;
-const stateCache = new Map<string, StateCacheEntry>();
-
-export type RawStateRevision = {
+type RawStateRevision = {
   readonly bytes: Buffer;
   readonly value: unknown;
   readonly revision: ConfigRevision;
@@ -38,70 +42,38 @@ type RawStateRead =
     }
   | { readonly kind: 'present'; readonly raw: RawStateRevision };
 
-function cacheState(filePath: string, entry: StateCacheEntry): void {
-  stateCache.delete(filePath);
-  stateCache.set(filePath, entry);
-  while (stateCache.size > STATE_CACHE_MAX_ENTRIES) {
-    const oldest = stateCache.keys().next().value;
-    if (oldest === undefined) break;
-    stateCache.delete(oldest);
-  }
-}
-
-export function cachedStateFor(
-  filePath: string,
-  mtimeMs: number,
-  size: number,
-): WorkflowState | null {
-  const cached = stateCache.get(filePath);
-  if (cached === undefined || cached.mtimeMs !== mtimeMs || cached.size !== size) return null;
-  cacheState(filePath, cached);
-  return cached.state;
-}
-
-export function cacheStateSnapshot(
-  filePath: string,
-  mtimeMs: number,
-  size: number,
-  state: WorkflowState,
-): void {
-  cacheState(filePath, { mtimeMs, size, state });
-}
-
-export function forgetCachedState(filePath: string): void {
-  stateCache.delete(filePath);
-}
-
-export function cacheRevision(
-  filePath: string,
-  revision: ConfigRevision,
-  state: WorkflowState,
-): void {
-  cacheState(filePath, {
-    mtimeMs: Number(revision.fileIdentity.mtimeNs / 1_000_000n),
-    size: Number(revision.fileIdentity.size),
-    state,
-  });
-}
-
-export function revisionFromBytes(bytes: Uint8Array, stat: BigIntStats): ConfigRevision {
-  return {
-    rawSha256: sha256Hex(bytes),
-    fileIdentity: {
-      dev: stat.dev,
-      ino: stat.ino,
-      size: stat.size,
-      mtimeNs: stat.mtimeNs,
-    },
-  };
-}
-
 export function statePath(ref: SessionRef): string {
   const directory = sessionDir(ref.projectDir, ref.sessionId);
   try {
     return join(realpathSync(directory), STATE_FILE);
   } catch {
     return join(directory, STATE_FILE);
+  }
+}
+
+export function readStateFile(
+  filePath: string,
+):
+  | { kind: 'malformed'; message: string; cause?: unknown }
+  | { kind: 'present'; bytes: Buffer; revision: ConfigRevision } {
+  try {
+    const fd = openSync(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      if (!fstatSync(fd, { bigint: true }).isFile())
+        return { kind: 'malformed', message: 'State path is not a regular file.' };
+      const bytes = readFileSync(fd);
+      const stat = fstatSync(fd, { bigint: true });
+      const revision = revisionFromStat(sha256Hex(bytes), stat);
+      return { kind: 'present', bytes, revision };
+    } finally {
+      closeSync(fd);
+    }
+  } catch (cause) {
+    return {
+      kind: 'malformed',
+      message: `State file cannot be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+      cause,
+    };
   }
 }
 
@@ -123,22 +95,9 @@ export function readRawState(ref: SessionRef): RawStateRead {
     };
   }
 
-  let bytes: Buffer;
-  let stat: BigIntStats;
-  try {
-    bytes = readFileSync(filePath);
-    stat = statSync(filePath, { bigint: true });
-    if (!stat.isFile()) {
-      return { kind: 'malformed', message: 'State path is not a regular file.' };
-    }
-  } catch (cause) {
-    return {
-      kind: 'malformed',
-      message: `State file cannot be read: ${cause instanceof Error ? cause.message : String(cause)}`,
-    };
-  }
-
-  const revision = revisionFromBytes(bytes, stat);
+  const file = readStateFile(filePath);
+  if (file.kind === 'malformed') return file;
+  const { bytes, revision } = file;
   let value: unknown;
   try {
     value = JSON.parse(bytes.toString('utf8'));

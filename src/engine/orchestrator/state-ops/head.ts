@@ -1,13 +1,12 @@
-import { existsSync, readFileSync, realpathSync, statSync, type BigIntStats } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { sessionDir, STATE_FILE } from '../../../core/paths.js';
 import { WorkflowStateSchema, type WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { assertSessionDirConfined } from '../../../core/sessions/confinement.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { ConfigRevision } from '../../../lib/fs/atomic-write/types.js';
-import { revisionFromBytes } from '../../../core/state/file.js';
 import { LEGACY_STATE_VERSION } from '../../../core/state/migration/legacy-state.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { loadStateWithRevision } from '../../../core/state/persistence.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import { stateOpsError } from './errors.js';
 
@@ -26,34 +25,25 @@ export function readStateHead(ref: SessionRef): StateHead | null {
   const path = workflowStatePath(ref);
   if (!existsSync(path)) return null;
 
-  const loaded = loadState(ref);
-  if (loaded === null) {
-    throw stateOpsError.notRead(ref.sessionId, 'it could not be read, or its content is not valid');
+  const loaded = loadStateWithRevision(ref);
+  if (loaded.kind !== 'loaded') {
+    const cause = loaded.kind === 'invalid' ? loaded.cause : undefined;
+    throw stateOpsError.notRead(
+      ref.sessionId,
+      cause ?? 'it could not be read, or its content is not valid',
+    );
   }
 
-  let bytes: Buffer;
-  let stat: BigIntStats;
-  try {
-    bytes = readFileSync(path);
-    const candidate = statSync(path, { bigint: true });
-    if (!('mtimeNs' in candidate) || typeof candidate.mtimeNs !== 'bigint') {
-      throw stateOpsError.invalidHead('Workflow state revision metadata is unavailable.');
-    }
-    stat = candidate;
-  } catch (cause) {
-    throw stateOpsError.notRead(ref.sessionId, cause);
-  }
-
+  const { bytes, revision } = loaded;
   let raw: unknown;
   try {
     raw = JSON.parse(bytes.toString('utf8'));
   } catch (cause) {
     throw stateOpsError.invalidHead('Workflow state is not valid JSON.', cause);
   }
-  const revision = revisionFromBytes(bytes, stat);
   // A v3 file reads as the v4 state `loadState` maps it to; its first write saves it as v4.
   if (narrowRecord(raw)?.stateVersion === LEGACY_STATE_VERSION) {
-    return { state: loaded, revision, digest: revision.rawSha256 };
+    return { state: loaded.state, revision, digest: revision.rawSha256 };
   }
   const parsed = WorkflowStateSchema.safeParse(raw);
   if (!parsed.success) {

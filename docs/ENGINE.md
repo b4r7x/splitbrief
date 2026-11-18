@@ -256,7 +256,7 @@ Two complementary paths:
 
 **`saveState()`** — writes `state.json` on every phase transition via `transitionAndSave()`. This is the continuation source of truth: `splitbrief resume` reads it to know what phase, which tasks, and what progress. It's overwritten, not appended.
 
-One API owns the file. The state-file reader reads and classifies it and owns `revisionFromBytes`, the compare-and-swap revision every reader shares; the orchestrator's state operations are the only writer, and `commitWorkflowState` stamps `WORKFLOW_STATE_VERSION` rather than spelling the number. No caller writes `state.json` directly or infers a revision from an event stream.
+The state-file reader reads the bytes and identity from one open file. It reuses a parsed state only when the content digest and file identity match the cached revision. The orchestrator's state operations compare the revision before writing, and `commitWorkflowState` stamps `WORKFLOW_STATE_VERSION`. No caller writes `state.json` directly or infers a revision from an event stream.
 
 A persisted changed-files baseline has two provenance states: `head: null` records a known unborn start, and a SHA records the exact run-start commit. State without a baseline is rejected at final review (`finalReviewError.missingRunBaseline`) rather than reconstructed from commit subjects.
 
