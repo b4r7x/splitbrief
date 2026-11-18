@@ -3,17 +3,15 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
-  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ChangedFilesSnapshotSchema } from '../../../core/schemas/workflow/changed-files.js';
 
 const control = vi.hoisted(() => ({
@@ -117,7 +115,7 @@ const { createRunIsolation } = await import('../isolation/create.js');
 
 const roots: string[] = [];
 function tempRoot() {
-  const root = mkdtempSync(join(tmpdir(), 'splitbrief-filesystem-boundary-'));
+  const root = createTempDir('splitbrief-filesystem-boundary');
   roots.push(root);
   return root;
 }
@@ -133,7 +131,7 @@ afterEach(() => {
   control.statusFiles = [];
   control.gitCalls.length = 0;
   control.tree.clear();
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) cleanupTempDir(root);
 });
 
 const config = makeNoValidationConfig({

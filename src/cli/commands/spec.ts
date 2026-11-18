@@ -192,7 +192,7 @@ async function createSpecPlanner(
 }
 
 async function runSpecPlanSession(spec: PreparedSpec, planner: Planner): Promise<PlanProposal> {
-  const { projectDir, sessionId, config, interaction, execution } = spec;
+  const { projectDir, sessionId, interaction, execution } = spec;
   let plan: PlanProposal;
   try {
     plan = await withCliErrors(async () => {
@@ -217,7 +217,8 @@ async function runSpecPlanSession(spec: PreparedSpec, planner: Planner): Promise
           );
           return runCommandSeatCall(
             {
-              tool: getRunnerCatalogDisplayName(config.planner),
+              projectDir,
+              runner: execution.config.planner,
               write: (line) => console.log(line),
             },
             (signal) =>

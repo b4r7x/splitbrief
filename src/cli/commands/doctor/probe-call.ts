@@ -1,4 +1,3 @@
-import { realpath } from 'node:fs/promises';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
@@ -17,14 +16,21 @@ import type {
   CliImplementerAdapter,
 } from '../../../engine/runners/cli-tools/contract.js';
 import { preparePrompt } from '../../../engine/runners/cli-tools/prompt-transport.js';
+import { withToolStage } from '../../../engine/runners/cli-tools/probe/stage.js';
 import { toCliEnvironment } from '../../../engine/runners/invoke-cli-adapter.js';
 import { createCustomRunnerRedactor } from '../../../engine/runners/custom/redaction.js';
 import { resolveCliExecutableAliases } from '../../../engine/runners/cli-executable/resolve.js';
 import { sandboxCredentialValues } from '../../../engine/runners/sandbox/credential-values.js';
 import { createRunnerSandboxEnv } from '../../../engine/runners/sandbox/env.js';
 import { clearBridgedCliState } from '../../../engine/runners/sandbox/state/bridge.js';
+import { throwIfAborted } from '../../../utils/abort.js';
 import { cliError } from '../../errors.js';
-import { type SeatProbeSeat, type SeatProbeCapture, seatProbeAdapter } from './seat-probe.js';
+import {
+  type SeatProbeCall,
+  type SeatProbeSeat,
+  type SeatProbeCapture,
+  seatProbeAdapter,
+} from './seat-probe.js';
 
 const SEAT_PROBE_PROMPT = 'Reply with the word ok.';
 const SEAT_PROBE_TIMEOUT_MS = 60_000;
@@ -44,8 +50,16 @@ function seatProbeRunner(config: Config, seat: SeatProbeSeat): RunnerConfig {
   }
 }
 
-export async function defaultSeatProbeCall(
-  input: Readonly<{ projectDir: string; seat: SeatProbeSeat }>,
+export const defaultSeatProbeCall: SeatProbeCall = (input) =>
+  withToolStage(undefined, async (signal) => {
+    const capture = await captureSeatProbe(input, signal);
+    throwIfAborted(signal);
+    return capture;
+  });
+
+async function captureSeatProbe(
+  input: Parameters<SeatProbeCall>[0],
+  signal: AbortSignal,
 ): Promise<SeatProbeCapture> {
   const { config } = loadConfig(input.projectDir);
   const runner = seatProbeRunner(config, input.seat);
@@ -58,7 +72,7 @@ export async function defaultSeatProbeCall(
   const role: RunnerRole = input.seat === 'build' ? 'implementer' : 'planner';
   const adapter = seatProbeAdapter(runner.tool, input.seat);
   const workspace = await createProject(undefined);
-  const workspaceDir = await realpath(workspace.path);
+  const workspaceDir = workspace.path;
   try {
     const env = await createRunnerSandboxEnv(workspaceDir, runner, role);
     const executable = (
@@ -76,7 +90,7 @@ export async function defaultSeatProbeCall(
       environment: toCliEnvironment(env),
       cwd: workspaceDir,
       timeoutMs: SEAT_PROBE_TIMEOUT_MS,
-      signal: undefined,
+      signal,
     };
     const prepared = await preparePrompt(adapter, invocation, args, SEAT_PROBE_PROMPT);
     const result = await processRunnerOf({})({
@@ -87,6 +101,7 @@ export async function defaultSeatProbeCall(
       stdin: prepared.stdin,
       timeoutMs: SEAT_PROBE_TIMEOUT_MS,
       maxOutputBytes: SEAT_PROBE_MAX_OUTPUT_BYTES,
+      signal,
     });
     const redact = createCustomRunnerRedactor(sandboxCredentialValues(env));
     return {
@@ -100,8 +115,11 @@ export async function defaultSeatProbeCall(
       outputExceeded: result.outputExceeded,
     };
   } finally {
-    await clearBridgedCliState(workspace.path);
-    await workspace.cleanup();
+    try {
+      await clearBridgedCliState(workspaceDir);
+    } finally {
+      await workspace.cleanup();
+    }
   }
 }
 

@@ -1,13 +1,18 @@
 import { awaitActiveWorkflowShutdown } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { getDefaultDetectionService } from '../../engine/detection/service/create.js';
+import { awaitToolStages, stopToolStages } from '../../engine/runners/cli-tools/probe/stage.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
-import { installDiagnosticSink } from '../../lib/warn.js';
+import { installDiagnosticSink, warnError } from '../../lib/warn.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { teardownStores } from '../bootstrap/init.js';
-import { SIGNAL_EXIT_CODE, type TerminationSignal } from '../../lib/process/signals.js';
+import {
+  onUnheldTerminationSignal,
+  SIGNAL_EXIT_CODE,
+  type TerminationSignal,
+} from '../../lib/process/signals.js';
 import { closeTuiInput } from './stdin.js';
 import type { EditorOutput, TuiInput } from './types.js';
 
@@ -31,6 +36,18 @@ async function runCleanupStep(step: CleanupStep): Promise<void> {
   await settleCleanupStep(step);
 }
 
+/** Stops tool work and returns any process reaping failure after cleanup. */
+async function stopToolWork(): Promise<CleanupFailure | undefined> {
+  const detectionShutdown = runCleanupStep(() => getDefaultDetectionService().shutdown());
+  await runCleanupStep(stopToolStages);
+  await detectionShutdown;
+  const reaping = await settleCleanupStep(killAllProcesses);
+  // A stage can remove its sign-in copy only after its process ends.
+  await runCleanupStep(awaitToolStages);
+  await runCleanupStep(awaitActiveWorkflowShutdown);
+  return reaping;
+}
+
 // A process group that survives reaping is reported to the caller, but it must not cost the user
 // the remaining owners: the terminal is restored first, then the failure is surfaced.
 async function cleanupTuiProcess(restore: CleanupStep): Promise<void> {
@@ -39,11 +56,40 @@ async function cleanupTuiProcess(restore: CleanupStep): Promise<void> {
     const current = preparationStore.get();
     if (current.kind !== 'idle') preparationStore.cancel(current.attempt);
   });
-  await runCleanupStep(() => getDefaultDetectionService().shutdown());
-  const reaping = await settleCleanupStep(killAllProcesses);
-  await runCleanupStep(awaitActiveWorkflowShutdown);
+  const reaping = await stopToolWork();
   await runCleanupStep(restore);
   if (reaping !== undefined) throw reaping.error;
+}
+
+export function reportStopFailure(error: unknown): void {
+  warnError(
+    'Could not stop every tool process while SPLITBRIEF stopped, so one may keep running',
+    error,
+    'feedback',
+  );
+}
+
+/**
+ * Owns each termination signal that neither the TUI nor a headless run holds: before they take
+ * the signals and after they let them go. It stops the tool work, then exits with the signal's code.
+ */
+export function installProcessStop(exit: (code: number) => void): () => boolean {
+  let stopping = false;
+  onUnheldTerminationSignal(
+    createTerminationSignalListener({
+      handle: createTerminationHandler({
+        cleanup: async () => {
+          stopping = true;
+          const reaping = await stopToolWork();
+          if (reaping !== undefined) throw reaping.error;
+        },
+        reportCleanupFailure: reportStopFailure,
+        exit,
+      }),
+      reportCleanupFailure: reportStopFailure,
+    }),
+  );
+  return () => stopping;
 }
 
 export function createTuiCleanup(deps: { restore: CleanupStep }): () => Promise<void> {

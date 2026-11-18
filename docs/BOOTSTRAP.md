@@ -181,7 +181,11 @@ If a component calls `store.use()` on a field that was never set by `initStores(
 
 ## Shutdown and cleanup order
 
-TUI quit tears down stores and cancels the current preparation. Detection shutdown refuses new cache saves and refreshes, cancels refresh lanes, and waits for accepted saves. Cleanup then drains registered processes, waits for workflow shutdown, and restores the terminal. `renderApp()` then ends the process with the selected exit code. A caller-requested unmount returns after cleanup so the caller can report an error. The process registry owns child termination timing.
+TUI quit tears down stores and cancels the current preparation. Detection shutdown refuses new cache saves and refreshes, and cancels refresh lanes. Cleanup stops active tool stages and refuses new ones. It waits for accepted cache saves, reaps registered processes, and waits for the stages to remove their temp folders and sign-in copies. Cleanup then waits for workflow shutdown and restores the terminal. `renderApp()` then ends the process with the selected exit code. A caller-requested unmount returns after cleanup so the caller can report an error. The process registry owns child termination timing.
+
+Every active holder receives SIGINT, SIGTERM and SIGHUP. The TUI holds the signals from just before mount until its cleanup ends. A signal during TUI cleanup joins that cleanup and exits with the signal's code. Headless runs, headless Apply and workflows hold signals through `withSignalHandlers` (`src/lib/process/signals.ts`). The headless and workflow holders can overlap.
+
+When there are zero holders, `installProcessStop` in `src/cli.ts` handles the signal. This covers tool checks before a TUI or headless run and the seat calls of `doctor --probe-seat`, `spec` and `review`. The handler stops detection and tool stages, reaps registered processes, and waits for stage cleanup and workflow shutdown. Once the handler starts, it controls the exit. It exits with 128 plus the signal number.
 
 ---
 

@@ -1,7 +1,7 @@
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { chmod, readFile, stat, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliExecutableIdentity } from '../../../../core/discovery/detection/executable.js';
 import {
   CLI_CONFORMANCE_EXIT_CODES,
@@ -47,7 +47,7 @@ function rawOptions(contract: unknown, processRunner: CliProcessRunner, recordPa
   return {
     contractJson: JSON.stringify(contract),
     recordPath,
-    projectDir: join(tmpdir(), 'unused-cli-project'),
+    projectDir: dirname(recordPath),
     resolveExecutable: currentExecutableIdentity,
     processRunner,
   };
@@ -149,7 +149,7 @@ async function fileExists(path: string): Promise<boolean> {
 
 describe('CLI production conformance lane', () => {
   it('reuses raw evidence and selects the explicit role from the named export', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    const directory = createTempDir('splitbrief-cli-harness');
     try {
       const recordPath = join(directory, 'evidence.json');
       const raw = await runRawCliConformance(
@@ -169,12 +169,12 @@ describe('CLI production conformance lane', () => {
       expect(evidence).toHaveProperty('verdict', 'PASS');
       expect(evidence).toHaveProperty('productionConformance');
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      cleanupTempDir(directory);
     }
   });
 
   it('fails closed for absent raw evidence, wrong role, and a missing named export', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    const directory = createTempDir('splitbrief-cli-harness');
     try {
       const missingRecord = await runProductionCliConformance({
         modulePath: join(directory, 'missing.mjs'),
@@ -216,12 +216,12 @@ describe('CLI production conformance lane', () => {
       });
       expect(roleMiss.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.HARNESS_FAILURE);
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      cleanupTempDir(directory);
     }
   });
 
   it('rejects adapter argument conflicts without spawning the candidate process', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    const directory = createTempDir('splitbrief-cli-harness');
     try {
       const recordPath = join(directory, 'conflict.json');
       const raw = await runRawCliConformance(
@@ -246,12 +246,12 @@ describe('CLI production conformance lane', () => {
       const evidence = JSON.parse(await readFile(recordPath, 'utf8')) as Record<string, unknown>;
       expect(JSON.stringify(evidence)).not.toContain('secret-value');
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      cleanupTempDir(directory);
     }
   });
 
   it('proves direct-change versus no-op implementer outcomes and text-exit terminal handling', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    const directory = createTempDir('splitbrief-cli-harness');
     try {
       const changedContract = {
         ...baseContract,
@@ -298,12 +298,12 @@ describe('CLI production conformance lane', () => {
       expect(noop.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
       expect(noop.verdict).toBe('OMIT');
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      cleanupTempDir(directory);
     }
   });
 
   it('accepts structured terminal output and omits when its terminal is missing', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    const directory = createTempDir('splitbrief-cli-harness');
     try {
       const terminalContract = {
         ...baseContract,
@@ -352,12 +352,12 @@ describe('CLI production conformance lane', () => {
       expect(missing.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.OMIT);
       expect(missing.verdict).toBe('OMIT');
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      cleanupTempDir(directory);
     }
   });
 
   it("sends the prompt on stdin in the adapter's own encoding", async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    const directory = createTempDir('splitbrief-cli-harness');
     try {
       const framedContract = { ...baseContract, id: 'fixture-framed-cli' };
       const recordPath = join(directory, 'framed.json');
@@ -378,7 +378,7 @@ describe('CLI production conformance lane', () => {
       });
       expect(production.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      cleanupTempDir(directory);
     }
   });
 });

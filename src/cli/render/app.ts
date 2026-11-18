@@ -9,7 +9,11 @@ import {
   resumeTerminalAfterEditor,
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
-import type { TerminationSignal } from '../../lib/process/signals.js';
+import {
+  holdTerminationSignals,
+  releaseTerminationSignals,
+  type TerminationSignal,
+} from '../../lib/process/signals.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { holdSlowProbeLines } from '../slow-probe-line.js';
 import { resolveRenderInputConfig } from './input-config.js';
@@ -23,6 +27,7 @@ import {
   createTerminalCleanup,
   createTerminationHandler,
   createTerminationSignalListener,
+  reportStopFailure,
 } from './process-lifecycle.js';
 import { openTuiInput } from './stdin.js';
 
@@ -61,15 +66,9 @@ function installProcessListeners(
   cleanup: () => Promise<void>,
   exit: (code: number) => void,
 ): ProcessListeners {
-  const reportTerminationCleanupFailure = (error: unknown) =>
-    warnError(
-      'Could not stop every tool process while SPLITBRIEF stopped, so one may keep running',
-      error,
-      'feedback',
-    );
   const onTerminationSignal = createTerminationHandler({
     cleanup,
-    reportCleanupFailure: reportTerminationCleanupFailure,
+    reportCleanupFailure: reportStopFailure,
     exit,
   });
   const reportCrash = (reason: unknown) => {
@@ -94,7 +93,7 @@ function installProcessListeners(
         listeners.completion ??= onTerminationSignal(signal);
         return listeners.completion;
       },
-      reportCleanupFailure: reportTerminationCleanupFailure,
+      reportCleanupFailure: reportStopFailure,
     }),
     settleCrash: createCrashListener({
       handle: (reason) => {
@@ -116,9 +115,7 @@ function installProcessListeners(
     }),
     onResume: createResumeHandler({ restore: () => resumeTerminalAfterEditor() }),
   };
-  process.on('SIGINT', listeners.settleTerminationSignal);
-  process.on('SIGTERM', listeners.settleTerminationSignal);
-  process.on('SIGHUP', listeners.settleTerminationSignal);
+  holdTerminationSignals(listeners.settleTerminationSignal);
   process.on('uncaughtException', listeners.settleCrash);
   process.on('unhandledRejection', listeners.settleCrash);
   process.on('SIGTSTP', listeners.onSuspend);
@@ -126,10 +123,9 @@ function installProcessListeners(
   return listeners;
 }
 
+// The termination signals stay held until the cleanup ends: one that arrives meanwhile joins the
+// cleanup and exits with its code.
 function removeProcessListeners(listeners: ProcessListeners): void {
-  process.off('SIGINT', listeners.settleTerminationSignal);
-  process.off('SIGTERM', listeners.settleTerminationSignal);
-  process.off('SIGHUP', listeners.settleTerminationSignal);
   process.off('SIGTSTP', listeners.onSuspend);
   process.off('SIGCONT', listeners.onResume);
   process.off('uncaughtException', listeners.settleCrash);
@@ -166,7 +162,7 @@ export async function renderApp(
     await mountTui(appElement, { fullscreen, kittyKeyboard, output, input, unmountSignal });
   } finally {
     removeProcessListeners(listeners);
-    await cleanup();
+    await cleanup().finally(() => releaseTerminationSignals(listeners.settleTerminationSignal));
     releaseSlowProbeLines();
   }
   if (listeners.completion !== undefined) await listeners.completion;

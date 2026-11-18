@@ -16,7 +16,7 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
   - `0` — success.
   - `1` — generic CLI failure. Almost every command throws via `cliError(message)` which defaults to `exitCode: 1`. The top-level handler prints `Error: <message>` to stderr and exits with the carried code.
   - `2`: `start` refuses an `@file` input, an empty feature description before `@file` inputs, or a feature description that starts with `@`. Guardrail hooks also use this code.
-  - `130`, `143`, `129`: a headless run (`--plain` or `--json`) stopped by SIGINT, SIGTERM or SIGHUP. See [Headless event stream](#headless-event-stream---json).
+  - `130`, `143`, `129`: a command stopped by SIGINT, SIGTERM or SIGHUP. Before it exits, it stops the tool checks it started, ends their tool processes and removes their temporary folders. A headless run (`--plain` or `--json`) stops resumably. See [Headless event stream](#headless-event-stream---json).
 - **Error format:** Command errors print `Error: <message>` in red on stderr. Blocked `doctor` readiness prints its report on stdout and exits `1` without a repeated error message. Use `doctor --json` to read readiness blockers programmatically.
 
 ### Global options

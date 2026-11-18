@@ -2,11 +2,11 @@ import { sha256Hex } from '../../../src/utils/sha256.js';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { afterEach, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import {
   makeCopyingIsolation,
@@ -22,10 +22,10 @@ import { runSingleTask } from '../../../src/engine/orchestrator/task/step.js';
 
 const roots: string[] = [];
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) cleanupTempDir(root);
 });
 function fixture() {
-  const projectDir = mkdtempSync(join(tmpdir(), 'validator-retention-'));
+  const projectDir = createTempDir('validator-retention');
   roots.push(projectDir);
   execFileSync('git', ['init', '--quiet'], { cwd: projectDir });
   const sessionId = 'retention';

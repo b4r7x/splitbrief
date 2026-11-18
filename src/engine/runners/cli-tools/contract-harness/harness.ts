@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -204,7 +204,9 @@ export async function createProject(projectDir: string | undefined): Promise<Con
   if (projectDir !== undefined) {
     return { path: resolve(projectDir), cleanup: async () => {} };
   }
-  const path = await mkdtemp(join(tmpdir(), 'splitbrief-cli-conformance-'));
+  // The canonical path: a sandbox built on it and the cleanup name the same temp folders, even
+  // where the system temp folder is a link, as on macOS.
+  const path = await realpath(await mkdtemp(join(tmpdir(), 'splitbrief-cli-conformance-')));
   try {
     await execFileAsync(gitBinary(), ['init', '--quiet'], {
       cwd: path,

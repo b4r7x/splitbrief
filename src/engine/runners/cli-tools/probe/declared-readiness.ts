@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../../../core/discovery/detection/executable.js';
 import type { ProbeOutcome } from '../../../../core/discovery/runner-evidence.js';
 import { cliAuthChannelPlatformSupported } from '../../../../core/runners/cli-tool/auth-channels.js';
@@ -14,7 +11,6 @@ import { throwIfAborted } from '../../../../utils/abort.js';
 import { trackProbe } from '../../../probe-activity.js';
 import { revalidateCliExecutableIdentity } from '../../cli-executable/identity.js';
 import { readCodexCredentialStore } from '../../host-model-selection.js';
-import { removeSandboxTempDirs } from '../../sandbox/state/paths.js';
 import type {
   CliDeclaredProbeContract,
   CliProbeOutput,
@@ -30,6 +26,7 @@ import {
 import { probeEnvironment, runProbe } from './process.js';
 import { isProviderOracleProbe } from './provider-oracle.js';
 import { hasForbiddenProbeArgument, declaredAuthProbeIsSafe } from './safety.js';
+import { withProbeStage } from './stage.js';
 
 export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
   tool: CliToolId;
@@ -190,25 +187,22 @@ export async function probeDeclaredCliReadinessEvidence(
   options: ProbeDeclaredCliReadinessEvidenceOptions,
 ): Promise<CliReadinessProbeEvidence> {
   throwIfAborted(options.signal);
-  if (options.executable === null) {
+  const { executable } = options;
+  if (executable === null) {
     return { version: { kind: 'not-run' }, auth: 'not-run' };
   }
-  if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {
+  if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
     return { version: { kind: 'cancelled' }, auth: 'cancelled' };
   }
-  const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-readiness-'));
-  try {
-    return await declaredReadinessEvidence({
-      executable: options.executable,
+  return withProbeStage('splitbrief-readiness-', options.signal, (neutralDir, signal) =>
+    declaredReadinessEvidence({
+      executable,
       neutralDir,
       tool: options.tool,
       probe: options.probe,
-      signal: options.signal,
+      signal,
       onAuthProbeRun: options.onAuthProbeRun,
       versionProbes: options.versionProbes,
-    });
-  } finally {
-    await rm(neutralDir, { recursive: true, force: true });
-    removeSandboxTempDirs(neutralDir);
-  }
+    }),
+  );
 }

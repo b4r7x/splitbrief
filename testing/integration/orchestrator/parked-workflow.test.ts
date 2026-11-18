@@ -1,11 +1,11 @@
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import { afterEach, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import {
   makeCallbacks,
@@ -25,7 +25,7 @@ import {
 
 const roots: string[] = [];
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) cleanupTempDir(root);
 });
 function assertUnborn(dir: string) {
   expect(existsSync(join(dir, '.git/index'))).toBe(false);
@@ -37,7 +37,7 @@ function assertUnborn(dir: string) {
 it.each(['initial', 'consult'] as const)(
   'repeated workflow resume preserves %s output and the stopped attempt',
   async (route) => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'validator-cold-workflow-'));
+    const projectDir = createTempDir('validator-cold-workflow');
     roots.push(projectDir);
     execFileSync('git', ['init', '--quiet'], { cwd: projectDir });
     const sessionId = 'parked-workflow';

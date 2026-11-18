@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { withSignalHandlers } from './signals.js';
+import {
+  holdTerminationSignals,
+  onUnheldTerminationSignal,
+  releaseTerminationSignals,
+  withSignalHandlers,
+} from './signals.js';
 
 describe('withSignalHandlers', () => {
   it('executes the function to completion and returns cancelled=false when no signal fires', async () => {
@@ -82,5 +87,26 @@ describe('withSignalHandlers', () => {
 
     expect(result).toEqual({ cancelled: true });
     expect(handler).toHaveBeenCalledOnce();
+  });
+});
+
+// The listeners stay on the process of this test file, so this case runs last.
+describe('onUnheldTerminationSignal', () => {
+  it('leaves each signal to a holder and calls the stop for a signal that no holder takes', async () => {
+    const stop = vi.fn();
+    const held = vi.fn();
+    onUnheldTerminationSignal(stop);
+
+    await withSignalHandlers(held, async () => {
+      process.emit('SIGTERM', 'SIGTERM');
+    });
+    holdTerminationSignals(held);
+    process.emit('SIGINT', 'SIGINT');
+    releaseTerminationSignals(held);
+    expect(held.mock.calls).toEqual([['SIGTERM'], ['SIGINT']]);
+    expect(stop).not.toHaveBeenCalled();
+
+    process.emit('SIGHUP', 'SIGHUP');
+    expect(stop).toHaveBeenCalledExactlyOnceWith('SIGHUP');
   });
 });

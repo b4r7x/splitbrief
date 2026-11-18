@@ -2,10 +2,10 @@ import * as fs from 'node:fs/promises';
 import * as syncFs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { afterEach, expect, it, vi } from 'vitest';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
+import { cleanupTempDir, createTempDir, recordSandboxProjects } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { createRunIsolation } from '../../../src/engine/orchestrator/isolation/create.js';
@@ -23,11 +23,11 @@ const roots: string[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  for (const root of roots.splice(0)) syncFs.rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) cleanupTempDir(root);
 });
 
 async function fixture(input: { cli?: boolean } = {}) {
-  const parent = syncFs.mkdtempSync(join(tmpdir(), 'preserved-workspace-'));
+  const parent = createTempDir('preserved-workspace');
   roots.push(parent);
   const projectDir = join(parent, 'project');
   syncFs.mkdirSync(projectDir);
@@ -61,6 +61,7 @@ async function fixture(input: { cli?: boolean } = {}) {
   };
   const run = makeIsolation();
   const workspace = await run.acquire(options);
+  recordSandboxProjects(workspace.projectDir);
   syncFs.writeFileSync(join(workspace.projectDir, 'partial.ts'), 'owned partial');
   await workspace.retain?.();
   const record = await readWorkspaceRecord(ref);

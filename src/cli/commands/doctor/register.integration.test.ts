@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
+import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { freezeProbeDeadlines } from '#testing/helpers/fake-timers.js';
+import { stubSignInHome } from '#testing/helpers/sign-in-home.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   activateCompatibleCliShim,
@@ -2053,6 +2062,40 @@ describe('doctor --probe-seat', () => {
     );
 
     expect(logged).toEqual(['Seat probe BUILD: other', 'First error: Model refused the request']);
+  });
+
+  // macOS hands out its temp folder as a link: /var/folders/... is /private/var/folders/...
+  it('removes the temp folder of the seat call when the system temp folder is a link', async () => {
+    initGitRepo(tmp);
+    writeConfig(
+      tmp,
+      'version: 3\nplanner:\n  kind: cli\n  tool: command-code\nimplementer:\n  kind: cli\n  tool: command-code\n',
+    );
+    await stubSignInHome(join(tmp, 'home'), []);
+    writeFakeNodeCli(
+      shimDir,
+      CLI_TOOL_CATALOG['command-code'].command,
+      [
+        "const { writeFileSync } = require('node:fs');",
+        "const { join } = require('node:path');",
+        "writeFileSync(join(process.env.TMPDIR, 'tool-note.txt'), 'written by the tool');",
+        "console.log(JSON.stringify({ type: 'result', subtype: 'success', finalText: 'ok' }));",
+      ].join('\n'),
+    );
+    const systemTmp = join(tmp, 'system-tmp');
+    const linkedTmp = join(tmp, 'linked-tmp');
+    mkdirSync(systemTmp);
+    symlinkSync(systemTmp, linkedTmp);
+    vi.stubEnv('TMPDIR', linkedTmp);
+    const logged = captureLogged();
+
+    await runDoctor(['--project', tmp, '--probe-seat', 'plan']);
+
+    expect(logged).toEqual(['Seat probe PLAN: passed']);
+    // Apple's git writes its own xcrun_db cache into TMPDIR; only the folders of the seat call count.
+    expect(
+      readdirSync(systemTmp).filter((name) => /^(sb-|splitbrief-cli-conformance-)/.test(name)),
+    ).toEqual([]);
   });
 
   it('makes no seat call without the flag', async () => {

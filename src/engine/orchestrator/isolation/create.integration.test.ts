@@ -76,7 +76,7 @@ const isolationWorktree = (dir: string): string =>
 
 function cleanupTempDir(dir: string): void {
   if (existsSync(join(dir, '.git'))) {
-    rmSync(isolationRoot(dir), { recursive: true, force: true });
+    removeTempDir(isolationRoot(dir));
   }
   removeTempDir(dir);
 }

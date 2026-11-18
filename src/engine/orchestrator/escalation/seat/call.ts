@@ -1,5 +1,7 @@
 import {
+  getRunnerCatalogDisplayName,
   getRunnerDisplayName,
+  type DeepReadonly,
   type RunnerConfig,
 } from '../../../../core/config/accessors/runner-config.js';
 import type { CrewSeatId } from '../../../../core/crew/identity.js';
@@ -8,8 +10,12 @@ import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { heldSeatOf } from '../../../../core/sessions/held-seat.js';
 import { seatRetrySentence, seatWaitSentence } from '../../../../core/sessions/seat-wait-line.js';
 import { loadState } from '../../../../core/state/persistence.js';
+import { throwIfAborted } from '../../../../utils/abort.js';
 import { thrownSeatFailure } from '../../../implementers/pipeline/call-result.js';
+import { withToolStage } from '../../../runners/cli-tools/probe/stage.js';
 import type { RunnerFailureOutcomeState } from '../../../runners/errors.js';
+import { clearBridgedStateUnder } from '../../../runners/sandbox/state/bridge.js';
+import { removeSandboxTempDir, sandboxRoot } from '../../../runners/sandbox/state/paths.js';
 import {
   abortableDelay,
   withSeatRetry,
@@ -206,19 +212,54 @@ export async function runThrowingSeatCall<T>(
  * waited out once. There is no saved state to park on a wait and no fallback
  * seat to consider, so `write` receives the retry and wait lines instead.
  */
-export async function runCommandSeatCall<T>(
-  opts: Readonly<{ tool: string; write: (line: string) => void }>,
+export function runCommandSeatCall<T>(
+  opts: Readonly<{
+    projectDir: string;
+    runner: DeepReadonly<RunnerConfig>;
+    write: (line: string) => void;
+  }>,
   call: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  return answerOrThrow(
-    await seatCallLadder(throwingAttempt(call), () => {}, {
-      onRetry: (info) => opts.write(seatRetrySentence(info)),
-      waits: async () => true,
-      wait: async (deadline) => {
-        const line = seatWaitSentence(opts.tool, deadline.toISOString());
-        if (line !== null) opts.write(line);
-        await abortableDelay(deadline.getTime() - Date.now(), undefined);
-      },
-    }),
-  );
+  const { projectDir, runner, write } = opts;
+  const attempt = throwingAttempt(call);
+  return withToolStage(undefined, async (signal) => {
+    let answer: T;
+    try {
+      answer = answerOrThrow(
+        await seatCallLadder(
+          async (attemptSignal) => {
+            const result = await attempt(attemptSignal);
+            throwIfAborted(attemptSignal);
+            return result;
+          },
+          () => {},
+          {
+            signal,
+            onRetry: (info) => write(seatRetrySentence(info)),
+            waits: async () => true,
+            wait: async (deadline) => {
+              const line = seatWaitSentence(
+                getRunnerCatalogDisplayName(runner),
+                deadline.toISOString(),
+              );
+              if (line !== null) write(line);
+              await abortableDelay(deadline.getTime() - Date.now(), signal);
+            },
+          },
+        ),
+      );
+    } finally {
+      if (runner.kind !== 'api') {
+        const tool = runner.kind === 'cli' ? runner.tool : undefined;
+        const root = sandboxRoot(projectDir, 'planner', tool);
+        try {
+          if (tool !== undefined) await clearBridgedStateUnder(root, tool);
+        } finally {
+          removeSandboxTempDir(root);
+        }
+      }
+    }
+    throwIfAborted(signal);
+    return answer;
+  });
 }

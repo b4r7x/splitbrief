@@ -1,6 +1,5 @@
 import type { Dirent } from 'node:fs';
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
@@ -29,11 +28,11 @@ import {
 } from '../../runners/cli-tools/probe/process.js';
 import { providerOracleCommand } from '../../runners/cli-tools/probe/provider-oracle.js';
 import { probeCommandsMatch } from '../../runners/cli-tools/probe/safety.js';
+import { withProbeStage } from '../../runners/cli-tools/probe/stage.js';
 import type { AuthProbeRun } from '../../runners/cli-tools/probe/declared-readiness.js';
 import { cliChannelStaging } from '../../runners/sandbox/auth-env.js';
 import { createSandboxEnv, prependCliExecutableDirectory } from '../../runners/sandbox/env.js';
 import { bridgedCliStatePresent } from '../../runners/sandbox/state/bridge.js';
-import { removeSandboxTempDirs } from '../../runners/sandbox/state/paths.js';
 import type { CliRunnerDiscoveryContext } from '../cli-context.js';
 import {
   type AdmittedCatalogOperation,
@@ -260,10 +259,9 @@ export async function probeContextCatalog(
     expected: operation.executable,
   });
   if (reRead.kind !== 'resolved') return { kind: 'cancelled' };
-  const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-catalog-'));
-  try {
+  return withProbeStage('splitbrief-catalog-', input.signal, async (neutralDir, signal) => {
     const environment = await catalogProbeEnvironment(operation, neutralDir);
-    throwIfAborted(input.signal);
+    throwIfAborted(signal);
     // A provider-dependent tool reaches some providers with no credential (a
     // project's own provider, the keyless `opencode` one), so its staged
     // listing runs and names exactly the providers a run can reach.
@@ -283,7 +281,7 @@ export async function probeContextCatalog(
               probe,
               neutralDir,
               environment.env,
-              input.signal,
+              signal,
               input.namesProject ? input.projectDir : undefined,
             ),
           );
@@ -293,8 +291,5 @@ export async function probeContextCatalog(
       expected: operation.executable,
     });
     return after.kind === 'resolved' ? outcome : { kind: 'cancelled' };
-  } finally {
-    await rm(neutralDir, { recursive: true, force: true });
-    removeSandboxTempDirs(neutralDir);
-  }
+  });
 }

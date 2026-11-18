@@ -31,6 +31,10 @@ vi.mock('../bootstrap/init.js', () => ({ teardownStores: lifecycle.teardownStore
 vi.mock('../../engine/detection/service/create.js', () => ({
   getDefaultDetectionService: () => ({ shutdown: lifecycle.shutdownDetection }),
 }));
+vi.mock('../../engine/runners/cli-tools/probe/stage.js', () => ({
+  stopToolStages: vi.fn(),
+  awaitToolStages: vi.fn(async () => {}),
+}));
 vi.mock('../../lib/process/registry.js', () => ({ killAllProcesses: lifecycle.killAllProcesses }));
 vi.mock('../../engine/orchestrator/session-lifecycle/shutdown.js', () => ({
   awaitActiveWorkflowShutdown: lifecycle.awaitActiveWorkflowShutdown,
@@ -561,6 +565,18 @@ describe('renderApp completion', () => {
     inkExit.resolve();
     await vi.waitFor(() => expect(lifecycle.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce());
     expect(exit).not.toHaveBeenCalled();
+    workflow.resolve();
+    await rendering;
+    expect(exit).toHaveBeenCalledExactlyOnceWith(143);
+  });
+
+  it('exits with the signal code when termination arrives during the cleanup after Ink completion', async () => {
+    const workflow = Promise.withResolvers<void>();
+    lifecycle.awaitActiveWorkflowShutdown.mockImplementation(() => workflow.promise);
+    const exit = vi.fn();
+    const rendering = renderApp(createElement(Fragment), { fullscreen: false }, { exit });
+    await vi.waitFor(() => expect(lifecycle.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce());
+    process.emit('SIGTERM', 'SIGTERM');
     workflow.resolve();
     await rendering;
     expect(exit).toHaveBeenCalledExactlyOnceWith(143);

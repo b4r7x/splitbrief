@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it, vi } from 'vitest';
@@ -20,16 +20,20 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 
-it('handles the first key and quits the real CLI while the cache parser remains held', async (context) => {
+it('handles the first key and quits the real CLI while the cache parser and the tool checks remain held', async (context) => {
   await withTempDir('home-boot-quit', async (dir) => {
     const home = join(dir, 'home');
     const projectDir = join(dir, 'project');
     const binDir = join(dir, 'bin');
+    const childTmp = join(dir, 't');
+    const statusLaunches = join(dir, 'status-launches');
     const startedPath = join(dir, 'parse-started');
     const releasePath = join(dir, 'release-parse');
     const finishedPath = join(dir, 'parse-finished');
-    mkdirSync(home);
+    mkdirSync(join(home, '.commandcode'), { recursive: true });
+    writeFileSync(join(home, '.commandcode', 'auth.json'), '{"apiKey":"fixture"}\n');
     mkdirSync(binDir);
+    mkdirSync(childTmp);
     mkdirSync(join(projectDir, '.git', 'objects'), { recursive: true });
     mkdirSync(join(projectDir, '.git', 'refs', 'heads'), { recursive: true });
     writeFileSync(join(projectDir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
@@ -52,6 +56,21 @@ it('handles the first key and quits the real CLI while the cache parser remains 
     for (const tool of Object.values(CLI_TOOL_CATALOG)) {
       writeFakeNodeCli(binDir, tool.command, 'process.exit(1);');
     }
+    // Command Code answers its version, then never answers its sign-in status: the quit comes
+    // while both lanes check it, each with a copy of the sign-in file.
+    writeFakeNodeCli(
+      binDir,
+      CLI_TOOL_CATALOG['command-code'].command,
+      [
+        "const { appendFileSync } = require('node:fs');",
+        "if (process.argv.includes('--version')) { console.log('" +
+          CLI_TOOL_CATALOG['command-code'].compatibility.testedVersion +
+          "'); process.exit(0); }",
+        "if (process.argv[2] !== 'status') process.exit(1);",
+        `appendFileSync(${JSON.stringify(statusLaunches)}, 'status\\n');`,
+        'setInterval(() => {}, 1000);',
+      ].join('\n'),
+    );
 
     const identity = cacheIdentity({ cacheDir: join(home, SPLITBRIEF_DIR, 'cache') });
     const catalog = {
@@ -93,6 +112,9 @@ it('handles the first key and quits the real CLI while the cache parser remains 
           cwd: fileURLToPath(new URL('../../../', import.meta.url)),
           env: {
             ...environment,
+            TMPDIR: childTmp,
+            TEMP: childTmp,
+            TMP: childTmp,
             XDG_STATE_HOME: join(dir, 'state'),
             SPLITBRIEF_E2E_PARSE_STARTED: startedPath,
             SPLITBRIEF_E2E_PARSE_RELEASE: releasePath,
@@ -116,6 +138,9 @@ it('handles the first key and quits the real CLI while the cache parser remains 
             () => {
               expect(existsSync(startedPath), rawIo).toBe(true);
               expect(stripTerminalControls(rawIo), rawIo).toContain('Describe your feature');
+              expect(existsSync(statusLaunches) ? readFileSync(statusLaunches, 'utf8') : '').toBe(
+                'status\nstatus\n',
+              );
             },
             { timeout: 20_000 },
           );
@@ -143,6 +168,9 @@ it('handles the first key and quits the real CLI while the cache parser remains 
             rawIo.lastIndexOf(terminalSequences.hideCursor),
           );
           expect(existsSync(join(projectDir, '.git', 'index'))).toBe(false);
+          expect(readdirSync(childTmp).filter((name) => /^(splitbrief-|sb-)/.test(name))).toEqual(
+            [],
+          );
         } finally {
           try {
             if (!didExit) await terminatePtyProcessGroup(child, exited.promise);

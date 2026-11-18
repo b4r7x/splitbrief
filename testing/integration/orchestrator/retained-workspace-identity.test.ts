@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -14,9 +13,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
+import { cleanupTempDir, createTempDir, recordSandboxProjects } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { createRunIsolation } from '../../../src/engine/orchestrator/isolation/create.js';
@@ -25,10 +24,10 @@ import { getChangedFilesSinceSnapshot } from '../../../src/engine/orchestrator/a
 
 const roots: string[] = [];
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) cleanupTempDir(root);
 });
 function fixture() {
-  const projectDir = mkdtempSync(join(tmpdir(), 'retained-identity-'));
+  const projectDir = createTempDir('retained-identity');
   roots.push(projectDir);
   execFileSync('git', ['init', '--quiet'], { cwd: projectDir });
   const sessionId = 'retained';
@@ -56,6 +55,7 @@ async function parked() {
     config: f.config,
     brief: makeAttemptBrief(),
   });
+  recordSandboxProjects(workspace.projectDir);
   writeFileSync(join(workspace.projectDir, 'partial.ts'), 'silent partial');
   await workspace.retain?.();
   workspace.cleanup();
@@ -95,7 +95,7 @@ it.each(['missing', 'recreated', 'root-recreated'] as const)(
   'refuses unavailable workspace after %s changes',
   async (change) => {
     const f = await parked();
-    if (change === 'missing') rmSync(f.workspace.projectDir, { recursive: true, force: true });
+    if (change === 'missing') cleanupTempDir(f.workspace.projectDir);
     if (change === 'recreated') {
       renameSync(f.workspace.projectDir, `${f.workspace.projectDir}-old`);
       mkdirSync(f.workspace.projectDir);
@@ -176,7 +176,7 @@ it('keeps bytes when persistence fails and reuses the existing run record', asyn
 
 it('recognizes an alias of the owning project without accepting another project', async () => {
   const f = await parked();
-  const parent = mkdtempSync(join(tmpdir(), 'retained-alias-'));
+  const parent = createTempDir('retained-alias');
   roots.push(parent);
   const alias = join(parent, 'alias');
   symlinkSync(f.projectDir, alias, 'dir');

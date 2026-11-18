@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll } from 'vitest';
 import './scrub-credentials.js';
-import { cleanupTempDir, createdTempDirs } from './temp-dir.js';
+import { cleanupTempDir, createdTempDirs, sandboxProjectDirs } from './temp-dir.js';
 
 // Run isolation resolves its worktrees under the user state directory
 // ($XDG_STATE_HOME, else ~/.local/state), so any suite reaching runWorkflow
@@ -27,10 +27,9 @@ afterAll(async () => {
   // a test file's `vi.mock` of `node:fs` applies.
   const { disposeNodeRuntime } = await import('./compatible-cli-shim.js');
   disposeNodeRuntime();
-  const { removeSandboxTempDirs } = await import('../../src/engine/runners/sandbox/state/paths.js');
-  for (const dir of createdTempDirs) {
-    removeSandboxTempDirs(dir);
-    cleanupTempDir(dir);
-  }
+  for (const dir of createdTempDirs) cleanupTempDir(dir);
   createdTempDirs.clear();
+  const { removeSandboxTempDirs } = await import('../../src/engine/runners/sandbox/state/paths.js');
+  for (const dir of sandboxProjectDirs) removeSandboxTempDirs(dir);
+  sandboxProjectDirs.clear();
 });

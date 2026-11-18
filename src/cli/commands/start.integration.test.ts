@@ -13,7 +13,7 @@ import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import {
   prepareExecutionMock,
-  setupRunnerTrustIsolation,
+  setupStartCommandIntegration,
   writeConfigMarker,
 } from '#testing/helpers/start-command.js';
 import { writeEmptyDetectionCache } from '#testing/helpers/write-empty-detection-cache.js';
@@ -30,7 +30,7 @@ const fakeDeps: StartDeps = {
   prepareExecution: prepareExecutionMock,
 };
 
-setupRunnerTrustIsolation();
+setupStartCommandIntegration();
 
 let tmp = '';
 

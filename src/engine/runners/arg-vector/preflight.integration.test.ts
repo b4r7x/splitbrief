@@ -241,7 +241,9 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
       .mocked(spawnWithTimeout)
       .mock.calls.filter(([options]) => options.args.includes('--help'));
     expect(helpReads).toHaveLength(2);
-    for (const [options] of helpReads) expect(options.signal).toBe(controller.signal);
+    // A help read gets the preparation signal joined with the process stop signal.
+    controller.abort();
+    for (const [options] of helpReads) expect(options.signal?.aborted).toBe(true);
   });
 
   it('rejects with the abort when the help read stops on the preparation signal', async () => {

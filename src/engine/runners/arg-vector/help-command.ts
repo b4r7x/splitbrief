@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
@@ -9,7 +8,7 @@ import { CLI_PROBE_TIMEOUT_MS } from '../../constants.js';
 import { trackProbe } from '../../probe-activity.js';
 import { resolveCliExecutableAliases } from '../cli-executable/resolve.js';
 import { probeEnvironment } from '../cli-tools/probe/process.js';
-import { removeSandboxTempDirs } from '../sandbox/state/paths.js';
+import { withProbeStage } from '../cli-tools/probe/stage.js';
 import { subcommandCandidate } from './help-text.js';
 
 /**
@@ -78,8 +77,7 @@ async function fetchHelp(
   // The help probe runs in a disposable stage with the version probe's sandbox HOME, never in the
   // project or the user's HOME: the read-only working directory cannot observe or write project
   // state, and a tool that installs a pending update when it starts finds no record of one.
-  const stageDir = await mkdtemp(join(tmpdir(), 'splitbrief-help-'));
-  try {
+  return withProbeStage('splitbrief-help-', signal, async (stageDir, stageSignal) => {
     const { env } = await probeEnvironment({
       executable,
       neutralDir: stageDir,
@@ -88,13 +86,16 @@ async function fetchHelp(
     });
     const cwd = join(stageDir, 'cwd');
     await mkdir(cwd, { mode: 0o500 });
-    return await trackProbe({ tool, check: 'options' }, () =>
-      runHelpCommand({ executablePath: executable.path, env, cwd, subcommand, signal }),
+    return trackProbe({ tool, check: 'options' }, () =>
+      runHelpCommand({
+        executablePath: executable.path,
+        env,
+        cwd,
+        subcommand,
+        signal: stageSignal,
+      }),
     );
-  } finally {
-    await rm(stageDir, { recursive: true, force: true });
-    removeSandboxTempDirs(stageDir);
-  }
+  });
 }
 
 async function runHelpCommand({

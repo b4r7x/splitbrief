@@ -264,7 +264,7 @@ async function requestVerdict(
         : { diff }),
     });
     const typed = await runCommandSeatCall(
-      { tool: getRunnerCatalogDisplayName(seat.runner), write: (line) => console.log(line) },
+      { projectDir, runner: seat.runner, write: (line) => console.log(line) },
       (signal) =>
         requestTyped({
           prompt,

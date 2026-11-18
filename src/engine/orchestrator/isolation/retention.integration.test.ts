@@ -5,7 +5,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTempDir, cleanupTempDir, recordSandboxProjects } from '#testing/helpers/temp-dir.js';
 import { createRunIsolation } from './create.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { publishRetainedWorkspaceNotice } from './kept-notice.js';
@@ -38,6 +38,7 @@ describe('retained workspace of a moved project', () => {
     await isolation.dispose();
     const startedIn = realpathSync(projectDir);
     const movedDir = join(root, 'moved');
+    recordSandboxProjects(projectDir);
     renameSync(projectDir, movedDir);
     return {
       ref: { projectDir: movedDir, sessionId },

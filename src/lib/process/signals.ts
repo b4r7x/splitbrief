@@ -7,6 +7,33 @@ export const SIGNAL_EXIT_CODE: Record<TerminationSignal, number> = {
   SIGHUP: 129,
 };
 
+const TERMINATION_SIGNALS: readonly TerminationSignal[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
+const holders = new Set<(signal: TerminationSignal) => void>();
+
+/**
+ * Gives each termination signal to `listener` until `releaseTerminationSignals(listener)`. While
+ * any holder has the signals, the stop of `onUnheldTerminationSignal` leaves them to the holders.
+ */
+export function holdTerminationSignals(listener: (signal: TerminationSignal) => void): void {
+  holders.add(listener);
+  for (const signal of TERMINATION_SIGNALS) process.on(signal, listener);
+}
+
+export function releaseTerminationSignals(listener: (signal: TerminationSignal) => void): void {
+  holders.delete(listener);
+  for (const signal of TERMINATION_SIGNALS) process.off(signal, listener);
+}
+
+/** Calls `stop` for each termination signal that arrives while no holder has the signals. */
+export function onUnheldTerminationSignal(stop: (signal: TerminationSignal) => void): void {
+  for (const signal of TERMINATION_SIGNALS) {
+    process.on(signal, () => {
+      if (holders.size === 0) stop(signal);
+    });
+  }
+}
+
 export async function withSignalHandlers<T>(
   handler: (signal: TerminationSignal) => void | Promise<void>,
   fn: () => Promise<T>,
@@ -19,16 +46,12 @@ export async function withSignalHandlers<T>(
     pendingShutdown = Promise.resolve(handler(signal));
   };
 
-  process.on('SIGINT', onSignal);
-  process.on('SIGTERM', onSignal);
-  process.on('SIGHUP', onSignal);
+  holdTerminationSignals(onSignal);
   try {
     const value = await fn();
     return { cancelled: receivedSignal, value };
   } finally {
-    process.removeListener('SIGINT', onSignal);
-    process.removeListener('SIGTERM', onSignal);
-    process.removeListener('SIGHUP', onSignal);
+    releaseTerminationSignals(onSignal);
     await pendingShutdown;
   }
 }

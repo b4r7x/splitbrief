@@ -18,6 +18,7 @@ import { assertNotMistypedCommand } from './cli/unknown-command.js';
 import { valueTakingFlags } from './cli/options/workflow.js';
 import { HELP_EXAMPLES } from './cli/help-examples.js';
 import { watchSlowProbeLines } from './cli/slow-probe-line.js';
+import { installProcessStop } from './cli/render/process-lifecycle.js';
 import { toErrorMessage } from './utils/format/errors.js';
 import { createLogger } from './lib/logger.js';
 import { getSplitbriefVersion } from './core/version.js';
@@ -43,6 +44,8 @@ registerResumeCommand(program);
 registerReviewCommand(program);
 registerContinueCommand(program);
 
+const isProcessStopping = installProcessStop((code) => process.exit(code));
+
 async function main(): Promise<void> {
   assertSupportedNodeVersion();
   assertNotMistypedCommand(
@@ -55,6 +58,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  if (isProcessStopping()) return;
   const message = toErrorMessage(err, { preserveLineBreaks: true });
   // No-op for a fatal before the logger starts. canonicalizeProjectDir starts it at the git
   // repository root only: configuring from cwd would create .splitbrief outside the project.

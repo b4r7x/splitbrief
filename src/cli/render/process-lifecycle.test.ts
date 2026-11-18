@@ -16,13 +16,19 @@ import { preparationStore } from '../../stores/navigation/preparation.js';
 const lifecycleMocks = vi.hoisted(() => ({
   teardownStores: vi.fn<() => void | Promise<void>>(),
   shutdownDetection: vi.fn<() => Promise<void>>(),
+  stopToolStages: vi.fn<() => void>(),
   killAllProcesses: vi.fn<() => Promise<void>>(),
+  awaitToolStages: vi.fn<() => Promise<void>>(),
   awaitActiveWorkflowShutdown: vi.fn<() => Promise<void>>(),
 }));
 
 vi.mock('../bootstrap/init.js', () => ({ teardownStores: lifecycleMocks.teardownStores }));
 vi.mock('../../engine/detection/service/create.js', () => ({
   getDefaultDetectionService: () => ({ shutdown: lifecycleMocks.shutdownDetection }),
+}));
+vi.mock('../../engine/runners/cli-tools/probe/stage.js', () => ({
+  stopToolStages: lifecycleMocks.stopToolStages,
+  awaitToolStages: lifecycleMocks.awaitToolStages,
 }));
 vi.mock('../../lib/process/registry.js', () => ({
   killAllProcesses: lifecycleMocks.killAllProcesses,
@@ -40,6 +46,7 @@ describe('TUI cleanup', () => {
     preparationStore.reset();
     lifecycleMocks.shutdownDetection.mockResolvedValue(undefined);
     lifecycleMocks.killAllProcesses.mockResolvedValue(undefined);
+    lifecycleMocks.awaitToolStages.mockResolvedValue(undefined);
     lifecycleMocks.awaitActiveWorkflowShutdown.mockResolvedValue(undefined);
   });
 
@@ -89,8 +96,14 @@ describe('TUI cleanup', () => {
     lifecycleMocks.shutdownDetection.mockImplementation(async () => {
       calls.push('discovery');
     });
+    lifecycleMocks.stopToolStages.mockImplementation(() => {
+      calls.push('stop checks');
+    });
     lifecycleMocks.killAllProcesses.mockImplementation(async () => {
       calls.push('processes');
+    });
+    lifecycleMocks.awaitToolStages.mockImplementation(async () => {
+      calls.push('check folders');
     });
     lifecycleMocks.awaitActiveWorkflowShutdown.mockImplementation(async () => {
       calls.push('workflow');
@@ -106,7 +119,15 @@ describe('TUI cleanup', () => {
     await first;
     await cleanup();
 
-    expect(calls).toEqual(['stores', 'discovery', 'processes', 'workflow', 'terminal']);
+    expect(calls).toEqual([
+      'stores',
+      'discovery',
+      'stop checks',
+      'processes',
+      'check folders',
+      'workflow',
+      'terminal',
+    ]);
   });
 
   it('deduplicates concurrent cleanup with the same promise', async () => {

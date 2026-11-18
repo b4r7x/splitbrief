@@ -1,10 +1,10 @@
 import { chmodSync, writeFileSync } from 'node:fs';
-import { mkdtemp, readFile, rm, writeFile, chmod } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CONFORMANCE_ROWS } from '#testing/helpers/cli-conformance-rows.js';
 import { prependPath } from '#testing/helpers/command-shim.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createCandidateEvidenceCapture } from '../../providers/candidate/evidence.js';
 import type { RawCliCandidateContract } from './candidate-contract.js';
 import { CLI_CONFORMANCE_EXIT_CODES, type CliConformanceRole } from './contract-harness/harness.js';
@@ -176,19 +176,19 @@ function writeConformanceShim(
 const tempDirectories: string[] = [];
 const restorePathHooks: Array<() => void> = [];
 
-afterEach(async () => {
+afterEach(() => {
   while (restorePathHooks.length > 0) {
     const restore = restorePathHooks.pop();
     restore?.();
   }
   while (tempDirectories.length > 0) {
     const directory = tempDirectories.pop();
-    if (directory !== undefined) await rm(directory, { recursive: true, force: true });
+    if (directory !== undefined) cleanupTempDir(directory);
   }
 });
 
-async function temporaryDirectory(prefix: string): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), prefix));
+function temporaryDirectory(prefix: string): string {
+  const directory = createTempDir(prefix);
   tempDirectories.push(directory);
   return directory;
 }
@@ -197,8 +197,8 @@ describe('existing CLI common contract', () => {
   itUnix.each(CONFORMANCE_ROWS)(
     '$id $role captures raw evidence then reuses it in production harness',
     async (row) => {
-      const directory = await temporaryDirectory('splitbrief-cli-existing-contract-');
-      const shimDir = await temporaryDirectory('splitbrief-cli-existing-shim-');
+      const directory = temporaryDirectory('splitbrief-cli-existing-contract');
+      const shimDir = temporaryDirectory('splitbrief-cli-existing-shim');
       const profile = SHIM_PROFILES[row.rawContract.command];
       if (profile === undefined) {
         throw new Error(`missing shim profile for ${row.rawContract.command}`);

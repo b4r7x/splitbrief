@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { delimiter, join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
 import { vi } from 'vitest';
 import {
   CliExecutableReceiptSchema,
@@ -15,6 +14,7 @@ import {
   runFactoryEffectConformance,
   type CliEffectDeclaration,
 } from '../../../src/engine/runners/cli-tools/contract-harness/effects.js';
+import { cleanupTempDir, createTempDir } from '../temp-dir.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -44,7 +44,7 @@ type EffectScenario = Readonly<{
 }>;
 
 export async function effectScenario(prefix: string): Promise<EffectScenario> {
-  const root = await mkdtemp(join(tmpdir(), `splitbrief-${prefix}-`));
+  const root = createTempDir(`splitbrief-${prefix}`);
   const projectDir = join(root, 'project');
   const toolsDir = join(root, 'tools');
   await mkdir(projectDir, { recursive: true });
@@ -54,7 +54,7 @@ export async function effectScenario(prefix: string): Promise<EffectScenario> {
     projectDir,
     toolsDir,
     recordPath: join(root, 'evidence.json'),
-    cleanup: () => rm(root, { recursive: true, force: true }),
+    cleanup: async () => cleanupTempDir(root),
   };
 }
 

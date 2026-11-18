@@ -21,8 +21,11 @@ import { createRunIsolation } from './create.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
 let dirs: string[] = [];
+let workspaces: IsolatedWorkspace[] = [];
 
 afterEach(() => {
+  for (const workspace of workspaces) workspace.cleanup();
+  workspaces = [];
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -42,7 +45,7 @@ function tempProject(name: string): string {
 
 async function acquire(projectDir: string): Promise<IsolatedWorkspace> {
   const workspace = await createStagedProject({ projectDir: projectDir });
-  dirs.push(workspace.projectDir);
+  workspaces.push(workspace);
   return workspace;
 }
 

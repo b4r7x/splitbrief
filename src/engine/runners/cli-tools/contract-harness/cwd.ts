@@ -150,7 +150,7 @@ export async function runCwdCliConformance(
 ): Promise<CliConformanceOutcome> {
   const file = `hello-${randomBytes(4).toString('hex')}.txt`;
   const project = await createProject(undefined);
-  const projectDir = await realpath(project.path);
+  const projectDir = project.path;
   const redact = (value: string) => value.replaceAll(projectDir, CLI_PROJECT_DIR_SENTINEL);
   const finish = async (
     exitCode: CliConformanceOutcome['exitCode'],
