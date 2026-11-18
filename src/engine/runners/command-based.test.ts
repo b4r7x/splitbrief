@@ -29,8 +29,19 @@ describe('invokeCommandRunner', () => {
   });
 
   it('passes {prompt} in an argument through as plain text', async () => {
-    const result = await run('printf', ['%s', '{prompt}'], 'ignored');
-    expect(result.text.trim()).toBe('{prompt}');
+    const sentinel = 'shell-runner-prompt-tail';
+    const prompt = `${'x'.repeat(1024 * 1024)}${sentinel}`;
+    const result = await run(
+      'sh',
+      [
+        '-c',
+        `tail=$(tail -c ${sentinel.length}) || exit 1; printf '%s\\n%s' "$1" "$tail"`,
+        'sh',
+        '{prompt}',
+      ],
+      prompt,
+    );
+    expect(result.text.trim()).toBe(`{prompt}\n${sentinel}`);
   });
 
   it('returns stdout without extracting code', async () => {

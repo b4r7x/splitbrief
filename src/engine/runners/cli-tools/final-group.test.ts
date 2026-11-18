@@ -1,3 +1,4 @@
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
@@ -90,14 +91,14 @@ async function call(
         path,
         fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
       },
-      args: ['-e', `process.stdout.write(${JSON.stringify(output)})`],
+      args: ['-e', nodeCliScript(`process.stdout.write(${JSON.stringify(output)})`)],
       promptTransport: selected.adapter.promptTransport,
       environment: {},
       cwd: tmpdir(),
       timeoutMs: 10_000,
       signal: undefined,
     },
-    prompt: 'p',
+    prompt: 'Review the final transcript and its tool calls.\n'.repeat(32_768),
     callContext,
     onOutput: (text) => live.push(text),
   });

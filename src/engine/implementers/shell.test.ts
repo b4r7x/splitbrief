@@ -1,3 +1,4 @@
+import { readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import type { Config } from '../../core/schemas/config.js';
 import type { RunnerCallEvent } from '../calls/types.js';
@@ -192,7 +193,11 @@ describe('shell implementer', () => {
   });
 
   it('threads a configured idleWarnMs override into the spawn', async () => {
-    const config = makeConfig({ command: 'bash', args: ['-c', 'sleep 0.15'], idleWarnMs: 30 });
+    const config = makeConfig({
+      command: 'bash',
+      args: ['-c', `${readCliPrompt()}\nsleep 0.15`],
+      idleWarnMs: 30,
+    });
     const task = makeTask();
     const events: RunnerCallEvent[] = [];
     const publisher: ImplementerPublisher = {

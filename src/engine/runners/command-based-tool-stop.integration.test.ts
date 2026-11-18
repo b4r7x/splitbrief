@@ -1,3 +1,4 @@
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { describe, expect, it } from 'vitest';
 import { invokeCommandRunner } from './command-based.js';
 
@@ -20,7 +21,7 @@ function invokeReviewer(maxToolCalls: number) {
       kind: 'config',
       runner: {
         command: process.execPath,
-        args: ['-e', program],
+        args: ['-e', nodeCliScript(program)],
         outputFormat: 'stream-json',
         maxToolCalls,
       },

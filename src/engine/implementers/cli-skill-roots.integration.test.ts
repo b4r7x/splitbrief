@@ -1,3 +1,4 @@
+import { readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -71,6 +72,7 @@ function installShim(command: string): ReturnType<typeof trustedShimGate> {
     [
       '#!/bin/bash',
       'if [[ " $* " == *" --version "* ]]; then echo "opencode 1.18.15"; exit 0; fi',
+      readCliPrompt(),
       `printf '%s\\n' '${toolUse}'`,
       'mkdir -p src',
       `printf '%s' 'export const greet = 1;' > "$PWD/src/greet.ts"`,
@@ -99,7 +101,12 @@ async function implement(
     publisher,
   });
   return implementer.implement({
-    task: makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/greet.ts'] }),
+    task: makeTask({
+      id: 'T001',
+      action: 'create',
+      suggestedFiles: ['src/greet.ts'],
+      description: 'Read the skill reference and write the file.\n'.repeat(32_768),
+    }),
     projectDir: isolationDir,
     fileIgnoreProjectDir: checkoutDir,
     config: makeConfig({ implementer: opencode }),

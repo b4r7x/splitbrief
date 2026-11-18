@@ -1,3 +1,4 @@
+import { shellQuoteArg } from '../../../src/utils/shell-quote.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
@@ -56,7 +57,7 @@ function plannerAuthority(receipt: CliExecutableReceipt) {
   return { slot, preparationId, gates, cliSeats: testCliSeats(gates) };
 }
 
-function finalResponseBody(): string {
+function finalResponseBody(capturePath: string): string {
   const draft = JSON.stringify({ type: 'text', part: { type: 'text', text: 'draft bytes' } });
   const toolUse = JSON.stringify({
     type: 'tool_use',
@@ -72,11 +73,11 @@ function finalResponseBody(): string {
   return [
     `printf '%s\\n' '${draft}'`,
     `printf '%s\\n' '${toolUse}'`,
-    'prompt=$(cat)',
-    'case "$prompt" in',
-    `  *'first'*) printf '%s\\n' '${sentinelA}' ;;`,
-    `  *) printf '%s\\n' '${sentinelB}' ;;`,
-    'esac',
+    `if grep -q 'first' ${shellQuoteArg(capturePath)}; then`,
+    `  printf '%s\\n' '${sentinelA}'`,
+    'else',
+    `  printf '%s\\n' '${sentinelB}'`,
+    'fi',
     'exit 0',
   ].join('\n');
 }
@@ -95,9 +96,11 @@ describe('planner effect matrix — production factories under hostile config', 
       vi.stubEnv('HOME', hostileHome);
       vi.stubEnv('XDG_CONFIG_HOME', hostileXdg);
       vi.stubEnv('PATH', `${scenario.toolsDir}${delimiter}${process.env.PATH ?? ''}`);
+      const capturePath = join(scenario.toolsDir, 'stdin.txt');
       const receipt = await fixtureExecutable({
         directory: scenario.toolsDir,
-        body: finalResponseBody(),
+        capturePath,
+        body: finalResponseBody(capturePath),
       });
       const authority = plannerAuthority(receipt);
       const config = effectConfig();
@@ -220,6 +223,7 @@ describe('planner effect matrix — production factories under hostile config', 
       const outcome = await runEffect({
         role: 'planner',
         body: 'exit 0',
+        prompt: 'review the staged plan\n'.repeat(65_536),
         effect: { kind: 'planner-read-only' },
         ...scenario,
       });
@@ -248,7 +252,7 @@ describe('planner effect matrix — production factories under hostile config', 
         role: 'implementer',
         body: `mkdir -p src\nprintf '%s' '${NONCE}' > src/hello.ts\nexit 0`,
         effect: { kind: 'direct-write', file: 'src/hello.ts', nonceContent: NONCE },
-        task: makeTask(),
+        task: makeTask({ description: 'Make the declared change.\n'.repeat(65_536) }),
         ...scenario,
       });
       expect(outcome).toEqual({

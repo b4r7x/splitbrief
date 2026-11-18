@@ -1,4 +1,4 @@
-import { chmodSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync, chmodSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection/executable.js';
@@ -27,6 +27,7 @@ function installFailingClaudeShim(): CliExecutableIdentity {
   const shimPath = join(shimDir, 'claude');
   const script = [
     '#!/usr/bin/env node',
+    `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(join(shimDir, 'stdin.txt'))}, fs.readFileSync(0));`,
     "process.stderr.write('failure from ' + process.argv[1] + '\\n');",
     'process.exit(23);',
     '',
@@ -51,8 +52,9 @@ describe('Claude invoke process diagnostics', () => {
     const executable = installFailingClaudeShim();
     const events: RunnerCallEvent[] = [];
 
+    const prompt = 'test nonzero exit diagnostics\n'.repeat(65_536);
     const caught = await invokeTestClaude({
-      prompt: 'prompt',
+      prompt,
       projectDir,
       executable,
       onOutput: () => {},
@@ -67,6 +69,7 @@ describe('Claude invoke process diagnostics', () => {
     expect(data).toContain('claude');
     expect(data).not.toContain(executable.path);
 
+    expect(readFileSync(join(shimDir, 'stdin.txt'), 'utf8')).toContain(prompt.trimEnd());
     expect(JSON.stringify(events)).not.toContain(executable.path);
     expect(events).toEqual(
       expect.arrayContaining([
@@ -86,7 +89,7 @@ describe('Claude invoke process diagnostics', () => {
     const shimPath = join(shimDir, 'claude');
     writeFileSync(
       shimPath,
-      `#!/usr/bin/env node\nprocess.stderr.write('quota exceeded: ${credential}\\n');process.exit(23);\n`,
+      `#!/usr/bin/env node\nrequire('node:fs').readFileSync(0);\nprocess.stderr.write('quota exceeded: ${credential}\\n');process.exit(23);\n`,
       'utf8',
     );
     chmodSync(shimPath, 0o755);

@@ -1,3 +1,4 @@
+import { promptCliScript, readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import { createSteeringPort, deliverToRunningCall, type SteerOutcome } from '../calls/steering.js';
 import { installClaudeSteeringShim } from '#testing/helpers/claude-steering-shim.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -129,10 +130,12 @@ function installRecordingShim(command: string, bodyLines: string[]): { argvFile:
   const shimPath = join(shimDir, command);
   const lines = command === 'codex' ? codexLines(bodyLines) : bodyLines;
   const body = lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`).join('\n');
-  const readPrompt = command === 'codex' || command === 'claude' ? 'cat >/dev/null\n' : '';
   writeFileSync(
     shimPath,
-    `#!/bin/bash\n${readPrompt}printf '%s\\n' "$@" > '${argvFile}'\n${body}\n`,
+    promptCliScript({
+      capturePath: join(shimDir, 'stdin.txt'),
+      body: `printf '%s\\n' "$@" > '${argvFile}'\n${body}`,
+    }),
     'utf8',
   );
   chmodSync(shimPath, 0o755);
@@ -153,12 +156,13 @@ function installDirectWriteRecordingShim(
     .join('\n');
   writeFileSync(
     shimPath,
-    `#!/bin/bash
-printf '%s\\n' "$@" > '${argvFile}'
+    promptCliScript({
+      capturePath: join(shimDir, 'stdin.txt'),
+      body: `printf '%s\\n' "$@" > '${argvFile}'
 mkdir -p "$PWD/${dirname(mutatedFile)}"
 printf '%s\\n' 'export const escalated = true;' > "$PWD/${mutatedFile}"
-${output}
-`,
+${output}`,
+    }),
     'utf8',
   );
   chmodSync(shimPath, 0o755);
@@ -411,6 +415,7 @@ describe('createCliPlanner', () => {
       shimPath,
       [
         '#!/bin/bash',
+        readCliPrompt(),
         `if printf '%s\\n' "$@" | grep -q '^sess-old$'; then`,
         "  printf '%s\\n' 'session not found: sess-old' >&2",
         '  exit 1',
@@ -563,6 +568,7 @@ Create the mismatch fallback file.
       shimPath,
       [
         '#!/bin/bash',
+        readCliPrompt(),
         `if printf '%s\\n' "$@" | grep -q '^sess-old$'; then`,
         `  printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'sess-new-unexpected' }).replace(/'/g, "'\\''")}'`,
         `  printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: tasksMarkdown } }).replace(/'/g, "'\\''")}'`,
@@ -658,12 +664,12 @@ Create the mismatch fallback file.
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
     const callbacks = { onOutput: () => {} };
 
-    await expect(
-      callPlanner(planner, { prompt: 'plan a change', projectDir, callbacks }),
-    ).rejects.toMatchObject({
+    const prompt = 'plan a change\n'.repeat(80_000);
+    await expect(callPlanner(planner, { prompt, projectDir, callbacks })).rejects.toMatchObject({
       kind: 'planning-unexpected-mutations',
       data: { files: ['src/hello.ts'] },
     });
+    expect(readFileSync(join(shimDir, 'stdin.txt'), 'utf8')).toContain(prompt);
     expect(readArgv(argvFile)).toEqual(
       expect.arrayContaining(['run', '--format', 'json', '--agent', 'plan']),
     );
@@ -804,6 +810,7 @@ Create \`src/text.test.ts\` with vitest tests for the \`titleCase\` function cre
       shimPath,
       [
         '#!/bin/bash',
+        readCliPrompt(join(shimDir, 'stdin.txt')),
         `cat > "$PWD/${TASKS_FILE}" <<'TASKS_EOF'`,
         realTasksMd,
         'TASKS_EOF',
@@ -822,9 +829,10 @@ Create \`src/text.test.ts\` with vitest tests for the \`titleCase\` function cre
 
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
 
+    const prompt = 'add a titleCase function\n'.repeat(65_536);
     await expect(
       callPlanner(planner, {
-        prompt: 'add a titleCase function',
+        prompt,
         projectDir,
         callbacks: { onOutput: vi.fn() },
       }),
@@ -832,6 +840,7 @@ Create \`src/text.test.ts\` with vitest tests for the \`titleCase\` function cre
       kind: 'planning-unexpected-mutations',
       data: { files: [TASKS_FILE] },
     });
+    expect(readFileSync(join(shimDir, 'stdin.txt'), 'utf8')).toContain(prompt);
   });
   it('re-checks the tool once and rejects with its check failure when the admitted binary is gone', async () => {
     // Admit the actual shim identity, then remove the executable before the
@@ -1208,14 +1217,19 @@ describe('createCliPlanner — typed calls', () => {
       'utf8',
     );
     const { argvFile } = installRecordingShim('agy', fixture.trimEnd().split('\n'));
+    const prompt = `${'x'.repeat(1024 * 1024)}agy-schema-prompt-tail`;
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'antigravity' } }));
     schemaFileWrites.count = 0;
 
     const result = await planner
       .typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'reviewer' })
-      .invoke({ prompt: 'q', schema: { json: { type: 'object' }, name: 'probe' } });
+      .invoke({ prompt, schema: { json: { type: 'object' }, name: 'probe' } });
 
-    expect(result.status).toBe('completed');
+    expect(result.status, result.error?.message).toBe('completed');
+    expect(JSON.parse(readFileSync(join(shimDir, 'stdin.txt'), 'utf8'))).toEqual({
+      event: 'user',
+      message: { content: prompt },
+    });
     const argv = readArgv(argvFile);
     expect(argv).toContain('--json-schema');
     expect(argv[argv.indexOf('--json-schema') + 1]).toBe('{"type":"object"}');
@@ -1261,16 +1275,19 @@ describe('createCliPlanner — typed calls', () => {
     ]);
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
 
+    const prompt = `${'x'.repeat(1024 * 1024)}opencode-schema-less-prompt-tail`;
+    const stdinFile = join(shimDir, 'stdin.txt');
     const typed = await planner
       .typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'reviewer' })
-      .invoke({ prompt: 'q' });
+      .invoke({ prompt });
+    expect(typed.status, typed.error?.message).toBe('completed');
+    expect(readFileSync(stdinFile, 'utf8')).toBe(prompt);
     const typedArgv = readArgv(argvFile);
+    unlinkSync(stdinFile);
 
-    await planner.review('q', projectDir, { onOutput: () => {} });
-    const reviewArgv = readArgv(argvFile);
-
-    expect(typed.status).toBe('completed');
-    expect(typedArgv).toEqual(reviewArgv);
+    await planner.review(prompt, projectDir, { onOutput: () => {} });
+    expect(readFileSync(stdinFile, 'utf8')).toBe(prompt);
+    expect(typedArgv).toEqual(readArgv(argvFile));
   });
 
   itUnix('repairs a planner answer on the codex thread that gave it', async () => {

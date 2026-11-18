@@ -1,3 +1,4 @@
+import { promptCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   chmodSync,
@@ -951,17 +952,19 @@ describe('planner admission path', () => {
     try {
       writeFileSync(
         join(shimDir, 'opencode'),
-        [
-          '#!/bin/sh',
-          'if [ "$1" = "--version" ] || [ "$1" = "-v" ] || [ "$1" = "version" ]; then',
-          "  printf '%s\\n' '1.18.15'",
-          '  exit 0',
-          'fi',
-          `printf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}`,
-          `printf '%s\\n' '{"type":"text","sessionID":"ses-open","part":{"type":"text","text":"slow response"}}'`,
-          'exit 0',
-          '',
-        ].join('\n'),
+        promptCliScript({
+          probes: [
+            'if [ "$1" = "--version" ] || [ "$1" = "-v" ] || [ "$1" = "version" ]; then',
+            "  printf '%s\\n' '1.18.15'",
+            '  exit 0',
+            'fi',
+          ].join('\n'),
+          body: [
+            `printf '%s\\n' "$*" >> ${JSON.stringify(argvLog)}`,
+            `printf '%s\\n' '{"type":"text","sessionID":"ses-open","part":{"type":"text","text":"slow response"}}'`,
+            'exit 0',
+          ].join('\n'),
+        }),
         'utf8',
       );
       chmodSync(join(shimDir, 'opencode'), 0o755);
@@ -976,7 +979,7 @@ describe('planner admission path', () => {
       };
 
       const planner = await createPlanner(config, undefined, { cliGate });
-      const result = await planner.review('review the fixture', projectDir, {
+      const result = await planner.review('review the fixture\n'.repeat(65_536), projectDir, {
         onOutput: () => {},
       });
 
@@ -1044,17 +1047,19 @@ describe('a CLI tool that updates itself during a run', () => {
   }
 
   function opencodePlanRelease(release: string): string {
-    return [
-      '#!/bin/sh',
-      'if [ "$1" = "--version" ]; then',
-      "  printf '%s\\n' '1.18.15'",
-      '  exit 0',
-      'fi',
-      ranLine(release),
-      `printf '%s\\n' '{"type":"text","sessionID":"ses-open","part":{"type":"text","text":"answer from ${release}"}}'`,
-      'exit 0',
-      '',
-    ].join('\n');
+    return promptCliScript({
+      probes: [
+        'if [ "$1" = "--version" ]; then',
+        "  printf '%s\\n' '1.18.15'",
+        '  exit 0',
+        'fi',
+      ].join('\n'),
+      body: [
+        ranLine(release),
+        `printf '%s\\n' '{"type":"text","sessionID":"ses-open","part":{"type":"text","text":"answer from ${release}"}}'`,
+        'exit 0',
+      ].join('\n'),
+    });
   }
 
   /** Installs releases a and b, points PATH at a, and admits it the way preparation does. */
@@ -1107,7 +1112,7 @@ describe('a CLI tool that updates itself during a run', () => {
     cli.pointTo('b');
 
     await expect(
-      planner.review('review the fixture', projectDir, { onOutput: () => {} }),
+      planner.review('review the fixture\n'.repeat(65_536), projectDir, { onOutput: () => {} }),
     ).resolves.toMatchObject({ text: expect.stringContaining('answer from a') });
     expect(ranCount('a')).toBe(1);
     expect(ranCount('b')).toBe(0);

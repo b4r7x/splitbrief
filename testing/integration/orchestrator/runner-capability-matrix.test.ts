@@ -80,9 +80,13 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
           initialSessionId: null,
         });
 
-        const result = await planner.review('review the staged plan', scenario.projectDir, {
-          onOutput: () => {},
-        });
+        const result = await planner.review(
+          'review the staged plan\n'.repeat(65_536),
+          scenario.projectDir,
+          {
+            onOutput: () => {},
+          },
+        );
 
         expect(result.text).toBe(SENTINEL);
         const invocation = readFileSync(log, 'utf8').trim();
@@ -266,7 +270,7 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
         const outcome = await runFactoryEffectConformance({
           role: 'planner',
           projectDir: scenario.projectDir,
-          prompt: 'review the staged plan',
+          prompt: 'review the staged plan\n'.repeat(65_536),
           executable: await fixtureExecutable({ directory: scenario.toolsDir, body }),
           effect: { kind: 'planner-read-only' },
           recordPath: scenario.recordPath,

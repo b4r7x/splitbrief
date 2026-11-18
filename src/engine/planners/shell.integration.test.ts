@@ -1,3 +1,4 @@
+import { readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createCommandPlanner } from './command-invoke.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -54,14 +55,14 @@ describe('createCommandPlanner with a shell runner', () => {
       planner: {
         kind: 'shell',
         command: 'bash',
-        args: ['-c', 'sleep 0.15'],
+        args: ['-c', `${readCliPrompt()}\nsleep 0.15`],
         idleWarnMs: 30,
       },
     });
     const planner = createCommandPlanner(config, 'shell');
     const events: RunnerCallEvent[] = [];
 
-    await planner.review('prompt', projectDir, {
+    await planner.review('Review the staged plan.\n'.repeat(65_536), projectDir, {
       onOutput: vi.fn(),
       onCallEvent: (event) => events.push(event),
     });
@@ -71,7 +72,12 @@ describe('createCommandPlanner with a shell runner', () => {
 
   it('ends a review call at a configured timeout', async () => {
     const config = makeConfig({
-      planner: { kind: 'shell', command: 'bash', args: ['-c', 'sleep 5'], timeout: 150 },
+      planner: {
+        kind: 'shell',
+        command: 'bash',
+        args: ['-c', `${readCliPrompt()}\nsleep 5`],
+        timeout: 150,
+      },
     });
     const planner = createCommandPlanner(config, 'shell');
 

@@ -1,3 +1,8 @@
+import {
+  nodeCliScript,
+  promptCliScript,
+  readCliPrompt,
+} from '#testing/helpers/prompt-cli-script.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readFileSync } from 'node:fs';
@@ -181,13 +186,20 @@ function invocation(opts: {
   environment?: Readonly<Record<string, string>>;
   promptTransport?: CliPromptTransport;
   script: string;
+  stdin?: 'script';
   signal?: AbortSignal;
   timeoutMs?: number;
   executable?: CliExecutableIdentity;
 }): CliInvocation {
   return {
     executable: opts.executable ?? executableIdentity(process.execPath),
-    args: ['-e', opts.script, ...(opts.args ?? [])],
+    args: [
+      '-e',
+      opts.executable === undefined && opts.stdin !== 'script'
+        ? nodeCliScript(opts.script)
+        : opts.script,
+      ...(opts.args ?? []),
+    ],
     promptTransport: opts.promptTransport ?? { kind: 'stdin' },
     environment: opts.environment ?? {},
     cwd: tmpdir(),
@@ -357,6 +369,7 @@ describe('process steering lifecycle boundary', () => {
       },
       {
         invocation: invocation({
+          stdin: 'script',
           script:
             "process.stdin.resume(); process.stdin.on('end',()=>console.log('RESULT:'+Buffer.from('final answer').toString('base64')))",
           timeoutMs: 1_000,
@@ -391,6 +404,7 @@ describe('process steering lifecycle boundary', () => {
       },
       {
         invocation: invocation({
+          stdin: 'script',
           script: `process.stdin.resume();process.stdin.on('end',()=>{${script}})`,
           timeoutMs: 1_000,
           ...(opts.signal !== undefined && { signal: opts.signal }),
@@ -472,6 +486,7 @@ describe('invokeProcessCli', () => {
     const stdinResult = await run(
       adapter({ kind: 'stdin' }),
       invocation({
+        stdin: 'script',
         script: emitPromptScript(
           "let v='';process.stdin.setEncoding('utf8');process.stdin.on('data',c=>v+=c);process.stdin.on('end',()=>emit(v))",
         ),
@@ -487,6 +502,7 @@ describe('invokeProcessCli', () => {
     const result = await run(
       adapter({ kind: 'stdin' }),
       invocation({
+        stdin: 'script',
         script:
           "require('node:fs').closeSync(0);process.stdout.write('RESULT\\n');setInterval(()=>{},1000)",
       }),
@@ -503,7 +519,7 @@ describe('invokeProcessCli', () => {
   it('fails when a child exits 0 with no words before a large stdin prompt is delivered', async () => {
     const result = await run(
       adapter({ kind: 'stdin' }),
-      invocation({ script: "require('node:fs').closeSync(0);process.exit(0)" }),
+      invocation({ stdin: 'script', script: "require('node:fs').closeSync(0);process.exit(0)" }),
       'x'.repeat(8 * 1024 * 1024),
     );
 
@@ -521,6 +537,7 @@ describe('invokeProcessCli', () => {
     const result = await run(
       adapter({ kind: 'stdin' }),
       invocation({
+        stdin: 'script',
         script: `process.stderr.write(${JSON.stringify(`${line}\n`)});process.exit(1)`,
       }),
       'x'.repeat(8 * 1024 * 1024),
@@ -701,6 +718,7 @@ describe('invokeProcessCli', () => {
         args: ['--', ...acceptedArgs],
         script: 'process.stdout.write(JSON.stringify(process.argv.slice(1)))',
       }),
+      'confirm argv independently of stdin\n'.repeat(65_536),
     );
 
     expect(result.status).toBe('completed');
@@ -1674,30 +1692,39 @@ describe('invokeProcessCli', () => {
     });
   });
 
-  itUnix('runs the admitted release after the PATH symlink moves to a new release', async () => {
-    await withTempDir('splitbrief-cli-versioned', async (dir) => {
-      const cli = versionedCli({ root: dir, command: 'vendor-cli' });
-      const release = (name: string) =>
-        `#!/bin/sh\nprintf '%s\\n' ran >> ${JSON.stringify(join(dir, `${name}.ran`))}\necho RESULT\n`;
-      cli.write('a', release('a'));
-      cli.write('b', release('b'));
-      cli.pointTo('a');
-      const admitted = await resolveCliExecutable({
-        command: join(cli.binDir, 'vendor-cli'),
-        projectDir: process.cwd(),
+  itUnix.each([
+    ['empty', ''],
+    ['large', `${'x'.repeat(1024 * 1024)}release-prompt-tail`],
+  ])(
+    'runs the admitted release after the PATH symlink moves with a %s prompt',
+    async (_label, prompt) => {
+      await withTempDir('splitbrief-cli-versioned', async (dir) => {
+        const cli = versionedCli({ root: dir, command: 'vendor-cli' });
+        const release = (name: string) =>
+          promptCliScript({
+            body: `printf '%s\\n' ran >> ${JSON.stringify(join(dir, `${name}.ran`))}\necho RESULT`,
+          });
+        cli.write('a', release('a'));
+        cli.write('b', release('b'));
+        cli.pointTo('a');
+        const admitted = await resolveCliExecutable({
+          command: join(cli.binDir, 'vendor-cli'),
+          projectDir: process.cwd(),
+        });
+
+        cli.pointTo('b');
+        const result = await run(
+          adapter({ kind: 'stdin' }),
+          invocation({ executable: admitted, script: '', environment: { PATH: '/usr/bin:/bin' } }),
+          prompt,
+        );
+
+        expect(result.status, result.error?.message).toBe('completed');
+        expect(readFileSync(join(dir, 'a.ran'), 'utf8')).toBe('ran\n');
+        expect(existsSync(join(dir, 'b.ran'))).toBe(false);
       });
-
-      cli.pointTo('b');
-      const result = await run(
-        adapter({ kind: 'stdin' }),
-        invocation({ executable: admitted, script: '', environment: { PATH: '/usr/bin:/bin' } }),
-      );
-
-      expect(result.status).toBe('completed');
-      expect(readFileSync(join(dir, 'a.ran'), 'utf8')).toBe('ran\n');
-      expect(existsSync(join(dir, 'b.ran'))).toBe(false);
-    });
-  });
+    },
+  );
 
   it('names the tool, not the resolved executable path, when a silent runner is killed', async () => {
     const result = await invokeProcessCli(adapter({ kind: 'stdin' }), {
@@ -1829,7 +1856,7 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
 
   async function replay(dir: string, body: string, onEvent: (event: RunnerCallEvent) => void) {
     const shimPath = join(dir, 'agy');
-    writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, { mode: 0o755 });
+    writeFileSync(shimPath, promptCliScript({ shell: '/bin/bash', body }), { mode: 0o755 });
     chmodSync(shimPath, 0o755);
     return invokeProcessCli(antigravityImplementerAdapter, {
       invocation: {
@@ -2254,6 +2281,7 @@ describe('invokeProcessCli tool-use guard', () => {
         shimPath,
         [
           '#!/bin/bash',
+          readCliPrompt(),
           `(sleep 1; echo alive > ${JSON.stringify(markerPath)}) &`,
           `printf '%s\\n' ${JSON.stringify(ESCAPING_STEP)}`,
           'sleep 30',
@@ -2300,7 +2328,9 @@ describe('invokeProcessCli tool-use guard', () => {
     );
     await withTempDir('splitbrief-tool-guard-pass', async (dir) => {
       const shimPath = join(dir, 'agy');
-      writeFileSync(shimPath, `#!/bin/bash\ncat ${JSON.stringify(FIXTURE)}\n`, { mode: 0o755 });
+      writeFileSync(shimPath, promptCliScript({ body: `cat ${JSON.stringify(FIXTURE)}` }), {
+        mode: 0o755,
+      });
       const result = await invokeProcessCli(antigravityImplementerAdapter, {
         invocation: {
           executable: executableIdentity(shimPath),
@@ -2311,7 +2341,7 @@ describe('invokeProcessCli tool-use guard', () => {
           timeoutMs: 15_000,
           signal: undefined,
         },
-        prompt: 'fixture prompt',
+        prompt: 'approve this fixture tool use\n'.repeat(65_536),
         callContext,
         toolUseGuard: () => null,
       });
@@ -2326,7 +2356,9 @@ describe('invokeProcessCli tool-use guard', () => {
     );
     await withTempDir('splitbrief-tool-guard-once', async (dir) => {
       const shimPath = join(dir, 'agy');
-      writeFileSync(shimPath, `#!/bin/bash\ncat ${JSON.stringify(FIXTURE)}\n`, { mode: 0o755 });
+      writeFileSync(shimPath, promptCliScript({ body: `cat ${JSON.stringify(FIXTURE)}` }), {
+        mode: 0o755,
+      });
       const seen: string[] = [];
       const result = await invokeProcessCli(antigravityImplementerAdapter, {
         invocation: {
@@ -2416,18 +2448,25 @@ describe('invokeProcessCli structured-terminal halts on stderr', () => {
   const QUOTA_LINE =
     'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.';
 
+  const promptTail = 'agy-terminal-prompt-tail';
+  const largePrompt = `${'x'.repeat(1024 * 1024)}${promptTail}`;
+
   async function runAgy(
     dir: string,
     output: Readonly<{ stdout?: readonly string[]; stderr?: readonly string[]; exit: number }>,
+    prompt = 'fixture prompt',
   ) {
     const shimPath = join(dir, 'agy');
     const body = [
-      '#!/bin/bash',
       ...(output.stdout ?? []).map((line) => `printf '%s\\n' ${JSON.stringify(line)}`),
       ...(output.stderr ?? []).map((line) => `printf '%s\\n' ${JSON.stringify(line)} >&2`),
       `exit ${output.exit}`,
     ];
-    writeFileSync(shimPath, `${body.join('\n')}\n`, { mode: 0o755 });
+    writeFileSync(
+      shimPath,
+      promptCliScript({ body: body.join('\n'), capturePath: join(dir, 'stdin.txt') }),
+      { mode: 0o755 },
+    );
     return invokeProcessCli(antigravityImplementerAdapter, {
       invocation: {
         executable: executableIdentity(shimPath),
@@ -2438,7 +2477,7 @@ describe('invokeProcessCli structured-terminal halts on stderr', () => {
         timeoutMs: 15_000,
         signal: undefined,
       },
-      prompt: 'fixture prompt',
+      prompt,
       callContext,
     });
   }
@@ -2458,10 +2497,14 @@ describe('invokeProcessCli structured-terminal halts on stderr', () => {
     'ends incomplete when agy exits 0 without a result frame or stderr diagnosis',
     async () => {
       await withTempDir('splitbrief-agy-no-result', async (dir) => {
-        const result = await runAgy(dir, { exit: 0 });
+        const result = await runAgy(dir, { exit: 0 }, largePrompt);
         expect(result).toMatchObject({
           status: 'incomplete',
           error: { code: 'protocol-failure' },
+        });
+        expect(JSON.parse(readFileSync(join(dir, 'stdin.txt'), 'utf8'))).toEqual({
+          event: 'user',
+          message: { content: largePrompt },
         });
       });
     },
@@ -2479,10 +2522,14 @@ describe('invokeProcessCli structured-terminal halts on stderr', () => {
           text_delta: 'I hit the usage limit.',
         },
       });
-      const result = await runAgy(dir, { stdout: [stepUpdate], exit: 0 });
+      const result = await runAgy(dir, { stdout: [stepUpdate], exit: 0 }, largePrompt);
       expect(result).toMatchObject({
         status: 'incomplete',
         error: { code: 'protocol-failure' },
+      });
+      expect(JSON.parse(readFileSync(join(dir, 'stdin.txt'), 'utf8'))).toEqual({
+        event: 'user',
+        message: { content: largePrompt },
       });
     });
   });
@@ -3251,6 +3298,7 @@ describe('OpenCode process steering', () => {
         onEvent?: (event: RunnerCallEvent) => void;
         onSpawned?: (proc: ChildProcess) => void;
         parserFailure?: boolean;
+        prompt?: string;
       } = {},
     ) => {
       const role = opts.role ?? 'implementer';
@@ -3305,7 +3353,7 @@ describe('OpenCode process steering', () => {
             signal: opts.signal,
             timeoutMs: opts.timeoutMs ?? 8_000,
           },
-          prompt: 'initial',
+          prompt: opts.prompt ?? 'initial',
           installedVersion: input.installedVersion,
           ...(opts.steering !== false && { steering: port }),
           callContext: { ...callContext, role },
@@ -3569,8 +3617,11 @@ describe('OpenCode process steering', () => {
   ])('preserves the existing invocation with %j', async (opts) => {
     await withTempDir('opencode-one-shot', async (dir) => {
       const fixture = setup(dir);
-      const result = await fixture.run(opts);
-      expect(result.status).toBe('completed');
+      const result = await fixture.run({
+        ...opts,
+        prompt: 'OpenCode standalone prompt\n'.repeat(65_536),
+      });
+      expect(result.status, result.error?.message).toBe('completed');
       expect(result.text).toBe('standalone');
       const run = JSON.parse(readFileSync(fixture.shim.captureFile, 'utf8'));
       const expected =

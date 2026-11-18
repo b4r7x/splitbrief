@@ -1,3 +1,4 @@
+import { promptCliScript } from './prompt-cli-script.js';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -34,7 +35,6 @@ export function writeCursorRefusalShim(
   const refusal = quote(opts.stderr ?? CURSOR_MODEL_REFUSAL);
   const counter = join(dir, 'cursor-calls');
   const body = [
-    '#!/bin/bash',
     `printf '%s\\n' '{"type":"system","subtype":"init","session_id":"s1"}'`,
     ...(opts.firstFailure === undefined
       ? [`printf '%s\\n' ${refusal} >&2`]
@@ -48,5 +48,7 @@ export function writeCursorRefusalShim(
         ]),
     'exit 1',
   ];
-  writeFileSync(join(dir, 'cursor-agent'), `${body.join('\n')}\n`, { mode: 0o755 });
+  writeFileSync(join(dir, 'cursor-agent'), promptCliScript({ body: body.join('\n') }), {
+    mode: 0o755,
+  });
 }

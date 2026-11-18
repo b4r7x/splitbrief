@@ -1,3 +1,4 @@
+import { readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isolationWorktreePath } from '../../../src/core/paths.js';
 import { execSync } from 'node:child_process';
@@ -91,7 +92,7 @@ function opencodeConfig(): CliImplementerConfig {
     kind: 'cli',
     tool: 'opencode',
     model: 'opencode/test-isolation',
-    contextLength: 4096,
+    contextLength: 2_000_000,
   };
 }
 
@@ -122,6 +123,7 @@ function installEscapingOpencodeShim(command: string): void {
       '#!/bin/bash',
       `SHIM='${shimDir}'`,
       'if [[ " $* " == *" --version "* ]]; then echo "opencode 1.18.15"; exit 0; fi',
+      readCliPrompt(),
       'if [ -f "$SHIM/ran" ]; then',
       '  mkdir -p src',
       `  printf '%s' '${SOURCE}' > "$PWD/${TARGET}"`,
@@ -171,7 +173,11 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
       });
     const started = Date.now();
 
-    const { state } = await taskLoop(makeImplState([greetTask()]));
+    const task = {
+      ...greetTask(),
+      description: 'Create the requested greeting.\n'.repeat(65_536),
+    };
+    const { state } = await taskLoop(makeImplState([task]));
 
     expect(Date.now() - started).toBeLessThan(45_000);
     const evidence = `OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf ${'x'.repeat(192)}…`;

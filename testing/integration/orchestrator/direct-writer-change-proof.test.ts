@@ -1,3 +1,4 @@
+import { promptCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
@@ -40,11 +41,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
-import {
-  prependPath,
-  type ContractShimMode,
-  type ContractShimProfile,
-} from '#testing/helpers/command-shim.js';
+import { prependPath, type ContractShimMode } from '#testing/helpers/command-shim.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/cli-executable/custom.js';
 import { ensureSessionDir } from '../../../src/core/sessions/spec-files.js';
@@ -59,15 +56,10 @@ const MARKER = 'direct-writer-valid';
 const PROMPT_HEAD = 'CHANGE_PROOF_HEAD ';
 const PROMPT_TAIL = ' CHANGE_PROOF_TAIL';
 
-const OPENCODE_PROFILE: ContractShimProfile = {
-  transport: 'argv',
-  versionLine: 'opencode 1.18.15',
-  successLines: [
-    '{"type":"text","part":{"type":"text","text":"ok"}}',
-    '{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":12,"output":8}}}',
-  ],
-  authArgv: ['auth'],
-};
+const OPENCODE_SUCCESS_LINES = [
+  '{"type":"text","part":{"type":"text","text":"ok"}}',
+  '{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":12,"output":8}}}',
+];
 
 type ShimFixture = {
   shimDir: string;
@@ -176,9 +168,9 @@ function writeOpencodeProofShim(opts: {
   mode: ShimMode;
   outsidePath?: string;
 }): void {
-  const successLines = OPENCODE_PROFILE.successLines
-    .map((line) => `printf '%s\\n' ${shellQuoteArg(line)}`)
-    .join('\n');
+  const successLines = OPENCODE_SUCCESS_LINES.map(
+    (line) => `printf '%s\\n' ${shellQuoteArg(line)}`,
+  ).join('\n');
   const outsideWrite =
     opts.outsidePath === undefined
       ? ''
@@ -231,23 +223,22 @@ function writeOpencodeProofShim(opts: {
     'signal-exit': 'kill -TERM "$$"',
   };
 
-  const script = [
-    '#!/bin/bash',
-    'set -euo pipefail',
-    `CAPTURE_DIR=${shellQuoteArg(opts.captureDir)}`,
-    `MODE=${shellQuoteArg(opts.mode)}`,
-    `VERSION_LINE=${shellQuoteArg(OPENCODE_PROFILE.versionLine)}`,
-    'if [[ " $* " == *" --version "* ]]; then',
-    '  printf \'%s\\n\' "$VERSION_LINE"',
-    '  exit 0',
-    'fi',
-    'if [[ -n "$CAPTURE_DIR" ]]; then',
-    '  mkdir -p "$CAPTURE_DIR"',
-    '  printf \'%s\\n\' "$@" > "$CAPTURE_DIR/argv.lines"',
-    '  printf \'%s\' "$(pwd)" > "$CAPTURE_DIR/cwd.txt"',
-    'fi',
-    modeBody[opts.mode],
-  ].join('\n');
+  const script = promptCliScript({
+    shell: '/bin/bash',
+    probes: [
+      'set -euo pipefail',
+      'if [[ " $* " == *" --version "* ]]; then',
+      "  printf 'opencode 1.18.15\\n'",
+      '  exit 0',
+      'fi',
+    ].join('\n'),
+    capturePath: join(opts.captureDir, 'stdin.txt'),
+    body: [
+      `printf '%s\\n' "$@" > ${shellQuoteArg(join(opts.captureDir, 'argv.lines'))}`,
+      `printf '%s' "$(pwd)" > ${shellQuoteArg(join(opts.captureDir, 'cwd.txt'))}`,
+      modeBody[opts.mode],
+    ].join('\n'),
+  });
   const shimPath = join(opts.dir, 'opencode');
   writeFileSync(shimPath, script + '\n', 'utf-8');
   chmodSync(shimPath, 0o755);
@@ -483,7 +474,10 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     const fixture = createShimFixture(projectDir, 'valid-change');
     const sessionId = 'sess-direct-writer-valid';
     const events: EngineEvent[] = [];
-    const task = proofTask();
+    const task = {
+      ...proofTask(),
+      description: `${PROMPT_HEAD}${'create the change proof module\n'.repeat(65_536)}${PROMPT_TAIL}`,
+    };
     const planner = makePlanner({
       typedCall: typedCallFromTasks([task], { inputTokens: 40, outputTokens: 20 }),
     });
@@ -501,7 +495,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
         model: 'noop-planner',
         contextLength: 4096,
       },
-      implementer: implementerConfig(),
+      implementer: { ...implementerConfig(), contextLength: 2_000_000 },
       validation: {
         endChecks: true,
         testCommand: 'node validate.mjs',
@@ -556,13 +550,25 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       _eventSink: (event) => events.push(event),
     });
 
-    const shimCwd = existsSync(join(fixture.captureDir, 'cwd.txt'))
-      ? readFileSync(join(fixture.captureDir, 'cwd.txt'), 'utf-8')
-      : '';
-    expect(shimCwd).not.toBe(projectDir);
+    const workspace = runWorkspaceDir({ projectDir, sessionId });
+    const cwdFile = join(fixture.captureDir, 'cwd.txt');
     expect(
-      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), TARGET_SRC), 'utf-8'),
-    ).toBe(`export const marker = "${MARKER}";\n`);
+      existsSync(cwdFile),
+      JSON.stringify({
+        workspace,
+        summary,
+        halt: events.find(
+          (event) => event.type === 'runner_call_error' || event.type === 'recovery_prompted',
+        ),
+      }),
+    ).toBe(true);
+    expect(realpathSync(readFileSync(cwdFile, 'utf8'))).toBe(realpathSync(workspace));
+    expect(
+      readFileSync(join(fixture.captureDir, 'stdin.txt'), 'utf8').includes(task.description),
+    ).toBe(true);
+    expect(readFileSync(join(workspace, TARGET_SRC), 'utf-8')).toBe(
+      `export const marker = "${MARKER}";\n`,
+    );
     expect(existsSync(join(projectDir, TARGET_SRC))).toBe(false);
     expect(existsSync(join(projectDir, SANDBOX_DIR))).toBe(false);
     expect(summary).toMatchObject({

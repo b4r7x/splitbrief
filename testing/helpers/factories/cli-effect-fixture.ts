@@ -15,6 +15,7 @@ import {
   type CliEffectDeclaration,
 } from '../../../src/engine/runners/cli-tools/contract-harness/effects.js';
 import { cleanupTempDir, createTempDir } from '../temp-dir.js';
+import { promptCliScript } from '../prompt-cli-script.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -63,10 +64,11 @@ export async function fixtureExecutable(input: {
   directory: string;
   body: string;
   name?: string;
+  capturePath?: string | undefined;
 }): Promise<CliExecutableReceipt> {
-  const { directory, body, name = 'opencode' } = input;
+  const { directory, body, name = 'opencode', capturePath } = input;
   const path = join(directory, name);
-  await writeFile(path, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  await writeFile(path, promptCliScript({ body, capturePath }), { mode: 0o755 });
   await chmod(path, 0o755);
   const realPath = await realpath(path);
   const canonicalPath = resolve(path);
@@ -97,6 +99,7 @@ type EffectRun = Readonly<{
   projectDir: string;
   toolsDir: string;
   recordPath: string;
+  capturePath?: string | undefined;
   prompt?: string | undefined;
   task?: Task | undefined;
   timeoutMs?: number | undefined;
@@ -105,7 +108,11 @@ type EffectRun = Readonly<{
 
 export async function runEffect(input: EffectRun) {
   vi.stubEnv('PATH', `${input.toolsDir}${delimiter}${process.env.PATH ?? ''}`);
-  const executable = await fixtureExecutable({ directory: input.toolsDir, body: input.body });
+  const executable = await fixtureExecutable({
+    directory: input.toolsDir,
+    body: input.body,
+    capturePath: input.capturePath,
+  });
   return runFactoryEffectConformance({
     role: input.role,
     projectDir: input.projectDir,

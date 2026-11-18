@@ -1,3 +1,4 @@
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
@@ -37,7 +38,11 @@ function executableIdentity(): CliExecutableIdentity {
 function invocation(opts: { script: string; lines: readonly string[] }): CliInvocation {
   return {
     executable: executableIdentity(),
-    args: ['-e', opts.script, Buffer.from(JSON.stringify(opts.lines), 'utf8').toString('base64')],
+    args: [
+      '-e',
+      nodeCliScript(opts.script),
+      Buffer.from(JSON.stringify(opts.lines), 'utf8').toString('base64'),
+    ],
     promptTransport: { kind: 'stdin' },
     environment: {},
     cwd: tmpdir(),
@@ -136,6 +141,7 @@ async function run(opts: {
   script: string;
   lines: readonly string[];
   idle?: { warnMs: number; killMs: number };
+  prompt?: string;
   callContext?: RunnerCallContext;
 }) {
   const output: string[] = [];
@@ -145,7 +151,7 @@ async function run(opts: {
   const result = await invokeCliAdapter({
     adapter: claudeCodeImplementerAdapter,
     invocation: invocation({ script: opts.script, lines: opts.lines }),
-    prompt: '',
+    prompt: opts.prompt ?? '',
     callContext: opts.callContext ?? callContext,
     onOutput: (text, opts) => {
       output.push(text);
@@ -302,7 +308,11 @@ describe('synchronous CLI frame consumers', () => {
     for (const line of lines) {
       for (const event of parse(line)) recordCliProtocolEvent(recorder, event);
     }
-    const processCall = await run({ script: EMIT_ALL, lines });
+    const processCall = await run({
+      script: EMIT_ALL,
+      lines,
+      prompt: 'Compare the recorded activity.\n'.repeat(65_536),
+    });
 
     expect(output).toEqual(['Reading ', 'the parser.']);
     expect(processCall.output).toEqual(output);

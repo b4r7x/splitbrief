@@ -91,6 +91,7 @@ if (args[0] === 'serve') {
     setInterval(() => console.log('server draining ' + password), 50);
   });
 } else {
+  fs.readFileSync(0);
   const serverIndex = args.indexOf('--server');
   const url = serverIndex < 0 ? null : args[serverIndex + 1];
   fs.writeFileSync(${JSON.stringify(captureFile)}, JSON.stringify({pid:process.pid, home:process.env.HOME, cwd:process.cwd(), args, password:process.env.OPENCODE_PASSWORD, ...environment}));

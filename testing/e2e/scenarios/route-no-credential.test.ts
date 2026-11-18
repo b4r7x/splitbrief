@@ -87,7 +87,7 @@ function installShims(
   writeFakeNodeCli(
     binDir,
     'opencode',
-    `const { appendFileSync, existsSync, realpathSync } = require('node:fs');
+    `const { appendFileSync, existsSync, readFileSync, realpathSync } = require('node:fs');
 const { join } = require('node:path');
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
@@ -122,6 +122,7 @@ if (args[0] === 'serve') {
   return;
 }
 if (args[0] !== 'run') throw new Error('Unexpected opencode invocation: ' + args.join(' '));
+readFileSync(0);
 appendFileSync(${JSON.stringify(opencodeCalls)}, JSON.stringify({ model: args[args.indexOf('--model') + 1] }) + '\\n');
 console.log(JSON.stringify({ type: 'error', error: { type: 'provider.no-route', message: 'Model unavailable: ${ROUTE_MODEL}' } }));
 process.exit(1);`,

@@ -1,3 +1,4 @@
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
@@ -483,14 +484,17 @@ describe('Copilot JSON and text protocol adapters', () => {
     const result = await invokeProcessCli(copilotImplementerAdapter, {
       invocation: {
         executable: executableIdentity(process.execPath),
-        args: ['-e', `process.stdout.write(${JSON.stringify(`${lines.join('\n')}\n`)})`],
+        args: [
+          '-e',
+          nodeCliScript(`process.stdout.write(${JSON.stringify(`${lines.join('\n')}\n`)})`),
+        ],
         promptTransport: copilotImplementerAdapter.promptTransport,
         environment: {},
         cwd: tmpdir(),
         timeoutMs: 5_000,
         signal: undefined,
       },
-      prompt: 'fixture prompt',
+      prompt: 'Review the edits made by the recorded tools.\n'.repeat(32_768),
       callContext: {
         callId: 'copilot-tools',
         role: 'implementer',

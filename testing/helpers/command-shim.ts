@@ -1,3 +1,4 @@
+import { promptCliScript } from './prompt-cli-script.js';
 import {
   chmodSync,
   existsSync,
@@ -61,15 +62,12 @@ export interface CommandShimOptions {
 
 export function writeCommandShim(opts: CommandShimOptions): string {
   const printfLines = opts.lines.map((line) => `printf '%s\\n' ${shellQuoteArg(line)}`);
-  // A shim that exits before it reads its prompt can close the pipe before
-  // SPLITBRIEF writes the prompt, and spawnPipe then fails the call as stdin-incomplete.
-  const script = [
-    'cat > /dev/null',
+  const body = [
     ...(opts.sleepSeconds === undefined ? [] : [`sleep ${opts.sleepSeconds}`]),
     ...printfLines,
     '',
   ].join('\n');
-  return writeFakeCli(opts.dir, opts.command, script);
+  return writeFakeCli(opts.dir, opts.command, promptCliScript({ body }));
 }
 
 export function prependPath(dir: string): () => void {

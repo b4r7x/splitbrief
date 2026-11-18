@@ -1294,7 +1294,8 @@ describe('createCliImplementer (opencode arg vector)', () => {
     const shimPath = join(shimDir, 'opencode');
     const script = [
       '#!/usr/bin/env node',
-      "const { writeFileSync } = require('node:fs');",
+      "const { readFileSync, writeFileSync } = require('node:fs');",
+      'readFileSync(0);',
       `writeFileSync(${JSON.stringify(pidsFile)}, String(process.pid));`,
       `process.stdout.write('x'.repeat(${1024 * 1024 + 10}));`,
     ].join('\n');
@@ -1312,7 +1313,7 @@ describe('createCliImplementer (opencode arg vector)', () => {
 
     const implementer = createCliImplementer(opencodeImplementer, { publisher });
     const result = await implementer.implement({
-      task: makeTask(),
+      task: makeTask({ description: 'Report progress for this task.\n'.repeat(65_536) }),
       projectDir,
       config,
       context: { ...defaultContext, dir: projectDir },

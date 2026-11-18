@@ -1,3 +1,4 @@
+import { promptCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { useEffect } from 'react';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -3832,7 +3833,9 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
     for (const tool of ['claude', 'codex', 'opencode']) {
       writeFileSync(
         join(bin, tool),
-        `#!/bin/sh\necho "You've hit your usage limit. Try again in 3 hours." >&2\nexit 1\n`,
+        promptCliScript({
+          body: `echo "You've hit your usage limit. Try again in 3 hours." >&2\nexit 1`,
+        }),
         { mode: 0o755 },
       );
     }

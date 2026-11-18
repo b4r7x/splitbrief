@@ -23,6 +23,7 @@ describe('production-factory effect conformance', () => {
       const outcome = await runEffect({
         role: 'planner',
         body: 'exit 0',
+        prompt: 'review the staged plan\n'.repeat(65_536),
         effect: { kind: 'planner-read-only' },
         ...scenario,
       });
@@ -89,7 +90,7 @@ describe('production-factory effect conformance', () => {
         role: 'implementer',
         body: `mkdir -p src\nprintf '%s' '${NONCE}' > src/hello.ts\nexit 0`,
         effect: { kind: 'direct-write', file: 'src/hello.ts', nonceContent: NONCE },
-        task: makeTask(),
+        task: makeTask({ description: 'Make the declared change.\n'.repeat(65_536) }),
         ...scenario,
       });
       expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
@@ -292,7 +293,8 @@ describe('production-factory effect conformance', () => {
       const outcome = await runEffect({
         role: 'planner',
         prompt: plannerPrompt,
-        body: `cat > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
+        capturePath: join(scenario.toolsDir, 'prompt-received.txt'),
+        body: 'exit 0',
         effect: { kind: 'planner-read-only' },
         ...scenario,
       });
@@ -316,7 +318,8 @@ describe('production-factory effect conformance', () => {
       const outcome = await runEffect({
         role: 'implementer',
         prompt: plannerPrompt,
-        body: `mkdir -p src\nprintf '%s' '${EFFECT_NONCE}' > src/hello.ts\ncat > "$(dirname "$0")/prompt-received.txt"\nexit 0`,
+        capturePath: join(scenario.toolsDir, 'prompt-received.txt'),
+        body: `mkdir -p src\nprintf '%s' '${EFFECT_NONCE}' > src/hello.ts\nexit 0`,
         effect: { kind: 'direct-write', file: 'src/hello.ts', nonceContent: EFFECT_NONCE },
         task: makeTask(),
         ...scenario,

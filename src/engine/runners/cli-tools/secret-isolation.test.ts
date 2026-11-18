@@ -1,3 +1,4 @@
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import type { ChildProcess } from 'node:child_process';
 import {
   existsSync,
@@ -114,7 +115,7 @@ function invocation(opts: {
 }): CliInvocation {
   return {
     executable: executableIdentity(process.execPath),
-    args: ['-e', opts.script],
+    args: ['-e', nodeCliScript(opts.script)],
     promptTransport: { kind: 'stdin' },
     environment: opts.environment ?? {},
     cwd: tmpdir(),
@@ -127,10 +128,11 @@ async function run(
   selectedInvocation: CliInvocation,
   onEvent?: (event: RunnerCallEvent) => void,
   onSpawned?: (process: ChildProcess) => void,
+  prompt = '',
 ) {
   return invokeProcessCli(adapter({ kind: 'stdin' }), {
     invocation: selectedInvocation,
-    prompt: '',
+    prompt,
     callContext,
     onEvent,
     onSpawned,
@@ -279,6 +281,8 @@ describe('readonly provider bridge canary matrix', () => {
           "const fs=require('node:fs');const path=require('node:path');const file=path.join(process.env.HOME,'.codex','auth.json');const old=JSON.parse(fs.readFileSync(file,'utf8')).token;fs.writeFileSync(file,JSON.stringify({token:'rotated-by-child-5c6d'}));process.stdout.write('TEXT:'+Buffer.from(old).toString('base64')+'\\nRESULT\\n')",
       }),
       (event) => events.push(event),
+      undefined,
+      'Use the staged login state.\n'.repeat(65_536),
     );
 
     expect(result.status).toBe('completed');

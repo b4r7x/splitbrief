@@ -1,3 +1,4 @@
+import { promptCliScript } from './prompt-cli-script.js';
 import { chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool/catalog.js';
@@ -81,8 +82,7 @@ export function installCompatibleCliShim(
   const version = options.version ?? descriptor.compatibility.testedVersion;
   const command = descriptor.command;
   const sessionStateHome = createSessionStateHome(options.tool, options.directory);
-  const script = [
-    '#!/bin/sh',
+  const probes = [
     `if ${exactArgumentsCondition(['--version'])}; then`,
     `  printf '%s\\n' ${shellQuoteArg(versionOutput(options.tool, version))}`,
     '  exit 0',
@@ -91,7 +91,8 @@ export function installCompatibleCliShim(
     "  printf 'authenticated\\n'",
     `  exit ${options.authProbe === 'unverified' ? 1 : 0}`,
     'fi',
-    'cat >/dev/null',
+  ].join('\n');
+  const body = [
     ...markerLines(options.invocation?.marker),
     ...(options.invocation?.stdoutLines ?? []).map(
       (line) => `printf '%s\\n' ${shellQuoteArg(line)}`,
@@ -100,7 +101,7 @@ export function installCompatibleCliShim(
     '',
   ].join('\n');
   const path = join(options.directory, command);
-  writeFileSync(path, script, 'utf8');
+  writeFileSync(path, promptCliScript({ probes, body }), 'utf8');
   chmodSync(path, 0o755);
   return {
     path: realpathSync(path),

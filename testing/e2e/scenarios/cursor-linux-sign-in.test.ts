@@ -72,7 +72,7 @@ function cursorProject(xdgConfigHome: 'default' | 'set'): {
     bin,
     'cursor-agent',
     `
-const { existsSync, lstatSync, mkdirSync, realpathSync, writeFileSync } = require('node:fs');
+const { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } = require('node:fs');
 const { homedir } = require('node:os');
 const { join } = require('node:path');
 const xdg = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
@@ -86,6 +86,7 @@ if (process.argv[2] === 'status') {
   process.exit(0);
 }
 if (!process.argv.includes('--print')) process.exit(0);
+readFileSync(0);
 writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ xdg, isLink: lstatSync(auth).isSymbolicLink(), target: realpathSync(auth) }));
 writeFileSync(auth, '{"accessToken":"rotated-e2e"}');
 mkdirSync('src', { recursive: true });
