@@ -12,6 +12,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
 import { makeAttemptBrief } from '#testing/helpers/factories/attempt-brief.js';
+import { readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import {
   cleanupTaskProjects,
   makeTaskWorkflowContext,
@@ -115,7 +116,7 @@ const TRANSPORTS: Transport[] = [
           command: 'bash',
           args: [
             '-c',
-            `mkdir -p src && printf '${HELLO_TEXT.trimEnd()}\\n' > ${HELLO} && printf '${LEAKED.trimEnd()}\\n' > ${SECRET}`,
+            `${readCliPrompt()}\nmkdir -p src && printf '${HELLO_TEXT.trimEnd()}\\n' > ${HELLO} && printf '${LEAKED.trimEnd()}\\n' > ${SECRET}`,
           ],
         },
       });

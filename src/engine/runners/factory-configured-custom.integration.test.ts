@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONFIRM_PHRASE } from '../../core/approval/types.js';
@@ -248,10 +249,11 @@ describe('configured custom runner factory behavior', () => {
 
   function configuredFactoryBehaviorConfig(input: FactoryBehaviorConfigInput): Config {
     const id = `factory-r7-${input.role}-${input.contract}`;
+    const argv = ['-e', nodeCliScript(input.program)];
     const runner = {
       kind: input.contract === 'output' ? 'shell' : 'agent',
       command: process.execPath,
-      args: ['-e', input.program],
+      args: argv,
       outputFormat: 'text' as const,
       idleWarnMs: 300_000,
       idleKillMs: 1_800_000,
@@ -262,7 +264,7 @@ describe('configured custom runner factory behavior', () => {
         label: `Factory R7 ${input.role} ${input.contract}`,
         contract: input.contract,
         executable: process.execPath,
-        argv: ['-e', input.program],
+        argv,
         outputFormat: 'text' as const,
         idleWarnMs: 300_000,
         idleKillMs: 1_800_000,

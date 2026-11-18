@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -75,7 +76,9 @@ describe('runner environment policy', { timeout: 90_000 }, () => {
         command: process.execPath,
         args: [
           '-e',
-          `${recordEnvNames(implementer)} process.stdout.write(${JSON.stringify(CODE_RESPONSE)});`,
+          nodeCliScript(
+            `${recordEnvNames(implementer)} process.stdout.write(${JSON.stringify(CODE_RESPONSE)});`,
+          ),
         ],
         env: ['SPLITBRIEF_DECLARED_TOKEN'],
         model: 'fake-model',

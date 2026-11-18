@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { Command } from 'commander';
 import {
   mkdirSync,
@@ -71,7 +72,7 @@ function configuredDirectPlannerConfig(markerEnv: string): Config {
     label: 'Standalone configured direct planner',
     contract: 'direct' as const,
     executable: process.execPath,
-    argv: ['-e', childProgram],
+    argv: ['-e', nodeCliScript(childProgram)],
     outputFormat: 'text' as const,
     idleWarnMs: 300_000,
     idleKillMs: 1_800_000,

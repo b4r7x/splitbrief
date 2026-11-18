@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import {
   configuredRunner,
   createConfiguredCustomImplementer,
@@ -23,7 +24,12 @@ describe('createConfiguredCustomImplementer', () => {
     };
     const implementer = await createConfiguredCustomImplementer({
       runner: configuredRunner({
-        argv: ['-e', "process.stdout.write('```ts\\nexport const namedOptions = true;\\n```\\n');"],
+        argv: [
+          '-e',
+          nodeCliScript(
+            "process.stdout.write('```ts\\nexport const namedOptions = true;\\n```\\n');",
+          ),
+        ],
       }),
       runtime: harness.runtime,
       factoryOptions: { publisher },

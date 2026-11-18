@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import {
   makeBusRecorder,
   makeCallbacks,
@@ -690,7 +691,9 @@ function scriptedPlanner(
 // A real shell planner: `sleep` holds the call open until the stop kills it.
 function shellPlanner(inFlight: () => void): Planner {
   const shell = createCommandPlanner(
-    makeConfig({ planner: { kind: 'shell', command: 'bash', args: ['-c', 'sleep 30'] } }),
+    makeConfig({
+      planner: { kind: 'shell', command: 'bash', args: ['-c', `${readCliPrompt()}\nsleep 30`] },
+    }),
     'shell',
   );
   return {

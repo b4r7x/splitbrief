@@ -1,4 +1,4 @@
-import { readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
+import { nodeCliScript, readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -86,7 +86,7 @@ describe('agent implementer', () => {
   it('returns a timed-out call on timeout', async () => {
     const config = makeConfig({
       command: 'node',
-      args: ['-e', 'setInterval(() => {}, 1000)'],
+      args: ['-e', nodeCliScript('setInterval(() => {}, 1000)')],
       timeout: 50,
     });
 
@@ -106,7 +106,7 @@ describe('agent implementer', () => {
   it('aborts an in-flight spawned process when the signal fires', async () => {
     const config = makeConfig({
       command: 'node',
-      args: ['-e', 'setInterval(() => {}, 1000)'],
+      args: ['-e', nodeCliScript('setInterval(() => {}, 1000)')],
     });
 
     const controller = new AbortController();

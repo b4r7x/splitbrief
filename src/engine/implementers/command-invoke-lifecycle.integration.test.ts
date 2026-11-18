@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import {
   configuredRunner,
   createConfiguredCustomImplementer,
@@ -25,11 +26,13 @@ describe('createConfiguredCustomImplementer', () => {
       runner: configuredRunner({
         argv: [
           '-e',
-          [
-            `require('node:fs').writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
-            "process.stdout.write('```ts\\nexport const shouldNotApply = true;\\n```\\n');",
-            'setInterval(() => undefined, 1_000);',
-          ].join(''),
+          nodeCliScript(
+            [
+              `require('node:fs').writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
+              "process.stdout.write('```ts\\nexport const shouldNotApply = true;\\n```\\n');",
+              'setInterval(() => undefined, 1_000);',
+            ].join(''),
+          ),
         ],
         idleWarnMs: 1_000,
         idleKillMs: 3_000,
@@ -57,22 +60,25 @@ describe('createConfiguredCustomImplementer', () => {
     }> = [
       {
         name: 'completed',
-        argv: ['-e', "process.stdout.write('```ts\\nexport const completed = true;\\n```\\n');"],
+        argv: [
+          '-e',
+          nodeCliScript("process.stdout.write('```ts\\nexport const completed = true;\\n```\\n');"),
+        ],
         expectedSuccess: true,
       },
       {
         name: 'failed',
-        argv: ['-e', 'process.exitCode = 1;'],
+        argv: ['-e', nodeCliScript('process.exitCode = 1;')],
         expectedSuccess: false,
       },
       {
         name: 'malformed output',
-        argv: ['-e', "process.stdout.write('this is not fenced code');"],
+        argv: ['-e', nodeCliScript("process.stdout.write('this is not fenced code');")],
         expectedSuccess: false,
       },
       {
         name: 'aborted',
-        argv: ['-e', 'setInterval(() => undefined, 1_000);'],
+        argv: ['-e', nodeCliScript('setInterval(() => undefined, 1_000);')],
         expectedSuccess: false,
         abort: true,
       },

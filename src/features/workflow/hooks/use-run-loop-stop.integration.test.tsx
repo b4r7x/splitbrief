@@ -5,6 +5,7 @@ import { chmodSync, existsSync, mkdirSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -209,7 +210,9 @@ describe('run-loop stop completion', () => {
           command: process.execPath,
           args: [
             '-e',
-            `require('node:fs').writeFileSync(${JSON.stringify(join(projectDir, 'planner-started'))}, 'ready'); setInterval(() => {}, 1000)`,
+            nodeCliScript(
+              `require('node:fs').writeFileSync(${JSON.stringify(join(projectDir, 'planner-started'))}, 'ready'); setInterval(() => {}, 1000)`,
+            ),
           ],
           outputFormat: 'text',
         },

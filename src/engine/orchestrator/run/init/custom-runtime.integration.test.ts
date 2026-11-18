@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -197,7 +198,7 @@ describe('configured custom workflow runtime', () => {
             label: 'R2 staged custom runner',
             contract: 'output' as const,
             executable: process.execPath,
-            argv: ['-e', childProgram],
+            argv: ['-e', nodeCliScript(childProgram)],
             outputFormat: 'text' as const,
             idleWarnMs: 300_000,
             idleKillMs: 1_800_000,

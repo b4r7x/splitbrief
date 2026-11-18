@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
@@ -122,7 +123,9 @@ function retryChildProgram(
 ): string {
   const record = runnerRecord(input.id, input.contract);
   const source = `export const retryRunner = ${record} as const;\n`;
-  const marker = `require('node:fs').writeFileSync(${JSON.stringify(input.markerPath)}, ${JSON.stringify(record)});`;
+  const marker = nodeCliScript(
+    `require('node:fs').writeFileSync(${JSON.stringify(input.markerPath)}, ${JSON.stringify(record)});`,
+  );
   if (input.contract === 'output') {
     return `${marker}process.stdout.write(${JSON.stringify(`\`\`\`ts\n${source}\`\`\`\n`)});`;
   }

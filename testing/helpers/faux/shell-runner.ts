@@ -1,5 +1,6 @@
 import type { Config } from '../../../src/core/schemas/config.js';
 import { makeConfig } from '../factories/config.js';
+import { nodeCliScript } from '../prompt-cli-script.js';
 
 export const CODE_RESPONSE = [
   '```typescript',
@@ -35,7 +36,7 @@ export function makeShellRunnerConfig(overrides?: Parameters<typeof makeConfig>[
     implementer: {
       kind: 'shell',
       command: 'node',
-      args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
+      args: ['-e', nodeCliScript(`process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`)],
       model: 'fake-model',
       contextLength: 4096,
       temperature: 0,

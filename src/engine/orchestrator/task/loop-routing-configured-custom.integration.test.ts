@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
@@ -96,7 +97,7 @@ function runnerScript(
 }
 
 function configuredRunner(runner: RoutedRunner, script: string) {
-  const argv = ['-e', script];
+  const argv = ['-e', nodeCliScript(script)];
   const common = {
     command: process.execPath,
     args: argv,

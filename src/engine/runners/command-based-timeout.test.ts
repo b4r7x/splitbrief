@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readCliPrompt } from '#testing/helpers/prompt-cli-script.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { invokeCommandRunner, type CommandRunnerOptions } from './command-based.js';
 
@@ -271,7 +272,7 @@ describe('invokeCommandRunner with timeout', () => {
       run(
         {
           command: 'sh',
-          args: ['-c', 'sleep 5'],
+          args: ['-c', `${readCliPrompt()}\nsleep 5`],
         },
         {
           timeoutMs: 200,

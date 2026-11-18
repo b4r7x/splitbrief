@@ -1,6 +1,7 @@
 import { chmod, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliExecutableIdentity } from '../../../../core/discovery/detection/executable.js';
 import {
@@ -71,7 +72,7 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
     descriptor: { id: ${JSON.stringify(candidate.id)} },
     role: ${JSON.stringify(role)},
     promptTransport: { kind: 'stdin' },
-    buildArgs: () => ['-e', 'process.stdout.write("ok")'],
+    buildArgs: () => ['-e', ${JSON.stringify(nodeCliScript('process.stdout.write("ok")'))}],
     validateArgs: () => ({ valid: true }),
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
@@ -103,7 +104,8 @@ async function moduleWithCustomCandidate(
   const candidate = { ...contract };
   const hash = contractSha256(candidate);
   const buildArgs =
-    options.buildArgs ?? `() => ['-e', ${JSON.stringify('process.stdout.write("ok")')}]`;
+    options.buildArgs ??
+    `() => ['-e', ${JSON.stringify(nodeCliScript('process.stdout.write("ok")'))}]`;
   const validateArgs = options.validateArgs ?? '() => ({ valid: true })';
   const outputContract =
     options.outputContract ?? `{ kind: 'text-exit', successfulExitCodes: [0] }`;
@@ -265,7 +267,7 @@ describe('CLI production conformance lane', () => {
       expect(raw.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
       const changedPath = join(directory, 'changed.txt');
       const changedModule = await moduleWithCustomCandidate(directory, changedContract, {
-        buildArgs: `() => ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(changedPath)}, 'changed'); process.stdout.write('changed')`)}]`,
+        buildArgs: `() => ['-e', ${JSON.stringify(nodeCliScript(`require('node:fs').writeFileSync(${JSON.stringify(changedPath)}, 'changed'); process.stdout.write('changed')`))}]`,
       });
       const changed = await runProductionCliConformance({
         modulePath: changedModule,
@@ -318,7 +320,7 @@ describe('CLI production conformance lane', () => {
       const terminalEvent = `({ type: 'result', status: 'completed', text: 'terminal', usage: null, nativeSessionId: null, error: null, partial: false })`;
       const modulePath = await moduleWithCustomCandidate(directory, terminalContract, {
         outputContract: `{ kind: 'structured-terminal', terminalEvent: 'required' }`,
-        buildArgs: `() => ['-e', ${JSON.stringify("process.stdout.write('terminal\\n')")}]`,
+        buildArgs: `() => ['-e', ${JSON.stringify(nodeCliScript("process.stdout.write('terminal\\n')"))}]`,
         parse: `(line) => line === 'terminal' ? [${terminalEvent}] : []`,
         terminal: `() => ${terminalEvent}`,
       });
@@ -339,7 +341,7 @@ describe('CLI production conformance lane', () => {
       expect(missingRaw.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
       const missingModule = await moduleWithCustomCandidate(directory, missingContract, {
         outputContract: `{ kind: 'structured-terminal', terminalEvent: 'required' }`,
-        buildArgs: `() => ['-e', ${JSON.stringify("process.stdout.write('not-terminal\\n')")}]`,
+        buildArgs: `() => ['-e', ${JSON.stringify(nodeCliScript("process.stdout.write('not-terminal\\n')"))}]`,
         parse: `(line) => line === 'not-terminal' ? [{ type: 'text', channel: 'assistant', text: line }] : []`,
       });
       const missing = await runProductionCliConformance({

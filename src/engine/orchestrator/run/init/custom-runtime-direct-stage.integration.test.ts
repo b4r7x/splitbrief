@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -54,7 +55,7 @@ function makeDirectRunner(input: DirectRunnerInput) {
     label: input.id,
     contract: 'direct' as const,
     executable: process.execPath,
-    argv: ['-e', script],
+    argv: ['-e', nodeCliScript(script)],
     outputFormat: 'text' as const,
     idleWarnMs: 300_000,
     idleKillMs: 1_800_000,

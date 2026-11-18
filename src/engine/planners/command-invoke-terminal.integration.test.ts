@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { normalizeCustomCommand } from '../../core/config/custom-commands/schema.js';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project/create.js';
@@ -62,7 +63,7 @@ describe('configured direct planner terminal cleanup', () => {
         label: `Planner direct terminal ${name}`,
         contract: 'direct',
         executable: process.execPath,
-        argv: ['-e', script],
+        argv: ['-e', nodeCliScript(script)],
         ...(options.outputFormat === undefined ? {} : { outputFormat: options.outputFormat }),
         ...(options.idleWarnMs === undefined ? {} : { idleWarnMs: options.idleWarnMs }),
         ...(options.idleKillMs === undefined ? {} : { idleKillMs: options.idleKillMs }),
