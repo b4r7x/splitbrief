@@ -180,14 +180,14 @@ test('search and history keep local links, page metadata and reading position', 
   await expectPageMetadata(page, 'getting-started', 'Getting started');
   await page.evaluate(() => scrollTo({ top: 1300, behavior: 'instant' }));
   const before = await page.evaluate(() => scrollY);
-  await search.fill('Repo-map');
+  await search.fill('Configuration');
   await page
     .getByRole('navigation', { name: 'Documentation' })
-    .getByRole('link', { name: 'Repo-map context', exact: true })
+    .getByRole('link', { name: 'Configuration', exact: true })
     .click();
-  await expect(page).toHaveURL(/\/docs\/repomap\/$/);
+  await expect(page).toHaveURL(/\/docs\/configuration\/$/);
   await expect(page.locator('.brand')).toHaveAttribute('href', new URL('/', page.url()).href);
-  await expectPageMetadata(page, 'repomap', 'Repo-map context');
+  await expectPageMetadata(page, 'configuration', 'Configuration Reference');
   await search.fill('CLI');
   await page
     .getByRole('navigation', { name: 'Documentation' })
@@ -197,8 +197,10 @@ test('search and history keep local links, page metadata and reading position', 
   await expectPageMetadata(page, 'cli-reference', 'CLI Reference');
   await page.evaluate(() => scrollTo({ top: 1800, behavior: 'instant' }));
   await page.goBack();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Repo-map context');
-  await expectPageMetadata(page, 'repomap', 'Repo-map context');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'SPLITBRIEF Configuration Reference',
+  );
+  await expectPageMetadata(page, 'configuration', 'Configuration Reference');
   await page.goBack();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Getting started with SPLITBRIEF',
@@ -213,8 +215,10 @@ test('search and history keep local links, page metadata and reading position', 
   await expect(page).toHaveURL(/\/docs\/getting-started\/$/);
   await expectPageMetadata(page, 'getting-started', 'Getting started');
   await page.goForward();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Repo-map context');
-  await expectPageMetadata(page, 'repomap', 'Repo-map context');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'SPLITBRIEF Configuration Reference',
+  );
+  await expectPageMetadata(page, 'configuration', 'Configuration Reference');
   await page.goForward();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('CLI Reference');
   await expectPageMetadata(page, 'cli-reference', 'CLI Reference');

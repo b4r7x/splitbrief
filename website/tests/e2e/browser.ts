@@ -14,9 +14,9 @@ export const site: Site = JSON.parse(
 
 export async function openPage(page: Page, path = '/') {
   await page.goto(path);
-  await page.evaluate(() => document.fonts.ready);
   await page.waitForSelector('html.is-enhanced');
-  await page.waitForTimeout(150);
+  await page.evaluate(() => document.fonts.ready);
+  await settleScenes(page);
 }
 
 export async function scrollScene(page: Page, selector: string, progress: number) {
@@ -35,7 +35,7 @@ export async function scrollScene(page: Page, selector: string, progress: number
     },
     { selector, progress },
   );
-  await page.waitForTimeout(800);
+  await settleScenes(page);
 }
 
 export async function clickInPlace(page: Page, locator: Locator) {

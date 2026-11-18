@@ -212,6 +212,7 @@ for (const viewport of [
     for (const [index, [progress, selector]] of endings.entries()) {
       const chapter = chapters[index];
       if (!chapter) throw new Error('Workflow chapter is incomplete');
+      const ending = page.locator(selector);
       await clickInPlace(
         page,
         page.getByRole('navigation', { name: 'Choose a workflow step' }).getByRole('button', {
@@ -219,21 +220,23 @@ for (const viewport of [
         }),
       );
       await settleScenes(page);
+      await expect(ending).toBeInViewport({ ratio: 1 });
       const initialOffset = await page
         .locator('.work-document')
         .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).m42);
       await scrollScene(page, '[data-scroll-track]', Math.max(0, progress - 0.0005));
-      await settleScenes(page);
       expect(await page.locator('.terminal').boundingBox()).toEqual(terminal);
       const heading = await page
         .getByRole('heading', { name: chapter[1], exact: true })
         .boundingBox();
-      const ending = await page.locator(selector).boundingBox();
-      if (!heading || !ending) throw new Error('Chapter text is missing');
+      const endingBounds = await ending.boundingBox();
+      if (!heading || !endingBounds) throw new Error('Chapter text is missing');
       expect(heading.y).toBeGreaterThanOrEqual(window.y - 1);
-      expect(ending.y).toBeGreaterThanOrEqual(window.y - 1);
-      expect(ending.y + ending.height).toBeLessThanOrEqual(window.y + window.height + 1);
-      await expect(page.locator(selector)).toHaveCSS('clip-path', 'none');
+      expect(endingBounds.y).toBeGreaterThanOrEqual(window.y - 1);
+      expect(endingBounds.y + endingBounds.height).toBeLessThanOrEqual(
+        window.y + window.height + 1,
+      );
+      await expect(ending).toHaveCSS('clip-path', 'none');
       expect(
         await page
           .locator('.work-document')
@@ -246,7 +249,6 @@ for (const viewport of [
       );
     }
     await scrollScene(page, '[data-scroll-track]', 0.3095);
-    await settleScenes(page);
     expect(
       await page
         .locator('.work-document')
