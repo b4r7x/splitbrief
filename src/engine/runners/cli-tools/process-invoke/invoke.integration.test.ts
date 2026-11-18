@@ -6,6 +6,7 @@ import {
 import { taskId } from '../../../../core/schemas/task.js';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readFileSync } from 'node:fs';
+import { EventEmitter, once } from 'node:events';
 import {
   createSteeringPort,
   deliverToRunningCall,
@@ -20,18 +21,28 @@ import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js'
 import type { ChildProcess } from 'node:child_process';
 import {
   chmodSync,
+  closeSync,
+  constants,
   existsSync,
   mkdirSync,
+  openSync,
   realpathSync,
   statSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
-import { expireDeadlineAfterFile } from '#testing/helpers/fake-timers.js';
+import {
+  expireDeadlineAfterFile,
+  freezeProbeDeadlines,
+  holdTestDeadlines,
+  waitForFile,
+} from '#testing/helpers/fake-timers.js';
+import { makeFifo } from '#testing/helpers/stderr-handshake.js';
 import {
   installOpencodeSteeringShim,
   type OpencodeSteeringShimMode,
@@ -41,6 +52,7 @@ import { CLI_TOOL_CATALOG } from '../../../../core/runners/cli-tool/catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { killOrphanRunner } from '#testing/helpers/orphan-runner.js';
 import { canSignalProcess } from '../../../../lib/process/liveness.js';
+import { SIGKILL_DELAY_MS } from '../../../../lib/process/termination.js';
 import { versionedCli } from '#testing/helpers/versioned-cli.js';
 import {
   RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES,
@@ -252,6 +264,60 @@ async function run(
     onEvent,
     onSpawned,
   });
+}
+
+function observeCliLines<T extends Pick<CliImplementerAdapter, 'parse'>>(
+  selected: T,
+  onLine: (events: readonly CliProtocolEvent[]) => void,
+): T {
+  return {
+    ...selected,
+    parse: (line) => {
+      const parsed = selected.parse(line);
+      onLine(parsed);
+      return parsed;
+    },
+  };
+}
+
+function waitForOutput<T>(output: Promise<T>, call: Promise<RunnerCallResult>): Promise<T> {
+  return Promise.race([
+    output,
+    call.then((result) => {
+      throw new Error(
+        `The call ended before the expected output: ${result.error?.message ?? result.status}`,
+      );
+    }),
+  ]);
+}
+
+function outputGate(dir: string) {
+  const fifo = makeFifo(join(dir, 'release-output'));
+  const fd = openSync(fifo, constants.O_RDWR | constants.O_NONBLOCK);
+  onTestFinished(() => closeSync(fd));
+  return {
+    wait: `IFS= read -r ack < ${JSON.stringify(fifo)} || exit 2`,
+    release: () => writeSync(fd, 'ack\n'),
+  };
+}
+
+function observeProcessGroup(onSignal: (signal: string) => void) {
+  let pid: number | undefined;
+  const realKill = process.kill.bind(process);
+  const kill = vi.spyOn(process, 'kill').mockImplementation((target, signal) => {
+    if (pid !== undefined && target === -pid && signal !== 0) onSignal(String(signal));
+    return realKill(target, signal);
+  });
+  onTestFinished(() => {
+    kill.mockRestore();
+    if (pid !== undefined) killOrphanRunner(pid);
+  });
+  return {
+    onSpawned: (child: ChildProcess) => {
+      pid = child.pid;
+    },
+    groupAlive: () => pid !== undefined && canSignalProcess(-pid),
+  };
 }
 
 const emitPromptScript = (source: string) =>
@@ -1432,18 +1498,27 @@ describe('invokeProcessCli', () => {
     });
 
     const timeoutEvents: RunnerCallEvent[] = [];
+    const timeoutStderr = Promise.withResolvers<void>();
+    const timeoutMs = 30;
+    holdTestDeadlines();
+    const timingOut = run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        environment,
+        timeoutMs,
+        script:
+          "process.stderr.write('debug '+process.env.OPENAI_API_KEY);setInterval(()=>{},1000)",
+      }),
+      '',
+      (event) => {
+        timeoutEvents.push(event);
+        if (event.type === 'call_stderr_delta') timeoutStderr.resolve();
+      },
+    );
+    await waitForOutput(timeoutStderr.promise, timingOut);
+    await vi.advanceTimersByTimeAsync(timeoutMs);
     outcomes.push({
-      result: await run(
-        adapter({ kind: 'stdin' }),
-        invocation({
-          environment,
-          timeoutMs: 30,
-          script:
-            "process.stderr.write('debug '+process.env.OPENAI_API_KEY);setInterval(()=>{},1000)",
-        }),
-        '',
-        (event) => timeoutEvents.push(event),
-      ),
+      result: await timingOut,
       events: timeoutEvents,
     });
 
@@ -1845,20 +1920,33 @@ describe('invokeProcessCli', () => {
 });
 
 describe('invokeProcessCli antigravity stream-json liveness', () => {
+  freezeProbeDeadlines();
+
   const FIXTURE = join(
     import.meta.dirname,
     '../../../../../testing/fixtures/antigravity/stream-json.ndjson',
   );
-  // The idle clock starts at spawn, so the warn threshold has to clear the shim's own start-up
-  // as well as the gaps under test — and start-up is what a loaded four-worker run stretches.
-  // The gaps keep their ratio to it: the streaming case sits far below, the stall case far above.
   const idle = { warnMs: 2_000, killMs: 10_000 };
 
-  async function replay(dir: string, body: string, onEvent: (event: RunnerCallEvent) => void) {
+  function replay(
+    dir: string,
+    body: string,
+    onEvent: (event: RunnerCallEvent) => void,
+    onFrame?: () => void,
+  ) {
     const shimPath = join(dir, 'agy');
     writeFileSync(shimPath, promptCliScript({ shell: '/bin/bash', body }), { mode: 0o755 });
     chmodSync(shimPath, 0o755);
-    return invokeProcessCli(antigravityImplementerAdapter, {
+    const selected =
+      onFrame === undefined
+        ? antigravityImplementerAdapter
+        : observeCliLines(antigravityImplementerAdapter, onFrame);
+    let pid: number | undefined;
+    const spawned = Promise.withResolvers<void>();
+    onTestFinished(() => {
+      if (pid !== undefined) killOrphanRunner(pid);
+    });
+    const call = invokeProcessCli(selected, {
       invocation: {
         executable: executableIdentity(shimPath),
         args: [],
@@ -1872,7 +1960,12 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
       callContext,
       idle,
       onEvent,
+      onSpawned: (child) => {
+        pid = child.pid;
+        spawned.resolve();
+      },
     });
+    return { call, spawned: spawned.promise };
   }
 
   itUnix(
@@ -1880,13 +1973,27 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
     async () => {
       await withTempDir('splitbrief-agy-stream', async (dir) => {
         const events: RunnerCallEvent[] = [];
-        // 0.4 s gaps stay under a quarter of the warn threshold while the 14-frame replay outlasts
-        // twice the threshold, so only a clock that every frame resets stays quiet.
-        const script = `while IFS= read -r line; do printf '%s\\n' "$line"; sleep 0.4; done < ${JSON.stringify(FIXTURE)}`;
-        const started = Date.now();
-        const result = await replay(dir, script, (event) => events.push(event));
+        const gate = outputGate(dir);
+        const frames = new EventEmitter();
+        const script = `while IFS= read -r line; do ${gate.wait}; printf '%s\\n' "$line"; done < ${JSON.stringify(FIXTURE)}`;
+        const { call, spawned } = replay(
+          dir,
+          script,
+          (event) => events.push(event),
+          () => frames.emit('frame'),
+        );
+        const frameCount = readFileSync(FIXTURE, 'utf8').trimEnd().split('\n').length;
+        const gapMs = idle.warnMs / 2 + 1;
+        await waitForOutput(spawned, call);
+        // One gap stays below the warning deadline. A missed reset crosses it on the next gap.
+        for (let index = 0; index < frameCount; index += 1) {
+          await vi.advanceTimersByTimeAsync(gapMs);
+          const next = once(frames, 'frame');
+          gate.release();
+          await waitForOutput(next, call);
+        }
+        const result = await call;
 
-        expect(Date.now() - started).toBeGreaterThanOrEqual(2 * idle.warnMs);
         expect(result).toMatchObject({
           status: 'completed',
           text: 'OK\n',
@@ -1917,9 +2024,16 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
   itUnix('reports one stall when a frame is followed by three seconds of silence', async () => {
     await withTempDir('splitbrief-agy-stall', async (dir) => {
       const events: RunnerCallEvent[] = [];
+      const gate = outputGate(dir);
+      const first = Promise.withResolvers<void>();
       const fixture = JSON.stringify(FIXTURE);
-      const script = `head -n 1 ${fixture}\nsleep 3\ntail -n 1 ${fixture}`;
-      const result = await replay(dir, script, (event) => events.push(event));
+      const script = `head -n 1 ${fixture}\n${gate.wait}\ntail -n 1 ${fixture}`;
+      const { call } = replay(dir, script, (event) => events.push(event), first.resolve);
+      await waitForOutput(first.promise, call);
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(events.filter((event) => event.type === 'call_stalled')).toHaveLength(1);
+      gate.release();
+      const result = await call;
 
       expect(result.status).toBe('completed');
       expect(events.filter((event) => event.type === 'call_stalled')).toHaveLength(1);
@@ -1945,9 +2059,10 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
             "process.stdout.write(JSON.stringify({ event: 'result', result: { status: 'SUCCESS', response: 'OK\\n' } }) + '\\n');",
           ].join('\n'),
         );
-        const result = await replay(dir, `exec node ${JSON.stringify(floodPath)}`, (event) =>
+        const { call } = replay(dir, `exec node ${JSON.stringify(floodPath)}`, (event) =>
           events.push(event),
         );
+        const result = await call;
 
         expect(result.status).toBe('completed');
         expect(
@@ -1963,16 +2078,20 @@ describe('invokeProcessCli antigravity stream-json liveness', () => {
 });
 
 describe('invokeProcessCli structured call after its terminal result', () => {
+  freezeProbeDeadlines();
+
   // agy 1.5.1 can print its completed result and then never exit, and it ignores SIGTERM.
   // The deadline only bounds a call that never returns: a call that settles returns far inside it.
   const DEADLINE_MS = 15_000;
   const STILL_RUNNING = Symbol('still running');
+  const GRACE_MS = 2_000;
   const SESSION_ID = 'agy-conversation-1';
   // Halt words in the answer show a diagnosis that reads the tool's own stdout.
   const HALT_WORDS_ANSWER =
     'The probe printed 401 Unauthorized: invalid api key while the network was down, so the plan retries the key check.';
   const NEUTRAL_ANSWER = 'The plan is ready.';
-  const LINGER = 'sleep 600';
+  // Keep the leader's pid so it cannot fork a new child as the test sends SIGTERM.
+  const LINGER = 'exec sleep 600';
 
   function resultLine(fields: Readonly<Record<string, unknown>>): string {
     const result = {
@@ -2004,11 +2123,16 @@ describe('invokeProcessCli structured call after its terminal result', () => {
     writeFileSync(shimPath, `#!/bin/bash\ncat > /dev/null\n${body}\n`, { mode: 0o755 });
     chmodSync(shimPath, 0o755);
     const events: RunnerCallEvent[] = [];
-    let pid: number | undefined;
-    onTestFinished(() => {
-      if (pid !== undefined) killOrphanRunner(pid);
+    const signals: string[] = [];
+    const group = observeProcessGroup((signal) => signals.push(signal));
+    const terminal = Promise.withResolvers<void>();
+    const firstText = Promise.withResolvers<void>();
+    const exit = Promise.withResolvers<number | null>();
+    // The adapter returns the held result without emitting a runner event for it.
+    const selected = observeCliLines(antigravityPlannerAdapter, (parsed) => {
+      if (parsed.some((event) => event.type === 'result')) terminal.resolve();
     });
-    const call = invokeProcessCli(antigravityPlannerAdapter, {
+    const call = invokeProcessCli(selected, {
       invocation: {
         executable: executableIdentity(shimPath),
         args: [],
@@ -2021,17 +2145,24 @@ describe('invokeProcessCli structured call after its terminal result', () => {
       prompt: 'fixture prompt',
       callContext: { ...callContext, role: 'planner' },
       idle: opts.idle,
-      onEvent: (event) => events.push(event),
+      onEvent: (event) => {
+        events.push(event);
+        if (event.type === 'call_text_delta') firstText.resolve();
+      },
       onSpawned: (child) => {
-        pid = child.pid;
+        group.onSpawned(child);
+        child.once('exit', exit.resolve);
       },
     });
-    const groupAlive = () => {
-      if (pid === undefined) throw new Error('the fake agy never started');
-      // A negative pid names the process group.
-      return canSignalProcess(-pid);
+    return {
+      call,
+      events,
+      signals,
+      groupAlive: group.groupAlive,
+      terminal: terminal.promise,
+      firstText: firstText.promise,
+      exit: exit.promise,
     };
-    return { call, events, groupAlive };
   }
 
   async function settleWithin<T>(call: Promise<T>): Promise<T> {
@@ -2070,10 +2201,13 @@ describe('invokeProcessCli structured call after its terminal result', () => {
       const fake = invokeAgy(dir, `cat result.ndjson\n${LINGER}`, {
         files: { 'result.ndjson': answerLine(HALT_WORDS_ANSWER) },
       });
+      await waitForOutput(fake.terminal, fake.call);
+      await vi.advanceTimersByTimeAsync(GRACE_MS);
       const result = await settleWithin(fake.call);
 
       expectAnswer(result, fake.events, HALT_WORDS_ANSWER);
       expect(runnerCallOutcome(result).state).toBe('success');
+      expect(fake.signals).toEqual(['SIGTERM']);
       expect(fake.groupAlive()).toBe(false);
     });
   });
@@ -2085,9 +2219,14 @@ describe('invokeProcessCli structured call after its terminal result', () => {
         const fake = invokeAgy(dir, `trap '' TERM\ncat result.ndjson\n${LINGER}`, {
           files: { 'result.ndjson': answerLine(HALT_WORDS_ANSWER) },
         });
+        await waitForOutput(fake.terminal, fake.call);
+        await vi.advanceTimersByTimeAsync(GRACE_MS);
+        expect(fake.signals).toEqual(['SIGTERM']);
+        await vi.advanceTimersByTimeAsync(SIGKILL_DELAY_MS);
         const result = await settleWithin(fake.call);
 
         expectAnswer(result, fake.events, HALT_WORDS_ANSWER);
+        expect(fake.signals).toEqual(['SIGTERM', 'SIGKILL']);
         expect(fake.groupAlive()).toBe(false);
       });
     },
@@ -2135,32 +2274,15 @@ describe('invokeProcessCli structured call after its terminal result', () => {
           text_delta: 'The plan',
         },
       };
-      const ready = join(dir, 'ready');
-      const go = join(dir, 'go');
-      const fake = invokeAgy(
-        dir,
-        [
-          'cat head.part',
-          `: > ${JSON.stringify(ready)}`,
-          `until [ -e ${JSON.stringify(go)} ]; do sleep 0.05; done`,
-          'cat tail.part',
-        ].join('\n'),
-        {
-          files: {
-            'head.part': `${JSON.stringify(step)}\n${line.slice(0, cut)}`,
-            'tail.part': line.slice(cut),
-          },
+      const gate = outputGate(dir);
+      const fake = invokeAgy(dir, ['cat head.part', gate.wait, 'cat tail.part'].join('\n'), {
+        files: {
+          'head.part': `${JSON.stringify(step)}\n${line.slice(0, cut)}`,
+          'tail.part': line.slice(cut),
         },
-      );
-      let ended = false;
-      void fake.call.finally(() => {
-        ended = true;
       });
-      await vi.waitFor(() => {
-        const streamed = fake.events.some((event) => event.type === 'call_text_delta');
-        expect(ended || (streamed && existsSync(ready))).toBe(true);
-      });
-      writeFileSync(go, '');
+      await waitForOutput(fake.firstText, fake.call);
+      gate.release();
       const result = await settleWithin(fake.call);
 
       expectAnswer(result, fake.events, NEUTRAL_ANSWER);
@@ -2175,17 +2297,22 @@ describe('invokeProcessCli structured call after its terminal result', () => {
       const result = await settleWithin(fake.call);
 
       expectAnswer(result, fake.events, NEUTRAL_ANSWER);
+      expect(await fake.exit).toBe(0);
     });
   });
 
-  // The fake ignores SIGTERM, so no stop ends the call inside two seconds of the answer: the
-  // 1.9 s timeout fires after the answer is held and before the call returns.
+  // The timeout stops the group before the terminal grace expires.
   itUnix('keeps a held answer when the configured timeout fires after it', async () => {
     await withTempDir('splitbrief-agy-late-timeout', async (dir) => {
+      const timeoutMs = 1_900;
       const fake = invokeAgy(dir, `trap '' TERM\ncat result.ndjson\n${LINGER}`, {
         files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
-        timeoutMs: 1_900,
+        timeoutMs,
       });
+      await waitForOutput(fake.terminal, fake.call);
+      await vi.advanceTimersByTimeAsync(timeoutMs);
+      expect(fake.signals).toEqual(['SIGTERM']);
+      await vi.advanceTimersByTimeAsync(SIGKILL_DELAY_MS);
       const result = await settleWithin(fake.call);
 
       expectAnswer(result, fake.events, NEUTRAL_ANSWER);
@@ -2193,20 +2320,30 @@ describe('invokeProcessCli structured call after its terminal result', () => {
     });
   });
 
-  // SPLITBRIEF sends SIGTERM 2 s after the answer and SIGKILL 2 s after that. The fake ignores
-  // SIGTERM, so the 3 s timeout fires while SPLITBRIEF waits for its stop to work.
+  // The timeout fires between SIGTERM and SIGKILL.
   itUnix(
     'keeps a held answer when the configured timeout fires while the tool ignores its stop',
     async () => {
       await withTempDir('splitbrief-agy-stop-timeout', async (dir) => {
+        const timeoutMs = 3_000;
         const fake = invokeAgy(dir, `trap '' TERM\ncat result.ndjson\n${LINGER}`, {
           files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
-          timeoutMs: 3_000,
+          timeoutMs,
         });
+        await waitForOutput(fake.terminal, fake.call);
+        await vi.advanceTimersByTimeAsync(GRACE_MS);
+        expect(fake.signals).toEqual(['SIGTERM']);
+        const beforeTimeout = vi.getTimerCount();
+        const untilTimeout = timeoutMs - GRACE_MS;
+        await vi.advanceTimersByTimeAsync(untilTimeout);
+        expect(vi.getTimerCount()).toBe(beforeTimeout - 1);
+        expect(fake.signals).toEqual(['SIGTERM']);
+        await vi.advanceTimersByTimeAsync(SIGKILL_DELAY_MS - untilTimeout);
         const result = await settleWithin(fake.call);
 
         expectAnswer(result, fake.events, NEUTRAL_ANSWER);
         expect(runnerCallOutcome(result).state).toBe('success');
+        expect(fake.signals).toEqual(['SIGTERM', 'SIGKILL']);
         expect(fake.groupAlive()).toBe(false);
       });
     },
@@ -2215,13 +2352,18 @@ describe('invokeProcessCli structured call after its terminal result', () => {
   // The idle clock restarts on the answer, so the cut fires 1.5 s after it.
   itUnix('keeps a held answer when the idle cut fires after it', async () => {
     await withTempDir('splitbrief-agy-late-idle', async (dir) => {
+      const idle = { warnMs: 1_000, killMs: 1_500 };
       const fake = invokeAgy(dir, `cat result.ndjson\n${LINGER}`, {
         files: { 'result.ndjson': answerLine(NEUTRAL_ANSWER) },
-        idle: { warnMs: 1_000, killMs: 1_500 },
+        idle,
       });
+      await waitForOutput(fake.terminal, fake.call);
+      await vi.advanceTimersByTimeAsync(idle.killMs);
       const result = await settleWithin(fake.call);
 
       expectAnswer(result, fake.events, NEUTRAL_ANSWER);
+      expect(fake.events.map((event) => event.type)).toContain('call_stalled');
+      expect(fake.signals).toEqual(['SIGTERM']);
       expect(fake.groupAlive()).toBe(false);
     });
   });
@@ -2237,6 +2379,8 @@ describe('invokeProcessCli structured call after its terminal result', () => {
           }),
         },
       });
+      await waitForOutput(fake.terminal, fake.call);
+      await vi.advanceTimersByTimeAsync(GRACE_MS);
       const result = await settleWithin(fake.call);
 
       expect(result).toMatchObject({
@@ -2444,6 +2588,8 @@ describe('invokeProcessCli tool-use guard', () => {
 });
 
 describe('invokeProcessCli structured-terminal halts on stderr', () => {
+  freezeProbeDeadlines();
+
   // Captured live from `agy -p` on 2026-09-21.
   const QUOTA_LINE =
     'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.';
@@ -2635,6 +2781,7 @@ describe('invokeProcessCli reads the stderr of a failed call as its diagnosis', 
   });
 
   it('reads stderr when the failed terminal names no halt of its own', async () => {
+    holdTestDeadlines();
     const result = await run(
       adapter({ kind: 'stdin' }),
       invocation({
@@ -3538,9 +3685,11 @@ describe('OpenCode process steering', () => {
         const fixture = setup(dir, mode === 'timeout' ? 'abort' : mode);
         const controller = new AbortController();
         let delivery: Promise<SteerOutcome> | undefined;
+        const timeoutMs = mode === 'timeout' ? 750 : 8_000;
+        if (mode === 'timeout') holdTestDeadlines();
         const running = fixture.run({
           signal: controller.signal,
-          timeoutMs: mode === 'timeout' ? 750 : 8_000,
+          timeoutMs,
           parserFailure: mode === 'protocol-failure',
           onEvent: (event) => {
             if (event.type === 'call_tool_use_delta') {
@@ -3554,6 +3703,9 @@ describe('OpenCode process steering', () => {
         if (mode === 'abort') {
           await vi.waitFor(() => expect(existsSync(fixture.shim.requestsFile)).toBe(true));
           controller.abort();
+        }
+        if (mode === 'timeout' && (await waitForFile(fixture.shim.requestsFile, running))) {
+          await vi.advanceTimersByTimeAsync(timeoutMs);
         }
         const result = await running;
         expect(result.status).toBe(
@@ -3669,17 +3821,8 @@ describe('invokeProcessCli step and dispose order', () => {
    */
   function trace() {
     const steps: string[] = [];
-    let pid: number | undefined;
-    const realKill = process.kill.bind(process);
-    const kill = vi.spyOn(process, 'kill').mockImplementation((target, signal) => {
-      if (pid !== undefined && target === -pid && signal !== 0) steps.push(`kill:${signal}`);
-      return realKill(target, signal);
-    });
-    onTestFinished(() => {
-      kill.mockRestore();
-      if (pid !== undefined) killOrphanRunner(pid);
-    });
-    const groupGone = () => pid === undefined || !canSignalProcess(-pid);
+    const group = observeProcessGroup((signal) => steps.push(`kill:${signal}`));
+    const groupGone = () => !group.groupAlive();
     const base = adapter({ kind: 'stdin' });
     const parse = (line: string) => {
       steps.push(`line:${line}`);
@@ -3695,7 +3838,7 @@ describe('invokeProcessCli step and dispose order', () => {
         steps.push(`terminal:${event.type}`, groupGone() ? 'group gone' : 'group running');
       },
       onSpawned: (child: ChildProcess) => {
-        pid = child.pid;
+        group.onSpawned(child);
         steps.push('spawned');
         child.once('close', () => steps.push('close'));
       },
