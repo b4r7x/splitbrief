@@ -206,10 +206,8 @@ export function typedRunnerCallErrorCode(err: unknown): string | null {
   return typeof callError.code === 'string' ? callError.code : null;
 }
 
-export function typedPromptTransportError(err: unknown): RunnerCallError | undefined {
-  const callError = errorData(err)?.error;
-  if (!isRecord(callError) || callError.code !== 'prompt-transport-error') return undefined;
-  return RunnerCallErrorSchema.safeParse(callError).data;
+export function typedRunnerCallError(err: unknown): RunnerCallError | undefined {
+  return RunnerCallErrorSchema.safeParse(errorData(err)?.error).data;
 }
 
 /**

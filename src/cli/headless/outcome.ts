@@ -101,12 +101,14 @@ export function emitRecoveryAndFailIfPending({
   );
   // The stored message names no clock; a quota halt's reset is spelled when the line is printed.
   const reset = formatResetAt(issue.resetAt);
+  const diagnostic =
+    issue.reason === 'review-failed' && cause === 'non-zero-exit' ? issue.details[0] : undefined;
   // Accept as is also runs with no panel, so a halt that offers it names that command too.
   const accept = issue.availableActions.includes('accept-as-is')
     ? `\n${recoveryActionLabel('accept-as-is', issue)}: ${continueRunCommand(sessionId)} --action accept-as-is [--plain|--json]`
     : '';
   throw cliError(
-    `${recoveryHaltLabel(haltOf(issue.reason))} (${issue.reason}): ${issue.message}${reset === undefined ? '' : ` (${reset})`}${question === undefined ? '' : `\nQuestion: ${question}`}${cannot === undefined || cannotBy === undefined ? '' : `\n${cannotDetail(cannotBy, cannot)}`}\nRecommended: ${issue.recommendedAction}\nContinue with: ${resumeCommand}${continuesHeadless(issue) ? ' [--plain|--json]' : ''}${accept}`,
+    `${recoveryHaltLabel(haltOf(issue.reason))} (${issue.reason}): ${issue.message}${reset === undefined ? '' : ` (${reset})`}${diagnostic === undefined ? '' : `\n${diagnostic}`}${question === undefined ? '' : `\nQuestion: ${question}`}${cannot === undefined || cannotBy === undefined ? '' : `\n${cannotDetail(cannotBy, cannot)}`}\nRecommended: ${issue.recommendedAction}\nContinue with: ${resumeCommand}${continuesHeadless(issue) ? ' [--plain|--json]' : ''}${accept}`,
     1,
   );
 }

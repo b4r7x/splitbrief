@@ -21,7 +21,7 @@ import {
   failureStateFromCode,
   isSeatDown,
   thrownSeatFailure,
-  typedPromptTransportError,
+  typedRunnerCallError,
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { readTaskFileContent } from './extracted-code.js';
@@ -232,8 +232,8 @@ async function thrownOutcome(
   }
   if (seat.shouldThrow(err)) throw err;
   const output = errorOutput(err);
-  const transportError = typedPromptTransportError(err);
-  if (transportError !== undefined) {
+  const transportError = typedRunnerCallError(err);
+  if (transportError?.code === 'prompt-transport-error') {
     implBuffer?.flush();
     const error = toErrorMessage(err);
     seat.failTask(opts, error);

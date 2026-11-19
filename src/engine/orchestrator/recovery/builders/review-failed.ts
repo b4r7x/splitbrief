@@ -91,6 +91,7 @@ function buildNoVerdictReviewIssue(
     ],
     facts: compactFacts({
       reviewFailureKind: failure.kind,
+      cause: failure.kind === 'call-failed' ? failure.cause : undefined,
       reviewScope: opts.scope,
       afterTaskId: opts.afterTaskId,
       ...(diagnostic === undefined ? {} : apiContextRecoveryFacts(diagnostic)),

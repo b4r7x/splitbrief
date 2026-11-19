@@ -9,7 +9,7 @@ import { accountCauseAdvice } from '../../../core/recovery/account-cause.js';
 import {
   runnerOwnWords,
   thrownSeatFailure,
-  typedPromptTransportError,
+  typedRunnerCallError,
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
@@ -26,6 +26,7 @@ import { nowIso } from '../../../utils/format/time.js';
 import { inputTooLargeFigures, type PromptSize } from '../../runners/input-limit.js';
 import {
   inputTooLargeDetail,
+  processExitStderrDetails,
   promptTransportDetails,
   runnerDefectRow,
   runnerHaltRow,
@@ -67,7 +68,7 @@ export type PlannerCallDiagnosis = Readonly<{
   inputSize?: PromptSize | undefined;
   /** Present when the failure is a seat-down cause: what the one halt builder consumes. */
   seatDown?: PlannerSeatDownDiagnosis | undefined;
-  cause?: 'prompt-transport-error' | undefined;
+  cause?: 'prompt-transport-error' | 'implementer-recipe-invalid' | 'non-zero-exit' | undefined;
 }>;
 
 /** The tool's own words usually end their sentence already; a second full stop is noise. */
@@ -96,7 +97,9 @@ export function diagnosePlannerCallFailure(
     typed === null
       ? labelError(input.label, err)
       : `${input.label}: ${sanitizeTerminalDiagnosticText(typed)}`;
-  const transport = typedPromptTransportError(err)?.promptTransport;
+  const callError = typedRunnerCallError(err);
+  const transport =
+    callError?.code === 'prompt-transport-error' ? callError.promptTransport : undefined;
   if (transport?.source === 'stdin') {
     return {
       failure: 'call-failed',
@@ -208,7 +211,27 @@ export function diagnosePlannerCallFailure(
       seatDown: { classification },
     };
   }
-  return { failure: 'call-failed', message, tool, details, words: said, resetsAt: null };
+  const exit = callError?.processExit;
+  if (exit !== undefined) {
+    return {
+      failure: 'call-failed',
+      cause: 'non-zero-exit',
+      message: `${input.label}: ${sanitizeTerminalDiagnosticText(exit.summary)}`,
+      tool,
+      details: processExitStderrDetails(tool, exit.stderr),
+      words: said,
+      resetsAt: null,
+    };
+  }
+  return {
+    failure: 'call-failed',
+    ...(code === 'implementer-recipe-invalid' && { cause: code }),
+    message,
+    tool,
+    details,
+    words: said,
+    resetsAt: null,
+  };
 }
 
 /**

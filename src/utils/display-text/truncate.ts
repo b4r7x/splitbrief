@@ -166,6 +166,30 @@ function takeLeadingCells(text: string, maxCells: number): string {
   return result;
 }
 
+export function takeGraphemesByChars({
+  text,
+  maxChars,
+  from = 'start',
+}: {
+  text: string;
+  maxChars: number;
+  from?: 'start' | 'end';
+}): string {
+  if (text.length <= maxChars) return text;
+
+  const parts = graphemes(text);
+  if (from === 'end') parts.reverse();
+
+  let length = 0;
+  for (const part of parts) {
+    const nextLength = length + part.length;
+    if (nextLength <= maxChars) length = nextLength;
+    else break;
+  }
+
+  return from === 'end' ? text.slice(text.length - length) : text.slice(0, length);
+}
+
 export function truncateByChars(text: string, maxChars: number): string {
   if (maxChars <= 0) return '';
   const kept = text.slice(0, maxChars);

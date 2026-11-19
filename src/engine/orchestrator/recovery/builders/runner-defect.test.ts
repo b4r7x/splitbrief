@@ -12,10 +12,36 @@ import {
   buildRepeatedTimeoutRecoveryIssue,
   buildRunnerCheckFailedRecoveryIssue,
   buildRunnerInputTooLargeRecoveryIssue,
+  processExitStderrDetails,
   runnerDefectRow,
   runnerHaltRow,
 } from './runner-defect.js';
 import { buildSeatDownIssue } from './seat-down.js';
+
+describe('processExitStderrDetails', () => {
+  const head = 'h'.repeat(267);
+  const tail = 't'.repeat(271);
+
+  it.each([
+    {
+      cut: 'head',
+      stderr: `${head}📚-workspace-index.json\nexit`,
+      excerpt: `${head} [… output omitted …] exit`,
+    },
+    {
+      cut: 'tail',
+      stderr: `copy failed\n${head}📚${tail}`,
+      excerpt: `c [… output omitted …] ${tail}`,
+    },
+  ])('keeps whole graphemes at the $cut cut', ({ stderr, excerpt }) => {
+    const [detail] = processExitStderrDetails('Claude Code CLI', stderr);
+
+    expect(detail?.length).toBeLessThanOrEqual(320);
+    expect(detail).not.toContain('\uFFFD');
+    expect(detail?.isWellFormed()).toBe(true);
+    expect(detail).toBe(`Claude Code CLI reported: ${excerpt}`);
+  });
+});
 
 describe('runnerHaltRow', () => {
   it.each(['plan', 'build', 'review'] as const)(

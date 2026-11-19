@@ -15,6 +15,11 @@ import {
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  REVIEWER_EXIT_TRACE,
+  REVIEWER_NODE_EMOJI_EXIT_TRACE,
+  REVIEWER_NODE_EXIT_TRACE,
+} from '#testing/helpers/reviewer-exit-trace.js';
 import { passingReviewVerdict } from '#testing/helpers/typed-planner.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
@@ -365,6 +370,117 @@ describe('a Cursor reviewer that refuses the account', () => {
       }
     },
   );
+});
+
+function failingClaudeSeat(projectDir: string, stderr: string, exitCode: number) {
+  writeFileSync(
+    join(projectDir, 'claude'),
+    ['#!/bin/sh', 'cat >/dev/null', `printf '%s' "${stderr}" >&2`, `exit ${exitCode}`].join('\n'),
+    { mode: 0o755 },
+  );
+  const runner = { kind: 'cli', tool: 'claude-code' } as const;
+  const config = makeNoValidationConfig({ planner: runner, reviewer: runner });
+  writeConfig(projectDir, config);
+  const planner = createCliPlanner({
+    config,
+    cliSeat: admittedCliSeat(trustedShimGate({ dir: projectDir, tool: runner.tool })),
+  });
+  return { config, planner, runner };
+}
+
+it('halts final REVIEW on the seat when the CLI rejects an option', async () => {
+  const ref = project();
+  const words = 'unknown option --output-format';
+  const { config, planner } = failingClaudeSeat(ref.projectDir, words, 2);
+  const { bus } = makeBusRecorder();
+  const result = await review(ref, doneState(makeTask({ id: 'T001' })), planner, bus, config);
+  const { pendingRecovery } = await halt(ref, result, bus, config);
+  if (pendingRecovery === undefined) throw new Error('REVIEW did not save a recovery issue');
+
+  expect(formatRecoveryPrompt(pendingRecovery)).toContain('Seat down · Final review failed');
+  expect(pendingRecovery).toMatchObject({
+    seat: 'review',
+    reason: 'planner-call-failed',
+    availableActions: ['retry-same-worker', 'end-run'],
+    details: [`Claude Code CLI reported: ${words}`],
+  });
+});
+
+it.each([
+  {
+    label: 'short stderr',
+    exit: 23,
+    words: 'workspace index is corrupt',
+    detail: /^Claude Code CLI reported: workspace index is corrupt$/u,
+  },
+  {
+    label: 'long stderr',
+    exit: 23,
+    words: REVIEWER_EXIT_TRACE,
+    detail:
+      /^Claude Code CLI reported: Failed to open workspace index\..* \[… output omitted …\] Caused by: ENOSPC: no space left on device$/u,
+  },
+  {
+    label: 'Node stderr with a version footer',
+    exit: 1,
+    words: REVIEWER_NODE_EXIT_TRACE,
+    detail:
+      /^Claude Code CLI reported: node:fs:560 .*ENOENT: no such file or directory, open 'workspace-index\.json'.* \[… output omitted …\] Node\.js v22\.22\.2$/u,
+  },
+  {
+    label: 'Node stderr with 📚-workspace-index.json at the cut',
+    exit: 1,
+    words: REVIEWER_NODE_EMOJI_EXIT_TRACE,
+    detail:
+      /^Claude Code CLI reported: node:fs:560 .*ENOENT: no such file or directory, open '.*\/exports\/ \[… output omitted …\] Node\.js v22\.22\.2$/u,
+  },
+])('attributes only stderr to the CLI on PLAN and final REVIEW ($label)', async (row) => {
+  const ref = project();
+  const { config, planner, runner } = failingClaudeSeat(ref.projectDir, row.words, row.exit);
+  const call = planner.typedCall({
+    projectDir: ref.projectDir,
+    seat: 'planner',
+    callbacks: { onOutput: () => undefined },
+  });
+  const err = await call
+    .invoke({ prompt: 'Read the workspace' })
+    .then(requireCompletedCall)
+    .then(
+      () => {
+        throw new Error('PLAN unexpectedly completed');
+      },
+      (err: unknown) => err,
+    );
+  const diagnosis = diagnosePlannerCallFailure({
+    err,
+    label: 'Planning failed',
+    runner,
+    seat: 'plan',
+  });
+  const planIssue = buildPlannerCallFailedRecoveryIssue({
+    diagnosis,
+    runner,
+    phase: 'planning',
+    createdAt: new Date(0).toISOString(),
+  });
+  const { bus } = makeBusRecorder();
+  const result = await review(ref, doneState(makeTask({ id: 'T001' })), planner, bus, config);
+  const { pendingRecovery } = await halt(ref, result, bus, config);
+  if (pendingRecovery === undefined) throw new Error('REVIEW did not save a recovery issue');
+
+  for (const [issue, heading] of [
+    [planIssue, `Seat down · Planning failed: CLI exited with code ${row.exit}`],
+    [
+      pendingRecovery,
+      `Needs you · Final review failed (reviewer: Claude Code CLI): CLI exited with code ${row.exit}`,
+    ],
+  ] as const) {
+    const lines = formatRecoveryPrompt(issue).split('\n');
+    expect.soft(lines).toEqual([heading, '', expect.stringMatching(row.detail)]);
+    expect.soft(lines[2]?.length).toBeLessThanOrEqual(320);
+    expect.soft(lines[2]).not.toContain('\uFFFD');
+    expect.soft(lines[2]?.isWellFormed()).toBe(true);
+  }
 });
 
 it.each([

@@ -80,12 +80,13 @@ export function publishReviewFailure(input: {
     message = diagnosis.message;
     resetAt = diagnosis.resetsAt?.toISOString();
     failure =
-      diagnosis.failure === 'call-failed'
+      diagnosis.failure === 'call-failed' && diagnosis.cause !== 'implementer-recipe-invalid'
         ? {
             kind: 'call-failed',
             code: errorKind(err) ?? REVIEW_UNAVAILABLE,
             message,
-            ...(diagnosis.cause === 'prompt-transport-error' && { details: diagnosis.details }),
+            ...(diagnosis.cause !== undefined && { details: diagnosis.details }),
+            ...(diagnosis.cause === 'non-zero-exit' && { cause: diagnosis.cause }),
           }
         : { kind: 'seat-blocked', diagnosis };
   }

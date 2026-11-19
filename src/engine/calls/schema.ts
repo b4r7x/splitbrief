@@ -87,6 +87,7 @@ export const RunnerCallErrorSchema = z.strictObject({
   message: boundedMessage,
   status: nonnegativeInteger.optional(),
   providerType: boundedName.optional(),
+  processExit: z.strictObject({ summary: boundedMessage, stderr: boundedMessage }).optional(),
   promptTransport: z
     .discriminatedUnion('source', [
       z.strictObject({ source: z.literal('stdin'), stderr: boundedMessage }),

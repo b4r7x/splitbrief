@@ -4,7 +4,14 @@ import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.
 import type { ModelRefusal } from '../../../../core/runners/route-auth.js';
 import type { Config } from '../../../../core/schemas/config.js';
 import type { RecoveryIssue, SwitchSeatOffer } from '../../../../core/schemas/recovery/schemas.js';
-import { oneLineDisplayText } from '../../../../utils/display-text/sanitize.js';
+import {
+  oneLineDisplayText,
+  sanitizeTerminalDisplayText,
+} from '../../../../utils/display-text/sanitize.js';
+import {
+  takeGraphemesByChars,
+  truncateByTailLines,
+} from '../../../../utils/display-text/truncate.js';
 import {
   type PromptSize,
   inputTooLargeSentence,
@@ -13,7 +20,7 @@ import {
 } from '../../../runners/input-limit.js';
 import { haltActions, chooseRecommended } from './actions.js';
 import { taskFiles, attemptDetails } from './details.js';
-import { createRecoveryIssue, compactFacts } from './issue.js';
+import { createRecoveryIssue, compactFacts, MAX_SUMMARY_LENGTH } from './issue.js';
 import { buildSeatDownIssue, toolReported } from './seat-down.js';
 import { switchSeatOffer, seatRouteRefusal, modelRefusalHalt } from './switch-offer.js';
 import type { RunnerFailureRecoveryOptions } from './types.js';
@@ -47,6 +54,21 @@ function runnerModel(runner: Config['implementer']): string | undefined {
 /** Why a refused command line or a refused model halts at once, on every seat. */
 export function refusalStopDetail(refusal: ModelRefusal | undefined): string {
   return `The run stopped instead of spending retries on ${refusal === undefined ? 'a command the tool cannot accept' : 'a model the tool refuses'}.`;
+}
+
+export function processExitStderrDetails(tool: string, stderr: string): string[] {
+  const safe = sanitizeTerminalDisplayText(stderr, { preserveLineBreaks: true }).trim();
+  if (safe.length === 0) return [];
+  const words = safe.replace(/\s+/g, ' ');
+  const detail = toolReported(tool, words);
+  if (detail.length <= MAX_SUMMARY_LENGTH) return [detail];
+
+  const omission = ' [… output omitted …] ';
+  const budget = MAX_SUMMARY_LENGTH - toolReported(tool, omission).length;
+  const lastLine = truncateByTailLines(safe, 1).replace(/\s+/g, ' ').trim();
+  const tail = takeGraphemesByChars({ text: lastLine, maxChars: budget, from: 'end' }).trimStart();
+  const head = takeGraphemesByChars({ text: words, maxChars: budget - tail.length }).trimEnd();
+  return [toolReported(tool, `${head}${omission}${tail}`.trim())];
 }
 
 export function promptTransportDetails(tool: string, stderr: string): string[] {

@@ -210,7 +210,20 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
     ...warning,
     message: redactProcessPath(warning.message),
   }));
-  return result.status === 'completed'
-    ? { ...result, warnings }
-    : { ...result, error: failure(result.error), warnings };
+  if (result.status === 'completed') return { ...result, warnings };
+  const error = failure(result.error);
+  return {
+    ...result,
+    error:
+      error.code === 'non-zero-exit'
+        ? {
+            ...error,
+            processExit: {
+              summary: boundedRunnerCallMessage(redactProcessPath(result.error.message)),
+              stderr: boundedRunnerCallMessage(stderr.trim()),
+            },
+          }
+        : error,
+    warnings,
+  };
 }
