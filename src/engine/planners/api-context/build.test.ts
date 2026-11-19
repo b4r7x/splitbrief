@@ -9,7 +9,7 @@ import {
   readApiContextDiagnostic,
   type ApiContextDiagnostic,
 } from '../../providers/api/context-diagnostic.js';
-import { apiPlanningInputBudget, buildApiPlanningContext } from './build.js';
+import { buildApiPlanningContext } from './build.js';
 import type { ApiContextManifestEntry, ApiPlanningContext } from './types.js';
 import { buildProjectContext } from '../context.js';
 
@@ -284,44 +284,6 @@ describe('planning context completeness', () => {
     });
   });
 
-  it('records the exact line interval of an optional excerpt and names what it omitted', async () => {
-    await withTempDir('api-context', async (dir) => {
-      const beta = Array.from({ length: 60 }, (_, i) => `export const beta${i} = ${i};`).join('\n');
-      write(dir, 'src/beta.ts', beta);
-      write(dir, 'src/gamma.ts', 'export const gamma = 0;\n');
-
-      const result = complete(
-        await build(dir, {
-          request: 'Add a feature.',
-          repoMap: 'src/beta.ts:\n  export const beta0\n\nsrc/gamma.ts:\n  export const gamma',
-          availableTokens: 64,
-        }),
-      );
-
-      const excerpt = entryFor(result.manifest, 'src/beta.ts');
-      expect(excerpt?.kind).toBe('optional');
-      expect(excerpt?.state).toBe('excerpt');
-      expect(excerpt?.startLine).toBe(1);
-      const endLine = excerpt?.endLine ?? 0;
-      expect(endLine).toBeGreaterThan(0);
-      expect(endLine).toBeLessThan(60);
-      expect(result.text).toContain(`src/beta.ts — lines 1-${endLine} of 60`);
-      expect(result.text).toContain(beta.split('\n').slice(0, endLine).join('\n'));
-      expect(result.text).not.toContain(`export const beta${endLine} = ${endLine};`);
-      expect(result.text).toContain(`- src/beta.ts — lines 1-${endLine} only`);
-
-      expect(entryFor(result.manifest, 'src/gamma.ts')).toEqual({
-        path: 'src/gamma.ts',
-        kind: 'optional',
-        state: 'omitted',
-      });
-      expect(result.text).toContain(
-        "- src/gamma.ts — not supplied, outside this call's context allocation",
-      );
-      expect(result.text).toContain('no filesystem, shell or search tool');
-    });
-  });
-
   it('names the required sections that do not fit instead of cutting them down', async () => {
     await withTempDir('api-context', async (dir) => {
       write(
@@ -347,15 +309,13 @@ describe('planning context completeness', () => {
     });
   });
 
-  it('supplies required source over the window whole when no Prompt budget is set, and still packs optional source into the window', async () => {
+  it('supplies required source whole when no Prompt budget is set', async () => {
     await withTempDir('api-context', async (dir) => {
       const big = Array.from({ length: 400 }, (_, i) => `export const b${i} = ${i};`).join('\n');
       write(dir, 'src/big.ts', big);
-      write(dir, 'src/gamma.ts', 'export const gamma = 0;\n');
 
       const result = await build(dir, {
         request: 'Modify `src/big.ts` end to end.',
-        repoMap: 'src/gamma.ts:\n  export const gamma',
         availableTokens: 100,
       });
 
@@ -363,14 +323,6 @@ describe('planning context completeness', () => {
       if (result.kind !== 'complete') return;
       expect(result.text).toContain(big);
       expect(entryFor(result.manifest, 'src/big.ts')?.state).toBe('included');
-      expect(entryFor(result.manifest, 'src/gamma.ts')).toEqual({
-        path: 'src/gamma.ts',
-        kind: 'optional',
-        state: 'omitted',
-      });
-      expect(result.text).toContain(
-        "- src/gamma.ts — not supplied, outside this call's context allocation",
-      );
     });
   });
 
@@ -395,7 +347,6 @@ describe('planning context completeness', () => {
       write(dir, 'src/beta.ts', 'export const beta = 2;\n');
       const overrides: Overrides = {
         request: 'Modify `src/beta.ts` and `src/alpha.ts` together.',
-        repoMap: 'src/beta.ts:\n  beta\n\nsrc/alpha.ts:\n  alpha',
       };
 
       const first = complete(await build(dir, overrides));
@@ -404,34 +355,6 @@ describe('planning context completeness', () => {
       expect(second.text).toEqual(first.text);
       expect(second.manifest).toEqual(first.manifest);
       expect(first.manifest.map((entry) => entry.path)).toEqual(['src/alpha.ts', 'src/beta.ts']);
-    });
-  });
-
-  it('packs every ranked optional source that fits whole after the required material, in rank order', async () => {
-    await withTempDir('api-context', async (dir) => {
-      const alpha = 'export const alpha = 1;\n';
-      const gamma = 'export const gamma = 3;\n';
-      const delta = 'export const delta = 4;\n';
-      write(dir, 'src/alpha.ts', alpha);
-      write(dir, 'src/gamma.ts', gamma);
-      write(dir, 'src/delta.ts', delta);
-
-      const result = complete(
-        await build(dir, {
-          request: 'Modify `src/alpha.ts`.',
-          artifacts: [{ name: 'spec.md', text: '# Spec\nbody', required: true }],
-          repoMap: 'src/gamma.ts:\n  gamma\n\nsrc/alpha.ts:\n  alpha\n\nsrc/delta.ts:\n  delta',
-        }),
-      );
-
-      expect(result.manifest).toEqual([
-        { path: 'spec.md', kind: 'required', state: 'included' },
-        { path: 'src/alpha.ts', kind: 'required', state: 'included', sha256: sha256Hex(alpha) },
-        { path: 'src/gamma.ts', kind: 'optional', state: 'included', sha256: sha256Hex(gamma) },
-        { path: 'src/delta.ts', kind: 'optional', state: 'included', sha256: sha256Hex(delta) },
-      ]);
-      expect(result.text).toContain(delta);
-      expect(result.text.indexOf(gamma)).toBeLessThan(result.text.indexOf(delta));
     });
   });
 
@@ -450,12 +373,6 @@ describe('planning context completeness', () => {
       expect(entryFor(after.manifest, 'src/alpha.ts')?.sha256).toBe(sha256Hex(updated));
       expect(entryFor(before.manifest, 'src/alpha.ts')?.sha256).not.toBe(sha256Hex(updated));
     });
-  });
-
-  it('allocates the seat context minus the output reserve, and nothing below zero', () => {
-    expect(apiPlanningInputBudget(undefined)).toBe(8_192 - 2_048);
-    expect(apiPlanningInputBudget(32_000)).toBe(32_000 - 2_048);
-    expect(apiPlanningInputBudget(1_000)).toBe(0);
   });
 });
 

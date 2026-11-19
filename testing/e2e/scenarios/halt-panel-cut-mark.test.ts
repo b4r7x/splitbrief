@@ -42,11 +42,7 @@ const ASK_USER = JSON.stringify({
   },
 });
 
-/**
- * The planner passes the implementer's question to the user with no default, so the headless run
- * halts on it. The plan prompt quotes this script from the repository, so the match is the
- * prompt's own first heading, not a phrase anywhere in it.
- */
+/** The headless run halts when the planner asks a question without a default. */
 function askingConsult(): string {
   return `(prompt) => {
   const heading = prompt.split('\\n').find((line) => line.startsWith('# '));

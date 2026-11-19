@@ -186,7 +186,6 @@ async function initializeTestWorkflow(
     validation: { endChecks: false, testCommand: 'noop' },
     workflow: {},
     approval: { feedRejectionsToPlanner: true },
-    codebase: { enabled: false, tokenBudget: 4000 },
     ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
     ...input.configOverrides,
   });

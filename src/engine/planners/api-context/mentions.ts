@@ -42,7 +42,7 @@ export function absolutePathsNamed(text: string): string[] {
   return [...new Set(mentions.map((mention) => mention.path))];
 }
 
-export function isCandidatePath(raw: string): boolean {
+function isCandidatePath(raw: string): boolean {
   if (raw.length === 0 || raw.length > PATH_MAX_LENGTH) return false;
   if (raw.startsWith('/') || raw.includes('\\') || raw.includes('\u0000')) return false;
   const segments = raw.split('/');

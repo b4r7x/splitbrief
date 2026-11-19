@@ -64,9 +64,7 @@ function session(state: Partial<WorkflowState>) {
   const prepared = makePreparedExecution({
     ...ref,
     feature: saved.feature,
-    config: makeConfig({
-      codebase: { enabled: false, tokenBudget: 4000 },
-    }),
+    config: makeConfig({}),
     resumeState: saved,
     active: reactivateExistingSession(ref),
   });

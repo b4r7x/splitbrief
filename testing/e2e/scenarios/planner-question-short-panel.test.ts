@@ -40,11 +40,6 @@ writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
 writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
 `;
 
-/**
- * The final review asks the question the one-row panel shows. Its body is braced and it matches the
- * title line itself: the plan prompt's repository map quotes this declaration up to its first `{`,
- * so a phrase in it would reach the plan call and answer it with a review.
- */
 function askingReview(): string {
   return `(prompt) => {
   return prompt.split('\\n').includes('# Final Implementation Review')

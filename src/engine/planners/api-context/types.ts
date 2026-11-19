@@ -2,15 +2,13 @@ import type { ProjectContext } from '../context.js';
 import type { PriorMessage } from '../types.js';
 
 type ApiContextEntryKind = 'required' | 'optional';
-export type ApiContextEntryState = 'included' | 'excerpt' | 'omitted' | 'missing' | 'unsupported';
+export type ApiContextEntryState = 'included' | 'omitted' | 'missing' | 'unsupported';
 
 /** One line of the packet's manifest: what was supplied, and in what shape. */
 export type ApiContextManifestEntry = Readonly<{
   path: string;
   kind: ApiContextEntryKind;
   state: ApiContextEntryState;
-  startLine?: number;
-  endLine?: number;
   sha256?: string;
 }>;
 
@@ -35,12 +33,8 @@ export type ApiPlanningContextInput = Readonly<{
   /** What the operator said for this call, and the rejections it must respect. */
   steer?: string | undefined;
   priorMessages?: readonly PriorMessage[] | undefined;
-  /** The ranked repo map, highest rank first, as the run already built it. */
-  repoMap?: string | undefined;
-  /** True when this call's prompt carries the map, so the budget counts it. */
-  repoMapInPrompt?: boolean | undefined;
   skills?: string | undefined;
-  /** Input-token window that optional source packs into, after the required material. */
+  /** Input-token window reported when the packet is missing required context. */
   availableTokens: number;
   /**
    * The input allocation of a Prompt budget the user set. Only then does required material

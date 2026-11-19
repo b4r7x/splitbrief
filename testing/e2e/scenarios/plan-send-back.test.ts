@@ -23,7 +23,6 @@ import { makeE2eScenarioConfig } from '../helpers/config.js';
 
 it('shows a repaired plan passing its checks after one send-back, including after replay', async () => {
   const config = makeE2eScenarioConfig({
-    codebase: { enabled: false, tokenBudget: 4000 },
     workflow: { approve: 'none' },
   });
   const replayer = createCassetteReplayer(

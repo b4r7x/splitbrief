@@ -13,7 +13,6 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { type SpecFileRef, readSpecFile } from '../../../core/sessions/spec-files.js';
 import { isSessionConversation } from '../../../core/state/planning-conversation.js';
 import { hasErrnoCode } from '../../../utils/errno.js';
-import { buildRepoMap } from '../../codebase/repomap.js';
 import { absolutePathsNamed } from '../../planners/api-context/mentions.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import type { PriorMessage, Planner } from '../../planners/types.js';
@@ -98,21 +97,10 @@ export async function planTurnText(opts: {
   language: string | undefined;
   earlierPlanning?: string | undefined;
   steer?: string | undefined;
-  onWarn: (message: string, details?: string) => void;
+  onWarn: (message: string) => void;
 }): Promise<PlanTurnText> {
   const { wctx, planner } = opts;
   const { workspaceDir: projectDir = wctx.projectDir, config } = wctx;
-  const repoMap =
-    config.codebase?.enabled === false
-      ? ''
-      : await buildRepoMap(projectDir, {
-          featureText: opts.feature,
-          tokenBudget: config.codebase?.tokenBudget ?? 4000,
-          onWarn: opts.onWarn,
-          ...(config.codebase?.include && { include: config.codebase.include }),
-          ...(config.codebase?.exclude && { exclude: config.codebase.exclude }),
-        });
-  const codebaseContext = repoMap === '' ? undefined : repoMap;
   const languageContext = buildProjectLanguageContext(projectDir, opts.language);
   const compose = (projectContext: string): string =>
     plannerRejectionContext(wctx) +
@@ -123,7 +111,6 @@ export async function planTurnText(opts: {
       build: buildSeat(wctx),
       approvesPlan: resolveApproveLevel(config) === 'plan',
       skillsContext: wctx.skillsContext,
-      codebaseContext,
       earlierPlanning: opts.earlierPlanning,
     });
   if (planner.resolvePlanningContext === undefined) {
@@ -162,7 +149,6 @@ export async function planTurnText(opts: {
           earlierPlanning: opts.earlierPlanning,
           steer: opts.steer,
           priorMessages,
-          repoMap: codebaseContext,
           skills: wctx.skillsContext,
         }),
       ),

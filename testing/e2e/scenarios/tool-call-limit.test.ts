@@ -78,7 +78,6 @@ async function runWithToolCalls(opts: {
     },
     {
       isolation: 'none',
-      // Anchored to the heading line: the plan prompt's repo map quotes this line of the script.
       consult: () =>
         `(prompt) => /^# Consult on a failing task$/m.test(prompt) ? ${JSON.stringify(JSON.stringify(ASK_USER))} : undefined`,
     },

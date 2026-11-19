@@ -418,7 +418,6 @@ describe('runWorkflow — smoke', () => {
         savedState: state,
         steer: message,
         config: makeConfig({
-          codebase: { enabled: false, tokenBudget: 4000 },
           workflow: { approve: 'plan', isolation: 'none' },
           validation: { endChecks: false, testCommand: 'noop' },
         }),
@@ -2000,7 +1999,6 @@ describe('runWorkflow — smoke', () => {
           ...(passLoaded ? { savedState: loadState(ref) ?? undefined } : {}),
           steer: plainUserMessage('PELICAN-42 keep the old name'),
           config: makeConfig({
-            codebase: { enabled: false, tokenBudget: 4000 },
             workflow: { approve: 'plan', isolation: 'none' },
             validation: { endChecks: false, testCommand: 'noop' },
           }),
@@ -3174,7 +3172,6 @@ describe('runWorkflow — recovery resume', () => {
       steer: message,
       config: makeConfig({
         workflow: { approve: 'none', isolation: 'none' },
-        codebase: { enabled: false, tokenBudget: 4000 },
         validation: { endChecks: false, testCommand: 'noop' },
       }),
       callbacks: makeCallbacks().callbacks,

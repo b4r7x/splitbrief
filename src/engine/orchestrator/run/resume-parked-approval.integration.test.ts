@@ -92,7 +92,6 @@ it('reopens a parked plan card and sends the correction typed at it to the plann
     bus,
     planner: makePlanner({ typedCall: typed.typedCall }),
     config: makeConfig({
-      codebase: { enabled: false, tokenBudget: 4000 },
       workflow: { approve: 'plan' },
     }),
     callbacks: makeCallbacks({ onApprovalNeeded }).callbacks,

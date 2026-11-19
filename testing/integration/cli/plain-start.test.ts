@@ -67,7 +67,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
   it('renders the run as plain lines and puts no NDJSON record on the same stdout', async () => {
     const tmp = getStartCommandTmp();
     // A test command the brief's check can run: a check that cannot run halts the run.
-    writeReadyReadinessFixtures(tmp, { validation: true, codebase: false, approve: 'none' });
+    writeReadyReadinessFixtures(tmp, { validation: true, approve: 'none' });
 
     const chunks: string[] = [];
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
@@ -149,7 +149,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
 
   it('prints the cause of a failed workflow on stderr before the pointer to it', async () => {
     const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false, approve: 'none' });
+    writeReadyReadinessFixtures(tmp, { validation: false, approve: 'none' });
 
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -266,7 +266,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
 
   it('--skills threads into runWorkflow', async () => {
     const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false });
+    writeReadyReadinessFixtures(tmp, { validation: false });
     const skillDir = join(tmp, '.claude', 'skills', 'house-style');
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(
@@ -301,7 +301,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
 
   it('unknown --skills id exits 2 with Unknown skill:', async () => {
     const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false });
+    writeReadyReadinessFixtures(tmp, { validation: false });
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 

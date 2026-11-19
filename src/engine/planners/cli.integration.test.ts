@@ -688,7 +688,6 @@ Create the mismatch fallback file.
     installDirectWriteRecordingShim('opencode', [output]);
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'opencode' },
-      codebase: { enabled: false, tokenBudget: 4000 },
     });
     const sessionId = 'mutating-planner';
     ensureSessionDir(projectDir, sessionId);
@@ -723,7 +722,6 @@ Create the mismatch fallback file.
     installDirectWriteRecordingShim('opencode', [output], '.opencode/package-lock.json');
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'opencode' },
-      codebase: { enabled: false, tokenBudget: 4000 },
       workflow: { approve: 'none' },
     });
     const sessionId = 'opencode-internal-state';

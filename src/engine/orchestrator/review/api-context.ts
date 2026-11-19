@@ -3,8 +3,9 @@ import type { TriageInput } from '../../../core/schemas/review/verdict.js';
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
 import { splitDiffByFile } from '../../../lib/git/diff-sections.js';
-import { apiPlanningInputBudget } from '../../planners/api-context/build.js';
 import type { ApiContextManifestEntry } from '../../planners/api-context/types.js';
+import { BASE_OUTPUT_RESERVE_TOKENS } from '../../providers/api/budget.js';
+import { resolveApplicationContextTokens } from '../../providers/api/runtime-context.js';
 import { renderWholeChecksLog } from '../evidence/review-packet/checks-log.js';
 import { buildFinalReviewPrompt } from '../../spec/prompts/review/final.js';
 import { reviewInputsSection } from '../../spec/prompts/review/changes.js';
@@ -159,7 +160,10 @@ function overflowing(parts: readonly Part[], availableTokens: number, model?: st
  */
 export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewContext {
   const { model } = input;
-  const availableTokens = apiPlanningInputBudget(input.contextLength);
+  const { applicationContextTokens } = resolveApplicationContextTokens(
+    input.contextLength === undefined ? {} : { configuredContextTokens: input.contextLength },
+  );
+  const availableTokens = Math.max(0, applicationContextTokens - BASE_OUTPUT_RESERVE_TOKENS);
   const manifest: ApiContextManifestEntry[] = [];
   const missingSections: string[] = [];
   const parts: Part[] = [];

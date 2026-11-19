@@ -64,7 +64,7 @@ splitbrief "refactor auth" @context.md @screenshot.png
 splitbrief start "add endpoint" @api-spec.yaml @existing-handler.ts
 ```
 
-**When to use.** When the planner needs additional context (design docs, screenshots, existing code) that isn't captured by the repo-map or the feature description alone.
+**When to use.** Attach design docs, screenshots, or source files the planner needs.
 
 **A bare path.** A path without `@` stays prompt text. A composer line is a command only when its first word is `/` plus a name without another `/`. `/help` and `/crew plan` are commands. A line that starts with `/Users/me/notes.md` goes to the planner as text because the path has a second `/`. The plan seat uses its own tools and policy to read the path. In the TUI, a pasted or dropped image path becomes an image attachment (`[image #n]`).
 
@@ -814,22 +814,6 @@ splitbrief continue --action end-run                # close it instead
 
 For backends without native session resume, the planner context is rebuilt from `session.jsonl`.
 
-### Repo-map context for the planner
-
-**What it does.** A token-budgeted PageRank-based summary of the codebase fed to every planner call inside a `<repo-map>` block. Cached at `.splitbrief/repomap.sqlite`.
-
-**How to use.**
-
-```yaml
-codebase:
-  enabled: true
-  tokenBudget: 4000
-  include: ["src/**/*.ts"]
-  exclude: ["\\.test\\.tsx?$"]
-```
-
-The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. Full details: [CONFIGURATION.md §7](./CONFIGURATION.md#7-codebase).
-
 ### Text selection and copying
 
 In fullscreen, drag with the mouse or touchpad to select visible text in the composer, transcript or workflow panels. Releasing the drag copies that text to the clipboard. Wheel scrolling and ordinary clicks remain available. Selection does not edit the draft.
@@ -898,4 +882,4 @@ Offered only when the PLAN seat can receive images; on a seat without vision the
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — slash command reference, dispatch, phase guards.
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — workflow hooks: events, schemas, trust, security.
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — code-level inventory, event union, persistence layout.
-- [API-KEYS.md](./API-KEYS.md), [CONFIGURATION.md §7](./CONFIGURATION.md#7-codebase), [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#diagnostic-modes).
+- [API-KEYS.md](./API-KEYS.md), [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#diagnostic-modes).

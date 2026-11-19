@@ -63,7 +63,6 @@ async function runSteeredWorkflow(opts: { outcome: SteerOutcome; retryToConsult?
       compactionThreshold: 10,
       compactionFormat: 'freeform',
     },
-    codebase: { enabled: false, tokenBudget: 4000 },
   });
   const savedState = opts.retryToConsult
     ? transition(createInitialState(feature), { type: 'START' })

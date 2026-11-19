@@ -55,7 +55,6 @@ while (!existsSync(${JSON.stringify(release)}) && Date.now() < deadline) await d
 it('names the brief check it runs and offers no running BUILD call while it runs', async () => {
   const target = createStopContinueFixture(implementer, {
     isolation: 'none',
-    // Anchored to the heading line: the plan prompt's repo map quotes this line of the script.
     consult: () =>
       `(prompt) => /^# Task Implementation Review$/m.test(prompt) ? ${JSON.stringify(TASK_REVIEW)} : undefined`,
   });

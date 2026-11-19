@@ -32,7 +32,6 @@ export type PlanSessionPromptInput = Readonly<{
   /** `workflow.approve: plan`: the user approves the plan before any check runs. */
   approvesPlan: boolean;
   skillsContext?: string | undefined;
-  codebaseContext?: string | undefined;
   /** The documents an earlier multi-step planning chain of this run wrote. */
   earlierPlanning?: string | undefined;
 }>;
@@ -108,9 +107,6 @@ export function buildPlanSessionPrompt(input: PlanSessionPromptInput): string {
       { heading: 'Request', body: input.feature },
       { heading: 'Project Context', body: input.projectContext },
       ...skillsSection(input.skillsContext),
-      ...(input.codebaseContext === undefined
-        ? []
-        : [{ heading: 'Repository Map', body: input.codebaseContext }]),
       ...buildLanguageContextSections(input.languageContext),
       ...(input.earlierPlanning === undefined
         ? []

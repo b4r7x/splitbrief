@@ -56,13 +56,6 @@ export const ApprovalConfigSchema = z.strictObject({
 
 export const CONFIG_VERSION = 3;
 
-export const CodebaseConfigSchema = z.strictObject({
-  enabled: z.boolean().default(true),
-  tokenBudget: z.number().int().positive().max(50_000).default(4000),
-  include: z.array(z.string()).optional(),
-  exclude: z.array(z.string()).optional(),
-});
-
 export const ConfigSchema = z.object({
   version: z.literal(CONFIG_VERSION),
   customCommands: CustomCommandsConfigSchema.optional(),
@@ -119,7 +112,6 @@ export const ConfigSchema = z.object({
     .optional(),
   /** Retired: loads with one notice and changes nothing. */
   escalation: z.unknown().optional(),
-  codebase: CodebaseConfigSchema.optional(),
   hooks: HooksConfigSchema.optional(),
   palette: PaletteConfigSchema.optional(),
   approval: ApprovalConfigSchema.optional(),

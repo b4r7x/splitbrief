@@ -197,6 +197,7 @@ describe('the packet an API review seat is handed', () => {
 
     expect(measured(10_000)).toBe(10_000 - 2_048);
     expect(measured(32_000)).toBe(32_000 - 2_048);
+    expect(measured(1_000)).toBe(0);
     // No configured window: the application default, minus the same reserve.
     expect(measured(undefined)).toBe(8_192 - 2_048);
   });

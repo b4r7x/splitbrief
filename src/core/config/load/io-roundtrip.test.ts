@@ -183,7 +183,6 @@ describe('config roundtrip', () => {
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
-      expect(written.codebase).toBeDefined();
       expect(written.hooks).toBeDefined();
       expect(written.palette).toBeDefined();
       expect(written.approval).toBeDefined();

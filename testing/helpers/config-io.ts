@@ -15,12 +15,6 @@ export function writeConfigYaml(projectDir: string, obj: Record<string, unknown>
 
 export function optionalSectionsYaml(): Record<string, unknown> {
   return {
-    codebase: {
-      enabled: true,
-      token_budget: 1234,
-      include: ['src/**'],
-      exclude: ['dist/**'],
-    },
     hooks: {
       pre_task: [{ command: './scripts/pre-task.sh' }],
     },

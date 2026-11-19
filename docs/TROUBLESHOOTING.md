@@ -208,16 +208,6 @@ Other runner outcomes (`spawn-not-found`, `protocol-failure`, `incompatible-vers
 
 ---
 
-### Symptom: `Repo-map cache unavailable. Continuing without caching.`
-
-The native `better-sqlite3` binding is missing or was built for a different Node version. SPLITBRIEF still parses the project and supplies the repo-map to the planner; only the cache is unavailable. The session log keeps the full diagnostic without printing its list of attempted paths into the conversation.
-
-Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to restore the cache. Reinstalling dependencies with lifecycle scripts disabled can leave the native binding absent.
-
-**See also:** [CONFIGURATION.md §Repo-map cache](./CONFIGURATION.md#repo-map-cache).
-
----
-
 ### Symptom: `EACCES: permission denied, open '.splitbrief/...'` or config writes silently fail
 
 The error names the file from the project root, also from a subfolder or with `--project`, and names a run workspace file by its project path.
@@ -435,11 +425,11 @@ Files can be inside or outside the project. Relative paths use the project root.
 1. At the plan card, choose **Request changes** and say what the plan must name: the files, the acceptance criteria, the checks. The planner revises the plan in the same session.
 2. Put the constraints in the task text up front, so the planner asks fewer questions and guesses less.
 3. Confirm the planner is large enough — Sonnet 4.6 minimum, Opus for unfamiliar codebases.
-4. Tune the codebase config (`codebase.tokenBudget`) so the planner sees enough of the codebase to ground its references.
+4. Give the file path relative to the project root, or attach a text file with `@path`.
 
 **Prevention:** Keep `workflow.approve: plan` (the default) for real feature work, so you read the plan before any code is written.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/CONFIGURATION.md](./CONFIGURATION.md#7-codebase) §7 `codebase`.
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
 ---
 
@@ -456,7 +446,6 @@ Files can be inside or outside the project. Relative paths use the project root.
 2. Warm the model before the run so the first token arrives sooner — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
 3. Raise or remove `planner.timeout` (milliseconds) in `.splitbrief/config.yaml`. It is the total wall-clock budget of each planner call (Opus planning passes can take several minutes). Without it, the call has no time limit.
 4. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run. For an `api` planner, check that its `apiBase` is reachable. For a `cli` planner, check that the tool is on `PATH`.
-5. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
 
 **Prevention:** Keep local models warm, and set a `planner.timeout` that leaves room for a slow first response.
 
@@ -466,17 +455,7 @@ Files can be inside or outside the project. Relative paths use the project root.
 
 ### Symptom: Planner says "I cannot find the file" or invents file paths
 
-**Likely cause:** The codebase context shipped to the planner is truncated below the relevant file, or `codebase.exclude` patterns are filtering it out.
-
-**Fix:**
-1. Inspect the repo-map produced for the run (`.splitbrief/sessions/<session>/planner-input.json` or equivalent under the session directory).
-2. Increase `codebase.tokenBudget` so the relevant tree is included.
-3. Trim `codebase.exclude` if a glob is hiding the directory you need (common: `dist/`, `**/*.test.ts`).
-4. Use `codebase.include` to pin specific paths that must always appear regardless of token budget.
-
-**Prevention:** When onboarding a new repo, run a single `start` and inspect the repo-map size; tune limits so the planner-relevant code fits.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#7-codebase) §7 `codebase`.
+An API planner receives the contents of named files. Give the file path relative to the project root, or attach a text file with `@path`. See [File attachments](./FEATURES.md#file-context-injection).
 
 ---
 
@@ -1562,7 +1541,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 1. Check that `version: 3` is present. No other version loads (see the next entry).
 2. Check that the top-level `planner` and `implementer` blocks have a valid `kind`.
 3. Check that the fields each kind requires are set. For example, `kind: api` requires `provider`, `service`, `offering` and `apiBase`.
-4. Remove unknown keys in `workflow`, `codebase` and `hooks`; those sections are strict. Removed fields (`workflow.autoApproveSpec`, `workflow.autoApprovePlan`, top-level `workflow.commitStrategy`) fail here rather than being ignored. The retired planning keys do not fail: `workflow.mode`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers` and the `workflow.approve` values `all`, `spec` and `default` each load with one notice.
+4. Remove unknown keys in `workflow` and `hooks`; those sections are strict. Removed fields (`workflow.autoApproveSpec`, `workflow.autoApprovePlan`, top-level `workflow.commitStrategy`) fail here rather than being ignored. The retired planning keys do not fail: `workflow.mode`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers` and the `workflow.approve` values `all`, `spec` and `default` each load with one notice.
 
 **Prevention:** Run `splitbrief doctor` after you edit the config by hand.
 

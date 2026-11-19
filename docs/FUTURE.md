@@ -161,12 +161,3 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). Today the system ships command-kind hooks and `.splitbrief/hooks/` discovery.
 
 - **[Could] Async fan-out within a single event.** Today hooks run sequentially in declaration order (order matters for `modify` patches). Opt-in parallel execution for events where ordering is irrelevant (`post_*`, `on_*`), with timeout aggregation and an explicit `parallel: true` flag on the entry.
-
----
-
-## Repo-map v2 (mixed)
-
-Follow-ups from the repo-map subsystem — see [SUBSYSTEMS.md §Design decisions](./SUBSYSTEMS.md#design-decisions). It supports multiple tree-sitter grammars plus PageRank; these are the axes along which it will grow.
-
-- **[Won't] Embeddings-based retrieval.** Optional `codebase.kind: 'embeddings'` with a pluggable provider (Voyage, OpenAI, a local embedding model). Semantically richer than symbol matching; deferred because of per-call cost, index-sync work, and the cost/latency profile for local-only users. The symbol-graph path stays the default.
-- **[Should] Grammar version bumps.** Procedure to increment the `parse_version` column in `.splitbrief/repomap.sqlite` and force a global cache rebuild when the tree-sitter grammar changes. Today bumping the compiled-in constant invalidates every row on the next planning run, but a migration note in release notes and an automatic bump on install is cleaner.

@@ -85,13 +85,12 @@ export async function runPlanningSession(
       language: shared.state.discoveredValidation?.language,
       earlierPlanning: earlier,
       steer: standing,
-      onWarn: (message, details) =>
+      onWarn: (message) =>
         bus.publish({
           type: 'warning',
           ts: Date.now(),
           phase: shared.state.phase,
           message,
-          ...(details === undefined ? {} : { details }),
         }),
     });
     const input = { wctx, planner, lead, standing, fullStanding, turnText };

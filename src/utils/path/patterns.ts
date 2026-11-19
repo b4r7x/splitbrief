@@ -1,5 +1,3 @@
-import { isAbsolute, resolve } from 'node:path';
-
 export const CONCRETE_FILE_PATH_PATTERN =
   /\b(?:[a-zA-Z][a-zA-Z0-9_-]*\/)+[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z]{1,5}\b/g;
 
@@ -25,10 +23,6 @@ export function scopePathPatterns(value: string): string[] {
     const token = candidate.trim();
     return token.length > 0 && isPathToken(token);
   });
-}
-
-export function resolveFromProject(projectDir: string, p: string): string {
-  return isAbsolute(p) ? p : resolve(projectDir, p);
 }
 
 export function matchesGlob(filePath: string, pattern: string): boolean {

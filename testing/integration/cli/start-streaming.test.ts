@@ -32,7 +32,7 @@ describe('start command — liveness record', () => {
 
   it('creates and then releases a liveness record across a real headless start run', async () => {
     const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false });
+    writeReadyReadinessFixtures(tmp, { validation: false });
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
     let midRunPid: number | undefined;

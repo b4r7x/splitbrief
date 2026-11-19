@@ -772,8 +772,7 @@ else {
   it('builds again a passed brief whose files a partial reject put back, and lists only files on disk', {
     timeout: 240_000,
   }, async () => {
-    // The user's edit moved T001's input, so its new attempt asks the planner first. The plan
-    // prompt quotes this script in its repo map, so only a title at a line start is the consult.
+    // The user's edit moved T001's input, so its new attempt asks the planner first.
     fixture = createStopContinueFixture(briefLoggingImplementer, {
       isolation: 'none',
       consult: () =>

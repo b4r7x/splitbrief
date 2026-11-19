@@ -41,7 +41,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Change a planner, implementer or reviewer seat | [docs/PLANNERS-AND-IMPLEMENTERS.md](./docs/PLANNERS-AND-IMPLEMENTERS.md) |
 | Change a screen, an overlay or anything under `src/stores/` | [docs/STORES-AND-UI.md](./docs/STORES-AND-UI.md) |
 | Change the plan card, approvals or recovery | [docs/APPROVAL-AND-RECOVERY.md](./docs/APPROVAL-AND-RECOVERY.md) |
-| Change a supporting subsystem (hooks, repo-map, evidence ledger) | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) |
+| Change a supporting subsystem (hooks, evidence ledger) | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) |
 | See the layers and what exists today | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) |
 | Look up a term | [docs/CONCEPTS.md](./docs/CONCEPTS.md) |
 | Change the Task Brief or `state.json` contract | [docs/TASK-CONTRACT.md](./docs/TASK-CONTRACT.md) |
@@ -52,7 +52,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Run SPLITBRIEF for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) |
 | Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) |
 | Look up a runtime command (`/name`) | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) |
-| Configure SPLITBRIEF or tune the planner repo-map | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) |
+| Configure SPLITBRIEF | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) |
 | Find a recipe | [docs/USAGE-EXAMPLES.md](./docs/USAGE-EXAMPLES.md) |
 | Debug a failing workflow | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) |
 | Add or move any file | [docs/STRUCTURE.md](./docs/STRUCTURE.md) |
@@ -85,7 +85,7 @@ These rules apply everywhere. The linked doc holds the detail.
 - **ESM with `.js` extension** in every import, and **kebab-case** file and folder names. See [CODE-STANDARD.md §5](./docs/CODE-STANDARD.md#5-naming--file-naming).
 - **No decorative comments.** No section banners. See [STRUCTURE.md](./docs/STRUCTURE.md#no-decorative-comments).
 - **Error at boundaries.** Internal functions propagate; callers decide. See [ERRORS.md](./docs/ERRORS.md).
-- **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions: `src/utils/type-guards.ts`, `src/stores/create.ts`, `src/stores/use-many.ts`, the `as AppError` factory cast in `src/utils/error.ts`, `Map.get(...)!` in `src/engine/codebase/graph.ts` and `src/engine/codebase/pagerank.ts` (Map.get after pre-population — invariant documented inline), `as unknown` for path-walking arbitrary shapes in `src/engine/hooks/substitute.ts` (recursive Record traversal), and `src/lib/terminal/filtered-stdin/create.ts` (bridged `PassThrough` stdin that satisfies the TTY members Ink reads).
+- **No unsafe assertions.** No incidental `!` or broad `as` in production. Sanctioned exceptions: `src/utils/type-guards.ts`, `src/stores/create.ts`, `src/stores/use-many.ts`, the `as AppError` factory cast in `src/utils/error.ts`, `as unknown` for path-walking arbitrary shapes in `src/engine/hooks/substitute.ts` (recursive Record traversal), and `src/lib/terminal/filtered-stdin/create.ts` (bridged `PassThrough` stdin that satisfies the TTY members Ink reads).
 - **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`. See [NO-BARRELS.md](./docs/NO-BARRELS.md).
 - **Zero memoization, no imperative handles.** No `useMemo`, `useCallback`, `React.memo`, `forwardRef` or `useImperativeHandle`. See [STORES-AND-UI.md](./docs/STORES-AND-UI.md#store-rules).
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or the UI folders. See [LAYERS.md](./docs/LAYERS.md#engine--workflow-orchestration).

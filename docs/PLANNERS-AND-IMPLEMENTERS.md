@@ -62,7 +62,7 @@ Every consult is a typed call on this same interface: `askPlannerSession` sends 
 
 `PlannerUserTurnResult` distinguishes `{ status: 'delivered', usage }` from `{ status: 'not-delivered', reason: 'not-ready' }`. Usage may be null after successful delivery. The queue retains a not-ready correction for a later prompt and acknowledges only the IDs that prompt actually carried; arrivals during regeneration stay pending.
 
-The planning prompt follows one chain. `planTurnText` builds the repo map and composes `buildPlanSessionPrompt` from the feature, the project context, the language and skills context, and any earlier planning of an older run. `planFullTurn` restates that prompt for a turn that is not on a native session. The session sends each turn through `requestTyped`, which calls the seat's `typedCall`.
+The planning prompt follows one chain. `planTurnText` composes `buildPlanSessionPrompt` from the feature, the project context, the language and skills context, and any earlier planning of an older run. `planFullTurn` restates that prompt for a turn that is not on a native session. The session sends each turn through `requestTyped`, which calls the seat's `typedCall`.
 
 **Continuation per seat.** A step cut by Stop now is continued, not restarted from a blob. The step's own prompt is always stated. For the reviewer and the implementer the continuation trails it (`composeContinuation`). The planning session issues its call again: the plan prompt in full (`planFullTurn`), with the operator's steer as a note, on the native session where the tool has one (`claude-code`, `codex` after its own thread id is captured). A cut typed answer leaves no partial to carry, and an unanswered question round takes the steer as its answer. The reviewer re-issues its whole deterministic prompt, rebuilt from disk, with the note appended; it is one shot by constitution and never resumes or keeps a session, whichever seat holds it. A plan-task consult resumes the planner's saved thread where the tool supports it, exactly as a planning turn does. A review-seat consult is one stateless call, so it sends its full prompt again. The implementer restarts the brief on `buildPrompt`, with the partial and a line naming the declared files that already changed since the task started; the attempt count does not move.
 
@@ -154,7 +154,7 @@ Wraps a backend-specific `invokePlan()` function as the seat's `typedCall` bindi
 - Converts the backend response into `RunnerCallResult` immediately, then accumulates token usage from the typed call result
 - Returns the answer from the completed terminal result only; stdin/stdout adapters never reopen files that a backend wrote
 
-An `api` planner reads no files of its own, so it declares `resolvePlanningContext` and the planning session's prompt carries an explicit evidence packet in place of the project context (`apiPlanningPacket`, built by `buildApiPlanningContext`): the project instructions, the current source of every path the request or the earlier planning names, ranked repo-map files in the room left, and a named list of what was not read. The whole prompt is measured against the model's context; a missing, unreadable or oversized required section refuses before any call and halts as `planner-call-failed` with the `insufficient-context` diagnosis. A tool that reads files on its own still reads them.
+An `api` planner reads no files of its own, so it declares `resolvePlanningContext` and the planning session's prompt carries an explicit evidence packet in place of the project context (`apiPlanningPacket`, built by `buildApiPlanningContext`): the project instructions, the current source of every path the request or the earlier planning names, and a list of named files it could not read. The whole prompt is measured against the model's context; a missing, unreadable or oversized required section refuses before any call and halts as `planner-call-failed` with the `insufficient-context` diagnosis. A tool that reads files on its own still reads them.
 
 **Native session continuity.** A backend that resumes its own thread keeps it across the calls of a run. Claude Code captures the id **as it streams** (`onSessionId`, through `invokeCliAdapter`), not after the call returns, so a call cut halfway still leaves a thread the next call resumes. The CLI planner keeps the same in-memory `SessionResumeState` and passes only an id the tool itself reported — codex resumes its own thread id, never the SPLITBRIEF session id, which is not a tool thread at all.
 
@@ -418,7 +418,7 @@ A CLI runner under `model: auto` — or with the model omitted — is resolved a
 
 Routing between configured profiles is by capability, never by price: `compareProfileRouteRank` ranks the capable profiles by context window, smallest sufficient window first, then by name. A routed selection names the profile and the fit it was chosen on: `Selected profile <name> (fits, estimated N/M tokens)`. Only a profile with a Prompt budget drops out on an overflow. When no profile fits and no Prompt budget stops the brief, a recovery pin keeps its profile, else the default profile takes the brief, else the usable profile with the largest window: `Selected profile <name> (overflow, estimated N/M tokens; no Prompt budget is set)`.
 
-Token estimation uses a per-model-family character-to-token ratio: Claude models use 3.5, GPT uses 4.0, DeepSeek/Qwen/Llama/etc. use family-specific ratios. When a model ID is available (e.g., during implementer profile routing), the calibrated ratio produces more accurate estimates — reducing unnecessary escalations from overestimates and overflow failures from underestimates. Callers without model context (repomap budget, planner base) default to 4.0 chars/token.
+Token estimation uses a per-model-family character-to-token ratio: Claude models use 3.5, GPT uses 4.0, DeepSeek/Qwen/Llama/etc. use family-specific ratios. When a model ID is available (e.g., during implementer profile routing), the calibrated ratio produces more accurate estimates — reducing unnecessary escalations from overestimates and overflow failures from underestimates. Calls without a model ID default to 4.0 chars/token.
 
 The 25% reserve is for output. The remaining budget goes to `currentCode`. If the whole file doesn't fit, the prompt formatter tries these modes in order:
 
@@ -626,7 +626,7 @@ Every newly dispatched API BUILD call uses file-bundle-v1, including single-file
 
 The API implementer retains `writesFiles: 'extracted-code'` because SPLITBRIEF applies the returned text. The backend selects the grammar before dispatch; response text never selects a fallback. Shell/command extracted output keeps `legacy-code-v1`, and direct writers keep `direct`. See [TASK-CONTRACT.md](./TASK-CONTRACT.md#api-build-file-bundles) for limits and partial-apply evidence. Application budgets and effective request options are described in [CONFIGURATION.md](./CONFIGURATION.md). Current API transport omits configured temperature and effort controls, including retry temperature increments.
 
-PLAN receives an explicit packet of instructions, project metadata, required artifacts and supplied source text. Its manifest names included, excerpted, omitted, missing and unsupported sections. A path alone does not grant filesystem access. Missing, unsupported or oversized required context refuses the call; optional context may be visibly omitted. This is a text transport with no shell, search or autonomous tool loop.
+PLAN receives an explicit packet of instructions, project metadata, required artifacts and supplied source text. Its manifest names included, omitted, missing and unsupported sections. A path alone does not grant filesystem access. The call requires readable source for existing files named in the request. A configured Prompt budget also limits the size of the packet. This is a text transport with no shell, search or autonomous tool loop.
 
 REVIEW uses one complete packet and one stateless call. Required current diff, task/evidence and drift inputs must fit without silently dropping files. A missing drift artifact may be replaced by a complete fresh deterministic recomputation. Insufficient context or a transport/protocol failure enters non-verdict recovery; it is neither zero-blocker success nor a BUILD repair cycle. Adjust `/crew plan` or `/crew review` as indicated, resume and choose retry. Recovery preserves the diagnosis, with token estimates confined to explicitly opened details.
 
@@ -785,7 +785,6 @@ type Config = {
   }
   escalation?: unknown           // retired: loads with one notice, ignored; the planner's consult replaces the intermediate tier
   approval?: { enabled?: boolean; tiers?: unknown /* retired: one notice, ignored */; feedRejectionsToPlanner?: boolean; ... }
-  codebase?: CodebaseConfig
   hooks?: HooksConfig
   // ... plus theme, sessions, palette
 }
@@ -812,7 +811,7 @@ The planner prompt builders adapt import conventions, type annotation style, and
 The planning session has one prompt builder and a few turn builders.
 The check and skill rules are `GATES_ARE_SPLITBRIEFS` and `SKILLS_WITH_EVERY_BRIEF`.
 
-**`buildPlanSessionPrompt({ feature, projectContext, languageContext, build, skillsContext?, codebaseContext?, earlierPlanning? })`** -- the first turn of the planning session. `projectContext` includes the repo map. `build` names the implementer model and the context it was measured at, so the planner sizes tasks for it. `earlierPlanning` carries the documents an older run's planning chain wrote. The prompt asks for `{ result }` against `PlanAnswerSchema`: questions with defaults, or a plan.
+**`buildPlanSessionPrompt({ feature, projectContext, languageContext, build, skillsContext?, earlierPlanning? })`** -- the first turn of the planning session. `build` names the implementer model and the context it was measured at, so the planner sizes tasks for it. `earlierPlanning` carries the documents an older run's planning chain wrote. The prompt asks for `{ result }` against `PlanAnswerSchema`: questions with defaults, or a plan.
 
 **Turn builders** -- `planAnswersTurn` (the user's answers), `planRepairTurn` (the failed check messages and codes, with the plan that failed), `planRevisedTurn` (a correction from the plan card or a saved rewind, with the reviewed `plan.json`), and `planFullTurn` (the whole prompt plus the conversation so far, for a planner without a native session).
 

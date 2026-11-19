@@ -196,7 +196,7 @@ export function writeConfigMarker(projectDir: string): void {
 
 export function writeReadyReadinessFixtures(
   projectDir: string,
-  options: { validation?: boolean; codebase?: boolean; approve?: 'plan' | 'none' } = {},
+  options: { validation?: boolean; approve?: 'plan' | 'none' } = {},
 ): void {
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
   writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.splitbrief/\npackage.json\n');
@@ -221,9 +221,6 @@ export function writeReadyReadinessFixtures(
   ];
   if (validation) lines.push('  testCommand: node -e ""');
   lines.push('workflow:', `  approve: ${options.approve ?? 'plan'}`);
-  if (options.codebase === false) {
-    lines.push('codebase:', '  enabled: false');
-  }
   writeFileSync(configFilePath, lines.join('\n'));
   chmodSync(configFilePath, 0o600);
   writeFileSync(

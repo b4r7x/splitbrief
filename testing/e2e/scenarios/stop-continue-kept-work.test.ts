@@ -382,7 +382,6 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
 
   it('consults the planner on a resumed brief that has no change at all, then retries it', async () => {
     fixture = createStopContinueFixture(implementerCalls([{ holds: true }, {}]), {
-      // Anchored to a line start: the plan prompt's repository map quotes this matcher's own line.
       consult: () => `(prompt) =>
   /^# Consult (on a failing task|continued)$/m.test(prompt)
     ? ${JSON.stringify(JSON.stringify(GUIDANCE_ANSWER))}

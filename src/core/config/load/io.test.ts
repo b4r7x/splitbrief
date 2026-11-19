@@ -85,6 +85,18 @@ describe('config loading', () => {
       expect(config.validation.endChecks).toBe(true);
     });
 
+    it('ignores a retired codebase block and reports it once', () => {
+      const dir = join(TMP, 'retired-codebase');
+      writeConfigYaml(dir, { codebase: { enabled: true, token_budget: 1234 } });
+
+      const { config, warnings } = loadConfig(dir);
+
+      expect(warnings.filter((warning) => warning.includes('codebase'))).toEqual([
+        'codebase was retired and is ignored. Delete codebase.',
+      ]);
+      expect(config).not.toHaveProperty('codebase');
+    });
+
     it('preserves schema-supported optional top-level sections while merging defaults', () => {
       const dir = join(TMP, 'optional-sections');
       writeConfigYaml(dir, {
@@ -94,12 +106,6 @@ describe('config loading', () => {
 
       const { config } = loadConfig(dir);
 
-      expect(config.codebase).toMatchObject({
-        enabled: true,
-        tokenBudget: 1234,
-        include: ['src/**'],
-        exclude: ['dist/**'],
-      });
       expect(config.hooks?.pre_task?.[0]).toMatchObject({ command: './scripts/pre-task.sh' });
       expect(config.palette?.customActions?.[0]).toMatchObject({
         id: 'refresh-docs',
@@ -205,13 +211,6 @@ describe('config loading', () => {
       writeConfigYaml(dir, { approval: { headless: true } });
 
       expect(() => loadConfig(dir)).toThrow('approval.headless: Unknown config key');
-    });
-
-    it('rejects the removed codebase.cacheDir field', () => {
-      const dir = join(TMP, 'removed-codebase-cache-dir');
-      writeConfigYaml(dir, { codebase: { enabled: true, cache_dir: '.custom-cache' } });
-
-      expect(() => loadConfig(dir)).toThrow('codebase.cacheDir: Unknown config key');
     });
 
     it.each(['ask', 'always'])(

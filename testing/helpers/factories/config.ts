@@ -61,7 +61,6 @@ type ConfigInput = {
   workflow: Config['workflow'];
   sessions?: Config['sessions'];
   escalation?: Config['escalation'];
-  codebase?: Config['codebase'];
   hooks?: Config['hooks'];
   approval?: Config['approval'];
   implementerProfiles?: ImplementerProfilesFixture;
@@ -123,7 +122,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
     base.reviewer = overrides.reviewer === 'none' ? 'none' : makePlannerConfig(overrides.reviewer);
   if (overrides?.sessions !== undefined) base.sessions = overrides.sessions;
   if (overrides?.escalation !== undefined) base.escalation = overrides.escalation;
-  if (overrides?.codebase !== undefined) base.codebase = overrides.codebase;
   if (overrides?.hooks !== undefined) base.hooks = overrides.hooks;
   if (overrides?.approval !== undefined) base.approval = overrides.approval;
   if (overrides?.implementerProfiles !== undefined)

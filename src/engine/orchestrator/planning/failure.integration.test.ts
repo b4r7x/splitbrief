@@ -540,14 +540,14 @@ describe('a planning halt while the run holds a plan correction', () => {
         code: 'insufficient-context',
         seat: 'plan',
         cause: 'input-budget',
-        missingSections: ['repo map'],
+        missingSections: ['src/hello.ts'],
       }),
       correction,
     );
 
     expect(issue?.reason).toBe('planner-call-failed');
     expect(issue?.details).toEqual([
-      'Missing: repo map',
+      'Missing: src/hello.ts',
       'Pick a plan seat with a larger context in /crew plan, then choose Try again.',
       correctionGoesAgain,
     ]);

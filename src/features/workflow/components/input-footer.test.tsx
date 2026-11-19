@@ -694,8 +694,6 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const now = Date.now();
     const ago = (minutes: number) => now - minutes * 60_000;
-    // The research call opens once the repo map is built: that wait is research too, so the first
-    // call of a run keeps the clock the run's start opened.
     addEvent({ type: 'workflow_started', ts: ago(10), phase: 'researching', feature: 'demo' });
     addEvent(makePlannerStatus({ phase: 'researching', call: 'research', ts: ago(10) + 6_000 }));
     const research = renderFeature(<InputFooter />);

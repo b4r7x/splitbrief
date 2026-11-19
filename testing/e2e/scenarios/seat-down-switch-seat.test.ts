@@ -159,7 +159,6 @@ const GUIDANCE = JSON.stringify({
 async function codexSeatFixture(haltedCallWrote: boolean, implementerModel: string) {
   fixture = createStopContinueFixture(() => '', {
     isolation: 'none',
-    // Anchored to the heading line: the plan prompt's repo map quotes this line of the script.
     consult: () =>
       `(prompt) => /^# Consult on a failing task$/m.test(prompt) ? ${JSON.stringify(GUIDANCE)} : undefined`,
   });

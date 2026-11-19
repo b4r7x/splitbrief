@@ -18,12 +18,6 @@ import {
 function makeConfigWithOptionalSections(): Config {
   return {
     ...makeBaseConfig(),
-    codebase: {
-      enabled: true,
-      tokenBudget: 1234,
-      include: ['src/**'],
-      exclude: ['dist/**'],
-    },
     hooks: {
       pre_task: [
         {
@@ -313,7 +307,6 @@ describe('runner selection commits', () => {
       model: { id: 'auto' },
     });
 
-    expect(updated.codebase).toEqual(config.codebase);
     expect(updated.hooks).toEqual(config.hooks);
     expect(updated.palette).toEqual(config.palette);
     expect(updated.approval).toEqual(config.approval);

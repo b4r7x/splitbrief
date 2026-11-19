@@ -214,6 +214,10 @@ const RETIRED_CONFIG_VALUES: readonly {
     notice:
       "escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.",
   },
+  {
+    path: ['codebase'],
+    notice: 'codebase was retired and is ignored. Delete codebase.',
+  },
 ];
 
 /** One notice per retired value the raw config names; the load reports them, once. */

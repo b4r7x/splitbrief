@@ -1,17 +1,12 @@
 import { estimateTokens } from '../../../core/tokens/estimate.js';
 import type { ProjectContext } from '../context.js';
-import { sourceBlock } from './sources.js';
 import type { ApiContextEntryState, ApiContextManifestEntry } from './types.js';
 
 /** Why a state other than `included` appears in the packet's own footer. */
-const OMISSION_REASON: Record<
-  Exclude<ApiContextEntryState, 'included'>,
-  (entry: ApiContextManifestEntry) => string
-> = {
-  excerpt: (entry) => `lines ${entry.startLine}-${entry.endLine} only`,
-  missing: () => 'not present in the project',
-  unsupported: () => 'not readable as text',
-  omitted: () => "not supplied, outside this call's context allocation",
+const OMISSION_REASON: Record<Exclude<ApiContextEntryState, 'included'>, string> = {
+  missing: 'not present in the project',
+  unsupported: 'not readable as text',
+  omitted: "not supplied, outside this call's context allocation",
 };
 
 const NO_TOOLS_NOTICE =
@@ -30,7 +25,7 @@ function notSuppliedLines(
   const lines: string[] = [];
   for (const entry of manifest) {
     if (entry.state === 'included') continue;
-    lines.push(`- ${entry.path} — ${OMISSION_REASON[entry.state](entry)}`);
+    lines.push(`- ${entry.path} — ${OMISSION_REASON[entry.state]}`);
   }
   for (const note of project.notes) {
     lines.push(
@@ -79,44 +74,4 @@ export function overflowingSections(
     if (!names.includes(part.name)) names.push(part.name);
   }
   return names;
-}
-
-/**
- * The longest whole-line prefix of a file that fits the allowance, with the
- * exact interval it covers. A prefix only grows, so the search is a bisection;
- * null when not even the first line fits.
- */
-export function wholeLinePrefix(
-  content: string,
-  path: string,
-  allowance: number,
-  model: string | undefined,
-): (Section & { endLine: number }) | null {
-  const lines = content.split('\n');
-  const render = (endLine: number): Section & { endLine: number } => ({
-    ...section(
-      path,
-      sourceBlock(
-        `${path} — lines 1-${endLine} of ${lines.length}`,
-        lines.slice(0, endLine).join('\n'),
-      ),
-      model,
-    ),
-    endLine,
-  });
-
-  let best = render(1);
-  if (best.tokens > allowance) return null;
-  let low = 1;
-  let high = lines.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    const candidate = render(mid);
-    if (candidate.tokens > allowance) high = mid - 1;
-    else {
-      best = candidate;
-      low = mid;
-    }
-  }
-  return best;
 }

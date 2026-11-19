@@ -63,7 +63,7 @@ afterEach(() => {
 /** A ready project whose config declares one `pre_task` and one `post_task` hook that this machine never trusted. */
 function hookedProject(): { tmp: string; preMark: string; postMark: string } {
   const tmp = getStartCommandTmp();
-  writeReadyReadinessFixtures(tmp, { validation: true, codebase: false, approve: 'none' });
+  writeReadyReadinessFixtures(tmp, { validation: true, approve: 'none' });
   const preMark = join(marks, 'pre-task');
   const postMark = join(marks, 'post-task');
   const hook = (mark: string) =>

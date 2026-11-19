@@ -124,10 +124,10 @@ describe('repository documentation', () => {
       name: 'cuts one long sentence at a word boundary',
       source: 'docs/B.md',
       markdown:
-        '# B\n\nThe planner reads the repository map, the open questions, the acceptance criteria, the protected paths, the validation commands, the task list, the evidence ledger and the context budget before it compiles anything at all',
+        '# B\n\nThe planner reads the project instructions, the task request, the acceptance criteria, the protected paths, the validation commands and the attached files before it proposes a plan for approval.',
       title: 'B',
       description:
-        'The planner reads the repository map, the open questions, the acceptance criteria, the protected paths, the validation commands, the task list, the evidence…',
+        'The planner reads the project instructions, the task request, the acceptance criteria, the protected paths, the validation commands and the attached files…',
     },
     {
       name: 'takes an explicit description over the first paragraph',

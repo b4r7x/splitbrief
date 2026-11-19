@@ -63,7 +63,6 @@ function setup(steer: string | undefined = CORRECTION) {
   const wctx = makeWctx({
     ...ref,
     config: makeConfig({
-      codebase: { enabled: false, tokenBudget: 4000 },
       workflow: { approve: 'plan' },
     }),
     planner: makePlanner({ typedCall: typed.typedCall }),

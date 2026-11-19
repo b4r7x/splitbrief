@@ -59,7 +59,6 @@ Each removed name fails with a message that names its replacement or says why it
 | `--approve` | `workflow.approve` (`plan` or `none`) in the config |
 | `/attach`, `/detach` | `/image <path>`, `/image remove <index\|id>` |
 | `/effort` | The seat picker: `/crew plan`, then ⏎ on the model |
-| `/repomap` | Nothing. The repo map rebuilds itself on each planning run |
 | `/accept-run`, `/reject-run` | `/run accept`, `/run reject confirm` |
 | `/config` | `/settings` |
 | `/planner`, `/implementer`, `/reviewer` | `/crew plan`, `/crew build`, `/crew review` |
@@ -82,7 +81,6 @@ If you're a **user** of SPLITBRIEF (running `splitbrief start ...` from the CLI)
 
 If you're an **integrator** (building on the engine API):
 - `OrchestratorCallbacks.onEvent` is gone. Subscribe to the EventBus via `_eventSink` instead, or write a sink module.
-- `Planner` interface methods accept new optional `codebaseContext` parameter.
 - Legacy `appendEvent` removed; use `appendEngineEvent`.
 
 ## Config schema additions
@@ -99,15 +97,6 @@ hooks:
 
 First run with hooks defined will prompt for trust. CI: pass `--allow-hooks`.
 
-### Repo-map (default ON)
-```yaml
-codebase:
-  enabled: true
-  tokenBudget: 4000
-```
-
-To disable: set `enabled: false`. The cache rebuilds itself on each planning run when it is stale; there is no manual rebuild step.
-
 ## CLI flag additions
 
 - `--json` (start, resume, continue) — headless NDJSON mode
@@ -122,7 +111,6 @@ If you wrap SPLITBRIEF programmatically (not as CLI):
   2. Add a custom sink module next to the shipped JSONL, logger and stdout JSON sinks, then wire it where the run sets up its sinks. UI-facing sinks belong outside the engine; the shipped TUI sink is part of the workflow UI.
   The existing on-disk append remains available via the JSONL sink and `appendEngineEvent(ref, event)`. The JSONL sink is unchanged by the 2026-04-20 release.
 - **`TuiEvent` and `OrchestratorEvent` are removed.** Use the `EngineEvent` alias; its discriminated-union schema (`EngineEventSchema`) is the single source of truth. Workflow sub-stores consume `EngineEvent` directly; the workflow-TUI sink (`tuiSink`) is a pass-through, not a mapper.
-- Update `Planner` adapter signatures to accept the new `codebaseContext` parameter.
 - `EngineEvent` variant names are snake_case (e.g. `task_started`, not `task-start`).
 
 If you query session JSONL files programmatically:

@@ -27,7 +27,6 @@ export async function apiPlanningPacket(opts: {
   earlierPlanning?: string | undefined;
   steer?: string | undefined;
   priorMessages?: readonly PriorMessage[] | undefined;
-  repoMap?: string | undefined;
   skills?: string | undefined;
 }): Promise<string> {
   const { context, compose } = opts;
@@ -59,7 +58,6 @@ export async function apiPlanningPacket(opts: {
     }),
     ...(opts.steer !== undefined && opts.steer !== '' && { steer: opts.steer }),
     ...(opts.priorMessages !== undefined && { priorMessages: opts.priorMessages }),
-    ...(opts.repoMap !== undefined && { repoMap: opts.repoMap, repoMapInPrompt: true }),
     ...(opts.skills !== undefined && { skills: opts.skills }),
     availableTokens: inputAllocation,
     ...(userBudget && { userBudgetTokens: inputAllocation }),

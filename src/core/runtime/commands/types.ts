@@ -182,7 +182,6 @@ export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
   '/mode': 'every run plans in one session',
   '/planner': 'the PLAN seat is chosen with /crew plan',
   '/reject-run': 'a run is rejected with /run reject confirm',
-  '/repomap': 'the repo map rebuilds itself on each planning run, with no manual step',
   '/revise-plan': 'request changes on the plan',
   '/revise-spec': 'request changes on the plan',
   '/reviewer': 'the REVIEW seat is chosen with /crew review',

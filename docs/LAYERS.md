@@ -130,7 +130,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 - `core/runtime/commands/` — runtime command definitions (pure data + handlers; see also `core/keybindings/`)
 - `core/providers/` — provider catalog, known-models, model-selection logic
 - `core/hooks/` — workflow hook trust grant + sha256 config/file digest
-- `core/tokens/` — pure token accounting helpers used by the repo-map budget and the planner base
+- `core/tokens/` — pure token accounting helpers used by planner and API calls
 - `core/pipeline-spec/` — the typed pipeline contract: retry ladder, test check narrowing rule, capture limits, halt signatures, brief body order and the brief grouping rule, scope and baseline rules, timeouts. Pure data read by the engine and rendered into `skills/` by `scripts/skill-blocks.ts`
 - `core/scope/` — the one matcher that decides whether a changed path is inside a brief's declared set
 - `core/validation/stacks/` — the five validation stacks (TypeScript, JavaScript, Python, Go, Rust) and their registry: markers, the test command a planner `test` check runs, test patterns, narrowing, allowed commands
@@ -172,7 +172,6 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 - engine-scoped error diagnosis (provider hints, etc.)
 - `engine/events/` — event bus subsystem: the `EngineEventSchema` type-dispatched schema + `parseEngineEvent`, the `EngineEvent` alias inferred from that schema plus the `EventBus`/`EventSink` ports, the `createEventBus()` factory with crash isolation per sink, `payloads/` holding the member arrays of each event family that the schema spreads, and `sinks/` holding headless/persistence/telemetry subscribers
 - `engine/hooks/` — workflow hook runtime: the subprocess `command` hook dispatch (inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), the safe `${event.*}` regex substitution (values are emitted verbatim as distinct argv elements, never shell-evaluated), the sequential `pre_*` runner with deny short-circuit, and the bus sink for `post_*`/`on_*` fire-and-forget
-- `engine/codebase/` — repo-map pipeline — produces the token-budgeted codebase summary injected into the planner prompt. See [SUBSYSTEMS.md §Repo-map](./SUBSYSTEMS.md#3-repo-map).
 
 **Prohibited imports:** `features/`, `components/`, `hooks/`, `cli/`, `react`, `ink`. Grep gate in [`INVARIANTS.md`](./INVARIANTS.md).
 

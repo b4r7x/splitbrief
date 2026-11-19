@@ -37,7 +37,6 @@ const questions = planQuestionsFrom(
 function pauseInPlanning(ref: SessionRef, isolation: 'worktree' | 'staged-copy' | 'none') {
   const state = loadState(ref) ?? undefined;
   const config = makeConfig({
-    codebase: { enabled: false, tokenBudget: 1000 },
     workflow: { isolation },
   });
   const script = scriptedTypedCall([questions]);

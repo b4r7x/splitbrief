@@ -127,7 +127,7 @@ export const gates: readonly Gate[] = [
   {
     id: '17',
     description: 'No incidental non-null assertions (sanctioned files in CLAUDE.md allow-listed)',
-    command: `{ rg -n -P "[A-Za-z0-9_)\\]]![^=)]" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "!==|!=" | rg -v "^src/(stores/use-many|engine/codebase/graph|engine/codebase/pagerank)\\.ts:" || true; } | wc -l`,
+    command: `{ rg -n -P "[A-Za-z0-9_)\\]]![^=)]" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "!==|!=" | rg -v "^src/stores/use-many\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {

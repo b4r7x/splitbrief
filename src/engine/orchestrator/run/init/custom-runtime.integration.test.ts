@@ -224,7 +224,6 @@ describe('configured custom workflow runtime', () => {
               validation: { endChecks: false, testCommand: 'noop' },
               workflow: {},
               approval: { feedRejectionsToPlanner: true },
-              codebase: { enabled: false, tokenBudget: 4000 },
             }),
           );
           const dynamicConfig = ConfigSchema.parse({

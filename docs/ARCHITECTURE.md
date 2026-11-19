@@ -65,7 +65,6 @@ The repository layers many supporting subsystems on top of that core loop:
 - **Snapshots** — working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/` with a baseline + delta layout. A blob name is the SHA-256 of the file's relative path (`encodeSnapshotPath`). The run ledger, `snapshots/run-ledger.json`, is what `/run accept` and `/run reject confirm` operate on for a run without a workspace; a workspace run uses Apply and its backup instead ([SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject)).
 - **Run workspace and Apply** create and retain one run directory. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) owns the data flow; [WORKFLOW.md](./WORKFLOW.md#apply) owns the Apply sequence. The implementer boundary and audit stay with the implementers.
 - **Protected-path confirmation** checks attempt changes inside the workspace. See [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation).
-- **Repo-map context** — token-budgeted PageRank-based codebase summary fed to every planner call.
 - **Hooks** — `pre_*` (sync) and `post_*` / `on_*` (fire-and-forget) commands declared in config and dispatched on matching events.
 
 The original layering rules still hold: engine never imports React, features never import each other, stores have no React/Ink imports and no engine value imports, zero runtime classes, zero barrels, ESM `.js` suffixes everywhere.
@@ -107,7 +106,7 @@ Two modules are load-bearing for the seat surfaces:
 | `src/utils/` | pure / generic / no domain (canonical-json is the model) | holds |
 | `src/lib/` | third-party adapters (Node fs, simple-git, terminal escapes) | holds |
 | `src/core/` | SPLITBRIEF domain — schemas, paths, phase taxonomy, sessions; **no React, no engine** | holds |
-| `src/engine/` | orchestrator, planners, implementers, runners, hooks, snapshots, providers, codebase, parsers, streaming, spec, detection; **no React, no Ink, no `src/features/` / `src/components/` / `src/hooks/`** | holds |
+| `src/engine/` | orchestrator, planners, implementers, runners, hooks, snapshots, providers, parsers, streaming, spec, detection; **no React, no Ink, no `src/features/` / `src/components/` / `src/hooks/`** | holds |
 | `src/features/<name>/` | feature-local screen/picker/overlay + components/hooks/helpers; **never imports another feature** | holds |
 | `src/components/` | shared UI primitives (cross-feature only) | holds |
 | `src/stores/` | `useSyncExternalStore` module-state; **no React, no Ink, no engine value imports**; `import type` from engine is allowed for shared event/detection types | holds |
@@ -548,7 +547,7 @@ palette:
       command: /usage          # runtime command to invoke (must start with '/')
 ```
 
-All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, the optional `reviewer`, `validation`, `workflow.{approve,git,isolation,...}`, `codebase`, `hooks`, `approval`) are unchanged in shape. The retired `workflow.max_retries` and `escalation` keys still load with one notice each and are ignored.
+All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, the optional `reviewer`, `validation`, `workflow.{approve,git,isolation,...}`, `hooks`, `approval`) are unchanged in shape. The retired `workflow.max_retries`, `escalation` and `codebase` keys still load with one notice each and are ignored.
 
 ---
 

@@ -298,14 +298,6 @@ Workflow lifecycle hooks let users run custom commands at well-known moments (pr
 
 First-time trust gate for hook configs. SPLITBRIEF computes a hash from the hook section and holds the grant against that hash; it prompts in a TTY the first time, showing each hook's executable, the absolute path it resolves to here, and its argv, then asking `Trust these hooks for this project? [y/N]`. Answering `y` writes a receipt to `~/.splitbrief/trust/hooks.json` keyed by the canonical path of this checkout, so the grant belongs to this machine and this checkout and a repository can neither ship nor forge one. Any edit to the hooks section invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config edit.
 
-## Repo-map
-
-Token-budgeted codebase summary injected into the planner prompt at workflow start. Pipeline: tree-sitter parse → SQLite cache → symbol graph → PageRank → token-aware format. Opt-out via `codebase.enabled: false`. The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. See [CONFIGURATION.md §7](./CONFIGURATION.md#7-codebase) and [SUBSYSTEMS.md §Repo-map](./SUBSYSTEMS.md#3-repo-map).
-
-- **RepoMapOptions** — options to `buildRepoMap(projectDir, opts)`: `{ focusFiles?, featureText?, tokenBudget?, include?, exclude?, onWarn? }`. `tokenBudget` defaults to 4000. With no `include`, discovery walks every known language extension. The default excludes are test files (`\.test\.tsx?$`), `.git/`, `.splitbrief/`, `.trees/`, `node_modules/` and `dist/`; an `exclude` entry adds to them. `focusFiles` and the files `featureText` names boost the PageRank personalization vector for files the planner already knows are relevant.
-
----
-
 ## Artifacts on disk
 
 All workflow state lives under `.splitbrief/` in the target project. Each session gets its own self-contained folder.

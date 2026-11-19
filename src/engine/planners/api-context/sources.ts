@@ -1,8 +1,7 @@
 import { readConfinedEntry } from '../../orchestrator/approval/file-snapshots/entry/read.js';
-import { PATH_MAX_LENGTH, isCandidatePath } from './mentions.js';
+import { PATH_MAX_LENGTH } from './mentions.js';
 
 const BACKTICK_RUN_RE = /`+/g;
-const REPO_MAP_HEADING_RE = /^([^\s:][^:]*):$/;
 
 type SourceRead =
   | { kind: 'text'; content: string; sha256: string }
@@ -49,15 +48,4 @@ function fenceFor(content: string): string {
 export function sourceBlock(heading: string, content: string): string {
   const fence = fenceFor(content);
   return `### ${heading}\n${fence}\n${content}\n${fence}`;
-}
-
-/** The repo map's own order is its rank; a path it lists once is listed once. */
-export function rankedRepoMapPaths(repoMap: string | undefined): readonly string[] {
-  if (repoMap === undefined || repoMap === '') return [];
-  const ranked = new Set<string>();
-  for (const line of repoMap.split('\n')) {
-    const path = REPO_MAP_HEADING_RE.exec(line)?.[1];
-    if (path !== undefined && isCandidatePath(path)) ranked.add(path);
-  }
-  return [...ranked];
 }

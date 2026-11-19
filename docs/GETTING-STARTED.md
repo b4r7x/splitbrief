@@ -130,7 +130,7 @@ Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `splitbrief
        │                                                                  │
        │  admitted planner (see PLANNERS-AND-IMPLEMENTERS.md)             │
        │                                                                  │
-       │  - Reads the repo (token-budgeted PageRank repo-map)             │
+       │  - Reads project context and source files                        │
        │  - Asks clarifying questions inline                              │
        │  - Compiles a Task Brief (signature, types, tests, steps)        │
        │  - Reviews final diff against the brief at the end               │
@@ -290,7 +290,6 @@ These features are active by default unless noted:
 | Understand every workflow phase and transition | [docs/WORKFLOW.md](./WORKFLOW.md) |
 | Configure something | [docs/CONFIGURATION.md](./CONFIGURATION.md) |
 | Read the Task Brief contract | [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) |
-| Tune the planner's repo-map context | [docs/CONFIGURATION.md](./CONFIGURATION.md#7-codebase) |
 | Wire up workflow lifecycle hooks | [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md) |
 | Debug a failing run | [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md#diagnostic-modes) |
 | Understand the architecture end-to-end | [docs/ARCHITECTURE.md](./ARCHITECTURE.md) |

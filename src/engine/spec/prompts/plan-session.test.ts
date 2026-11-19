@@ -200,14 +200,12 @@ describe('buildPlanSessionPrompt', () => {
     );
   });
 
-  it('carries the request, the repository map and the documents of an earlier planning chain', () => {
+  it('carries the request and the documents of an earlier planning chain', () => {
     const prompt = buildPlanSessionPrompt({
       ...input,
-      codebaseContext: 'src/hello.ts: greet()',
       earlierPlanning: '### research.md\nOld findings',
     });
     expect(prompt).toContain('Greet people by name');
-    expect(prompt).toContain('src/hello.ts: greet()');
     expect(prompt).toContain('Old findings');
   });
 

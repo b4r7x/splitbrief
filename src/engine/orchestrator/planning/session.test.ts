@@ -131,7 +131,7 @@ async function plan(opts: {
     wctx: {
       projectDir,
       sessionId,
-      config: opts.config ?? makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+      config: opts.config ?? makeConfig(),
       callbacks: makeCallbacks({ onApprovalNeeded, ...opts.callbacks }).callbacks,
       bus,
       metadata: TEST_METADATA,
@@ -354,6 +354,45 @@ describe('a planner that reads no files of its own', () => {
     expect(run.result.disposition).toBe('ready-for-tasks');
   });
 
+  it('gives the API planner its instructions and named source without ranked file context', async () => {
+    const run = await plan({
+      script: [makePlanProposal()],
+      config: makeConfig(),
+      planner: { resolvePlanningContext: async () => ROOMY_CONTEXT },
+      feature: 'Modify `src/hello.ts` so it greets people by name.',
+      setup: (projectDir) => {
+        writeHello(projectDir);
+        writeFileSync(join(projectDir, 'AGENTS.md'), 'Use the project greeting style.\n');
+        writeFileSync(
+          join(projectDir, 'src', 'unrequested.ts'),
+          'export function unrequested(): string {\n  return "UNREQUESTED_BODY";\n}\n',
+        );
+      },
+    });
+
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.prompts[0]).toContain('Use the project greeting style.');
+    expect(run.prompts[0]).toContain('export const HELLO_SENTINEL = 1;');
+    expect.soft(run.prompts[0]).not.toContain('## Repository Map');
+    expect(run.prompts[0]).not.toContain('UNREQUESTED_BODY');
+  });
+
+  it('gives a planner that reads the project itself the README without a repository map', async () => {
+    const run = await plan({
+      script: [makePlanProposal()],
+      config: makeConfig(),
+      feature: 'Modify `src/hello.ts` so it greets people by name.',
+      setup: (projectDir) => {
+        writeHello(projectDir);
+        writeFileSync(join(projectDir, 'README.md'), 'Use the project greeting style.\n');
+      },
+    });
+
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.prompts[0]).toContain('Use the project greeting style.');
+    expect(run.prompts[0]).not.toContain('## Repository Map');
+  });
+
   it('leaves a planner that reads the project itself to read it', async () => {
     const run = await plan({
       script: [makePlanProposal()],
@@ -364,26 +403,19 @@ describe('a planner that reads no files of its own', () => {
     expect(run.prompts[0]).not.toContain('HELLO_SENTINEL');
   });
 
-  it('admits every later turn of a session whose first packet filled the context', async () => {
+  it('admits later turns with a large required source file', async () => {
     const context = { ...ROOMY_CONTEXT, applicationContextTokens: 16_000 };
+    const source = `export const greeting = '${'x'.repeat(28_000)}';\n`;
     const run = await plan({
       script: [questions(1), uncoveredPlan, 'not json', makePlanProposal()],
-      config: makeConfig({ codebase: { enabled: true, tokenBudget: 4000 } }),
       callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
       planner: { resolvePlanningContext: async () => context },
-      feature: 'Modify `src/m0.ts` so it greets people by name.',
-      setup: (projectDir) => {
-        mkdirSync(join(projectDir, 'src'), { recursive: true });
-        for (let index = 0; index < 40; index++) {
-          writeFileSync(
-            join(projectDir, 'src', `m${index}.ts`),
-            `import { m${(index + 1) % 40} } from './m${(index + 1) % 40}.js';\nexport function m${index}(name: string): string {\n  return \`${'x'.repeat(1200)}\` + name + m${(index + 1) % 40};\n}\n`,
-          );
-        }
-      },
+      feature: 'Modify `greeting.ts` so it greets people by name.',
+      setup: (projectDir) => writeFileSync(join(projectDir, 'greeting.ts'), source),
     });
 
     expect(run.prompts).toHaveLength(4);
+    expect(run.prompts[0]).toContain(source);
     for (const prompt of run.prompts) {
       const measured = measureApiBudget({
         context,
@@ -658,7 +690,6 @@ describe('the planning session on the live path', () => {
       const run = await plan({
         script: [invalid, makePlanProposal()],
         config: makeConfig({
-          codebase: { enabled: false, tokenBudget: 4000 },
           implementer: { contextLength: 8192 },
         }),
         setup: (projectDir) => {
@@ -780,7 +811,6 @@ describe('the planning session on the live path', () => {
     const run = await plan({
       script: [makePlanProposal(), makePlanProposal()],
       config: makeConfig({
-        codebase: { enabled: false, tokenBudget: 4000 },
         implementer: { kind: 'shell', command: 'gen', model: 'gen' },
       }),
       setup: (projectDir) => {
@@ -831,7 +861,6 @@ describe('the planning session on the live path', () => {
     const run = await plan({
       script: [renderPlan],
       config: makeConfig({
-        codebase: { enabled: false, tokenBudget: 4000 },
         validation: { render: 'npm run tui-shots -- --scenario {id} --output {out}' },
       }),
     });
@@ -918,7 +947,7 @@ describe('the planning session on the live path', () => {
         wctx: {
           projectDir: first.projectDir,
           sessionId: first.sessionId,
-          config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+          config: makeConfig(),
           callbacks: makeCallbacks().callbacks,
           bus: makeBusRecorder().bus,
           metadata: TEST_METADATA,
@@ -989,7 +1018,7 @@ describe('the planning session on the live path', () => {
       wctx: {
         projectDir: first.projectDir,
         sessionId: first.sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks({
           onPlannerReply: vi.fn().mockResolvedValue({
             message: plainUserMessage('1. Round 1: which module?\nsrc/b.ts'),
@@ -1081,7 +1110,7 @@ describe('the planning session on the live path', () => {
       wctx: {
         projectDir,
         sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks().callbacks,
         bus: makeBusRecorder().bus,
         metadata: TEST_METADATA,
@@ -1114,7 +1143,7 @@ describe('the planning session on the live path', () => {
       wctx: {
         projectDir,
         sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks().callbacks,
         bus: makeBusRecorder().bus,
         metadata: TEST_METADATA,
@@ -1202,7 +1231,7 @@ describe('the plan card', () => {
       wctx: {
         projectDir: first.projectDir,
         sessionId: first.sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks({
           onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')),
           onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
@@ -1239,7 +1268,7 @@ describe('the plan card', () => {
       wctx: {
         projectDir: first.projectDir,
         sessionId: first.sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks({
           onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
         }).callbacks,
@@ -1614,7 +1643,6 @@ describe('the plan card', () => {
 
   it('skips the card at approve: none and still asks for a listed protected write', async () => {
     const config = makeConfig({
-      codebase: { enabled: false, tokenBudget: 4000 },
       workflow: { approve: 'none' },
     });
     const run = await plan({ script: [protectedPlan], config });
@@ -1750,7 +1778,7 @@ describe('a question round the user answers in their own words', () => {
       wctx: {
         projectDir: first.projectDir,
         sessionId: first.sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks({
           onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('use src/b.ts')),
         }).callbacks,
@@ -1788,7 +1816,7 @@ describe('a question round the user answers in their own words', () => {
       wctx: {
         projectDir: first.projectDir,
         sessionId: first.sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks({ onPlannerReply }).callbacks,
         bus,
         metadata: TEST_METADATA,
@@ -1964,7 +1992,7 @@ describe('the order of the turns of one planning session', () => {
       wctx: {
         projectDir: first.projectDir,
         sessionId: first.sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks({ onPlannerReply }).callbacks,
         bus,
         metadata: TEST_METADATA,
@@ -2070,7 +2098,7 @@ describe('the order of the turns of one planning session', () => {
       wctx: {
         projectDir,
         sessionId,
-        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        config: makeConfig(),
         callbacks: makeCallbacks({
           onContinuationNeeded: async () => plainUserMessage('keep it small'),
         }).callbacks,

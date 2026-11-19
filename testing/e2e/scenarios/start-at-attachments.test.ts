@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -10,7 +11,8 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachmentFailureText } from '../../../src/core/attachments/failure.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { sessionsRoot } from '../../../src/core/paths.js';
+import { configPath } from '../../../src/core/config/load/document.js';
+import { PLAN_JSON_FILE, sessionDir, sessionsRoot } from '../../../src/core/paths.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import {
@@ -77,7 +79,8 @@ afterEach(() => {
 });
 
 describe('e2e: start @file attachments', () => {
-  it('attaches outside text from a separate argument and supplies it to planning and final review', async () => {
+  it('reports a retired codebase setting and plans with the attached text', async () => {
+    appendFileSync(configPath(fixture.projectDir), '\ncodebase:\n  enabled: true\n');
     const path = join(fixture.tmpDir, 'outside-notes.md');
     const marker = `outside-attachment-${fixture.tmpDir}`;
     const content = `The greeting helper must preserve this marker: ${marker}.\n`;
@@ -103,6 +106,12 @@ describe('e2e: start @file attachments', () => {
     expect(state.phase).toBe('complete');
     expect(state.plannerContext).toContain(content);
     expect(readFileSync(fixture.greetPath, 'utf8')).toBe(GREET_SOURCE);
+    expect(
+      existsSync(join(sessionDir(fixture.projectDir, sessions[0] ?? ''), PLAN_JSON_FILE)),
+    ).toBe(true);
+    expect(run.stderr.split('\n').filter((line) => line.includes('codebase was retired'))).toEqual([
+      'codebase was retired and is ignored. Delete codebase.',
+    ]);
   });
 
   it('says on stderr under --plain that a planner which takes no images dropped the image', async () => {

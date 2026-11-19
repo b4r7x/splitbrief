@@ -7,7 +7,7 @@ Thanks for considering a contribution. SPLITBRIEF is a small, opinionated codeba
 Read in order:
 
 1. [docs/CODE-STANDARD.md §6](./docs/CODE-STANDARD.md#6-the-hard-conventions-enforced--summarized-linked) — architectural rules at a glance.
-2. [docs/CONCEPTS.md](./docs/CONCEPTS.md) — shared vocabulary (EventBus, EngineEvent, Phase, Hook, RepoMap).
+2. [docs/CONCEPTS.md](./docs/CONCEPTS.md) — shared vocabulary (EventBus, EngineEvent, Phase, Hook).
 3. [docs/STRUCTURE.md](./docs/STRUCTURE.md) — where files live, file-placement decision tree.
 4. [docs/TESTING.md](./docs/TESTING.md) — test philosophy and placement.
 

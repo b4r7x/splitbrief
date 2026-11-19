@@ -10,6 +10,7 @@
 
 - Custom command setup moves to your project configuration. The seat picker and CLI help omit those options.
 - Temperature, API call Timeout and Compaction format move from Settings to your project configuration.
+- SPLITBRIEF no longer sends a repository map to planners. API planners receive project instructions, attachments, and the contents of files named in the request.
 
 ## [0.2.0]
 
