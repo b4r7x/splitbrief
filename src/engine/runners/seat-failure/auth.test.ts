@@ -17,33 +17,52 @@ const CODEX_SIGNED_OUT =
   'unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a271258d6ded5175-WAW, request id: req_7346f7bf9594404cb642dbe6079577d6';
 
 describe('isAuthFailureDiagnostic', () => {
-  it('recognizes the real codex burned-refresh-token turn failure', () => {
-    expect(isAuthFailureDiagnostic(CODEX_BURNED_REFRESH)).toBe(true);
+  it.each([
+    ...HALT_SIGNATURES.auth,
+    CODEX_BURNED_REFRESH,
+    CODEX_SIGNED_OUT,
+    'Please log out and sign in again.',
+    'Invalid API key · Please run /login',
+    'OAuth token has expired · Please run /login',
+    'OAuth token revoked · Please run /login',
+    'API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}',
+    'Not logged in',
+    'Error: not logged in',
+    'not logged in to any provider',
+    'Not logged in · Please run /login',
+    'Not logged in. Run cursor-agent login.',
+    'Error: Your session ended. Please sign in again to continue.',
+    'Your session ended. Please sign in.',
+    'Please sign in again in Settings.',
+    'Please sign in again',
+    'Please sign in to continue.',
+    'Please sign in to view available models. Launch the CLI without arguments to sign in.',
+    'Not authenticated',
+    'Error: Not authenticated. Please run "cmd login" first.',
+    "Error: Authentication required. Please run 'agent login' first, or set CURSOR_API_KEY environment variable.",
+    'HTTP 403 Forbidden',
+    'unexpected status 403: access denied',
+    '{"error":{"message":"denied"},"status":403}',
+    'Error: unauthenticated',
+  ])('recognizes %j', (message) => {
+    expect(isAuthFailureDiagnostic(message)).toBe(true);
   });
 
-  it('recognizes the real codex signed-out 401 turn failure', () => {
-    expect(isAuthFailureDiagnostic(CODEX_SIGNED_OUT)).toBe(true);
-  });
-
-  it('recognizes Claude Code signed-out result texts', () => {
-    expect(isAuthFailureDiagnostic('Invalid API key · Please run /login')).toBe(true);
-    expect(isAuthFailureDiagnostic('OAuth token has expired · Please run /login')).toBe(true);
-    expect(isAuthFailureDiagnostic('OAuth token revoked · Please run /login')).toBe(true);
-    expect(
-      isAuthFailureDiagnostic(
-        'API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}',
-      ),
-    ).toBe(true);
-  });
-
-  it('recognizes a bare not-logged-in status', () => {
-    expect(isAuthFailureDiagnostic('Not logged in')).toBe(true);
-  });
-
-  it('every HALT_SIGNATURES.auth phrase classifies as an auth failure', () => {
-    for (const phrase of HALT_SIGNATURES.auth) {
-      expect(isAuthFailureDiagnostic(`CLI failed: ${phrase}`)).toBe(true);
-    }
+  it.each([
+    'Sign in successful.',
+    'Sign in was successful.',
+    'Signed in as user@example.com',
+    'Successfully signed in',
+    'You are signed in',
+    'No authentication required.',
+    'No need to log in.',
+    'Sign in to GitHub to see more',
+    'Log in with --token',
+    'No active session',
+    'Not signed in',
+    'Commands:\n  login  Manage credentials\n  run    Run a task',
+  ])('does not classify %j as signed out', (message) => {
+    expect(isAuthFailureDiagnostic(message)).toBe(false);
   });
 
   it('does not classify billing, capacity, or ordinary failures as auth', () => {
@@ -149,17 +168,5 @@ describe('runnerAccountDisplayName', () => {
     [{ kind: 'cli', tool: 'claude-code', model: 'sonnet' }, 'Claude Code CLI'],
   ] as const)('names the account holder of %o', (implementer, name) => {
     expect(runnerAccountDisplayName(makeConfig({ implementer }).implementer)).toBe(name);
-  });
-});
-
-describe('isAuthFailureDiagnostic — an account the provider refuses', () => {
-  it.each([
-    'HTTP 403 Forbidden',
-    'unexpected status 403: access denied',
-    '{"error":{"message":"denied"},"status":403}',
-    'Error: unauthenticated',
-    'Please sign in to continue.',
-  ])('classifies %j as an auth failure', (message) => {
-    expect(isAuthFailureDiagnostic(message)).toBe(true);
   });
 });

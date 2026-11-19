@@ -12,9 +12,16 @@ import {
   type ModelRefusal,
 } from '../../../core/runners/route-auth.js';
 
+const SIGN_IN_REFUSALS = [
+  'your session ended. please sign in.',
+  'please sign in again',
+  'please sign in to continue.',
+  'please sign in to view available models. launch the cli without arguments to sign in.',
+];
+
 /**
  * Signed-out diagnostics match the shared halt phrases (`HALT_SIGNATURES.auth`),
- * the word "unauthenticated", "sign in", "http 403", "status 403", or '"status":403'.
+ * known sign-in refusals, the word "unauthenticated", or explicit HTTP 403 diagnostics.
  * The additional forms are diagnostic-only because the stdout tail carries
  * test logs. These matches apply only to failure diagnostics
  * (`RunnerCallResult.error.message`), never task output.
@@ -25,7 +32,7 @@ export function isAuthFailureDiagnostic(message: string): boolean {
     HALT_SIGNATURES.auth.some((phrase) => text.includes(phrase)) ||
     /(?:http |status |"status":)403\b/.test(text) ||
     /\bunauthenticated\b/.test(text) ||
-    /\bsign in\b/.test(text)
+    SIGN_IN_REFUSALS.some((phrase) => text.includes(phrase))
   );
 }
 
