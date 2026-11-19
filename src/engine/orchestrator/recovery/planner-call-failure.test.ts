@@ -6,6 +6,8 @@ import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factori
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import { error } from '../../../utils/error.js';
+import { spawnPipeError } from '../../../lib/process/spawn/fatal.js';
+import { stdinPromptTransportError } from '../../calls/prompt-transport.js';
 import { CURSOR_MODEL_REFUSAL } from '#testing/helpers/cursor-refusal.js';
 import { inputTooLargeRefusal } from '../../runners/input-limit.js';
 import { streamError } from '../../streaming/stream-errors.js';
@@ -80,6 +82,40 @@ function callFailure(
     error: { code, message },
   });
 }
+
+it('attributes a configured stdin failure on PLAN to SPLITBRIEF', () => {
+  const runner = makeConfig({ planner: { kind: 'shell', command: '/bin/sh' } }).planner;
+  const diagnosis = diagnosePlannerCallFailure({
+    err: stdinPromptTransportError('', spawnPipeError.stdinIncomplete()),
+    label: 'Runner call failed',
+    runner,
+    seat: 'plan',
+  });
+  const issue = buildPlannerCallFailedRecoveryIssue({
+    diagnosis,
+    runner,
+    seat: 'plan',
+    phase: 'planning',
+    createdAt: new Date(0).toISOString(),
+  });
+
+  expect(issue.reason).toBe('planner-call-failed');
+  expect(formatRecoveryPrompt(issue)).toContain('SPLITBRIEF could not deliver the prompt');
+  expect(issue.details).toEqual(['The prompt could not be fully delivered through stdin.']);
+});
+
+it('preserves the PLAN sign-in diagnosis when Antigravity rejects stream input', () => {
+  const diagnostic = 'Error: not logged in. Could not accept stream input.';
+  const diagnosis = diagnosePlannerCallFailure({
+    err: callFailure('prompt-transport-error', diagnostic),
+    label: 'Planning failed',
+    runner: cliSeat('antigravity'),
+    seat: 'plan',
+  });
+
+  expect(diagnosis.failure).toBe('unauthenticated');
+  expect(diagnosis.details).toContain(`Google Antigravity CLI reported: ${diagnostic}`);
+});
 
 const calls = [
   { seat: 'plan', label: 'Planning failed' },

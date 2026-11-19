@@ -4,10 +4,12 @@ import {
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
+import { PROMPT_TRANSPORT_HEADLINE } from '../../../core/recovery/headline.js';
 import { accountCauseAdvice } from '../../../core/recovery/account-cause.js';
 import {
   runnerOwnWords,
   thrownSeatFailure,
+  typedPromptTransportError,
   typedRunnerCallErrorCode,
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
@@ -22,8 +24,12 @@ import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text/diag
 import { labelError } from '../../../utils/format/errors.js';
 import { nowIso } from '../../../utils/format/time.js';
 import { inputTooLargeFigures, type PromptSize } from '../../runners/input-limit.js';
-import { inputTooLargeDetail } from './builders/runner-defect.js';
-import { runnerDefectRow, runnerHaltRow } from './builders/runner-defect.js';
+import {
+  inputTooLargeDetail,
+  promptTransportDetails,
+  runnerDefectRow,
+  runnerHaltRow,
+} from './builders/runner-defect.js';
 import { toolReported } from './builders/seat-down.js';
 import {
   buildPlannerCallFailedRecoveryIssue,
@@ -61,6 +67,7 @@ export type PlannerCallDiagnosis = Readonly<{
   inputSize?: PromptSize | undefined;
   /** Present when the failure is a seat-down cause: what the one halt builder consumes. */
   seatDown?: PlannerSeatDownDiagnosis | undefined;
+  cause?: 'prompt-transport-error' | undefined;
 }>;
 
 /** The tool's own words usually end their sentence already; a second full stop is noise. */
@@ -83,10 +90,24 @@ export function diagnosePlannerCallFailure(
   // "Planner review call failed", which says "failed" twice and hides an expired
   // login entirely.
   const typed = typedRunnerCallErrorMessage(err);
+  const tool = getRunnerCatalogDisplayName(runner);
+  const code = typedRunnerCallErrorCode(err);
   const message =
     typed === null
       ? labelError(input.label, err)
       : `${input.label}: ${sanitizeTerminalDiagnosticText(typed)}`;
+  const transport = typedPromptTransportError(err)?.promptTransport;
+  if (transport?.source === 'stdin') {
+    return {
+      failure: 'call-failed',
+      cause: 'prompt-transport-error',
+      message: PROMPT_TRANSPORT_HEADLINE,
+      tool,
+      details: promptTransportDetails(tool, transport.stderr),
+      words: transport.stderr || PROMPT_TRANSPORT_HEADLINE,
+      resetsAt: null,
+    };
+  }
   // An API error's own message is a rewritten hint with advice of its own, so a
   // halt that gives its advice starts from the provider's words under the hint.
   // A halt line a seat printed last on its stdout is its own words too.
@@ -94,10 +115,10 @@ export function diagnosePlannerCallFailure(
   const words = thrown.source === 'stdout-tail' ? thrown.words : runnerOwnWords(err);
   const advised =
     words === null ? message : `${input.label}: ${sanitizeTerminalDiagnosticText(words)}`;
-  const tool = getRunnerCatalogDisplayName(runner);
-  const code = typedRunnerCallErrorCode(err);
-  // A timeout's words are SPLITBRIEF's own deadline, already the message: nothing to quote.
-  const details = typed === null || code === 'timeout' ? [] : [toolReported(tool, typed)];
+  const details =
+    typed === null || code === 'timeout' || transport?.source === 'local'
+      ? []
+      : [toolReported(tool, typed)];
   const said = words ?? message;
   // A model the tool refused is the tool's own verdict on the seat's model: no
   // reading of the words turns it into a quota or a sign-in, and the halt asks

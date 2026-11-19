@@ -1,7 +1,8 @@
 import type { TaskId } from '../../../core/schemas/task.js';
 import { seatAxisWords } from '../../../core/runners/effort-channel.js';
-import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
+import type { RunnerCallContext, RunnerCallError, RunnerCallResult } from '../../calls/types.js';
 import { createRunnerCallId } from '../../calls/id.js';
+import { RunnerCallErrorSchema } from '../../calls/schema.js';
 import {
   runnerOutcome,
   type RunnerFailureOutcomeState,
@@ -9,6 +10,7 @@ import {
 } from '../../runners/errors.js';
 import type { ImplementerOptions } from '../types.js';
 import { processError } from '../../../lib/process/errors.js';
+import { spawnPipeError } from '../../../lib/process/spawn/fatal.js';
 import {
   classifySeatFailure,
   type SeatFailureClassification,
@@ -85,7 +87,7 @@ function runnerCallStatusMessage(status: Exclude<RunnerCallResult['status'], 'co
   }
 }
 
-function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
+export function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
   switch (code) {
     case 'runner_call_tool_use_stop':
       return 'tool-use-limit';
@@ -204,6 +206,12 @@ export function typedRunnerCallErrorCode(err: unknown): string | null {
   return typeof callError.code === 'string' ? callError.code : null;
 }
 
+export function typedPromptTransportError(err: unknown): RunnerCallError | undefined {
+  const callError = errorData(err)?.error;
+  if (!isRecord(callError) || callError.code !== 'prompt-transport-error') return undefined;
+  return RunnerCallErrorSchema.safeParse(callError).data;
+}
+
 /**
  * The runner's own words for a failed call: the typed call error, else the raw
  * detail an API error keeps under its rewritten hint.
@@ -239,7 +247,11 @@ export function thrownSeatFailure(err: unknown): ThrownSeatFailure {
   const callError = isRecord(data?.error) ? data.error : null;
   const status = callError?.status ?? data?.status ?? data?.statusCode;
   const providerType = callError?.providerType;
-  const words = runnerOwnWords(err) ?? toErrorMessage(err);
+  const deliveryCause =
+    callError?.code === 'prompt-transport-error' && err instanceof Error ? err.cause : undefined;
+  const words = spawnPipeError.isStdinIncomplete(deliveryCause)
+    ? deliveryCause.message
+    : (runnerOwnWords(err) ?? toErrorMessage(err));
   const classification = classifySeatFailure({
     message: words,
     ...(typeof status === 'number' && { status }),

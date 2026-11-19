@@ -113,6 +113,10 @@ describe('getTerminalCellWidth', () => {
   it('measures an empty string as zero cells', () => {
     expect(getTerminalCellWidth('')).toBe(0);
   });
+
+  it('measures a cursor restore sequence as zero cells', () => {
+    expect(getTerminalCellWidth('\u001b8')).toBe(0);
+  });
 });
 
 describe('splitTerminalGraphemes', () => {

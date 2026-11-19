@@ -7,7 +7,7 @@ import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
 import type { RunnerFailureOutcomeState } from '../runners/errors.js';
-import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
+import type { RunnerCallContext, RunnerCallError, RunnerCallEvent } from '../calls/types.js';
 import type { TextChunkMarks } from '../events/types.js';
 import type { CliSeat } from '../runners/seat-gates.js';
 import type { Phase } from '../../core/schemas/enums.js';
@@ -25,6 +25,7 @@ export interface ImplementerResult {
   error?: string | undefined;
   /** Machine outcome behind a failure; the message is for humans, this is not. */
   outcome?: RunnerFailureOutcomeState | undefined;
+  transportError?: RunnerCallError | undefined;
   usage?: TokenDelta | undefined;
   /** What a `file-bundle-v1` response actually did on disk; absent for every other grammar. */
   applyResult?: BundleApplyResult | undefined;

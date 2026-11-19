@@ -25,7 +25,7 @@ export const REVIEW_UNAVAILABLE = 'review-unavailable';
  */
 export type FinalReviewFailure =
   | Readonly<{ kind: 'insufficient-context'; diagnostic: ApiContextDiagnostic }>
-  | Readonly<{ kind: 'call-failed'; code: string; message: string }>
+  | Readonly<{ kind: 'call-failed'; code: string; message: string; details?: string[] }>
   | Readonly<{ kind: 'seat-blocked'; diagnosis: PlannerCallDiagnosis }>
   | Readonly<{
       kind: 'input-too-large';

@@ -81,6 +81,7 @@ function buildNoVerdictReviewIssue(
         : failure.message,
     details: [
       ...(missing.length > 0 ? [`Missing: ${missing.join(', ')}`] : []),
+      ...(failure.kind === 'call-failed' ? (failure.details ?? []) : []),
       ...(opts.details ?? []),
       ...(diagnostic === undefined
         ? []

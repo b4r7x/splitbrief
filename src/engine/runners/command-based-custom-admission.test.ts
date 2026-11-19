@@ -23,7 +23,9 @@ describe('custom command runner admission', () => {
       const admittedRunner = customRunner({
         argv: [
           '-e',
-          `require('node:fs').writeFileSync(${JSON.stringify(admittedEffect)}, 'admitted')`,
+          nodeCliScript(
+            `require('node:fs').writeFileSync(${JSON.stringify(admittedEffect)}, 'admitted')`,
+          ),
         ],
       });
       const competingRunner = customRunner({

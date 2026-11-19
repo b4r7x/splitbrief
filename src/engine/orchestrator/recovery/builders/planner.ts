@@ -146,6 +146,7 @@ export function buildPlannerCallFailedRecoveryIssue(
     facts: compactFacts({
       tool: diagnosis.tool,
       refusal: modelRefusalKind,
+      cause: diagnosis.cause,
       ...(diagnosis.inputSize !== undefined && inputTooLargeFacts(diagnosis.inputSize)),
       ...opts.facts,
     }),

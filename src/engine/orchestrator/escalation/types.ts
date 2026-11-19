@@ -5,7 +5,11 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { ImplementerReport } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { Implementer, ImplementerOptions } from '../../implementers/types.js';
+import type {
+  Implementer,
+  ImplementerOptions,
+  ImplementerResult,
+} from '../../implementers/types.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
@@ -61,7 +65,7 @@ export type EscalationContext = WorkflowContext & {
 };
 
 /** Machine outcome of the attempt that produced `lastError`, with the runner that made it. */
-export type RetryAttemptFailure = {
+export type RetryAttemptFailure = Pick<ImplementerResult, 'transportError'> & {
   outcome: RunnerFailureOutcomeState;
   runner: Config['implementer'];
   /** Bounded tail of the failing attempt's final text; absent when the tool printed none. */
@@ -156,7 +160,7 @@ export type RetryInvokeArgs = {
   seat: RetrySeatTarget;
 };
 
-export type RetryInvokeResult = {
+export type RetryInvokeResult = Pick<ImplementerResult, 'transportError'> & {
   success: boolean;
   error?: string | undefined;
   /** The runner's final text, carried through from `ImplementerResult.output`. */

@@ -37,6 +37,7 @@ async function runnerHalt(
     outcome: failure.outcome,
     runner: failure.runner,
     toolMessage: stepOutcome.lastError,
+    transportError: failure.transportError,
     // The ladder books a timeout before it names the second one in a row a defect.
     booked: failure.outcome === 'runner-timeout-repeated',
   });

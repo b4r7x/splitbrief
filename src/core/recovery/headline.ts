@@ -18,6 +18,8 @@ import {
   reviewFailedCause,
 } from './causes.js';
 
+export const PROMPT_TRANSPORT_HEADLINE = 'SPLITBRIEF could not deliver the prompt';
+
 type RecoveryHeadlineInput = Pick<
   RecoveryIssue,
   'reason' | 'seat' | 'taskId' | 'files' | 'facts' | 'resetAt'
@@ -56,6 +58,12 @@ export function formatRecoveryHeadlineSpans(
   issue: RecoveryHeadlineInput,
   now: number = Date.now(),
 ): readonly SeatLineSpan[] {
+  if (
+    (issue.reason === 'implementer-recipe-invalid' || issue.reason === 'planner-call-failed') &&
+    recoveryFactString(issue.facts, 'cause') === 'prompt-transport-error'
+  ) {
+    return [{ text: PROMPT_TRANSPORT_HEADLINE }];
+  }
   switch (issue.reason) {
     case 'apply-conflict':
       return [{ text: `Apply found ${countNoun(issue.files.length, 'conflicting file')}` }];
@@ -107,7 +115,14 @@ export function formatRecoveryHeadlineSpans(
     case 'scope-violation':
       return [{ text: `${taskName(issue)} wrote outside its declared files` }];
     case 'implementer-recipe-invalid':
-      return [{ text: modelRefusalCause(issue) ?? `Tool recipe rejected by ${toolName(issue)}` }];
+      return [
+        {
+          text:
+            recoveryFactString(issue.facts, 'cause') === 'prompt-preparation'
+              ? 'SPLITBRIEF could not prepare the prompt'
+              : (modelRefusalCause(issue) ?? `Tool recipe rejected by ${toolName(issue)}`),
+        },
+      ];
     case 'implementer-left-isolation':
       return [{ text: leftIsolationCause(taskName(issue)) }];
     case 'checkout-changed':

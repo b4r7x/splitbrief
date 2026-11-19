@@ -638,6 +638,8 @@ Arbitrary command run via `createCommandPlanner(config, 'shell')` / `createComma
 
 The implementer extracts code from stdout (`writesFiles: 'extracted-code'`). The planner reads its answer from stdout.
 
+If a configured shell or agent command exits successfully or is killed while SPLITBRIEF is still sending the prompt, BUILD stops with **Seat down**. If the command exits silently with a nonzero code while the prompt is still being sent, SPLITBRIEF reports that exit code.
+
 ### agent
 
 The same factories with `'agent'`. Like shell, but the subprocess writes files to disk directly instead of returning code in stdout. `createChangeDetector()` compares the workspace after the call with a baseline captured before it (`captureChangeDetectorBaseline`): the changed files with their contents and modes when the directory has `.git`, else a hash of every tracked file. A call that changed nothing fails with `no-files-changed`.

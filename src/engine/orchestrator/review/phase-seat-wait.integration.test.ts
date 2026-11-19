@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -30,6 +30,15 @@ import { haltVerdictlessReview } from './loop/halts.js';
 import { runFinalReviewPhase } from './phase.js';
 import type { FinalReviewResult } from './types.js';
 import { createCliPlanner } from '../../planners/cli.js';
+import { createCommandPlanner } from '../../planners/command-invoke.js';
+import { requireCompletedCall } from '../../planners/require-completed-call.js';
+import { invokeCommandRunner } from '../../runners/command-based.js';
+import { formatRecoveryPrompt } from '../../../features/workflow/recovery/prompt-text.js';
+import { invokeProcessCli } from '../../runners/cli-tools/process-invoke/invoke.js';
+import { claudeCodePlannerAdapter } from '../../runners/cli-tools/claude-code/adapter.js';
+import { antigravityPlannerAdapter } from '../../runners/cli-tools/antigravity/adapter.js';
+import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';
+import { buildPlannerCallFailedRecoveryIssue } from '../recovery/builders/planner.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { CURSOR_MODEL_REFUSAL, writeCursorRefusalShim } from '#testing/helpers/cursor-refusal.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
@@ -37,6 +46,8 @@ import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 const CODEX_REVIEWER = makeNoValidationConfig({ reviewer: { kind: 'cli', tool: 'codex' } });
 const RESET_IN_BOUND = 'HTTP 429: rate limit reached (retry-after: 120)';
 const RESET_PAST_BOUND = 'HTTP 429: rate limit reached (retry-after: 7200)';
+const TERMINAL_RESET = '\u001b(B\u001b[m';
+const CURSOR_RESTORE = '\u001b8';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -354,4 +365,198 @@ describe('a Cursor reviewer that refuses the account', () => {
       }
     },
   );
+});
+
+it.each([
+  { stderr: TERMINAL_RESET, label: 'terminal reset' },
+  { stderr: CURSOR_RESTORE, label: 'cursor restore' },
+])('omits the shell attribution on PLAN for $label', async ({ stderr }) => {
+  const ref = project();
+  const runner = {
+    kind: 'shell' as const,
+    command: '/bin/sh',
+    args: ['-c', 'printf "%s" "$1" >&2; exit 0', 'plan', stderr],
+  };
+  const err = await invokeCommandRunner({
+    source: { kind: 'config', runner, env: process.env, notFoundMessage: 'Missing shell' },
+    cwd: ref.projectDir,
+    prompt: 'p'.repeat(1024 * 1024),
+    callContext: { role: 'planner', callId: 'plan', backendKind: 'shell' },
+  }).then(
+    () => {
+      throw new Error('The PLAN call returned before consuming the prompt');
+    },
+    (err: unknown) => err,
+  );
+  const diagnosis = diagnosePlannerCallFailure({
+    err,
+    label: 'Planning failed',
+    runner,
+    seat: 'plan',
+  });
+  const issue = buildPlannerCallFailedRecoveryIssue({
+    diagnosis,
+    runner,
+    seat: 'plan',
+    phase: 'planning',
+    createdAt: new Date(0).toISOString(),
+  });
+  const panel = formatRecoveryPrompt(issue);
+  expect(panel).toContain('The prompt could not be fully delivered through stdin.');
+  expect(panel).not.toContain('Custom Shell reported:');
+});
+
+it.each([
+  { stderr: '', label: 'silent', reported: false },
+  { stderr: TERMINAL_RESET, label: 'terminal reset only', reported: false },
+  { stderr: CURSOR_RESTORE, label: 'cursor restore only', reported: false },
+  { stderr: 'Check the workspace index', label: 'stderr', reported: true },
+])('saves and displays the final REVIEW transport failure ($label)', async (row) => {
+  const { stderr, reported } = row;
+  const ref = project();
+  writeSpecFile(ref, SPEC_FILE, '# Spec\n' + 'Review the context.\n'.repeat(60_000), null);
+  const runner = {
+    kind: 'shell' as const,
+    command: '/bin/sh',
+    args: ['-c', 'printf "%s" "$1" >&2; exit 0', 'review', stderr],
+    contextLength: 1_000_000,
+  };
+  const config = makeNoValidationConfig({ planner: runner, reviewer: runner });
+  writeConfig(ref.projectDir, config);
+  const { bus } = makeBusRecorder();
+  const result = await review(
+    ref,
+    doneState(makeTask({ id: 'T001' })),
+    createCommandPlanner(config, 'shell'),
+    bus,
+    config,
+  );
+  await halt(ref, result, bus, config);
+
+  const issue = loadState(ref)?.pendingRecovery;
+  if (!issue) throw new Error('Review did not save a recovery issue');
+  const panel = formatRecoveryPrompt(issue);
+  expect(issue.reason).toBe('review-failed');
+  expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
+  expect(panel).toContain('SPLITBRIEF could not deliver the prompt');
+  expect(panel).toContain('The prompt could not be fully delivered through stdin.');
+  expect(panel).not.toMatch(/reported: .*prompt could not be fully delivered/);
+  if (reported) expect(panel).toContain(`Custom Shell reported: ${stderr}`);
+  else expect(panel).not.toContain('reported:');
+});
+
+it.each([
+  {
+    tool: 'claude-code',
+    adapter: claudeCodePlannerAdapter,
+    words: 'Claude Code image attachments could not be read',
+    attribution: 'Claude Code CLI reported:',
+  },
+  {
+    tool: 'antigravity',
+    adapter: antigravityPlannerAdapter,
+    words: 'failed to decode stream input',
+    attribution: 'Antigravity CLI reported:',
+  },
+] as const)('shows the actual $tool diagnostic on PLAN and once on final REVIEW', async (row) => {
+  const ref = project();
+  const marker = join(ref.projectDir, 'started');
+  const shim = join(ref.projectDir, 'runner');
+  const fixture = resolve('testing/fixtures/antigravity/stream-input-bad-json');
+  writeFileSync(
+    shim,
+    [
+      '#!/bin/sh',
+      `touch "${marker}"`,
+      'cat >/dev/null',
+      `cat "${fixture}.ndjson"`,
+      `cat "${fixture}.stderr.txt" >&2`,
+      'exit 1',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  const path = realpathSync(shim);
+  const { dev, ino, size, mtimeMs } = statSync(path);
+  const images =
+    row.tool === 'claude-code'
+      ? [
+          {
+            id: 'attached',
+            kind: 'image' as const,
+            path: join(ref.projectDir, 'missing.png'),
+            mimeType: 'image/png',
+            sizeBytes: 12,
+          },
+        ]
+      : [];
+  const args = row.adapter.baseArgs({
+    model: undefined,
+    effort: undefined,
+    projectDir: ref.projectDir,
+    configuredArgs: [],
+    sessionId: null,
+    imagePaths: images.map((image) => image.path),
+  });
+  const invoke = (role: 'planner' | 'review') =>
+    invokeProcessCli(row.adapter, {
+      invocation: {
+        executable: { path, fingerprint: { dev, ino, size, mtimeMs } },
+        args,
+        baseArgs: args,
+        promptTransport: row.adapter.promptTransport,
+        environment: { PATH: process.env.PATH ?? '' },
+        cwd: ref.projectDir,
+        images,
+        signal: undefined,
+      },
+      prompt: 'Inspect screenshot',
+      callContext: { callId: role, role, backendKind: 'cli' },
+    });
+
+  const runner = { kind: 'cli', tool: row.tool } as const;
+  const config = makeNoValidationConfig({ planner: runner, reviewer: runner });
+  writeConfig(ref.projectDir, config);
+  const planError = await invoke('planner').then((call) => {
+    try {
+      requireCompletedCall(call);
+    } catch (error) {
+      return error;
+    }
+    throw new Error('The PLAN call completed');
+  });
+  const diagnosis = diagnosePlannerCallFailure({
+    err: planError,
+    label: 'Planning failed',
+    runner,
+    seat: 'plan',
+  });
+  const planIssue = buildPlannerCallFailedRecoveryIssue({
+    diagnosis,
+    runner,
+    phase: 'planning',
+    createdAt: new Date(0).toISOString(),
+  });
+
+  const reviewer = makePlanner({
+    typedCall: ({ seat }) => ({
+      seat,
+      typedOutput: 'strict-native',
+      canResume: false,
+      invoke: () => invoke('review'),
+    }),
+  });
+  const { bus } = makeBusRecorder();
+  const result = await review(ref, doneState(makeTask({ id: 'T001' })), reviewer, bus, config);
+  await halt(ref, result, bus, config);
+  const reviewIssue = loadState(ref)?.pendingRecovery;
+  if (!reviewIssue) throw new Error('Review did not save a recovery issue');
+  expect(reviewIssue.reason).toBe('review-failed');
+  expect(existsSync(marker)).toBe(row.tool === 'antigravity');
+  const planPanel = formatRecoveryPrompt(planIssue);
+  const reviewPanel = formatRecoveryPrompt(reviewIssue);
+  expect(planPanel).toContain(row.words);
+  if (row.tool === 'claude-code') expect(planPanel).not.toContain(row.attribution);
+  else expect(planPanel).toContain(row.attribution);
+  expect(reviewPanel.split(row.words).length - 1).toBe(1);
+  expect(reviewPanel).not.toContain(row.attribution);
 });

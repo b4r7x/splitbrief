@@ -18,8 +18,10 @@ import {
   ABORTED_OUTCOME_TEXT,
   createImplementerCallContext,
   errorOutput,
+  failureStateFromCode,
   isSeatDown,
   thrownSeatFailure,
+  typedPromptTransportError,
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { readTaskFileContent } from './extracted-code.js';
@@ -230,6 +232,19 @@ async function thrownOutcome(
   }
   if (seat.shouldThrow(err)) throw err;
   const output = errorOutput(err);
+  const transportError = typedPromptTransportError(err);
+  if (transportError !== undefined) {
+    implBuffer?.flush();
+    const error = toErrorMessage(err);
+    seat.failTask(opts, error);
+    return {
+      success: false,
+      output,
+      error,
+      outcome: failureStateFromCode(transportError.code) ?? undefined,
+      transportError,
+    };
+  }
   // A tool that changed during the run and failed its new check: a sign-in
   // failure takes the sign-out route, which quotes the check's words and
   // gives its own login step; every other cause halts on the check and its fix.

@@ -31,6 +31,9 @@ import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
 import { admittedCliSeat } from '#testing/helpers/runner-gate.js';
 import { killOrphanRunner } from '#testing/helpers/orphan-runner.js';
+import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { buildSeatHalt } from '../orchestrator/escalation/halts.js';
 
 let projectDir: string;
 let shimDir: string;
@@ -271,6 +274,48 @@ it('steers OpenCode through the implementer sandbox with bridged credentials and
 });
 
 describe('createCliImplementer (claude-code)', () => {
+  it('attributes an unreadable image to SPLITBRIEF before launching Claude Code', async () => {
+    const { argvFile } = installRecordingClaudeShim('src/hello.ts');
+    const config = makeClaudeConfig();
+    const task = makeTask();
+    const result = await createCliImplementer(cliClaudeImplementer).implement({
+      task,
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      images: [
+        {
+          id: 'attached',
+          kind: 'image',
+          path: join(projectDir, 'missing.png'),
+          mimeType: 'image/png',
+          sizeBytes: 12,
+        },
+      ],
+    });
+    expect(existsSync(argvFile)).toBe(false);
+    if (result.outcome !== 'implementer-recipe-invalid' || result.error === undefined)
+      throw new Error(`Expected a recipe halt: ${result.error}`);
+    const halt = await buildSeatHalt(
+      makeWctx({ projectDir, sessionId: 'build-transport', config }),
+      makeImplState([task]),
+      task,
+      {
+        ...result,
+        outcome: result.outcome,
+        runner: config.implementer,
+        toolMessage: result.error,
+        booked: false,
+      },
+    );
+    expect(halt?.issue.reason).toBe('implementer-recipe-invalid');
+    expect(halt?.issue.details.join(' ')).toContain(
+      'Claude Code image attachments could not be read',
+    );
+    expect(halt?.issue.details.join(' ')).not.toContain('Claude Code CLI reported:');
+  });
+
   it('invokes claude with --permission-mode acceptEdits so writes are not auto-denied', async () => {
     const { argvFile } = installRecordingClaudeShim('src/hello.ts');
     const config = makeClaudeConfig();

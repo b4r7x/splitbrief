@@ -75,6 +75,8 @@ export interface RunnerCallRecorder {
   finishFailed: (opts: {
     status: RunnerCallFailureStatus;
     error: RunnerCallError;
+    /** Delivery can fail after a configured runner has already reported its result. */
+    supersedeParsedFailure?: true | undefined;
     usage?: RunnerCallUsage | null | undefined;
     nativeSessionId?: string | null | undefined;
     partial?: boolean | undefined;

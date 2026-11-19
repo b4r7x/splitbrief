@@ -48,14 +48,17 @@ export async function spawnWithStdin(opts: {
     return isFatalSignal(result) ? result : undefined;
   });
 
-  const exitFailure = (code: number | null): Error => {
-    if (code === 127) return processError.notFound(opts.command, opts.notFoundMessage);
+  const exitFailure = (code: number | null, incompleteStdin = false): Error => {
     const stderrText = stderrOutput.snapshot().text;
+    const output = rawText.snapshot().text;
+    if (code === 127 && (!incompleteStdin || stderrText.trim() || output.trim())) {
+      return processError.notFound(opts.command, opts.notFoundMessage);
+    }
     return processError.exitCode({
       command: opts.command,
       code,
       stderr: stderrText,
-      output: rawText.snapshot().text,
+      output,
       detail: stderrText.trim() ? undefined : opts.errorDetail?.(),
     });
   };
@@ -96,16 +99,13 @@ export async function spawnWithStdin(opts: {
       };
     },
   }).catch((err: unknown) => {
-    // A child that stops on its own error (a usage limit, a dead login) before
-    // it reads the whole prompt breaks the pipe under it: its words, not the
-    // pipe, are the diagnosis.
+    // A nonzero exit explains why the child stopped reading, even if it printed nothing.
     if (
       spawnPipeError.isStdinIncomplete(err) &&
-      err.data !== undefined &&
-      err.data.code !== 0 &&
-      (stderrOutput.snapshot().text.trim() || rawText.snapshot().text.trim())
+      typeof err.data?.code === 'number' &&
+      err.data.code !== 0
     ) {
-      throw exitFailure(err.data.code);
+      throw exitFailure(err.data.code, true);
     }
     throw err;
   });

@@ -5,6 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { revertedDir } from '../../../core/paths.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { nowIso } from '../../../utils/format/time.js';
+import type { ImplementerResult } from '../../implementers/types.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import { classifySeatFailure } from '../../runners/seat-failure/classify.js';
 import { publishError } from '../publish/notice.js';
@@ -22,7 +23,7 @@ type SeatHaltScope = Pick<
 >;
 
 /** A failed call of the BUILD seat: the outcome its runner reported, in the tool's own words. */
-type BuildSeatFailure = {
+type BuildSeatFailure = Pick<ImplementerResult, 'transportError'> & {
   outcome: RunnerFailureOutcomeState;
   runner: Config['implementer'];
   toolMessage: string;
@@ -96,6 +97,7 @@ export async function buildSeatHalt(
   const issue = build({
     ...haltBase(scope, state, task, failure),
     toolMessage,
+    transportError: failure.transportError,
     ...(seatSwap !== undefined && { seatSwap }),
     ...(state.workspace?.kind === 'checkout' && {
       inPlace: { revertedDir: revertedDir(scope) },

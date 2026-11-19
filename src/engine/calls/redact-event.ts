@@ -44,6 +44,12 @@ export function redactRunnerCallEventInput(
           ...(input.error.providerType !== undefined && {
             providerType: redact(input.error.providerType),
           }),
+          ...(input.error.promptTransport !== undefined && {
+            promptTransport:
+              input.error.promptTransport.source === 'stdin'
+                ? { source: 'stdin', stderr: redact(input.error.promptTransport.stderr) }
+                : input.error.promptTransport,
+          }),
         },
         ...(input.rawTail !== undefined && { rawTail: redact(input.rawTail) }),
         nativeSessionId: input.nativeSessionId === null ? null : redact(input.nativeSessionId),

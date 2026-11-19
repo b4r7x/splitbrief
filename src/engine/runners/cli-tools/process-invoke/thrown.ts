@@ -8,7 +8,11 @@ import {
   RUNNER_CALL_STOPPED_ERROR,
   runnerCallIdleTimeoutError,
 } from '../../../calls/status.js';
-import type { RunnerCallFailureStatus, RunnerCallResult } from '../../../calls/types.js';
+import type {
+  RunnerCallError,
+  RunnerCallFailureStatus,
+  RunnerCallResult,
+} from '../../../calls/types.js';
 import {
   callbackFailure,
   errorMessage,
@@ -17,11 +21,12 @@ import {
   haltFailure,
 } from './failures.js';
 import type { ProcessCall } from './types.js';
+import { stdinPromptTransportCallError } from '../../../calls/prompt-transport.js';
 
 function failCall(
   call: ProcessCall,
   status: RunnerCallFailureStatus,
-  error: { code: string; message: string },
+  error: RunnerCallError,
 ): RunnerCallResult {
   return finishFailureSafely({
     recorder: call.state.recorder,
@@ -89,18 +94,21 @@ export function thrownCallResult(call: ProcessCall, cause: unknown): RunnerCallR
     // these the pipe stays the cause.
     const ownExitCode = cause.data?.code;
     const { stderr } = state;
-    const diagnostic = stderr.trim();
     return failCall(
       call,
       'failed',
       haltFailure(stderr, [state.stdoutLastLine, state.stdoutTailCarry], state.recognizedHalt) ??
         (typeof ownExitCode === 'number' && ownExitCode !== 0
           ? { code: 'non-zero-exit', message: `CLI exited with code ${ownExitCode}` }
-          : {
-              code: 'prompt-transport-error',
-              message: `CLI prompt could not be fully delivered through stdin${diagnostic === '' ? '' : `: ${diagnostic}`}`,
-            }),
+          : stdinPromptTransportCallError('CLI', stderr, credentialValues)),
     );
+  }
+  if (matches('prompt-transport-error')(cause)) {
+    return failCall(call, 'failed', {
+      code: cause.kind,
+      message: cause.message,
+      promptTransport: { source: 'local' },
+    });
   }
   const fatalState = fatalStateOf(cause);
   if (fatalState !== null) {

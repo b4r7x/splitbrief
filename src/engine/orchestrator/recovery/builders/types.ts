@@ -1,5 +1,6 @@
 import type { Config } from '../../../../core/schemas/config.js';
 import type { SeatSwitchRecord } from '../../../../core/schemas/workflow/seat.js';
+import type { RunnerCallError } from '../../../calls/types.js';
 import type { SeatSwapContext } from '../seat/swap-context.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
 
@@ -13,6 +14,7 @@ import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
 export interface RunnerFailureRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
   runner: Config['implementer'];
   toolMessage: string;
+  transportError?: RunnerCallError | undefined;
   seatSwap?: SeatSwapContext | undefined;
   /** The switches this run already made, so a seat is moved to its fallback at most once. */
   seatSwitches?: readonly SeatSwitchRecord[] | undefined;

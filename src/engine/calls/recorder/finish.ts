@@ -76,8 +76,15 @@ export function finishFailed(
   state: RunnerCallRecorderState,
   finishOpts: Parameters<RunnerCallRecorder['finishFailed']>[0],
 ): RunnerCallResult {
-  if (state.hasTerminalEvent) return snapshot(state);
+  if (state.hasTerminalEvent) {
+    const current = snapshot(state);
+    if (!finishOpts.supersedeParsedFailure || current.error?.code !== 'runner_result_error') {
+      return current;
+    }
+    state.hasTerminalEvent = false;
+  }
   const defaults = currentTerminalDefaults(state, finishOpts);
+  const { promptTransport } = finishOpts.error;
   const providerType =
     finishOpts.error.providerType === undefined
       ? undefined
@@ -89,6 +96,18 @@ export function finishFailed(
           message: boundedRunnerCallMessage(finishOpts.error.message, state.credentialValues),
           ...(finishOpts.error.status !== undefined && { status: finishOpts.error.status }),
           ...(providerType !== undefined && { providerType }),
+          ...(promptTransport !== undefined && {
+            promptTransport:
+              promptTransport.source === 'stdin'
+                ? {
+                    source: 'stdin' as const,
+                    stderr: boundedRunnerCallMessage(
+                      promptTransport.stderr,
+                      state.credentialValues,
+                    ),
+                  }
+                : promptTransport,
+          }),
         }
       : {
           code: state.toolUseStop.code,

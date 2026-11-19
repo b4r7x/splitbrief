@@ -117,6 +117,9 @@ async function runRetryStepAttempt(
         lastFailure: {
           outcome: retryResult.outcome,
           runner: retryResult.runner ?? ctx.config.implementer,
+          ...(retryResult.transportError !== undefined && {
+            transportError: retryResult.transportError,
+          }),
           ...(handBack !== undefined && { handBack }),
         },
       }),

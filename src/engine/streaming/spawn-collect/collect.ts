@@ -117,7 +117,7 @@ function createCollectCall(opts: SpawnAndCollectOptions): CollectCall {
     credentialValues,
     stopAfterToolUses: opts.maxToolCalls,
     onLimit: () => limitController.abort(),
-    onEvent: (event) => opts.onCallEvent?.(event),
+    onEvent: opts.onCallEvent,
   });
   const parsedRecorder = createParsedLineRecorder({ recorder, onText: opts.onText });
   const stream = createRedactedStream({

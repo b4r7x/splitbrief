@@ -84,6 +84,9 @@ export async function callOutcome(seat: CallSeat, call: ReturnedCall): Promise<I
       output: outputText,
       error,
       ...(outcome.state !== 'success' && { outcome: outcome.state }),
+      ...(callResult.error.code === 'prompt-transport-error' && {
+        transportError: callResult.error,
+      }),
       ...usageField,
     };
   }

@@ -80,6 +80,7 @@ export async function handleFailedImplementation(
           outcome: failed.outcome,
           runner: wctx.config.implementer,
           toolMessage: failed.error ?? unreportedWords(failed.outcome),
+          transportError: failed.transportError,
           booked: false,
         });
   if (halt !== undefined) {

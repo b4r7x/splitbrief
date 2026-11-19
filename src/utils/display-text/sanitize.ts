@@ -20,7 +20,7 @@ const CSI_SEQUENCE_PATTERN = new RegExp(
   `(?:${ESC}\\[[0-?]*[ -/]*[@-~]|${CSI}[0-?]*[ -/]*[@-~])`,
   'g',
 );
-const ESCAPE_SEQUENCE_PATTERN = new RegExp(`${ESC}(?:[ -/]*[@-~]|[@-Z\\\\-_])`, 'g');
+const ESCAPE_SEQUENCE_PATTERN = new RegExp(`${ESC}[ -/]*[0-~]`, 'g');
 const CONTROL_CHARACTER_EXCEPT_WHITESPACE_PATTERN = new RegExp(
   `[${C0_CONTROL_RANGE_EXCEPT_WHITESPACE}${C1_CONTROL_RANGE}]`,
   'g',

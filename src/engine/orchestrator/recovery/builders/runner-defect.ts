@@ -4,6 +4,7 @@ import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.
 import type { ModelRefusal } from '../../../../core/runners/route-auth.js';
 import type { Config } from '../../../../core/schemas/config.js';
 import type { RecoveryIssue, SwitchSeatOffer } from '../../../../core/schemas/recovery/schemas.js';
+import { oneLineDisplayText } from '../../../../utils/display-text/sanitize.js';
 import {
   type PromptSize,
   inputTooLargeSentence,
@@ -48,6 +49,13 @@ export function refusalStopDetail(refusal: ModelRefusal | undefined): string {
   return `The run stopped instead of spending retries on ${refusal === undefined ? 'a command the tool cannot accept' : 'a model the tool refuses'}.`;
 }
 
+export function promptTransportDetails(tool: string, stderr: string): string[] {
+  return [
+    'The prompt could not be fully delivered through stdin.',
+    ...(oneLineDisplayText(stderr) ? [toolReported(tool, stderr)] : []),
+  ];
+}
+
 /**
  * A refused command line or a refused model (`refusal`): both halt as
  * `implementer-recipe-invalid`, and the `refusal` fact tells the headline which.
@@ -59,6 +67,13 @@ function recipeHaltIssue(
   refusal?: ModelRefusal,
 ): RecoveryIssue {
   const displayName = getRunnerCatalogDisplayName(opts.runner);
+  const transport = opts.transportError?.promptTransport;
+  const details =
+    transport?.source === 'stdin'
+      ? promptTransportDetails(displayName, transport.stderr)
+      : transport?.source === 'local'
+        ? [opts.toolMessage]
+        : [toolReported(displayName, opts.toolMessage), refusalStopDetail(refusal)];
   const actions = haltActions('implementer-recipe-invalid', [
     'retry-same-worker',
     seatSwap === undefined ? undefined : 'switch-seat',
@@ -72,19 +87,18 @@ function recipeHaltIssue(
     task: opts.task,
     files: taskFiles(opts.task),
     affectedTaskIds: [opts.task.id],
-    message,
-    details: [
-      toolReported(displayName, opts.toolMessage),
-      refusalStopDetail(refusal),
-      ...attemptDetails(opts.attempts),
-    ],
+    message: transport === undefined ? message : opts.toolMessage,
+    details: [...details, ...attemptDetails(opts.attempts)],
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({
       tool: displayName,
       model: runnerModel(opts.runner),
-      recipeMessage: opts.toolMessage,
-      refusal,
+      ...(transport === undefined
+        ? { recipeMessage: opts.toolMessage, refusal }
+        : {
+            cause: transport.source === 'stdin' ? 'prompt-transport-error' : 'prompt-preparation',
+          }),
     }),
     availableActions: actions,
     recommendedAction: chooseRecommended(actions, ['switch-seat']),

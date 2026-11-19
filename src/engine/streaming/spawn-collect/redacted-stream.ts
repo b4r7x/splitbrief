@@ -2,6 +2,7 @@ import { createLineBuffer } from '../../../lib/process/line-buffer.js';
 import type { SpawnPipeFatalSignal } from '../../../lib/process/spawn/types.js';
 import { runnerCallLineOutputLimit } from '../../calls/output-limit.js';
 import type { RunnerCallRecorder } from '../../calls/recorder/types.js';
+import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from '../../calls/schema.js';
 import type { TextChunkMarks } from '../../events/types.js';
 import {
   type CustomRunnerRedactor,
@@ -27,6 +28,7 @@ type SubagentLine = {
 type RedactedStreamState = {
   /** The channel of the main-loop text that the stdout redactor holds. */
   stdoutChannel: ParsedTextChannel;
+  stderrPrefix: string;
   readonly subagentRedactors: Map<string, CustomRunnerStreamingRedactor>;
   /** Subagent lines that wait while the stdout redactor holds main-loop text. */
   readonly pendingSubagentLines: SubagentLine[];
@@ -72,7 +74,12 @@ export function createRedactedStream(input: {
     stderrRedactor: createCustomRunnerStreamingRedactor(redactCredential, protectedValues),
     stderrBuffer: createRunnerCallStderrBuffer(input.recorder),
     onStderr: input.onStderr,
-    state: { stdoutChannel: 'stdout', subagentRedactors: new Map(), pendingSubagentLines: [] },
+    state: {
+      stdoutChannel: 'stdout',
+      stderrPrefix: '',
+      subagentRedactors: new Map(),
+      pendingSubagentLines: [],
+    },
   };
 }
 
@@ -208,6 +215,8 @@ export function applyParsed(stream: RedactedStream, parsed: ParsedLine): void {
 
 function emitStderr(stream: RedactedStream, chunk: string): void {
   if (chunk.length === 0) return;
+  const remaining = RUNNER_CALL_MESSAGE_MAX_LENGTH - stream.state.stderrPrefix.length;
+  if (remaining > 0) stream.state.stderrPrefix += chunk.slice(0, remaining);
   stream.stderrBuffer.push(chunk);
   stream.onStderr?.(chunk);
 }

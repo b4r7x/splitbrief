@@ -270,6 +270,51 @@ describe('an OpenCode route refusal (provider.no-route)', () => {
 });
 
 describe('buildRecipeInvalidRecoveryIssue', () => {
+  it.each([
+    { runner: { kind: 'agent', command: '/bin/sh', model: 'test' } as const, label: 'Agent' },
+    { runner: { kind: 'cli', tool: 'cursor' } as const, label: 'Cursor CLI' },
+  ])('attributes silent stdin failure for $label to SPLITBRIEF', ({ runner }) => {
+    const toolMessage = `${runner.kind === 'cli' ? 'CLI' : 'Command'} prompt could not be fully delivered through stdin`;
+    const transportError = {
+      code: 'prompt-transport-error',
+      message: toolMessage,
+      promptTransport: { source: 'stdin', stderr: '' },
+    } as const;
+    const issue = buildRecipeInvalidRecoveryIssue({
+      task: makeTask(),
+      runner: makeConfig({ implementer: runner }).implementer,
+      toolMessage,
+      ...{ transportError },
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('implementer-recipe-invalid');
+    expect(formatRecoveryHeadline(issue)).toBe('SPLITBRIEF could not deliver the prompt');
+    expect(issue.details[0]).toContain('prompt could not be fully delivered through stdin');
+    expect(issue.details.join('\n')).not.toContain('reported:');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('quotes only the stderr of a runner that closed stdin', () => {
+    const toolMessage = 'Command prompt could not be fully delivered through stdin: Check the log';
+    const transportError = {
+      code: 'prompt-transport-error',
+      message: toolMessage,
+      promptTransport: { source: 'stdin', stderr: 'Check the log' },
+    } as const;
+    const issue = buildRecipeInvalidRecoveryIssue({
+      task: makeTask(),
+      runner: makeConfig({ implementer: { kind: 'agent', command: '/bin/sh', model: 'test' } })
+        .implementer,
+      toolMessage,
+      ...{ transportError },
+      createdAt,
+    });
+
+    expect(issue.details[0]).toContain('prompt could not be fully delivered through stdin');
+    expect(issue.details[1]).toBe('Agent reported: Check the log');
+  });
+
   it('names the tool that refused the command line and offers a retry or end', () => {
     const issue = buildRecipeInvalidRecoveryIssue({
       task: makeTask({ id: 'T022' }),
@@ -518,4 +563,18 @@ describe('buildRunnerInputTooLargeRecoveryIssue', () => {
       facts: { tool: 'Claude Code CLI' },
     });
   });
+});
+
+it('quotes a recipe rejection even when the tool uses the stdin diagnostic as its opening words', () => {
+  const runner = makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }).implementer;
+  const words = 'CLI prompt could not be fully delivered through stdin: unknown option --recipe';
+  const issue = buildRecipeInvalidRecoveryIssue({
+    task: makeTask(),
+    runner,
+    toolMessage: words,
+    createdAt,
+  });
+
+  expect(formatRecoveryHeadline(issue)).toBe('Tool recipe rejected by Claude Code CLI');
+  expect(issue.details).toContain(`Claude Code CLI reported: ${words}`);
 });

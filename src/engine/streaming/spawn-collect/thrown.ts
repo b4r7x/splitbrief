@@ -1,4 +1,5 @@
 import { processError } from '../../../lib/process/errors.js';
+import { spawnPipeError } from '../../../lib/process/spawn/fatal.js';
 import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -7,6 +8,7 @@ import {
   runnerCallIdleTimeoutError,
   RUNNER_CALL_STOPPED_ERROR,
 } from '../../calls/status.js';
+import { stdinPromptTransportError } from '../../calls/prompt-transport.js';
 import { customRunnerToolInputStateLimitError } from '../../runners/custom/tool-input-redaction.js';
 import { spawnCollectError } from './cancellation.js';
 import { flushStderr, flushStdout, toolInputCapacityExceeded } from './redacted-stream.js';
@@ -41,6 +43,15 @@ export function thrownCollectResult(call: CollectCall, err: unknown): CollectRes
   }
   flushStdout(stream);
   flushStderr(stream);
+  if (spawnPipeError.isStdinIncomplete(err) && cancellation.source() === 'none') {
+    const failure = stdinPromptTransportError(stream.state.stderrPrefix, err);
+    recorder.finishFailed({
+      status: 'failed',
+      error: failure.data.error,
+      supersedeParsedFailure: true,
+    });
+    throw failure;
+  }
   const redactedError = redactThrownError(err, redactCredential);
   if (!recorder.hasTerminal()) {
     const cancellationSource = cancellation.source();

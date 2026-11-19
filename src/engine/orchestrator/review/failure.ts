@@ -51,7 +51,8 @@ export function publishReviewFailure(input: {
   let failure = input.named;
   let message: string;
   let resetAt: string | undefined;
-  if (typedRunnerCallErrorCode(err) === 'input-too-large') {
+  const callErrorCode = typedRunnerCallErrorCode(err);
+  if (callErrorCode === 'input-too-large') {
     const sent = promptLength(input.sent.text + input.sent.suffix);
     const figures = inputTooLargeFigures(typedRunnerCallErrorMessage(err) ?? '');
     failure = {
@@ -80,7 +81,12 @@ export function publishReviewFailure(input: {
     resetAt = diagnosis.resetsAt?.toISOString();
     failure =
       diagnosis.failure === 'call-failed'
-        ? { kind: 'call-failed', code: errorKind(err) ?? REVIEW_UNAVAILABLE, message }
+        ? {
+            kind: 'call-failed',
+            code: errorKind(err) ?? REVIEW_UNAVAILABLE,
+            message,
+            ...(diagnosis.cause === 'prompt-transport-error' && { details: diagnosis.details }),
+          }
         : { kind: 'seat-blocked', diagnosis };
   }
   if (failure.kind !== 'seat-blocked')

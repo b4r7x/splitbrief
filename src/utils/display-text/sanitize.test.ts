@@ -12,6 +12,18 @@ describe('stripTerminalControls', () => {
     expect(stripTerminalControls(text)).toBe('abcdefg h');
   });
 
+  it.each([
+    ['save', '\u001b7'],
+    ['restore', '\u001b8'],
+  ])('removes the cursor %s sequence', (_, sequence) => {
+    expect(stripTerminalControls(sequence)).toBe('');
+  });
+
+  it('keeps printed digits when removing a cursor restore sequence', () => {
+    expect(stripTerminalControls('8')).toBe('8');
+    expect(stripTerminalControls('Error 8\u001b8')).toBe('Error 8');
+  });
+
   it('turns each run of line breaks and tabs into one space on one row', () => {
     expect(stripTerminalControls('a\nb')).toBe('a b');
     expect(stripTerminalControls('a\r\nb')).toBe('a b');
