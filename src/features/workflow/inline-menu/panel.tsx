@@ -1,5 +1,5 @@
+import { PanelSurface } from '../../../components/overlays/surface.js';
 import type { ReactNode } from 'react';
-import { Box } from 'ink';
 import { fitKeyLegend } from '../../../components/key-legend.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
@@ -23,7 +23,7 @@ export function InlineMenuPanel({
 }) {
   const t = useTheme();
   return (
-    <Box
+    <PanelSurface
       width={width}
       height={height}
       {...(framed && {
@@ -47,6 +47,6 @@ export function InlineMenuPanel({
           {fitKeyLegend(legend, Math.max(1, width - 4))}
         </Text>
       )}
-    </Box>
+    </PanelSurface>
   );
 }

@@ -1,23 +1,20 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
-import { ListRow } from '../../../components/list-row/row.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
-import { availableRows } from '../../../components/pickers/scroll-offset.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
-import { wrapOnWords } from '../picker/byline.js';
-import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { useStores } from '../../../stores/use-many.js';
 import { SingleColumnPicker } from './single-column.js';
 import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
-import { glyph } from '../../../lib/glyphs.js';
 import type { LeftColumnProps, RightColumnProps } from './types.js';
 import { useTwoColumnState } from './use-nav-state.js';
-import { isRealRightItem, isVirtualCustomItem } from './virtual-items.js';
+import { isRealRightItem } from './virtual-items.js';
 import { bylineLines, BYLINE_ROWS, getHint, type PickerHintKind } from './hint.js';
-import { TerminalPaneCard } from './terminal-pane-card.js';
-import { buildRightDisplay, type RightDisplaySlot } from './right-display.js';
+import { PaneDetails } from './terminal-pane-card.js';
+import { wrapPaneLines, fitPaneLines } from './pane-lines.js';
+import { Divider } from '../../../components/divider.js';
+import { pickerLayout, COLUMN_GAP, INNER_CHROME_ROWS } from './layout.js';
+import { ModelsColumn } from './models-column.js';
 
 export interface PreviewContext<L, R> {
   activeColumn: 'left' | 'right';
@@ -48,14 +45,6 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
 }
 
 const PREVIEW_MIN_COLS = 50;
-const INNER_PADDING = 4;
-const COLUMN_GAP = 3;
-const OUTER_CHROME_ROWS = 6;
-const INNER_CHROME_ROWS = 4;
-/** The least room between the title and a step label that shares its row. */
-const HEAD_GAP = 2;
-const VISIBLE_ROWS_CAP = 18;
-
 export function TwoColumnPicker<L extends FilterableItem, R extends { id: string }>({
   title,
   stepLabel,
@@ -71,30 +60,18 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
 
-  const totalBoxWidth = overlayWidth({ cols, density: 'wide' });
-  // The columns reserve every wrapped label row so the header stays inside the viewport.
-  const headStacked =
-    stepLabel !== undefined &&
-    stepLabel !== '' &&
-    getTerminalCellWidth(title) + HEAD_GAP + getTerminalCellWidth(stepLabel) > totalBoxWidth;
-  const stepLabelLines = headStacked
-    ? wrapOnWords(stepLabel, totalBoxWidth, Number.POSITIVE_INFINITY).lines
-    : stepLabel
-      ? [stepLabel]
-      : [];
-  const maxVisible = Math.min(
-    availableRows({
-      rows,
-      chromeRows: OUTER_CHROME_ROWS + INNER_CHROME_ROWS + (headStacked ? stepLabelLines.length : 0),
-    }),
-    VISIBLE_ROWS_CAP,
-  );
-  const columnHeight = maxVisible + INNER_CHROME_ROWS;
-  // The odd cell goes to the Models column, which carries the longer strings.
-  const leftBoxWidth = Math.floor((totalBoxWidth - COLUMN_GAP) / 2);
-  const rightBoxWidth = totalBoxWidth - COLUMN_GAP - leftBoxWidth;
-  const leftContentWidth = Math.max(1, leftBoxWidth - INNER_PADDING);
-  const rightContentWidth = Math.max(1, rightBoxWidth - INNER_PADDING);
+  const {
+    singlePane,
+    totalBoxWidth,
+    headStacked,
+    stepLabelLines,
+    maxVisible,
+    columnHeight,
+    leftBoxWidth,
+    rightBoxWidth,
+    leftContentWidth,
+    rightContentWidth,
+  } = pickerLayout({ cols, rows, title, stepLabel });
 
   const nav = useTwoColumnState<L, R>({
     leftProps,
@@ -103,18 +80,43 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     onConfirm,
     onCancel,
     onRefresh,
+    singlePane,
     maxVisible,
   });
 
   const terminalPane = nav.terminalPane;
-  const rightZoneTool =
-    nav.left.currentItem === undefined ? '' : leftProps.getKey(nav.left.currentItem);
-  const display = buildRightDisplay<R>(nav.right.items, rightProps.getKey, rightProps.section);
-  const selectedDisplayIndex = Math.max(
-    0,
-    display.findIndex((slot) => slot.kind === 'row' && slot.navIndex === nav.right.index),
+  const showTools = !singlePane || nav.activeColumn === 'left';
+  const showModels = !singlePane || nav.activeColumn === 'right';
+  const inlinePane = singlePane && showTools ? terminalPane : undefined;
+  const inlineGuidance =
+    singlePane &&
+    showTools &&
+    !inlinePane &&
+    !nav.hasSelectableRight &&
+    nav.left.currentItem !== undefined
+      ? rightProps.placeholder
+      : undefined;
+  const hasInlineInfo = inlinePane !== undefined || inlineGuidance != null;
+  const reclaimByline = hasInlineInfo && !notice?.message && (inlinePane !== undefined || !preview);
+  const spare = reclaimByline ? BYLINE_ROWS + 1 : 0;
+  // The tool cursor keeps one visible row. The details use the rest, including the space the
+  // header and byline yield when the shortest terminal has a remedy to show.
+  const toolSlots = maxVisible + (hasInlineInfo ? 1 + spare : 0);
+  const paneLines = inlinePane ? wrapPaneLines(inlinePane, leftContentWidth) : [];
+  const infoRows = hasInlineInfo
+    ? Math.min(Math.max(0, toolSlots - 1), inlinePane ? paneLines.length + 3 : 3)
+    : 0;
+  const leftVisible = toolSlots - infoRows;
+  const details = infoRows >= 2 && (
+    <>
+      <Divider width={leftContentWidth} />
+      {inlinePane ? (
+        <PaneDetails label={inlinePane.label} lines={fitPaneLines(paneLines, infoRows - 2)} />
+      ) : (
+        inlineGuidance
+      )}
+    </>
   );
-
   const rightCurrent = nav.right.currentItem;
   const hintKind: PickerHintKind =
     terminalPane !== undefined
@@ -129,12 +131,17 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     hasRefresh: !!onRefresh,
     maxVisible,
     width: totalBoxWidth,
+    columnHint: !singlePane ? '←→ column' : nav.activeColumn === 'right' ? '← tools' : '',
     enterHint:
-      nav.activeColumn === 'right'
-        ? rightProps.enterHint?.(
-            rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : undefined,
-          )
-        : undefined,
+      singlePane && nav.activeColumn === 'left'
+        ? nav.hasSelectableRight
+          ? '⏎ models'
+          : ''
+        : nav.activeColumn === 'right'
+          ? rightProps.enterHint?.(
+              rightCurrent && isRealRightItem(rightCurrent) ? rightCurrent : undefined,
+            )
+          : undefined,
   });
 
   const rawPreview =
@@ -172,7 +179,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     >
       <Box
         width={totalBoxWidth}
-        marginBottom={1}
+        marginBottom={hasInlineInfo ? 0 : 1}
         flexDirection={headStacked ? 'column' : 'row'}
         justifyContent="space-between"
       >
@@ -186,103 +193,69 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
         ))}
       </Box>
       <Box gap={COLUMN_GAP} width={totalBoxWidth} flexDirection="row" alignItems="flex-start">
-        <Box width={leftBoxWidth} flexShrink={0}>
-          <SingleColumnPicker<L>
-            label={leftProps.label ?? 'Items'}
-            items={nav.left.items}
-            filter={nav.left.filter}
-            selectedIndex={nav.left.index}
-            isActive={nav.activeColumn === 'left'}
-            height={columnHeight}
-            visibleRows={maxVisible}
-            getKey={leftProps.getKey}
-            contentMaxWidth={leftContentWidth}
-            emptyText={leftEmptyText}
-            onRowActivate={nav.clickLeft}
-            onWheel={(direction) => nav.wheelLeft(wheelStep(direction))}
-            rowZonePrefix="runner-left"
-            rowZoneZ={ROW_ZONE_Z_OVERLAY}
-            renderRow={(item, isCursor, maxWidth) => {
-              const key = leftProps.getKey(item);
-              const isSelected = nav.selectedLeftKey
-                ? nav.selectedLeftKey === key
-                : !!('isCurrent' in item && item.isCurrent);
-              const isContext =
-                nav.activeColumn === 'right' &&
-                nav.left.currentItem !== undefined &&
-                leftProps.getKey(item) === leftProps.getKey(nav.left.currentItem);
-              return leftProps.renderRow(item, { isCursor, isSelected, isContext, maxWidth });
-            }}
-          />
-        </Box>
-        <Box width={rightBoxWidth} flexShrink={0}>
-          {terminalPane !== undefined ? (
-            <TerminalPaneCard
-              pane={terminalPane}
-              contentWidth={rightContentWidth}
-              height={columnHeight}
-            />
-          ) : (
-            <SingleColumnPicker<RightDisplaySlot<R>>
-              label={rightProps.label ?? 'Options'}
-              items={display}
-              filter={nav.right.filter}
-              selectedIndex={selectedDisplayIndex}
-              isActive={nav.activeColumn === 'right'}
-              height={columnHeight}
-              visibleRows={maxVisible}
-              getKey={(slot) => slot.key}
-              lineCountOf={(slot) => (slot.kind === 'guidance' ? 2 : 1)}
-              contentMaxWidth={rightContentWidth}
-              onRowActivate={(displayIndex) => {
-                const slot = display[displayIndex];
-                if (slot?.kind === 'row') nav.clickRight(slot.navIndex);
-              }}
-              onWheel={(direction) => nav.wheelRight(wheelStep(direction))}
-              // A click acts on the row that was drawn, and a row is drawn for one tool.
-              rowZonePrefix={`runner-right:${rightZoneTool}`}
+        {showTools && (
+          <Box width={leftBoxWidth} flexShrink={0}>
+            <SingleColumnPicker<L>
+              label={leftProps.label ?? 'Items'}
+              items={nav.left.items}
+              filter={nav.left.filter}
+              selectedIndex={nav.left.index}
+              isActive={nav.activeColumn === 'left'}
+              height={toolSlots + INNER_CHROME_ROWS}
+              details={details}
+              visibleRows={leftVisible}
+              getKey={leftProps.getKey}
+              contentMaxWidth={leftContentWidth}
+              emptyText={leftEmptyText}
+              onRowActivate={nav.clickLeft}
+              onWheel={(direction) => nav.wheelLeft(wheelStep(direction))}
+              rowZonePrefix="runner-left"
               rowZoneZ={ROW_ZONE_Z_OVERLAY}
-              renderRow={(slot, isCursor, maxWidth) => {
-                if (slot.kind === 'spacer') {
-                  return <Text color={t.textDim}> </Text>;
-                }
-                if (slot.kind === 'header') {
-                  return (
-                    <Text color={t.textDim} wrap="truncate-end">
-                      {`  ${glyph('divider')}${glyph('divider')} ${slot.section.toUpperCase()}`}
-                    </Text>
-                  );
-                }
-                if (slot.kind === 'guidance') return rightProps.placeholder ?? null;
-                if (isVirtualCustomItem(slot.item)) {
-                  return (
-                    <ListRow
-                      label="+ Add custom model…"
-                      state={isCursor ? 'active' : 'default'}
-                      width={maxWidth}
-                      keepWhole="label"
-                    />
-                  );
-                }
-                return rightProps.renderRow(slot.item, { isCursor, maxWidth });
+              renderRow={(item, isCursor, maxWidth) => {
+                const key = leftProps.getKey(item);
+                const isSelected = nav.selectedLeftKey
+                  ? nav.selectedLeftKey === key
+                  : !!('isCurrent' in item && item.isCurrent);
+                const isContext =
+                  nav.activeColumn === 'right' &&
+                  nav.left.currentItem !== undefined &&
+                  leftProps.getKey(item) === leftProps.getKey(nav.left.currentItem);
+                return leftProps.renderRow(item, { isCursor, isSelected, isContext, maxWidth });
               }}
             />
-          )}
+          </Box>
+        )}
+        {showModels && (
+          <Box width={rightBoxWidth} flexShrink={0}>
+            <ModelsColumn
+              nav={nav}
+              rightProps={rightProps}
+              singlePane={singlePane}
+              toolKey={
+                nav.left.currentItem === undefined ? '' : leftProps.getKey(nav.left.currentItem)
+              }
+              rightContentWidth={rightContentWidth}
+              columnHeight={columnHeight}
+              maxVisible={maxVisible}
+            />
+          </Box>
+        )}
+      </Box>
+      {!reclaimByline && (
+        <Box
+          width={totalBoxWidth}
+          height={BYLINE_ROWS}
+          overflow="hidden"
+          marginTop={1}
+          flexDirection="column"
+        >
+          {byline.lines.map((line, rowIndex) => (
+            <Text key={rowIndex} color={byline.color} wrap="truncate-end">
+              {line}
+            </Text>
+          ))}
         </Box>
-      </Box>
-      <Box
-        width={totalBoxWidth}
-        height={BYLINE_ROWS}
-        overflow="hidden"
-        marginTop={1}
-        flexDirection="column"
-      >
-        {byline.lines.map((line, rowIndex) => (
-          <Text key={rowIndex} color={byline.color} wrap="truncate-end">
-            {line}
-          </Text>
-        ))}
-      </Box>
+      )}
       <Box width={totalBoxWidth}>
         <Text color={t.textDim} wrap="truncate-end">
           {hint}

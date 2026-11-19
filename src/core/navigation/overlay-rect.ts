@@ -29,6 +29,13 @@ export function overlayGutterRows(rows: number): number {
   return Math.min(2, Math.floor(Math.max(0, rows - 18) / 6));
 }
 
+export function overlayInnerRowCapacity(input: { rows: number; outerChromeRows: number }): number {
+  return Math.max(
+    0,
+    input.rows - overlayGutterRows(input.rows) - OVERLAY_FRAME_ROWS - input.outerChromeRows,
+  );
+}
+
 export interface OverlayRect {
   width: number;
   innerWidth: number;

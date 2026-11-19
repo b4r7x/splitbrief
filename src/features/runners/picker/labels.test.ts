@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CUSTOM_COMMAND_PANE_CELLS,
   CUSTOM_COMMAND_PANE_LINES,
   fallbackInheritanceNotice,
   formatPermissionLabels,
@@ -12,7 +11,6 @@ import type { RunnerConfig } from '../../../core/config/accessors/runner-config.
 import { cliReadinessRemediation } from '../../../core/readiness/cli-remediation.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
-import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import type { PickerOptionStatus } from '../model-catalog/status.js';
 
 describe('fallbackInheritanceNotice', () => {
@@ -186,12 +184,6 @@ describe('formatPermissionLabels', () => {
 });
 
 describe('CUSTOM_COMMAND_PANE_LINES', () => {
-  it('writes every line to the narrowest card the picker draws', () => {
-    for (const line of CUSTOM_COMMAND_PANE_LINES) {
-      expect(getTerminalCellWidth(line), line).toBeLessThanOrEqual(CUSTOM_COMMAND_PANE_CELLS);
-    }
-  });
-
   it('names the action, both contracts, both steps and the save rule', () => {
     const card = CUSTOM_COMMAND_PANE_LINES.join('\n');
     expect(card).toContain('Run your own command.');

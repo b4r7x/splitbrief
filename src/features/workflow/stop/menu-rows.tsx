@@ -1,3 +1,4 @@
+import { PanelRow } from '../../../components/overlays/row.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { listRowLead } from '../../../components/list-row/lead.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
@@ -7,13 +8,13 @@ import type { ConversationRowSegment } from '../conversation-rows/types.js';
 export function MenuRows({
   options,
   selectedIndex,
-  marked,
+  cursor,
   rowBudget,
   width,
 }: {
   options: readonly { readonly parts: readonly (readonly ConversationRowSegment[])[] }[];
   selectedIndex: number;
-  marked: boolean;
+  cursor: 'focused' | 'draft' | 'none';
   rowBudget: number;
   width: number;
 }) {
@@ -31,12 +32,14 @@ export function MenuRows({
       width={width}
       barColumn="padding"
       renderItem={({ row, index, line }) => {
-        const selected = marked && row === selectedIndex;
+        const selected = cursor !== 'none' && row === selectedIndex;
         return (
-          <Text color={selected ? t.accent : t.textDim} wrap="truncate-end">
-            {listRowLead(selected && index === 0 ? 'active' : 'default')}
-            <TextSpans parts={line} selected={selected} />
-          </Text>
+          <PanelRow active={selected && cursor === 'focused'} width="100%">
+            <Text color={selected ? t.accent : t.textDim} wrap="truncate-end">
+              {listRowLead(selected && index === 0 ? 'active' : 'default')}
+              <TextSpans parts={line} selected={selected} />
+            </Text>
+          </PanelRow>
         );
       }}
     />

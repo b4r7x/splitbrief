@@ -37,6 +37,7 @@ export function FieldRow(props: {
       <Box flexGrow={1} minWidth={0}>
         <MultilineInput
           value={props.value}
+          textStyle={{ color: t.text }}
           onChange={props.onChange}
           onSubmit={props.onSubmit}
           rows={1}

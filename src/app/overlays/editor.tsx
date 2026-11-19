@@ -8,6 +8,7 @@ import { CANCEL_HINT, formatKeyHints } from '../../components/key-legend.js';
 import { useEditorKeys } from '../../features/editor/use-keys.js';
 import { usePlanEditorSession } from '../../features/editor/use-session.js';
 import { EditorBufferView } from '../../features/editor/buffer-view.js';
+import { PanelSurface } from '../../components/overlays/surface.js';
 import { FramePanel, OVERLAY_FRAME_COLS } from '../../components/frame-panel.js';
 import { fitFeedbackMessage } from '../../components/composer/feedback-fit.js';
 
@@ -49,28 +50,30 @@ export function EditorOverlay() {
   useEditorKeys({ onSave, onCancel, onOpenExternal });
 
   return (
-    <FramePanel filePath={filePath ?? 'file'} width={cols} height={rows}>
-      <Box height={viewport} overflow="hidden">
-        <EditorBufferView />
-      </Box>
-      {reasonRows.length > 0 && (
-        <Box flexDirection="column" height={reasonRows.length}>
-          {reasonRows.map((row, index) => (
-            <Text key={`${index}:${row}`} color={t.error} wrap="truncate">
-              {row}
-            </Text>
-          ))}
+    <PanelSurface width={cols} height={rows}>
+      <FramePanel filePath={filePath ?? 'file'} width={cols} height={rows}>
+        <Box height={viewport} overflow="hidden">
+          <EditorBufferView />
         </Box>
-      )}
-      <Box height={1}>
-        <Text color={t.textDim} wrap="truncate">
-          {formatKeyHints([
-            { key: 'ctrl+s', verb: 'save' },
-            { key: 'ctrl+o', verb: 'external' },
-            CANCEL_HINT,
-          ])}
-        </Text>
-      </Box>
-    </FramePanel>
+        {reasonRows.length > 0 && (
+          <Box flexDirection="column" height={reasonRows.length}>
+            {reasonRows.map((row, index) => (
+              <Text key={`${index}:${row}`} color={t.error} wrap="truncate">
+                {row}
+              </Text>
+            ))}
+          </Box>
+        )}
+        <Box height={1}>
+          <Text color={t.textDim} wrap="truncate">
+            {formatKeyHints([
+              { key: 'ctrl+s', verb: 'save' },
+              { key: 'ctrl+o', verb: 'external' },
+              CANCEL_HINT,
+            ])}
+          </Text>
+        </Box>
+      </FramePanel>
+    </PanelSurface>
   );
 }

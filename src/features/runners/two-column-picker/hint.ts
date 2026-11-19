@@ -35,6 +35,7 @@ const ESCAPE_HINTS: Record<EscapeAction, string> = {
   collapse: 'esc collapse',
   'clear-left': 'esc clear',
   'clear-right': 'esc clear',
+  back: 'esc tools',
   cancel: 'esc cancel',
 };
 
@@ -51,6 +52,7 @@ export function getHint(input: {
   hasRefresh: boolean;
   maxVisible: number;
   width: number;
+  columnHint: string;
   enterHint?: string | undefined;
 }): string {
   const { kind, nav, hasRefresh, maxVisible } = input;
@@ -59,7 +61,7 @@ export function getHint(input: {
     return `Terminal too short${SOFT_SEP}${escapeHint}`;
   }
   const fitHint = (action: string, columns: boolean): string => {
-    const navigation = [...(columns ? ['←→ column'] : []), '↑↓ select'];
+    const navigation = [...(columns && input.columnHint ? [input.columnHint] : []), '↑↓ select'];
     const selectOnly = navigation.filter((hint) => hint !== '↑↓ select');
     const extras = [
       ...(nav.currentRightIsCustom ? ['ctrl+d delete'] : []),

@@ -24,6 +24,7 @@ interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: stri
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
+  singlePane: boolean;
   maxVisible: number;
 }
 
@@ -89,7 +90,9 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const rightCurrentItem = filteredRight[rightEffectiveIndex];
 
   const terminalPane = leftCol.currentItem ? terminalPaneOf?.(leftCol.currentItem) : undefined;
-  const expandedOnScreen = terminalPane === undefined && (rightProps.isExpanded ?? false);
+  const modelsVisible = !params.singlePane || activeColumn === 'right';
+  const expandedOnScreen =
+    modelsVisible && terminalPane === undefined && (rightProps.isExpanded ?? false);
   const isDisabled = leftCol.currentItem
     ? (isLeftItemDisabled?.(leftCol.currentItem) ?? false)
     : false;
@@ -156,11 +159,17 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     resetRight(leftCol.moveBy(direction));
   };
 
+  const backToTools = () => {
+    setActiveColumn('left');
+    setSelectedLeftKey(null);
+  };
+
   const isActive = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
 
   useInput(
     (input, key) =>
       handleKeyboardInput(input, key, {
+        singlePane: params.singlePane,
         leftActive: activeColumn === 'left',
         rightActive,
         isTerminal: terminalPane !== undefined,
@@ -181,7 +190,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
         onRefresh: params.onRefresh,
         maxVisible: params.maxVisible,
         setActiveColumn,
-        setSelectedLeftKey,
+        backToTools,
         setLeftFilter: leftCol.setFilter,
         setRightFilter: rightCol.setFilter,
         setLeftIndex: leftCol.setIndex,
@@ -210,10 +219,13 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
       index: rightEffectiveIndex,
       currentItem: rightCurrentItem,
     },
+    backToTools,
+    hasSelectableRight,
     selectedLeftKey,
     terminalPane,
     isDisabled,
     escape: escapeAction({
+      singlePane: params.singlePane,
       isExpanded: expandedOnScreen,
       leftActive: activeColumn === 'left',
       rightActive,

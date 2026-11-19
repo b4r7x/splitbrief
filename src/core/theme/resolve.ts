@@ -40,12 +40,9 @@ export function resolveTheme(input: {
   if (cached) return cached;
   const palette = PALETTES[variant];
   const { diff, markdown, syntax, cursor, review, highlight, ...text } = palette.swatches;
-  const surfaceHexes = [
-    text.suggestionPanelBg,
-    text.selectionBg,
-    markdown.codeBg,
-    highlight.bg,
-  ].map((swatch) => swatch.truecolor);
+  const surfaceHexes = [text.overlayBg, text.selectionBg, markdown.codeBg, highlight.bg].map(
+    (swatch) => swatch.truecolor,
+  );
   const ground = terminalBackground ?? palette.ground;
   const grounds = [
     ground,

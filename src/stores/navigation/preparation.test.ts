@@ -204,7 +204,7 @@ describe('preparationStore while the composer is edited', () => {
     ui.stdin.write(' and tests');
     await vi.waitFor(() => expect(frame()).toContain('add a parser and tests'));
     ui.stdin.write('\none\ntwo\nthree\nfour');
-    await vi.waitFor(() => expect(frame()).toContain('[paste #1 +5 lines]'));
+    await vi.waitFor(() => expect(frame()).toContain('[Pasted #1 +5 lines]'));
     await flushEffects();
     const draft = frame();
 

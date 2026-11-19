@@ -26,7 +26,7 @@ describe('composer paste capture', () => {
     resetAllStores();
   });
 
-  it('collapses a big multi-line paste to a dim marker instead of filling the field', async () => {
+  it('shows each folded paste with its number and line count', async () => {
     const ui = renderDockedComposer({
       commands: COMMANDS,
       currentScreen: 'workflow',
@@ -40,8 +40,11 @@ describe('composer paste capture', () => {
     ui.stdin.write('line 1\nline 2\nline 3\nline 4\nline 5');
     await flushEffects();
 
+    ui.stdin.write('part A\npart B\npart C\npart D');
+    await flushEffects();
+
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('[paste #1 +5 lines]');
+    expect(frame).toContain('[Pasted #1 +5 lines][Pasted #2 +4 lines]');
     expect(frame).not.toContain('line 5');
 
     ui.unmount();

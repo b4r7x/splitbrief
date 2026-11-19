@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
 import { CLOSE_HINT, formatKeyHints, SELECT_HINT } from '../../components/key-legend.js';
-import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/panel.js';
+import { OverlayPanel } from '../../components/overlays/panel.js';
 import { ListRow } from '../../components/list-row/row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
@@ -27,7 +27,11 @@ import { runViewStore } from '../../stores/workflow/run-view.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
+import {
+  overlayInnerRowCapacity,
+  overlayRect,
+  type OverlayDensity,
+} from '../../core/navigation/overlay-rect.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
@@ -184,6 +188,7 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
 
       <Box flexDirection="column" height={listBudget}>
         <ListViewport
+          highlightCursor
           barColumn="padding"
           items={results}
           selectedIndex={cursor}

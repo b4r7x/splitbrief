@@ -415,7 +415,7 @@ it.for([true, false])(
       async ({ paste, pasteMode, screen, box }) => {
         await vi.waitFor(() => expect(pasteMode()).toBe(true), { timeout: 10_000 });
         paste('line one\rline two\rline three\rline four');
-        await vi.waitFor(() => expect(box(), screen()).toContain('› [paste #1 +4 lines]'), {
+        await vi.waitFor(() => expect(box(), screen()).toContain('› [Pasted #1 +4 lines]'), {
           timeout: 10_000,
         });
         expect(screen()).not.toContain(PREPARATION_BLOCKED);

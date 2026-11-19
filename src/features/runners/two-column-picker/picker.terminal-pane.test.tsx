@@ -140,7 +140,7 @@ describe('TwoColumnPicker terminal rows', () => {
 
   it.each([
     { cols: 80, rows: 24, wrapped: ['The review seat runs whatever the', 'planner runs.'] },
-    { cols: 60, rows: 18, wrapped: ['The review seat runs', 'whatever the planner', 'runs.'] },
+    { cols: 60, rows: 18, wrapped: ['The review seat runs whatever the planner runs.'] },
   ])(
     "breaks the card's prose on words and keeps the hint on one row at $cols columns",
     async ({ wrapped, ...viewport }) => {

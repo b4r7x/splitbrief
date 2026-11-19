@@ -505,6 +505,8 @@ The first-run setup screen composes the same feature: ready-made crews above the
 
 The workflow screen takes no density, live or at rest: its rail, dividers, transcript (the summary of a closed run included) and composer all span `getChromeContentWidth(cols)`, and nothing on it is centred. The full-bleed `editor` overlay also takes no density and stays full-width.
 
+The inner card uses `PanelSurface` to paint `overlayBg`, including its padding and blank rows. A selectable action uses `PanelRow` to paint `selectionBg` while it holds keyboard focus. Its check mark still identifies the saved value. Help and Usage scroll without marking an action. The editor applies the surface at its page entry because the run screen also uses the document frame.
+
 ### Picker view state
 
 `pickerViewStore` holds the tool/model picker's sub-view for both slots: which step is showing (`picker`, the two custom-command steps, custom model), the left index preserved across a step, the expanded model (provider routes or an option family), the drafted option-family variant its axis rows spell out, and the in-flight text draft. The fallback slot has no custom-command steps. A custom fallback model changes `fallback.model` only. The fallback itself stays in `configStore`; it needs no new store. `pickerViewStore` replaces the picker's component-local `useReducer`. The state survives the picker unmounting and remounting. A test or visual fixture can seed a step directly (`pickerViewStore.open(...)`, `pickerViewStore.expand(id, draftId)`) instead of driving keystrokes into it.

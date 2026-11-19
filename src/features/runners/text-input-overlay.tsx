@@ -118,6 +118,7 @@ export function TextInputOverlay({
         <Box flexGrow={1}>
           <MultilineInput
             value={value}
+            textStyle={{ color: t.text }}
             onChange={handleChange}
             onSubmit={handleSubmit}
             rows={rows}

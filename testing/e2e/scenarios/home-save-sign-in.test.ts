@@ -152,11 +152,11 @@ process.exit(1);`,
               await shows('/crew build');
               child.write('\r');
               await shows('BUILD · tool, model, effort');
-              // Only the landed listing names this row alone: the bundled list adds ` · id` to
-              // its two DeepSeek rows.
-              await shows(/DeepSeek V4\.1(?! Flash ·)/, 30_000);
+              await shows('▌ OpenCode CLI', 30_000);
+              await shows(/⏎ (?:models|confirm)/, 30_000);
               child.write('\x1b[C');
-              await shows(/▌ DeepSeek V4\.1/);
+              // The bundled listing adds ` · id` to its two DeepSeek rows.
+              await shows(/▌ DeepSeek V4\.1(?! Flash ·)/, 30_000);
               await moveCursorTo(
                 text,
                 (keys) => child.write(keys),

@@ -1,3 +1,4 @@
+import chalk from 'chalk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -209,6 +210,29 @@ describe('DocumentReviewPrompt', () => {
       expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
     },
   );
+
+  it('keeps the draft target marked without an action band while the composer owns the keys', () => {
+    const level = chalk.level;
+    chalk.level = 3;
+    const ui = renderFeature(
+      <DocumentReviewPrompt
+        artifact="plan"
+        confirms={[]}
+        budgetRows={40}
+        selectedIndex={1}
+        draft="send"
+        focused
+      />,
+    );
+    try {
+      const frame = ui.lastFrame();
+      expect(stripAnsiStyles(frame)).toContain(`${listRowLead('active')}Request changes`);
+      expect(frame).not.toContain(chalk.bgRgb(54, 58, 78)('x').split('x')[0]);
+    } finally {
+      ui.unmount();
+      chalk.level = level;
+    }
+  });
 
   it('names only the live keys once a comment is being typed', () => {
     const frame = frameOf(

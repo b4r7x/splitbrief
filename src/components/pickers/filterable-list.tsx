@@ -85,6 +85,7 @@ export function FilterableList<T>({
         />
       </Box>
       <ListViewport
+        highlightCursor
         barColumn="padding"
         width={innerWidth}
         items={filtered}

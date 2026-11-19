@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Box, useInput } from 'ink';
-import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/panel.js';
+import { OverlayPanel } from '../../components/overlays/panel.js';
 import { ListRow } from '../../components/list-row/row.js';
 import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
@@ -11,6 +11,7 @@ import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
 import { resolveScrollKey, stepForScrollAction } from '../../core/keybindings/scroll.js';
 import {
   OVERLAY_FRAME_ROWS,
+  overlayInnerRowCapacity,
   overlayRect,
   type OverlayDensity,
 } from '../../core/navigation/overlay-rect.js';

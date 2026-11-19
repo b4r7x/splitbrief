@@ -12,6 +12,7 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
+import { terminalCellAtText } from '../helpers/terminal-cells.js';
 import { wholeFrames } from '../helpers/whole-frames.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
@@ -36,6 +37,8 @@ type Screen = {
   readonly text: () => string;
   /** The screen as one line: box borders dropped and wrapped rows joined, so a wrapped sentence reads whole. */
   readonly prose: () => string;
+  readonly background: (phrase: string, offset?: number) => number | undefined;
+  readonly resize: (cols: number, rows: number) => void;
   readonly write: (keys: string) => void;
   readonly shows: (expected: string | RegExp, timeout?: number) => Promise<void>;
 };
@@ -128,7 +131,7 @@ process.exit(1);`,
         let didExit = false;
         const text = () =>
           Array.from(
-            { length: viewport.rows },
+            { length: terminal.rows },
             (_, row) =>
               terminal.buffer.active
                 .getLine(terminal.buffer.active.viewportY + row)
@@ -151,6 +154,19 @@ process.exit(1);`,
         const screen: Screen = {
           text,
           prose,
+          background: (phrase, offset = 0) => {
+            const cell = terminalCellAtText(terminal.buffer.active, phrase, offset);
+            if (cell.isBgDefault()) return undefined;
+            expect(cell.isBgRGB()).toBe(true);
+            return cell.getBgColor();
+          },
+          resize: (cols, rows) => {
+            if (!('resize' in child) || typeof child.resize !== 'function') {
+              throw new Error('The PTY does not support resize');
+            }
+            terminal.resize(cols, rows);
+            child.resize(cols, rows);
+          },
           write: (keys) => child.write(keys),
           shows: (expected, timeout = 10_000) =>
             vi.waitFor(
@@ -213,6 +229,97 @@ async function addCustomModel(screen: Screen): Promise<void> {
 }
 
 describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () => {
+  it('uses the completion background inside Settings and fills its active row', async (context) => {
+    await withOpencodeHome(
+      'settings-overlay-color',
+      {
+        signedIn: { id: 'deepseek', name: 'DeepSeek' },
+        served: { id: 'deepseek-flash', providerID: 'deepseek' },
+        buildModel: 'deepseek/deepseek-flash',
+      },
+      async (screen) => {
+        screen.write('/crew');
+        await screen.shows('▌ /crew  Who fills each seat');
+        const panel = screen.background('tab fill');
+        const active = screen.background('▌ /crew');
+        expect(panel).toBeDefined();
+        expect(active).toBeDefined();
+        expect(active).not.toBe(panel);
+
+        screen.write('\r');
+        await screen.shows('│  Settings');
+        const title = ' │  Settings';
+        expect(screen.background(title)).toBeUndefined();
+        expect(screen.background(title, 2)).toBe(panel);
+        expect(screen.background('Settings')).toBe(panel);
+        const lead = '▌ PLAN';
+        expect(screen.background(lead)).toBe(active);
+        expect(screen.background(lead, 1)).toBe(active);
+
+        screen.write('\x1b[B');
+        await screen.shows('▌ BUILD');
+        expect(screen.background('▌ BUILD')).toBe(active);
+        expect(screen.background('PLAN ')).toBe(panel);
+      },
+      (reason) => context.skip(reason),
+    );
+  });
+
+  it('keeps the model filter when resizing across the single-pane breakpoint', async (context) => {
+    await withOpencodeHome(
+      'picker-single-pane',
+      {
+        signedIn: { id: 'deepseek', name: 'DeepSeek' },
+        served: { id: 'deepseek-flash', providerID: 'deepseek' },
+        buildModel: 'deepseek/deepseek-flash',
+      },
+      async (screen, projectDir) => {
+        const path = join(projectDir, '.splitbrief', 'config.yaml');
+        const before = readFileSync(path, 'utf8');
+        screen.write('/crew build');
+        await screen.shows('/crew build');
+        screen.write('\r');
+        await screen.shows('▌ OpenCode CLI', 30_000);
+        const columns = /│\s*Tools\s*│.*│\s*Models\s*│/;
+        expect(screen.text()).not.toMatch(columns);
+
+        screen.write('opencode');
+        await screen.shows('› opencode');
+        const lines = screen.text().split('\n');
+        const row = lines.findIndex((line) => line.includes('▌ OpenCode CLI'));
+        const column = lines[row]?.indexOf('OpenCode CLI') ?? -1;
+        expect(column).toBeGreaterThan(0);
+        screen.write(`\x1b[<0;${column + 1};${row + 1}M\x1b[<0;${column + 1};${row + 1}m`);
+        await screen.shows(/▌ DeepSeek V4\.1 Flash/, 30_000);
+        screen.write('deepseek');
+        await screen.shows('› deepseek');
+        expect(screen.text()).not.toContain('› opencode');
+
+        screen.resize(80, 24);
+        await screen.shows(columns);
+        const filters = screen
+          .text()
+          .split('\n')
+          .find((line) => line.includes('› deepseek'));
+        expect(filters).toContain('  opencode');
+        expect(filters).not.toContain('› opencode');
+        expect(screen.text()).toMatch(/▌ DeepSeek V4\.1 Flash/);
+        screen.resize(79, 24);
+        await vi.waitFor(() => {
+          expect(screen.text()).not.toMatch(columns);
+          expect(screen.text()).toContain('› deepseek');
+          expect(screen.text()).toMatch(/▌ DeepSeek V4\.1 Flash/);
+        });
+        screen.write('\x1b[D');
+        await screen.shows('› opencode');
+        expect(screen.text()).not.toContain('› deepseek');
+        expect(readFileSync(path, 'utf8')).toBe(before);
+      },
+      (reason) => context.skip(reason),
+      { cols: 79, rows: 24 },
+    );
+  });
+
   it('keeps a custom model row when the filter holds the name the row shows', async (context) => {
     await withOpencodeHome(
       'picker-custom-model-filter',

@@ -1,4 +1,4 @@
-import { Box } from 'ink';
+import { PanelSurface } from '../../../components/overlays/surface.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { useTheme } from '../../../components/theme.js';
 import { PromptBody } from './prompt-body.js';
@@ -63,7 +63,7 @@ export function QuestionPrompt({
   const { framed } = inlineMenuChrome(clampedBoxRows, 1);
   const innerHeight = clampedBoxRows - (framed ? 2 : 0);
   return (
-    <Box
+    <PanelSurface
       flexDirection="column"
       width={width}
       {...(framed && {
@@ -76,6 +76,6 @@ export function QuestionPrompt({
       flexShrink={0}
     >
       <PromptBody prompt={hint} height={innerHeight} width={innerWidth} />
-    </Box>
+    </PanelSurface>
   );
 }

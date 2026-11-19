@@ -207,10 +207,11 @@ describe('e2e: the BUILD fallback picker refuses its own seat', { timeout: 120_0
       screen.write('\r');
       await screen.shows('BUILD fallback · tool, model, effort');
       screen.write('codex');
-      await screen.shows(/▌ OpenAI…/);
-      await screen.shows('GPT-6-Luna', 30_000);
+      await screen.shows('▌ OpenAI Codex CLI');
+      await screen.shows('⏎ models', 30_000);
       screen.write('\x1b[C');
-      await screen.shows(/▌[\s\S]*▌/);
+      await screen.shows('Models · OpenAI Codex CLI');
+      await screen.shows('GPT-6-Luna', 30_000);
       screen.write('gpt-6-sol');
       await screen.shows('› gpt-6-sol');
       await screen.shows(/▌ GPT-6-Sol/);

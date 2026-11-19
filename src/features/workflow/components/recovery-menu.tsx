@@ -197,6 +197,7 @@ function ActionList({
   return (
     <ListViewport
       items={actions}
+      highlightCursor={focused}
       selectedIndex={selectedIndex}
       getKey={(item) => item.action}
       rowBudget={rowBudget}

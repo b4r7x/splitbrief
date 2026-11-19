@@ -142,8 +142,8 @@ describe('TwoColumnPicker', () => {
                 .join(' '),
             ).toBe(label);
           }
-          const hint = lines.find((line) => line.includes('⏎ confirm'));
-          expect(hint).toContain('←→ column');
+          const hint = lines.find((line) => line.includes(cols < 80 ? '⏎ models' : '⏎ confirm'));
+          if (cols >= 80) expect(hint).toContain('←→ column');
           expect(hint).toContain('↑↓ select');
           expect(hint).toContain('esc cancel');
           expect(lines.length).toBeLessThanOrEqual(rows);
@@ -265,7 +265,7 @@ describe('TwoColumnPicker', () => {
     }
   });
 
-  it('keeps the column and select keys at 60 columns, dropping refresh first', async () => {
+  it('names the next pane and select keys at 60 columns', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     const ui = renderFeature(
       <TwoColumnPicker<Tool, Model>
@@ -288,11 +288,9 @@ describe('TwoColumnPicker', () => {
     );
     await tick(20);
 
-    const hint =
-      (ui.lastFrame() ?? '').split('\n').find((line) => line.includes('⏎ confirm')) ?? '';
-    expect(hint).toContain('←→ column');
+    const hint = (ui.lastFrame() ?? '').split('\n').find((line) => line.includes('⏎ models')) ?? '';
     expect(hint).toContain('↑↓ select');
-    expect(hint).not.toContain('ctrl+r refresh');
+    expect(hint).toContain('esc cancel');
     ui.unmount();
   });
 
@@ -1445,6 +1443,7 @@ describe('TwoColumnPicker', () => {
       const ui = renderFeature(
         <TwoColumnPicker<Tool, Model>
           title="Picker"
+          initialColumn="right"
           leftProps={{
             items: tools,
             getKey: (t) => t.id,

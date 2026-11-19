@@ -14,8 +14,6 @@ import { createFrameIdentity } from './visual-contract-fixtures.js';
 
 interface GeometryCase {
   readonly viewport: Viewport;
-  /** Whether the list keeps the size cell at this width; it keeps it for every row or for none. */
-  readonly sizeCell: 'kept' | 'dropped';
   /** The route rows the list window shows under the open model. */
   readonly routes: number;
 }
@@ -23,9 +21,9 @@ interface GeometryCase {
 const SCENARIO_ID = 'overlay-picker-opencode-expanded';
 
 const CASES: readonly GeometryCase[] = [
-  { viewport: viewport({ cols: 120, rows: 40 }), sizeCell: 'kept', routes: 2 },
-  { viewport: viewport({ cols: 80, rows: 24 }), sizeCell: 'kept', routes: 2 },
-  { viewport: viewport({ cols: 60, rows: 18 }), sizeCell: 'dropped', routes: 1 },
+  { viewport: viewport({ cols: 120, rows: 40 }), routes: 2 },
+  { viewport: viewport({ cols: 80, rows: 24 }), routes: 2 },
+  { viewport: viewport({ cols: 60, rows: 18 }), routes: 1 },
 ];
 
 afterEach(() => {
@@ -34,7 +32,7 @@ afterEach(() => {
 
 describe('picker tree geometry', () => {
   it.each(CASES)(
-    'pins OpenCode tree columns at $viewport.cols x $viewport.rows, size cell $sizeCell',
+    'pins OpenCode tree columns at $viewport.cols x $viewport.rows',
     async (geometryCase) => {
       const scenario = requireScenario(SCENARIO_ID);
       const checkpoint = requireCheckpoint(scenario);
@@ -169,16 +167,8 @@ describe('picker tree geometry', () => {
           }
           expect(modelAbove).toBeDefined();
           if (modelAbove === undefined) continue;
-          if (geometryCase.sizeCell === 'dropped') {
-            expect(
-              lastInkColumnBefore(modelAbove.row, trailingColumn),
-              'the list drops the size cell for every row at this width, so the parent ends at its label',
-            ).toBeLessThan(trailingColumn - 2);
-          }
-          const valueEdge =
-            geometryCase.sizeCell === 'kept'
-              ? lastInkColumnBefore(modelAbove.row, trailingColumn)
-              : trailingColumn - 2;
+          expect(lineOf(modelAbove.row.slice(0, trailingColumn)).trimEnd()).toMatch(/\b1M$/);
+          const valueEdge = lastInkColumnBefore(modelAbove.row, trailingColumn);
           const end = lastInkColumnBefore(entry.row, trailingColumn);
           if (end === undefined || valueEdge === undefined) {
             throw new Error('a child row or its parent paints nothing before the chevron');

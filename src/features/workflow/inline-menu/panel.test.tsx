@@ -121,7 +121,7 @@ describe('InlineMenuPanel', () => {
           <MenuRows
             options={layout.options}
             selectedIndex={0}
-            marked
+            cursor="focused"
             rowBudget={layout.bodyRows}
             width={layout.width - 4}
           />

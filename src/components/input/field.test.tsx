@@ -484,7 +484,7 @@ interface AtomModel {
 }
 
 const ATOM_LABEL = '[image #1]';
-const PASTE_LABEL = '[paste #1 +5 lines]';
+const PASTE_LABEL = '[Pasted #1 +5 lines]';
 
 function atomValue(model: AtomModel): string {
   return model.before + model.label + model.after;
@@ -604,7 +604,7 @@ describe('MultilineInput image atoms', () => {
   });
 
   // A word delete stops at a space, and the collapsed-paste label has spaces in it — so without the
-  // atom this key would cut the marker in half and leave `[paste #1 +5` standing as a label.
+  // atom this key would cut the marker in half and leave `[Pasted #1 +5` standing as a label.
   it('takes the whole atom when a word delete stops inside its label', async () => {
     const ui = renderFeature(
       <AtomHarness initial={{ before: 'see ', label: PASTE_LABEL, after: '' }} />,

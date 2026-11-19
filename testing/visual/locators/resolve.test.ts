@@ -162,6 +162,40 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
     }
   });
 
+  it.each([VIEWPORT, WIDE_VIEWPORT, viewport({ cols: 60, rows: 18 })])(
+    'crops the ASCII home composer and its completion menu at $cols x $rows',
+    async (frameViewport) => {
+      const scenario = requireScenario('home-skills-completion');
+      const checkpoint = requireCheckpoint(scenario);
+      const handle = await mountGalleryScenario({
+        scenario,
+        checkpoint,
+        viewport: frameViewport,
+        profile: 'ascii-mono',
+      });
+      try {
+        const frame = await handle.waitForCheckpoint();
+        const grid = await createFrameGrid(scenario, frameViewport, frame);
+        const cropRows = (elementId: string) => {
+          const locator = resolveElementLocator({ scenario, checkpoint, grid, elementId });
+          return createCropCellGrid({ frame: grid, locator }).cells.map((row) =>
+            row.map((cell) => cell.grapheme).join(''),
+          );
+        };
+        const composer = cropRows('composer');
+        expect(composer.at(-3)).toMatch(/^\+-+\+$/);
+        expect(composer.at(-2)).toContain('> /skills');
+        expect(composer.at(-1)).toMatch(/^\+-+\+$/);
+        const menu = cropRows('completion');
+        expect(menu[0]).toMatch(/^\+-+\+$/);
+        expect(menu.at(-2)).toContain('tab fill');
+        expect(menu.at(-1)).toMatch(/^\+-+\+$/);
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
+
   it('reports invalid names and cross-frame provenance failures', async () => {
     const review = requireScenario('workflow-review');
     const checkpoint = requireCheckpoint(review);

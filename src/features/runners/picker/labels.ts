@@ -15,13 +15,6 @@ import type { PickerOptionStatus } from '../model-catalog/status.js';
 import type { TerminalPane } from '../two-column-picker/types.js';
 
 /**
- * The launcher's card is a fixed-height read-only pane, so a line written to its narrowest draw
- * never takes a second row: at 60 columns the overlay is 56 cells wide, the
- * Models box takes 27 of them and its padding and border spend 4, leaving these.
- */
-export const CUSTOM_COMMAND_PANE_CELLS = 23;
-
-/**
  * What the launcher row promises: the action, the two contracts it chooses between, the two steps
  * Enter opens and the fact that neither of them has written anything yet. The seat is not repeated
  * here — the picker's title names it one row above the card — and neither is the configured

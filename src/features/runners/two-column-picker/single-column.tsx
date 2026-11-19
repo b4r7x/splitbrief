@@ -1,6 +1,8 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
+import { PanelSurface } from '../../../components/overlays/surface.js';
+import { PanelRow } from '../../../components/overlays/row.js';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import {
   getScrollbarThumb,
@@ -11,7 +13,8 @@ import { windowSlice } from '../../../components/pickers/scroll-offset.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
 
 interface SingleColumnPickerProps<T> {
-  label: string;
+  label: ReactNode;
+  details?: ReactNode;
   items: T[];
   filter: string;
   selectedIndex: number;
@@ -22,13 +25,12 @@ interface SingleColumnPickerProps<T> {
   renderRow: (item: T, isCursor: boolean, maxWidth: number) => ReactNode;
   contentMaxWidth: number;
   placeholderWhenEmpty?: ReactNode;
-  hideFilterRow?: boolean;
-  customFilterPrompt?: ReactNode;
   emptyText?: string;
   onRowActivate?: ((globalIndex: number) => void) | undefined;
   onWheel?: ((direction: 'up' | 'down') => void) | undefined;
   rowZonePrefix?: string | undefined;
   rowZoneZ?: number | undefined;
+  isAction?: ((item: T) => boolean) | undefined;
   lineCountOf?: ((item: T) => number) | undefined;
 }
 
@@ -54,22 +56,12 @@ function ScrollbarGutter({
 function FilterRow({
   filter,
   isActive,
-  customFilterPrompt,
-}: Pick<SingleColumnPickerProps<unknown>, 'filter' | 'isActive' | 'customFilterPrompt'>) {
+}: Pick<SingleColumnPickerProps<unknown>, 'filter' | 'isActive'>) {
   const t = useTheme();
-  let prompt: ReactNode;
-  if (customFilterPrompt !== undefined && customFilterPrompt !== null) {
-    prompt = customFilterPrompt;
-  } else if (filter) {
-    prompt = <Text color={t.text}>{filter}</Text>;
-  } else {
-    prompt = <Text color={t.textDim}>Type to filter…</Text>;
-  }
-
   return (
     <Box>
-      <Text color={isActive ? t.accent : t.textDim}>{`${glyph('prompt')} `}</Text>
-      {prompt}
+      <Text color={t.accent}>{isActive ? `${glyph('prompt')} ` : '  '}</Text>
+      <Text color={filter ? t.text : t.textDim}>{filter || 'Type to filter…'}</Text>
     </Box>
   );
 }
@@ -104,6 +96,7 @@ type PickerRowsProps<T> = Pick<
   | 'onRowActivate'
   | 'onWheel'
   | 'lineCountOf'
+  | 'isAction'
 > & {
   emptyText: string;
   rowZonePrefix: string;
@@ -124,6 +117,7 @@ function PickerRows<T>({
   onWheel,
   rowZonePrefix,
   rowZoneZ,
+  isAction,
   lineCountOf,
 }: PickerRowsProps<T>) {
   const t = useTheme();
@@ -167,9 +161,9 @@ function PickerRows<T>({
       {visibleSlice.map((item, index) => {
         const itemIndex = scrollOffset + index;
         const itemKey = getKey(item);
-        const isCursor = isActive && itemIndex === selectedIndex;
+        const isCursor = isActive && itemIndex === selectedIndex && (isAction?.(item) ?? true);
         const rowNode = (
-          <Box key={itemKey} width="100%">
+          <PanelRow key={itemKey} width="100%" active={isCursor}>
             <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
               {renderRow(item, isCursor, rowContentWidth)}
             </Box>
@@ -178,7 +172,7 @@ function PickerRows<T>({
               visible={overflow}
               color={t.scrollIndicator}
             />
-          </Box>
+          </PanelRow>
         );
         if (!onRowActivate) return rowNode;
         return (
@@ -204,6 +198,7 @@ function PickerRows<T>({
 
 export function SingleColumnPicker<T>({
   label,
+  details,
   items,
   filter,
   selectedIndex,
@@ -214,33 +209,33 @@ export function SingleColumnPicker<T>({
   renderRow,
   contentMaxWidth,
   placeholderWhenEmpty,
-  hideFilterRow,
-  customFilterPrompt,
   emptyText = 'No items',
   onRowActivate,
   onWheel,
   rowZonePrefix = 'single-column-row',
   rowZoneZ = ROW_ZONE_Z_OVERLAY,
+  isAction,
   lineCountOf,
 }: SingleColumnPickerProps<T>) {
   const t = useTheme();
 
   return (
-    <Box
+    <PanelSurface
       flexDirection="column"
       flexGrow={1}
       flexBasis={0}
       height={height}
       borderStyle={borderStyleFor('round')}
       borderColor={isActive ? t.accent : t.border}
-      borderDimColor={!isActive}
       paddingX={1}
     >
-      <Text color={isActive ? t.accent : t.textDim}>{label}</Text>
-
-      {!hideFilterRow && (
-        <FilterRow filter={filter} isActive={isActive} customFilterPrompt={customFilterPrompt} />
+      {typeof label === 'string' ? (
+        <Text color={isActive ? t.accent : t.textDim}>{label}</Text>
+      ) : (
+        label
       )}
+
+      <FilterRow filter={filter} isActive={isActive} />
 
       <PickerRows
         items={items}
@@ -256,8 +251,10 @@ export function SingleColumnPicker<T>({
         onWheel={onWheel}
         rowZonePrefix={rowZonePrefix}
         rowZoneZ={rowZoneZ}
+        isAction={isAction}
         lineCountOf={lineCountOf}
       />
-    </Box>
+      {details}
+    </PanelSurface>
   );
 }

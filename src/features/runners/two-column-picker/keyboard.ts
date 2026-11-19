@@ -8,6 +8,7 @@ function stepIndex<T>(items: T[], from: number, direction: 1 | -1): number {
 }
 
 export interface KeyboardContext<L extends FilterableItem, R extends { id: string }> {
+  singlePane: boolean;
   leftActive: boolean;
   rightActive: boolean;
   /** The highlighted left row answers for itself: Enter commits, → is inert. */
@@ -31,7 +32,7 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   onRefresh?: (() => void) | undefined;
   maxVisible: number;
   setActiveColumn: (col: 'left' | 'right') => void;
-  setSelectedLeftKey: (key: string | null) => void;
+  backToTools: () => void;
   setLeftFilter: (fn: (prev: string) => string) => void;
   setRightFilter: (fn: (prev: string) => string) => void;
   /** Returns the left item the cursor lands on, so the right column can reset against it. */
@@ -50,6 +51,7 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
 /** The key handler acts on this decision and the key line names it. */
 export function escapeAction(state: {
   isExpanded: boolean;
+  singlePane: boolean;
   leftActive: boolean;
   rightActive: boolean;
   leftFilter: string;
@@ -58,7 +60,7 @@ export function escapeAction(state: {
   if (state.isExpanded) return 'collapse';
   if (state.leftActive && state.leftFilter !== '') return 'clear-left';
   if (state.rightActive && state.rightFilter !== '') return 'clear-right';
-  return 'cancel';
+  return state.rightActive && state.singlePane ? 'back' : 'cancel';
 }
 
 export function handleKeyboardInput<L extends FilterableItem, R extends { id: string }>(
@@ -91,6 +93,9 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
         ctx.setRightFilter(() => '');
         ctx.setRightIndex(ctx.rightVirtualCount);
         return;
+      case 'back':
+        ctx.backToTools();
+        return;
       case 'cancel':
         ctx.onCancel();
         return;
@@ -113,10 +118,7 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   }
 
   if (key.leftArrow) {
-    if (ctx.rightActive) {
-      ctx.setActiveColumn('left');
-      ctx.setSelectedLeftKey(null);
-    }
+    if (ctx.rightActive) ctx.backToTools();
     return;
   }
 

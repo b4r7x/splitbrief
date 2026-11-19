@@ -1,6 +1,8 @@
 import { ThemeText as Text, useTheme } from '../../theme.js';
 import { useRef, type ReactNode } from 'react';
 import { Box } from 'ink';
+import { PanelSurface } from '../../overlays/surface.js';
+import { PanelRow } from '../../overlays/row.js';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import { getScrollbarThumb, scrollbarCell } from '../../scrollbar.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -22,21 +24,14 @@ export function CompletionPanel<T>({
   footer: string;
   isOpen?: boolean | undefined;
   itemKey: (item: T) => string;
-  renderRow: (opts: {
-    item: T;
-    globalIndex: number;
-    isSelected: boolean;
-    rowBg: string | undefined;
-    panelBg: string | undefined;
-  }) => ReactNode;
-  renderEmpty?: ((panelBg: string | undefined) => ReactNode) | undefined;
+  renderRow: (opts: { item: T; globalIndex: number; isSelected: boolean }) => ReactNode;
+  renderEmpty?: (() => ReactNode) | undefined;
 }) {
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const offsetRef = useRef(0);
   if (!(isOpen ?? items.length > 0)) return null;
 
-  const panelBg = t.suggestionPanelBg;
   const scrollOffset = keepInViewOffset({
     previous: offsetRef.current,
     index: selectedIndex,
@@ -62,48 +57,47 @@ export function CompletionPanel<T>({
     lineCount: items.length,
     visibleHeight: visibleSlice.length,
   });
-  const emptyRow = renderEmpty?.(panelBg);
+  const emptyRow = renderEmpty?.();
 
   const rows: ReactNode[] = [];
   for (const [i, item] of visibleSlice.entries()) {
     const globalIndex = scrollOffset + i;
     const isSelected = globalIndex === selectedIndex;
-    const rowBg = isSelected ? t.selectionBg : panelBg;
     const onThumb = scrollbarCell(i, thumb);
     const isFirst = i === 0;
     const isLast = i === visibleSlice.length - 1;
     const countLabel =
       isFirst && showScrollUp ? upLabel : isLast && showScrollDown ? downLabel : '';
     rows.push(
-      <Box key={itemKey(item)} width="100%" height={1} overflow="hidden" backgroundColor={rowBg}>
+      <PanelRow active={isSelected} key={itemKey(item)} width="100%" height={1} overflow="hidden">
         <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-          {renderRow({ item, globalIndex, isSelected, rowBg, panelBg })}
+          {renderRow({ item, globalIndex, isSelected })}
         </Box>
         {overflow ? (
-          <Box flexShrink={0} backgroundColor={rowBg}>
+          <Box flexShrink={0}>
             <Text color={t.scrollIndicator}>{` ${countLabel.padStart(countWidth)} `}</Text>
             <Text color={onThumb ? t.accent : t.scrollIndicator}>
               {onThumb ? glyph('scrollThumb') : glyph('scrollTrack')}
             </Text>
           </Box>
         ) : null}
-      </Box>,
+      </PanelRow>,
     );
   }
   if (emptyRow) {
     rows.push(
-      <Box key="empty" width="100%" height={1} overflow="hidden" backgroundColor={panelBg}>
+      <Box key="empty" width="100%" height={1} overflow="hidden">
         {emptyRow}
       </Box>,
     );
   }
   rows.push(
-    <Box key="divider" width="100%" height={1} overflow="hidden" backgroundColor={panelBg}>
+    <Box key="divider" width="100%" height={1} overflow="hidden">
       <Text color={t.border}>{glyph('divider').repeat(Math.max(0, cols - 4))}</Text>
     </Box>,
   );
   rows.push(
-    <Box key="footer" width="100%" height={1} overflow="hidden" backgroundColor={panelBg}>
+    <Box key="footer" width="100%" height={1} overflow="hidden">
       <Text color={t.textDim} wrap="truncate-end">
         {footer}
       </Text>
@@ -113,16 +107,15 @@ export function CompletionPanel<T>({
   return (
     <Box flexDirection="column" width="100%">
       <OcclusionBackplate rows={rows.length + 2} width={Math.max(0, cols)} />
-      <Box
+      <PanelSurface
         flexDirection="column"
         width="100%"
         paddingX={1}
         borderStyle={borderStyleFor('round')}
         borderColor={t.border}
-        backgroundColor={panelBg}
       >
         {rows}
-      </Box>
+      </PanelSurface>
     </Box>
   );
 }

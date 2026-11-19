@@ -13,6 +13,7 @@ import { ScrollIndicator } from '../scroll-indicator.js';
 import { computeListDisplayWindow } from './scroll-window.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from './row-zone.js';
 import { ListGroupHeader } from '../list-row/row.js';
+import { PanelRow } from '../overlays/row.js';
 
 export interface ListSectionConfig<T> {
   by: (item: T) => string;
@@ -37,6 +38,7 @@ export interface ListDecorationsConfig<T> {
 interface ListViewportBaseProps<T> {
   items: T[];
   selectedIndex: number;
+  highlightCursor?: boolean | undefined;
   /** The horizontal space the list occupies; required for a right-edge scrollbar to be placed. */
   width?: number | undefined;
   /** Where the bar sits relative to `width`; `padding` rides the enclosing frame's padding column. */
@@ -76,6 +78,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
   const {
     items,
     selectedIndex,
+    highlightCursor = false,
     width,
     barColumn = 'inside',
     getKey,
@@ -184,11 +187,19 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
             );
           }
           case 'item': {
-            const rendered = renderItem(slot.item, {
-              isCursor: slot.itemIndex === selectedIndex,
+            const isCursor = slot.itemIndex === selectedIndex;
+            const body = renderItem(slot.item, {
+              isCursor,
               globalIndex: slot.itemIndex,
               contentWidth: rowContentWidth,
             });
+            const rendered = highlightCursor ? (
+              <PanelRow active={isCursor} width="100%">
+                {body}
+              </PanelRow>
+            ) : (
+              body
+            );
             const itemIndex = slot.itemIndex;
             return onRowActivate ? (
               <RowZone

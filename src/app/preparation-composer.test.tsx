@@ -36,7 +36,7 @@ const CHECKING = 'Checking tools';
 const FULLSCREEN_PANEL_TITLE = 'Preparing your tools';
 const DRAFT = 'add a parser';
 const TYPED_AFTER_SUBMIT = ' and tests';
-const PASTE_CHIP = '[paste #1 +5 lines]';
+const PASTE_CHIP = '[Pasted #1 +5 lines]';
 const PASTED_LINES = '\none\ntwo\nthree\nfour';
 /** Two keystrokes either side of the settle: side by side means the caret never moved. */
 const BEFORE_MARK = '@';

@@ -12,7 +12,7 @@ export interface Theme {
   implementer: ThemeColor;
   reviewer: ThemeColor;
   border: ThemeColor;
-  suggestionPanelBg: ThemeColor;
+  overlayBg: ThemeColor;
   selectionBg: ThemeColor;
   scrollIndicator: ThemeColor;
   diff: {
@@ -112,7 +112,7 @@ export const PALETTES: Readonly<Record<ThemeVariant, Palette>> = {
       // The review seat has its own hue, distinct from warning.
       reviewer: { truecolor: '#ffa95e', ansi: 'yellowBright' },
       border: { truecolor: '#8a91ad', ansi: 'gray' },
-      suggestionPanelBg: { truecolor: '#1f2233', ansi: undefined },
+      overlayBg: { truecolor: '#1f2233', ansi: undefined },
       selectionBg: { truecolor: '#363a4e', ansi: 'black' },
       scrollIndicator: { truecolor: '#9fa7bf', ansi: 'white' },
       diff: {
@@ -174,7 +174,7 @@ export const PALETTES: Readonly<Record<ThemeVariant, Palette>> = {
       implementer: { truecolor: '#1d3c8f', ansi: 'blue' },
       reviewer: { truecolor: '#a34a00', ansi: 'yellowBright' },
       border: { truecolor: '#6b7181', ansi: 'gray' },
-      suggestionPanelBg: { truecolor: '#f6f7f9', ansi: undefined },
+      overlayBg: { truecolor: '#f6f7f9', ansi: undefined },
       selectionBg: { truecolor: '#e1e4ea', ansi: 'white' },
       scrollIndicator: { truecolor: '#454c59', ansi: undefined },
       diff: {
@@ -225,7 +225,7 @@ export type TokenRole = 'text' | 'mark' | 'surface' | 'cursor-text';
 
 export function themeTokenRole(path: string): TokenRole {
   switch (path) {
-    case 'suggestionPanelBg':
+    case 'overlayBg':
     case 'selectionBg':
     case 'markdown.codeBg':
     case 'highlight.bg':

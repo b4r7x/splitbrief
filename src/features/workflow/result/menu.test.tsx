@@ -75,6 +75,23 @@ describe('ResultMenu', () => {
     resetAllStores();
   });
 
+  it('paints each line of the action holding the keys and clears its band on focus loss', () => {
+    chalk.level = 3;
+    terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    const { ui } = renderMenu();
+    const band = chalk.bgHex(defaultTheme.selectionBg!)('x').split('x')[0]!;
+    const frame = ui.lastFrame()?.split('\n') ?? [];
+    const first = frame.findIndex((line) => stripAnsiStyles(line).includes('Apply'));
+    const next = frame.findIndex((line) => stripAnsiStyles(line).includes('Show diff'));
+
+    expect(next - first).toBeGreaterThan(1);
+    for (const line of frame.slice(first, next)) expect(line).toContain(band);
+    expect(frame[next]).not.toContain(band);
+    ui.rerender(menuElement({ focused: false }).element);
+    expect(ui.lastFrame()).not.toContain(band);
+    ui.unmount();
+  });
+
   it.each([60, 120])(
     'keeps action names and wrapped dim consequences separate at %s columns',
     async (cols) => {

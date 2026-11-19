@@ -51,10 +51,10 @@ export function CommandCompletionMenu({
       footer={footer}
       isOpen
       itemKey={(cmd) => cmd.name}
-      renderRow={({ item: cmd, isSelected, rowBg }) => (
-        <CommandRow cmd={cmd} isSelected={isSelected} rowBg={rowBg} nameWidth={nameWidth} />
+      renderRow={({ item: cmd, isSelected }) => (
+        <CommandRow cmd={cmd} isSelected={isSelected} nameWidth={nameWidth} />
       )}
-      renderEmpty={(panelBg) => {
+      renderEmpty={() => {
         if (filtered.length > 0) return null;
         if (!fuzzyMatch) {
           return <Text color={t.textDim}>{`${listRowLead('default')}no matching commands`}</Text>;
@@ -73,7 +73,6 @@ export function CommandCompletionMenu({
             labelColor={t.textDim}
             detail={`${fuzzyMatch.description} (fuzzy)`}
             detailColor={t.textDim}
-            backgroundColor={panelBg}
           />
         );
       }}
@@ -88,34 +87,32 @@ function getCommandNameWidth(names: string[]): number {
 function CommandRow({
   cmd,
   isSelected,
-  rowBg,
   nameWidth,
 }: {
   cmd: CommandCompletionRow;
   isSelected: boolean;
-  rowBg: string | undefined;
   nameWidth: number;
 }) {
   const t = useTheme();
 
   return (
-    <Box width="100%" height={1} overflow="hidden" backgroundColor={rowBg}>
+    <Box width="100%" height={1} overflow="hidden">
       <Box width={2} flexShrink={0}>
         <Text color={t.accent}>{listRowLead(isSelected ? 'active' : 'default')}</Text>
       </Box>
-      <Box width={nameWidth} flexShrink={0} overflow="hidden" backgroundColor={rowBg}>
+      <Box width={nameWidth} flexShrink={0} overflow="hidden">
         <Text color={isSelected ? t.accent : t.text} bold={isSelected} wrap="truncate-end">
           {cmd.name}
         </Text>
       </Box>
-      <Box width={COMMAND_NAME_GAP} flexShrink={0} backgroundColor={rowBg} />
-      <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden" backgroundColor={rowBg}>
+      <Box width={COMMAND_NAME_GAP} flexShrink={0} />
+      <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
         <Text color={t.textDim} wrap="truncate-end">
           {cmd.description}
         </Text>
       </Box>
       {cmd.trailing ? (
-        <Box flexShrink={0} marginLeft={1} backgroundColor={rowBg}>
+        <Box flexShrink={0} marginLeft={1}>
           <Text color={t.textDim}>{cmd.trailing}</Text>
         </Box>
       ) : null}

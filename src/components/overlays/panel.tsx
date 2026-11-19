@@ -1,24 +1,13 @@
 import { ThemeText as Text, useTheme } from '../theme.js';
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
+import { PanelSurface } from './surface.js';
 import { borderStyleFor } from '../../lib/glyphs.js';
 import { fitKeyLegend } from '../key-legend.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import {
-  OVERLAY_FRAME_ROWS,
-  type OverlayDensity,
-  overlayGutterRows,
-  overlayRect,
-} from '../../core/navigation/overlay-rect.js';
+import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { useStores } from '../../stores/use-many.js';
-
-export function overlayInnerRowCapacity(input: { rows: number; outerChromeRows: number }): number {
-  return Math.max(
-    0,
-    input.rows - overlayGutterRows(input.rows) - OVERLAY_FRAME_ROWS - input.outerChromeRows,
-  );
-}
 
 /** The card a page asks a body to paint itself in, so the body can budget the card's rows. */
 export interface OverlayCard {
@@ -67,7 +56,7 @@ export function OverlayPanel({
 
   return (
     <Box width={cols} height={rows} alignItems="center" justifyContent="center">
-      <Box
+      <PanelSurface
         flexDirection="column"
         width={rect.width}
         borderStyle={borderStyleFor('round')}
@@ -78,7 +67,7 @@ export function OverlayPanel({
         {titleNode}
         {children}
         {hintNode}
-      </Box>
+      </PanelSurface>
     </Box>
   );
 }

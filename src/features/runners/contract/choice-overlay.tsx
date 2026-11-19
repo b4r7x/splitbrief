@@ -9,6 +9,7 @@ import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { PanelRow } from '../../../components/overlays/row.js';
 import { OverlayPanel } from '../../../components/overlays/panel.js';
 import { ContractChip, StepIndicator, tierColor } from './chip.js';
 import {
@@ -57,7 +58,7 @@ function ContractCardView({
   const lead = (first: boolean) =>
     first && focused ? <Text color={t.accent}>{listRowLead('active')}</Text> : <Text>{'  '}</Text>;
   return (
-    <Box flexDirection="column">
+    <PanelRow active={focused} flexDirection="column">
       <Box height={1} overflow="hidden">
         <Box flexShrink={0}>
           {lead(true)}
@@ -93,7 +94,7 @@ function ContractCardView({
           </Text>
         </Box>
       </Box>
-    </Box>
+    </PanelRow>
   );
 }
 

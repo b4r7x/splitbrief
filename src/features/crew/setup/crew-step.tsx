@@ -147,6 +147,7 @@ export function CrewStep({
         </Box>
       )}
       <ListViewport
+        highlightCursor
         barColumn="padding"
         width={innerWidth}
         items={list.filtered}

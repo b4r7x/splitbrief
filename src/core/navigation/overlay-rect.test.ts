@@ -3,6 +3,7 @@ import {
   OVERLAY_DENSITIES,
   type OverlayDensity,
   overlayGutterRows,
+  overlayInnerRowCapacity,
   overlayRect,
   overlayWidth,
 } from './overlay-rect.js';
@@ -36,6 +37,16 @@ describe('overlayWidth', () => {
 describe('overlayGutterRows', () => {
   it('adds breathing room as the terminal gets taller, capped at two rows', () => {
     expect([18, 24, 30, 40].map(overlayGutterRows)).toEqual([0, 1, 2, 2]);
+  });
+});
+
+describe('overlayInnerRowCapacity', () => {
+  it('leaves room for the frame rows and the gutter around the panel', () => {
+    const capacity = (rows: number) => overlayInnerRowCapacity({ rows, outerChromeRows: 4 });
+
+    expect(capacity(10)).toBe(2);
+    expect(capacity(40)).toBe(30);
+    expect(capacity(4)).toBe(0);
   });
 });
 

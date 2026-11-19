@@ -59,7 +59,7 @@ export function EditorBufferView() {
           selection,
         });
         return (
-          <Text key={rowIndex} wrap="truncate">
+          <Text key={rowIndex} color={t.text} wrap="truncate">
             {segments.length === 0
               ? ' '
               : segments.map((segment, j) => (

@@ -12,7 +12,7 @@ const mounted: ReturnType<typeof renderFeature>[] = [];
 function ThemeReadout() {
   const theme = useTheme();
   return (
-    <Text color={theme.textDim} backgroundColor={theme.suggestionPanelBg}>
+    <Text color={theme.textDim} backgroundColor={theme.overlayBg}>
       {theme.textDim ?? 'Native foreground'}
     </Text>
   );

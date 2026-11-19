@@ -32,12 +32,12 @@ export function ReferenceCompletionMenu({
       maxVisible={maxVisible}
       footer={footer}
       itemKey={(file) => file}
-      renderRow={({ item: file, isSelected, rowBg }) => (
-        <Box width="100%" height={1} overflow="hidden" backgroundColor={rowBg}>
+      renderRow={({ item: file, isSelected }) => (
+        <Box width="100%" height={1} overflow="hidden">
           <Box width={2} flexShrink={0}>
             <Text color={t.accent}>{listRowLead(isSelected ? 'active' : 'default')}</Text>
           </Box>
-          <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden" backgroundColor={rowBg}>
+          <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
             <Text
               color={isSelected ? t.accent : t.textDim}
               bold={isSelected}

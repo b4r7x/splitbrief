@@ -4,6 +4,7 @@ import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
+import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -14,6 +15,7 @@ import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
+import { readForegroundAtText } from '../helpers/terminal-cells.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 const PATIENCE = { timeout: 60_000 };
@@ -51,7 +53,11 @@ const QUESTIONS = {
   ],
 };
 
-type Tui = Readonly<{ screen: () => string; write: (keys: string) => void }>;
+type Tui = Readonly<{
+  screen: () => string;
+  write: (keys: string) => void;
+  foregroundAt: (phrase: string) => ReturnType<typeof readForegroundAtText>;
+}>;
 
 // Each call saves its prompt before it is counted, then waits for its hold file to be removed if present.
 function plannerScript(callsPath: string, dir: string, holdPaths: readonly string[]): string {
@@ -166,7 +172,11 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
         exit.resolve(event);
       });
       try {
-        await drive({ screen, write: (keys) => child.write(keys) });
+        await drive({
+          screen,
+          write: (keys) => child.write(keys),
+          foregroundAt: (phrase) => readForegroundAtText(terminal.buffer.active, phrase),
+        });
       } finally {
         if (outcome === undefined) await terminatePtyProcessGroup(child, exit.promise);
         await reapOrphanRunners(target.projectDir);
@@ -316,7 +326,7 @@ it(
   'keeps a command that SPLITBRIEF refuses in the answer field, over a composer draft',
   SCENARIO_TIMEOUT,
   async () => {
-    await scenario(async (run, { screen, write }) => {
+    await scenario(async (run, { screen, write, foregroundAt }) => {
       write(DRAFT);
       await expect.poll(screen, PATIENCE).toContain(`› ${DRAFT}`);
       unlinkSync(run.hold);
@@ -329,6 +339,9 @@ it(
       await expect.poll(screen, PATIENCE).toContain('↑/tab menu');
       write(MISTYPED);
       await expect.poll(screen, PATIENCE).toContain(`› ${MISTYPED}`);
+
+      const theme = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
+      expect(foregroundAt(MISTYPED)).toEqual({ mode: 'rgb', color: theme.text });
 
       write(PTY_SUBMIT_INPUT);
       await expect.poll(screen, PATIENCE).toContain('Unknown command: /ster. Did you mean /steer?');

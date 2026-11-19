@@ -1,10 +1,11 @@
 import { Box } from 'ink';
+import { PanelRow } from '../../../components/overlays/row.js';
 import { ListRow } from '../../../components/list-row/row.js';
-import { overlayInnerRowCapacity, OverlayPanel } from '../../../components/overlays/panel.js';
+import { OverlayPanel } from '../../../components/overlays/panel.js';
 import { windowSlice } from '../../../components/pickers/scroll-offset.js';
 import { useTheme } from '../../../components/theme.js';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
-import { overlayRect } from '../../../core/navigation/overlay-rect.js';
+import { overlayInnerRowCapacity, overlayRect } from '../../../core/navigation/overlay-rect.js';
 import {
   type ApiProviderDescriptor,
   API_PROVIDER_CATALOG,
@@ -104,29 +105,35 @@ export function LocalConnectionForm(props: LocalConnectionFormProps) {
         onLeave={(direction) => move(direction === 'up' ? -1 : 1)}
       />
       <Box height={1} />
-      <ListRow
-        label={`${checked ? 'Retry' : 'Check'} this connection`}
-        state={row === 2 ? 'active' : 'default'}
-        width={innerWidth}
-      />
+      <PanelRow active={row === 2}>
+        <ListRow
+          label={`${checked ? 'Retry' : 'Check'} this connection`}
+          state={row === 2 ? 'active' : 'default'}
+          width={innerWidth}
+        />
+      </PanelRow>
       <DimLine text={status.line} />
       {status.detail === undefined ? (
         <Box height={1} />
       ) : (
         <DimLine text={status.detail} tone="warning" />
       )}
-      {slice.visibleSlice.map((model) => (
-        <ListRow
-          key={model.id}
-          label={model.label}
-          state={modelRows[modelIndex]?.id === model.id ? 'active' : 'default'}
-          width={innerWidth}
-          trailing={model.state}
-          selected={model.id === seat.model}
-          {...(model.label === model.id ? {} : { metadata: model.id })}
-          {...(model.state === 'not in this catalog' ? { trailingColor: t.warning } : {})}
-        />
-      ))}
+      {slice.visibleSlice.map((model) => {
+        const active = modelRows[modelIndex]?.id === model.id;
+        return (
+          <PanelRow key={model.id} active={active}>
+            <ListRow
+              label={model.label}
+              state={active ? 'active' : 'default'}
+              width={innerWidth}
+              trailing={model.state}
+              selected={model.id === seat.model}
+              {...(model.label === model.id ? {} : { metadata: model.id })}
+              {...(model.state === 'not in this catalog' ? { trailingColor: t.warning } : {})}
+            />
+          </PanelRow>
+        );
+      })}
     </OverlayPanel>
   );
 }

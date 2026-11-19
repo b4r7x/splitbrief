@@ -1771,7 +1771,7 @@ describe('Composer image attach gate', () => {
     await dropImage(first);
     first.stdin.write(' look');
     await flushEffects();
-    expect(stripAnsiStyles(first.lastFrame() ?? '')).toContain('[paste #1 +5 lines]');
+    expect(stripAnsiStyles(first.lastFrame() ?? '')).toContain('[Pasted #1 +5 lines]');
     first.stdin.write('\r');
     await flushEffects();
     first.unmount();
@@ -1798,14 +1798,14 @@ describe('Composer image attach gate', () => {
     const frame = stripAnsiStyles(second.lastFrame() ?? '');
     expect(frame).toContain('line 5');
     expect(frame).toContain('[image #1]');
-    expect(frame).not.toContain('[paste');
+    expect(frame).not.toContain('[Pasted #');
 
     second.stdin.write('\r');
     await flushEffects();
     expect(submissions).toHaveLength(2);
     expect(submissions[1]).toBe(submissions[0]);
     expect(submissions[1]).toContain('line 1\nline 2\nline 3\nline 4\nline 5');
-    expect(submissions[1]).not.toContain('[paste');
+    expect(submissions[1]).not.toContain('[Pasted #');
   });
 
   it('leaves no collapsed-paste marker over the draft history recalls next', async () => {
@@ -1815,7 +1815,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
     ui.stdin.write('line 1\nline 2\nline 3\nline 4\nline 5');
     await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('[paste #1 +5 lines]');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('[Pasted #1 +5 lines]');
 
     // The collapsed paste is one row, so the up arrow reaches the history rather than a line above.
     ui.stdin.write('\x1b[A');
@@ -1823,7 +1823,7 @@ describe('Composer image attach gate', () => {
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('rewrite the brief compiler');
-    expect(frame).not.toContain('[paste');
+    expect(frame).not.toContain('[Pasted #');
   });
 
   it('carries an image dropped into an answer through with that answer', async () => {

@@ -1,3 +1,4 @@
+import { PanelSurface } from '../../../../components/overlays/surface.js';
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { Box } from 'ink';
 import { borderStyleFor } from '../../../../lib/glyphs.js';
@@ -93,7 +94,7 @@ export function DocumentReviewPrompt({
   const confirmsOnRow = form.confirmsText !== null && !fit.confirms;
 
   return (
-    <Box
+    <PanelSurface
       flexDirection="column"
       {...(form.framed
         ? { borderStyle: borderStyleFor('bold'), borderColor: t.border, paddingX: 1 }
@@ -134,7 +135,7 @@ export function DocumentReviewPrompt({
                 (option) => option.command === (draft === 'send' ? 'comment' : draft),
               )
         }
-        marked={focused || draft !== null}
+        cursor={draft !== null ? 'draft' : focused ? 'focused' : 'none'}
         rowBudget={fit.listRows}
         width={width}
       />
@@ -146,6 +147,6 @@ export function DocumentReviewPrompt({
           <Text color={t.textDim}>{fitKeyLegend(legendAt(legendWidth), legendWidth)}</Text>
         </Box>
       ) : null}
-    </Box>
+    </PanelSurface>
   );
 }

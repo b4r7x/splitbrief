@@ -130,7 +130,7 @@ function ResultMenuBody({
         <MenuRows
           options={layout.options}
           selectedIndex={selectedIndex}
-          marked={focused}
+          cursor={focused ? 'focused' : 'none'}
           rowBudget={chrome.listRows}
           width={layout.width - 4}
         />

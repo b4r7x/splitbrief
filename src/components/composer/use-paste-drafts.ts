@@ -39,15 +39,13 @@ interface DraftView {
   runs: DraftRun[];
 }
 
-// Both atom kinds are spelled the same way — bracketed, lower case, `#n` — so that inside the prose
-// they read as one family of things the draft carries rather than as words the operator typed. The
-// number is the one the submission legend binds to the attachment.
+// The image number matches the attachment in the submission legend.
 function imageAtomLabel(index: number): string {
   return `[image #${index + 1}]`;
 }
 
 function pasteAtomLabel(index: number, lineCount: number): string {
-  return `[paste #${index + 1} +${lineCount} lines]`;
+  return `[Pasted #${index + 1} +${lineCount} lines]`;
 }
 
 function pasteLineCount(text: string): number {

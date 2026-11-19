@@ -5,7 +5,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { defaultTheme, ThemeText as Text } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
-import { OverlayPanel, overlayInnerRowCapacity } from './panel.js';
+import { OverlayPanel } from './panel.js';
 
 // ink-testing-library's stdout mock resolves chalk color level 0 unless FORCE_COLOR is set before
 // ink (and its chalk dependency) first load, so the color assertions below would silently no-op
@@ -81,16 +81,6 @@ describe('OverlayPanel title', () => {
 
     expect(rowsBelowTitle('gap')).toBe(2);
     expect(rowsBelowTitle('tight')).toBe(1);
-  });
-});
-
-describe('OverlayPanel inner row capacity', () => {
-  it('leaves room for the frame rows and the gutter around the panel', () => {
-    const capacity = (rows: number) => overlayInnerRowCapacity({ rows, outerChromeRows: 4 });
-
-    expect(capacity(10)).toBe(2);
-    expect(capacity(40)).toBe(30);
-    expect(capacity(4)).toBe(0);
   });
 });
 

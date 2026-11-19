@@ -1,3 +1,5 @@
+import { PanelRow } from '../../../components/overlays/row.js';
+import { PanelSurface } from '../../../components/overlays/surface.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { useLayoutEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
@@ -146,7 +148,7 @@ export function PlannerQuestion({
         )
       : 'Questions paused · tab to return · esc type a reply';
   return (
-    <Box
+    <PanelSurface
       width={width}
       height={height}
       flexDirection="column"
@@ -166,30 +168,36 @@ export function PlannerQuestion({
       )}
       <Box height={bodyHeight} flexDirection="column" flexShrink={0} overflow="hidden">
         {body.map(({ row, text }, index) => (
-          <Text
+          <PanelRow
             key={visibleOffset + index}
-            color={
-              row.option === selected && focused ? t.accent : row.navigation ? t.textDim : t.text
-            }
-            bold={row.option === undefined && row.text !== ''}
-            wrap="truncate-end"
+            active={row.option === selected && focused && !disabled}
           >
-            {row.option === undefined
-              ? ''
-              : listRowLead(focused && row.first && row.option === selected ? 'active' : 'default')}
-            {text || (row.defaultLabel ? '' : ' ')}
-            {row.defaultLabel && (
-              <Text color={t.textDim} bold={false}>
-                {' '}
-                {row.defaultLabel}
-              </Text>
-            )}
-            {!chrome.titled && (
-              <Text color={t.textDim} bold={false}>
-                {asked}
-              </Text>
-            )}
-          </Text>
+            <Text
+              color={
+                row.option === selected && focused ? t.accent : row.navigation ? t.textDim : t.text
+              }
+              bold={row.option === undefined && row.text !== ''}
+              wrap="truncate-end"
+            >
+              {row.option === undefined
+                ? ''
+                : listRowLead(
+                    focused && row.first && row.option === selected ? 'active' : 'default',
+                  )}
+              {text || (row.defaultLabel ? '' : ' ')}
+              {row.defaultLabel && (
+                <Text color={t.textDim} bold={false}>
+                  {' '}
+                  {row.defaultLabel}
+                </Text>
+              )}
+              {!chrome.titled && (
+                <Text color={t.textDim} bold={false}>
+                  {asked}
+                </Text>
+              )}
+            </Text>
+          </PanelRow>
         ))}
       </Box>
       {showAnswer && (
@@ -199,6 +207,7 @@ export function PlannerQuestion({
             <MultilineInput
               resetKey={state.index}
               value={state.drafts[state.index]?.text ?? ''}
+              textStyle={{ color: t.text }}
               onChange={(text) => questionPromptStore.setFocus('answer', text)}
               onSubmit={onAnswer}
               placeholder="Your answer…"
@@ -238,6 +247,6 @@ export function PlannerQuestion({
         <Text color={t.textDim}>{maxOffset > 0 ? `${mark}${SOFT_SEP}pgup/pgdn scroll` : ' '}</Text>
       )}
       {chrome.legend && <Text color={t.textDim}>{legend}</Text>}
-    </Box>
+    </PanelSurface>
   );
 }

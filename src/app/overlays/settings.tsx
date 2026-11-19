@@ -149,6 +149,7 @@ export function SettingsOverlay() {
   const listBody = (
     <>
       <ListViewport
+        highlightCursor
         barColumn="padding"
         width={rect.innerWidth}
         items={filtered}

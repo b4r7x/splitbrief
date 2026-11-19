@@ -1,3 +1,4 @@
+import { PanelSurface } from '../../../../components/overlays/surface.js';
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import { ListViewport } from '../../../../components/pickers/list-viewport.js';
@@ -121,7 +122,7 @@ export function ConfirmApprovalPrompt({
   );
 
   const body = (
-    <Box
+    <PanelSurface
       flexDirection="column"
       {...(fit.framed && {
         borderStyle: borderStyleFor('bold'),
@@ -148,8 +149,12 @@ export function ConfirmApprovalPrompt({
           <Text color={tone}>{title}</Text>
         ))}
       {fit.gaps.title && <Text> </Text>}
-      {fit.label && <Text>{getApprovalConfirmLabel(request.actionClass)}</Text>}
-      {fit.subject.length > 0 && <Text bold>{fit.subject.join('\n')}</Text>}
+      {fit.label && <Text color={t.text}>{getApprovalConfirmLabel(request.actionClass)}</Text>}
+      {fit.subject.length > 0 && (
+        <Text color={t.text} bold>
+          {fit.subject.join('\n')}
+        </Text>
+      )}
       {fit.hidden > 0 && fit.markRow && <Text color={t.textDim}>{mark}</Text>}
       {/* Every gate wears the same heavy rule, so weight alone cannot tell an irreversible one apart —
           and it has to be told apart, because `y` is the primary key on one panel and a refused key on
@@ -164,6 +169,7 @@ export function ConfirmApprovalPrompt({
           <Box flexDirection="column" flexShrink={0}>
             <ListViewport
               items={[...options]}
+              highlightCursor={focused && isActive}
               selectedIndex={keys.selectedIndex}
               getKey={(option) => option.key}
               rowBudget={fit.options}
@@ -210,10 +216,12 @@ export function ConfirmApprovalPrompt({
         </>
       ) : (
         <>
-          {fit.options >= 2 && <Text>{CONFIRM_QUESTION}</Text>}
+          {fit.options >= 2 && <Text color={t.text}>{CONFIRM_QUESTION}</Text>}
           <Box height={1} overflow="hidden">
             <Text color={t.text}>{`${glyph('prompt')} `}</Text>
-            <Text wrap="truncate-end">{keys.reason}</Text>
+            <Text color={t.text} wrap="truncate-end">
+              {keys.reason}
+            </Text>
             <Text color={t.text}>{glyph('liveBar')}</Text>
             {rowAction !== undefined && <Text color={t.textDim}>{`${SOFT_SEP}${rowAction}`}</Text>}
           </Box>
@@ -222,7 +230,7 @@ export function ConfirmApprovalPrompt({
           {fit.legend && <Text color={t.textDim}>{CONFIRM_REASON_HINTS}</Text>}
         </>
       )}
-    </Box>
+    </PanelSurface>
   );
   return frame.kind === 'box' ? (
     body

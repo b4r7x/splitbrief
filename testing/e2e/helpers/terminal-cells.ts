@@ -17,17 +17,13 @@ function foregroundOf(cell: IBufferCell): TerminalForeground {
 }
 
 /**
- * The foreground of the cell `offset` characters into the first `phrase` on the visible screen.
+ * The cell `offset` characters into the first `phrase` on the visible screen.
  * The column is taken from the cells themselves, so a wide glyph before the phrase cannot shift
  * it. A screen that does not show the phrase, or a cell the row does not hold, throws instead of
  * leaving a missing value to compare.
  */
-export function readForegroundAtText(
-  buffer: IBuffer,
-  phrase: string,
-  offset = 0,
-): TerminalForeground {
-  if (phrase === '') throw new Error('A foreground read needs a phrase to find');
+export function terminalCellAtText(buffer: IBuffer, phrase: string, offset = 0): IBufferCell {
+  if (phrase === '') throw new Error('A cell read needs a phrase to find');
   if (offset < 0 || offset >= phrase.length) {
     throw new Error(`The offset ${offset} is outside "${phrase}"`);
   }
@@ -50,11 +46,19 @@ export function readForegroundAtText(
       if (position + entry.text.length > target) {
         const cell = line.getCell(entry.column);
         if (cell === undefined) break;
-        return foregroundOf(cell);
+        return cell;
       }
       position += entry.text.length;
     }
     throw new Error(`The screen shows "${phrase}" without the cell at offset ${offset}`);
   }
   throw new Error(`The screen does not show "${phrase}"`);
+}
+
+export function readForegroundAtText(
+  buffer: IBuffer,
+  phrase: string,
+  offset = 0,
+): TerminalForeground {
+  return foregroundOf(terminalCellAtText(buffer, phrase, offset));
 }

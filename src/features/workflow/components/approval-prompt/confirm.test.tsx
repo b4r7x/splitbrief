@@ -1,3 +1,5 @@
+import chalk from 'chalk';
+import { defaultTheme } from '../../../../components/theme.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -107,6 +109,25 @@ describe('ApprovalPrompt confirm tier', () => {
     ui.stdin.write(ESC);
     await expect(third).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
+  });
+
+  it('uses the panel text colour for the path the user is asked to confirm', () => {
+    const level = chalk.level;
+    chalk.level = 3;
+    void openApprovalPrompt(makeConfirmRequest('project/file.txt'));
+    const ui = renderFeature(<ApprovalPrompt />);
+    try {
+      const path = ui
+        .lastFrame()
+        .split('\n')
+        .find((line) => stripAnsiStyles(line).includes('project/file.txt'));
+      expect(path).toBeDefined();
+      const foreground = chalk.hex(defaultTheme.text!)('x').split('x')[0];
+      expect(path).toContain(foreground);
+    } finally {
+      ui.unmount();
+      chalk.level = level;
+    }
   });
 
   it('never asks the user to type a confirmation phrase', async () => {

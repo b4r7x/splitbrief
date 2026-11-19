@@ -18,6 +18,7 @@ import {
   startAndSignal,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const STARTED_IN = 'This run started in';
@@ -93,8 +94,10 @@ describe('e2e: the run screen at rest when its project folder goes away', {
               ),
             ),
           );
-        const dataListener = child.onData((data) => terminal.write(data));
+        const frames = wholeFrames((data) => terminal.write(data));
+        const dataListener = child.onData(frames.feed);
         const exitListener = child.onExit((event) => {
+          frames.flush();
           outcome = event;
           exit.resolve(event);
         });

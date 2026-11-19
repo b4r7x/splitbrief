@@ -101,7 +101,7 @@ export function StopSheet({
         <MenuRows
           options={layout.options}
           selectedIndex={selectedIndex}
-          marked
+          cursor="focused"
           rowBudget={chrome.listRows}
           width={layout.width - 4}
         />

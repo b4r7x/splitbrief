@@ -37,7 +37,6 @@ export interface AlignedOptionRowProps {
   detail?: string | undefined;
   detailColor?: string | undefined;
   detailWrap?: TextProps['wrap'] | undefined;
-  backgroundColor?: string | undefined;
 }
 
 export function AlignedOptionRow({
@@ -53,36 +52,26 @@ export function AlignedOptionRow({
   detail,
   detailColor,
   detailWrap = 'truncate-end',
-  backgroundColor,
 }: AlignedOptionRowProps) {
   const cleanMeta = meta ? { ...meta, text: stripTerminalControls(meta.text) } : undefined;
   const cleanLabel = stripTerminalControls(label);
   const cleanDetail = detail === undefined ? undefined : stripTerminalControls(detail);
 
   return (
-    <Box width="100%" height={1} overflow="hidden" backgroundColor={backgroundColor}>
+    <Box width="100%" height={1} overflow="hidden">
       {lead}
-      {leadGap > 0 ? (
-        <Box width={leadGap} flexShrink={0} backgroundColor={backgroundColor} />
-      ) : null}
+      {leadGap > 0 ? <Box width={leadGap} flexShrink={0} /> : null}
       {cleanMeta ? (
         <>
-          <Box
-            width={cleanMeta.width}
-            flexShrink={0}
-            overflow="hidden"
-            backgroundColor={backgroundColor}
-          >
+          <Box width={cleanMeta.width} flexShrink={0} overflow="hidden">
             <Text color={cleanMeta.color} wrap="truncate-end">
               {cleanMeta.text}
             </Text>
           </Box>
-          {metaGap > 0 ? (
-            <Box width={metaGap} flexShrink={0} backgroundColor={backgroundColor} />
-          ) : null}
+          {metaGap > 0 ? <Box width={metaGap} flexShrink={0} /> : null}
         </>
       ) : null}
-      <Box width={labelWidth} flexShrink={0} overflow="hidden" backgroundColor={backgroundColor}>
+      <Box width={labelWidth} flexShrink={0} overflow="hidden">
         <Text
           color={labelColor}
           {...(labelBold !== undefined ? { bold: labelBold } : {})}
@@ -91,17 +80,9 @@ export function AlignedOptionRow({
           {cleanLabel}
         </Text>
       </Box>
-      {labelGap > 0 ? (
-        <Box width={labelGap} flexShrink={0} backgroundColor={backgroundColor} />
-      ) : null}
+      {labelGap > 0 ? <Box width={labelGap} flexShrink={0} /> : null}
       {cleanDetail ? (
-        <Box
-          flexGrow={1}
-          flexShrink={1}
-          minWidth={0}
-          overflow="hidden"
-          backgroundColor={backgroundColor}
-        >
+        <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
           <Text color={detailColor} wrap={detailWrap}>
             {cleanDetail}
           </Text>

@@ -6,7 +6,7 @@ import {
   type SeatPickerRole,
 } from '../../core/runners/seat-roles.js';
 import { OverlayPanel } from '../../components/overlays/panel.js';
-import { ThemeText as Text } from '../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { arrowSep, SOFT_SEP } from '../../core/separators.js';
 import { CLOSE_HINT, formatKeyHints } from '../../components/key-legend.js';
 import { BOOT_MANIFEST_TITLE } from '../../core/discovery/copy.js';
@@ -43,6 +43,7 @@ export function ToolModelPicker({
   slot,
   deps = defaultPickerEffectDeps,
 }: ToolModelPickerProps) {
+  const t = useTheme();
   const lane = seatPickerLane(role);
   const inheritedReview = configStore.use(
     (s) => s.config !== null && inheritsPlannerSeat(s.config, 'reviewer'),
@@ -149,7 +150,11 @@ export function ToolModelPicker({
       <TextInputOverlay
         title={slot === 'fallback' ? 'Custom fallback model' : 'Custom model'}
         role={role}
-        recap={inheritanceNotice === undefined ? undefined : <Text>{inheritanceNotice}</Text>}
+        recap={
+          inheritanceNotice === undefined ? undefined : (
+            <Text color={t.textDim}>{inheritanceNotice}</Text>
+          )
+        }
         label={`Model id for ${item.displayName}`}
         placeholder={entry.placeholder}
         examples={entry.examples}

@@ -93,12 +93,14 @@ export interface ColumnState<T> {
 }
 
 /** What Esc does next, in the column that holds the keys. */
-export type EscapeAction = 'collapse' | 'clear-left' | 'clear-right' | 'cancel';
+export type EscapeAction = 'collapse' | 'clear-left' | 'clear-right' | 'back' | 'cancel';
 
 export interface TwoColumnNavState<L, R> {
   activeColumn: 'left' | 'right';
   left: ColumnState<L>;
   right: ColumnState<RightItemOrVirtual<R>>;
+  backToTools: () => void;
+  hasSelectableRight: boolean;
   selectedLeftKey: string | null;
   terminalPane: TerminalPane | undefined;
   /** The highlighted left row is disabled: neither → nor ⏎ acts on it. */

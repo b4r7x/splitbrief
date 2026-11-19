@@ -149,9 +149,11 @@ function resolveHomeComposer(context: LocatorContext): CellRect {
   const layout = getHomeLayout({ cols, rows, dockRows: RESTING_DOCK_ROWS, noConfig: false });
   const x = Math.floor((cols - layout.width) / 2);
   const boxBottom = rows - layout.inputBottomMargin - 1;
-  let boxTop = boxBottom;
-  while (boxTop > context.grid.rect.y && cellAt(context.grid, x, boxTop) !== '╭') boxTop -= 1;
-  if (cellAt(context.grid, x, boxTop) !== '╭') {
+  // ASCII paints both corners with '+', so seek the top strictly above the known bottom.
+  const topCorner = cellAt(context.grid, x, boxBottom) === '+' ? '+' : '╭';
+  let boxTop = boxBottom - 1;
+  while (boxTop > context.grid.rect.y && cellAt(context.grid, x, boxTop) !== topCorner) boxTop -= 1;
+  if (cellAt(context.grid, x, boxTop) !== topCorner) {
     throw new Error('No home composer box is painted above the bottom margin');
   }
   const { feedbackLine } = deriveHomeHintLines({

@@ -302,13 +302,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'home-draft-paste-fold',
-      title: 'Home · a pasted text of four lines folded in the draft',
+      title: 'Home · Pasted text folded into one draft item',
       surface: screenSurface('home'),
       checkpoint: {
         id: 'ready',
         title: 'Draft holding the fold of the pasted lines',
         kind: 'ready',
-        marker: '[paste #1 +4 lines]',
+        marker: '[Pasted #1 +4 lines]',
       },
       elements: [
         { id: 'header', title: 'Home header' },
@@ -7016,7 +7016,7 @@ function overlayGroup(input: OverlayGroupInput): readonly ScenarioDefinition[] {
   );
 }
 
-const PICKER_TITLE_MARKER = 'Tools';
+const PICKER_TITLE_MARKER = 'tool, model, effort';
 
 const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> = {
   help: overlayGroup({
@@ -7611,7 +7611,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-implementer-picker',
         title: 'Overlay · implementer picker',
-        marker: 'Add custom model',
+        marker: PICKER_TITLE_MARKER,
       },
       {
         id: 'overlay-implementer-picker-claude',

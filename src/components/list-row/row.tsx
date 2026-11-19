@@ -22,7 +22,6 @@ interface ListRowBaseProps {
   trailing?: string | undefined;
   trailingColor?: string | undefined;
   selected?: boolean | undefined;
-  hover?: boolean | undefined;
   width?: number | undefined;
   labelWidth?: number | undefined;
   /**
@@ -60,7 +59,6 @@ export function ListRow({
   trailing,
   trailingColor,
   selected,
-  hover,
   width,
   labelWidth,
   labelTruncate = 'end',
@@ -71,7 +69,6 @@ export function ListRow({
   const accentRow = state === 'active';
   const leadColor = accentRow ? t.accent : t.textDim;
   const labelColor = accentRow ? t.accent : t.text;
-  const backgroundColor = hover ? t.selectionBg : undefined;
   const labelWrap = labelTruncate === 'end' ? 'truncate-end' : 'truncate-start';
   const cleanLabel = stripTerminalControls(label);
   const cleanMeta = metadata === undefined ? undefined : stripTerminalControls(metadata);
@@ -169,15 +166,15 @@ export function ListRow({
         );
 
   return (
-    <Box width={width} height={1} overflow="hidden" backgroundColor={backgroundColor}>
+    <Box width={width} height={1} overflow="hidden">
       <Text color={leadColor}>{listRowLead(state)}</Text>
       {acceleratorWidth !== undefined ? (
-        <Box width={accelW} flexShrink={0} backgroundColor={backgroundColor}>
+        <Box width={accelW} flexShrink={0}>
           <Text color={t.textDim}>{`${(accelerator ?? '').padEnd(acceleratorWidth)}   `}</Text>
         </Box>
       ) : null}
       {hasTree ? (
-        <Box width={treeW} flexShrink={0} backgroundColor={backgroundColor}>
+        <Box width={treeW} flexShrink={0}>
           <Text color={t.border}>{cleanTree}</Text>
         </Box>
       ) : null}
@@ -187,7 +184,6 @@ export function ListRow({
           : { width: labelBoxW, flexShrink: 0 })}
         minWidth={0}
         overflow="hidden"
-        backgroundColor={backgroundColor}
       >
         <Text color={labelColor} wrap={labelWrap}>
           {fittedLabelParts === undefined ? (
@@ -207,7 +203,6 @@ export function ListRow({
           {...(metaW === undefined ? { flexShrink: 1 } : { width: metaW, flexShrink: 0 })}
           minWidth={0}
           overflow="hidden"
-          backgroundColor={backgroundColor}
         >
           <Text color={metadataColor} wrap="truncate-end">
             {metaGap}
@@ -215,9 +210,9 @@ export function ListRow({
           </Text>
         </Box>
       ) : null}
-      {labelWidth !== undefined ? <Box flexGrow={1} backgroundColor={backgroundColor} /> : null}
+      {labelWidth !== undefined ? <Box flexGrow={1} /> : null}
       {showTrailing ? (
-        <Box width={trailW} flexShrink={0} backgroundColor={backgroundColor}>
+        <Box width={trailW} flexShrink={0}>
           <Text color={trailingColor ?? t.textDim} wrap="truncate-end">
             {' '}
             {cleanTrailing}
@@ -225,7 +220,7 @@ export function ListRow({
         </Box>
       ) : null}
       {showCheck ? (
-        <Box width={checkW} flexShrink={0} backgroundColor={backgroundColor}>
+        <Box width={checkW} flexShrink={0}>
           <Text {...(selected ? { color: t.success } : {})}>
             {selected ? ` ${glyph('check')}` : '  '}
           </Text>

@@ -63,7 +63,18 @@ const CARD_EDGE = new Set([
 function rightCardRows(frame: string): string[] {
   const lines = frame.split('\n');
   const span = rightCardSpan(lines);
-  if (span === undefined) throw new Error('Right card borders are absent');
+  if (span === undefined) {
+    // A narrow Tools pane puts the diagnostic after an inset rule. Scope to that region so
+    // a matching tool row or a message below the card cannot satisfy the assertion.
+    const divider = lines.findIndex((line) => /^\s*│\s*─+\s*│\s*$/u.test(line));
+    const close = lines.findIndex(
+      (line, index) => index > divider && line.includes(CARD_BOTTOM_RIGHT),
+    );
+    if (divider < 0 || close < 0) throw new Error('Picker detail region absent');
+    return lines
+      .slice(divider + 1, close)
+      .map((line) => line.slice(line.indexOf(CARD_VERTICAL) + 1, line.lastIndexOf(CARD_VERTICAL)));
+  }
   return lines
     .slice(span.top + 1, span.bottom)
     .map((line) => line.slice(span.left + 1, span.right));
@@ -591,7 +602,7 @@ describe('visual catalog', () => {
     }
   });
 
-  it('ends the cut routes-unchecked card with an ellipsis at 60x18', async () => {
+  it('keeps the saved choice below the full remedy at 60x18', async () => {
     const scenario = findVisualScenario('overlay-picker-routes-unchecked');
     const checkpoint = scenario?.checkpoints[0];
     if (!scenario || !checkpoint) throw new Error('Missing routes-unchecked scenario');
@@ -604,7 +615,8 @@ describe('visual catalog', () => {
       const rows = rightCardRows(stripAnsiStyles(await handle.waitForCheckpoint()))
         .map((row) => row.trim())
         .filter((row) => row !== '');
-      expect(rows.at(-1)).toMatch(/…$/);
+      expect(rows).toContain('Saved choice:');
+      expect(rows.at(-1)).not.toMatch(/…$/);
     } finally {
       await handle.unmount();
     }
