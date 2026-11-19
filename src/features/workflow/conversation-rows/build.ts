@@ -35,7 +35,7 @@ import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 import { isRunnerCallTranscriptRowSuppressed } from './runner-call-classification.js';
 import { rowsBlock, sectionSpacerBlock } from './blocks/compose.js';
 import { segmentedRow } from './row-format/rows.js';
-import { walkTranscript } from './transcript-walk/walk.js';
+import { sectionsWithoutReplayMarkers, walkTranscript } from './transcript-walk/walk.js';
 import type { RunnerActivityBatch } from './transcript-walk/types.js';
 
 const MIN_ROW_WIDTH = 1;
@@ -240,7 +240,7 @@ function markdownProjectionCacheKeys(
   width: number,
 ): string[] {
   const keys: string[] = [];
-  for (const section of sections) {
+  for (const section of sectionsWithoutReplayMarkers(sections)) {
     for (const [index, event] of section.items.entries()) {
       if (event.type !== 'planner_text' || !isPlannerTextRenderedAsMarkdown(event)) continue;
       const keyPrefix = `event-${section.startIndex + index}-${event.type}`;

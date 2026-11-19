@@ -1,3 +1,4 @@
+import { isInfrastructurePhaseEvent } from '../../../../core/phases/of-event.js';
 import { type Section, isSettledSection } from '../../../../core/sections/types.js';
 import type { EngineEventOf, EngineEvent } from '../../../../engine/events/types.js';
 import {
@@ -55,7 +56,8 @@ export function settledTaskStartedEvent(
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
-  const reads = walkReads(sections);
+  const transcript = sectionsWithoutReplayMarkers(sections);
+  const reads = walkReads(sections, transcript);
   const walk: TranscriptWalk = {
     activityBatch: null,
     recovery: null,
@@ -66,7 +68,7 @@ export function* walkTranscript(
     restatedPrompt: null,
     settledContext: {},
   };
-  for (const section of sections) {
+  for (const section of transcript) {
     const scope = walkSection(section);
     yield* enterSection(walk, reads, scope);
     for (const [index, event] of section.items.entries())
@@ -76,13 +78,33 @@ export function* walkTranscript(
   yield* flush(walk, reads, true);
 }
 
-function walkReads(sections: readonly Section<EngineEvent>[]): TranscriptWalkReads {
-  const automatic = automaticRecoveryFolds(sections);
+export function sectionsWithoutReplayMarkers(
+  sections: readonly Section<EngineEvent>[],
+): Section<EngineEvent>[] {
+  let markers = 0;
+  return sections.map((section) => {
+    const startIndex = section.startIndex - markers;
+    const items = section.items.some(isInfrastructurePhaseEvent)
+      ? section.items.filter((event) => !isInfrastructurePhaseEvent(event))
+      : section.items;
+    markers += section.items.length - items.length;
+    return startIndex === section.startIndex && items === section.items
+      ? section
+      : { ...section, startIndex, items };
+  });
+}
+
+function walkReads(
+  sections: readonly Section<EngineEvent>[],
+  transcript: readonly Section<EngineEvent>[],
+): TranscriptWalkReads {
+  const automatic = automaticRecoveryFolds(transcript);
   return {
     recoveries: automatic.recoveries,
     switches: automatic.switches,
     hidden: new Set([
       ...automatic.hidden,
+      // replay_complete can mark an implementer attempt cut short by a process exit.
       ...endedImplementerAttempts(sections),
       ...carriedOnSeatChanges(sections),
       ...answeredResumes(sections),
