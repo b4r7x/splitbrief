@@ -7,3 +7,7 @@ export const HIDDEN_API_PROVIDER_IDS: readonly ApiProviderId[] = [
   'lm-studio',
   'llama-cpp',
 ];
+
+export function isCustomCommandAuthoringEnabled(): boolean {
+  return false;
+}

@@ -17,9 +17,9 @@ describe('parseSettingsFocus', () => {
   });
 
   it('reproduces a typed filter', () => {
-    expect(parseSettingsFocus('filter:temp')).toEqual({
+    expect(parseSettingsFocus('filter:context')).toEqual({
       initialKey: undefined,
-      initialFilter: 'temp',
+      initialFilter: 'context',
     });
   });
 

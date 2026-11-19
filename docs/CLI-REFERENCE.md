@@ -78,13 +78,13 @@ The warning reads `The plan seat reads no files, so it cannot open <p1>, <p2>. P
 
 ```
 splitbrief start [feature] [files...] \
-  [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
+  [--planner <tool>] [--planner-model <model>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
   [--planner-output-format <format>] [--planner-context-length <tokens>] \
-  [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
+  [--implementer <provider>] [--implementer-model <model>] \
   [--implementer-api-base <url>] [--implementer-api-key-env <var>] [--implementer-args <arg>] \
   [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
-  [--reviewer <tool>] [--reviewer-model <model>] [--reviewer-command <cmd>] \
+  [--reviewer <tool>] [--reviewer-model <model>] \
   [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
   [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
@@ -99,18 +99,16 @@ splitbrief start [feature] [files...] \
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `shell`, `agent`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--planner-model <model>` | string | from config | Planner model (CLI and API planners). |
-| `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored for other kinds, with a readiness warning. |
 | `--planner-api-key-env <var>` | string | from config | Environment variable holding the planner API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` runners; ignored otherwise, with a readiness warning. |
 | `--planner-args <arg>` | string | from config | Append one planner CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Planner effort hint: `off`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. The seat's tool accepts a subset and reports what it rejects. A seat whose tool takes no effort flag does not get the value: the readiness warning `--planner-effort is ignored: <reason>.` (`config.warning`) names it, with the fix `Remove the flag from the command.` |
-| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `shell`, `agent`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
+| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
-| `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
 | `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored for other kinds, with a readiness warning. |
 | `--implementer-api-key-env <var>` | string | from config | Environment variable holding the implementer API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` runners; ignored otherwise, with a readiness warning. |
 | `--implementer-args <arg>` | string | from config | Append one implementer CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
@@ -118,7 +116,6 @@ splitbrief start [feature] [files...] \
 | `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
 | `--reviewer <tool>` | string | from config | Reviewer tool. Same tools as `--planner`. Without any `--reviewer-*` flag and without a `reviewer` block in config, the planner keeps the review seat. `--reviewer` gives a None REVIEW a runner for that run. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--reviewer-model <model>` | string | from config | Reviewer model (CLI and API reviewers). |
-| `--reviewer-command <cmd>` | string | from config | Custom reviewer command (when `--reviewer=shell`). |
 | `--reviewer-api-base <url>` | string | from config | Reviewer API base URL. Applies only to `api` runners; ignored for other kinds, with a readiness warning. |
 | `--reviewer-api-key-env <var>` | string | from config | Environment variable holding the reviewer API key; stored as an `env:<var>` reference. Applies only to `api` runners; ignored otherwise, with a readiness warning. |
 | `--reviewer-args <arg>` | string | from config | Append one reviewer CLI/shell argument. Repeatable. Applies to `cli`, `shell`, and `agent` runners. |
@@ -643,13 +640,13 @@ The run screen needs a terminal. When starting a continuation without a terminal
 
 ```
 splitbrief resume [session-id-or-number] \
-  [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
+  [--planner <tool>] [--planner-model <model>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
   [--planner-output-format <format>] [--planner-context-length <tokens>] \
-  [--implementer <provider>] [--implementer-model <model>] [--implementer-command <cmd>] \
+  [--implementer <provider>] [--implementer-model <model>] \
   [--implementer-api-base <url>] [--implementer-api-key-env <var>] [--implementer-args <arg>] \
   [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
-  [--reviewer <tool>] [--reviewer-model <model>] [--reviewer-command <cmd>] \
+  [--reviewer <tool>] [--reviewer-model <model>] \
   [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
   [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
@@ -915,14 +912,14 @@ A quota halt ends the first line with the clock its limit resets on, spelled whe
 
 There are no workflow modes. Every run plans in one session: one typed planner call, plus one per question round (at most two rounds), plus at most one repair when the plan fails its checks. The plan card then waits for approval unless `workflow.approve: none`. `--mode` was removed; see [MIGRATION.md](./MIGRATION.md#removed-commands-and-flags). Detailed semantics in [WORKFLOW.md](./WORKFLOW.md#3-the-planning-session).
 
-### Runner kinds (`--planner` / `--implementer`)
+### Runner kinds
 
 | `kind` | What it is | Examples |
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity` (binary `agy`) |
 | `api` | OpenAI-compatible HTTP endpoint | A custom endpoint in `.splitbrief/config.yaml` |
-| `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
-| `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |
+| `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts in `.splitbrief/config.yaml` |
+| `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools in `.splitbrief/config.yaml` |
 
 Schemas and YAML shape live in [ARCHITECTURE.md](./ARCHITECTURE.md) and [CONFIGURATION.md](./CONFIGURATION.md). Built-in CLI tools may run their own auto/permission modes according to their upstream behavior; SPLITBRIEF surfaces warnings but does not sandbox shell or network access.
 

@@ -159,10 +159,8 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
     return;
   }
 
-  // Type-anywhere: every printable key edits the focused column's query, no matter
-  // which row the cursor sits on — including the pinned custom-command launcher —
-  // and the cursor then lands on the first visible match. An expanded model
-  // collapses first, or the query would filter a list the user cannot see whole.
+  // A printable key edits the focused column's query on any row. The cursor then lands on the
+  // first visible match. An expanded model collapses before the query filters the list.
   if (key.backspace || key.delete) {
     if (ctx.leftActive) {
       ctx.setLeftFilter((prev) => prev.slice(0, -1));

@@ -307,7 +307,8 @@ export function usePickerCatalog(
     initialLeftIdx,
     initialRightIndex: seatAxisIndex >= 0 ? seatAxisIndex : rowIndexForModel(rightRows, entryModel),
     resolveRightIndex,
-    focusModels: focusedIndex >= 0 || seatAxisFocused,
+    focusModels:
+      focusedIndex >= 0 || (seatAxisFocused && configuredItem?.kind !== 'configured-command'),
     roleLabel: CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]],
     plannerIdentity: (() => {
       const plannerRunner = readActiveRunner({ config, role: 'planner' });

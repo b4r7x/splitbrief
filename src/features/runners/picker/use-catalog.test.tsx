@@ -283,7 +283,7 @@ function ControlledCatalogPicker({
       leftProps={{
         items: catalog.items,
         getKey: (item) => item.id,
-        isDisabled: (item) => !item.available && item.kind !== 'custom-command',
+        isDisabled: (item) => !item.available,
         initialIndex: catalog.initialLeftIdx,
         renderRow: (item) => <Text>{item.displayName}</Text>,
       }}
@@ -302,9 +302,7 @@ function ControlledCatalogPicker({
 function KeyboardCatalogProbe({ role }: { role: 'planner' | 'implementer' }) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const catalog = usePickerCatalog(role, 'seat', 0, selectedItemId);
-  const toolIds = catalog.items
-    .filter((item) => item.available || item.kind === 'custom-command')
-    .map((item) => item.id);
+  const toolIds = catalog.items.filter((item) => item.available).map((item) => item.id);
   const currentToolIndex = Math.max(0, toolIds.indexOf(catalog.selectedItemId ?? ''));
 
   useInput((_input, key) => {
@@ -355,12 +353,14 @@ describe('usePickerCatalog the REVIEW None row', () => {
     ui.unmount();
   });
 
-  it('None row shows with a custom planner', () => {
+  it('keeps None and the current inheritance row with a custom planner', () => {
     seedSeat(makeConfig({ planner: { kind: 'shell', command: './plan.sh' } }));
 
     const ui = renderFeature(<ReviewSeatProbe />);
     const none = catalog?.items.find((item) => item.kind === 'review-none');
+    const inherited = catalog?.items.find((item) => item.kind === 'inherit-planner');
 
+    expect(inherited?.isCurrent).toBe(true);
     expect(none?.displayName).toBe('None');
     expect(none?.isCurrent).not.toBe(true);
     ui.unmount();
@@ -961,14 +961,6 @@ describe('usePickerCatalog', () => {
     const initial = ui.lastFrame() ?? '';
     expect(initial).toContain('codex:');
     expect(initial).toContain('codex-only-model');
-
-    await flushEffects();
-    ui.stdin.write('\u001B[B');
-    await flushEffects();
-
-    const wrapped = ui.lastFrame() ?? '';
-    expect(wrapped).toContain('custom-command:');
-    expect(wrapped).not.toContain('codex-only-model');
 
     await flushEffects();
     ui.stdin.write('\u001B[B');

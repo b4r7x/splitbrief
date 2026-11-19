@@ -12,7 +12,10 @@ import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 // Each surface below hides the providers of the hidden list; with a list that leaves them out,
 // the same surfaces offer them again.
-vi.mock('../../../src/core/providers/hidden.js', () => ({ HIDDEN_API_PROVIDER_IDS: [] }));
+vi.mock('../../../src/core/providers/hidden.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/core/providers/hidden.js')>();
+  return { ...actual, HIDDEN_API_PROVIDER_IDS: [] };
+});
 
 describe('a local provider that the hidden list leaves out', () => {
   setupFetchMock();

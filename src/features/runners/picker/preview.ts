@@ -106,6 +106,12 @@ export function terminalPaneFor(
       lines: [...CUSTOM_COMMAND_PANE_LINES],
     };
   }
+  if (item.kind === 'configured-command') {
+    return {
+      label: 'Custom command',
+      lines: ['Edit the command in your project configuration.'],
+    };
+  }
   if (item.kind !== 'cli') return undefined;
   return notReadyPane({
     status: item.status,

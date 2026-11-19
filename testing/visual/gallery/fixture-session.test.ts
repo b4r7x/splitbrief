@@ -468,8 +468,7 @@ describe('a replayed fixture walk', () => {
         { timeout: 10_000 },
       );
       // Semantic confirmation: Enter acts on the cursor row. On the returned Claude row it
-      // saves exactly the configured seat and closes the picker; on the launcher row it only
-      // browses (the picker stays open), and on any other row it saves that row instead.
+      // saves exactly the configured seat and closes the picker.
       // `high` stays visible in the seat identity throughout, so the saved seat — not the
       // frame text — is what establishes the returned selection.
       // Enter waits for the scripted Right key to settle; the forwarded list fills before it does.

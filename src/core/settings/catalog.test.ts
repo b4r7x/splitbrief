@@ -4,6 +4,7 @@ import { createDefaultConfig } from '../config/load/defaults.js';
 import { getConfigValue } from '../config/accessors/values.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../schemas/config.js';
+import { buildSettingsItems } from '../../features/settings/items.js';
 
 // The default config with an API implementer, so the rows that only an API seat shows have a value.
 const apiConfig: Config = {
@@ -22,11 +23,7 @@ const apiConfig: Config = {
 // Settings whose dot-path is structurally valid but intentionally has no default
 // value. They read as `undefined` on `apiConfig`, so a non-undefined assertion
 // would spuriously fail. A typo'd id would not be in this set and still fail below.
-const OPTIONAL_WITHOUT_DEFAULT = new Set([
-  'implementer.contextLength',
-  'implementer.timeout',
-  'validation.testCommand',
-]);
+const OPTIONAL_WITHOUT_DEFAULT = new Set(['implementer.contextLength', 'validation.testCommand']);
 
 describe('SETTINGS_DEFS id resolution', () => {
   for (const def of SETTINGS_DEFS) {
@@ -63,28 +60,7 @@ describe('SETTINGS_DEFS read-only rows under REVIEW None', () => {
   });
 });
 
-describe('SETTINGS_DEFS numeric bounds', () => {
-  it('keeps implementer timeout aligned with the positive runner schema', () => {
-    const timeout = SETTINGS_DEFS.find((def) => def.id === 'implementer.timeout');
-
-    expect(timeout).toMatchObject({ kind: 'number', min: 1 });
-  });
-});
-
-describe('SETTINGS_DEFS applicability', () => {
-  it('hides temperature/timeout for a non-api implementer', () => {
-    const cliConfig = makeConfig({
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet' },
-    });
-    const cliDefs = SETTINGS_DEFS.filter((def) => def.appliesTo?.(cliConfig) ?? true);
-    const apiDefs = SETTINGS_DEFS.filter((def) => def.appliesTo?.(apiConfig) ?? true);
-
-    expect(apiDefs.some((def) => def.id === 'implementer.temperature')).toBe(true);
-    expect(apiDefs.some((def) => def.id === 'implementer.timeout')).toBe(true);
-    expect(cliDefs.some((def) => def.id === 'implementer.temperature')).toBe(false);
-    expect(cliDefs.some((def) => def.id === 'implementer.timeout')).toBe(false);
-  });
-
+describe('SETTINGS_DEFS Context length', () => {
   it('offers one context-length def whose label follows the implementer kind', () => {
     const cliConfig = makeConfig({
       implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet' },
@@ -121,12 +97,7 @@ describe('SETTINGS_DEFS dead settings', () => {
       (def) => def.id,
     );
 
-    expect(workflowIds).toEqual([
-      'workflow.approve',
-      'workflow.compactionFormat',
-      'workflow.isolation',
-      'workflow.review',
-    ]);
+    expect(workflowIds).toEqual(['workflow.approve', 'workflow.isolation', 'workflow.review']);
   });
 });
 
@@ -134,29 +105,23 @@ describe('SETTINGS_DEFS isolation', () => {
   const isolation = SETTINGS_DEFS.find((def) => def.id === 'workflow.isolation');
 
   it.each([
-    [
-      'cli',
-      makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet' } }),
-    ],
+    ['cli', makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } })],
     ['api', apiConfig],
-  ])('shows the isolation row as a choice for a %s build seat', (_kind, config) => {
-    expect(isolation?.appliesTo?.(config) ?? true).toBe(true);
-    expect(isolation?.kind).toBe('enum');
-    expect(isolation?.options).toEqual(['worktree', 'staged-copy', 'none']);
+  ] as const)('offers the isolation choices for a %s build seat', (_kind, config) => {
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools: [] });
+    expect(items.find((item) => item.key === 'workflow.isolation')).toMatchObject({
+      kind: 'setting',
+      def: {
+        label: 'Isolation',
+        section: 'Workflow',
+        kind: 'enum',
+        options: ['worktree', 'staged-copy', 'none'],
+      },
+    });
   });
 
   it('reads an unset isolation as worktree', () => {
     expect(isolation?.readValue?.(makeConfig())).toBe('worktree');
-  });
-});
-
-describe('SETTINGS_DEFS workflow compaction', () => {
-  it('includes compaction format in workflow settings', () => {
-    const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.compactionFormat');
-    expect(def).toMatchObject({
-      kind: 'enum',
-      options: ['auto', 'freeform', 'structured'],
-    });
   });
 });
 

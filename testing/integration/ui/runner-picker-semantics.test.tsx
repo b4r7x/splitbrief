@@ -273,7 +273,7 @@ describe('runner picker semantics integration', () => {
       expect(plannerZones).toContain('cursor');
       expect(plannerZones).toContain('antigravity');
       expect(plannerCatalog.map((item) => item.id).toSorted()).toEqual(
-        ['custom-command', ...PLANNER_CLI_TOOL_IDS.filter(isListedCliTool)].toSorted(),
+        PLANNER_CLI_TOOL_IDS.filter(isListedCliTool).toSorted(),
       );
       plannerUi.unmount();
 

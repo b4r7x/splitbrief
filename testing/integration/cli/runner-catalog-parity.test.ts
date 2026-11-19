@@ -197,7 +197,6 @@ describe('runner catalog parity by role', () => {
       const admissionRole = role === 'reviewer' ? 'planner' : role;
       const expectedCliIds = ADMITTED_IDS[admissionRole].cli.filter(isListedCliTool);
       const unlistedApiIds = ADMITTED_IDS[admissionRole].api;
-      const expectedMetaIds = ['custom-command'];
 
       for (const id of expectedCliIds) {
         expect(pickerIds).toContain(id);
@@ -205,10 +204,7 @@ describe('runner catalog parity by role', () => {
       for (const id of unlistedApiIds) {
         expect(pickerIds).not.toContain(id);
       }
-      for (const id of expectedMetaIds) {
-        expect(pickerIds).toContain(id);
-      }
-      expect(pickerIds.filter((id) => id === 'custom-command')).toHaveLength(1);
+      expect(pickerIds).not.toContain('custom-command');
       expect(pickerIds).not.toContain('shell');
       expect(pickerIds).not.toContain('agent');
       expect(pickerIds).not.toContain('copilot');

@@ -1,6 +1,5 @@
 import type { Config } from '../schemas/config.js';
 import { APPROVE_LEVELS, ISOLATION_STRATEGIES } from '../schemas/enums.js';
-import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { getIsolationStrategy } from '../config/accessors/values.js';
 import { resolveEndChecks, resolveReviewCadence } from '../config/runtime/resolve.js';
@@ -23,9 +22,7 @@ export interface SettingDef {
   options?: string[];
   optionLabels?: Readonly<Record<string, string>>;
   min?: number;
-  max?: number;
   integer?: boolean;
-  appliesTo?: (config: Config) => boolean;
   unsetLabel?: string;
   /** Override for reading the label when it depends on the resolved config. */
   readLabel?: (config: Config) => string;
@@ -46,18 +43,6 @@ const lockedWhileReviewNone = (config: Config): string | undefined =>
 
 export const SETTINGS_DEFS: SettingDef[] = [
   {
-    id: 'implementer.temperature',
-    label: 'Temperature',
-    section: 'Tuning',
-    // The row only exists for an api implementer, so it says nothing about the backends it never
-    // appears for: the help line has to fit beside its bounds without stranding them on a row.
-    description: '0 = precise, 0.3 = balanced, 1+ = creative',
-    kind: 'number',
-    min: 0,
-    max: 2,
-    appliesTo: isApiImplementer,
-  },
-  {
     id: 'implementer.contextLength',
     label: 'Context length',
     section: 'Tuning',
@@ -70,17 +55,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     readLabel: (config) => (isApiImplementer(config) ? 'Context length' : 'Prompt budget'),
   },
   {
-    id: 'implementer.timeout',
-    label: 'Timeout',
-    section: 'Tuning',
-    description: 'Total time limit of one API call (ms)',
-    kind: 'number',
-    min: 1,
-    integer: true,
-    appliesTo: isApiImplementer,
-    unsetLabel: 'no limit',
-  },
-  {
     id: 'workflow.approve',
     label: 'Plan approval',
     section: 'Workflow',
@@ -88,14 +62,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     kind: 'enum',
     options: [...APPROVE_LEVELS],
     unsetLabel: 'plan',
-  },
-  {
-    id: 'workflow.compactionFormat',
-    label: 'Compaction format',
-    section: 'Workflow',
-    description: 'Summary format for transcript compaction',
-    kind: 'enum',
-    options: [...CompactionFormatSchema.options],
   },
   {
     id: 'workflow.isolation',

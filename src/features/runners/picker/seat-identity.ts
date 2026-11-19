@@ -76,6 +76,7 @@ export function runnerItemOf(item: PickerOption | undefined): RunnerPickerOption
   if (item === undefined) return undefined;
   if (
     item.kind === 'custom-command' ||
+    item.kind === 'configured-command' ||
     item.kind === 'inherit-planner' ||
     item.kind === 'no-fallback' ||
     item.kind === 'review-none'

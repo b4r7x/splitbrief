@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { SETTINGS_DEFS, type SettingDef } from '../../core/settings/catalog.js';
+import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import {
   resolveCrewDisplayNames,
@@ -41,20 +41,6 @@ describe('buildSettingsItems', () => {
       'Workflow',
       'Validation',
     ]);
-  });
-
-  it('drops the settings that do not apply to the current config', () => {
-    const skipped: SettingDef = {
-      id: 'test.skipped',
-      label: 'Skipped',
-      section: 'Tuning',
-      description: 'never applies',
-      kind: 'boolean',
-      appliesTo: () => false,
-    };
-    const items = buildSettingsItems({ config: makeConfig(), defs: [skipped], cliTools: [] });
-
-    expect(items.some((item) => item.key === 'test.skipped')).toBe(false);
   });
 });
 

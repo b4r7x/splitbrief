@@ -4,6 +4,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { cursorModelOptions } from '#testing/helpers/factories/cursor-models.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
@@ -14,6 +15,7 @@ import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import { resolveTheme } from '../../core/theme/resolve.js';
 import { formatPickerStatusLabel } from './picker/labels.js';
+import { buildLeftItems } from './picker/left-items.js';
 import { ELLIPSIS } from '../../utils/display-text/truncate.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';
 import { AUTO_ROW_METADATA, BROWSE_CATALOG_TEXT } from './model-catalog/rows.js';
@@ -122,8 +124,6 @@ describe('runner row grammar', () => {
         isSelected: false,
         isContext: false,
         maxWidth: 40,
-        currentCommand: undefined,
-        currentCommandKind: undefined,
         showStatus: true,
       }),
     );
@@ -169,8 +169,6 @@ describe('runner row grammar', () => {
           isSelected: false,
           isContext: false,
           maxWidth: 60,
-          currentCommand: undefined,
-          currentCommandKind: undefined,
           showStatus: true,
         }),
       );
@@ -216,8 +214,6 @@ describe('runner row grammar', () => {
             isSelected: false,
             isContext: false,
             maxWidth: 20,
-            currentCommand: undefined,
-            currentCommandKind: undefined,
             showStatus: false,
           }),
         ),
@@ -257,8 +253,6 @@ describe('runner row grammar', () => {
         isSelected: false,
         isContext: false,
         maxWidth: 50,
-        currentCommand: undefined,
-        currentCommandKind: undefined,
         showStatus: true,
       }),
     );
@@ -289,8 +283,6 @@ describe('runner row grammar', () => {
         isSelected: false,
         isContext: false,
         maxWidth: 40,
-        currentCommand: undefined,
-        currentCommandKind: undefined,
         showStatus: true,
       }),
     );
@@ -331,8 +323,6 @@ describe('runner row grammar', () => {
       isSelected: false,
       isContext: false,
       maxWidth: 40,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
       showStatus: true,
     } as const;
     const level = chalk.level;
@@ -654,50 +644,7 @@ describe('runner row grammar', () => {
     expect(line).not.toContain('signed in');
   });
 
-  it('renders one add-custom-command launcher instead of per-kind add rows', async () => {
-    const launcher = pickerItem({
-      id: 'custom-command',
-      displayName: 'Custom command',
-      kind: 'custom-command',
-      roles: ['planner', 'implementer'],
-      modelPolicy: 'none',
-      billing: 'unknown',
-      permissions: readyPermissions,
-      status: { state: 'ready', remediation: null },
-      available: true,
-    });
-    const ui = renderFeature(
-      renderToolRow({
-        item: launcher,
-        isCursor: false,
-        isSelected: false,
-        isContext: false,
-        maxWidth: 40,
-        currentCommand: undefined,
-        currentCommandKind: undefined,
-        showStatus: true,
-      }),
-    );
-    await tick();
-
-    expect(ui.lastFrame()).toContain('+ Add custom command…');
-    expect(ui.lastFrame()).not.toContain('Add shell command');
-    expect(ui.lastFrame()).not.toContain('Add agent command');
-    ui.unmount();
-  });
-
-  it('renders the custom-command launcher and a tool row with a blank lead and no middot', async () => {
-    const launcher = pickerItem({
-      id: 'custom-command',
-      displayName: 'Custom command',
-      kind: 'custom-command',
-      roles: ['planner', 'implementer'],
-      modelPolicy: 'none',
-      billing: 'unknown',
-      permissions: readyPermissions,
-      status: { state: 'ready', remediation: null },
-      available: true,
-    });
+  it('renders a tool row with a blank lead and no middot', async () => {
     const tool = pickerItem({
       id: 'claude-code',
       displayName: 'Claude Code',
@@ -714,17 +661,8 @@ describe('runner row grammar', () => {
       isSelected: false,
       isContext: false,
       maxWidth: 40,
-      currentCommand: undefined,
-      currentCommandKind: undefined,
       showStatus: true,
     } as const;
-
-    const launcherUi = renderFeature(renderToolRow({ item: launcher, ...rowArgs }));
-    await tick(20);
-    const launcherLine = stripAnsiStyles(launcherUi.lastFrame() ?? '').split('\n')[0] ?? '';
-    expect(launcherLine.startsWith('  + Add custom command…')).toBe(true);
-    expect(launcherLine).not.toContain('·');
-    launcherUi.unmount();
 
     const toolUi = renderFeature(renderToolRow({ item: tool, ...rowArgs }));
     await tick(20);
@@ -1261,39 +1199,36 @@ describe('runner row grammar', () => {
     });
   });
 
-  it('shows the configured command with its saved contract on the launcher row', async () => {
-    const launcher = pickerItem({
-      id: 'custom-command',
-      displayName: 'Custom command',
-      kind: 'custom-command',
-      roles: ['planner', 'implementer'],
-      modelPolicy: 'none',
-      billing: 'unknown',
-      permissions: readyPermissions,
-      status: { state: 'ready', remediation: null },
-      available: true,
+  it.each([
+    ['shell', 'output'],
+    ['agent', 'direct'],
+  ] as const)('marks the saved %s command as current', async (kind, contract) => {
+    const command = 'my-tool --json';
+    const config = makeConfig({ planner: { kind, command } });
+    const [item] = buildLeftItems({
+      role: 'planner',
+      slot: 'seat',
+      rawItems: [],
+      config,
+      runner: config.planner,
     });
+    expect(item).toBeDefined();
+    if (item === undefined) throw new Error('Missing saved command row');
 
-    for (const [kind, contractWord] of [
-      ['shell', 'output'],
-      ['agent', 'direct'],
-    ] as const) {
-      const ui = renderFeature(
-        renderToolRow({
-          item: launcher,
-          isCursor: false,
-          isSelected: false,
-          isContext: false,
-          maxWidth: 40,
-          currentCommand: 'my-tool --json',
-          currentCommandKind: kind,
-          showStatus: true,
-        }),
-      );
-      await tick();
-      expect(ui.lastFrame()).toContain(`${contractWord} · my-tool --json`);
-      ui.unmount();
-    }
+    const ui = renderFeature(
+      renderToolRow({
+        item,
+        isCursor: false,
+        isSelected: false,
+        isContext: false,
+        maxWidth: 40,
+        showStatus: true,
+      }),
+    );
+    await tick();
+    expect(ui.lastFrame()).toContain(`${contract} · ${command}`);
+    expect(ui.lastFrame()?.trimEnd().endsWith(glyph('check'))).toBe(true);
+    ui.unmount();
   });
 
   it('renders displayName when present and falls back to formatModelName when absent', async () => {
@@ -1345,8 +1280,6 @@ describe('runner row grammar', () => {
         isSelected: false,
         isContext: true,
         maxWidth: 50,
-        currentCommand: undefined,
-        currentCommandKind: undefined,
         showStatus: true,
       }),
     );
@@ -1365,8 +1298,6 @@ describe('runner row grammar', () => {
         isSelected: false,
         isContext: false,
         maxWidth: 50,
-        currentCommand: undefined,
-        currentCommandKind: undefined,
         showStatus: true,
       }),
     );

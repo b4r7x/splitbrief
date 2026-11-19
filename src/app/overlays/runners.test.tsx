@@ -79,166 +79,6 @@ function resetPickerStores(): void {
   modelCacheStore.__testSetClaudeCodeModelOptions(PINNED_CLAUDE_CODE_OPTIONS);
 }
 
-async function openContractChoice(ui: ReturnType<typeof renderFeature>) {
-  await vi.waitFor(() => {
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Run your own command.');
-    expect(frame).toContain('Nothing is saved yet.');
-  });
-  await flushEffects();
-  ui.stdin.write('\r'); // Enter on the launcher opens the contract choice
-  // The launcher card names both contracts too, so only the chooser's own
-  // ledger clauses tell the two views apart.
-  await vi.waitFor(() => {
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain("read from the command's stdout");
-    expect(frame).toContain('written directly to your tree');
-  });
-}
-
-async function openCustomCommand(ui: ReturnType<typeof renderFeature>) {
-  await openContractChoice(ui);
-  await flushEffects();
-  ui.stdin.write('\r'); // confirm the preselected contract
-  await vi.waitFor(() => {
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Command to run');
-    expect(frame).toContain('esc back to contract');
-  });
-}
-
-describe('ToolModelPicker custom-command input', () => {
-  beforeEach(() => {
-    resetPickerStores();
-    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({ planner: { kind: 'shell', command: 'custom-planner' } }),
-    });
-  });
-
-  it('keeps the text input on Escape under a foreign overlay, then walks back one step', async () => {
-    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
-    await tick(20);
-    await openCustomCommand(ui);
-
-    overlayStore.open('command-palette');
-    await flushEffects();
-
-    ui.stdin.write(ESC); // ignored while the palette is on top
-    await tick(20);
-    expect(ui.lastFrame()).toContain('Command to run'); // still in the text-input view
-
-    overlayStore.close();
-    await flushEffects();
-
-    ui.stdin.write(ESC); // now reaches the picker and returns to the contract chooser
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain('Command to run'); // left the text-input view
-      expect(frame).toContain("read from the command's stdout"); // back on the contract chooser
-      expect(frame).toContain('written directly to your tree');
-    });
-
-    await flushEffects();
-    ui.stdin.write(ESC); // one more step back reaches the tool list
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain("read from the command's stdout");
-      expect(frame).toContain('Tools'); // back on the two-column picker view
-      expect(frame).toContain('Claude Code CLI'); // the tool rows are listed again
-    });
-    ui.unmount();
-  });
-
-  it('shows both contracts with distinct permission copy before the command input', async () => {
-    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
-    await tick(20);
-    await openContractChoice(ui);
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Output command');
-    expect(frame).toContain("read from the command's stdout");
-    expect(frame).toContain('no direct writes');
-    expect(frame).toContain('Direct-write agent');
-    expect(frame).toContain('the files it writes, not stdout');
-    expect(frame).toContain('written directly to your tree');
-    ui.unmount();
-  });
-
-  it('saves the chosen direct-write contract as an agent command', async () => {
-    const projectDir = createTempDir('runners-agent-contract');
-    writeConfig(projectDir, makeConfig({ planner: { kind: 'shell', command: 'custom-planner' } }));
-    configStore.load(projectDir);
-    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
-    await tick(20);
-    await openContractChoice(ui);
-
-    await flushEffects();
-    ui.stdin.write(ARROW_DOWN); // move from the shell contract to the agent contract
-    await flushEffects();
-    ui.stdin.write('\r');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('Command to run');
-    });
-    await flushEffects();
-    ui.stdin.write('\r'); // submit the prefilled configured command
-    await vi.waitFor(() => {
-      expect(loadConfig(projectDir).config.planner).toMatchObject({
-        kind: 'agent',
-        command: 'custom-planner',
-      });
-    });
-    ui.unmount();
-    cleanupTempDir(projectDir);
-  });
-
-  it('returns to the tool list when the contract choice is dismissed', async () => {
-    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
-    await tick(20);
-    await openContractChoice(ui);
-
-    await flushEffects();
-    ui.stdin.write(ESC);
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain("read from the command's stdout");
-      expect(frame).toContain('Tools');
-      expect(frame).toContain('Claude Code CLI');
-    });
-    ui.unmount();
-  });
-
-  it('preserves the typed draft when stepping back to the contract chooser and forward again', async () => {
-    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
-    await tick(20);
-    await openCustomCommand(ui);
-
-    for (const ch of 'zz') {
-      await flushEffects();
-      ui.stdin.write(ch);
-      await flushEffects();
-    }
-
-    await flushEffects();
-    ui.stdin.write(ESC); // back one step to the chooser
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).not.toContain('Command to run');
-      expect(frame).toContain("read from the command's stdout");
-    });
-
-    await flushEffects();
-    ui.stdin.write('\r'); // forward again to the command step
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Command to run');
-      expect(frame).toContain('zz'); // the draft survived the round trip
-    });
-    ui.unmount();
-  });
-});
-
 const catalogContexts = {
   readiness: 'runners-readiness',
   modelsDev: 'runners-models-dev',
@@ -1050,6 +890,46 @@ describe('ToolModelPicker custom model entry', () => {
       providers: [],
       cliTools: [cliDetectionFor('ready', 'claude-code')],
     });
+  });
+
+  it('offers custom models and saves a typed model without offering custom commands', async () => {
+    const projectDir = createTempDir('picker-custom-model-save');
+    const modelId = 'claude-custom-fixture';
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } });
+    writeConfig(projectDir, config);
+    configStore.load(projectDir);
+    overlayStore.open('planner-picker', 'tool:claude-code');
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
+
+    try {
+      await flushEffects();
+      expect.soft(frameText(ui)).not.toContain('+ Add custom command');
+      ui.stdin.write(ARROW_RIGHT);
+      await flushEffects();
+      ui.stdin.write(modelId);
+      await vi.waitFor(() =>
+        expect(frameText(ui)).toContain(`${listRowLead('active')}+ Add custom model…`),
+      );
+      await flushEffects();
+      ui.stdin.write('\r');
+      await vi.waitFor(() => expect(frameText(ui)).toContain('Model id for Claude Code CLI'));
+      await flushEffects();
+      ui.stdin.write(modelId);
+      await vi.waitFor(() => expect(frameText(ui)).toContain(modelId));
+      await flushEffects();
+      ui.stdin.write('\r');
+
+      await vi.waitFor(() =>
+        expect(loadConfig(projectDir).config.planner).toMatchObject({
+          kind: 'cli',
+          tool: 'claude-code',
+          model: modelId,
+        }),
+      );
+    } finally {
+      ui.unmount();
+      cleanupTempDir(projectDir);
+    }
   });
 
   it("offers the seat's own tool ids, not another tool's", async () => {

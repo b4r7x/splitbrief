@@ -267,6 +267,23 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
+  it('offers Context length while keeping advanced API and workflow settings in YAML', async () => {
+    seed({
+      implementer: { kind: 'api', temperature: 0.4, timeout: 5000, contextLength: 8192 },
+      workflow: { compactionFormat: 'structured' },
+    });
+    const ui = renderAt(120, 50);
+    await flushEffects();
+
+    const lines = frameLines(ui);
+    expect(lineWith(lines, 'Context length')).toContain('8192');
+    expect(lineWith(lines, 'Test command')).toBeDefined();
+    for (const label of ['Temperature', 'Timeout', 'Compaction format']) {
+      expect.soft(lineWith(lines, label), label).toBeUndefined();
+    }
+    ui.unmount();
+  });
+
   it('opens on the crew block, above every tuning row', async () => {
     const ui = renderAt(120, 40);
     await flushEffects();
@@ -279,7 +296,7 @@ describe('SettingsOverlay', () => {
     ];
     expect(crew).toEqual([...crew].toSorted((a, b) => a - b));
     expect(crew[0]).toBeGreaterThan(indexOfLine(lines, 'Crew'));
-    for (const index of crew) expect(index).toBeLessThan(indexOfLine(lines, 'Temperature'));
+    for (const index of crew) expect(index).toBeLessThan(indexOfLine(lines, 'Context length'));
 
     ui.unmount();
   });
@@ -306,9 +323,9 @@ describe('SettingsOverlay', () => {
     await flushEffects();
     expect(lineWith(frameLines(ui), 'PLAN')).toContain(`${glyph('liveBar')} PLAN`);
 
-    ui.stdin.write('temp');
+    ui.stdin.write('context');
     await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Temperature`);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Context length`);
     overlayStore.setExclusive(true);
 
     overlayStore.open('settings', 'seat:build');
@@ -322,18 +339,18 @@ describe('SettingsOverlay', () => {
       stack: [],
     });
 
-    ui.stdin.write('temp');
+    ui.stdin.write('context');
     await flushEffects();
     overlayStore.open('settings', 'seat:build');
     await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Temperature`);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Context length`);
     expect(lineWith(frameLines(ui), 'PLAN')).toBeUndefined();
 
     overlayStore.open('settings', 'filter:workflow');
     await flushEffects();
     expect(stripAnsiStyles(ui.lastFrame())).toContain('workflow');
     expect(lineWith(frameLines(ui), 'Isolation')).toBeDefined();
-    expect(lineWith(frameLines(ui), 'Temperature')).toBeUndefined();
+    expect(lineWith(frameLines(ui), 'Context length')).toBeUndefined();
 
     overlayStore.open('settings');
     await flushEffects();
@@ -416,11 +433,11 @@ describe('SettingsOverlay', () => {
   it('hides the crew block behind a filter that only matches a tuning row', async () => {
     const ui = renderAt(120, 40);
     await flushEffects();
-    ui.stdin.write('temp');
+    ui.stdin.write('context');
     await tick(20);
     const lines = frameLines(ui);
 
-    expect(lineWith(lines, 'Temperature')).toBeDefined();
+    expect(lineWith(lines, 'Context length')).toBeDefined();
     for (const seat of ['PLAN', 'BUILD', 'REVIEW']) expect(lineWith(lines, seat)).toBeUndefined();
 
     ui.unmount();
@@ -463,12 +480,12 @@ describe('SettingsOverlay', () => {
   });
 
   it('reproduces a typed filter from a filter focus', async () => {
-    overlayStore.open('settings', 'filter:temp');
+    overlayStore.open('settings', 'filter:context');
     const ui = renderAt(120, 40);
     await flushEffects();
     const lines = frameLines(ui);
 
-    expect(lineWith(lines, 'Temperature')).toBeDefined();
+    expect(lineWith(lines, 'Context length')).toBeDefined();
     expect(lineWith(lines, 'PLAN')).toBeUndefined();
 
     ui.unmount();
@@ -478,12 +495,12 @@ describe('SettingsOverlay', () => {
   // the spacer above its rule, so a description that wraps must not grow the panel by a row.
   it('keeps the frame height identical between a 1-line and a 2-line description row', async () => {
     // Inner width at 70 cols / roomy density is 60 cells (70 - 4 - OVERLAY_FRAME_COLS).
-    const shortDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.compactionFormat');
+    const shortDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.isolation');
     const longDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.approve');
     expect(shortDef?.description.length).toBeLessThanOrEqual(60);
     expect(longDef?.description.length).toBeGreaterThan(60);
 
-    overlayStore.open('settings', 'workflow.compactionFormat');
+    overlayStore.open('settings', 'workflow.isolation');
     const shortUi = renderAt(70, 40);
     await flushEffects();
     const shortFrame = stripAnsiStyles(shortUi.lastFrame()).split('\n');
@@ -496,7 +513,7 @@ describe('SettingsOverlay', () => {
     longUi.unmount();
 
     expect(
-      shortFrame.some((line) => line.includes('Summary format for transcript compaction')),
+      shortFrame.some((line) => line.includes('Where the build seat writes its changes')),
     ).toBe(true);
     const wrapStart = longFrame.findIndex((line) => line.includes('Whether the plan waits'));
     expect(wrapStart).toBeGreaterThan(-1);
@@ -839,7 +856,7 @@ describe('SettingsOverlay', () => {
 
   it.each([
     ['seat:plan', 'a one-line help'],
-    ['workflow.compactionFormat', 'a two-line help'],
+    ['workflow.isolation', 'a two-line help'],
   ])('leaves a blank row above the rule for %s (%s)', async (focus) => {
     overlayStore.open('settings', focus);
     const ui = renderAt(100, 40);
@@ -854,13 +871,13 @@ describe('SettingsOverlay', () => {
   });
 
   it('closes the help block one blank row above the legend', async () => {
-    overlayStore.open('settings', 'workflow.compactionFormat');
+    overlayStore.open('settings', 'workflow.isolation');
     const ui = renderAt(100, 40);
     await tick(20);
     const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
-    const options = indexOfLine(lines, 'auto · freeform · structured');
+    const options = indexOfLine(lines, 'worktree · staged copy · your checkout');
 
-    expect(options).toBeGreaterThan(indexOfLine(lines, 'Summary format for transcript compaction'));
+    expect(options).toBeGreaterThan(indexOfLine(lines, 'Where the build seat writes its changes'));
     expect(panelText(lines[options + 1] ?? '')).toBe('');
     expect(lines[options + 2]).toContain('↑↓ select');
 

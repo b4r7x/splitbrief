@@ -350,7 +350,7 @@ describe('useSettingsEditor', () => {
       createElement(Harness, {
         config,
         items,
-        initialKey: 'workflow.compactionFormat',
+        initialKey: 'workflow.isolation',
         activated: [],
       }),
     );
@@ -359,16 +359,14 @@ describe('useSettingsEditor', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message:
-          'Saved Compaction format · freeform to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
+          'Saved Isolation · staged copy to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
         isError: false,
       });
     });
-    ui.stdin.write('\u001b[B');
-    await flushEffects();
     ui.stdin.write(' ');
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).toBe(
-        'Saved Isolation · staged copy to .splitbrief/config.yaml',
+        'Saved Isolation · your checkout to .splitbrief/config.yaml',
       );
     });
     ui.unmount();

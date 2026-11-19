@@ -1190,12 +1190,11 @@ const createSettingsCrewApiTwinFixture: FixtureFactory = () =>
     seed: seedConfig({ planner: PLANNER_HIGH_EFFORT, implementer: BUILD_API_TWIN_SEAT }),
     focus: 'seat:build',
   });
-/** An API build seat with no `timeout`: its Timeout row reads that the call has no limit. */
 const createSettingsApiImplementerFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
-    seed: seedConfig({ implementer: BUILD_API_TWIN_SEAT }),
-    focus: 'implementer.timeout',
+    seed: seedConfig({ implementer: { ...BUILD_API_TWIN_SEAT, contextLength: 8192 } }),
+    focus: 'implementer.contextLength',
   });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -1208,7 +1207,7 @@ const createSettingsFloorFullFixture: FixtureFactory = () =>
     focus: 'seat:build',
   });
 const createSettingsFilteredFixture: FixtureFactory = () =>
-  createOverlayFixture({ overlay: 'settings', focus: 'filter:temp' });
+  createOverlayFixture({ overlay: 'settings', focus: 'filter:context' });
 const createSettingsFilterPlanFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:plan' });
 // The Workflow section scrolls off an unfiltered Settings below 120 columns, and its policy
@@ -1244,6 +1243,7 @@ const createSettingsInvalidNumberFixture: FixtureFactory = () => ({
   afterMount: async (write) => {
     await write.press('\r');
     for (const _ of String(BASE_IMPLEMENTER.contextLength)) await write.press('\x7f');
+    await write.press('0');
     await write.press('\r');
   },
 });
@@ -1354,6 +1354,12 @@ const createSettingsSeatSavedEffortClearedFixture: FixtureFactory = () => {
 };
 const createPlannerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker' });
+const createPlannerPickerShellFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedConfig({ planner: { kind: 'shell', command: './plan.sh' } }),
+    focus: seatAxisFocus('plan'),
+  });
 const createPlannerPickerCatalogFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -1504,9 +1510,7 @@ const createClaudeEffortSetFixture: FixtureFactory = () =>
 const createClaudeEffortReturnedFixture: FixtureFactory = () => ({
   ...createClaudeEffortSetFixture(),
   afterMount: async (write) => {
-    // Every key waits for the frame it changed. Sending the four keys without a settle lets
-    // the walk outrun the view: the archived 120x40 capture photographed the cursor on
-    // `+ Add custom command…` instead of the returned effort row.
+    // Wait for each frame so the next key reaches the correct column and row.
     for (const key of ['\x1b[D', '\x1b[B', '\x1b[A', '\x1b[C']) {
       await write.press(key);
     }
@@ -1920,10 +1924,6 @@ const createToolOrderFilterFixture: FixtureFactory = () => ({
     for (const key of 'co') await write.press(key);
   },
 });
-// The launcher's read-only card is what the cursor opens on this row, so the
-// fixture parks there with nothing configured — the state the card guides.
-const createCustomCommandLauncherFixture: FixtureFactory = () =>
-  createOverlayFixture({ overlay: 'planner-picker', focus: 'tool:custom-command' });
 
 // A tool that is not signed in takes neither → nor ⏎; the hint offers only the keys that act.
 const createSignedOutToolFixture: FixtureFactory = () =>
@@ -1940,14 +1940,6 @@ const createSignedOutToolFixture: FixtureFactory = () =>
     focus: 'tool:claude-code',
   });
 
-const createContractChoiceFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'planner-picker',
-    seed: () => {
-      seedConfig({ planner: { kind: 'shell', command: 'my-planner --json' } })();
-      pickerViewStore.open({ kind: 'custom-command-contract' });
-    },
-  });
 // A local server the picker cannot list opens its connection form on the seat's own address,
 // before any check has run.
 const createLocalConnectionFixture: FixtureFactory = () =>
@@ -1967,11 +1959,6 @@ const createLocalConnectionFixture: FixtureFactory = () =>
       pickerViewStore.open({ kind: 'local-connection', provider: 'ollama' });
     },
     focus: 'tool:ollama',
-  });
-const createCustomCommandFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'planner-picker',
-    seed: () => pickerViewStore.open({ kind: 'custom-command', intendedKind: 'shell' }),
   });
 const createCustomModelFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -3085,6 +3072,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     createSettingsSeatSavedEffortClearedFixture,
   ],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
+  [scenarioId('overlay-planner-picker-shell'), createPlannerPickerShellFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
   [scenarioId('overlay-picker-opencode-expanded'), createOpencodeExpandedFixture],
   [scenarioId('overlay-picker-opencode-expanded-drafted'), createOpencodeExpandedDraftedFixture],
@@ -3141,7 +3129,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
   [scenarioId('overlay-picker-cursor-haiku-expanded'), createCursorHaikuExpandedFixture],
   [scenarioId('overlay-picker-custom-model-no-children'), createPickerCustomModelNoChildrenFixture],
-  [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],
   [scenarioId('overlay-picker-tool-order'), createToolOrderFixture],
   [scenarioId('overlay-picker-tool-order-filter'), createToolOrderFilterFixture],
   [scenarioId('overlay-picker-signed-out-tool'), createSignedOutToolFixture],
@@ -3168,8 +3155,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-tool-incompatible'), createPickerToolIncompatibleFixture],
   [scenarioId('overlay-picker-tool-untrusted'), createPickerToolUntrustedFixture],
   [scenarioId('overlay-picker-tool-disabled'), createPickerToolDisabledFixture],
-  [scenarioId('overlay-picker-contract-choice'), createContractChoiceFixture],
-  [scenarioId('overlay-picker-custom-command'), createCustomCommandFixture],
   [scenarioId('overlay-picker-custom-model'), createCustomModelFixture],
   [scenarioId('overlay-picker-custom-model-claude'), createCustomModelClaudeFixture],
   [scenarioId('overlay-picker-custom-model-kilo'), createCustomModelKiloFixture],

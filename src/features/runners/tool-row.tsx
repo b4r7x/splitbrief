@@ -1,5 +1,4 @@
 import { ListRow } from '../../components/list-row/row.js';
-import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
@@ -15,8 +14,6 @@ interface ToolRowParams {
   isCursor: boolean;
   isSelected: boolean;
   maxWidth: number;
-  currentCommand: string | undefined;
-  currentCommandKind: 'shell' | 'agent' | undefined;
   isContext: boolean;
   /** Whether this list's width seats every status word; see `rowPlansFor`. */
   showStatus: boolean;
@@ -29,23 +26,15 @@ export function renderToolRow({
   isCursor,
   isSelected,
   maxWidth,
-  currentCommand,
-  currentCommandKind,
   isContext,
   showStatus,
 }: ToolRowParams) {
-  const isCommandBased = item.kind === 'custom-command';
-  const showConfiguredCommand = isCommandBased && currentCommandKind && currentCommand;
-  const label = isCommandBased
-    ? showConfiguredCommand
-      ? `${currentCommandKind === 'shell' ? 'output' : 'direct'}${SOFT_SEP}${currentCommand}`
-      : ADD_COMMAND_LABEL
-    : item.displayName;
+  const label = item.kind === 'custom-command' ? ADD_COMMAND_LABEL : item.displayName;
   const statusLabel = formatPickerStatusLabel(item.status);
   // A hidden status takes the version with it: a version alone would read as a ready tool.
   const metadata =
     statusLabel === undefined
-      ? !isCommandBased && item.available && item.version
+      ? item.available
         ? item.version
         : undefined
       : showStatus

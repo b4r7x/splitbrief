@@ -1,4 +1,9 @@
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import {
+  contractForRunnerKind,
+  type CustomCommandRunner,
+  type CustomCommandRunnerKind,
+} from '../../../core/config/custom-commands/tuple.js';
 import { PLANNER_INHERITANCE, REVIEW_NONE } from '../../../core/crew/identity.js';
 import {
   API_PROVIDER_CATALOG,
@@ -7,6 +12,7 @@ import {
   type DataUsePosture,
 } from '../../../core/providers/api-catalog.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
+import { isCustomCommandAuthoringEnabled } from '../../../core/providers/hidden.js';
 import { hasAutomaticModelDefault } from '../../../core/providers/model-selection.js';
 import type { CliEffortChannel } from '../../../core/runners/effort-channel.js';
 import { CLI_TOOL_CATALOG, LISTED_CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
@@ -22,6 +28,8 @@ import type { RunnerBillingPosture } from '../../../core/runners/billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ImplementerConfig } from '../../../core/schemas/runner/implementer.js';
 import type { PlannerConfig } from '../../../core/schemas/runner/planner.js';
+import { SOFT_SEP } from '../../../core/separators.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import {
   cliPermissions,
   deriveModelCatalogCapability,
@@ -76,6 +84,10 @@ export interface CustomCommandLauncherOption extends PickerOptionBase {
   kind: 'custom-command';
 }
 
+interface ConfiguredCommandOption extends PickerOptionBase {
+  kind: 'configured-command';
+}
+
 /** The review seat's inherit row: confirming it clears `reviewer` instead of writing one. */
 export interface InheritPlannerOption extends PickerOptionBase {
   kind: 'inherit-planner';
@@ -93,11 +105,31 @@ export interface ReviewNoneOption extends PickerOptionBase {
 export type PickerOption =
   | RunnerPickerOption
   | CustomCommandLauncherOption
+  | ConfiguredCommandOption
   | InheritPlannerOption
   | NoFallbackOption
   | ReviewNoneOption;
 
 export const INHERIT_PLANNER_OPTION_ID = 'inherit-planner';
+
+export function configuredCommandOption(
+  runner: CustomCommandRunner,
+  role: ActiveRunnerRole,
+): ConfiguredCommandOption {
+  return {
+    id: 'configured-command',
+    kind: 'configured-command',
+    displayName: `${contractForRunnerKind(runner.kind)}${SOFT_SEP}${sanitizeTerminalDisplayText(runner.command)}`,
+    roles: ['planner', 'implementer'],
+    modelPolicy: 'none',
+    modelCapability: deriveModelCatalogCapability('none'),
+    billing: 'unknown',
+    permissions: trustPermissions(runner.kind, runnerRoleForActiveRole(role)),
+    status: { state: 'ready', remediation: null },
+    available: false,
+    isCurrent: true,
+  };
+}
 
 export function noFallbackOption(input: Readonly<{ isCurrent: boolean }>): NoFallbackOption {
   return {
@@ -137,20 +169,22 @@ export function reviewNoneOption(input: Readonly<{ isCurrent: boolean }>): Revie
  * `reviewer` block is an edit that always succeeds.
  */
 export function inheritPlannerOption(
-  input: Readonly<{ planner: PickerOption; isCurrent: boolean }>,
+  input: Readonly<{ planner: PickerOption | CustomCommandRunnerKind; isCurrent: boolean }>,
 ): InheritPlannerOption {
+  const { planner, isCurrent } = input;
+  const command = typeof planner === 'string';
   return {
     id: INHERIT_PLANNER_OPTION_ID,
     displayName: PLANNER_INHERITANCE.mark,
     kind: 'inherit-planner',
-    roles: input.planner.roles,
+    roles: command ? ['planner'] : planner.roles,
     modelPolicy: 'none',
     modelCapability: deriveModelCatalogCapability('none'),
-    billing: input.planner.billing,
-    permissions: input.planner.permissions,
+    billing: command ? 'unknown' : planner.billing,
+    permissions: command ? trustPermissions(planner, 'planner') : planner.permissions,
     status: { state: 'ready', remediation: null },
     available: true,
-    ...(input.isCurrent ? { isCurrent: true } : {}),
+    ...(isCurrent ? { isCurrent: true } : {}),
   };
 }
 
@@ -195,7 +229,7 @@ function projectCliOption(
     billing: 'unknown',
     permissions: cliPermissions(descriptor, policyRole),
     status,
-    available: isSelectable(status, 'cli'),
+    available: isSelectable(status),
     ...(version ? { version } : {}),
     ...(isCurrent ? { isCurrent: true } : {}),
     ...(providerDependent ? { providerDependent: true } : {}),
@@ -225,26 +259,19 @@ function projectApiOption(
     dataUse: descriptor.dataUse,
     permissions: trustPermissions('api', runnerRoleForActiveRole(role)),
     status,
-    available: isSelectable(status, 'api'),
+    available: isSelectable(status),
     ...(isCurrent ? { isCurrent: true } : {}),
   };
 }
 
-function projectMetaOption(
-  input: Readonly<{
-    kind: 'custom-command';
-    role: ActiveRunnerRole;
-    isCurrent: boolean;
-  }>,
-): PickerOption {
-  const { kind, role, isCurrent } = input;
+function projectCommandLauncher(role: ActiveRunnerRole): CustomCommandLauncherOption {
   // The launcher runs whatever command the user types: it names no model and
   // its billing belongs to whatever that command calls.
   const status: PickerOptionStatus = { state: 'ready', remediation: null };
 
   return {
-    id: kind,
-    kind,
+    id: 'custom-command',
+    kind: 'custom-command',
     displayName: 'Custom command',
     roles: ['planner', 'implementer'] satisfies readonly RunnerRole[],
     modelPolicy: 'none',
@@ -252,8 +279,7 @@ function projectMetaOption(
     billing: 'unknown',
     permissions: trustPermissions('shell', runnerRoleForActiveRole(role)),
     status,
-    available: isSelectable(status, kind),
-    ...(isCurrent ? { isCurrent: true } : {}),
+    available: true,
   };
 }
 
@@ -274,7 +300,9 @@ export function sortPickerOptions(
 }
 
 export function assemblePickerDescriptors(): readonly RunnerPickerDescriptor[] {
-  const meta: RunnerPickerDescriptor[] = [{ kind: 'custom-command' }];
+  const meta: RunnerPickerDescriptor[] = isCustomCommandAuthoringEnabled()
+    ? [{ kind: 'custom-command' }]
+    : [];
   const cli: RunnerPickerDescriptor[] = LISTED_CLI_TOOL_IDS.map((id) => ({
     kind: 'cli',
     descriptor: CLI_TOOL_CATALOG[id],
@@ -314,7 +342,7 @@ export function buildPickerOptions(
     if (entry.kind === 'api') {
       return [projectApiOption(entry.descriptor, lane, detections, isCurrent)];
     }
-    return [projectMetaOption({ kind: entry.kind, role: lane, isCurrent })];
+    return [projectCommandLauncher(lane)];
   });
 
   return options.toSorted((a, b) =>

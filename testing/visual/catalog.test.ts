@@ -675,7 +675,6 @@ describe('visual catalog', () => {
 
   it('lists idle and filtered tools in one order without group rows', async () => {
     const idleNames = [
-      '+ Add custom command…',
       'OpenAI Codex CLI',
       'Claude Code CLI',
       'Kilo Code CLI',
@@ -690,7 +689,6 @@ describe('visual catalog', () => {
       'Kilo Code CLI',
       'Command Code CLI',
       'OpenCode CLI',
-      '+ Add custom command…',
     ];
     for (const [id, names] of [
       ['overlay-picker-tool-order', idleNames],
@@ -704,6 +702,7 @@ describe('visual catalog', () => {
       try {
         const frame = stripAnsiStyles(await handle.waitForCheckpoint());
         expectConsecutiveToolRows(frame, names);
+        expect(frame).not.toContain('+ Add custom command');
         expect(frame).not.toContain('Local connections');
         expect(frame).not.toContain('CLI tools');
         if (id === 'overlay-picker-tool-order-filter') {

@@ -86,12 +86,6 @@ describe('settingsHelpLines', () => {
     ]);
   });
 
-  it('keeps a bounded number range on the line that names it', () => {
-    expect(linesFor('implementer.temperature')).toEqual([
-      { text: '0 = precise, 0.3 = balanced, 1+ = creative · 0–2' },
-    ]);
-  });
-
   it('leaves a one-sided bound off the line', () => {
     expect(linesFor('implementer.contextLength')).toEqual([
       {
@@ -100,17 +94,17 @@ describe('settingsHelpLines', () => {
     ]);
   });
 
-  it('spells an ordinary enum as its description and its options', () => {
-    expect(linesFor('workflow.compactionFormat')).toEqual([
-      { text: 'Summary format for transcript compaction' },
-      { text: 'auto · freeform · structured' },
-    ]);
-  });
-
   it('lists the isolation choices by their labels', () => {
     expect(linesFor('workflow.isolation')).toEqual([
       { text: 'Where the build seat writes its changes; worktree by default' },
       { text: 'worktree · staged copy · your checkout' },
+    ]);
+  });
+
+  it('lists the review cadence choices by their option names', () => {
+    expect(linesFor('workflow.review')).toEqual([
+      { text: 'When the review seat reads the diff: once at the end, or after every brief' },
+      { text: 'end · task' },
     ]);
   });
 

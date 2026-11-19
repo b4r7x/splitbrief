@@ -20,7 +20,7 @@ const ARROW_UP = '\u001b[A';
 const CURSOR_GLYPH = '▌';
 const KITTY_SUPER_SPACE = '\u001b[32;9u';
 const KITTY_HYPER_SPACE = '\u001b[32;17u';
-const SEEDED_TIMEOUT_MS = 240_000;
+const SEEDED_CONTEXT_LENGTH = 240_000;
 
 function lineContaining(frame: string, text: string): string {
   const line = frame.split('\n').find((candidate) => candidate.includes(text));
@@ -122,14 +122,14 @@ describe('settings overlay integration', () => {
   });
 
   it('advances an enum twice from the latest saved value', async () => {
-    overlayStore.open('settings', 'workflow.compactionFormat');
+    overlayStore.open('settings', 'workflow.isolation');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
     ui.stdin.write(' ');
     ui.stdin.write(' ');
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.compactionFormat).toBe('structured');
+      expect(loadConfig(dir).config.workflow.isolation).toBe('none');
     });
 
     ui.unmount();
@@ -153,13 +153,13 @@ describe('settings overlay integration', () => {
   });
 
   it('typing edits a number, Enter commits via validation', async () => {
-    writeConfigYaml(dir, { implementer: { timeout: SEEDED_TIMEOUT_MS } });
+    writeConfigYaml(dir, { implementer: { contextLength: SEEDED_CONTEXT_LENGTH } });
     configStore.load(dir);
     terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
-    overlayStore.open('settings', 'implementer.timeout');
+    overlayStore.open('settings', 'implementer.contextLength');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
-    expect(ui.lastFrame()).toContain('Timeout');
+    expect(ui.lastFrame()).toContain('Context length');
 
     ui.stdin.write('\r'); // Enter edit mode on the numeric field.
     await vi.waitFor(() => {
@@ -167,24 +167,26 @@ describe('settings overlay integration', () => {
     });
     await flushEffects();
 
-    for (let i = 0; i < String(SEEDED_TIMEOUT_MS).length; i++) ui.stdin.write('\x7f');
+    for (let i = 0; i < String(SEEDED_CONTEXT_LENGTH).length; i++) ui.stdin.write('\x7f');
     await vi.waitFor(() => {
       const clearedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(clearedFrame, 'Timeout')).not.toContain(String(SEEDED_TIMEOUT_MS));
+      expect(lineContaining(clearedFrame, 'Context length')).not.toContain(
+        String(SEEDED_CONTEXT_LENGTH),
+      );
     });
     await flushEffects();
 
-    ui.stdin.write('5');
+    ui.stdin.write('4096');
     await vi.waitFor(() => {
       const typedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(typedFrame, 'Timeout')).toContain('5');
+      expect(lineContaining(typedFrame, 'Context length')).toContain('4096');
     });
     await flushEffects();
 
     ui.stdin.write('\r'); // commit
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: 5 });
+      expect(loadConfig(dir).config.implementer).toMatchObject({ contextLength: 4096 });
     });
 
     await vi.waitFor(() => {
@@ -196,40 +198,42 @@ describe('settings overlay integration', () => {
   });
 
   it('keeps edit mode open and shows a neutral note when committing invalid input', async () => {
-    writeConfigYaml(dir, { implementer: { timeout: SEEDED_TIMEOUT_MS } });
+    writeConfigYaml(dir, { implementer: { contextLength: SEEDED_CONTEXT_LENGTH } });
     configStore.load(dir);
     terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
-    overlayStore.open('settings', 'implementer.timeout');
+    overlayStore.open('settings', 'implementer.contextLength');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
-    ui.stdin.write('\r'); // enter edit mode (seeded with the configured timeout)
+    ui.stdin.write('\r'); // enter edit mode (seeded with the configured context length)
     await vi.waitFor(() => {
       expect(overlayStore.get().exclusive).toBe(true);
     });
 
     await flushEffects();
-    for (let i = 0; i < String(SEEDED_TIMEOUT_MS).length; i++) ui.stdin.write('\x7f');
+    for (let i = 0; i < String(SEEDED_CONTEXT_LENGTH).length; i++) ui.stdin.write('\x7f');
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, 'Timeout')).not.toContain(String(SEEDED_TIMEOUT_MS));
+      expect(lineContaining(frame, 'Context length')).not.toContain(String(SEEDED_CONTEXT_LENGTH));
     });
     await flushEffects();
 
-    ui.stdin.write('0'); // below min (1)
+    ui.stdin.write('0'); // below the minimum
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, 'Timeout')).toContain('0');
+      expect(lineContaining(frame, 'Context length')).toContain('0');
     });
     await flushEffects();
 
     ui.stdin.write('\r'); // attempt commit of out-of-range value
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: SEEDED_TIMEOUT_MS });
+      expect(loadConfig(dir).config.implementer).toMatchObject({
+        contextLength: SEEDED_CONTEXT_LENGTH,
+      });
       const feedback = feedbackStore.get();
       expect(feedback.isError).toBe(false);
-      expect(feedback.message).toContain('Timeout');
+      expect(feedback.message).toContain('Context length');
       expect(overlayStore.get().exclusive).toBe(true);
     });
     await flushEffects();
@@ -237,21 +241,21 @@ describe('settings overlay integration', () => {
     ui.stdin.write('\x7f');
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, 'Timeout')).not.toContain('0');
+      expect(lineContaining(frame, 'Context length')).not.toContain('0');
     });
     await flushEffects();
 
-    ui.stdin.write('5');
+    ui.stdin.write('4096');
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, 'Timeout')).toContain('5');
+      expect(lineContaining(frame, 'Context length')).toContain('4096');
     });
     await flushEffects();
 
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: 5 });
+      expect(loadConfig(dir).config.implementer).toMatchObject({ contextLength: 4096 });
       expect(overlayStore.get().exclusive).toBe(false);
       expect(feedbackStore.get().isError).toBe(false);
     });
@@ -260,23 +264,25 @@ describe('settings overlay integration', () => {
   });
 
   it('Esc cancels an active edit without saving', async () => {
-    writeConfigYaml(dir, { implementer: { timeout: SEEDED_TIMEOUT_MS } });
+    writeConfigYaml(dir, { implementer: { contextLength: SEEDED_CONTEXT_LENGTH } });
     configStore.load(dir);
-    overlayStore.open('settings', 'implementer.timeout');
+    overlayStore.open('settings', 'implementer.contextLength');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
-    expect(ui.lastFrame()).toContain('Timeout');
+    expect(ui.lastFrame()).toContain('Context length');
 
     ui.stdin.write('\r');
     await flushEffects();
-    for (let i = 0; i < String(SEEDED_TIMEOUT_MS).length; i++) ui.stdin.write('\x7f');
+    for (let i = 0; i < String(SEEDED_CONTEXT_LENGTH).length; i++) ui.stdin.write('\x7f');
     await flushEffects();
-    ui.stdin.write('5');
+    ui.stdin.write('4096');
     await flushEffects();
     ui.stdin.write('\x1b'); // escape
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: SEEDED_TIMEOUT_MS });
+      expect(loadConfig(dir).config.implementer).toMatchObject({
+        contextLength: SEEDED_CONTEXT_LENGTH,
+      });
     });
     ui.unmount();
   });
@@ -293,17 +299,17 @@ describe('settings overlay integration', () => {
       },
     });
     configStore.load(dir);
-    overlayStore.open('settings', 'implementer.temperature');
+    overlayStore.open('settings', 'implementer.contextLength');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
     expect(lineContaining(stripAnsiStyles(ui.lastFrame() ?? ''), CURSOR_GLYPH)).toContain(
-      'Temperature',
+      'Context length',
     );
 
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('End-of-run checks');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Test command');
       // The page steps over the Workflow section and lands with the whole of it on screen — its
       // first row included — so no row was stepped over unseen.
       expect(frame).toContain('Plan approval');

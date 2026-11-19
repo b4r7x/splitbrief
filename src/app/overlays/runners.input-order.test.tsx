@@ -296,7 +296,7 @@ const CLICKS: Array<
       saves: [],
       overlay: 'planner-picker',
       view: 'picker',
-      cursor: ['│ ▌ OpenAI Codex CLI 0.40.0 │ │ GPT-6-Astra 272K ▾ │'],
+      cursor: [expect.stringContaining('▌ OpenAI Codex CLI')],
       store: { expandedModelId: 'opus', effortDraft: null },
     },
   },

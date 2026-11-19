@@ -1,10 +1,12 @@
-import type { Command } from 'commander';
+import { type Command, Option } from 'commander';
 import {
   isListedApiProvider,
   IMPLEMENTER_API_PROVIDER_IDS,
 } from '../../core/providers/api-catalog.js';
+import { isCustomCommandAuthoringEnabled } from '../../core/providers/hidden.js';
 import { isListedCliTool, IMPLEMENTER_CLI_TOOL_IDS } from '../../core/runners/cli-tool/catalog.js';
 import { PLANNER_TOOL_IDS, META_PROVIDER_IDS } from '../../core/schemas/enums.js';
+import { includes } from '../../utils/type-guards.js';
 import { cliError } from '../errors.js';
 import { parseSkillIdsOption } from './skills.js';
 import { parseContinueActionOption } from './continue-action.js';
@@ -13,7 +15,11 @@ import { parseSeatDownPolicyOption } from './parsers.js';
 import { collectOption, parseOutputFormatOption, parsePositiveIntegerOption } from './parsers.js';
 
 function isListedRunnerId(id: string): boolean {
-  return isListedCliTool(id) && isListedApiProvider(id);
+  return (
+    isListedCliTool(id) &&
+    isListedApiProvider(id) &&
+    (!includes(META_PROVIDER_IDS, id) || isCustomCommandAuthoringEnabled())
+  );
 }
 
 const LISTED_PLANNER_TOOL_IDS = PLANNER_TOOL_IDS.filter(isListedRunnerId);
@@ -46,6 +52,7 @@ export function valueTakingFlags(program: Command): ReadonlySet<string> {
 }
 
 export function addWorkflowOptions(cmd: Command): Command {
+  const hideCustomCommands = !isCustomCommandAuthoringEnabled();
   // At 80 columns the widest term (37) leaves descriptions 39 — one short of commander's
   // default minWidthToWrap of 40, below which it emits every description unwrapped and the
   // terminal breaks them mid-word. 32, not 39, so a term up to 44 columns still wraps.
@@ -58,7 +65,12 @@ export function addWorkflowOptions(cmd: Command): Command {
       `Planner tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${LISTED_PLANNER_TOOL_IDS.join(', ')})`,
     )
     .option('--planner-model <model>', 'Planner model (CLI and API planners)')
-    .option('--planner-command <cmd>', 'Custom planner command (when --planner=shell)')
+    .addOption(
+      new Option(
+        '--planner-command <cmd>',
+        'Custom planner command (when --planner=shell)',
+      ).hideHelp(hideCustomCommands),
+    )
     .option('--planner-api-base <url>', 'Planner API base URL for API providers')
     .option(
       '--planner-api-key-env <var>',
@@ -81,7 +93,12 @@ export function addWorkflowOptions(cmd: Command): Command {
       `Implementer provider or CLI tool; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${LISTED_IMPLEMENTER_TOOL_IDS.join(', ')})`,
     )
     .option('--implementer-model <model>', 'Implementer model')
-    .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
+    .addOption(
+      new Option(
+        '--implementer-command <cmd>',
+        'Custom implementer command (when --implementer=shell)',
+      ).hideHelp(hideCustomCommands),
+    )
     .option('--implementer-api-base <url>', 'Implementer API base URL for API providers')
     .option(
       '--implementer-api-key-env <var>',
@@ -108,7 +125,12 @@ export function addWorkflowOptions(cmd: Command): Command {
       `Reviewer tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${LISTED_PLANNER_TOOL_IDS.join(', ')})`,
     )
     .option('--reviewer-model <model>', 'Reviewer model (CLI and API reviewers)')
-    .option('--reviewer-command <cmd>', 'Custom reviewer command (when --reviewer=shell)')
+    .addOption(
+      new Option(
+        '--reviewer-command <cmd>',
+        'Custom reviewer command (when --reviewer=shell)',
+      ).hideHelp(hideCustomCommands),
+    )
     .option('--reviewer-api-base <url>', 'Reviewer API base URL for API providers')
     .option(
       '--reviewer-api-key-env <var>',

@@ -921,18 +921,7 @@ describe('PickerView initial left highlight', () => {
     overlayStore.reset();
   });
 
-  it('highlights the configured tool when the launcher occupies index 0 with an empty filter', async () => {
-    const launcher = pickerItem({
-      id: 'custom-command',
-      displayName: 'Custom command',
-      kind: 'custom-command',
-      roles: ['planner', 'implementer'],
-      modelPolicy: 'none',
-      billing: 'unknown',
-      permissions: readyPermissions,
-      status: { state: 'ready', remediation: null },
-      available: true,
-    });
+  it('highlights the configured tool below another tool', async () => {
     const configured = pickerItem(
       {
         id: 'codex',
@@ -965,11 +954,11 @@ describe('PickerView initial left highlight', () => {
 
     const catalog: PickerCatalog = pickerCatalog({
       browseCatalog: false,
-      items: [launcher, other, configured],
+      items: [other, configured],
       rightModels: [],
       currentItem: configured,
       selectedItemId: configured.id,
-      initialLeftIdx: 2,
+      initialLeftIdx: 1,
       roleLabel: 'Planner',
       modelCounts: zeroCounts,
     });
@@ -981,11 +970,11 @@ describe('PickerView initial left highlight', () => {
 
     const liveBar = glyph('liveBar', 'unicode');
     const lines = (ui.lastFrame() ?? '').split('\n');
-    const launcherLine = lines.find((line) => line.includes('+ Add custom command')) ?? '';
+    const otherLine = lines.find((line) => line.includes('Claude Code')) ?? '';
     const configuredLine = lines.find((line) => line.includes('OpenAI Codex CLI')) ?? '';
 
     expect(configuredLine).toContain(liveBar);
-    expect(launcherLine).not.toContain(liveBar);
+    expect(otherLine).not.toContain(liveBar);
     ui.unmount();
   });
 });

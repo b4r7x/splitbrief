@@ -37,9 +37,6 @@ export function settingsHelpLines(item: SettingsItem, config: Config): HelpLine[
   const def = item.def;
   const locked = def.lockedBy?.(config);
   if (locked !== undefined) return [{ text: locked }];
-  if (def.kind === 'number' && def.min !== undefined && def.max !== undefined) {
-    return [{ text: `${def.description} · ${def.min}–${def.max}` }];
-  }
   if (def.kind === 'enum') {
     return [
       { text: def.description },

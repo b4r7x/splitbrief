@@ -75,11 +75,9 @@ describe('role membership', () => {
     const plannerIds = plannerItems.map((item) => item.id);
     const implementerIds = implementerItems.map((item) => item.id);
 
-    expect(plannerIds.toSorted()).toEqual(
-      ['custom-command', ...PLANNER_CLI_TOOL_IDS.filter(isListedCliTool)].toSorted(),
-    );
+    expect(plannerIds.toSorted()).toEqual(PLANNER_CLI_TOOL_IDS.filter(isListedCliTool).toSorted());
     expect(implementerIds.toSorted()).toEqual(
-      ['custom-command', ...IMPLEMENTER_CLI_TOOL_IDS.filter(isListedCliTool)].toSorted(),
+      IMPLEMENTER_CLI_TOOL_IDS.filter(isListedCliTool).toSorted(),
     );
     expect(plannerItems.every((item) => item.roles.includes('planner'))).toBe(true);
     expect(implementerItems.every((item) => item.roles.includes('implementer'))).toBe(true);
@@ -149,16 +147,24 @@ describe('role membership', () => {
     }
   });
 
-  it('includes exactly one custom-command launcher in both picker catalogs', () => {
+  it.each(SEAT_PICKER_ROLES)('offers no custom command in the %s picker', (role) => {
     const descriptors = assemblePickerDescriptors();
     const detections = { cliTools: [], providers: [] };
-    const plannerItems = buildPickerOptions('planner', descriptors, detections, undefined);
-    const implementerItems = buildPickerOptions('implementer', descriptors, detections, undefined);
+    const config = makeConfig({
+      planner: { kind: 'shell', command: 'plan-fixture' },
+      implementer: { kind: 'agent', command: 'build-fixture', model: 'fixture' },
+    });
 
-    expect(plannerItems.filter((item) => item.kind === 'custom-command')).toHaveLength(1);
-    expect(implementerItems.filter((item) => item.kind === 'custom-command')).toHaveLength(1);
-    expect(plannerItems.some((item) => item.id === 'shell' || item.id === 'agent')).toBe(false);
-    expect(implementerItems.some((item) => item.id === 'shell' || item.id === 'agent')).toBe(false);
+    for (const current of [undefined, config.planner, config.implementer]) {
+      for (const filterActive of [false, true]) {
+        const options = buildPickerOptions(role, descriptors, detections, current, {
+          filterActive,
+        });
+        expect(options.map((item) => item.kind)).not.toContain('custom-command');
+        expect(options.map((item) => item.id)).not.toContain('shell');
+        expect(options.map((item) => item.id)).not.toContain('agent');
+      }
+    }
   });
 });
 
@@ -368,18 +374,6 @@ describe('status projection', () => {
     });
   });
 
-  it('keeps the custom-command launcher always ready and selectable', () => {
-    const options = buildPickerOptions(
-      'planner',
-      assemblePickerDescriptors(),
-      { cliTools: [], providers: [] },
-      undefined,
-    );
-    const launcher = options.find((item) => item.kind === 'custom-command');
-    expect(launcher?.status.state).toBe('ready');
-    expect(launcher?.available).toBe(true);
-  });
-
   it('renders a non-active tool whose diagnostic is ready as selectable', () => {
     const options = buildPickerOptions(
       'implementer',
@@ -576,20 +570,15 @@ describe('tool order', () => {
       makeImplementerDetection('llama-cpp', { available: false, isLocal: true }),
     ],
   };
-  const emptyDetections = { cliTools: [], providers: [] };
-
-  function toolOrderIds(filterActive: boolean): string[] {
-    const body = [
-      'codex',
-      'claude-code',
-      'kilo-code',
-      'command-code',
-      'cursor',
-      'antigravity',
-      'opencode',
-    ];
-    return filterActive ? [...body, 'custom-command'] : ['custom-command', ...body];
-  }
+  const toolOrderIds = [
+    'codex',
+    'claude-code',
+    'kilo-code',
+    'command-code',
+    'cursor',
+    'antigravity',
+    'opencode',
+  ];
 
   it('orders an idle tool list by group and readiness', () => {
     for (const role of SEAT_PICKER_ROLES) {
@@ -600,16 +589,16 @@ describe('tool order', () => {
       );
       expect(options.find((item) => item.id === 'kilo-code')?.status.state).toBe('unverified');
       expect(options.find((item) => item.id === 'cursor')?.status.state).toBe('unavailable');
-      expect(options.map((item) => item.id)).toEqual(toolOrderIds(false));
+      expect(options.map((item) => item.id)).toEqual(toolOrderIds);
     }
   });
 
-  it('orders a filtered tool list by the same groups with the launcher last', () => {
+  it('orders a filtered tool list by the same groups', () => {
     for (const role of SEAT_PICKER_ROLES) {
       const options = buildPickerOptions(role, descriptors, detections, undefined, {
         filterActive: true,
       });
-      expect(options.map((item) => item.id)).toEqual(toolOrderIds(true));
+      expect(options.map((item) => item.id)).toEqual(toolOrderIds);
     }
   });
 
@@ -644,24 +633,8 @@ describe('tool order', () => {
     const claude = options.find((item) => item.id === 'claude-code');
     expect(claude?.isCurrent).toBe(true);
     expect(claude?.status.state).toBe('unauthenticated');
-    expect(ids).toEqual(toolOrderIds(true));
+    expect(ids).toEqual(toolOrderIds);
     expect(ids.indexOf('codex')).toBeLessThan(ids.indexOf('claude-code'));
     expect(ids.indexOf('claude-code')).toBeLessThan(ids.indexOf('cursor'));
-  });
-
-  it('launcher first when filter is empty', () => {
-    for (const role of SEAT_PICKER_ROLES) {
-      const options = buildPickerOptions(role, descriptors, emptyDetections, undefined);
-      expect(options[0]?.kind).toBe('custom-command');
-    }
-  });
-
-  it('launcher last while filtering', () => {
-    for (const role of SEAT_PICKER_ROLES) {
-      const options = buildPickerOptions(role, descriptors, emptyDetections, undefined, {
-        filterActive: true,
-      });
-      expect(options.at(-1)?.kind).toBe('custom-command');
-    }
   });
 });

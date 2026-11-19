@@ -209,12 +209,15 @@ describe('usePickerCatalog catalog diagnostic', () => {
     ui.unmount();
   });
 
-  // The unsupported verdict is about a CLI that cannot enumerate its models; an
-  // API provider has nothing to miss, so it must claim nothing.
-  it('claims nothing for an API provider', () => {
-    const ui = renderFeature(<Probe role="planner" toolId="anthropic" />);
+  it('omits the native catalog diagnostic for a configured command', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'shell', command: './plan.sh' } }),
+    });
+    const ui = renderFeature(<BylineProbe toolId="configured-command" />);
 
-    expect(captured).toBeUndefined();
+    expect(capturedCatalog?.currentItem?.kind).toBe('configured-command');
+    expect(capturedCatalog?.catalogDiagnostic).toBeUndefined();
     ui.unmount();
   });
 

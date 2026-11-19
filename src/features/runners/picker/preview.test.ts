@@ -24,7 +24,6 @@ import type { RightRow } from '../model-catalog/types.js';
 import type { RouteAuthContext } from '../right-column/policy.js';
 import type { PreviewContext } from '../two-column-picker/picker.js';
 import { formatCatalogDiagnostic } from './catalog-guidance.js';
-import { CUSTOM_COMMAND_PANE_LINES } from './labels.js';
 import { resolvePreview, terminalPaneFor } from './preview.js';
 import type { PickerCatalog } from './use-catalog.js';
 
@@ -101,16 +100,6 @@ describe('terminalPaneFor', () => {
       '',
       'Nothing is saved yet.',
     ]);
-  });
-
-  it('explains the custom command launcher', () => {
-    const launcher: PickerOption = { ...kilo, id: 'custom-command', kind: 'custom-command' };
-
-    expect(terminalPaneFor(launcher, catalog)).toEqual({
-      label: 'Custom command',
-      verb: 'add custom',
-      lines: [...CUSTOM_COMMAND_PANE_LINES],
-    });
   });
 
   it('names the saved choice only on the saved tool that is not ready', () => {

@@ -3,7 +3,6 @@ import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { feedbackStore } from '../../../stores/ui/feedback.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
 import { useEditBuffer } from './use-edit-buffer.js';
 
@@ -50,7 +49,7 @@ const stringDef: SettingDef = {
   kind: 'string',
 };
 
-describe('useEditBuffer commit on invalid input', () => {
+describe('useEditBuffer commit', () => {
   beforeEach(() => {
     resetAllStores();
   });
@@ -59,7 +58,7 @@ describe('useEditBuffer commit on invalid input', () => {
     resetAllStores();
   });
 
-  it('keeps edit mode open and shows a neutral note for empty numeric values', async () => {
+  it('commits an unset Context length when the user clears the number', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
     await flushEffects();
@@ -69,15 +68,13 @@ describe('useEditBuffer commit on invalid input', () => {
     ui.stdin.write('\r');
     await flushEffects();
 
-    expect(committed).toHaveLength(0);
-    expect(ui.lastFrame() ?? '').toContain('active=true');
-    expect(feedbackStore.get().isError).toBe(false);
-    expect(feedbackStore.get().message).toContain('Context length');
+    expect(committed).toEqual([{ id: numberDef.id, value: undefined }]);
+    expect(ui.lastFrame()).toContain('active=false');
 
     ui.unmount();
   });
 
-  it('keeps edit mode open and shows a neutral note for empty string values', async () => {
+  it('commits an unset Test command when the user submits only whitespace', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(
       <Harness def={stringDef} initialValue="npm test" committed={committed} />,
@@ -91,12 +88,8 @@ describe('useEditBuffer commit on invalid input', () => {
     ui.stdin.write('\r'); // attempt commit
     await flushEffects();
 
-    expect(committed).toHaveLength(0);
-    expect(ui.lastFrame() ?? '').toContain('active=true');
-
-    const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(false);
-    expect(feedback.message).toContain('Test command');
+    expect(committed).toEqual([{ id: stringDef.id, value: undefined }]);
+    expect(ui.lastFrame()).toContain('active=false');
 
     ui.unmount();
   });

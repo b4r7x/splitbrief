@@ -129,8 +129,6 @@ export function PickerView({
             isSelected,
             isContext,
             maxWidth,
-            currentCommand: catalog.currentCommand,
-            currentCommandKind: catalog.currentCommandKind,
             showStatus: statusesFitAt(maxWidth),
           }),
       }}

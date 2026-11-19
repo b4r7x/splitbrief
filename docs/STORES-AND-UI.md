@@ -510,7 +510,7 @@ The inner card uses `PanelSurface` to paint `overlayBg`, including its padding a
 
 ### Picker view state
 
-`pickerViewStore` holds the tool/model picker's sub-view for both slots: which step is showing (`picker`, the two custom-command steps, custom model), the left index preserved across a step, the expanded model (provider routes or an option family), the drafted option-family variant its axis rows spell out, and the in-flight text draft. The fallback slot has no custom-command steps. A custom fallback model changes `fallback.model` only. The fallback itself stays in `configStore`; it needs no new store. `pickerViewStore` replaces the picker's component-local `useReducer`. The state survives the picker unmounting and remounting. A test or visual fixture can seed a step directly (`pickerViewStore.open(...)`, `pickerViewStore.expand(id, draftId)`) instead of driving keystrokes into it.
+`pickerViewStore` holds the tool/model picker's sub-view for both slots: which step is showing (`picker` or an entry form), the left index preserved across a step, the expanded model (provider routes or an option family), the drafted option-family variant its axis rows spell out, and the in-flight text draft. The custom command views stay behind the authoring predicate in `src/core/providers/hidden.ts`. A custom fallback model changes `fallback.model` only. The fallback itself stays in `configStore`; it needs no new store. `pickerViewStore` replaces the picker's component-local `useReducer`. The state survives the picker unmounting and remounting. A test or visual fixture can seed a step directly (`pickerViewStore.open(...)`, `pickerViewStore.expand(id, draftId)`) instead of driving keystrokes into it.
 
 ---
 

@@ -45,7 +45,6 @@ export function buildSettingsItems(
     (row): SettingsItem => ({ kind: 'fallback', row, key: fallbackRowKey(row) }),
   );
   const settings = input.defs
-    .filter((def) => def.appliesTo?.(input.config) ?? true)
     .toSorted((a, b) => SETTINGS_SECTIONS.indexOf(a.section) - SETTINGS_SECTIONS.indexOf(b.section))
     .map((def): SettingsItem => ({ kind: 'setting', def, key: def.id }));
   return [...crew, ...fallbacks, ...settings];
@@ -59,8 +58,7 @@ export function settingsItemSection(item: SettingsItem): SettingsSection {
 
 /**
  * The crew key carries the seat word, so `plan` reaches the PLAN seat row. Descriptions are
- * left out: prose matches drag unrelated rows in (`format` would hit "Summary format for
- * transcript compaction").
+ * left out: they would match unrelated rows.
  */
 export function settingsItemFilterText(item: SettingsItem): string {
   if (item.kind === 'crew') return `${item.key} ${crewRowFilterText(item.row)}`.toLowerCase();

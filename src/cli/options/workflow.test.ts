@@ -64,8 +64,22 @@ describe('runner selection help', () => {
   ])('$label enumerates every id the catalog lists', ({ label, admitted }) => {
     expect(apiProviderCatalog.isListedApiProvider).toBeTypeOf('function');
     expect(idsListedInHelp(label)).toEqual(
-      admitted.filter((id) => isListedCliTool(id) && apiProviderCatalog.isListedApiProvider(id)),
+      admitted.filter(
+        (id) =>
+          id !== 'shell' &&
+          id !== 'agent' &&
+          isListedCliTool(id) &&
+          apiProviderCatalog.isListedApiProvider(id),
+      ),
     );
+  });
+
+  it('omits custom command flags from start help', async () => {
+    const result = await runCommand(['start', '--help']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('--planner-model');
+    expect(result.stdout).not.toMatch(/--(?:planner|implementer|reviewer)-command\b/);
   });
 
   it('lists the surviving ids, and no removed or unlisted one', () => {
@@ -77,8 +91,6 @@ describe('runner selection help', () => {
       'cursor',
       'command-code',
       'antigravity',
-      'shell',
-      'agent',
     ]);
     expect(idsListedInHelp('Reviewer tool')).toEqual(idsListedInHelp('Planner tool'));
     expect(idsListedInHelp('Implementer provider')).toEqual([
@@ -89,8 +101,6 @@ describe('runner selection help', () => {
       'cursor',
       'command-code',
       'antigravity',
-      'shell',
-      'agent',
     ]);
   });
 });

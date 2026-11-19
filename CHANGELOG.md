@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.
+
+### Removed
+
+- Custom command setup moves to your project configuration. The seat picker and CLI help omit those options.
+- Temperature, API call Timeout and Compaction format move from Settings to your project configuration.
+
 ## [0.2.0]
 
 The first release on npm: `npm install -g splitbrief`. It runs on macOS, Linux and inside WSL, with Node.js 22 or 24.

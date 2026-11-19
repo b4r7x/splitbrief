@@ -28,16 +28,14 @@ describe('displayValue', () => {
     expect(displayValue(def, 'npm test')).toBe('npm test');
   });
 
+  it.each([undefined, null])('shows a dash for %s when the def has no unset label', (value) => {
+    expect(displayValue(getDef('workflow.review'), value)).toBe('—');
+  });
+
   it('shows ✓ for true and off for false booleans', () => {
     const def = getDef('validation.endChecks');
     expect(displayValue(def, true)).toBe(glyph('check'));
     expect(displayValue(def, false)).toBe('off');
-  });
-
-  it('— stays the default for unset fields without an unsetLabel', () => {
-    const def = getDef('implementer.temperature');
-    expect(displayValue(def, undefined)).toBe('—');
-    expect(displayValue(def, null)).toBe('—');
   });
 
   it('shows a set Prompt budget as its number, also when it equals the detected window', () => {
@@ -60,8 +58,7 @@ describe('displayValue', () => {
     );
   });
 
-  it('unsetLabel fallbacks for timeout, contextLength and testCommand', () => {
-    expect(displayValue(getDef('implementer.timeout'), null)).toBe('no limit');
+  it('reads unset Context length and Test command as auto', () => {
     expect(displayValue(getDef('implementer.contextLength'), undefined)).toBe('auto');
     expect(displayValue(getDef('validation.testCommand'), undefined)).toBe('auto');
   });
@@ -83,7 +80,7 @@ describe('matchesFilter', () => {
   });
 
   it('reaches a setting by its label, and nothing else', () => {
-    expect(matching('temp')).toEqual(['implementer.temperature']);
+    expect(matching('context')).toEqual(['implementer.contextLength']);
   });
 
   it('reaches settings by their section name', () => {
@@ -97,30 +94,30 @@ describe('matchesFilter', () => {
 
 describe('validateNumber', () => {
   it('rejects non-numeric', () => {
-    const def = getDef('implementer.timeout');
+    const def = getDef('implementer.contextLength');
     expect(validateNumber('abc', def)).toBeNull();
   });
 
   it('rejects out of range', () => {
-    const def = getDef('implementer.timeout');
+    const def = getDef('implementer.contextLength');
     expect(validateNumber('-1', def)).toBeNull();
     expect(validateNumber('0', def)).toBeNull();
   });
 
   it('rejects empty numeric buffers', () => {
-    const def = getDef('implementer.timeout');
+    const def = getDef('implementer.contextLength');
     expect(validateNumber('', def)).toBeNull();
     expect(validateNumber('   ', def)).toBeNull();
   });
 
   it('accepts valid integer', () => {
-    const def = getDef('implementer.timeout');
-    expect(validateNumber('5', def)).toBe(5);
+    const def = getDef('implementer.contextLength');
+    expect(validateNumber('4096', def)).toBe(4096);
   });
 
   it('rejects non-integer for integer fields', () => {
-    const def = getDef('implementer.timeout');
-    expect(validateNumber('3.5', def)).toBeNull();
+    const def = getDef('implementer.contextLength');
+    expect(validateNumber('4096.5', def)).toBeNull();
   });
 
   it('accepts schema-valid context windows beyond the old 131072 cap', () => {

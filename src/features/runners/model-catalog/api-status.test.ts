@@ -202,7 +202,7 @@ describe('deriveApiStatus separates a local server failure from an auth failure'
       remediation:
         'ollama is reachable but lists no models. Install or load one, then refresh detection.',
     });
-    expect(isSelectable(status, 'api')).toBe(false);
+    expect(isSelectable(status)).toBe(false);
   });
 
   it('reads a fresh populated catalog as ready', () => {

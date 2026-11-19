@@ -7191,8 +7191,8 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       {
         id: 'overlay-settings-api-implementer',
-        title: 'Overlay · settings · API build seat with no time limit',
-        marker: 'no limit',
+        title: 'Overlay · settings · API build seat context length',
+        marker: 'Context length',
       },
       {
         id: 'overlay-settings-floor-full',
@@ -7201,8 +7201,8 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       {
         id: 'overlay-settings-filtered',
-        title: 'Overlay · settings · filtered to temperature',
-        marker: 'Settings',
+        title: 'Overlay · settings · filtered to context length',
+        marker: 'Context length',
       },
       {
         id: 'overlay-settings-filter-plan',
@@ -7309,6 +7309,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-planner-picker',
         title: 'Overlay · planner picker',
         marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-shell',
+        title: 'Overlay · planner picker · configured shell command',
+        marker: 'output · ./plan.sh',
       },
       {
         id: 'overlay-planner-picker-catalog',
@@ -7501,11 +7506,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
-        id: 'overlay-picker-custom-launcher',
-        title: 'Overlay · planner picker · add a custom command',
-        marker: PICKER_TITLE_MARKER,
-      },
-      {
         id: 'overlay-picker-tool-order',
         title: 'Overlay · planner picker · tool order',
         marker: PICKER_TITLE_MARKER,
@@ -7595,16 +7595,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · planner picker · a disabled tool',
         marker: PICKER_TITLE_MARKER,
         viewports: REQUIRED_VIEWPORTS,
-      },
-      {
-        id: 'overlay-picker-contract-choice',
-        title: 'Overlay · planner picker · custom command contract',
-        marker: 'Custom command · PLAN',
-      },
-      {
-        id: 'overlay-picker-custom-command',
-        title: 'Overlay · planner picker · custom command entry',
-        marker: 'Custom command · PLAN',
       },
       {
         id: 'overlay-picker-custom-model',

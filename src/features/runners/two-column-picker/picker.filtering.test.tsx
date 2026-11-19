@@ -36,9 +36,9 @@ const BACKSPACE = '\u007f';
 const ESC = '\u001B';
 const DOWN = '\u001B[B';
 
-const LAUNCHER: Tool = { id: 'add-custom', displayName: '+ Add custom command…' };
+const NO_FALLBACK: Tool = { id: 'no-fallback', displayName: 'None' };
 
-function launcherPicker(opts: {
+function fallbackPicker(opts: {
   initialIndex: number;
   onConfirm?: (left: Tool, right: Model | null) => void;
 }) {
@@ -46,15 +46,15 @@ function launcherPicker(opts: {
     <TwoColumnPicker<Tool, Model>
       title="Picker"
       leftProps={{
-        items: [...TOOLS, LAUNCHER],
+        items: [...TOOLS, NO_FALLBACK],
         getKey: (t) => t.id,
         isDisabled: (t) => !!t.disabled,
         terminalPane: (t) =>
-          t.id === LAUNCHER.id
-            ? { label: 'Custom command', verb: 'add custom', lines: ['run a custom command'] }
+          t.id === NO_FALLBACK.id
+            ? { label: 'No fallback', verb: 'clear fallback', lines: ['Pause and ask'] }
             : undefined,
         filterBy: (t, query) =>
-          t.id === LAUNCHER.id || filterByFields(t, query, ['id', 'displayName']),
+          t.id === NO_FALLBACK.id || filterByFields(t, query, ['id', 'displayName']),
         initialIndex: opts.initialIndex,
         renderRow: (t, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>,
       }}
@@ -156,10 +156,10 @@ describe('TwoColumnPicker type-anywhere filtering', () => {
     ui.unmount();
   });
 
-  it('typing while the cursor sits on the launcher row filters the list above it', async () => {
-    const ui = renderFeature(launcherPicker({ initialIndex: 3 }));
+  it('typing while the cursor sits on the None row filters the list above it', async () => {
+    const ui = renderFeature(fallbackPicker({ initialIndex: 3 }));
     await flushEffects();
-    expect(ui.lastFrame()).toContain('>+ Add custom command…');
+    expect(ui.lastFrame()).toContain('>None');
 
     await flushEffects();
     ui.stdin.write('a');
@@ -170,14 +170,14 @@ describe('TwoColumnPicker type-anywhere filtering', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('>Alpha');
     expect(frame).not.toContain('Gamma');
-    expect(frame).toContain('+ Add custom command…');
+    expect(frame).toContain('None');
     ui.unmount();
   });
 
-  it('keeps the launcher visible and confirmable under a non-matching query', async () => {
+  it('keeps the None row visible and confirmable under a non-matching query', async () => {
     const confirms: Array<{ l: string; r: string | null }> = [];
     const ui = renderFeature(
-      launcherPicker({
+      fallbackPicker({
         initialIndex: 0,
         onConfirm: (l, r) => {
           confirms.push({ l: l.id, r: r?.id ?? null });
@@ -193,12 +193,12 @@ describe('TwoColumnPicker type-anywhere filtering', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain('Alpha');
-    expect(frame).toContain('>+ Add custom command…');
+    expect(frame).toContain('>None');
 
     await flushEffects();
     ui.stdin.write('\r');
     await tick(20);
-    expect(confirms).toEqual([{ l: 'add-custom', r: null }]);
+    expect(confirms).toEqual([{ l: 'no-fallback', r: null }]);
     ui.unmount();
   });
 
@@ -393,7 +393,7 @@ describe('TwoColumnPicker space policy', () => {
   });
 
   it('leaves an ordinary row alone when space is the first thing typed', async () => {
-    const ui = renderFeature(launcherPicker({ initialIndex: 0 }));
+    const ui = renderFeature(fallbackPicker({ initialIndex: 0 }));
     await flushEffects();
     expect(ui.lastFrame()).toContain('>Alpha');
 

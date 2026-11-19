@@ -212,9 +212,6 @@ function matrixCells(): MatrixCell[] {
   const cells: MatrixCell[] = [];
   for (const role of ['planner', 'implementer'] as const) {
     for (const option of realPickerOptions(role)) {
-      // The custom-command launcher carries a command, not a catalog id; the UI
-      // routes it through commitCustomCommand, which the named-profile suite covers.
-      if (option.kind === 'custom-command') continue;
       const credentialEnv = credentialEnvFor(option);
       const models = buildRightModels({
         role,
@@ -681,7 +678,6 @@ codebase:
       const offered = new Set(MATRIX_CELLS.map((cell) => `${cell.role}:${cell.optionId}`));
       for (const role of ['planner', 'implementer'] as const) {
         for (const option of realPickerOptions(role)) {
-          if (option.kind === 'custom-command') continue;
           expect(offered).toContain(`${role}:${option.id}`);
         }
       }

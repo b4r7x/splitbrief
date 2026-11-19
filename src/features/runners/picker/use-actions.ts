@@ -254,6 +254,7 @@ export function usePickerActions(opts: {
   return {
     confirm(selection: PickerOption, model: ModelOption | null) {
       return reportFailure(async () => {
+        if (selection.kind === 'configured-command') return;
         if (selection.kind === 'no-fallback') {
           if (seatFallback(config, seatRole) === undefined) {
             overlayStore.close();

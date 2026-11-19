@@ -1,5 +1,6 @@
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
+import { isCustomCommandRunner } from '../../../core/config/custom-commands/tuple.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { CLI_TOOL_IDS } from '../../../core/runners/cli-tool/catalog.js';
 import {
@@ -14,6 +15,7 @@ import { modelRowMatchesId, isCurrentRunner } from '../model-catalog/catalog.js'
 import { routeDraftOf } from '../model-catalog/option-axis.js';
 import {
   type PickerOption,
+  configuredCommandOption,
   noFallbackOption,
   reviewNoneOption,
   inheritPlannerOption,
@@ -92,9 +94,15 @@ export function buildLeftItems(input: {
     ...item,
     isCurrent: source === 'configured' && isCurrentRunner(item, runner),
   }));
+  if (source === 'configured' && runner !== undefined && isCustomCommandRunner(runner)) {
+    configuredItems.unshift(configuredCommandOption(runner, lane));
+  }
   if (role !== 'reviewer') return configuredItems;
   const none = reviewNoneOption({ isCurrent: source === 'none' });
-  const plannerItem = rawItems.find((item) => isCurrentRunner(item, config.planner));
+  const { planner } = config;
+  const plannerItem = isCustomCommandRunner(planner)
+    ? planner.kind
+    : rawItems.find((item) => isCurrentRunner(item, planner));
   if (plannerItem === undefined) return [none, ...configuredItems];
   return [
     inheritPlannerOption({ planner: plannerItem, isCurrent: source === 'planner' }),

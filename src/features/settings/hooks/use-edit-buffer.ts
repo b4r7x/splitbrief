@@ -12,9 +12,7 @@ interface UseEditBufferParams {
 
 function numberConstraintHint(def: SettingDef): string {
   const parts: string[] = [];
-  if (def.min !== undefined && def.max !== undefined) parts.push(`${def.min}-${def.max}`);
-  else if (def.min !== undefined) parts.push(`>= ${def.min}`);
-  else if (def.max !== undefined) parts.push(`<= ${def.max}`);
+  if (def.min !== undefined) parts.push(`>= ${def.min}`);
   if (def.integer) parts.push('integer');
   return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 }
@@ -41,8 +39,11 @@ export function useEditBuffer({ onCommit }: UseEditBufferParams): EditBufferStat
     if (commit && editingId) {
       const def = SETTINGS_DEFS.find((d) => d.id === editingId);
       if (def) {
-        if (def.kind === 'number') {
-          const num = validateNumber(editBuffer, def);
+        const trimmed = editBuffer.trim();
+        if (trimmed === '' && def.unsetLabel !== undefined) {
+          onCommit(def, undefined);
+        } else if (def.kind === 'number') {
+          const num = validateNumber(trimmed, def);
           if (num === null) {
             feedbackStore.setMessage(
               `Invalid ${def.label}: enter a number${numberConstraintHint(def)}`,
@@ -51,7 +52,6 @@ export function useEditBuffer({ onCommit }: UseEditBufferParams): EditBufferStat
           }
           onCommit(def, num);
         } else {
-          const trimmed = editBuffer.trim();
           if (!trimmed) {
             feedbackStore.setMessage(`Invalid ${def.label}: value cannot be empty`);
             return;

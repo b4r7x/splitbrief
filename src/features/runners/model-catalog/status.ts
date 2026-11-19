@@ -7,7 +7,6 @@ import type { CliReadinessState } from '../../../core/discovery/detection/tool.j
 import type { SavedCatalog, SavedCatalogOf } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliToolDescriptor } from '../../../core/runners/cli-tool/types.js';
 import { servedProviders } from '../../../core/runners/route-auth.js';
-import type { RunnerKind } from '../../../core/schemas/enums.js';
 import { cliReadinessRemediation, thenRecheck } from '../../../core/readiness/cli-remediation.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
@@ -121,10 +120,6 @@ export function resolveCliVersion(
   return findCliDetection(detections, tool)?.installedVersion ?? undefined;
 }
 
-export function isSelectable(
-  status: PickerOptionStatus,
-  kind: RunnerKind | 'custom-command',
-): boolean {
-  if (kind === 'custom-command') return true;
+export function isSelectable(status: PickerOptionStatus): boolean {
   return status.state === 'ready';
 }

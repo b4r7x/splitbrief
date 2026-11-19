@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CUSTOM_COMMAND_PANE_LINES,
   fallbackInheritanceNotice,
   formatPermissionLabels,
   formatPickerStatusLabel,
@@ -9,7 +8,6 @@ import {
 import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import { cliReadinessRemediation } from '../../../core/readiness/cli-remediation.js';
-import { SOFT_SEP } from '../../../core/separators.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { PickerOptionStatus } from '../model-catalog/status.js';
 
@@ -180,28 +178,5 @@ describe('formatPermissionLabels', () => {
         sandbox: 'cli-managed',
       })[0],
     ).toBe('cli sandbox');
-  });
-});
-
-describe('CUSTOM_COMMAND_PANE_LINES', () => {
-  it('names the action, both contracts, both steps and the save rule', () => {
-    const card = CUSTOM_COMMAND_PANE_LINES.join('\n');
-    expect(card).toContain('Run your own command.');
-    expect(card).toContain(`output${SOFT_SEP}reads stdout`);
-    expect(card).toContain(`direct${SOFT_SEP}writes files`);
-    expect(card).toContain('⏎ picks the contract,');
-    expect(card).toContain('then the command.');
-    expect(card).toContain('Nothing is saved yet.');
-  });
-
-  it('repeats neither the seat the title names nor the command the row spells', () => {
-    const card = CUSTOM_COMMAND_PANE_LINES.join('\n');
-    expect(card).not.toMatch(/seat/i);
-    expect(card).not.toMatch(/current/i);
-  });
-
-  it('spends at most the rows the card has at its shortest supported height', () => {
-    // 60x18 leaves the card 8 interior rows under its label and the blank below it.
-    expect(CUSTOM_COMMAND_PANE_LINES).toHaveLength(8);
   });
 });
