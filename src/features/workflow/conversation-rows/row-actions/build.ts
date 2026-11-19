@@ -11,6 +11,8 @@ import { eventRowBlock } from '../event-rows/dispatch.js';
 import { implementerFailureCard } from '../event-rows/execution.js';
 import { recoveryRowBlock } from '../event-rows/recovery.js';
 import { runnerActivityBatchRowBlock } from '../activity/rows.js';
+import { foldRowKey } from '../fold-row.js';
+import { checkoutFoldKey } from '../blocks/callout.js';
 import { checkGroupKey, checkGroupRowBlock } from '../blocks/check-group.js';
 import { walkTranscript } from '../transcript-walk/walk.js';
 import type { TranscriptWalkStep } from '../transcript-walk/types.js';
@@ -99,6 +101,15 @@ export function buildConversationRowActions(
         open: step.open,
       });
       registerFoldRows(block, block.key);
+      continue;
+    }
+    if (
+      step.kind === 'event' &&
+      step.event.type === 'warning' &&
+      step.event.checkout !== undefined
+    ) {
+      const key = checkoutFoldKey(step.globalIndex);
+      actions.set(foldRowKey(key), { type: 'toggle-activity-batch', key });
       continue;
     }
     const key = diffToggleKey(step, ctx.width);

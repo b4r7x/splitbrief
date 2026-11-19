@@ -1,4 +1,6 @@
 import { basename, join } from 'node:path';
+import { sessionDir } from '../../../core/paths.js';
+import { warnError } from '../../../lib/warn.js';
 import { pruneSandboxNpmCache } from '../../runners/sandbox/env.js';
 import { clearBridgedCliState } from '../../runners/sandbox/state/bridge.js';
 import { removeSandboxTempDirs } from '../../runners/sandbox/state/paths.js';
@@ -35,8 +37,12 @@ async function disposeWorkspace(state: RunIsolationState): Promise<void> {
   try {
     await waitForInFlightOperations(state);
     await state.pendingCleanup;
-    await pruneSandboxNpmCache(projectDir);
-    removeSandboxTempDirs(projectDir);
+    const checkoutSandbox = sessionDir(projectDir, sessionId);
+    await clearBridgedCliState(checkoutSandbox).catch((err: unknown) => {
+      warnError('Could not remove the run’s tool sign-in copies', err);
+    });
+    await pruneSandboxNpmCache(checkoutSandbox);
+    removeSandboxTempDirs(checkoutSandbox);
     const { worktree, location } = state;
     if (worktree !== null) {
       await clearBridgedCliState(worktree.dir);

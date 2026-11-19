@@ -98,7 +98,7 @@ export function buildCheckoutChangedRecoveryIssue(
         `Changed while ${getRunnerCatalogDisplayName(opts.runner)} ran; the audit cannot tell who made the change.`,
         opts.inPlace === undefined
           ? "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted."
-          : `SPLITBRIEF put back the files this attempt changed in your checkout. ${replacedFilesSavedIn(opts.inPlace.revertedDir)}. The git change stays for you to check.`,
+          : `SPLITBRIEF puts back checkout files it can attribute to this attempt. ${replacedFilesSavedIn(opts.inPlace.revertedDir)} when it puts files back. The git change stays for you to check.`,
       ],
       actions: haltActions('checkout-changed', [
         'retry-same-worker',

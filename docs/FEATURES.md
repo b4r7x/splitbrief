@@ -109,7 +109,7 @@ Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CON
 
 ### Run Readiness / Doctor
 
-**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, the plan approval level, runner posture, context length, validation settings, git status, and active-session conflicts. Blockers stop the run; warnings can continue.
+**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, the plan approval level, runner posture, context length, validation settings and Git status. Blockers stop the run; warnings can continue.
 
 **How to use.**
 
@@ -396,7 +396,7 @@ Older files can name retired actions; `RETIRED_RECOVERY_ACTIONS` reads `revise-s
 
 ### Where the implementer works
 
-**What it does.** `workflow.isolation` chooses where every build seat writes. `worktree` (the default) gives the run one linked git worktree. `staged-copy` gives it one project copy. Both deliver the result to your checkout at Apply. `none` ("your checkout") lets the implementer edit your checkout directly: validation and review run there, and a passing review, or the end of a REVIEW None run, closes the run with no Apply. In `none`, a git write during a call halts `checkout-changed`, an edit of yours between calls is a warning, and every revert first saves the replaced files under `.splitbrief/sessions/<id>/reverted/<stamp>/`.
+**What it does.** `workflow.isolation` chooses the workspace a run opens before planning. `worktree` (the default) gives the run one linked git worktree. `staged-copy` gives it one project copy. Both deliver the result to your checkout at Apply. `none` ("your checkout") lets the implementer edit your checkout directly: validation and review run there, and a passing review, or the end of a REVIEW None run, closes the run with no Apply. In `none`, a Git write during a call halts `checkout-changed`. Multiple checkout runs can write at the same time. A revert preserves and names files whose changes it cannot attribute.
 
 **How to use.** Set the key in `.splitbrief/config.yaml`; `splitbrief init` does not write it. In Settings, highlight `Isolation` and press Space to cycle the choices. Details and trade-offs: [CONFIGURATION.md §5](./CONFIGURATION.md#implementer-isolation).
 
@@ -661,7 +661,7 @@ The byline under the menu reads `Ready to apply · pick Apply, Show diff or Disc
 
 ### Run screen at rest
 
-**What it does.** The workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, from the home list or from the palette replays its `session.jsonl` into the workflow stores and shows the run exactly where it stopped: the same header rail, the same transcript, the same footer. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
+**What it does.** The workflow screen is the run's home whether anything is running on it or not. Open a saved run from `/sessions`, the home list or the palette to read its transcript. In a second terminal, `splitbrief resume <session-id>` opens an owned run in the same screen. You can read and scroll without interfering with the original terminal. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
 
 **Format (header).** The rail has Plan, Build and Review stages; a checkout-mode run (`workflow.isolation: none`) has no Apply stage. A worktree or staged-copy run adds an Apply stage, pending while the run is ready, the active stage while Apply runs, done when applied, cancelled when discarded, and marked when Apply halted. An ended run has no Apply stage. Cleared stages and the active stage show `●`, and only the active stage is bright and bold; unreached stages show dim `○`. A run that stopped at a halt or on an error shows `✗` on its stage. A final review that failed is its own stage: Review shows `✗` while the run waits on the halt and `×` once the run is ended, never `●`. Every other open run — stopped by you, interrupted, or waiting at a question or a gate — shows `×`. A ready-to-apply or closed complete run shows three `●`. On a run with REVIEW None, Review shows a dim `○` in place of its `●`, because no seat reviewed the run. When Apply sent the merged result back to its brief checks, Apply is the active stage while the checks run, and a stop there marks Apply. A closed run and a run that waits for Apply (ready to apply, applying, or stopped at an Apply halt) name the crew that built them, in the header and the sidebar, also after you save another crew. Every other open run names the crew it will use when you continue it. The header shows no clock: a closed run states its time in its summary, where each stage row ends with the time of that stage, and its whole record has the `Ran` row.
 
@@ -677,7 +677,7 @@ The byline under the menu reads `Ready to apply · pick Apply, Show diff or Disc
 - `Stopped at T003 · ⏎ to continue` (the process went away)
 - `Waiting for OpenAI Codex CLI · resets 17:00` (a seat waits for its usage limit to reset; the date is included when that reset is not today). Once the reset passes, the byline reads the stop the run has: `Stopped at T003 · type a correction or ⏎ to continue` when you stopped it, or `Stopped at T003 · ⏎ to continue` when the process went away.
 
-A run nothing can pick up says why before where — `Saved state unreadable · start it again from home` — and takes `/commands` only. A run another process is driving reads `Running in another process`, or `Waiting for <tool> · resets <clock>` while a seat of that run waits for its usage limit to reset. A ready run whose Apply this window is writing to your checkout reads `Applying to your checkout · 0:06`, with Apply as the current stage on the rail and no result menu. A live run reads the same while **Re-run Apply** writes after an Apply halt. The placeholder reads `/ for a command · ⏎ for home when Apply finishes…`. Esc, a bare Enter or `/home` adds `Returns home when Apply finishes`, and Ctrl+C or `/quit` adds `Quits when Apply finishes`: Apply has no cancel, so home or quit waits until it finishes. The wait applies only to an Apply that runs in this window: another window that opens the run while it applies reads `Applying to your checkout` with the time since the Apply began and the placeholder `/ for a command…`, and goes home at once. A halted Apply drops a waiting home and shows its halt. While this window's Apply writes, `/resume`, `/steer`, `/end` and `/run` report `Apply is still writing to your checkout.`, and `/stop` reports `Nothing to stop: Apply finishes on its own.` ([While Apply writes](./APPROVAL-AND-RECOVERY.md#while-apply-writes)).
+A run nothing can pick up says why before where — `Saved state unreadable · start it again from home` — and takes `/commands` only. A live run in another terminal reads `Viewing live · Another terminal controls this run`. If it needs an answer, it reads `Waiting for an answer in another terminal · View only`. A seat waiting for a usage limit to reset shows `Waiting for <tool> · resets <clock>`. A stale heartbeat shows `Viewing last saved activity · Run is unresponsive`. A ready run whose Apply this window is writing to your checkout reads `Applying to your checkout · 0:06`, with Apply as the current stage on the rail and no result menu. A live run reads the same while **Re-run Apply** writes after an Apply halt. The placeholder reads `/ for a command · ⏎ for home when Apply finishes…`. Esc, a bare Enter or `/home` adds `Returns home when Apply finishes`, and Ctrl+C or `/quit` adds `Quits when Apply finishes`: Apply has no cancel, so home or quit waits until it finishes. The wait applies only to an Apply that runs in this window: another window that opens the run while it applies reads `Applying to your checkout` with the time since the Apply began and the placeholder `/ for a command…`, and goes home at once. A halted Apply drops a waiting home and shows its halt. While this window's Apply writes, `/resume`, `/steer`, `/end` and `/run` report `Apply is still writing to your checkout.`, and `/stop` reports `Nothing to stop: Apply finishes on its own.` ([While Apply writes](./APPROVAL-AND-RECOVERY.md#while-apply-writes)).
 
 **Format (closed run).** Applied, discarded, ended and older completed runs take `/commands` only. The placeholder reads `/ for a command…`. Bare Enter goes home. The summary of the run is the last rows of its transcript. The rule under the transcript reads `Run closed` with the date and the time that the run closed, such as `Run closed · Nov 8, 20:48`. A run with no close time on record reads `Run closed`.
 
@@ -791,7 +791,7 @@ The first line is `{ type: "readiness_report", report: ... }`. After that, `crea
 
 ### `splitbrief status` and `splitbrief init`
 
-**What it does.** `init` is the interactive setup that writes `.splitbrief/config.yaml` (or rewrites it with `--reconfigure`). `status` is read-only — prints the active session state without acquiring the lock.
+**What it does.** `init` is the interactive setup that writes `.splitbrief/config.yaml` (or rewrites it with `--reconfigure`). `status` reads the default run without acquiring its lock.
 
 ```bash
 splitbrief init [--reconfigure]
@@ -801,10 +801,10 @@ splitbrief doctor [--json] [--probe-seat <plan|build|review>]
 
 ### `splitbrief resume` / `splitbrief continue`
 
-**What it does.** Picks a run up where it stopped. A run is a durable record: an open run stays continuable, so the only refusals are a missing or unreadable `state.json`, no active pointer, a run whose process is still running or unresponsive, a **ready** run (it takes Apply or Discard), and a **closed** run. [WORKFLOW.md §Run status](./WORKFLOW.md#run-status) owns the status rules. It does not replay finished work — the run picks up at the step its saved state names (`resumeStep`).
+Continue an open run from its saved step, or watch a run another terminal drives. After the other process exits, you can press Enter to continue the run. See [run status](./WORKFLOW.md#run-status) and [CLI options](./CLI-REFERENCE.md#splitbrief-resume).
 
 ```bash
-splitbrief resume                                   # the most recent run
+splitbrief resume                                  # the default run
 splitbrief continue 2026-05-01-add-auth             # a named run
 splitbrief continue --action retry --json           # answer its halt, headlessly
 splitbrief continue --action end-run                # close it instead

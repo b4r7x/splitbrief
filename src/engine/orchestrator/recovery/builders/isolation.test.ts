@@ -82,7 +82,7 @@ describe('isolation halts of a call that ran in the checkout itself', () => {
 
     expect(left.details[1]).toBe('The files this attempt changed stay in your checkout.');
     expect(changed.details[1]).toBe(
-      'SPLITBRIEF put back the files this attempt changed in your checkout. The replaced files are saved in .splitbrief/sessions/s1/reverted. The git change stays for you to check.',
+      'SPLITBRIEF puts back checkout files it can attribute to this attempt. The replaced files are saved in .splitbrief/sessions/s1/reverted when it puts files back. The git change stays for you to check.',
     );
     for (const issue of [left, changed]) {
       expect(issue.details.join(' ')).not.toContain('promoted');

@@ -103,7 +103,7 @@ async function callPlanner(
   { signal, steer: interruptSteer, steerInput }: ContinuationLoopBodyArgs,
 ): Promise<RequestTypedResult<PlanAnswer>> {
   const { wctx, planner } = input;
-  const { projectDir, sessionId, bus } = wctx;
+  const { projectDir, workspaceDir = projectDir, sessionId, bus } = wctx;
   const callImages = imagesFromMessages([
     { images: call.images },
     ...(steerInput === undefined ? [] : [steerInput]),
@@ -113,6 +113,7 @@ async function callPlanner(
     const asked = await askPlannerSession(
       {
         projectDir,
+        workspaceDir,
         sessionId,
         bus,
         planner,
@@ -134,7 +135,7 @@ async function callPlanner(
           composeTurn(input, shared, call, onSession, interruptSteer, prior),
         onCallEvent: (event) => {
           if (event.type === 'call_started') heartbeat.updateCallId(event.callId);
-          publishRunnerCallEvent({ bus, phase: shared.state.phase, rootDir: projectDir }, event);
+          publishRunnerCallEvent({ bus, phase: shared.state.phase, rootDir: workspaceDir }, event);
         },
       },
     );

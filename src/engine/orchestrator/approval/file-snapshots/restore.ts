@@ -36,26 +36,28 @@ async function readStoredEntry(
   return { ...blob, mode: stored.mode };
 }
 
-/** The entry a file held when the snapshot was taken: its own capture, or the commit it names. */
-export async function entryToRestore(
+type SnapshotEntry = ChangeEntry | { kind: 'stored'; sha256: string; mode: number };
+
+/** Resolves the captured entry or the commit it names. A stored entry carries its recorded hash. */
+export async function snapshotEntry(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
   file: string,
-  store: string | undefined,
-): Promise<ChangeEntry> {
+): Promise<SnapshotEntry> {
   const link = snapshot.symlinks?.[file];
   if (link !== undefined) return { kind: 'symlink', target: link };
   if (snapshot.baselineFileModes !== undefined) {
     const hash = snapshot.baselineFileHashes?.[file];
     if (hash == null) return { kind: 'absent' };
-    return readStoredEntry(store, file, {
+    return {
+      kind: 'stored',
       sha256: hash,
       mode: snapshot.baselineFileModes[file] ?? 0o644,
-    });
+    };
   }
   const stored = snapshot.storedDirtyEntries?.[file];
   if (stored === null) return { kind: 'absent' };
-  if (stored !== undefined) return readStoredEntry(store, file, stored);
+  if (stored !== undefined) return { kind: 'stored', ...stored };
   const saved = snapshot.dirtyFileEntries?.[file];
   if (saved === null) return { kind: 'absent' };
   if (saved !== undefined) {
@@ -79,6 +81,16 @@ export async function entryToRestore(
   return committed.kind === 'symlink'
     ? committed
     : { ...committed, sha256: sha256Hex(committed.bytes) };
+}
+
+export async function entryToRestore(
+  projectDir: string,
+  snapshot: ChangedFilesSnapshot,
+  file: string,
+  store: string | undefined,
+): Promise<ChangeEntry> {
+  const entry = await snapshotEntry(projectDir, snapshot, file);
+  return entry.kind === 'stored' ? readStoredEntry(store, file, entry) : entry;
 }
 
 export async function restoreDirtyFilesFromSnapshot(

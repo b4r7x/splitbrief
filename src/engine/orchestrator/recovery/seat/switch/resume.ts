@@ -13,6 +13,8 @@ import { seatRunnerValue } from './plan.js';
 import { planSwitchSeatRecoveryAction, type SeatSwitchPlan } from './plan.js';
 import type { RecoveryActionBlockedCode } from '../../actions/types.js';
 import { seatCandidateOfRunner } from './config.js';
+import { withAtRestSession } from '../../../run/liveness.js';
+import { readRecoveryActionState } from '../../actions/shared.js';
 
 /** Why a switch the caller asked for did not commit; the halt stays pending with its intent. */
 export type SwitchSeatResumeOutcome = 'aborted' | 'unadmitted' | 'conflict';
@@ -158,33 +160,14 @@ export async function switchSeatAndPrepareResume(
     configOfRecord === undefined
       ? undefined
       : seatCandidateOfRunner(seatRunnerValue(configOfRecord, seat, profile));
-  if (
+  const useRecordedSeat =
     configOfRecord !== undefined &&
     record !== undefined &&
-    (sameSeatCandidate(record, candidate) || !sameSeatCandidate(record, plan.from))
-  ) {
-    const ontoRecord = !sameSeatCandidate(record, candidate);
-    const config = configOfRecord;
-    const preparation = await runPrepare(config);
-    if (preparation.kind !== 'prepared') {
-      return unswitched(
-        input,
-        plan,
-        preparation,
-        preparation.kind === 'aborted' ? 'aborted' : 'unadmitted',
-      );
-    }
-    if (input.signal.aborted) return unswitched(input, plan, preparation, 'aborted');
-    const state = commit(
-      input,
-      { ...plan, candidate: record, switchedConfig: config },
-      currentRevision ?? '',
-      !ontoRecord,
-    );
-    return { kind: 'switched', state, seat, candidate: record, config, preparation };
-  }
-
-  const preparation = await runPrepare(plan.switchedConfig);
+    (sameSeatCandidate(record, candidate) || !sameSeatCandidate(record, plan.from));
+  const selected = useRecordedSeat
+    ? { ...plan, candidate: record, switchedConfig: configOfRecord }
+    : plan;
+  const preparation = await runPrepare(selected.switchedConfig);
   if (preparation.kind !== 'prepared') {
     return unswitched(
       input,
@@ -195,20 +178,28 @@ export async function switchSeatAndPrepareResume(
   }
   if (input.signal.aborted) return unswitched(input, plan, preparation, 'aborted');
 
-  const expectedRevision = currentRevision;
-  // A project with no config of record has no revision to check against, so the
-  // seat is recorded on the state and the in-memory config carries the switch;
-  // there is no file to write. A real run always has the file the halt read.
-  if (expectedRevision !== undefined) {
-    const written = await (input.writeSeat ?? recordSeatOfRecord)(
-      input.projectDir,
-      { seat, profile },
-      seatRunnerValue(plan.switchedConfig, seat, profile),
-      expectedRevision,
-    );
-    if (written !== 'saved') return unswitched(input, plan, preparation, 'conflict');
-  }
-
-  const state = commit(input, plan, expectedRevision ?? '', plan.auto);
-  return { kind: 'switched', state, seat, candidate, config: plan.switchedConfig, preparation };
+  return withAtRestSession(input, async () => {
+    if (input.signal.aborted) return unswitched(input, plan, preparation, 'aborted');
+    const current = { ...input, state: readRecoveryActionState(input, input.state) };
+    // Without a config of record, the state and the admitted config carry the switch.
+    if (!useRecordedSeat && currentRevision !== undefined) {
+      const written = await (input.writeSeat ?? recordSeatOfRecord)(
+        input.projectDir,
+        { seat, profile },
+        seatRunnerValue(selected.switchedConfig, seat, profile),
+        currentRevision,
+      );
+      if (written !== 'saved') return unswitched(current, plan, preparation, 'conflict');
+    }
+    const auto = useRecordedSeat ? sameSeatCandidate(candidate, selected.candidate) : plan.auto;
+    const state = commit(current, selected, currentRevision ?? '', auto);
+    return {
+      kind: 'switched',
+      state,
+      seat,
+      candidate: selected.candidate,
+      config: selected.switchedConfig,
+      preparation,
+    };
+  });
 }

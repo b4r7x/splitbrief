@@ -123,6 +123,9 @@ const STEER_ROW_START = 'Send a correction now';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
+  if (projection.scenarioId === 'workflow-start-readiness-details') {
+    return () => ({ ...base(), afterMount: (write) => write.press('\x01') });
+  }
   if (projection.scenarioId === 'workflow-crew-wide-review-none') {
     return () => {
       const live = base();
@@ -1107,8 +1110,17 @@ const checkpointPredicates = [
   [checkpointId('planning-path-notice'), includesAll('cannot open', 'Planning…')],
   [
     checkpointId('start-readiness-warning'),
-    includesAll('Warning', 'Examples: README.md', 'reverted/', 'Planning…'),
+    (ctx) =>
+      includesAll('This run edits your checkout', 'ctrl+a', 'Planning…')(ctx) &&
+      excludesAll('Examples:', 'reverted/')(ctx),
   ],
+  [checkpointId('start-readiness-details'), includesAll('reverted/', 'Planning…')],
+  [checkpointId('at-rest-follower'), includesAll('Viewing live')],
+  [
+    checkpointId('at-rest-follower-waiting'),
+    includesAll('Waiting for an answer in another terminal'),
+  ],
+  [checkpointId('at-rest-follower-stale'), includesAll('Viewing last saved activity')],
   [checkpointId('start-variant-not-applied'), includesAll('Warning', 'variant', 'Planning…')],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [

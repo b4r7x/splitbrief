@@ -128,12 +128,17 @@ export const RUN_BASE_TREES_DIR = 'bases';
 export const INTERNAL_SKIP_DIRS = ['.git', SPLITBRIEF_DIR, 'node_modules', TREES_DIR];
 
 const GIT_STATUS_INTERNAL_DIRS = [SPLITBRIEF_DIR, TREES_DIR];
+const RENDER_CHECK_OUTPUT_PATH =
+  /^\.test-artifacts\/ui\/render-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?:\/|$)/;
 
 export function isInternalGitStatusPath(file: string): boolean {
   const normalized = file.replaceAll('\\', '/');
-  return GIT_STATUS_INTERNAL_DIRS.some(
-    (dir) =>
-      normalized === dir || normalized.startsWith(`${dir}/`) || normalized.includes(`/${dir}/`),
+  return (
+    RENDER_CHECK_OUTPUT_PATH.test(normalized) ||
+    GIT_STATUS_INTERNAL_DIRS.some(
+      (dir) =>
+        normalized === dir || normalized.startsWith(`${dir}/`) || normalized.includes(`/${dir}/`),
+    )
   );
 }
 

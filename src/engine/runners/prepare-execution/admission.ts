@@ -1,20 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { updateNamedImplementerConfig } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import { exemptLiveSessionBlocker } from '../../../core/readiness/checks/repo.js';
 import { variantWithoutModelChecks } from '../../../core/readiness/checks/runner/fields.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../../core/readiness/collect.js';
 import { buildRunnerAdmissionChecks } from '../../../core/readiness/runner-causes.js';
-import {
-  flattenReadinessChecks,
-  countReadinessChecks,
-  aggregateReadinessStatus,
-  selectNextAction,
-} from '../../../core/readiness/status.js';
 import type { ReadinessReport, ReadinessCheck } from '../../../core/readiness/types.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
-import { inspectSessionLiveness } from '../../../core/sessions/liveness.js';
+import { createActiveSessionReceipt } from '../../../core/sessions/active-pointer.js';
 import { prepareNewSession } from '../../../core/sessions/prepare.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { resolveSeatDisplayName } from '../../providers/model/display-names.js';
@@ -54,8 +46,7 @@ export const DEFAULT_DEPENDENCIES: PrepareExecutionDependencies = {
   prepareCustomRunnerAdmission,
   resolveCliExecutableAliases,
   prepareNewSession,
-  reactivateExistingSession: (ref) =>
-    reactivateExistingSession(ref, { inspectOwner: inspectSessionLiveness }),
+  createActiveSessionReceipt,
   newPreparationId: randomUUID,
 };
 
@@ -89,17 +80,6 @@ function withEffectiveModels(config: PreparedConfig, gates: readonly RunnerGate[
     }
   }
   return next === config ? config : parsePreparedConfig(next);
-}
-
-function exemptReadOnlyBlockers(report: ReadinessReport): ReadinessReport {
-  const sections = report.sections.map((section) => ({
-    ...section,
-    checks: section.checks.map(exemptLiveSessionBlocker),
-  }));
-  const checks = flattenReadinessChecks(sections);
-  const counts = countReadinessChecks(checks);
-  const status = aggregateReadinessStatus(counts);
-  return { ...report, sections, counts, status, nextAction: selectNextAction(checks, status) };
 }
 
 /** Runs the admission ladder for each candidate in order, and notes a saved trust. */
@@ -184,10 +164,8 @@ export async function admitRunners(
   // collectReadiness is given no probe results, so it emits a placeholder
   // blocker per configured CLI. This function supersedes those with its own
   // per-candidate verdicts below, so they are stripped before the status is read.
-  const rebuild = (checks: readonly ReadinessCheck[]): ReadinessReport => {
-    const applied = applyRunnerPreparationChecks(collected.report, checks);
-    return input.policy.purpose === 'review' ? exemptReadOnlyBlockers(applied) : applied;
-  };
+  const rebuild = (checks: readonly ReadinessCheck[]): ReadinessReport =>
+    applyRunnerPreparationChecks(collected.report, checks);
   let report = rebuild([]);
   sink.report = report;
   if (report.status === 'blocked') return { kind: 'blocked', report };

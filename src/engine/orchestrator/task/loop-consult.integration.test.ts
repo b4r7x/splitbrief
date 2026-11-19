@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
-import { taskId } from '../../../core/schemas/task.js';
+import { taskId, type Task } from '../../../core/schemas/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
@@ -13,7 +13,6 @@ import {
   makeImplementer,
   makePlanner,
   makeWctx,
-  openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
@@ -34,6 +33,9 @@ import { mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
+import { createSnapshot } from '../../snapshots/create.js';
+import { ensureRunBaselineSnapshot } from '../run/snapshots.js';
+import type { WorkflowContext } from '../types.js';
 
 let dirs: string[] = [];
 
@@ -50,6 +52,25 @@ function setupProject(): { projectDir: string; sessionId: string } {
   });
   dirs.push(projectDir);
   return { projectDir, sessionId };
+}
+
+async function openStagedTaskRun(wctx: WorkflowContext, tasks: Task[]) {
+  const { projectDir, sessionId, bus, isolation, config } = wctx;
+  const ref = { projectDir, sessionId };
+  await ensureRunBaselineSnapshot({ ...ref, bus, phase: 'implementing' });
+  const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
+  const workspace = await isolation.open({ config });
+  const workspaceDir = workspace.projectDir;
+  return {
+    wctx: { ...wctx, workspaceDir },
+    state: makeImplState(tasks, {
+      workspace: {
+        kind: workspace.kind,
+        path: workspaceDir,
+        base: { snapshotId: base.manifest.id, head: workspace.head },
+      },
+    }),
+  };
 }
 
 /**
@@ -534,8 +555,6 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         dependsOn: ['T002'],
       }),
     ];
-    const state = makeImplState(tasks);
-
     // T002's attempt leaves a new file behind and overwrites the file T001 completed;
     // the split children continue on both.
     const implementer = makeImplementer({
@@ -576,7 +595,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ typedCall: consultCallAnswering(() => splitIntoTwo()) });
 
-    const wctx = await openRunWorkspace(
+    const { wctx, state } = await openStagedTaskRun(
       makeWctx({
         projectDir,
         sessionId,
@@ -587,6 +606,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         implementer,
         bus,
       }),
+      tasks,
     );
     const result = await runTaskLoop({
       wctx,
@@ -905,7 +925,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       }),
     });
     const { bus, events } = makeBusRecorder();
-    const wctx = await openRunWorkspace(
+    const { wctx, state } = await openStagedTaskRun(
       makeWctx({
         projectDir,
         sessionId,
@@ -915,11 +935,12 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         implementer: makeImplementer({ implement: vi.fn(write), retry: vi.fn(write) }),
         bus,
       }),
+      tasks,
     );
 
     const result = await runTaskLoop({
       wctx,
-      initialState: makeImplState(tasks),
+      initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });

@@ -36,9 +36,9 @@ export function compilePlan(
   state: WorkflowState,
   plan: PlanProposal,
 ): { state: WorkflowState; tasks: WorkflowState['tasks'] } {
-  const { projectDir, sessionId, bus, config } = wctx;
+  const { projectDir, workspaceDir = projectDir, sessionId, bus, config } = wctx;
   const ref = { projectDir, sessionId };
-  const tasks = plan.tasks.map((spec) => taskFromSpec(spec, projectDir));
+  const tasks = plan.tasks.map((spec) => taskFromSpec(spec, workspaceDir));
   writePlanJson(ref, plan);
   writeAndPublishPlanArtifacts({
     projectDir,
@@ -50,12 +50,12 @@ export function compilePlan(
     tasks,
     replacedTasks: state.tasks,
   });
-  const manifest = readManifestCommands(projectDir);
-  const stack = detectStack(projectDir, config.validation.stack);
+  const manifest = readManifestCommands(workspaceDir);
+  const stack = detectStack(workspaceDir, config.validation.stack);
   const discovered = sanitizeDiscoveredValidation(
     discoveredValidation(plan),
     { bus, phase: state.phase },
-    { projectDir, config, manifest, stack },
+    { projectDir: workspaceDir, config, manifest, stack },
   );
   let next = discovered === undefined ? state : { ...state, discoveredValidation: discovered };
   if (next.pendingPlannerConversation !== undefined) {
@@ -77,12 +77,13 @@ export async function checkFullPlan(
   wctx: PlanCheckContext,
   plan: PlanProposal,
 ): Promise<readonly PlanCheckError[]> {
+  const projectDir = wctx.workspaceDir ?? wctx.projectDir;
   return checkPlan(
     plan,
-    wctx.projectDir,
+    projectDir,
     await estimatePlanContextFits(plan, {
       config: wctx.config,
-      projectDir: wctx.projectDir,
+      projectDir,
       modelCache: wctx.modelCache,
       detectedContextLength: wctx.detectedContextLength,
       skillsContext: wctx.skillsContext,

@@ -1,5 +1,6 @@
 import { continueRunCommand } from '../../../core/recovery/resume-command.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
+import { isRunHeldElsewhere } from '../../../core/sessions/run/record.js';
 import { activeApply } from '../../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { warnStderr } from '../../../lib/warn.js';
 import { type RouteData, routerStore } from '../../../stores/navigation/router.js';
@@ -49,10 +50,10 @@ function leave(departure: Departure | null): void {
   if (departure?.kind === 'quit') {
     nameDraftsNotRemoved('at-exit');
     const route = routerStore.get();
-    if (route.screen === 'workflow') {
+    if (route.screen === 'workflow' && route.execution.observing !== true) {
       try {
         const record = readRunRecord(route.run.ref, configStore.reviewNone());
-        if (record.status.kind !== 'closed') {
+        if (record.status.kind !== 'closed' && !isRunHeldElsewhere(record)) {
           warnStderr(
             `Continue this run with: ${continueRunCommand(route.run.ref.sessionId)}`,
             'at-exit',

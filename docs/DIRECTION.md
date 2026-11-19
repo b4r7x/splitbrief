@@ -337,9 +337,9 @@ For a worktree or staged-copy run, Apply is the non-negotiable half. Work that s
 
 **A worktree is not a security boundary.** It isolates files, not the runtime — same ports, same database, same credentials on disk — and it shares hooks and config with the real repository by design. An implementer running in a worktree is code running with the user's privileges. Runner kinds `shell` and `agent` execute arbitrary commands with no shell or network sandbox, and the worktree does not change that. Documentation and UI must say so plainly rather than implying containment. The checkout mode removes even the file boundary, so it must say so too.
 
-### Parallelism
+### Parallelism within a run
 
-Parallelism is not the first goal. The first goal is reliable execution on the weaker model. One worktree per run isolates the implementer from the user's checkout; it is not a licence for concurrent workers inside it.
+Independent runs can start in the same project. Each run executes one task at a time in its own workspace or in the checkout if the user chose checkout mode.
 
 Allowed in this direction:
 
@@ -347,15 +347,14 @@ Allowed in this direction:
 - optional fallback to stronger implementer profiles,
 - future parallel execution only when each worker owns a separate worktree or equivalent sandbox.
 
-Not allowed in the first implementation:
+Excluded within a run:
 
-- multiple workers writing the same working tree at once,
-- multiple workers writing the same checkout at once,
+- multiple workers in a single run writing to its workspace at once,
 - hidden background task fan-out,
 - best-of-N workers racing on the same files,
 - automatic merge of overlapping changes.
 
-If parallel execution is later considered, it should be a separate design using one worktree per worker, and only for tasks with non-overlapping file ownership. Do not frame parallel writes as near-term work.
+Any future task parallelism within a run requires a separate workspace for each worker and non-overlapping file ownership.
 
 ### User edits
 

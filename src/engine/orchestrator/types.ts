@@ -149,6 +149,7 @@ export type PlannerCallbacksContext = Pick<
   | 'continuation'
   | 'steering'
 > & {
+  workspaceDir?: string | undefined;
   /** The run's skills block, as `context.skillsContext` carries it. */
   skillsContext?: string | undefined;
 };

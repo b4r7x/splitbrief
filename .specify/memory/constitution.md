@@ -550,13 +550,18 @@ Explicit anti-goals that MUST NOT be implemented:
   there, a passing review closes the run, and there is no Apply.
   SPLITBRIEF MUST NOT switch a run to the checkout automatically
 - In worktree and staged-copy runs, an implementer that writes files
-  directly works in the run workspace created once per run, with the
+  directly works in the run workspace created before planning, with the
   project's dependencies made available inside it so validation can run
   there; the assessed result defined in Principle V is applied
   to the user's real project directory once, at Apply, guarded against
   clobbering edits made in the meantime. A worktree isolates files — not
   runtime, not security: it shares hooks and config with the repository.
-  Same-directory parallel writes remain out of scope
+  A project can have multiple simultaneous runs. Each session MUST
+  have at most one driver. A new isolated run MUST start from the pinned Git HEAD
+  while a checkout-mode run is live. `none` allows simultaneous checkout
+  writers. A revert MUST preserve a file when it cannot attribute its edits
+  to the run and MUST name that file. Apply MAY proceed while another run
+  drives its own session.
 - Tests are written alongside or after implementation (not TDD)
   unless explicitly requested for a specific feature
 

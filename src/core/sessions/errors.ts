@@ -15,22 +15,38 @@ export type SessionPreparationOperation =
 type SessionPreparationErrorData = Readonly<{
   operation: SessionPreparationOperation;
   sessionId: string;
+  title: string;
+  reason: string;
 }>;
 
 export type SessionPreparationIoError = AppError<'session-prepare-io', SessionPreparationErrorData>;
 
+const preparationTitles: Record<SessionPreparationOperation, string> = {
+  'allocate-session': 'Could not create the session folder',
+  'write-readiness': 'Could not save the readiness report',
+  'publish-active': 'Could not mark the session active',
+  'release-session': 'Could not release the session',
+  'rollback-session': 'Could not undo session preparation',
+  'discard-orphan-session': 'Could not remove the abandoned session',
+};
+
 export const sessionPreparationError = {
+  isIo: (cause: unknown): cause is SessionPreparationIoError =>
+    matches('session-prepare-io')(cause),
   io: (
     operation: SessionPreparationOperation,
     ref: SessionRef,
     cause: unknown,
-  ): SessionPreparationIoError =>
-    error(
+  ): SessionPreparationIoError => {
+    const title = preparationTitles[operation];
+    const reason = toErrorMessage(cause);
+    return error(
       'session-prepare-io',
-      `Failed to ${operation.replaceAll('-', ' ')} for session '${ref.sessionId}'`,
-      { operation, sessionId: ref.sessionId },
+      `${title}: ${reason}`,
+      { operation, sessionId: ref.sessionId, title, reason },
       cause,
-    ),
+    );
+  },
 } as const;
 
 export function stillRunningText(sessionId: string): Readonly<{ summary: string; fix: string }> {

@@ -11,7 +11,6 @@ import {
 import type { CustomRunnerAdmissionPolicy } from '../../../engine/runners/types.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../../preparation.js';
-import { clearStaleSessionForCli } from '../../sessions/resolve.js';
 
 type StartPreparationInput = Readonly<{
   projectDir: string;
@@ -42,7 +41,6 @@ export async function prepareStartOutcome(
       projectDir: input.projectDir,
       opts: input.opts,
     });
-  clearStaleSessionForCli(input.projectDir);
   const interaction = input.transport;
   const outcome = await (input.prepare ?? prepareExecution)({
     projectDir: input.projectDir,

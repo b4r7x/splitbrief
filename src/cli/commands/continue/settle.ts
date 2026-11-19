@@ -1,10 +1,12 @@
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import { acceptedCounts, acceptedSentence } from '../../../core/review/accepted.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { RunStatus } from '../../../core/sessions/run/status.js';
+import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run/status.js';
 import { runApplyAtRest } from '../../../engine/orchestrator/apply/at-rest.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { closedChangesSuffix, closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
+import { withAtRestSession } from '../../../engine/orchestrator/run/liveness.js';
+import { rebaseOnPersistedWorkflowState } from '../../../engine/orchestrator/state-ops/head.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -89,15 +91,20 @@ export async function settleReadyRun(
       if (event.type === 'warning') process.stderr.write(`${event.message}\n`);
     },
   });
-  const finalize = (state: WorkflowState): void => {
-    finalizeRunAtRest({ ref, state });
-  };
-
   if (input.action === 'discard') {
-    const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
-    if (closure.closedNow) finalize(closure.state);
-    process.stderr.write(`Run ${sessionId} discarded.${closedChangesSuffix(ref, closure.state)}\n`);
-    return undefined;
+    return withAtRestSession(ref, async () => {
+      const current = rebaseOnPersistedWorkflowState(ref, state);
+      const status = deriveRunStatus({ state: current, liveness: 'not-alive', reviewNone: false });
+      if (status.kind !== 'ready-to-apply') {
+        throw cliError(`Run ${sessionId} is no longer ready to apply.`, 1);
+      }
+      const closure = await closeRunIfOpen({ ...ref, bus }, current, 'discarded');
+      if (closure.closedNow) finalizeRunAtRest({ ref, state: closure.state });
+      process.stderr.write(
+        `Run ${sessionId} discarded.${closedChangesSuffix(ref, closure.state)}\n`,
+      );
+      return undefined;
+    });
   }
 
   // Apply has no stop: a signal lets it finish and write its exit record, then the process exits.

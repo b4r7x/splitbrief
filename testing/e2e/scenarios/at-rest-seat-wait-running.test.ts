@@ -23,6 +23,7 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 let fixture: StopContinueFixture | undefined;
+const LIVE_VIEW = 'Viewing live';
 
 afterEach(() => {
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
@@ -86,7 +87,7 @@ describe('e2e: the run screen of a run another process holds, while that run wai
             child.write('\r');
             await waitForText('Sessions · 1');
             child.write('\r');
-            await waitForText('Running in another process');
+            await waitForText(LIVE_VIEW);
             // The holder logs a wait on the open screen and never logs its end.
             const wait: SeatWait = {
               seat: 'build',
@@ -111,7 +112,7 @@ describe('e2e: the run screen of a run another process holds, while that run wai
             await vi.waitFor(
               () => {
                 const frame = screen();
-                expect(frame).toContain('Running in another process');
+                expect(frame).toContain(LIVE_VIEW);
                 expect(frame).not.toContain('Waiting for');
               },
               { timeout: 15_000 },
@@ -131,7 +132,7 @@ describe('e2e: the run screen of a run another process holds, while that run wai
       expect(result.value.waiting).toMatch(
         new RegExp(`Waiting for OpenAI Codex CLI · resets .*${clock}`),
       );
-      expect(result.value.waiting).not.toContain('Running in another process');
+      expect(result.value.waiting).not.toContain(LIVE_VIEW);
       expect(result.value.passedAt).toBeGreaterThanOrEqual(Date.parse(result.value.resetAt));
       const log = readFileSync(
         join(sessionDir(ref.projectDir, ref.sessionId), SESSION_LOG_FILE),

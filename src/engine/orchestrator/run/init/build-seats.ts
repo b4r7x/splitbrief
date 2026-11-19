@@ -21,6 +21,7 @@ type SeatStepInput = Readonly<{
   opts: RunWorkflowOptions;
   config: Config;
   projectDir: string;
+  workspaceDir: string;
   sessionId: string;
   bus: EventBus;
   customRuntime: CustomRunnerRuntimePort;
@@ -73,6 +74,7 @@ export async function buildSeats(input: SeatStepInput): Promise<RunSeats> {
   if (savedState && !hasPendingRecovery) {
     savedState = await autoCompactResumeContext({
       projectDir,
+      workspaceDir: input.workspaceDir,
       sessionId,
       bus,
       config,

@@ -1,4 +1,5 @@
 import { sessionDir } from '../../../core/paths.js';
+import { tryClaimSession } from '../../../core/sessions/lock/ownership.js';
 import { checkSessionLockStatus } from '../../../core/sessions/lock/status.js';
 import { listSessionIds, sessionsRootLabel } from '../../../core/sessions/orphans.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
@@ -69,34 +70,34 @@ function sessionOwnerGone(sessionDirPath: string, sessionId: string): boolean {
   return status.kind === 'dead' || status.kind === 'exited';
 }
 
-async function reapSessionOrphans(
+export async function reapSessionOrphans(
   projectDir: string,
   sessionId: string,
-  deps: OrphanReaperDeps,
+  deps: OrphanReaperDeps = defaultDeps,
 ): Promise<void> {
   const ref = { projectDir, sessionId };
-  let pids: RunnerPidEntry[];
+  let release: (() => void) | null = null;
   try {
-    pids = readRunnerPids(ref);
-    if (pids.length === 0) return;
-
-    if (!sessionOwnerGone(sessionDir(projectDir, sessionId), sessionId)) return;
-
+    if (readRunnerPids(ref).length === 0) return;
+    release = tryClaimSession(ref);
+    if (release === null || !sessionOwnerGone(sessionDir(projectDir, sessionId), sessionId)) return;
+    const pids = readRunnerPids(ref);
     await Promise.all(pids.map((entry) => reapOrphanPid(entry, deps)));
+    try {
+      releaseRunnerPids(ref, pids);
+    } catch (err) {
+      warnError(
+        `Checked the tool processes the stopped run in ${sessionRelativePath(sessionId)} left, but could not update ${sessionRelativePath(sessionId, RUNNER_PIDS_FILE)}, so the next start checks them again`,
+        err,
+      );
+    }
   } catch (err) {
     warnError(
       `Could not check ${sessionRelativePath(sessionId)} for tool processes its stopped run left, so they may keep running`,
       err,
     );
-    return;
-  }
-  try {
-    releaseRunnerPids(ref, pids);
-  } catch (err) {
-    warnError(
-      `Checked the tool processes the stopped run in ${sessionRelativePath(sessionId)} left, but could not update ${sessionRelativePath(sessionId, RUNNER_PIDS_FILE)}, so the next start checks them again`,
-      err,
-    );
+  } finally {
+    release?.();
   }
 }
 

@@ -497,6 +497,25 @@ describe('setProcessLedger', () => {
     expect(released).toEqual([proc.pid]);
   });
 
+  it('records each parallel scope’s child in that scope’s ledger', () => {
+    const first = createProcessScope();
+    const second = createProcessScope();
+    const ledgerA = { record: vi.fn(), release: vi.fn() };
+    const ledgerB = { record: vi.fn(), release: vi.fn() };
+    runInProcessScope(first, () => setProcessLedger(ledgerA));
+    runInProcessScope(second, () => setProcessLedger(ledgerB));
+    try {
+      const proc = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
+      procs.push(proc);
+      runInProcessScope(first, () => registerProcess(proc, { group: true }));
+      expect(ledgerA.record.mock.calls.map(([pid]) => pid)).toEqual([proc.pid]);
+      expect(ledgerB.record).not.toHaveBeenCalled();
+    } finally {
+      runInProcessScope(first, () => clearProcessLedger(ledgerA));
+      runInProcessScope(second, () => clearProcessLedger(ledgerB));
+    }
+  });
+
   it('clearProcessLedger only uninstalls the ledger it is given', () => {
     const recorded: number[] = [];
     const current = {

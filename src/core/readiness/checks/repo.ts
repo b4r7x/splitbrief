@@ -1,7 +1,6 @@
 import { countNoun } from '../../../utils/pluralize.js';
 import type { InProgressGitOp } from '../../../lib/git/repository.js';
 import { revertedDir } from '../../paths.js';
-import { stillRunningText } from '../../sessions/errors.js';
 import type { IsolationStrategy } from '../../schemas/enums.js';
 import type { SessionRef } from '../../types/session-ref.js';
 import type { ReadinessCheck } from '../types.js';
@@ -17,7 +16,7 @@ export interface RepoReadinessInput {
   activeSessionLive?: boolean | undefined;
 }
 
-export const ACTIVE_SESSION_LIVE_CHECK = 'repo.active-session-live';
+export const DIRTY_WORKTREE_CHECK = 'repo.dirty-worktree';
 
 /** Before a run exists its folder has no name, so the fix names where the run's folder will be. */
 function checkoutFix(run: SessionRef | undefined): string {
@@ -92,15 +91,12 @@ export function buildRepoChecks(
   }
 
   if (repo.activeSession) {
-    const stillRunning = repo.activeSessionLive ? stillRunningText(repo.activeSession) : undefined;
     checks.push({
-      id: repo.activeSessionLive ? ACTIVE_SESSION_LIVE_CHECK : 'repo.active-session-stale',
-      severity: repo.activeSessionLive ? 'blocker' : 'info',
-      summary:
-        stillRunning?.summary ??
-        `Stale active session marker ${repo.activeSession} can be cleared.`,
-      fix: stillRunning?.fix,
-      nextAction: repo.activeSessionLive ? 'clean-or-isolate-repo' : undefined,
+      id: repo.activeSessionLive ? 'repo.active-session-live' : 'repo.active-session-stale',
+      severity: 'info',
+      summary: repo.activeSessionLive
+        ? `Run ${repo.activeSession} is still running.`
+        : `Run ${repo.activeSession} is the default.`,
       metadata: { sessionId: repo.activeSession, live: repo.activeSessionLive === true },
     });
   }
@@ -111,7 +107,7 @@ export function buildRepoChecks(
     const examples = [...repo.dirtyFiles, ...repo.untrackedFiles].slice(0, 5);
     const inCheckout = isolation === 'none';
     checks.push({
-      id: 'repo.dirty-worktree',
+      id: DIRTY_WORKTREE_CHECK,
       severity: 'warning',
       summary: `Working tree has ${[
         ...(dirtyCount > 0 ? [countNoun(dirtyCount, 'changed file')] : []),
@@ -119,7 +115,9 @@ export function buildRepoChecks(
       ].join(' and ')}.`,
       details: [
         ...(examples.length > 0 ? [`Examples: ${examples.join(', ')}`] : []),
-        ...(inCheckout ? ['An attempt revert restores only the paths that attempt changed.'] : []),
+        ...(inCheckout
+          ? ['A revert keeps shared changes and changes it cannot attribute to this run.']
+          : []),
       ],
       fix: inCheckout
         ? checkoutFix(undefined)
@@ -129,22 +127,6 @@ export function buildRepoChecks(
   }
 
   return checks;
-}
-
-/**
- * A read-only purpose starts nothing, claims no active pointer and writes no
- * session state, so a run in progress elsewhere cannot refuse it. The live
- * session is still worth reporting, so it is downgraded to the fact it is
- * rather than dropped.
- */
-export function exemptLiveSessionBlocker(check: ReadinessCheck): ReadinessCheck {
-  if (check.id !== ACTIVE_SESSION_LIVE_CHECK) return check;
-  return {
-    id: check.id,
-    severity: 'info',
-    summary: check.summary,
-    ...(check.metadata !== undefined && { metadata: check.metadata }),
-  };
 }
 
 /** At run start the checkout warning names the run's own folder for the files a revert saves. */

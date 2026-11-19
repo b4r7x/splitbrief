@@ -10,6 +10,7 @@ import { recordCheckRuns } from '../../evidence/record-checks.js';
 import { runBaseOf } from '../../isolation/run-base/tree.js';
 import { transitionAndSave } from '../../state-ops/transition.js';
 import { failingFilesFromKeys, fileOwnerSentence } from '../../task/file-owner.js';
+import { withAttemptRestoreScope } from '../../task/restore-scope.js';
 import type { BaseGate } from '../../validation/base-gate.js';
 import { checkFailureText, failureKeysForFile } from '../../validation/failure-text.js';
 import { enabledReviewChecks, planApprovesNpmScripts } from '../../validation/checks/runner.js';
@@ -118,11 +119,17 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       lines.push(`- ${label}: not run, ${stoppedBy} failed`);
       continue;
     }
-    const { run, fresh, unavailable, notVerified } = await runReviewCheck({
-      check: chosen,
-      moment: 'pre-review',
-      baseGate: opts.baseGate,
-      checkOptions,
+    const { run, fresh, unavailable, notVerified } = await withAttemptRestoreScope({
+      ref,
+      dir: opts.workspaceDir,
+      taskStartSnapshot: null,
+      run: () =>
+        runReviewCheck({
+          check: chosen,
+          moment: 'pre-review',
+          baseGate: opts.baseGate,
+          checkOptions,
+        }),
     });
     runs.push(run);
     if (run.status !== 'pass' && run.status !== 'fail') {

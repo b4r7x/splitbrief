@@ -70,7 +70,7 @@ The callbacks are how the engine asks for human decisions without importing Reac
 
 ## Workflow initialization
 
-`runWorkflow()` is the top-level engine entry. It takes the already-prepared execution (project dir, session ID, admitted config), builds a summary base with planner/implementer metadata, acquires the session liveness lockfile so a concurrent resume refuses to double-run the session, wraps the entire run in `withShutdownHandlers()` (the SIGINT/SIGTERM/SIGHUP handler that saves state on interrupt), and delegates to `initializeWorkflow()`.
+`runWorkflow()` is the top-level engine entry. It takes the already-prepared execution (project dir, session ID, admitted config), builds a summary base with planner/implementer metadata, claims ownership for that session and writes its liveness record, wraps the entire run in `withShutdownHandlers()` (the SIGINT/SIGTERM/SIGHUP handler that saves state on interrupt), and delegates to `initializeWorkflow()`.
 
 `initializeWorkflow()` does the following, in order:
 
@@ -176,9 +176,9 @@ See [Message queue](./ENGINE.md#message-queue) for BUILD corrections before call
 
 ## Run workspace and Apply
 
-`runWorkflow()` builds one run-scoped isolation with `createRunIsolation()` before initialization. Before execution, `runTasksAndReview()` captures a snapshot named `workspace-base` and opens one workspace through that isolation's `open()`. `RECORD_WORKSPACE` saves its kind, path, base snapshot id and starting HEAD. Every task, retry, validation and code review reads that workspace. Attempt cleanup restores only the current attempt's changes. Earlier tasks remain available to later tasks.
+`runWorkflow()` builds one run-scoped isolation through `createRunIsolation()`. For a new workflow, initialization opens the workspace and captures `workspace-base` before the planning session. `RECORD_WORKSPACE` stores its kind, path, base snapshot ID and starting HEAD. A run that resumes an existing workspace uses its saved path. Older runs keep their recorded workspace rules.
 
-The checkout receives no run result until Apply. The planner's cwd stays in the checkout to preserve its native session. Brief refresh, consult snapshots and review packets read the workspace. Consult and planner-review prompts name that path. A separate reviewer runs with the workspace as its cwd. Session state and evidence remain under the project checkout.
+New isolated runs plan and build against the same workspace. A configured custom planner reads a disposable copy of that workspace. The workspace normally includes local edits. If a live checkout run exists, the isolated workspace uses the pinned commit. Tasks, retries, checks and review use that workspace. Session state and evidence remain under the project checkout. Apply writes the result to the checkout.
 
 The worktree path is `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>/`, or `~/.local/state/splitbrief/trees/...` by default. `isolationWorktreePath()` uses the first 12 hex characters of `sha256(realpath(git-common-dir))` as the repository key. The directory stays outside `.git/` and the project root, so project test discovery does not count a second copy. [Configuration](./CONFIGURATION.md#implementer-isolation) defines the strategies, dependency links and fallback.
 
@@ -186,7 +186,7 @@ The worktree path is `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>/`
 
 | State | Source |
 |---|---|
-| `base` | The saved `workspace-base` snapshot at workspace creation, including captured uncommitted files. Missing delta entries resolve through the session baseline. |
+| `base` | The saved `workspace-base` snapshot at workspace creation. It includes uncommitted files when the workspace starts from the checkout snapshot. Missing delta entries resolve through the session baseline. |
 | `ours` | The run workspace now. |
 | `theirs` | The checkout now, captured once for the merge and write guard. |
 
@@ -194,7 +194,7 @@ The worktree path is `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>/`
 
 An open run retains its workspace across stops and restarts. After Apply commits its record, it removes the worktree, or the staged-copy directory. A worktree that an older version created on a `splitbrief/<slug>` branch loses that branch too. It also clears the retained-workspace record. A removal failure publishes a warning; the run stays applied. Discard and End run preserve its work before removal. See [Apply](./WORKFLOW.md#apply).
 
-In checkout mode (`workflow.isolation: none`) `openWorkspace()` creates no worktree and keeps no workspace record. Readiness warns about uncommitted changes and names `.splitbrief/sessions/<id>/reverted/` as the backup folder. An attempt revert restores only paths that attempt changed and leaves your other uncommitted files untouched. The run records `workspace.kind: 'checkout'` in `state.json` once, so a later config change does not move it. Every task, check and review reads the checkout. There is no Apply: a passing review, or the end of a REVIEW None run, closes the run, and the close writes no `run.patch`.
+In checkout mode (`workflow.isolation: none`), the run records `workspace.kind: 'checkout'` before planning. A later config change does not move it. Readiness names `.splitbrief/sessions/<id>/reverted/` as the backup folder. A revert leaves and names files whose edits it cannot attribute to that run. Every task, check and review reads the checkout. There is no Apply: a passing review, or the end of a REVIEW None run, closes the run, and the close writes no `run.patch`.
 
 A worktree shares repository hooks and config, and the host's ports, sockets and databases. It is a file boundary, not a sandbox. The [tripwire and git audit](./APPROVAL-AND-RECOVERY.md#isolation-checks) check implementer calls. `createRunnerSandboxEnv()` provides credential and path hygiene. Keychain-backed session channels keep host `HOME` and `USER`; see [API-KEYS.md](./API-KEYS.md#what-a-host-account-child-can-and-cannot-reach).
 
@@ -243,7 +243,7 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`plan.json`, `plan.md`, `tasks.md`** — the plan the planning session compiled, and its two renderings. The user reviews `plan.md` on the plan card and may edit `plan.json`. A run planned by an older engine also holds `research.md`, `spec.md` and the other documents of the retired chain.
 
-**`summary.json`** — final cost, timing, task outcomes. Written at the end of each pass by `saveFinalSession()`, which also clears the `.splitbrief/active` lock file once the run is closed. A resumed pass drops the stop the last pass recorded as it starts (`reopenSessionRecord`).
+**`summary.json`** — final cost, timing, task outcomes. Written at the end of each pass by `saveFinalSession()`, which also clears the default pointer if it still names the run and the run is closed. A resumed pass drops the stop the last pass recorded as it starts (`reopenSessionRecord`).
 
 **`snapshots/`** — the run's content-addressed snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, `pre-final-review`, the `post-task-<n>` snapshots of a checkout run, and for a run without a workspace or a checkout-mode run the accepted-run snapshot, plus the run ledger. There are no configurable trigger points. See [SUBSYSTEMS.md](./SUBSYSTEMS.md).
 
@@ -251,7 +251,7 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`reverted/<stamp>/`** — the bytes SPLITBRIEF replaced when it reverted files in the checkout in checkout mode: a denied hook, a denied protected write, an exhausted brief or an interrupted brief on restart. A symlink is saved as a link. The revert's warning names the folder.
 
-**On interrupt** (SIGINT, SIGTERM or SIGHUP), `withSignalHandlers()` runs `shutdownWorkflow()`: it kills all child processes and saves the current state to `state.json`. It does not touch the `.splitbrief/active` marker: `saveFinalSession()` clears that only once the run is closed. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
+**On interrupt** (SIGINT, SIGTERM or SIGHUP), `withSignalHandlers()` runs `shutdownWorkflow()`: it kills all child processes and saves the current state to `state.json`. An interrupt releases ownership for the session. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
 
 **Collectable orphan directories.** A session directory that never started — a crash or abort after `readiness.json` landed and before the run wrote its lockfile — holds nothing but `readiness.json`, or nothing at all. A directory with exactly that content (or empty) is **collectable**; `pruneOrphanSessions` applies the recognition rule. A directory holding any other artifact — a lockfile, an ownership marker, or anything else — is never collectable.
 
@@ -271,7 +271,7 @@ When the reviewer call fails, the review is reported as failed (`reviewStatus: '
 
 Evidence recording happens throughout: the evidence ledger tracks approvals, rejections, validation outcomes, and the final review status. After the review, a review packet is written — a structured summary of all evidence for the session, carrying the parsed review verdict, criteria counts and finding counts in its final-review section.
 
-The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the summary, and calls `callbacks.onComplete(summary)`. `saveFinalSession()` writes `summary.json`. A workspace result with a passing review, or from a REVIEW None run, remains ready to apply; it keeps the active pointer until closure. Older runs without a workspace close on pass. See [Run status](./WORKFLOW.md#run-status).
+The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the summary, and calls `callbacks.onComplete(summary)`. `saveFinalSession()` writes `summary.json`. A workspace result with a passing review, or from a REVIEW None run, remains ready to apply; it remains eligible for the default selection until closure. Older runs without a workspace close on pass. See [Run status](./WORKFLOW.md#run-status).
 
 In the TUI, the run loop settles at rest on the same screen and re-reads its `RunRecord`. A ready run shows [the result menu](./FEATURES.md#run-result-menu). A closed run shows its summary as the last rows of the transcript. `/usage` owns the cost details. A configured reviewer has its own recorded cost line; otherwise review usage stays with the planner.
 
@@ -279,15 +279,15 @@ In the TUI, the run loop settles at rest on the same screen and re-reads its `Ru
 
 ## Continue
 
-`splitbrief resume` picks up a run that is not finished with it. A run is a durable record: an open run stays continuable. The refusals are listed in [CLI-REFERENCE.md](./CLI-REFERENCE.md); a ready or closed run is one of them.
+`splitbrief resume` and `splitbrief continue` resolve a session by ID or numeric alias, or use the default selection. The default starts with `.splitbrief/active` and falls back to the newest saved open run.
 
-The CLI reads `.splitbrief/active` to find the session ID, loads `state.json` via `loadState()`, and runs three guards:
+The CLI loads `state.json` through `loadState()` and checks the following conditions before continuing:
 
 1. **Version check** -- `stateVersion` must equal `WORKFLOW_STATE_VERSION` (currently 4). A v3 state is migrated on load; anything else refuses with an error.
 2. **Run-status check** -- `deriveRunStatus` reads the state, the lockfile and the artifacts on disk. Open runs resume. Ready runs offer Apply or Discard. Closed runs are refused. See [Run status](./WORKFLOW.md#run-status).
 3. **Recovery check** -- a pending issue opens before work. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) resolve with a notice.
 
-After validation, the CLI routes to headless (`--json`) or interactive (TUI) mode, passing the loaded state as `resumeState`.
+A terminal without an explicit action can open an owned session read-only. It follows a live owner and shows saved activity for a matching process with a stale heartbeat. After the owner exits, an explicit continuation must acquire ownership. A command that drives the run routes to headless mode or the TUI, with the loaded state as `resumeState`.
 
 Inside `initializeWorkflow()`, context rebuild follows the capability matrix:
 
@@ -301,7 +301,7 @@ The orchestrator then publishes `workflow_resumed` and picks up at the step `res
 
 **`splitbrief spec <feature>`** -- runs the planning session and exits without implementation. It writes `plan.json`, `plan.md` and `tasks.md`. In a terminal it reads one line of answers to the planner's questions; without a TTY every question takes its default. Because the command never implements, the plan card does not apply to it.
 
-**`splitbrief continue [alias]`** -- continues a session by numeric alias, by session ID, or through the active pointer, resuming from its saved state.
+**`splitbrief continue [session-id-or-number]`** also accepts explicit recovery and Apply actions.
 
 ---
 

@@ -29,6 +29,7 @@ export type ApplyRebuiltContextOpts = {
 
 export type AutoCompactResumeOpts = {
   projectDir: string;
+  workspaceDir?: string | undefined;
   sessionId: string;
   bus: EventBus;
   config: Pick<Config, 'workflow' | 'planner'>;
@@ -57,13 +58,14 @@ export async function autoCompactResumeContext(
     const result = await compactResumeTranscript({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
+      workspaceDir: opts.workspaceDir,
       planner: opts.planner,
       keepRecentCount: keepRecentCountForThreshold(threshold),
       format,
       ...(opts.signal !== undefined && { signal: opts.signal }),
       onCallEvent: (event) =>
         publishRunnerCallEvent(
-          { bus: opts.bus, phase: opts.state.phase, rootDir: opts.projectDir },
+          { bus: opts.bus, phase: opts.state.phase, rootDir: opts.workspaceDir ?? opts.projectDir },
           event,
         ),
       onFallback: () =>

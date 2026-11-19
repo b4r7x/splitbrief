@@ -1,4 +1,6 @@
 import type { ReadinessReport, ReadinessCheck } from '../../core/readiness/types.js';
+import { sessionPreparationError } from '../../core/sessions/errors.js';
+import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
@@ -8,8 +10,6 @@ import type { StartPreparationState } from './use-controller.js';
 const INDENT = '  ';
 /** `blocker`, the longest severity word a problem carries, so the detail IDs line up. */
 const SEVERITY_WIDTH = 7;
-/** Nothing in the report says what to do: the two keys the panel offers are the action. */
-const RETRY_ACTION = 'Retry the check, or open settings to change the crew.';
 
 export type LineTone = 'cause' | 'text' | 'dim';
 
@@ -164,7 +164,10 @@ function section(label: string, lines: PanelLine[]): PanelLine[] {
 interface PanelModel {
   failed: boolean;
   cause: string;
-  action: string;
+  action?: string | undefined;
+  reason?: string | undefined;
+  diagnostic?: string | undefined;
+  settings: boolean;
   blockers: readonly ReadinessCheck[];
   warnings: readonly ReadinessCheck[];
   details: readonly ReadinessCheck[];
@@ -181,12 +184,20 @@ export function panelModel(
   const blockers = checksOf(state.report, 'blocker');
   const warnings = checksOf(state.report, 'warning');
   const details = [...blockers, ...warnings];
+  const settings = blockers.some((check) => check.nextAction === 'fix-config');
   if (state.kind === 'failed') {
-    const message = sanitizeTerminalDisplayText(state.error.message).trim();
+    const failure = state.error;
+    const session = sessionPreparationError.isIo(failure) ? failure.data : undefined;
+    const cause = sanitizeTerminalDiagnosticText(session?.title ?? failure.message).trim();
     return {
       failed: true,
-      cause: message === '' ? 'Tool preparation failed.' : message,
-      action: RETRY_ACTION,
+      settings,
+      cause: cause || 'Tool preparation failed.',
+      reason: session?.reason,
+      diagnostic:
+        failure.cause instanceof Error
+          ? sanitizeTerminalDiagnosticText(failure.cause.message)
+          : undefined,
       blockers,
       warnings,
       details,
@@ -195,27 +206,41 @@ export function panelModel(
   const [lead, ...rest] = blockers;
   return {
     failed: false,
+    settings,
     cause:
       lead === undefined
         ? sanitizeTerminalDisplayText(state.report.nextAction.reason)
         : sanitizeTerminalDisplayText(lead.summary),
-    action: lead?.fix === undefined ? RETRY_ACTION : sanitizeTerminalDisplayText(lead.fix),
+    action: lead?.fix === undefined ? undefined : sanitizeTerminalDisplayText(lead.fix),
     blockers: rest,
     warnings,
     details,
   };
 }
 
-export function panelLines(model: PanelModel, budget: number): PanelLine[] {
-  return [
+export function panelLines(model: PanelModel, budget: number, expanded: boolean): PanelLine[] {
+  const lead = [
     ...paragraph({ key: 'cause', text: model.cause, tone: 'cause', budget }),
-    ...paragraph({
-      key: 'action',
-      text: model.action,
-      tone: 'text',
-      budget,
-      marker: glyph('connectorHandoff'),
-    }),
+    ...(model.reason ? paragraph({ key: 'reason', text: model.reason, tone: 'text', budget }) : []),
+    ...(model.action
+      ? paragraph({
+          key: 'action',
+          text: model.action,
+          tone: 'text',
+          budget,
+          marker: glyph('connectorHandoff'),
+        })
+      : []),
+  ];
+  if (model.failed && !expanded) return lead;
+  return [
+    ...lead,
+    ...(model.diagnostic
+      ? section(
+          'File error',
+          paragraph({ key: 'diagnostic', text: model.diagnostic, tone: 'dim', budget }),
+        )
+      : []),
     ...section(
       'Blockers',
       spaced(

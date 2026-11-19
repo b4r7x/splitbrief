@@ -64,7 +64,9 @@ You: "add user authentication with JWT"
 └──────────────────────┘
 ```
 
-Every implementer works in one run workspace — a git worktree by default — never in your working tree. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) edits files there; for a model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) SPLITBRIEF writes the returned content there. The briefs are validated and reviewed in the workspace. When the review passes, the run is ready to apply: Apply merges your own edits with the result and writes it into your project once, and refuses to overwrite a file that changed during the write. Discard keeps the changes in a patch instead. API responses use declared text-file bundles with whole-response preflight and exact-path approval; shell extraction remains single-file. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
+SPLITBRIEF opens each run's workspace before planning. It uses a Git worktree by default or a staged copy. Set `workflow.isolation: none` to work directly in your checkout. In an isolated run, SPLITBRIEF builds, checks and reviews the result in the workspace. Apply merges that result with your checkout and protects edits made while it writes. Discard keeps the changes in a patch. The workspace isolates project files. It shares ports, databases, Git hooks and config with the checkout. See [isolation settings](./docs/CONFIGURATION.md#implementer-isolation).
+
+CLI and agent runners write their own files. SPLITBRIEF writes the file contents that API and shell runners return. API runners can return a bundle of declared text files. SPLITBRIEF checks the whole bundle and asks for approval on protected paths before writing. A shell runner returns one file.
 
 The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, live token counts.
 
@@ -113,7 +115,7 @@ After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `
 ```
 .splitbrief/
 ├── config.yaml
-├── active              ← current session-id
+├── active              ← default run for resume
 └── sessions/
     └── 2026-04-14-add-user-auth/
         ├── state.json
@@ -123,7 +125,7 @@ After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `
         └── tasks.md     ← the Task Briefs, rendered from plan.json
 ```
 
-Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are scoped to one workflow each — see [docs/VISION.md](./docs/VISION.md) for the full list of non-goals.
+You can start more than one run in the same project. Each session keeps its own history and artifacts. To watch a run from another terminal, use `splitbrief resume <session-id>`. You can continue from that terminal after the original process exits. See [resume and continue](./docs/CLI-REFERENCE.md#splitbrief-resume).
 
 To have SPLITBRIEF stop a brief that does not fit your model's context window, set a
 Prompt budget:
@@ -154,8 +156,8 @@ See [Message queue](./docs/ENGINE.md#message-queue) for delivery rules and [Mid-
 | `splitbrief init` | Create config, auto-detect available models |
 | `splitbrief doctor` | Check run readiness — config, runners, credentials, repo — without starting a workflow |
 | `splitbrief review` | Review the working-tree diff in one reviewer call — no session, no planning |
-| `splitbrief resume` | Resume the most recent run |
-| `splitbrief status` | Show current workflow state |
+| `splitbrief resume [session-id-or-number]` | Continue a saved run or watch a run already open elsewhere |
+| `splitbrief status` | Show the default run's state |
 
 Those are the ones you need first. The full set — `continue`, `review` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
 

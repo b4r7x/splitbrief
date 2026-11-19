@@ -7,26 +7,23 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { error } from '../../../utils/error.js';
 import { startHeartbeat } from './heartbeat.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
-import {
-  checkSessionLiveness,
-  markExited,
-  writeLockfile,
-  type SessionLivenessStatus,
-} from '../../../core/sessions/lock/file.js';
+import { checkSessionLockStatus } from '../../../core/sessions/lock/status.js';
+import { sessionClaimPath, tryClaimSession } from '../../../core/sessions/lock/ownership.js';
+import { markExited, writeLockfile } from '../../../core/sessions/lock/file.js';
+import { reapSessionOrphans } from './orphan-reaper.js';
 
 const workflowLivenessError = {
-  sessionAlreadyLive: (sessionId: string, pid: number) =>
+  sessionAlreadyLive: (sessionId: string, pid?: number) =>
     error('workflow-session-already-live', sessionError.stillActive(sessionId).message, {
       sessionId,
       pid,
     }),
+  lockFailed: (what: string, path: string, cause: unknown) =>
+    error('workflow-session-lock-failed', sessionFileFailure(what, path, cause), { path }, cause),
 };
 
-type LivenessOpts = {
-  projectDir: string;
-  sessionId: string;
+type LivenessOpts = SessionRef & {
   feature: string;
-  signal?: AbortSignal | undefined;
 };
 
 const heldRuns = new Map<string, Promise<void>>();
@@ -36,63 +33,93 @@ export function heldLiveness(ref: SessionRef): Promise<void> | undefined {
   return heldRuns.get(sessionDir(ref.projectDir, ref.sessionId));
 }
 
-// Every run writes a liveness lockfile + heartbeat so checkSessionLiveness can see an
-// in-flight run and refuse a concurrent resume/continue.
-export async function acquireLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
-  const release = await lockLiveness(opts);
-  const dir = sessionDir(opts.projectDir, opts.sessionId);
-  const held = Promise.withResolvers<void>();
-  heldRuns.set(dir, held.promise);
-  return async () => {
-    await release();
-    if (heldRuns.get(dir) === held.promise) heldRuns.delete(dir);
-    held.resolve();
-  };
+function claimRun(ref: SessionRef): () => void {
+  let release: (() => void) | null;
+  try {
+    release = tryClaimSession(ref);
+  } catch (cause) {
+    throw workflowLivenessError.lockFailed(
+      'Could not hold the run lock',
+      sessionClaimPath(ref.sessionId),
+      cause,
+    );
+  }
+  if (release === null) throw workflowLivenessError.sessionAlreadyLive(ref.sessionId);
+  const { projectDir, sessionId } = ref;
+  const dir = sessionDir(projectDir, sessionId);
+  const lockfile = sessionRelativePath(sessionId, LOCKFILE);
+  try {
+    const status = checkSessionLockStatus({ sessionDir: dir, expectedSessionId: sessionId });
+    if (status.kind === 'live' || status.kind === 'stale') {
+      throw workflowLivenessError.sessionAlreadyLive(sessionId, status.data.pid);
+    }
+    if (status.kind === 'invalid') {
+      throw workflowLivenessError.lockFailed(
+        'Could not read the run lock',
+        lockfile,
+        'Invalid lock record',
+      );
+    }
+  } catch (cause) {
+    release();
+    throw cause;
+  }
+  return release;
 }
 
-async function lockLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
-  const dir = sessionDir(opts.projectDir, opts.sessionId);
-  const lockfile = sessionRelativePath(opts.sessionId, LOCKFILE);
-  ensureSessionDir(opts.projectDir, opts.sessionId);
-  let status: SessionLivenessStatus;
+export async function withAtRestSession<T>(ref: SessionRef, mutate: () => Promise<T>): Promise<T> {
+  await reapSessionOrphans(ref.projectDir, ref.sessionId);
+  const release = claimRun(ref);
   try {
-    status = checkSessionLiveness(dir);
-  } catch (err) {
-    if (opts.signal?.aborted) return async () => {};
-    warnStderr(
-      `${sessionFileFailure('Could not read the run lock', lockfile, err)}${SOFT_SEP}another SPLITBRIEF process can open this run at the same time`,
-    );
-    return async () => {};
+    return await mutate();
+  } finally {
+    release();
   }
-  if (status.alive) {
-    throw workflowLivenessError.sessionAlreadyLive(opts.sessionId, status.data.pid);
+}
+
+export async function acquireLiveness(opts: LivenessOpts): Promise<() => Promise<void>> {
+  const { projectDir, sessionId, feature } = opts;
+  const dir = sessionDir(projectDir, sessionId);
+  const lockfile = sessionRelativePath(sessionId, LOCKFILE);
+  const releaseClaim = claimRun(opts);
+  try {
+    ensureSessionDir(projectDir, sessionId);
+    const now = Date.now();
+    try {
+      await writeLockfile(dir, {
+        pid: process.pid,
+        startTimeMs: now,
+        lastAliveMs: now,
+        sessionId,
+        feature,
+      });
+    } catch (cause) {
+      throw workflowLivenessError.lockFailed('Could not write the run lock', lockfile, cause);
+    }
+  } catch (cause) {
+    releaseClaim();
+    throw cause;
   }
 
-  try {
-    const now = Date.now();
-    await writeLockfile(dir, {
-      pid: process.pid,
-      startTimeMs: now,
-      lastAliveMs: now,
-      sessionId: opts.sessionId,
-      feature: opts.feature,
-    });
-    const stopHeartbeat = startHeartbeat(dir);
-    return async () => {
+  const stopHeartbeat = startHeartbeat(dir);
+  const held = Promise.withResolvers<void>();
+  heldRuns.set(dir, held.promise);
+  let release: Promise<void> | undefined;
+  return () => {
+    release ??= (async () => {
       stopHeartbeat();
       try {
         await markExited(dir, 0);
       } catch (err) {
         warnStderr(
-          `${sessionFileFailure('Could not release the run lock', lockfile, err)}${SOFT_SEP}other SPLITBRIEF processes can see the run as running for a few more seconds`,
+          `${sessionFileFailure('Could not release the run lock', lockfile, err)}${SOFT_SEP}other SPLITBRIEF processes may have to wait for this process to exit`,
         );
+      } finally {
+        releaseClaim();
+        heldRuns.delete(dir);
+        held.resolve();
       }
-    };
-  } catch (err) {
-    if (opts.signal?.aborted) return async () => {};
-    warnStderr(
-      `${sessionFileFailure('Could not write the run lock', lockfile, err)}${SOFT_SEP}another SPLITBRIEF process can open this run at the same time`,
-    );
-    return async () => {};
-  }
+    })();
+    return release;
+  };
 }

@@ -21,6 +21,7 @@ export type DispatchNativeInjectionOptions = {
   message: QueuedMessage;
   planner: Planner;
   projectDir: string;
+  workspaceDir?: string | undefined;
   sessionId: string;
   getState: () => WorkflowState;
   setState: (s: WorkflowState) => void;
@@ -52,6 +53,7 @@ export async function dispatchNativeInjection(
 ): Promise<NativeInjectionResult> {
   const { message, planner, projectDir, sessionId, getState, setState, bus, signal } = opts;
   const ref = { projectDir, sessionId };
+  const workspaceDir = opts.workspaceDir ?? projectDir;
   if (!planner.injectUserTurn) return { status: 'not-delivered', reason: 'unsupported' };
   if (signal?.aborted) return { status: 'not-delivered', reason: 'aborted' };
   if (wasCleared(ref, message.id)) return { status: 'not-delivered', reason: 'cleared' };
@@ -84,11 +86,11 @@ export async function dispatchNativeInjection(
       text: injectionText,
       images: message.images,
       attachedInputs: message.attachedInputs,
-      projectDir,
+      projectDir: workspaceDir,
       ...(signal !== undefined && { signal }),
       callbacks: {
         onCallEvent: (event: Parameters<typeof publishRunnerCallEvent>[1]) =>
-          publishRunnerCallEvent({ bus, phase: getState().phase, rootDir: projectDir }, event),
+          publishRunnerCallEvent({ bus, phase: getState().phase, rootDir: workspaceDir }, event),
       },
     };
     const injection = await planner.injectUserTurn(turn);

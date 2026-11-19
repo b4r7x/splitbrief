@@ -80,6 +80,12 @@ export const StartReadinessCheckSchema = z.object({
   remediation: z.string().optional(),
 });
 
+export const CheckoutStartNoticeSchema = z.object({
+  summary: z.string(),
+  details: z.array(z.string()),
+});
+export type CheckoutStartNotice = z.infer<typeof CheckoutStartNoticeSchema>;
+
 export const StartReadinessRecordSchema = z.object({
   type: z.literal('start-readiness'),
   generatedAt: z.string(),

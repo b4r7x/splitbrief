@@ -68,6 +68,7 @@ import {
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { createStagedProject } from '../approval/staged-project/create.js';
 import { gateAttemptChanges } from './gates/attempt.js';
+import { withAttemptRestoreScope } from './restore-scope.js';
 import { runImplementation } from './run-implementation.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { attachedMessage } from '#testing/helpers/user-message.js';
@@ -1628,20 +1629,27 @@ describe.each(['implementation', 'retry-invoker'] as const)(
                 recordApprovalDenial: vi.fn(),
               })
             : undefined;
-        const result =
-          run?.implResult ??
-          (await invoker({
-            task,
-            lastError: 'validation failed',
-            attempts: state.attempt,
-            projectDir,
-            implementer,
-            config: wctx.config,
-            createdByThisTask: [],
-            seat: { ref: { ...ref, bus }, state, usageCategory: 'implementer' },
-          }));
         const workspace = run?.workspace ?? initialWorkspace;
         if (workspace === undefined) throw new Error('Missing attempt workspace');
+        const result =
+          run?.implResult ??
+          (await withAttemptRestoreScope({
+            ref,
+            dir: projectDir,
+            taskStartSnapshot: snapshot,
+            attemptSnapshot: workspace.snapshot,
+            run: () =>
+              invoker({
+                task,
+                lastError: 'validation failed',
+                attempts: state.attempt,
+                projectDir,
+                implementer,
+                config: wctx.config,
+                createdByThisTask: [],
+                seat: { ref: { ...ref, bus }, state, usageCategory: 'implementer' },
+              }),
+          }));
         expect(result.applyResult).toMatchObject({
           status: 'partial',
           failedPath: 'src/locked/c.ts',
@@ -2196,8 +2204,8 @@ describe('BUILD steering wiring', () => {
       targetBaseline: undefined,
       cleanup: () => {},
       changedFiles: async () => [],
-      revert: async () => {},
-      discard: async () => ({}),
+      revert: async () => ({ restoredFiles: [], keptPaths: [] }),
+      discard: async () => ({ restoredFiles: [] }),
     };
     const isolation: RunIsolation = {
       open: async () => ({
@@ -2362,8 +2370,8 @@ describe('runImplementation step and dispose order', () => {
       retain: async () => {
         log.push('workspace retained');
       },
-      revert: async () => {},
-      discard: async () => ({}),
+      revert: async () => ({ restoredFiles: [], keptPaths: [] }),
+      discard: async () => ({ restoredFiles: [] }),
     };
     const isolation: RunIsolation = {
       open: async () => ({ kind: 'worktree', projectDir, head: null, keptFiles: [] }),

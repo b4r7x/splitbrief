@@ -1,3 +1,4 @@
+import { sessionDir } from '../../../core/paths.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import { briefKeptFiles } from '../kept-work.js';
 import { prepareWorktreeAcquisition } from './acquisition.js';
@@ -50,14 +51,25 @@ async function acquireWorkspace(
           sessionId,
           worktreeDir: dir,
           initialTargetBaseline: undefined,
+          pinned: state.pinned,
         })
       ).targetBaseline;
   const snapshot = resumed
     ? retained.snapshot
-    : await captureWorkspaceSnapshot(dir, { projectDir, sessionId });
+    : await captureWorkspaceSnapshot(
+        dir,
+        { projectDir, sessionId },
+        undefined,
+        state.pinned ? null : projectDir,
+      );
   const sandboxEnv = resumed
     ? await state.sandboxEnvs.resumedEnv(dir, input.role, input.config)
-    : await state.sandboxEnvs.workspaceEnv(dir, input.role, input.config);
+    : await state.sandboxEnvs.workspaceEnv(
+        dir,
+        input.role,
+        input.config,
+        inCheckout ? sessionDir(projectDir, sessionId) : dir,
+      );
   await assertAttemptDir(state, dir);
   if (state.disposed) throw retentionError.unavailable();
   let preserved = false;
@@ -75,14 +87,14 @@ async function acquireWorkspace(
     revert: async () => {
       if (state.disposed || state.ownedWorkspace !== workspace) throw retentionError.unavailable();
       await settledCleanup(state);
-      await revertAttempt(state, dir, snapshot, input.brief);
+      return revertAttempt(state, dir, snapshot, input.brief);
     },
     discard: async (files) => {
       if (state.disposed || state.ownedWorkspace !== workspace) throw retentionError.unavailable();
       await settledCleanup(state);
-      const { savedTo } = await restoreAttempt(state, dir, snapshot, files);
+      const { restoredFiles, savedTo } = await restoreAttempt(state, dir, snapshot, files);
       const kept = await briefKeptFiles(dir, input.brief.taskStartSnapshot);
-      return { savedTo, briefKept: kept?.length };
+      return { restoredFiles, savedTo, briefKept: kept?.length };
     },
     retain: () => {
       if (state.disposed || state.ownedWorkspace !== workspace)

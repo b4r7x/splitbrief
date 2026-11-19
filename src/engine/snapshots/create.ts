@@ -22,14 +22,23 @@ import { acquireSnapshotLock } from './lock.js';
 import { hashFile, walkProjectEntries } from './files.js';
 import { encodeSnapshotPath, generateSnapshotId } from './path-codec.js';
 import { hasBaseline, readManifest, writeManifest } from './manifest.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { nowIso } from '../../utils/format/time.js';
+
+const GITIGNORE_PATH = '.gitignore';
+
+type SourceFile = { bytes: Buffer; mode: number };
 
 export type CreateSnapshotOptions = {
   projectDir: string;
   sessionId: string;
+  sourceDir?: string | undefined;
+  ignoreProjectDir?: string | null | undefined;
+  gitignore?: SourceFile | null | undefined;
   phase: SnapshotPhase;
   name?: string;
   taskIndex?: number;
+  checkoutRevision?: number;
   bus?: EventBus;
   eventPhase?: Phase;
 };
@@ -44,24 +53,27 @@ async function captureFile(opts: {
   projectDir: string;
   path: string;
   filesDir: string;
+  storageDir: string;
   force: boolean;
   baselineHash?: string | undefined;
   baselineMode?: number | undefined;
+  seed?: SourceFile | undefined;
 }): Promise<{ hash: string; entry?: SnapshotFileEntry }> {
-  const { projectDir, path, filesDir, force, baselineHash, baselineMode } = opts;
-  assertExistingPathConfined(path, projectDir);
-  const hash = (await hashFile(join(projectDir, path))) ?? '';
+  const { projectDir, path, filesDir, storageDir, force, baselineHash, baselineMode, seed } = opts;
+  if (seed === undefined) assertExistingPathConfined(path, projectDir);
+  const hash =
+    seed === undefined ? ((await hashFile(join(projectDir, path))) ?? '') : sha256Hex(seed.bytes);
   const encodedName = encodeSnapshotPath(path);
   const absPath = join(projectDir, path);
 
   let contents: Buffer;
   let mode: number;
   try {
-    mode = (await stat(absPath)).mode & 0o777;
+    mode = seed?.mode ?? (await stat(absPath)).mode & 0o777;
     if (!force && hash === (baselineHash ?? '') && mode === baselineMode) {
       return { hash };
     }
-    contents = await readFile(absPath);
+    contents = seed?.bytes ?? (await readFile(absPath));
   } catch {
     // Read failure (unreadable/removed source). The path stays tracked via its
     // hash, but no blob is written and no entry is recorded — restore reports it
@@ -72,7 +84,7 @@ async function captureFile(opts: {
   // Write failure means snapshot storage is broken; propagating fails the whole
   // snapshot instead of silently recording an entry whose blob is absent.
   const blobPath = join(filesDir, encodedName);
-  assertWritablePathConfined(relative(projectDir, blobPath), projectDir);
+  assertWritablePathConfined(relative(storageDir, blobPath), storageDir);
   await writeFile(blobPath, contents, { mode: SECURE_FILE_MODE });
 
   return { hash, entry: { path, hash, encodedName, mode } };
@@ -88,6 +100,7 @@ function buildManifest(opts: {
   trackedFileCount: number;
   name?: string | undefined;
   taskIndex?: number | undefined;
+  checkoutRevision?: number | undefined;
 }): SnapshotManifest {
   return {
     version: 1,
@@ -101,20 +114,34 @@ function buildManifest(opts: {
     trackedFileCount: opts.trackedFileCount,
     ...(opts.name !== undefined && { name: opts.name }),
     ...(opts.taskIndex !== undefined && { taskIndex: opts.taskIndex }),
+    ...(opts.checkoutRevision !== undefined && { checkoutRevision: opts.checkoutRevision }),
   };
 }
 
 export async function createSnapshot(opts: CreateSnapshotOptions): Promise<CreateSnapshotResult> {
-  const { projectDir, sessionId, phase, name, taskIndex, bus, eventPhase } = opts;
+  const {
+    projectDir,
+    sessionId,
+    sourceDir = projectDir,
+    phase,
+    name,
+    taskIndex,
+    bus,
+    eventPhase,
+  } = opts;
   const release = await acquireSnapshotLock(projectDir, sessionId);
   let result: CreateSnapshotResult;
   try {
+    const gitignore = opts.gitignore;
     const trackedPaths: string[] = [];
     const symlinks: NonNullable<SnapshotManifest['symlinks']> = [];
-    for await (const entry of walkProjectEntries(projectDir)) {
+    for await (const entry of walkProjectEntries(sourceDir, {
+      ignoreProjectDir: opts.ignoreProjectDir,
+    })) {
+      if (gitignore === null && entry.path === GITIGNORE_PATH) continue;
       if (entry.kind === 'file') trackedPaths.push(entry.path);
       if (entry.kind === 'symlink') {
-        symlinks.push({ path: entry.path, target: await readlink(join(projectDir, entry.path)) });
+        symlinks.push({ path: entry.path, target: await readlink(join(sourceDir, entry.path)) });
       }
     }
     trackedPaths.sort();
@@ -129,7 +156,14 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
       const fileEntries: SnapshotFileEntry[] = [];
 
       for (const path of trackedPaths) {
-        const captured = await captureFile({ projectDir, path, filesDir, force: true });
+        const captured = await captureFile({
+          projectDir: sourceDir,
+          storageDir: projectDir,
+          seed: path === GITIGNORE_PATH ? (gitignore ?? undefined) : undefined,
+          path,
+          filesDir,
+          force: true,
+        });
         fileHashes[path] = captured.hash;
         if (captured.entry) fileEntries.push(captured.entry);
       }
@@ -144,6 +178,7 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
         trackedFileCount: trackedPaths.length,
         name,
         taskIndex,
+        checkoutRevision: opts.checkoutRevision,
       });
 
       await writeManifest(projectDir, sessionId, manifest);
@@ -170,7 +205,9 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
 
       for (const path of trackedPaths) {
         const captured = await captureFile({
-          projectDir,
+          projectDir: sourceDir,
+          storageDir: projectDir,
+          seed: path === GITIGNORE_PATH ? (gitignore ?? undefined) : undefined,
           path,
           filesDir,
           force: false,

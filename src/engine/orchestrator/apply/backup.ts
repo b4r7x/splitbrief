@@ -37,6 +37,7 @@ const ApplyExpectedEntrySchema = z.union([
 ]);
 const ApplyBackupSchema = z.object({
   id: z.string().min(1),
+  checkoutRevision: z.number().int().nonnegative().optional(),
   replaced: z.array(ApplyBackupEntrySchema),
   created: z.array(z.string().min(1)),
   /** The folders Apply made for its created files; a backup written before this field has none. */
@@ -134,6 +135,7 @@ export async function writeApplyBackup(input: {
   workspaceDir: string;
   files: string[];
   theirs: ReadonlyMap<string, SideEntry>;
+  checkoutRevision?: number;
 }): Promise<
   | { kind: 'written'; backup: ApplyBackup; candidateDir: string }
   | { kind: 'changed'; files: string[] }
@@ -200,8 +202,11 @@ export async function writeApplyBackup(input: {
   }
   if (changed.length > 0) return { kind: 'changed', files: changed };
 
+  const checkoutRevision =
+    previous === undefined ? input.checkoutRevision : previous.checkoutRevision;
   const backup: ApplyBackup = {
     id: backupId,
+    ...(checkoutRevision === undefined ? {} : { checkoutRevision }),
     replaced: [...replaced.values()].sort((left, right) =>
       left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
     ),

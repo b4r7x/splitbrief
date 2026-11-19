@@ -20,7 +20,7 @@ import type { useWorkflowScreen } from './use-model.js';
 export function useAtRestByline(input: {
   model: Pick<
     ReturnType<typeof useWorkflowScreen>,
-    'atRestRecord' | 'applying' | 'closedView' | 'continuable' | 'inputHint'
+    'atRestRecord' | 'applying' | 'closedView' | 'continuable' | 'inputHint' | 'observing'
   >;
   cols: number;
   /** The run on screen is closed, so the rule above the composer ends it. */
@@ -35,6 +35,7 @@ export function useAtRestByline(input: {
   const bylineWidth = Math.max(1, getChromeContentWidth(cols) - MARK_SLOT_CELLS);
   const config = configStore.useConfig();
   const atRestStatus = model.atRestRecord?.status;
+  const owner = model.atRestRecord?.owner;
   const viewWait = runViewStore.use((view) => view.seatWait);
   // An open run continues with this window's crew, so its saved wait on a tool the seat no longer
   // runs waits no more. A run another process drives waits on the crew that process loaded.
@@ -46,6 +47,7 @@ export function useAtRestByline(input: {
   // did leaves another process's Apply to the running line, which has no clock to get wrong.
   const applyClock = runViewStore.use((view) => view.apply);
   const planCard = runViewStore.use((view) => view.planCard);
+  const waitingForAnswer = runViewStore.use((view) => (view.questions?.length ?? 0) > 0);
   const failure = runViewStore.use((view) => view.failure);
   const applying =
     model.applying ||
@@ -78,12 +80,15 @@ export function useAtRestByline(input: {
       ? apply === undefined
         ? undefined
         : applyByline(apply, bylineWidth)
-      : model.closedView !== null
+      : model.closedView !== null && owner?.kind !== 'stale'
         ? apply !== undefined && apply.queued !== null
           ? applyByline(apply, bylineWidth)
           : bylineParts(model.closedView, bylineWidth)
         : openRunBylineParts({
             status: atRestStatus,
+            owner,
+            waitingForAnswer,
+            observing: model.observing,
             wait,
             planCard,
             failure,

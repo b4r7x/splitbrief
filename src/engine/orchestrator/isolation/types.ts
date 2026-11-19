@@ -16,6 +16,12 @@ export type IsolationRole = 'planner' | 'implementer';
 /** The brief an attempt builds, with the snapshot of the brief's start. */
 export type AttemptBrief = { task: Task; taskStartSnapshot: ChangedFilesSnapshot };
 
+export type AttemptRevertResult = {
+  restoredFiles: string[];
+  keptPaths: string[];
+  savedTo?: string | undefined;
+};
+
 export type IsolatedWorkspace = {
   projectDir: string;
   sandboxEnv: NodeJS.ProcessEnv;
@@ -41,16 +47,18 @@ export type IsolatedWorkspace = {
 export type AttemptWorkspace = IsolatedWorkspace & {
   changedFiles: () => Promise<string[]>;
   /** Puts the whole attempt back to its start and publishes its revert row; fails loudly. */
-  revert: () => Promise<void>;
+  revert: () => Promise<AttemptRevertResult>;
   /**
    * Puts the given files back to the attempt's start and publishes no row, as the caller names
    * them. `savedTo` is the folder, relative to the project, that holds the bytes a checkout
    * replaced; `briefKept` counts the files a put-back of the brief still acts on afterwards.
    * Fails loudly.
    */
-  discard: (
-    files: readonly string[],
-  ) => Promise<{ savedTo?: string | undefined; briefKept?: number | undefined }>;
+  discard: (files: readonly string[]) => Promise<{
+    restoredFiles: string[];
+    savedTo?: string | undefined;
+    briefKept?: number | undefined;
+  }>;
 };
 
 export type RunWorkspace = {
@@ -100,6 +108,7 @@ export type RunIsolationState = {
   // none of them can write ownership after it completes.
   readonly inFlightOperations: Set<Promise<unknown>>;
   fallbackReported: boolean;
+  pinned: boolean;
   /** The run's worktree; `abandoned` when the open fell back after it made the worktree. */
   worktree: { dir: string; git: GitClient; abandoned: boolean } | null;
   nodeModulesExcludeFile: string | null;

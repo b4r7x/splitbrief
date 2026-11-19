@@ -1583,6 +1583,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
     openRun({
       status: { kind: 'running' },
+      owner: { kind: 'live', pid: process.pid },
       hydration: {
         kind: 'loaded',
         state: makeWorkflowState({
@@ -1609,12 +1610,12 @@ describe('WorkflowScreen showing a run at rest', () => {
     const waiting = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(waiting).toContain('Waiting for OpenAI Codex CLI');
     expect(waiting).toContain('resets');
-    expect(waiting).not.toContain('Running in another process');
+    expect(waiting).not.toContain('Viewing live');
 
     vi.advanceTimersByTime(3_000);
     await flushEffects();
     const passed = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(passed).toContain('Running in another process');
+    expect(passed).toContain('Viewing live');
     expect(passed).not.toContain('Waiting for');
 
     ui.unmount();
@@ -1673,6 +1674,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
     const record = openRun({
       status: { kind: 'running' },
+      owner: { kind: 'live', pid: process.pid },
       hydration: {
         kind: 'loaded',
         state: makeWorkflowState({
@@ -1707,7 +1709,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     vi.advanceTimersByTime(1_200);
     await flushEffects();
     const passed = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(passed).toContain('Running in another process');
+    expect(passed).toContain('Viewing live');
     expect(passed).not.toContain('Waiting for');
 
     ui.unmount();

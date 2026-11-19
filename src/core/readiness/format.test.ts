@@ -105,7 +105,7 @@ describe('start readiness record', () => {
       RUN,
     );
 
-    expect(startReadinessWarnings(record)).toEqual([
+    expect(startReadinessWarnings(record, undefined).map((warning) => warning.message)).toEqual([
       'Working tree has 1 changed file.\nExamples: a.ts\nFix: Commit it.',
       'Implementer is ready with warnings.\nThe sandbox profile is missing.',
       'A plain warning.',
@@ -119,13 +119,18 @@ describe('start readiness record', () => {
         'none',
       ),
     );
-    const [warning = ''] = startReadinessWarnings(createStartReadinessRecord(report, RUN));
+    const [notice] = startReadinessWarnings(createStartReadinessRecord(report, RUN), RUN);
+    expect(notice?.checkout?.summary).toBe('Working tree has 1 changed file.');
+    expect(notice?.checkout?.details).toContain(
+      'Backup on revert: .splitbrief/sessions/2026-01-01-fix-the-readme/reverted/',
+    );
+    const warning = notice?.message ?? '';
     const doctor = formatReadinessReport(report);
 
     expect(warning.split('\n')).toEqual([
       'Working tree has 1 changed file.',
       'Examples: README.md',
-      'An attempt revert restores only the paths that attempt changed.',
+      'A revert keeps shared changes and changes it cannot attribute to this run.',
       'Fix: The run edits this checkout. A revert saves the files it replaces in .splitbrief/sessions/2026-01-01-fix-the-readme/reverted/. Commit or stash the edits you do not want this run to touch.',
     ]);
     for (const line of warning.split('\n').slice(0, 3)) expect(doctor).toContain(line);

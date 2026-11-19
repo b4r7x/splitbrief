@@ -1,5 +1,6 @@
-import { isQueuePhase } from '../../../core/phases/roles.js';
+import { isLivePhase, isQueuePhase } from '../../../core/phases/roles.js';
 import { messageSeat } from '../../../core/queue/state.js';
+import { noWordsRefusal } from '../../../core/recovery/typed-words.js';
 import { selectBuildMessageBrief } from '../../../core/run-view/briefs.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { approvalPromptStore } from '../../../stores/prompts/approval.js';
@@ -66,7 +67,7 @@ export function createReviewInputHandler(
         }
         return;
       }
-      const { phase, briefs, reviewNone } = runViewStore.get();
+      const { phase, briefs, reviewNone, afterLastBrief } = runViewStore.get();
       if (isQueuePhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {
@@ -83,7 +84,11 @@ export function createReviewInputHandler(
           const result = await effects.enqueue(message, phase);
           if (!result) {
             composerDraftStore.requestPrepend(document);
-            feedbackStore.setMessage('Cannot queue message: no active workflow.');
+            feedbackStore.setMessage(
+              seat === null && isLivePhase(phase)
+                ? noWordsRefusal(afterLastBrief)
+                : 'Cannot queue message: no active workflow.',
+            );
           } else if (result.status === 'rejected') {
             // The submission was refused: it comes back in front of whatever the composer holds
             // now, so a rejection loses neither what was sent nor what was typed since.

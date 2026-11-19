@@ -10,7 +10,6 @@ import {
   releasePreparedExecutionOwnership,
   type PreparationOutcome,
 } from '../../../engine/runners/prepare-execution/prepared.js';
-import { assertNoLiveSessionForCli } from '../../sessions/resolve.js';
 import { prepareStartOutcome } from './prepare.js';
 import { preparedExecutionOrThrow } from '../../preparation.js';
 import type { InteractiveDispatchArgs } from './types.js';
@@ -38,7 +37,6 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
   const finishBootstrap = () => awaitDiscovery;
 
   if (needsSetup) {
-    assertNoLiveSessionForCli(projectDir);
     routerStore.init({
       screen: 'setup',
       onComplete: feature ? 'workflow' : 'home',
@@ -109,6 +107,5 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
     return;
   }
 
-  assertNoLiveSessionForCli(projectDir);
   await Promise.all([mountInk(), finishBootstrap()]);
 }

@@ -185,6 +185,56 @@ describe('deriveRunStatus', () => {
     });
   });
 
+  describe('a failure saved on a stopped run', () => {
+    const step = { kind: 'brief', taskId: taskId('T001'), attempt: 0 } as const;
+    const parked = {
+      step,
+      source: 'user',
+      cut: 'mid-step',
+      kept: ['src/marker.ts'],
+      at: '2026-09-01T00:00:01.000Z',
+    } as const;
+    const failed = {
+      step,
+      message: 'This run started in another folder.',
+      at: '2026-09-01T00:00:02.000Z',
+    };
+
+    it('reports a failed resume after the previous park', () => {
+      expect(
+        stopOf({
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T001' })],
+          interruptedStep: { ...parked, kept: [...parked.kept] },
+          awaitingContinue: true,
+          lastFailure: failed,
+        }),
+      ).toMatchObject({ stop: { kind: 'stopped', on: { kind: 'failed' } }, resumeAt: step });
+    });
+
+    it.each([
+      ['a later park', '2026-09-01T00:00:03.000Z'],
+      ['equal timestamps', failed.at],
+      ['an invalid park timestamp', 'legacy'],
+      ['an older run with no timed park', undefined],
+    ])('keeps the pause for %s', (_, at) => {
+      expect(
+        stopOf({
+          phase: 'implementing',
+          awaitingContinue: true,
+          ...(at !== undefined && { interruptedStep: { ...parked, at, kept: [...parked.kept] } }),
+          lastFailure: failed,
+        }),
+      ).toMatchObject({ stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } } });
+    });
+
+    it('keeps the outstanding plan gate when no resume failed after a park', () => {
+      expect(stopOf({ phase: 'reviewing-plan', lastFailure: failed })).toMatchObject({
+        stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan' } },
+      });
+    });
+  });
+
   it('forgets a recorded failure once the run picks the step up again', () => {
     const failed = state({
       phase: 'specifying',

@@ -325,6 +325,54 @@ describe('buildConversationRowActions', () => {
     expect(actions.size).toBe(0);
   });
 
+  it('keeps an earlier checkout warning clickable when only a later fold takes the key', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          {
+            type: 'warning',
+            ts: 1,
+            phase: 'planning',
+            message: 'Full checkout warning',
+            checkout: { summary: 'One local edit', details: ['Backup on revert: sample/'] },
+          },
+          ...['a', 'b', 'c', 'd'].map((name, index) =>
+            activity({
+              callId: 'later',
+              sequence: index + 1,
+              activityId: name,
+              kind: 'read',
+              label: name,
+            }),
+          ),
+        ],
+      },
+    ];
+    const inputs = {
+      sections,
+      cols: 80,
+      viewportHeight: 24,
+      streaming,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+    };
+    const rows = buildConversationRows(inputs).rows;
+    const earlier = rows.find((row) => rowText(row).includes('Files and backup'));
+    if (!earlier) throw new Error('Missing checkout fold');
+    expect(rowText(earlier)).not.toMatch(/ctrl\+[ad]/);
+    const action = buildConversationRowActions(inputs).get(earlier.key);
+    if (action?.type !== 'toggle-activity-batch')
+      throw new Error('The checkout row has no fold action');
+    expect(
+      buildConversationRows({ ...inputs, expandedActivityBatches: new Set([action.key]) })
+        .rows.map(rowText)
+        .join(' '),
+    ).toContain('Backup on revert: sample/');
+    expect(rows.findLast((row) => rowText(row).includes('ctrl+a'))?.key).not.toBe(earlier.key);
+  });
+
   it('gives the key to the lowest folded row while each folded row keeps its own action', () => {
     const sections: Section<EngineEvent>[] = [
       {

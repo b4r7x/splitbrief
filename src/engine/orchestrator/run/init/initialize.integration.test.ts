@@ -406,7 +406,7 @@ describe('initializeWorkflow', () => {
         expect(warnings[0]?.message.split('\n')).toEqual([
           'Working tree has 1 changed file.',
           'Examples: README.md',
-          'An attempt revert restores only the paths that attempt changed.',
+          'A revert keeps shared changes and changes it cannot attribute to this run.',
           `Fix: The run edits this checkout. A revert saves the files it replaces in .splitbrief/sessions/${sessionId}/reverted/. Commit or stash the edits you do not want this run to touch.`,
         ]);
         const request = events.findIndex((event) => event.type === 'user_message');

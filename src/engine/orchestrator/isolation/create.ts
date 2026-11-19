@@ -10,6 +10,7 @@ export function createRunIsolation(opts: RunIsolationOptions): RunIsolation {
     sandboxEnvs: createWorkspaceSandboxEnvs(),
     inFlightOperations: new Set(),
     fallbackReported: false,
+    pinned: false,
     worktree: null,
     nodeModulesExcludeFile: null,
     runWorkspace: undefined,

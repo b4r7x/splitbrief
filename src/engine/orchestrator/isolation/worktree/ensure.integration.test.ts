@@ -639,6 +639,29 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
     expect(await readFile(excludeFile, 'utf-8')).toBe(before);
   });
 
+  it('keeps the dependency link ignored after another workspace releases its exclude', async () => {
+    createTestGitRepo(repoDir, { 'README.md': '# test\n', '.gitignore': 'node_modules/\n' });
+    await mkdir(join(repoDir, 'node_modules'));
+    const git = createGitClient(repoDir);
+    const excludeFile = join(gitCommonDir(), 'info', 'exclude');
+    const first = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: SESSION_ID,
+      git,
+    });
+    const second = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: 'second-run',
+      git,
+    });
+    expect(first.kind).toBe('ready');
+    if (second.kind !== 'ready') throw new Error(second.reason);
+
+    await removeNodeModulesExclude(excludeFile, SESSION_ID);
+    const changed = await createGitClient(second.worktreePath).raw(['status', '--porcelain']);
+    expect(changed).not.toContain('node_modules');
+  });
+
   it('writes no exclude entry when the checkout already excludes node_modules itself', async () => {
     createTestGitRepo(repoDir, { 'README.md': '# test\n', '.gitignore': 'node_modules/\n' });
     await mkdir(join(repoDir, 'node_modules'), { recursive: true });

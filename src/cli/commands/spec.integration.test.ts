@@ -17,6 +17,8 @@ import {
 } from '#testing/helpers/compatible-cli-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { writeLiveSession, writeSessionLockfile } from '#testing/helpers/start-command.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -449,6 +451,20 @@ describe('spec command — reporting', () => {
       .split('\n')
       .find((l) => l.startsWith('Planning feature:'));
     expect(line).toContain('Planning feature: Add a greeting - with a test (planner:');
+  });
+
+  it('writes a spec beside a live workflow and preserves the workflow default', async () => {
+    const live = 'ongoing-workflow';
+    writeLiveSession(tmp, live);
+    writeSessionLockfile(tmp, live);
+
+    await runSpec(['plan a related feature']);
+
+    expect(readActive(tmp)).toBe(live);
+    const spec = readdirSync(sessionsRoot()).find((session) => session !== live);
+    expect(spec).toBeDefined();
+    if (spec === undefined) throw new Error('Expected a spec session');
+    expect(existsSync(join(sessionsRoot(), spec, PLAN_JSON_FILE))).toBe(true);
   });
 
   it('lists plan.json, plan.md and tasks.md with absolute paths that exist on disk', async () => {

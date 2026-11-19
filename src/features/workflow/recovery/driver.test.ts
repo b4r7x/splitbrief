@@ -43,6 +43,7 @@ import {
   type UseInputModeResult,
 } from '../hooks/use-input-mode.js';
 import { createRecoveryDriver } from './driver.js';
+import { acquireLiveness } from '../../../engine/orchestrator/run/liveness.js';
 import type { PendingRecoveryResult } from './types.js';
 import { clearAllHandlers, setStopHandler } from '../run-requests/registry.js';
 import { requestSteer } from '../run-requests/stop-resume.js';
@@ -830,6 +831,26 @@ describe('createRecoveryDriver', () => {
       expect(loadState(prepared.session.ref)?.decideForMe).not.toBe(true);
     });
 
+    it('cannot end on the saved decision while another driver holds the run', async () => {
+      const { prepared, state } = decided({
+        ...CANNOT,
+        facts: { ...CANNOT.facts, cannotNext: 'end-run' },
+      });
+      const { ref } = prepared.session;
+      const saved = loadState(ref);
+      const { inputMode } = makeInputMode([]);
+      const release = await acquireLiveness({ ...ref, feature: state.feature });
+
+      try {
+        await expect(runDriver(prepared, state, inputMode)).rejects.toMatchObject({
+          kind: 'workflow-session-already-live',
+        });
+        expect(loadState(ref)).toEqual(saved);
+      } finally {
+        await release();
+      }
+    });
+
     it('skips a brief the planner cannot do with no panel once the user chose it', async () => {
       const { prepared, state } = decided(CANNOT);
       const { inputMode, feedbackAtPrompt } = makeInputMode([]);
@@ -1144,6 +1165,27 @@ describe('createRecoveryDriver', () => {
     if (result.shouldRun) {
       expect(result.switchSeat?.candidate).toEqual({ tool: 'claude-code', model: 'opus' });
       expect(result.state.pendingRecovery).toBeDefined();
+    }
+  });
+
+  it('keeps the halt when the recovery panel answers after another driver enters', async () => {
+    const { prepared, state } = setupSession({
+      availableActions: ['retry-same-worker', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    });
+    const { ref } = prepared.session;
+    const answer = Promise.withResolvers<QuestionAnswer>();
+    const { inputMode, feedbackAtPrompt } = makeInputMode([answer.promise]);
+    const prompt = runDriver(prepared, state, inputMode);
+    await vi.waitFor(() => expect(feedbackAtPrompt).toHaveLength(1));
+    const release = await acquireLiveness({ ...ref, feature: state.feature });
+
+    try {
+      answer.resolve(rowPick('a'));
+      await expect(prompt).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
+      expect(loadState(ref)).toEqual(state);
+    } finally {
+      await release();
     }
   });
 

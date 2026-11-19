@@ -130,7 +130,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 - Not tested on Windows at all.
 - Subprocess handling is POSIX-ish (SIGTERM/SIGKILL). Windows uses different signal semantics.
-- `.splitbrief/active` as a text file vs. a file lock differs in concurrency guarantees across platforms.
+- Session ownership and checkout writes require file locking that works across processes.
 
 Testing + CI on Windows would come first, before any behavioural fixes.
 

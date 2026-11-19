@@ -51,6 +51,12 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
     case 'warning':
       return {
         ...event,
+        ...(event.checkout !== undefined && {
+          checkout: {
+            summary: sanitizeTerminalDiagnosticText(event.checkout.summary),
+            details: event.checkout.details.map((line) => sanitizeTerminalDiagnosticText(line)),
+          },
+        }),
         message: sanitizeTerminalDiagnosticText(event.message, { preserveLineBreaks: true }),
       };
     case 'error':

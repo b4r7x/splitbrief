@@ -6,7 +6,7 @@ import { checkIgnoredPaths } from '../../lib/git/files.js';
 import { INTERNAL_SKIP_DIRS } from '../../core/paths.js';
 
 export type CollectTrackedFilesOptions = {
-  ignoreProjectDir?: string | undefined;
+  ignoreProjectDir?: string | null | undefined;
 };
 
 export async function hashFile(filePath: string): Promise<string | null> {
@@ -27,7 +27,7 @@ export async function* walkProjectEntries(
   projectDir: string,
   opts: CollectTrackedFilesOptions = {},
 ): AsyncGenerator<ProjectEntry> {
-  const ignoreDir = opts.ignoreProjectDir ?? projectDir;
+  const ignoreDir = opts.ignoreProjectDir === undefined ? projectDir : opts.ignoreProjectDir;
   let level = [''];
   while (level.length > 0) {
     const candidates: ProjectEntry[] = [];
@@ -50,10 +50,12 @@ export async function* walkProjectEntries(
       }
     }
     const ignored = new Set(
-      await checkIgnoredPaths(
-        ignoreDir,
-        candidates.map((entry) => (entry.kind === 'directory' ? `${entry.path}/` : entry.path)),
-      ),
+      ignoreDir === null
+        ? []
+        : await checkIgnoredPaths(
+            ignoreDir,
+            candidates.map((entry) => (entry.kind === 'directory' ? `${entry.path}/` : entry.path)),
+          ),
     );
     level = [];
     for (const entry of candidates) {

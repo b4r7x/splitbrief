@@ -1,8 +1,10 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { sessionDir, sessionsRoot } from '../../../src/core/paths.js';
+import { sessionDir, sessionsRoot, SNAPSHOT_BASELINE_ID } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { resolveValidatedBlobPath } from '../../../src/engine/snapshots/blob-resolver.js';
+import { readManifest } from '../../../src/engine/snapshots/manifest.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -13,6 +15,7 @@ import {
   GREET_SOURCE,
   MARKER_FILE,
   MARKER_SOURCE,
+  readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
 
@@ -29,7 +32,7 @@ const ATTEMPT_BYTES = 'the attempt rewrote this\n';
 
 /**
  * Cuts the stored copy of the user's uncommitted `init.txt` short, as a cut write would, then
- * rewrites `init.txt` and moves the checkout's git state, so the run halts and puts the attempt back.
+ * rewrites `init.txt` and moves the checkout's Git state to trigger a put-back.
  */
 function cuttingImplementer(checkoutDir: string): string {
   const sessions = sessionsRoot(checkoutDir);
@@ -51,27 +54,35 @@ writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
 }
 
 describe('e2e: a checkout revert over a stored entry that does not match its hash', () => {
-  it('refuses the stored bytes and never writes them over the uncommitted file', async () => {
+  it('names the corrupt snapshot while keeping the checkout edits and the original user bytes', async () => {
     fixture = createStopContinueFixture(cuttingImplementer, { isolation: 'none' });
     const userFile = join(fixture.projectDir, 'init.txt');
     writeFileSync(userFile, USER_EDIT);
 
     const halted = await cli(fixture, ['start', 'smoke']);
 
-    expect(halted.exitCode).not.toBe(0);
+    expect(halted.exitCode).toBe(1);
     const sessionId = readActive(fixture.projectDir);
     if (sessionId === null) throw new Error(`the halted run left no session: ${halted.stderr}`);
-    const blob = join(sessionDir(fixture.projectDir, sessionId), 'entries', sha256Hex(USER_EDIT));
+    const ref = { projectDir: fixture.projectDir, sessionId };
+    const blob = join(sessionDir(ref.projectDir, sessionId), 'entries', sha256Hex(USER_EDIT));
     expect(readFileSync(blob, 'utf8')).toBe(SHORT_BLOB);
-    // The revert reached init.txt: it saved the attempt's bytes before it read the stored entry.
-    const reverted = join(sessionDir(fixture.projectDir, sessionId), 'reverted');
-    expect(
-      readdirSync(reverted).some(
-        (stamp) =>
-          existsSync(join(reverted, stamp, 'init.txt')) &&
-          readFileSync(join(reverted, stamp, 'init.txt'), 'utf8') === ATTEMPT_BYTES,
-      ),
-    ).toBe(true);
+    expect(halted.stderr).toContain('Entry snapshot does not match its hash: init.txt');
+    const state = readState(fixture, sessionId);
+    expect(state.pendingRecovery?.reason).toBe('checkout-changed');
+    expect(state.closed).toBeUndefined();
     expect(readFileSync(userFile, 'utf8')).toBe(ATTEMPT_BYTES);
+    expect(readFileSync(fixture.greetPath, 'utf8')).toBe(GREET_SOURCE);
+    expect(readFileSync(fixture.markerPath, 'utf8')).toBe(MARKER_SOURCE);
+
+    const baseline = await readManifest(ref.projectDir, sessionId, SNAPSHOT_BASELINE_ID);
+    const original = await resolveValidatedBlobPath({
+      ...ref,
+      snapshotId: SNAPSHOT_BASELINE_ID,
+      path: 'init.txt',
+      entry: baseline.fileEntries.find((entry) => entry.path === 'init.txt'),
+    });
+    if (original === null) throw new Error('The run baseline lost its copy of init.txt.');
+    expect(readFileSync(original, 'utf8')).toBe(USER_EDIT);
   }, 150_000);
 });

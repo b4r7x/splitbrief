@@ -163,6 +163,7 @@ export async function prepareWorktreeAcquisition(opts: {
   sessionId: string;
   worktreeDir: string;
   initialTargetBaseline: AcquisitionBaseline | undefined;
+  pinned?: boolean | undefined;
 }): Promise<{ targetBaseline: AcquisitionBaseline }> {
   const { projectDir, worktreeDir } = opts;
   // This record belongs to the project session, outside the worker's directory.
@@ -174,7 +175,10 @@ export async function prepareWorktreeAcquisition(opts: {
       : {
           kind: 'known' as const,
           target: opts.initialTargetBaseline,
-          worktree: await captureWorkspaceBaseline(projectDir, worktreeDir),
+          worktree:
+            opts.pinned === true
+              ? opts.initialTargetBaseline
+              : await captureWorkspaceBaseline(projectDir, worktreeDir),
         };
   let targetBaseline: AcquisitionBaseline;
   if (previous === null || previous.kind === 'unknown') {
@@ -192,7 +196,10 @@ export async function prepareWorktreeAcquisition(opts: {
       })}\n`,
     );
   } else {
-    const synchronized = await synchronizeWorktree({ projectDir, worktreeDir, baseline: previous });
+    const synchronized =
+      opts.pinned === true
+        ? previous
+        : await synchronizeWorktree({ projectDir, worktreeDir, baseline: previous });
     await writeKnownBaseline({ projectDir, baselinePath, worktreeDir, baseline: synchronized });
     targetBaseline = synchronized.target;
   }

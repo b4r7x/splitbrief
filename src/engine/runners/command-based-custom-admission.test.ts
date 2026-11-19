@@ -10,6 +10,7 @@ import {
   executableReceipt,
   invokeCustomRunner,
 } from '#testing/helpers/custom-command-based.js';
+import { nodeCliScript } from '#testing/helpers/prompt-cli-script.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -61,7 +62,7 @@ describe('custom command runner admission', () => {
           const result = await invokeCustomRunner({
             admission: await admittedCustomRunner(
               authorizationProjectDir,
-              customRunner({ argv: ['-e', 'process.stdout.write(process.cwd())'] }),
+              customRunner({ argv: ['-e', nodeCliScript('process.stdout.write(process.cwd())')] }),
             ),
             prompt: '',
             authorizationProjectDir,

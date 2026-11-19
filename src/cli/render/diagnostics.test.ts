@@ -369,7 +369,7 @@ describe('renderApp diagnostics ownership', () => {
     }
 
     expect(loggedDiagnostics(projectDir).filter((line) => line.includes('run lock'))).toEqual([
-      `Could not release the run lock: permission denied · .splitbrief/sessions/${sessionId}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds`,
+      `Could not release the run lock: permission denied · .splitbrief/sessions/${sessionId}/lockfile.json · other SPLITBRIEF processes may have to wait for this process to exit`,
     ]);
     expect(terminalWrites.filter((write) => write.includes('run lock'))).toEqual([]);
   });

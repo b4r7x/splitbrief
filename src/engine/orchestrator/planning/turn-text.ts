@@ -101,7 +101,7 @@ export async function planTurnText(opts: {
   onWarn: (message: string, details?: string) => void;
 }): Promise<PlanTurnText> {
   const { wctx, planner } = opts;
-  const { projectDir, config } = wctx;
+  const { workspaceDir: projectDir = wctx.projectDir, config } = wctx;
   const repoMap =
     config.codebase?.enabled === false
       ? ''

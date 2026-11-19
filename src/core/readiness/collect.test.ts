@@ -674,7 +674,7 @@ describe('collectReadiness repository posture from a scripted git', () => {
     ).toEqual([]);
   });
 
-  it('blocks on an active session whose heartbeat is live', async () => {
+  it('reports the default session whose heartbeat is live', async () => {
     const sessionId = '2026-04-18-live-heartbeat';
     writeSessionState(tempDir, sessionId, 'implementing');
     writeSessionLockfile(tempDir, sessionId);
@@ -689,11 +689,10 @@ describe('collectReadiness repository posture from a scripted git', () => {
     expect(repoChecks(report)).toContainEqual(
       expect.objectContaining({
         id: 'repo.active-session-live',
-        severity: 'blocker',
+        severity: 'info',
         metadata: { sessionId, live: true },
       }),
     );
-    expect(report.status).toBe('blocked');
   });
 
   it('keeps a stale active session marker informational', async () => {

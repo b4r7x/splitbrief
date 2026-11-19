@@ -4,10 +4,13 @@ import { deriveRunStatus } from '../../../core/sessions/run/status.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { applyOfferedSeatSwap } from '../../../engine/orchestrator/run/seat-swap.js';
-import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
+import { withAtRestSession } from '../../../engine/orchestrator/run/liveness.js';
+import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
+import { rebaseOnPersistedWorkflowState } from '../../../engine/orchestrator/state-ops/head.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
 import type { OrchestratorCallbacks } from '../../../engine/orchestrator/types.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
+import { routerStore } from '../../../stores/navigation/router.js';
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
@@ -83,11 +86,10 @@ async function answerHalt(loop: RunLoop, state: WorkflowState): Promise<'next-st
       deriveRunStatus({ state: closedState, liveness: 'not-alive', reviewNone: false }).kind ===
         'closed'
     ) {
-      finalizeEndedRun({
-        ref: loop.prepared.session.ref,
-        active: loop.prepared.session.active,
-        state: closedState,
-        modelCache: modelCacheStore,
+      const { ref } = loop.prepared.session;
+      await withAtRestSession(ref, async () => {
+        const state = rebaseOnPersistedWorkflowState(ref, closedState);
+        finalizeRunAtRest({ ref, state, modelCache: modelCacheStore });
       });
     }
     await settleRun(prepared.session.ref, true);
@@ -221,7 +223,22 @@ async function enterEngine(
   await loop.input.runWorkflow({
     prepared: loop.prepared,
     sinks: loop.sinks,
-    tuiSink: addTuiEvent,
+    tuiSink: (event) => {
+      addTuiEvent(event);
+      if (event.type !== 'workflow_resumed') return;
+      const route = routerStore.get();
+      if (
+        route.screen === 'workflow' &&
+        route.execution.kind === 'local' &&
+        route.execution.prepared === prepared &&
+        route.execution.observing === true
+      ) {
+        routerStore.updateRun({
+          run: route.run,
+          execution: { ...route.execution, observing: undefined },
+        });
+      }
+    },
     modelCache: modelCacheStore,
     drainPendingAttachments: () => attachmentsStore.drain(),
     streamingSink: storeStreamingSink,

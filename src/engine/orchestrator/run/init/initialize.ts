@@ -1,7 +1,10 @@
+import { getIsolationStrategy } from '../../../../core/config/accessors/values.js';
 import { resolveReviewCadence } from '../../../../core/config/runtime/resolve.js';
 import { initLogger } from '../../../../core/logger.js';
 import { projectName } from '../../../../core/project-meta.js';
+import { awaitsApply } from '../../../../core/sessions/run/status.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../../core/sessions/spec-files.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { createInitialState } from '../../../../core/state/machine.js';
 import { recordSeatIdentities } from '../../../../core/state/seats/record.js';
 import type { ProjectContext } from '../../../../core/state/types.js';
@@ -11,6 +14,9 @@ import { publishWorkflowConfig } from '../../publish/notice.js';
 import { buildSummary } from '../../summary/build.js';
 import type { WorkflowContext } from '../../types.js';
 import { createValidator } from '../../validation/run.js';
+import { readWorkspaceSeed, reserveWorkspaceSeed } from '../../isolation/seed.js';
+import { runCodeDir } from '../../kept-work.js';
+import { ensureRunWorkspace } from '../workspace.js';
 import { resumeContinuation } from './resume-repair.js';
 import type { InitializeWorkflowArgs, InitResult } from './options.js';
 import { composeWorkflowCustomRunnerRuntime } from './custom-runtime.js';
@@ -27,6 +33,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const { runtime } = opts.prepared;
   const feature = runtime.feature;
   const projectDir = opts.prepared.session.ref.projectDir;
+  const ref = { projectDir, sessionId };
 
   initLogger(projectDir);
   ensureSplitbriefDir(projectDir);
@@ -74,10 +81,37 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     reviewNone: resolveReviewCadence(config) === 'none',
   });
 
+  const seed = await readWorkspaceSeed(ref);
+  const planningWorkspace = newWorkflow || seed !== null;
+  const recorded = settled.savedState;
+  const enter = (savedState: WorkflowState | undefined) =>
+    enterRunState({
+      projectDir,
+      sessionId,
+      bus,
+      config,
+      summaryBase,
+      prepared,
+      savedState,
+      startFrom: newWorkflow ? args.savedState : undefined,
+      selectedSkills: opts.selectedSkills,
+      resumeCause: opts.resumeCause,
+      signal: opts.signal,
+      setTrackedState,
+    });
+  let entered: WorkflowState | undefined;
+  if (planningWorkspace && recorded?.workspace !== undefined && !awaitsApply(recorded)) {
+    // Report a workspace failure as part of this resume. Seat setup can call the planner, so
+    // the workspace must be verified before that setup.
+    args.setTrackedBus?.(bus);
+    entered = enter(recorded);
+    await ensureRunWorkspace(ref, { config, isolation, bus }, entered, true);
+  }
   const seats = await buildSeats({
     opts,
     config,
     projectDir,
+    workspaceDir: planningWorkspace ? runCodeDir(projectDir, recorded?.workspace) : projectDir,
     sessionId,
     bus,
     customRuntime,
@@ -100,20 +134,17 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const { planner, reviewer, reviewerSeat } = seats.plannerSeat;
   const { implementer, createPreparedImplementer } = seats.implementerSeat;
 
-  const state = enterRunState({
-    projectDir,
-    sessionId,
-    bus,
-    config,
-    summaryBase,
-    prepared,
-    savedState: seats.savedState,
-    startFrom: newWorkflow ? args.savedState : undefined,
-    selectedSkills: opts.selectedSkills,
-    resumeCause: opts.resumeCause,
-    signal: opts.signal,
-    setTrackedState,
-  });
+  // Keep the selected inputs before START, then record START before copying them.
+  // A stop during acquisition can continue with the reserved inputs.
+  if (newWorkflow && seed === null) await reserveWorkspaceSeed(ref, getIsolationStrategy(config));
+  let state = entered === undefined ? enter(seats.savedState) : (seats.savedState ?? entered);
+  args.setTrackedBus?.(bus);
+
+  if (planningWorkspace && state.workspace === undefined) {
+    state = await ensureRunWorkspace(ref, { config, isolation, bus }, state, true);
+    setTrackedState(state);
+  }
+  const workspaceDir = planningWorkspace ? runCodeDir(projectDir, state.workspace) : projectDir;
 
   publishWorkflowConfig(
     { bus: bus, phase: state.phase },
@@ -137,7 +168,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
   const context: ProjectContext = {
     name: projectName(projectDir),
-    dir: projectDir,
+    dir: workspaceDir,
     ...skills,
   };
 
@@ -146,7 +177,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const plannerContext = runtime.plannerContext ?? state.plannerContext;
   const wctx: WorkflowContext = {
     projectDir,
-    workspaceDir: projectDir,
+    workspaceDir,
     sessionId,
     config,
     isolation,

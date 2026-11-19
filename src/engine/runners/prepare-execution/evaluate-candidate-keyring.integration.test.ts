@@ -85,7 +85,7 @@ describe('evaluateCandidate on a Codex host that keeps its sign-in in the keyrin
           prepareCustomRunnerAdmission: notCalled('prepareCustomRunnerAdmission'),
           resolveCliExecutableAliases: notCalled('resolveCliExecutableAliases'),
           prepareNewSession: notCalled('prepareNewSession'),
-          reactivateExistingSession: notCalled('reactivateExistingSession'),
+          createActiveSessionReceipt: notCalled('createActiveSessionReceipt'),
           newPreparationId: () => 'preparation-1',
         },
       };

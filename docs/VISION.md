@@ -24,7 +24,7 @@ What a run spent is reported after it finishes, when the prices are known. It is
 - **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, compiled from one checked plan per run
 - **NOT a kanban board or project-management system** — no boards, tickets, or cross-team task tracking
 - **NOT a plan archive** — sessions are execution records scoped to one workflow each, not a long-lived store of past plans
-- **NOT a cross-plan dependency tracker** — SPLITBRIEF reasons about one workflow at a time, not dependencies across plans
+- **NOT a cross-plan dependency tracker** — Parallel workflows have independent plans
 
 An implementer pool, when enabled, is profile selection inside the single implementer role. It chooses the capable worker with the smallest sufficient context window for a Task Brief; it is not dynamic agent count, agent racing, or same-checkout parallel writing.
 

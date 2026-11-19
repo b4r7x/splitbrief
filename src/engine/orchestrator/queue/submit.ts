@@ -20,6 +20,7 @@ export function createQueueHandler(
   opts: QueueHandlerContext &
     Pick<WorkflowContext, 'config' | 'modelCache'> & {
       planner: Planner;
+      workspaceDir?: string | undefined;
       serialize: WriteSequencer;
       signal?: AbortSignal | undefined;
     },
@@ -85,6 +86,7 @@ export function createQueueHandler(
               message: enqueuedMessage,
               planner,
               projectDir,
+              workspaceDir: opts.workspaceDir,
               sessionId,
               getState: () => getState() ?? enqueuedState,
               setState,

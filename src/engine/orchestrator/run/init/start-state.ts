@@ -97,11 +97,13 @@ export function enterRunState(input: RunStateInput): WorkflowState {
       { projectDir, sessionId, bus, phase: state.phase },
       { ...plainUserMessage(feature), attachedInputs: [...(runtime.attachedInputs ?? [])] },
     );
-    for (const message of startReadinessWarnings(
-      createStartReadinessRecord(prepared.report, { projectDir, sessionId }),
+    const ref = { projectDir, sessionId };
+    for (const warning of startReadinessWarnings(
+      createStartReadinessRecord(prepared.report, ref),
+      config.workflow.isolation === 'none' ? ref : undefined,
     )) {
-      toldWarnings.add(message);
-      publishWarning({ bus, phase: state.phase, message });
+      toldWarnings.add(warning.message);
+      publishWarning({ bus, phase: state.phase, ...warning });
     }
   }
 

@@ -37,6 +37,7 @@ export type PlannerSessionTurn = Readonly<{
 
 export type PlannerSessionContext = Readonly<{
   projectDir: string;
+  workspaceDir?: string | undefined;
   sessionId: string;
   bus: EventBus;
   planner: Pick<Planner, 'capabilities' | 'typedCall'>;
@@ -109,7 +110,7 @@ export async function askPlannerSession<T>(
             onRepair: (reasons) =>
               publishSeatAnswerRefused({ bus: ctx.bus, phase: state.phase }, 'planner', reasons),
             call: ctx.planner.typedCall({
-              projectDir: ctx.projectDir,
+              projectDir: ctx.workspaceDir ?? ctx.projectDir,
               seat: 'planner',
               callbacks: {
                 onOutput: () => {},

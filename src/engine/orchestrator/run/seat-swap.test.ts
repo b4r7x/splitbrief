@@ -10,12 +10,13 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { writeConfig } from '../../../core/config/load/io.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { PreparationPolicy } from '../../runners/prepare-execution/types.js';
 import type { prepareExecution } from '../../runners/prepare-execution/prepare.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { PreparedExecution } from '../../runners/prepare-execution/prepared.js';
 import { applyOfferedSeatSwap, type SeatSwapChoice } from './seat-swap.js';
+import { acquireLiveness } from './liveness.js';
 
 let dirs: string[] = [];
 
@@ -102,6 +103,35 @@ describe('applyOfferedSeatSwap', () => {
     });
 
     expect(outcome).toBeUndefined();
+  });
+
+  it('leaves the config and halt alone when another driver enters during seat admission', async () => {
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-raced', true);
+    const ref = { projectDir, sessionId };
+    const configPath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+    const before = readFileSync(configPath, 'utf8');
+    const held = Promise.withResolvers<Awaited<ReturnType<typeof prepareExecution>>>();
+    const prepare = vi.fn(() => held.promise);
+    const swapping = applyOfferedSeatSwap({
+      choice: CHOICE,
+      ...ref,
+      bus: makeBusRecorder().bus,
+      config,
+      prepared: preparedFor(config),
+      savedState,
+      prepare,
+    });
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledOnce());
+    const priorState = loadState(ref);
+    const release = await acquireLiveness({ ...ref, feature: savedState.feature });
+    try {
+      held.resolve({ kind: 'prepared', execution: preparedFor(config) });
+      await expect(swapping).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
+      expect(readFileSync(configPath, 'utf8')).toBe(before);
+      expect(loadState(ref)).toEqual(priorState);
+    } finally {
+      await release();
+    }
   });
 
   it('hands back the re-prepared execution the switched seat was admitted under', async () => {

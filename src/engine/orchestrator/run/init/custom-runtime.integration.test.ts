@@ -8,6 +8,10 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  createCommandPlanner,
+  createConfiguredCustomPlanner,
+} from '../../../planners/command-invoke.js';
 import { ConfigSchema } from '../../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../../core/readiness/types.js';
 import { SANDBOX_DIR } from '../../../../core/paths.js';
@@ -422,6 +426,115 @@ describe('configured custom workflow runtime', () => {
       });
     });
   });
+  it('runs a configured shell planner with the files of its staged-copy workspace', async () => {
+    await withTempDir('staged-planner-input-', async (projectDir) => {
+      createTestGitRepo(projectDir, {
+        '.gitignore': '.splitbrief/\n',
+        'input.txt': 'checkout data',
+      });
+      const script = "process.stdout.write(require('node:fs').readFileSync('input.txt', 'utf8'))";
+      const command = {
+        label: 'Read staged input',
+        contract: 'output' as const,
+        executable: process.execPath,
+        argv: ['-e', nodeCliScript(script)],
+        outputFormat: 'text' as const,
+        idleWarnMs: 300_000,
+        idleKillMs: 1_800_000,
+        env: [],
+      };
+      const config = parsePreparedConfig({
+        ...makeConfig({
+          planner: {
+            kind: 'shell',
+            command: command.executable,
+            args: command.argv,
+            outputFormat: command.outputFormat,
+            idleWarnMs: command.idleWarnMs,
+            idleKillMs: command.idleKillMs,
+            env: command.env,
+          },
+        }),
+        customCommands: { 'read-staged-input': command },
+      });
+      const sessionId = 'shell-planner';
+      const isolation = makeCopyingIsolation(projectDir, sessionId);
+      try {
+        const workspace = await isolation.open({ config });
+        await writeFile(join(workspace.projectDir, 'input.txt'), 'workspace data');
+        const runtime = composeWorkflowCustomRunnerRuntime({
+          projectDir,
+          sessionId,
+          callbacks: makeCallbacks().callbacks,
+          interaction: 'headless',
+          allowRepoRunners: true,
+        });
+        const configured = resolveConfiguredCustomRunner(config, 'planner');
+        const gate = await configuredGate({
+          projectDir,
+          config,
+          preparationId: sessionId,
+          role: 'planner',
+          slot: { role: 'planner' },
+        });
+        if (
+          configured === null ||
+          !('command' in gate) ||
+          gate.command.kind !== 'configured-custom'
+        )
+          throw new Error('The shell planner was not admitted');
+
+        const planner = createConfiguredCustomPlanner(configured, runtime, gate.command.invocation);
+        const result = await planner
+          .typedCall({
+            projectDir: workspace.projectDir,
+            seat: 'planner',
+            callbacks: { onOutput: () => {} },
+          })
+          .invoke({ prompt: 'Read the staged file' });
+        expect(result.status).toBe('completed');
+        expect(result.text.trim()).toBe('workspace data');
+      } finally {
+        await isolation.dispose();
+      }
+    });
+  });
+
+  it('a planner in a staged copy cannot discover the original Git checkout', async () => {
+    await withTempDir('staged-planner-git-', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'input.txt': 'checkout data' });
+      const script = [
+        "const { spawnSync } = require('node:child_process');",
+        "const git = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });",
+        "process.stdout.write(git.status === 0 ? git.stdout : 'no checkout');",
+      ].join('');
+      const config = makeConfig({
+        planner: {
+          kind: 'shell',
+          command: process.execPath,
+          args: ['-e', nodeCliScript(script)],
+          outputFormat: 'text',
+        },
+      });
+      const isolation = makeCopyingIsolation(projectDir, 'shell-planner');
+      try {
+        const workspace = await isolation.open({ config });
+        const planner = createCommandPlanner(config, 'shell');
+        const result = await planner
+          .typedCall({
+            projectDir: workspace.projectDir,
+            seat: 'planner',
+            callbacks: { onOutput: () => {} },
+          })
+          .invoke({ prompt: 'Find Git checkout' });
+        expect(result.status).toBe('completed');
+        expect(result.text.trim()).toBe('no checkout');
+      } finally {
+        await isolation.dispose();
+      }
+    });
+  });
+
   it('delivers declared artifact reviews as immutable text rather than a stage path', async () => {
     await withTempDir('splitbrief-runtime-artifact-review', async (projectDir) => {
       createTestGitRepo(projectDir);

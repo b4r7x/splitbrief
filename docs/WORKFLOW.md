@@ -273,13 +273,13 @@ Older runs without `state.workspace` keep their status rules. A passed run stays
 
 The "Workspace kept at … for Continue" notice appears only when an open run returns control to you after successful retention, for example after a halt or a failed turn. The notice carries the code `workspace_kept`. After a stop you asked for, the screen shows no notice: SPLITBRIEF writes it to the debug log only ([Debug environment variables](./TROUBLESHOOTING.md#debug-environment-variables)). End run, Discard and Apply let a workspace run's workspace go through one function, which publishes the row-less `workspace_closed` event. Once a run's log holds that event, the transcript drops the kept notice. A continue (`workflow_resumed`) drops it too, so a continued run never offers its own running workspace for Continue; a later halt that keeps the workspace again shows its own notice. Recovery publishes it immediately before opening its panel, after automatic switches, replayed actions and supplied corrections have had their turn. Headless continuation of an answered partial Apply publishes no notice before execution. If the retention record cannot be verified, the row names the record it could not read and SPLITBRIEF returns control to you without a successful-retention notice. Automatic seat switches and automatic continuation after a settings boundary publish no retention notice. After a successful seat switch, the workflow refreshes its displayed crew from the admitted execution and its saved config metadata, without saving the config again; a memory-only switch stays visible when no config file exists.
 
-**Closing a checkout run.** With `workflow.isolation: none` the implementer edits your checkout itself. Readiness warns about uncommitted changes and names the `reverted/` backup folder. An attempt revert restores only paths that attempt changed and leaves your other uncommitted files untouched. The run records `workspace.kind: 'checkout'` once, so a later config change does not move it. There is no Apply step: a passing review, an Accept as is override or the end of a REVIEW None run closes the run as `closed complete`. A REVIEW None run keeps its review step, and no seat runs at that step. A stop there reads `Stopped at the review · ⏎ to continue`, or `Stopped before the review · ⏎ to continue` after a pause. Typed words get `Cannot send words to the review. Clear them.`, and a bare ⏎ closes the run. An override preserves the failed or unverified verdict; the summary of the closed run shows needs attention. End run, Discard and `CLOSE_RUN` write no `run.patch`, because nothing is unapplied. When files the run wrote are still in the checkout, the close notice reads: "This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written." A run that left no files in the checkout, for example because a halt put its brief's files back, closes without that notice.
+**Closing a checkout run.** With `workflow.isolation: none` the implementer edits your checkout itself. Readiness warns about uncommitted changes and names the `reverted/` backup folder. An attempt revert keeps and reports files whose changes it cannot attribute to the attempt. The run records `workspace.kind: 'checkout'` once, so a later config change does not move it. There is no Apply step: a passing review, an Accept as is override or the end of a REVIEW None run closes the run as `closed complete`. A REVIEW None run keeps its review step, and no seat runs at that step. A stop there reads `Stopped at the review · ⏎ to continue`, or `Stopped before the review · ⏎ to continue` after a pause. Typed words get `Cannot send words to the review. Clear them.`, and a bare ⏎ closes the run. An override preserves the failed or unverified verdict; the summary of the closed run shows needs attention. End run, Discard and `CLOSE_RUN` write no `run.patch`, because nothing is unapplied. When files the run wrote are still in the checkout, the close notice reads: "This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written." A run that left no files in the checkout, for example because a halt put its brief's files back, closes without that notice.
 
 On a checkout run, `/run accept` closes an open run as `ended`, with its current files. `/run reject confirm` compares the baseline, the latest recorded run snapshot and the current checkout. The run records a run snapshot after each brief settles and when the run comes to rest, so a run that stopped or halted before its review can also be rejected. It restores or deletes only recorded run changes that still match the run snapshot. Later user edits and files outside that recorded change stay untouched. The message names paths left as you changed them. Rejection saves replaced files with their modes under `.splitbrief/sessions/<id>/reverted/<stamp>/`.
 
 A rejection with no conflicts or missing snapshot files closes the checkout run as `discarded`. Otherwise the run stays open, and it no longer lists the files the rejection put back. A brief that passed and had a file put back is open again: the run waits before the first such brief, and continuing it builds that brief again. This is also true when the run was halted on a later brief or on the final review: that halt ends. You can also reject the run again. Only a run killed before its first brief settled has no recorded run snapshot. Rejection then reports `No run snapshot to reject.` and changes no files. Rejection refuses closed runs in every isolation mode, except undo of a completed Apply from its backup in a worktree or staged-copy run. See [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject).
 
-**`stop`** — why it is not running. It has two kinds. `waiting-for-you` means that the run cannot go on without you, `on`: `halt` (a `pendingRecovery` waits on an answer), `question` (the planner waits for a reply) or `gate` (parked at the plan card, or at an older run's spec or briefs gate). `stopped` means that the run can go on as it stands, `on`: `paused` (a park, `at: 'mid-step'` or `'boundary'`), `failed` (`lastFailure` names the error a turn died on) or `interrupted` (the process went away without recording anything). The first match wins, in this order: `halt`, `question`, `paused`, `gate`, `failed`, `interrupted`. Together with `running`, `ready-to-apply` and `closed`, a user sees five states: running, waiting for you, stopped, ready to apply and closed. A *Seat down* halt can move its seat to the seat's `fallback` at once, once per run and seat, and each switch is recorded in `seatSwitches` ([Seat down](./APPROVAL-AND-RECOVERY.md#seat-down)).
+**`stop`** — why it is not running. It has two kinds. `waiting-for-you` means that the run cannot go on without you, `on`: `halt` (a `pendingRecovery` waits on an answer), `question` (the planner waits for a reply) or `gate` (parked at the plan card, or at an older run's spec or briefs gate). `stopped` means that the run can go on as it stands, `on`: `paused` (a park, `at: 'mid-step'` or `'boundary'`), `failed` (`lastFailure` names the error a turn died on) or `interrupted` (the process went away without recording anything). The first match wins, in this order: `halt`, `question`, `paused`, `gate`, `failed`, `interrupted`. If a resume saves a failure after the time of its previous pause, the run reports the failure and keeps the paused step for the next retry. Together with `running`, `ready-to-apply` and `closed`, a user sees five states: running, waiting for you, stopped, ready to apply and closed. A *Seat down* halt can move its seat to the seat's `fallback` at once, once per run and seat, and each switch is recorded in `seatSwitches` ([Seat down](./APPROVAL-AND-RECOVERY.md#seat-down)).
 
 **`resumeAt`** — the step it picks up at, from `resumeStep(state, reviewNone)`: the gate it is parked at, the brief it was building, the review it reached, or the planner call its saved phase names (`plan` for a run in `planning`). The engine reads it to decide what runs, not how: every planner call continues as the one planning session. `resumeStep` reads the saved state and REVIEW None of the config the next pass runs on, which is the crew in the window; first match wins: an open planner conversation, a ready Apply, a parked gate, the brief, the review (Apply for a worktree or staged-copy run under REVIEW None), else the planning session.
 
@@ -303,7 +303,7 @@ Run changes in a worktree or staged-copy workspace await Apply. A seat switch ca
 
 Apply writes an assessed run result into your checkout once. A checkout-mode run (`workflow.isolation: none`) has no Apply; see [Closing a checkout run](#run-status). Use [the result menu](./FEATURES.md#run-result-menu) or [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). Without the run screen, use `splitbrief continue <id> --action apply`, or `--action apply-as-is` for a run accepted as is. An override follows [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
 
-Apply merges the current checkout into the run workspace. It uses the three states defined in [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply). The checkout receives no candidate writes during this merge.
+Apply can run while another session is working. It merges current checkout files with the result in the run workspace. It uses the three states defined in [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply). The checkout receives no candidate writes during this merge. Independent changes merge together.
 
 A conflict raises the `apply-conflict` halt. You choose the result for each file in the workspace. Resolve every conflict before checks or review. The available choices and recovery steps are in [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
 
@@ -416,7 +416,7 @@ The operator can take these actions during a live phase:
 | Reviewer | The whole deterministic review prompt is re-issued — the request (or an older run's spec), briefs, diff, drift, evidence, rebuilt from disk — with the continuation block on the end. Each verdict call uses a full, stateless prompt. It never resumes a session. |
 | Implementer | The brief restarts on its own prompt, with the partial and a line naming the declared files that already changed since the task started, so the next attempt edits what is on disk. The attempt count is unchanged. |
 
-A user park keeps partial edits in the run workspace, including a stopped retry. Continue reuses that workspace at the stopped attempt while the session, brief, build seat and directory identity match. A failed continuation-record save leaves the files in place and reports that automatic continuation is unavailable. A cold crash restores the current brief's attributed workspace changes from its task snapshot and restarts that brief. Earlier completed tasks stay in the workspace.
+A user park keeps partial edits in the run workspace, including a stopped retry. Continue reuses that workspace at the stopped attempt while the session, brief, build seat and directory identity match. A failed continuation-record save leaves the files in place and reports that automatic continuation is unavailable. A cold crash restores the current brief's attributed workspace changes from its task snapshot and restarts that brief. In checkout mode, a restart restores only recorded writes whose current entries still match. Earlier completed tasks stay in the workspace.
 
 A stopped workspace keeps its private CLI state and caches. Static credential copies use mode 0400 inside mode 0700 directories; rotating OAuth bridges remain links to host state. Re-entry creates a fresh temporary sandbox and removes that sandbox when the entry ends. The run workspace survives ordinary disposal while the run stays open. Closing follows the patch rules in [Apply](#apply).
 
@@ -455,7 +455,9 @@ Stop status follows real work: `Waiting for processes to exit` only while owned 
 
 A run is a durable record. An open run stays continuable, so there is one verb for picking one up and one path behind it: `continueRun`.
 
-`splitbrief resume` reads `.splitbrief/active` for the most recent run; `splitbrief continue <id>` names one outright. Both load `state.json` through the v4 state operations API. Missing, malformed, future-versioned and closed states cannot continue. A ready run offers Apply or Discard. A v3 state migrates to v4 on load.
+`splitbrief resume` and `splitbrief continue` accept a session ID or numeric alias. Omit it to open the default run. In a terminal, both commands can open a read-only view when another process owns the run. When that process exits, you can explicitly continue an open run. See the [CLI reference](./CLI-REFERENCE.md#splitbrief-resume).
+
+Both commands load `state.json` through the v4 state operations API. Missing, malformed, future-versioned and closed states cannot continue. A ready run offers Apply or Discard. A v3 state migrates to v4 on load.
 
 ### Where it picks up
 
@@ -509,7 +511,7 @@ If state has `pendingRecovery`, resume shows that issue before dispatching work.
 
 An unresolved recovery also makes the stop audible: when the task loop re-enters a state that still carries `pendingRecovery`, it publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` that reads `The run still waits at its halt, so the brief did not start. Choose an action in the halt panel.`, then stops without running any task. The issue is neither cleared nor re-entered. In headless `--json` mode the same state fails the command with exit code 1 for **every** status — an applying recovery does not exit 0 having done nothing.
 
-An operator park keeps partial workspace edits at the same attempt. A crash without `interruptedStep` restores the brief's attributed workspace changes and restarts at attempt 0. Re-entry clears the park before the brief runs. A halt followed by Stop in that gap can therefore leave an `in_progress` brief without `interruptedStep`. If the session log proves that brief never ran again, `RESTORE_BRIEF_PARK` restores its park instead of restarting it.
+An operator park keeps partial workspace edits at the same attempt. A crash without `interruptedStep` restarts at attempt 0 after restoring the brief's attributed changes. In checkout mode the restoration uses recorded writes whose current entries still match. Re-entry clears the park before the brief runs. A halt followed by Stop in that gap can therefore leave an `in_progress` brief without `interruptedStep`. If the session log proves that brief never ran again, `RESTORE_BRIEF_PARK` restores its park instead of restarting it.
 
 ---
 
@@ -554,7 +556,7 @@ Recovery actions:
 | `continue` | Offered only on a saved halt on a retired reason: resolves the halt, and the run goes on |
 | `accept-as-is` | Records an Accept as is override at final review, with the open findings and each red check. Not offered while an Apply input blocks. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. Without the run screen: `splitbrief continue <id> --action accept-as-is`. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
 | `restore-backup` | Restores a partial Apply through its backup. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
-| `skip-current-task` | Records evidence, restores the files the brief changed since its task-start snapshot and, when the skip ends a rewrite or a split, the files of the replaced attempts, marks task `skipped`, advances index |
+| `skip-current-task` | Records evidence, restores the brief's attributed changes and those of any replaced attempts, marks the task `skipped`, and advances the index. In checkout mode the restoration uses recorded writes whose current entries still match. |
 | `end-run` | Uses the shared close path. Refuses an unfinished Apply: restore or retry Apply first. Unapplied workspace work stays in `run.patch`; a checkout-mode run writes no patch. The run closes as `ended` or `discarded`. See [Apply](#apply). |
 
 A *Needs you* halt allows `continue`, `retry-same-worker`, `revise`, `accept-as-is`, `restore-backup`, `skip-current-task` and `end-run`; a *Seat down* halt allows `retry-same-worker`, `switch-seat`, `retry-later` (with a reset only), `skip-current-task` and `end-run`. The retired actions of older files read through `RETIRED_RECOVERY_ACTIONS`: `revise-spec` as `revise`, `route-bigger-worker` as `retry-same-worker`, and `pause-run` and `planner-split-rebase` are dropped.
@@ -569,14 +571,13 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
  1. splitbrief start "add email validator"
  2. CLI loads .splitbrief/config.yaml → configStore.
     A retired key (workflow.mode, an old approve value, task_review, ...) prints one notice.
- 3. CLI checks .splitbrief/active → error if it names a live run;
-    a pointer whose run is no longer alive is cleared.
-    Generate session ID, create .splitbrief/sessions/<id>/, write the
-    .splitbrief/active receipt { version, sessionId, generation }.
+ 3. CLI allocates a unique session ID and creates .splitbrief/sessions/<id>/.
+    The successful start updates the default run in .splitbrief/active.
  4. routerStore → screen: workflow. useRunLoop starts.
 
- 5. runWorkflow() begins. initializeWorkflow emits workflow_started.
-    Repo map built from codebase config.
+ 5. runWorkflow() claims the session. initializeWorkflow emits workflow_started.
+    New runs open their workspace and record workspace-base before planning.
+    If another live run uses checkout mode, the isolated workspace uses pinned HEAD.
 
  6. phase: idle → START → planning
     The planning session sends the typed plan prompt.
@@ -601,8 +602,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 
 10. phase: reviewing-plan (or planning, with approve: none)
       → BEGIN_IMPLEMENTATION → implementing
-    The run records one workspace and its workspace-base snapshot.
-    No command runs before the first task.
+    The build reuses the workspace and workspace-base snapshot.
+    No check command runs before the first task.
     review: end runs each brief's own checks after it, except render checks, and
     the reviewer checks at the final review over the run workspace.
     review: task also runs due checks after each task, then a task review,

@@ -260,11 +260,11 @@ Only the CLI subcommands call this. An API server, SDK bootstrap, or programmati
 **Starts in `core/`** — domain concern, not CLI-specific:
 
 ```
-src/core/sessions/guards.ts
-  clearStaleSession(projectDir)   # session-state predicate + cleanup
+src/core/sessions/lock/ownership.ts
+  tryClaimSession(ref)          # exclusive claim for one session
 ```
 
-Session lifecycle is a domain concern. Even though today only the CLI start path calls it, putting it in `cli/` would mean moving it later when (not if) another code path needs the same predicate. When the producer naturally belongs to a domain, start in that domain.
+Session ownership belongs to the session domain. The workflow driver and session cleanup use the same claim.
 
 **Decision heuristic:**
 

@@ -21,6 +21,7 @@ export type ApplyResult =
 export type ApplyRun = Pick<ApplyInput, 'wctx' | 'reviewNone' | 'setTrackedState'> & {
   workspace: NonNullable<WorkflowState['workspace']>;
   states: ApplyStates;
+  checkoutRevision: number;
 };
 
 /**

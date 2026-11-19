@@ -10,7 +10,6 @@ import { retentionError } from '../isolation/retention.js';
 import { publishError } from '../publish/notice.js';
 import { reopenSessionRecord } from '../session-lifecycle/finalize.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
-import { readWorkflowStateHead } from '../state-ops/head.js';
 import { buildSummary } from '../summary/build.js';
 import type { ResumeContextHolder, WorkflowContext } from '../types.js';
 import {
@@ -24,9 +23,18 @@ import { runTasksAndReview } from './task-execution.js';
 import { recordFailure, trackedPhase } from './tracker.js';
 import type { RunTracker, ScopedRun } from './types.js';
 
-export async function runBody(run: ScopedRun, tracker: RunTracker): Promise<void> {
+export type ClaimedRunState =
+  | { kind: 'loaded'; savedState: WorkflowState | undefined }
+  | { kind: 'unreadable'; cause: unknown };
+
+export async function runBody(
+  run: ScopedRun,
+  tracker: RunTracker,
+  entry: ClaimedRunState,
+): Promise<void> {
   try {
-    await runPhases(run, tracker);
+    if (entry.kind === 'unreadable') throw entry.cause;
+    await runPhases(run, tracker, entry.savedState);
   } catch (err) {
     await killProcessScope(run.processScope);
     if (!run.opts.signal?.aborted || retentionError.isFailed(err)) {
@@ -49,15 +57,15 @@ export async function runBody(run: ScopedRun, tracker: RunTracker): Promise<void
   }
 }
 
-async function runPhases(run: ScopedRun, tracker: RunTracker): Promise<void> {
+async function runPhases(
+  run: ScopedRun,
+  tracker: RunTracker,
+  savedState: WorkflowState | undefined,
+): Promise<void> {
   const { opts, ref, feature, summaryBase } = run;
   const trackState = (state: WorkflowState): void => {
     tracker.state = state;
   };
-  // Read progress after acquisition: the previous runner may have finished while orphan
-  // cleanup was awaiting.
-  const savedState =
-    opts.prepared.purpose === 'new-workflow' ? undefined : readWorkflowStateHead(ref)?.state;
   if (opts.prepared.purpose !== 'new-workflow') reopenSessionRecord(ref);
   tracker.state = savedState ?? createInitialState(feature);
   const started = await initializeRun(run, tracker, savedState, trackState);
@@ -119,6 +127,9 @@ async function initializeRun(
     metadata: run.metadata,
     setTrackedState: trackState,
     getTrackedState: () => tracker.state,
+    setTrackedBus: (bus) => {
+      tracker.bus = bus;
+    },
     resumeHolder,
     isolation: run.isolation,
     savedState,
@@ -164,6 +175,7 @@ async function initializeRun(
     projectDir: ref.projectDir,
     sessionId: ref.sessionId,
     sinks: wctx.sinks,
+    workspaceDir: wctx.workspaceDir,
     getTrackedState: () => tracker.state,
     setTrackedState: trackState,
     bus: wctx.bus,

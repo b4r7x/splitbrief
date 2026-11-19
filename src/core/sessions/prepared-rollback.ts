@@ -20,6 +20,8 @@ import {
 } from './ownership-marker.js';
 import { sessionDir } from '../paths.js';
 import { sessionPreparationError } from './errors.js';
+import { tryClaimSession } from './lock/ownership.js';
+import { checkSessionLockStatus } from './lock/status.js';
 
 function claimOwnedDirectoryLocked(
   session: NewSessionOwnership,
@@ -59,14 +61,27 @@ export function rollbackPreparedSessionLocked(
   const canonical = sessionDir(session.ref.projectDir, session.ref.sessionId);
   if (!pathExists(canonical)) return;
 
-  const claim = claimOwnedDirectoryLocked(session, options);
-  assertNoNewerSameSessionActive(session);
-  const initialActive: ActiveSessionReceipt = session.ownership;
-  clearActiveReceiptLocked(session.ref, initialActive);
-  if (pathExists(canonical)) {
-    throw ownershipFailure(session.ref, 'the canonical session path was recreated');
+  const release = tryClaimSession(session.ref);
+  if (release === null) throw ownershipFailure(session.ref, 'the session is in use');
+  try {
+    const status = checkSessionLockStatus({
+      sessionDir: canonical,
+      expectedSessionId: session.ref.sessionId,
+    });
+    if (status.kind === 'live' || status.kind === 'stale' || status.kind === 'invalid') {
+      throw ownershipFailure(session.ref, 'the session may still be in use');
+    }
+    const claim = claimOwnedDirectoryLocked(session, options);
+    assertNoNewerSameSessionActive(session);
+    const initialActive: ActiveSessionReceipt = session.ownership;
+    clearActiveReceiptLocked(session.ref, initialActive);
+    if (pathExists(canonical)) {
+      throw ownershipFailure(session.ref, 'the canonical session path was recreated');
+    }
+    rmSync(join(session.ref.projectDir, claim), { recursive: true });
+  } finally {
+    release();
   }
-  rmSync(join(session.ref.projectDir, claim), { recursive: true });
 }
 
 export function rollbackPreparedSession(

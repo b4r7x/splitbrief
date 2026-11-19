@@ -13,6 +13,7 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 import { readForegroundAtText } from '../helpers/terminal-cells.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
@@ -123,8 +124,10 @@ process.exit(1);`,
                 .getLine(terminal.buffer.active.viewportY + row)
                 ?.translateToString(true) ?? '',
           ).join('\n');
-        const dataListener = child.onData((data) => terminal.write(data));
+        const frames = wholeFrames((data) => terminal.write(data));
+        const dataListener = child.onData(frames.feed);
         const exitListener = child.onExit((event) => {
+          frames.flush();
           didExit = true;
           exited.resolve(event);
         });
@@ -160,14 +163,24 @@ process.exit(1);`,
   });
 }
 
+async function selectBuildFallback(screen: Screen): Promise<void> {
+  screen.write('/crew');
+  await screen.shows('▌ /crew  Who fills each seat');
+  screen.write('\r');
+  await screen.shows(/▌ PLAN\b/);
+  // Discovery can update a model name while the cursor stays on the same seat.
+  const selectedSeat = () =>
+    screen
+      .text()
+      .match(/▌ (?:PLAN|BUILD|REVIEW)\b *(?:none\b)?/)?.[0]
+      .trimEnd() ?? '';
+  await moveCursorTo(selectedSeat, screen.write, '\x1b[B', /▌ BUILD +none/);
+}
+
 describe('e2e: the BUILD fallback picker refuses its own seat', { timeout: 120_000 }, () => {
   it('shows the neutral refusal in the byline and saves nothing', async (context) => {
     const skipped = await withCodexHome(WIDE, async (screen, configPath) => {
-      screen.write('/crew');
-      await screen.shows('▌ /crew  Who fills each seat');
-      screen.write('\r');
-      await screen.shows('Settings');
-      await moveCursorTo(screen.text, screen.write, '\x1b[B', /▌ BUILD.*none/);
+      await selectBuildFallback(screen);
       const configBefore = readFileSync(configPath, 'utf8');
 
       screen.write('\r');
@@ -197,11 +210,7 @@ describe('e2e: the BUILD fallback picker refuses its own seat', { timeout: 120_0
 
   it('shows the neutral refusal in a terminal of 50 columns and saves nothing', async (context) => {
     const skipped = await withCodexHome(NARROW, async (screen, configPath) => {
-      screen.write('/crew');
-      await screen.shows('▌ /crew  Who fills each seat');
-      screen.write('\r');
-      await screen.shows('Settings');
-      await moveCursorTo(screen.text, screen.write, '\x1b[B', /▌ BUILD.*none/);
+      await selectBuildFallback(screen);
       const configBefore = readFileSync(configPath, 'utf8');
 
       screen.write('\r');

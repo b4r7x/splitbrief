@@ -10,6 +10,8 @@ import { seatRunnerValue } from '../../../engine/orchestrator/recovery/seat/swit
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions/apply.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { endRunError } from '../../../engine/orchestrator/run/close.js';
+import { withAtRestSession } from '../../../engine/orchestrator/run/liveness.js';
+import { readRecoveryActionState } from '../../../engine/orchestrator/recovery/actions/shared.js';
 import { endRunAtRest } from '../../../engine/orchestrator/run/end.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
@@ -34,16 +36,16 @@ type RecoveryActionInput = {
  * transition the TUI panel applies, taken from the resume line an earlier halt
  * printed. A blocked action is the operator's error, not the run's.
  */
-export async function applyPendingRecoveryAction(
+async function applyClaimedRecoveryAction(
   args: RecoveryActionInput,
 ): Promise<{ state: WorkflowState; config: Config; seatSwitch?: SwitchedSeat }> {
   const projectDir = args.opts.projectDir;
   if (args.action.action === 'switch-seat') await loadRememberedCatalog(projectDir);
   const { config } = resolveRunConfig({ projectDir, opts: args.opts });
+  const ref = { projectDir, sessionId: args.sessionId };
   const result = await applyRecoveryAction({
-    projectDir,
-    sessionId: args.sessionId,
-    state: args.state,
+    ...ref,
+    state: readRecoveryActionState(ref, args.state),
     action: args.action.action,
     bus: createRecoveryBus({
       projectDir,
@@ -69,6 +71,13 @@ export async function applyPendingRecoveryAction(
         },
       }),
   };
+}
+
+export function applyPendingRecoveryAction(
+  args: RecoveryActionInput,
+): ReturnType<typeof applyClaimedRecoveryAction> {
+  const ref = { projectDir: args.opts.projectDir, sessionId: args.sessionId };
+  return withAtRestSession(ref, () => applyClaimedRecoveryAction(args));
 }
 
 export async function endRunAction(args: Omit<RecoveryActionInput, 'action'>): Promise<Resumed> {
@@ -98,23 +107,26 @@ export async function acceptAsIsAction(args: RecoveryActionInput): Promise<Resum
     assertResumeTerminal(args.opts);
     await ensureHeadlessHooksTrusted(args.opts.projectDir, args.opts);
   }
-  const resumed = await applyPendingRecoveryAction(args);
-  const accepted = resumed.state.acceptedAsIs;
-  if (
-    accepted !== undefined &&
-    deriveRunStatus({ state: resumed.state, liveness: 'not-alive', reviewNone: false }).kind !==
-      'open'
-  ) {
-    // The accept settled the run, so it gets the record every other ending gets.
-    finalizeRunAtRest({
-      ref: { projectDir: args.opts.projectDir, sessionId: args.sessionId },
-      state: resumed.state,
-    });
-    process.stderr.write(`${acceptedSentence(accepted)}\n`);
-    const writeRecord = recordWriterFor(args.opts.json !== true);
-    if (emitReadyToApply(resumed.state, args.sessionId, writeRecord)) return undefined;
-  }
-  return resumed;
+  const ref = { projectDir: args.opts.projectDir, sessionId: args.sessionId };
+  return withAtRestSession(ref, async () => {
+    const resumed = await applyClaimedRecoveryAction(args);
+    const accepted = resumed.state.acceptedAsIs;
+    if (
+      accepted !== undefined &&
+      deriveRunStatus({ state: resumed.state, liveness: 'not-alive', reviewNone: false }).kind !==
+        'open'
+    ) {
+      // The accept settled the run, so it gets the record every other ending gets.
+      finalizeRunAtRest({
+        ref: { projectDir: args.opts.projectDir, sessionId: args.sessionId },
+        state: resumed.state,
+      });
+      process.stderr.write(`${acceptedSentence(accepted)}\n`);
+      const writeRecord = recordWriterFor(args.opts.json !== true);
+      if (emitReadyToApply(resumed.state, args.sessionId, writeRecord)) return undefined;
+    }
+    return resumed;
+  });
 }
 
 export async function restoreBackupAction(args: RecoveryActionInput): Promise<Resumed | undefined> {

@@ -1,6 +1,8 @@
+import { isDeepStrictEqual } from 'node:util';
 import { acquireLiveness } from '../run/liveness.js';
 import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { trackActiveApply } from '../session-lifecycle/shutdown.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { runApply } from './run.js';
 
 type AtRestApplyInput = Omit<Parameters<typeof runApply>[0], 'setTrackedState'>;
@@ -14,11 +16,17 @@ async function applyHoldingLiveness(
     feature: input.state.feature,
   });
   try {
-    const result = await runApply(input);
+    const state = rebaseOnPersistedWorkflowState(input.wctx, input.state);
+    const result = await runApply({
+      ...input,
+      state,
+      overrideConfirmed:
+        input.overrideConfirmed === true &&
+        isDeepStrictEqual(input.state.acceptedAsIs, state.acceptedAsIs),
+    });
     if (
       result.outcome === 'applied' ||
-      ((result.outcome === 'halted' || result.outcome === 'restored') &&
-        result.state !== input.state)
+      ((result.outcome === 'halted' || result.outcome === 'restored') && result.state !== state)
     ) {
       finalizeRunAtRest({ ref: input.wctx, state: result.state });
     }

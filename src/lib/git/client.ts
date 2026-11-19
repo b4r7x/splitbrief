@@ -1,6 +1,7 @@
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
+import { gitDiscoveryCeiling } from './discovery.js';
 import { resolveBareCommandOnPath } from '../process/command-path.js';
 
 // simple-git rejects a binary outside its custom-binary rule; keep the bare name then.
@@ -52,16 +53,32 @@ const REMOTE_ACCESS_ENVIRONMENT = [
   'GIT_LFS_SKIP_DOWNLOAD_ERRORS',
 ];
 
-const getGit = (dir: string): SimpleGit => {
+type PrivateCheckout = { indexFile: string; worktreeDir: string };
+
+const getGit = (dir: string, checkout?: PrivateCheckout): SimpleGit => {
   const resolved = gitBinary();
   const binary = SIMPLE_GIT_BINARY_PATTERN.test(resolved) ? resolved : 'git';
-  return simpleGit(dir, { binary, allowEnvironment: REMOTE_ACCESS_ENVIRONMENT });
+  const ceiling = gitDiscoveryCeiling(dir);
+  const git = simpleGit(dir, {
+    binary,
+    allowEnvironment: [
+      ...REMOTE_ACCESS_ENVIRONMENT,
+      ...(checkout === undefined ? [] : ['GIT_INDEX_FILE', 'GIT_WORK_TREE']),
+      ...(ceiling === undefined ? [] : ['GIT_CEILING_DIRECTORIES']),
+    ],
+  });
+  if (checkout !== undefined) {
+    git.env('GIT_INDEX_FILE', checkout.indexFile);
+    git.env('GIT_WORK_TREE', checkout.worktreeDir);
+  }
+  if (ceiling !== undefined) git.env('GIT_CEILING_DIRECTORIES', ceiling);
+  return git;
 };
 
 export type GitClient = SimpleGit;
 
-export function createGitClient(dir: string): GitClient {
-  return getGit(dir);
+export function createGitClient(dir: string, checkout?: PrivateCheckout): GitClient {
+  return getGit(dir, checkout);
 }
 
 export function getGitForDir(dir: string): SimpleGit {

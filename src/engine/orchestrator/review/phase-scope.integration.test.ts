@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -41,6 +42,8 @@ import { loadOrCreateLedger } from '../evidence/ledger.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { resolveRunReviewScope } from '../evidence/review-packet/run-scope.js';
 import { createSnapshot } from '../../snapshots/create.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
+import { withAttemptRestoreScope } from '../task/restore-scope.js';
 import { runFinalReviewPhase } from './phase.js';
 
 const cleanups: Array<() => void> = [];
@@ -261,10 +264,15 @@ describe('final review task completion provenance', () => {
       status: 'failed',
       criteria: [],
     });
-    const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
-    writeFileSync(join(p.projectDir, created), 'export const created = true;\n');
+    const taskStartSnapshot = await captureWorkspaceSnapshot(p.projectDir, p.ref);
+    await withAttemptRestoreScope({
+      ref: p.ref,
+      dir: p.projectDir,
+      taskStartSnapshot,
+      run: () => writeFile(join(p.projectDir, created), 'export const created = true;\n'),
+    });
     // The retry before the consult starts after the file landed and changes nothing.
-    const attempt = await getChangedFilesSnapshot(p.projectDir);
+    const attempt = await captureWorkspaceSnapshot(p.projectDir, p.ref);
     const state = {
       ...makeImplState([task], {
         plan: {

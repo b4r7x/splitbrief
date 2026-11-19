@@ -2,7 +2,7 @@ import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
 import type { AcceptRunResult, RejectRunResult } from '../../../core/runtime/commands/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { RunRecord } from '../../../core/sessions/run/record.js';
+import { isRunHeld, type RunRecord } from '../../../core/sessions/run/record.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { canUndoApply, type RunStatus } from '../../../core/sessions/run/status.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
@@ -10,6 +10,7 @@ import { runApplyAtRest } from '../../../engine/orchestrator/apply/at-rest.js';
 import { undoApply } from '../../../engine/orchestrator/apply/restore.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { closeRunIfOpen, rejectCheckoutRun } from '../../../engine/orchestrator/run/close.js';
+import { withAtRestSession } from '../../../engine/orchestrator/run/liveness.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { acceptRunSnapshot } from '../../../engine/snapshots/run/lifecycle.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -23,6 +24,9 @@ function runCommandState(
   | { kind: 'snapshot' }
   | { kind: 'workspace'; state: WorkflowState }
   | { kind: 'unavailable'; message: string } {
+  if (isRunHeld(record) && record.owner?.pid !== process.pid) {
+    return { kind: 'unavailable', message: 'This run is open in another terminal.' };
+  }
   const { hydration } = record;
   if (hydration.kind === 'invalid') {
     return { kind: 'unavailable', message: `Cannot read this run: ${hydration.message}` };
@@ -52,11 +56,18 @@ export async function acceptRun(
   confirm: boolean,
   readConfig: () => Config,
 ): Promise<AcceptRunResult> {
-  const record = readRunRecord({ projectDir, sessionId }, configStore.reviewNone());
+  const ref = { projectDir, sessionId };
+  const record = readRunRecord(ref, configStore.reviewNone());
   const run = runCommandState(record);
   if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
   if (run.kind === 'snapshot') {
-    return { status: 'snapshot-accepted', ...(await acceptRunSnapshot(projectDir, sessionId)) };
+    return withAtRestSession(ref, async () => {
+      const latest = runCommandState(readRunRecord(ref, configStore.reviewNone()));
+      if (latest.kind !== 'snapshot') {
+        return { status: 'unavailable', message: 'This run changed. Open it again to accept it.' };
+      }
+      return { status: 'snapshot-accepted', ...(await acceptRunSnapshot(projectDir, sessionId)) };
+    });
   }
   const { state } = run;
   if (record.status.kind === 'closed') {
@@ -76,12 +87,22 @@ export async function acceptRun(
   }
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
   if (state.workspace?.kind === 'checkout') {
-    const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state);
-    if (closure.closedNow) {
-      finalizeRunAtRest({ ref: record.ref, state: closure.state });
-      sessionsStore.refresh();
-    }
-    return { status: 'ended' };
+    return withAtRestSession(ref, async () => {
+      const latest = readRunRecord(ref, configStore.reviewNone());
+      if (latest.status.kind === 'closed') {
+        return { status: 'unavailable', message: closedRunMessage(latest.status.as) };
+      }
+      const current = runCommandState(latest);
+      if (current.kind !== 'workspace' || current.state.workspace?.kind !== 'checkout') {
+        return { status: 'unavailable', message: 'This run changed. Open it again to accept it.' };
+      }
+      const closure = await closeRunIfOpen({ ...ref, bus }, current.state);
+      if (closure.closedNow) {
+        finalizeRunAtRest({ ref, state: closure.state });
+        sessionsStore.refresh();
+      }
+      return { status: 'ended' };
+    });
   }
   const reviewNone = resolveReviewCadence(readConfig()) === 'none';
   const result = await runApplyAtRest({
@@ -101,7 +122,8 @@ export async function acceptRun(
 }
 
 export async function rejectRun(projectDir: string, sessionId: string): Promise<RejectRunResult> {
-  const record = readRunRecord({ projectDir, sessionId }, configStore.reviewNone());
+  const ref = { projectDir, sessionId };
+  const record = readRunRecord(ref, configStore.reviewNone());
   const run = runCommandState(record);
   if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
   if (record.status.kind === 'closed' && !(run.kind === 'workspace' && canUndoApply(run.state))) {
@@ -113,27 +135,33 @@ export async function rejectRun(projectDir: string, sessionId: string): Promise<
       message: 'Run rejection is unavailable while the run is active.',
     };
   }
-  if (run.kind === 'snapshot') {
-    const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
-    return (await rejectCheckoutRun({ projectDir, sessionId, bus }, null)).result;
+  if (record.status.kind === 'closed' && run.kind === 'workspace') {
+    return { status: 'undone', ...(await undoApply(ref, run.state)) };
   }
-  const { state } = run;
-  if (record.status.kind === 'closed') {
-    return { status: 'undone', ...(await undoApply(record.ref, state)) };
-  }
-  const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
-  if (state.workspace?.kind === 'checkout') {
-    const { result, closure } = await rejectCheckoutRun({ projectDir, sessionId, bus }, state);
-    if (closure?.closedNow === true) {
-      finalizeRunAtRest({ ref: record.ref, state: closure.state });
+  return withAtRestSession(ref, async () => {
+    const latest = readRunRecord(ref, configStore.reviewNone());
+    if (latest.status.kind === 'closed') {
+      return { status: 'unavailable', message: closedRunMessage(latest.status.as) };
+    }
+    const current = runCommandState(latest);
+    if (current.kind === 'unavailable') return { status: 'unavailable', message: current.message };
+    const bus = createRecoveryBus({ ...ref, sink: addTuiEvent });
+    const scope = { ...ref, bus };
+    if (current.kind === 'snapshot') return (await rejectCheckoutRun(scope, null)).result;
+    const { state } = current;
+    if (state.workspace?.kind === 'checkout') {
+      const { result, closure } = await rejectCheckoutRun(scope, state);
+      if (closure?.closedNow === true) {
+        finalizeRunAtRest({ ref, state: closure.state });
+        sessionsStore.refresh();
+      }
+      return result;
+    }
+    const closure = await closeRunIfOpen(scope, state, 'discarded');
+    if (closure.closedNow) {
+      finalizeRunAtRest({ ref, state: closure.state });
       sessionsStore.refresh();
     }
-    return result;
-  }
-  const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
-  if (closure.closedNow) {
-    finalizeRunAtRest({ ref: record.ref, state: closure.state });
-    sessionsStore.refresh();
-  }
-  return { status: 'discarded' };
+    return { status: 'discarded' };
+  });
 }

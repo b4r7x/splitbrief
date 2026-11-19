@@ -9,7 +9,13 @@ import type { Summary } from '../../schemas/summary.js';
 import { loadOwnerWorkflowState } from '../../state/resume-hydration.js';
 import type { SessionRef } from '../../types/session-ref.js';
 import { checkSessionLiveness } from '../lock/file.js';
-import { loadRunRecord, type RunCheckpoint, type RunRecord, type RunRecordDeps } from './record.js';
+import {
+  loadRunRecord,
+  type RunCheckpoint,
+  type RunOwner,
+  type RunRecord,
+  type RunRecordDeps,
+} from './record.js';
 import { parsePersistedSession } from '../summary-parser.js';
 
 const isLedgerUnreadable = matches('recovery-evidence-storage');
@@ -41,11 +47,22 @@ function readLedger(ref: SessionRef): EvidenceLedger | null {
   }
 }
 
-export function defaultRunRecordDeps(): RunRecordDeps {
+export function readRunOwner(
+  ref: SessionRef,
+  checkLiveness = checkSessionLiveness,
+): RunOwner | undefined {
+  const status = checkLiveness(sessionDir(ref.projectDir, ref.sessionId));
+  if (status.alive) return { kind: 'live', pid: status.data.pid };
+  if (status.processAlive === true && status.data !== null) {
+    return { kind: 'stale', pid: status.data.pid };
+  }
+  return undefined;
+}
+
+export function defaultRunRecordDeps(checkLiveness = checkSessionLiveness): RunRecordDeps {
   return {
     loadResumeState: loadOwnerWorkflowState,
-    liveness: (ref) =>
-      checkSessionLiveness(sessionDir(ref.projectDir, ref.sessionId)).alive ? 'alive' : 'not-alive',
+    readOwner: (ref) => readRunOwner(ref, checkLiveness),
     readSummary: readSessionSummary,
     readLedger,
     readCheckpoint: readRunCheckpoint,
@@ -53,6 +70,10 @@ export function defaultRunRecordDeps(): RunRecordDeps {
 }
 
 /** One run, read from disk through the real readers. The composition root for `loadRunRecord`. */
-export function readRunRecord(ref: SessionRef, reviewNone: boolean): RunRecord {
-  return loadRunRecord(ref, defaultRunRecordDeps(), reviewNone);
+export function readRunRecord(
+  ref: SessionRef,
+  reviewNone: boolean,
+  checkLiveness = checkSessionLiveness,
+): RunRecord {
+  return loadRunRecord(ref, defaultRunRecordDeps(checkLiveness), reviewNone);
 }

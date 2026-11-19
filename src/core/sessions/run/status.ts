@@ -230,7 +230,11 @@ export function deriveRunStatus(
   // The stop records where it landed. States written before it did fall back to
   // the captured partial: only a call cut in flight leaves one.
   if (state.interruptedStep !== undefined) {
-    const { cut, partialRef } = state.interruptedStep;
+    const { at, cut, partialRef } = state.interruptedStep;
+    // A failed resume keeps the earlier park so the next attempt can recover its context.
+    if (state.lastFailure !== undefined && Date.parse(state.lastFailure.at) > Date.parse(at)) {
+      return stopped({ kind: 'failed' });
+    }
     return stopped({
       kind: 'paused',
       at: cut ?? (partialRef === undefined ? 'boundary' : 'mid-step'),

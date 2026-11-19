@@ -20,6 +20,7 @@ export const SnapshotManifestSchema = z.object({
   createdAt: z.string(),
   phase: SnapshotPhaseSchema,
   taskIndex: z.number().int().nonnegative().optional(),
+  checkoutRevision: z.number().int().nonnegative().optional(),
   fileHashes: z.record(z.string(), z.string()),
   fileEntries: z.array(SnapshotFileEntrySchema),
   symlinks: z.array(z.object({ path: z.string(), target: z.string() })).optional(),

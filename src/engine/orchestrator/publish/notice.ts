@@ -4,7 +4,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { AnsweredQuestion, ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import { labelError } from '../../../utils/format/errors.js';
-import type { EventBus } from '../../events/types.js';
+import type { EngineEventOf, EventBus } from '../../events/types.js';
 
 export type BusContext = {
   bus: EventBus;
@@ -71,10 +71,13 @@ export function publishInfo(
   });
 }
 
-export function publishWarning(options: PublishOperationalMessageOptions): void {
+export function publishWarning(
+  options: PublishOperationalMessageOptions & Pick<EngineEventOf<'warning'>, 'checkout'>,
+): void {
   const { bus, phase, message, taskId, safety, briefKept } = options;
   bus.publish({
     type: 'warning',
+    ...(options.checkout !== undefined && { checkout: options.checkout }),
     ts: Date.now(),
     phase,
     message,

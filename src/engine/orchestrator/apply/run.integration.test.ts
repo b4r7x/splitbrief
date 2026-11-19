@@ -12,10 +12,10 @@ import {
 import { open } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
+import { type ApplyRun, openApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import {
   makeBusRecorder,
   makeWctx,
@@ -43,8 +43,9 @@ import * as stagedProject from '../approval/staged-project/promote.js';
 import * as backup from './backup.js';
 import { applyBackupDir, readApplyBackup, writeApplyBackup } from './backup.js';
 import * as merge from './merge.js';
-import { restoreApplyBackup } from './restore.js';
+import { restoreApplyBackup, undoApply } from './restore.js';
 import { runApply } from './run.js';
+import { runApplyAtRest } from './at-rest.js';
 import { bindApplyHandOffs } from './hand-off.js';
 import { acquireLiveness } from '../run/liveness.js';
 import { runTasksAndReview } from '../run/task-execution.js';
@@ -114,6 +115,22 @@ async function apply(run: ApplyRun, state: WorkflowState = readyState(run)) {
     wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
     state,
     reviewNone: false,
+  });
+}
+
+function applyAtRest(run: ApplyRun) {
+  const ref = { projectDir: run.dir, sessionId: run.sessionId };
+  const state = makeWorkflowState({
+    ...RUN_CREW,
+    phase: 'complete',
+    reviewStatus: 'passed',
+    workspace: run.workspace,
+  });
+  saveState(ref, state);
+  return runApplyAtRest({
+    wctx: { ...ref, bus: makeBusRecorder().bus },
+    state,
+    reviewNone: true,
   });
 }
 
@@ -191,6 +208,160 @@ beforeEach(async () => {
 });
 
 describe('runApply', { timeout: 60_000 }, () => {
+  it('applies disjoint files when a second run writes during the first merge', async () => {
+    await withApplyRun({ 'a.txt': FIVE, 'b.txt': FIVE }, { sessionId: SESSION_ID }, async (a) => {
+      const b = await openApplyRun(a.dir, { sessionId: 'parallel-apply-b' });
+      writeFileSync(join(a.ws, 'a.txt'), 'change from A\n');
+      writeFileSync(join(b.ws, 'b.txt'), 'change from B\n');
+      const captured = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const actualMerge = await vi.importActual<typeof import('./merge.js')>('./merge.js');
+      vi.mocked(merge.mergeApplyStates).mockImplementationOnce(async (...args) => {
+        captured.resolve();
+        await resume.promise;
+        return actualMerge.mergeApplyStates(...args);
+      });
+
+      const merging = applyAtRest(a);
+      try {
+        await captured.promise;
+        expect((await applyAtRest(b)).outcome).toBe('applied');
+      } finally {
+        resume.resolve();
+        await merging;
+      }
+
+      expect((await merging).outcome).toBe('applied');
+      expect(read(a.dir, 'a.txt')).toBe('change from A\n');
+      expect(read(a.dir, 'b.txt')).toBe('change from B\n');
+    });
+  });
+
+  it('re-merges after another Apply writes the same hunk while its backup is prepared', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (a) => {
+      const b = await openApplyRun(a.dir, { sessionId: 'parallel-apply-b' });
+      const changeA = lines('ONE from A', 'two', 'three', 'four', 'five');
+      writeFileSync(join(a.ws, 'a.txt'), changeA);
+      writeFileSync(join(b.ws, 'a.txt'), lines('ONE from B', 'two', 'three', 'four', 'five'));
+      const prepared = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
+      vi.mocked(backup.writeApplyBackup).mockImplementationOnce(async (input) => {
+        const backup = await actualBackup.writeApplyBackup(input);
+        prepared.resolve();
+        await resume.promise;
+        return backup;
+      });
+
+      const applying = applyAtRest(b);
+      try {
+        await prepared.promise;
+        expect((await applyAtRest(a)).outcome).toBe('applied');
+      } finally {
+        resume.resolve();
+        await applying;
+      }
+
+      const result = await applying;
+      expect(result.outcome).toBe('halted');
+      expect(result.state.applying).toBeUndefined();
+      expect(result.state.pendingRecovery).toMatchObject({
+        reason: 'apply-conflict',
+        details: expect.arrayContaining(['a.txt · both sides changed the same lines']),
+      });
+      expect(read(a.dir, 'a.txt')).toBe(changeA);
+    });
+  });
+
+  it('writes its result when a sibling undoes an identical candidate after the merge', async () => {
+    await withApplyRun({ 'base.txt': 'base\n' }, { sessionId: SESSION_ID }, async (a) => {
+      const b = await openApplyRun(a.dir, { sessionId: 'parallel-apply-b' });
+      const contents = 'identical result\n';
+      writeFileSync(join(a.ws, 'new.txt'), contents);
+      writeFileSync(join(b.ws, 'new.txt'), contents);
+      const appliedB = await applyAtRest(b);
+      expect(appliedB.outcome).toBe('applied');
+
+      const prepared = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
+      vi.mocked(backup.writeApplyBackup).mockImplementationOnce(async (input) => {
+        const result = await actualBackup.writeApplyBackup(input);
+        prepared.resolve();
+        await resume.promise;
+        return result;
+      });
+
+      const applying = applyAtRest(a);
+      try {
+        await prepared.promise;
+        const undone = await undoApply(
+          { projectDir: b.dir, sessionId: b.sessionId },
+          appliedB.state,
+        );
+        expect(undone.removed).toEqual(['new.txt']);
+      } finally {
+        resume.resolve();
+        await applying;
+      }
+
+      expect(await applying).toMatchObject({ outcome: 'applied', files: ['new.txt'] });
+      expect(read(a.dir, 'new.txt')).toBe(contents);
+    });
+  });
+
+  it('restores a partial Apply without undoing a sibling that wrote its remaining candidate', async () => {
+    await withApplyRun(
+      { 'a.txt': 'base a\n', 'b.txt': 'base b\n' },
+      { sessionId: SESSION_ID },
+      async (a) => {
+        const b = await openApplyRun(a.dir, { sessionId: 'parallel-apply-b' });
+        const shared = 'identical result\n';
+        writeFileSync(join(a.ws, 'a.txt'), 'change from A\n');
+        writeFileSync(join(a.ws, 'b.txt'), shared);
+        writeFileSync(join(b.ws, 'b.txt'), shared);
+        const actualEntry = await vi.importActual<
+          typeof import('../approval/file-snapshots/entry/write.js')
+        >('../approval/file-snapshots/entry/write.js');
+        const writer = vi.mocked(entry.writeConfinedEntryOrLink);
+        writer.mockImplementation(async (root, path, ...args) => {
+          if (root === a.dir && path === 'b.txt') throw new Error('disk full');
+          return actualEntry.writeConfinedEntryOrLink(root, path, ...args);
+        });
+        expect(await applyAtRest(a)).toMatchObject({
+          outcome: 'halted',
+          state: { pendingRecovery: { reason: 'apply-partial' } },
+        });
+        writer.mockImplementation(actualEntry.writeConfinedEntryOrLink);
+        expect(await applyAtRest(b)).toMatchObject({ outcome: 'applied', files: ['b.txt'] });
+
+        const result = await apply(a, await choose(a, 'restore-backup'));
+
+        expect(result).toMatchObject({ outcome: 'restored', files: ['a.txt'] });
+        expect(read(a.dir, 'a.txt')).toBe('base a\n');
+        expect(read(a.dir, 'b.txt')).toBe(shared);
+      },
+    );
+  });
+
+  it('leaves identical bytes in place when a sibling wrote them after the Apply being undone', async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (a) => {
+      const b = await openApplyRun(a.dir, { sessionId: 'parallel-apply-b' });
+      const contents = 'identical result\n';
+      writeFileSync(join(a.ws, 'a.txt'), contents);
+      writeFileSync(join(b.ws, 'a.txt'), contents);
+      const appliedA = await applyAtRest(a);
+      expect(appliedA.outcome).toBe('applied');
+      writeFileSync(join(a.dir, 'a.txt'), 'base\n');
+      expect(await applyAtRest(b)).toMatchObject({ outcome: 'applied', files: ['a.txt'] });
+
+      const undone = await undoApply({ projectDir: a.dir, sessionId: a.sessionId }, appliedA.state);
+
+      expect(undone).toMatchObject({ restored: [], conflicts: ['a.txt'] });
+      expect(read(a.dir, 'a.txt')).toBe(contents);
+    });
+  });
+
   it.each(['worktree', 'staged-copy'] as const)(
     '%s: applies the merged candidate through one promote call and closes the run applied',
     async (strategy) => {

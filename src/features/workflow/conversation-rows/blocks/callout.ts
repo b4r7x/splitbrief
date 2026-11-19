@@ -1,3 +1,6 @@
+import type { CheckoutStartNotice } from '../../../../core/schemas/readiness.js';
+import { foldRow } from '../fold-row.js';
+import { compositeBlock, rowsBlock } from './compose.js';
 import { prepareCardRows } from '../row-format/card-block.js';
 import type { ConversationRowBlock, ConversationRowTone } from '../types.js';
 
@@ -43,4 +46,27 @@ export function calloutRowsBlock(input: {
     createRows: (windowStart, windowEnd) =>
       card.createRows(windowStart, windowEnd).map((row) => ({ ...row, markerTone: tone })),
   };
+}
+
+export function checkoutFoldKey(index: number): string {
+  return `checkout:${index}`;
+}
+
+export function checkoutWarningBlock(
+  checkout: CheckoutStartNotice,
+  index: number,
+  width: number,
+  expanded: boolean,
+): ConversationRowBlock | null {
+  const key = checkoutFoldKey(index);
+  const fold = foldRow({ foldKey: key, expanded, hidden: ['Files and backup'], width });
+  const notice = calloutRowsBlock({
+    keyPrefix: key,
+    label: 'This run edits your checkout',
+    value: expanded ? [checkout.summary, ...checkout.details].join('\n') : checkout.summary,
+    severity: 'warning',
+    width,
+  });
+  const block = compositeBlock(key, [notice, rowsBlock(fold.key, [fold])]);
+  return block === null ? null : { ...block, foldRowKey: fold.key };
 }

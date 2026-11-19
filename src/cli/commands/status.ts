@@ -4,8 +4,6 @@ import { plainTheme } from '../../core/theme/resolve.js';
 import type { Theme } from '../../core/theme/palette.js';
 import { paint } from '../../core/theme/paint.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
-import type { SessionRef } from '../../core/types/session-ref.js';
-import { loadState } from '../../core/state/persistence.js';
 import { readSeatIdentityRecord } from '../../core/state/seats/record.js';
 import {
   getCompletedTaskIds,
@@ -13,13 +11,10 @@ import {
   getFailedTaskIds,
 } from '../../core/state/selectors.js';
 import { canonicalizeProjectDir } from '../setup.js';
-import { readActive } from '../../core/sessions/active-pointer.js';
+import { resolveTargetRun } from '../sessions/resolve.js';
 import { sessionStatusWord } from '../../core/sessions/display.js';
 import { rowFor } from '../../core/sessions/io.js';
-import { checkSessionLiveness } from '../../core/sessions/lock/file.js';
-import { readSessionSummary } from '../../core/sessions/run/record-io.js';
-import { deriveRunStatus } from '../../core/sessions/run/status.js';
-import { sessionDir } from '../../core/paths.js';
+import type { RunRecord } from '../../core/sessions/run/record.js';
 import {
   CREW_SEAT_IDS,
   CREW_SEAT_LABELS,
@@ -111,17 +106,11 @@ function seatIdentity(
   );
 }
 
-function printRunLines(state: WorkflowState, ref: SessionRef, theme: Theme): void {
+function printRunLines(state: WorkflowState, run: RunRecord, theme: Theme): void {
+  const { ref, status, summary, owner } = run;
   console.log(
     `${paint(theme.textDim, 'Feature:'.padEnd(STATUS_LABEL_WIDTH))}${chalk.bold(oneLineDisplayText(state.feature))}`,
   );
-  const status = deriveRunStatus({
-    state,
-    liveness: checkSessionLiveness(sessionDir(ref.projectDir, ref.sessionId)).alive
-      ? 'alive'
-      : 'not-alive',
-    reviewNone: false,
-  });
   const session = rowFor(
     {
       id: ref.sessionId,
@@ -131,10 +120,14 @@ function printRunLines(state: WorkflowState, ref: SessionRef, theme: Theme): voi
       stateVersion: state.stateVersion,
     },
     status,
-    readSessionSummary(ref),
+    summary,
   );
+  const statusWord =
+    status.kind === 'running' && owner?.kind === 'stale'
+      ? 'unresponsive'
+      : sessionStatusWord(session);
   console.log(
-    `${paint(theme.textDim, 'Status:'.padEnd(STATUS_LABEL_WIDTH))}${chalk.bold(sessionStatusWord(session))}`,
+    `${paint(theme.textDim, 'Status:'.padEnd(STATUS_LABEL_WIDTH))}${chalk.bold(statusWord)}`,
   );
   const brief = briefPosition(state);
   if (brief !== undefined) {
@@ -231,20 +224,20 @@ async function runStatus(opts: { project?: string }): Promise<void> {
   const theme = plainTheme();
   await loadRememberedCatalog(projectDir);
 
-  const sessionId = readActive(projectDir);
-  const state = sessionId ? loadState({ projectDir, sessionId }) : null;
+  const run = await resolveTargetRun({ projectDir });
 
-  if (!state || sessionId === null) {
+  if (run === null || run.hydration.kind !== 'loaded') {
     console.log('No active workflow.');
     return;
   }
-  const ref = { projectDir, sessionId };
+  const { ref } = run;
+  const { state } = run.hydration;
   const records: RunRecords = {
     state,
     evidence: resolveCallUsageEvidence(ref),
     seats: readSeatIdentityRecord(ref),
   };
-  printRunLines(state, ref, theme);
+  printRunLines(state, run, theme);
   printCrewLines(records, theme);
   printTaskCounts(state, theme);
 }

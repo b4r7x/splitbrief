@@ -43,10 +43,14 @@ export interface ConfigDocumentEdit {
  * file is asked apart from the directory: a rule that ignores only the subdirectories of an
  * existing `.splitbrief/` matches the directory probe and still leaves the config file reported.
  */
-export async function ensureConfigGitignore(projectDir: string): Promise<boolean> {
+export async function ensureConfigGitignore(
+  projectDir: string,
+  beforeUpdate?: () => Promise<void>,
+): Promise<boolean> {
   const entry = `${SPLITBRIEF_DIR}/`;
   const probes = [entry, CONFIG_RELATIVE_PATH];
   if ((await checkIgnoredPaths(projectDir, probes)).length === probes.length) return false;
+  await beforeUpdate?.();
   return ensureGitignore(projectDir, entry);
 }
 

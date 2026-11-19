@@ -370,7 +370,7 @@ describe('createRunIsolation', () => {
     }
   });
 
-  it('dispose removes the sandbox npm-cache contents under the project sandbox root', {
+  it('dispose removes only this run’s checkout sandbox npm cache', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-npm-cache');
@@ -384,12 +384,19 @@ describe('createRunIsolation', () => {
       });
 
       const ws = await acquireDirect(handle);
-      // The planner runs in the project, not the worktree, so its cache is the
-      // one nothing else reclaims — the worktree's goes with the worktree.
-      const roleRoot = join(dir, SANDBOX_DIR, 'planner', 'codex');
+      const roleRoot = join(sessionDir(dir, SESSION_ID), SANDBOX_DIR, 'planner', 'codex');
       const npmCache = join(roleRoot, 'npm-cache');
       mkdirSync(npmCache, { recursive: true });
       writeFileSync(join(npmCache, 'cached-package.tgz'), 'cached\n');
+      const siblingCache = join(
+        sessionDir(dir, 'other-run'),
+        SANDBOX_DIR,
+        'planner',
+        'codex',
+        'npm-cache',
+      );
+      mkdirSync(siblingCache, { recursive: true });
+      writeFileSync(join(siblingCache, 'cached-package.tgz'), 'sibling cache\n');
       expect(ws.projectDir).not.toBe(dir);
 
       await handle.dispose();
@@ -397,6 +404,9 @@ describe('createRunIsolation', () => {
       expect(existsSync(join(npmCache, 'cached-package.tgz'))).toBe(false);
       expect(existsSync(npmCache)).toBe(false);
       expect(existsSync(roleRoot)).toBe(true);
+      expect(readFileSync(join(siblingCache, 'cached-package.tgz'), 'utf8')).toBe(
+        'sibling cache\n',
+      );
     } finally {
       cleanupTempDir(dir);
     }
@@ -1924,7 +1934,12 @@ describe('the checkout mode (workflow.isolation: none)', () => {
       const rows: unknown[] = [];
       const run = checkoutRun(dir, warnings, rows);
       const attempt = await acquireDirect(run);
-      writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2;\n');
+      await withAttemptRestoreScope({
+        ref: { projectDir: dir, sessionId: SESSION_ID },
+        dir,
+        taskStartSnapshot: attempt.snapshot,
+        run: async () => writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2;\n'),
+      });
 
       await attempt.revert();
 
@@ -1944,6 +1959,97 @@ describe('the checkout mode (workflow.isolation: none)', () => {
     }
   });
 
+  it('preserves an overlapping checkout writer after that run has disposed', async () => {
+    const dir = createTempDir('isolation-none-overlap');
+    const warnings: string[] = [];
+    const run = checkoutRun(dir, warnings);
+    const otherRef = { projectDir: dir, sessionId: `${SESSION_ID}-other` };
+    const other = createRunIsolation({ ...otherRef, strategy: 'none', onFallback: () => {} });
+    try {
+      createTestGitRepo(dir, { 'shared.txt': 'base\n' });
+      const ref = { projectDir: dir, sessionId: SESSION_ID };
+      const brief = {
+        ...makeAttemptBrief(),
+        taskStartSnapshot: await captureWorkspaceSnapshot(dir, ref),
+      };
+      const attempt = await run.acquire({ role: 'implementer', config, brief });
+      await withAttemptRestoreScope({
+        ref,
+        dir,
+        taskStartSnapshot: brief.taskStartSnapshot,
+        attemptSnapshot: attempt.snapshot,
+        run: async () => {
+          writeFileSync(join(dir, 'shared.txt'), 'first run\n');
+          const otherBrief = {
+            ...makeAttemptBrief(),
+            taskStartSnapshot: await captureWorkspaceSnapshot(dir, otherRef),
+          };
+          const otherAttempt = await other.acquire({
+            role: 'implementer',
+            config,
+            brief: otherBrief,
+          });
+          await withAttemptRestoreScope({
+            ref: otherRef,
+            dir,
+            taskStartSnapshot: otherBrief.taskStartSnapshot,
+            attemptSnapshot: otherAttempt.snapshot,
+            run: async () => {
+              writeFileSync(join(dir, 'shared.txt'), 'second run\n');
+              writeFileSync(join(dir, 'other.txt'), 'second run only\n');
+            },
+          });
+          await other.dispose();
+        },
+      });
+
+      await attempt.revert();
+
+      expect(readFileSync(join(dir, 'shared.txt'), 'utf8')).toBe('second run\n');
+      expect(readFileSync(join(dir, 'other.txt'), 'utf8')).toBe('second run only\n');
+      expect(warnings.join('\n')).toContain('other.txt, shared.txt');
+    } finally {
+      await run.dispose();
+      await other.dispose();
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('only puts back entries still containing the recorded checkout writes', async () => {
+    const dir = createTempDir('isolation-none-later-edit');
+    const warnings: string[] = [];
+    const run = checkoutRun(dir, warnings);
+    try {
+      createTestGitRepo(dir, { 'own.txt': 'base\n', 'shared.txt': 'base\n' });
+      const ref = { projectDir: dir, sessionId: SESSION_ID };
+      const brief = {
+        ...makeAttemptBrief(),
+        taskStartSnapshot: await captureWorkspaceSnapshot(dir, ref),
+      };
+      const attempt = await run.acquire({ role: 'implementer', config, brief });
+      await withAttemptRestoreScope({
+        ref,
+        dir,
+        taskStartSnapshot: brief.taskStartSnapshot,
+        attemptSnapshot: attempt.snapshot,
+        run: async () => {
+          writeFileSync(join(dir, 'own.txt'), 'from the tool\n');
+          writeFileSync(join(dir, 'shared.txt'), 'from the tool\n');
+        },
+      });
+      writeFileSync(join(dir, 'shared.txt'), 'from the user\n');
+
+      await attempt.revert();
+
+      expect(readFileSync(join(dir, 'own.txt'), 'utf8')).toBe('base\n');
+      expect(readFileSync(join(dir, 'shared.txt'), 'utf8')).toBe('from the user\n');
+      expect(warnings.join('\n')).toContain('shared.txt');
+    } finally {
+      await run.dispose();
+      cleanupTempDir(dir);
+    }
+  });
+
   it('works in a project with no git at all, and puts an attempt back without git', {
     timeout: 60_000,
   }, async () => {
@@ -1954,8 +2060,15 @@ describe('the checkout mode (workflow.isolation: none)', () => {
       const run = checkoutRun(dir);
       const opened = await run.open({ config });
       const attempt = await acquireDirect(run);
-      writeFileSync(join(dir, 'src', 'a.ts'), 'two\n');
-      writeFileSync(join(dir, 'src', 'b.ts'), 'new\n');
+      await withAttemptRestoreScope({
+        ref: { projectDir: dir, sessionId: SESSION_ID },
+        dir,
+        taskStartSnapshot: attempt.snapshot,
+        run: async () => {
+          writeFileSync(join(dir, 'src', 'a.ts'), 'two\n');
+          writeFileSync(join(dir, 'src', 'b.ts'), 'new\n');
+        },
+      });
 
       expect(opened).toMatchObject({ kind: 'checkout', projectDir: dir, head: null });
       expect(await attempt.changedFiles()).toEqual(['src/a.ts', 'src/b.ts']);
@@ -2125,8 +2238,16 @@ describe('the attempt revert row', () => {
       const run = revertRun(dir, 'none', rows, warnings);
       const brief = await startBrief(run, dir);
       const attempt = await acquireFor(run, brief);
-      writeFileSync(join(dir, 'src', 'a.ts'), 'two\n');
-      writeFileSync(join(dir, 'src', 'b.ts'), 'two\n');
+      await withAttemptRestoreScope({
+        ref: { projectDir: dir, sessionId: SESSION_ID },
+        dir,
+        taskStartSnapshot: brief.taskStartSnapshot,
+        attemptSnapshot: attempt.snapshot,
+        run: async () => {
+          writeFileSync(join(dir, 'src', 'a.ts'), 'two\n');
+          writeFileSync(join(dir, 'src', 'b.ts'), 'two\n');
+        },
+      });
 
       attempt.cleanup();
       await acquireFor(run, brief);
@@ -2256,8 +2377,16 @@ describe('the attempt revert row', () => {
         const run = revertRun(dir, strategy, rows, []);
         const brief = await startBrief(run, dir);
         const attempt = await acquireFor(run, brief);
-        writeFileSync(join(attempt.projectDir, 'src', 'a.ts'), 'two\n');
-        writeFileSync(join(attempt.projectDir, 'package.json'), '{"denied":true}\n');
+        await withAttemptRestoreScope({
+          ref: { projectDir: dir, sessionId: SESSION_ID },
+          dir: attempt.projectDir,
+          taskStartSnapshot: brief.taskStartSnapshot,
+          attemptSnapshot: attempt.snapshot,
+          run: async () => {
+            writeFileSync(join(attempt.projectDir, 'src', 'a.ts'), 'two\n');
+            writeFileSync(join(attempt.projectDir, 'package.json'), '{"denied":true}\n');
+          },
+        });
 
         const outcome = await gateAttemptChanges({
           wctx: makeWctx({

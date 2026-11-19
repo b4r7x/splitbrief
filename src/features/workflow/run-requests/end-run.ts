@@ -1,9 +1,12 @@
+import { existsSync } from 'node:fs';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
+import { isRunHeld } from '../../../core/sessions/run/record.js';
+import { projectGoneMessage } from '../../../core/state/resume-hydration.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { assertCanCloseRun } from '../../../engine/orchestrator/run/close.js';
 import { endRunAtRest } from '../../../engine/orchestrator/run/end.js';
-import { routerStore } from '../../../stores/navigation/router.js';
+import { atRestExecution, routerStore } from '../../../stores/navigation/router.js';
 import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
@@ -16,6 +19,12 @@ import { readRunHistory } from '../run-history.js';
 import { addTuiEvent } from '../tui-sink.js';
 
 let rereadAttempt = 0;
+
+function reportMissingProject(projectDir: string): boolean {
+  if (existsSync(projectDir)) return false;
+  feedbackStore.setError(projectGoneMessage(projectDir));
+  return true;
+}
 
 /**
  * The run on screen at rest, read again from its record. Another process can close a run this
@@ -40,8 +49,9 @@ export async function rereadRunAtRest(ref: SessionRef, signal?: AbortSignal): Pr
     }
     const publish = await readRunHistory(run);
     if (signal?.aborted || attempt !== rereadAttempt || routerStore.get() !== route) return;
+    if (reportMissingProject(ref.projectDir)) return;
     publish();
-    routerStore.updateRun({ run, execution: { kind: 'at-rest' } });
+    routerStore.updateRun({ run, execution: atRestExecution(run, route.execution.observing) });
     sessionsStore.refresh();
     if (run.status.kind !== 'closed' && run.status.kind !== 'ready-to-apply') return;
     const stop = stopStore.get();
@@ -49,7 +59,7 @@ export async function rereadRunAtRest(ref: SessionRef, signal?: AbortSignal): Pr
     if (overlayStore.get().active === 'stop-sheet') overlayStore.close();
   } catch (err) {
     if (signal?.aborted || attempt !== rereadAttempt || routerStore.get() !== route) return;
-    feedbackStore.setError(toErrorMessage(err));
+    if (!reportMissingProject(ref.projectDir)) feedbackStore.setError(toErrorMessage(err));
   }
 }
 
@@ -62,7 +72,7 @@ export function requestEndRun(): boolean {
         feedbackStore.setError(record.hydration.message);
         return true;
       }
-      if (record.status.kind === 'running') return false;
+      if (isRunHeld(record)) return false;
       if (record.status.kind === 'closed') {
         void rereadRunAtRest(record.ref);
         return true;

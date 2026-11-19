@@ -7,12 +7,13 @@ import {
   realpathSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
+import { getSplitbriefPath, sessionDir, sessionsRoot } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
+import { sandboxRoot } from '../../../src/engine/runners/sandbox/state/paths.js';
 import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { seedSignInFile } from '#testing/helpers/sign-in-home.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -141,13 +142,17 @@ describe.runIf(process.platform === 'linux')(
 
       const start = await builtCli(target, ['start', 'smoke', '--plain', '--allow-repo-runners']);
       expect(start.exitCode, `${start.stdout}\n${start.stderr}`).toBe(0);
-      const sandbox = join(target.projectDir, SPLITBRIEF_DIR, 'sandbox');
+      const projectDir = realpathSync(target.projectDir);
+      const [sessionId, extraSessionId] = readdirSync(sessionsRoot(projectDir));
+      if (sessionId === undefined || extraSessionId !== undefined)
+        throw new Error('expected one run session');
+      const sandbox = sandboxRoot(sessionDir(projectDir, sessionId), 'implementer', 'cursor');
       const record = JSON.parse(readFileSync(seen, 'utf8')) as Seen;
       expect(record.isLink).toBe(true);
       expect(record.target).toBe(realpathSync(hostAuth));
-      expect(realpathSync(record.xdg).startsWith(realpathSync(sandbox))).toBe(true);
+      expect(realpathSync(record.xdg).startsWith(`${realpathSync(sandbox)}${sep}`)).toBe(true);
       expect(readFileSync(hostAuth, 'utf8')).toContain('rotated-e2e');
-      expect(authLinksUnder(sandbox)).toEqual([]);
+      expect(authLinksUnder(getSplitbriefPath(projectDir))).toEqual([]);
     });
 
     it('reads $XDG_CONFIG_HOME/cursor/auth.json as the sign-in', async () => {

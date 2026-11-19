@@ -367,7 +367,7 @@ it('goes home at once from a run another process applies, and names that process
       target,
       ['--import', offline],
       async ({ screen, write, waitForText }) => {
-        await waitForText('Running in another process');
+        await waitForText('Viewing live');
         const run = screen();
         await delay(PROMPT_TYPEAHEAD_GRACE_MS);
         write('\r');
@@ -386,7 +386,7 @@ it('goes home at once from a run another process applies, and names that process
   }
 });
 
-it('leaves "Running in another process" once that process dies without a word on disk', async () => {
+it('leaves the live view when the owner dies without updating the lockfile', async () => {
   const target = createStopContinueFixture(() => '', { isolation: 'staged-copy' });
   fixture = target;
   const ready = await seedReadyRun(target);
@@ -420,7 +420,7 @@ setInterval(() => {}, 1000);
       target,
       ['--import', offline],
       async ({ screen, waitForText }) => {
-        await waitForText('Running in another process');
+        await waitForText('Viewing live');
         const owned = screen();
         holder.kill('SIGKILL');
         await holderExited;
@@ -434,7 +434,7 @@ setInterval(() => {}, 1000);
     // The window saw the dead owner by itself: the lockfile still names it, unchanged.
     expect(readFileSync(lockPath, 'utf8')).toBe(killedLock);
     expect(JSON.parse(killedLock)).not.toHaveProperty('exitedAt');
-    expect(after).not.toContain('Running in another process');
+    expect(after).not.toContain('Viewing live');
     expect(after).toContain('Show diff');
     expect(readState(target, ready.ref.sessionId).closed).toBeUndefined();
   } finally {

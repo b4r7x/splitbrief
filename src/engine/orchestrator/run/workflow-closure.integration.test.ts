@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -20,7 +20,7 @@ import {
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
-import { sessionDir } from '../../../core/paths.js';
+import { sessionDir, sessionsRoot } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -319,8 +319,8 @@ describe('runWorkflow step and dispose order', () => {
   const TEARDOWN = [
     'stop following',
     'clear ledger',
-    'clear sign-in copies',
     'dispose isolation',
+    'clear sign-in copies',
     'checkout snapshot',
     'release liveness',
   ];
@@ -370,7 +370,7 @@ describe('runWorkflow step and dispose order', () => {
       };
     });
     vi.spyOn(bridge, 'clearBridgedCliState').mockImplementation(async (dir, tool) => {
-      if (dir === projectDir) log.push('clear sign-in copies');
+      if (dirname(dir) === sessionsRoot(projectDir)) log.push('clear sign-in copies');
       await clearBridgedCliState(dir, tool);
     });
     vi.spyOn(isolation, 'createRunIsolation').mockImplementation((opts) => {

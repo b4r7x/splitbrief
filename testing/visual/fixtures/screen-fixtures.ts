@@ -25,7 +25,11 @@ import {
 import { writeSessionDraft } from '../../../src/core/sessions/draft.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { LOCKFILE, sessionDir } from '../../../src/core/paths.js';
-import { sessionError, sessionFileFailure } from '../../../src/core/sessions/errors.js';
+import {
+  sessionError,
+  sessionFileFailure,
+  sessionPreparationError,
+} from '../../../src/core/sessions/errors.js';
 import { sessionRelativePath } from '../../../src/core/sessions/ownership-marker.js';
 import { formatAttachmentFailure } from '../../../src/core/attachments/failure.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
@@ -980,38 +984,19 @@ function createHomePreparationFailedFixture(): FixtureLifecycle {
   return {
     setup: async (context) => {
       await home.setup(context);
+      const path = '.splitbrief/sessions';
+      const cause = Object.assign(new Error(`EACCES: permission denied, mkdir '${path}'`), {
+        code: 'EACCES',
+        path,
+      });
       submitSettledCheck({
         kind: 'failed',
         report: preparationReport([TRUST_BOUNDARY_CHECK]),
-        error: new Error(
-          'Session ownership could not be taken over: 20260804-a91f is held by another SPLITBRIEF process.',
+        error: sessionPreparationError.io(
+          'allocate-session',
+          { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: VISUAL_WORKFLOW_SESSION_ID },
+          cause,
         ),
-      });
-    },
-    teardown: home.teardown,
-  };
-}
-
-function createHomePreparationCheckoutWarningFixture(): FixtureLifecycle {
-  const home = createHomeFixture();
-  return {
-    setup: async (context) => {
-      await home.setup(context);
-      submitSettledCheck({
-        kind: 'failed',
-        report: preparationReport(
-          buildRepoChecks(
-            {
-              isGitRepo: true,
-              hasCommits: true,
-              dirtyFiles: ['src/app.ts'],
-              untrackedFiles: ['scratch.txt'],
-            },
-            'none',
-          ),
-          { section: { id: 'repo', title: 'Repository' } },
-        ),
-        error: new Error('Session ownership could not be taken over.'),
       });
     },
     teardown: home.teardown,
@@ -1131,30 +1116,6 @@ function createHomePreparationNoCommitsFixture(): FixtureLifecycle {
             hasCommits: false,
             dirtyFiles: [],
             untrackedFiles: [],
-          }),
-          { section: { id: 'repo', title: 'Repository' } },
-        ),
-      });
-    },
-    teardown: home.teardown,
-  };
-}
-
-function createHomePreparationRunStillRunningFixture(): FixtureLifecycle {
-  const home = createHomeFixture();
-  return {
-    setup: async (context) => {
-      await home.setup(context);
-      submitSettledCheck({
-        kind: 'blocked',
-        report: preparationReport(
-          buildRepoChecks({
-            isGitRepo: true,
-            hasCommits: true,
-            dirtyFiles: [],
-            untrackedFiles: [],
-            activeSession: '2026-11-06-fix-the-plan-card',
-            activeSessionLive: true,
           }),
           { section: { id: 'repo', title: 'Repository' } },
         ),
@@ -1729,7 +1690,10 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     () => withSlowToolCheck(createHomeStartingFixture(), { slowModelList: 'antigravity' }),
   ],
   [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
-  [scenarioId('home-preparation-checkout-warning'), createHomePreparationCheckoutWarningFixture],
+  [
+    scenarioId('home-preparation-failed-details'),
+    () => ({ ...createHomePreparationFailedFixture(), afterMount: (write) => write.press('d') }),
+  ],
   [scenarioId('home-preparation-blocked'), () => createHomePreparationBlockedFixture([])],
   [
     scenarioId('home-preparation-setting-not-applied'),
@@ -1750,7 +1714,6 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
   [scenarioId('home-preparation-no-commits'), createHomePreparationNoCommitsFixture],
-  [scenarioId('home-preparation-run-still-running'), createHomePreparationRunStillRunningFixture],
   [
     scenarioId('home-preparation-runner-trust'),
     () => createHomePreparationRunnerTrustFixture(false),

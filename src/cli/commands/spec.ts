@@ -33,6 +33,7 @@ import {
   planFullTurn,
   type PlanRound,
 } from '../../engine/spec/prompts/plan-session.js';
+import { acquireLiveness } from '../../engine/orchestrator/run/liveness.js';
 import { runCommandSeatCall } from '../../engine/orchestrator/escalation/seat/call.js';
 import {
   runPlanSession,
@@ -61,7 +62,6 @@ import {
   type PreparedExecution,
 } from '../../engine/runners/prepare-execution/prepared.js';
 import type { Config } from '../../core/schemas/config.js';
-import { clearStaleSessionForCli } from '../sessions/resolve.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../preparation.js';
 
 type SpecOpts = {
@@ -112,8 +112,6 @@ async function prepareSpec(feature: string, opts: SpecOpts, deps: SpecDeps): Pro
     projectDir,
     overrides: workflowOptsToCLIOverrides(opts),
   });
-
-  clearStaleSessionForCli(projectDir);
 
   const loaded = loadConfigOrExit(projectDir);
   await ensureHooksTrusted({
@@ -174,88 +172,74 @@ async function createSpecPlanner(
     },
   });
 
-  try {
-    return await deps.createPlanner(execution.config, {
-      initialSessionId: undefined,
-      projectDir,
-      preparedConfig: execution.config,
-      customRuntime,
-      preparationId: execution.preparationId,
-      gates: execution.gates,
-      cliSeats: execution.cliSeats,
-      slot: { role: 'planner' },
-    });
-  } catch (cause) {
-    rollbackPreparedExecutionOwnership(execution);
-    throw cause;
-  }
+  return deps.createPlanner(execution.config, {
+    initialSessionId: undefined,
+    projectDir,
+    preparedConfig: execution.config,
+    customRuntime,
+    preparationId: execution.preparationId,
+    gates: execution.gates,
+    cliSeats: execution.cliSeats,
+    slot: { role: 'planner' },
+  });
 }
 
 async function runSpecPlanSession(spec: PreparedSpec, planner: Planner): Promise<PlanProposal> {
   const { projectDir, sessionId, interaction, execution } = spec;
-  let plan: PlanProposal;
-  try {
-    plan = await withCliErrors(async () => {
-      // The BUILD context is measured as a headless `start` measures it.
-      const planContext = { config: execution.config, projectDir, modelCache: modelCacheStore };
-      const turnText = await planTurnText({
-        wctx: { ...planContext, sessionId },
-        planner,
-        feature: execution.runtime.feature,
-        language: undefined,
-        onWarn: (message) => console.warn(stripTerminalControls(message)),
-      });
-      const rounds: PlanRound[] = [];
-      let asked = '';
-      const outcome = await runPlanSession({
-        rounds: 0,
-        ask: async (turn) => {
-          if (turn.kind === 'answers')
-            rounds.push({ reply: asked, answer: turn.reply.message.text });
-          const prompt = await turnText((prompt) =>
-            planFullTurn(prompt, rounds, turn.kind === 'repair' ? turn : undefined),
-          );
-          return runCommandSeatCall(
-            {
-              projectDir,
-              runner: execution.config.planner,
-              write: (line) => console.log(line),
-            },
-            (signal) =>
-              requestTyped({
-                prompt,
-                schema: PlanAnswerSchema,
-                jsonSchema: PLAN_ANSWER_JSON_SCHEMA,
-                schemaName: 'plan_result',
-                call: planner.typedCall({
-                  projectDir,
-                  seat: 'planner',
-                  callbacks: { onOutput: () => {}, signal },
-                }),
-              }),
-          );
-        },
-        // Without a terminal nobody can answer, so every question takes its default.
-        answer: async (questions) => {
-          asked = questionsText(questions);
-          console.log(`${chalk.bold('The planner asks:')}\n${stripTerminalControls(asked)}\n`);
-          return plainUserMessage(
-            interaction === 'interactive'
-              ? await promptForLine('Your answer (⏎ takes the defaults): ')
-              : '',
-          );
-        },
-        check: (proposal) => checkFullPlan(planContext, proposal),
-      });
-      if (outcome.kind !== 'plan') throw sessionFailure(outcome);
-      return outcome.plan;
+  return withCliErrors(async () => {
+    // The BUILD context is measured as a headless `start` measures it.
+    const planContext = { config: execution.config, projectDir, modelCache: modelCacheStore };
+    const turnText = await planTurnText({
+      wctx: { ...planContext, sessionId },
+      planner,
+      feature: execution.runtime.feature,
+      language: undefined,
+      onWarn: (message) => console.warn(stripTerminalControls(message)),
     });
-  } catch (cause) {
-    rollbackPreparedExecutionOwnership(execution);
-    throw cause;
-  }
-  releasePreparedExecutionOwnership(execution);
-  return plan;
+    const rounds: PlanRound[] = [];
+    let asked = '';
+    const outcome = await runPlanSession({
+      rounds: 0,
+      ask: async (turn) => {
+        if (turn.kind === 'answers') rounds.push({ reply: asked, answer: turn.reply.message.text });
+        const prompt = await turnText((prompt) =>
+          planFullTurn(prompt, rounds, turn.kind === 'repair' ? turn : undefined),
+        );
+        return runCommandSeatCall(
+          {
+            projectDir,
+            runner: execution.config.planner,
+            write: (line) => console.log(line),
+          },
+          (signal) =>
+            requestTyped({
+              prompt,
+              schema: PlanAnswerSchema,
+              jsonSchema: PLAN_ANSWER_JSON_SCHEMA,
+              schemaName: 'plan_result',
+              call: planner.typedCall({
+                projectDir,
+                seat: 'planner',
+                callbacks: { onOutput: () => {}, signal },
+              }),
+            }),
+        );
+      },
+      // Without a terminal nobody can answer, so every question takes its default.
+      answer: async (questions) => {
+        asked = questionsText(questions);
+        console.log(`${chalk.bold('The planner asks:')}\n${stripTerminalControls(asked)}\n`);
+        return plainUserMessage(
+          interaction === 'interactive'
+            ? await promptForLine('Your answer (⏎ takes the defaults): ')
+            : '',
+        );
+      },
+      check: (proposal) => checkFullPlan(planContext, proposal),
+    });
+    if (outcome.kind !== 'plan') throw sessionFailure(outcome);
+    return outcome.plan;
+  });
 }
 
 function writeSpecArtifacts(
@@ -288,12 +272,24 @@ function printSpecResult(projectDir: string, sessionId: string, taskCount: numbe
 
 async function runSpec(feature: string, opts: SpecOpts, deps: SpecDeps): Promise<void> {
   const spec = await prepareSpec(feature, opts, deps);
-  const planner = await createSpecPlanner(spec, opts, deps);
-  console.log(
-    `Planning feature: ${oneLineDisplayText(feature)} (planner: ${getRunnerCatalogDisplayName(spec.config.planner)})\n`,
-  );
-  const plan = await runSpecPlanSession(spec, planner);
-  const taskCount = writeSpecArtifacts(spec, plan);
+  let taskCount: number;
+  try {
+    const release = await acquireLiveness({ ...spec.execution.session.ref, feature });
+    try {
+      const planner = await createSpecPlanner(spec, opts, deps);
+      console.log(
+        `Planning feature: ${oneLineDisplayText(feature)} (planner: ${getRunnerCatalogDisplayName(spec.config.planner)})\n`,
+      );
+      const plan = await runSpecPlanSession(spec, planner);
+      taskCount = writeSpecArtifacts(spec, plan);
+    } finally {
+      await release();
+    }
+  } catch (cause) {
+    rollbackPreparedExecutionOwnership(spec.execution);
+    throw cause;
+  }
+  releasePreparedExecutionOwnership(spec.execution);
   printSpecResult(spec.projectDir, spec.sessionId, taskCount);
 }
 

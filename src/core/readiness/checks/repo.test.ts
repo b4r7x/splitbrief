@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sessionError } from '../../sessions/errors.js';
-import {
-  buildRepoChecks,
-  exemptLiveSessionBlocker,
-  withRunFolder,
-  type RepoReadinessInput,
-} from './repo.js';
+import { buildRepoChecks, withRunFolder, type RepoReadinessInput } from './repo.js';
 
 const cleanRepo: RepoReadinessInput = {
   isGitRepo: true,
@@ -86,7 +80,9 @@ describe('buildRepoChecks dirty worktree', () => {
       expect(warning?.fix).toContain(
         "A revert saves the files it replaces in the run's reverted/ folder, under .splitbrief/sessions/.",
       );
-      expect(warning?.details?.join(' ')).toContain('only the paths that attempt changed');
+      expect(warning?.details?.join(' ')).toContain(
+        'A revert keeps shared changes and changes it cannot attribute to this run.',
+      );
       expect(warning?.details?.join(' ')).not.toContain('The run edits this checkout');
       expect(checks.some((check) => check.severity === 'blocker')).toBe(false);
     },
@@ -145,7 +141,7 @@ describe('buildRepoChecks dirty worktree', () => {
 });
 
 describe('buildRepoChecks active session', () => {
-  it('tells a live run to stop and continue, as every refusal of a live run does', () => {
+  it('reports a live default as information without a remediation', () => {
     const runId = '2026-11-06-a';
     const live = buildRepoChecks({
       ...cleanRepo,
@@ -153,19 +149,10 @@ describe('buildRepoChecks active session', () => {
       activeSessionLive: true,
     }).find((check) => check.id === 'repo.active-session-live');
 
-    expect(live?.severity).toBe('blocker');
+    expect(live?.severity).toBe('info');
     expect(live?.summary).toBe(`Run ${runId} is still running.`);
-    expect(live?.fix).toBe(
-      `Stop it in the window that runs it, then run 'splitbrief continue ${runId}'.`,
-    );
-
-    const activeError = sessionError.stillActive(runId);
-    expect(activeError.message).toContain(live?.summary);
-    expect(activeError.message).toContain(live?.fix);
-    expect(activeError.message).not.toContain('delete');
-    expect(activeError.message).not.toContain('discard');
-    expect(activeError.message).not.toContain('.splitbrief/active');
-    expect(activeError.message.toLowerCase()).not.toContain('session');
+    expect(live?.fix).toBeUndefined();
+    expect(live?.nextAction).toBeUndefined();
   });
 
   it('keeps the stale marker as information with no fix', () => {
@@ -176,35 +163,7 @@ describe('buildRepoChecks active session', () => {
     }).find((check) => check.id === 'repo.active-session-stale');
 
     expect(stale?.severity).toBe('info');
-    expect(stale?.summary).toBe('Stale active session marker session-abc can be cleared.');
+    expect(stale?.summary).toBe('Run session-abc is the default.');
     expect(stale?.fix).toBeUndefined();
-  });
-});
-
-describe('exemptLiveSessionBlocker', () => {
-  const liveSessionCheck = (): ReturnType<typeof buildRepoChecks>[number] => {
-    const check = buildRepoChecks({
-      ...cleanRepo,
-      activeSession: 'session-abc',
-      activeSessionLive: true,
-    }).find((candidate) => candidate.id === 'repo.active-session-live');
-    if (check === undefined) throw new Error('expected a live-session blocker');
-    return check;
-  };
-
-  it('downgrades the live-session blocker to information a read-only purpose can pass', () => {
-    const exempted = exemptLiveSessionBlocker(liveSessionCheck());
-
-    expect(exempted.severity).toBe('info');
-    expect(exempted.summary).toContain('session-abc');
-    expect(exempted.fix).toBeUndefined();
-    expect(exempted.nextAction).toBeUndefined();
-    expect(exempted.metadata).toEqual({ sessionId: 'session-abc', live: true });
-  });
-
-  it('leaves every other check exactly as it was', () => {
-    for (const check of buildRepoChecks({ ...cleanRepo, dirtyFiles: ['src/a.ts'] })) {
-      expect(exemptLiveSessionBlocker(check)).toBe(check);
-    }
   });
 });

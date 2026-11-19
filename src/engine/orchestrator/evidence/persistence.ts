@@ -3,7 +3,7 @@ import { isTaskSettled, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowContext } from '../types.js';
-import { publishError } from '../publish/notice.js';
+import { publishError, publishWarning } from '../publish/notice.js';
 import { raisePendingRecovery } from '../state-ops/halts.js';
 import { createRecoveryIssue } from '../recovery/builders/issue.js';
 import { nowIso } from '../../../utils/format/time.js';
@@ -29,6 +29,40 @@ import { briefInFlight } from '../../../core/state/selectors.js';
 import { changedSinceAtRest } from '../../snapshots/run/rest-changes.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { loadOrCreateLedger, warnEvidenceNotSaved } from './ledger.js';
+import type { EventBus } from '../../events/types.js';
+import { withCheckoutWriteLock } from '../../checkout-write.js';
+import {
+  checkoutSnapshotExpectations,
+  keptCheckoutPathsMessage,
+  readCheckoutFingerprint,
+} from '../isolation/checkout-entries.js';
+import { entryStoreDir } from '../isolation/entry-snapshot.js';
+
+export async function attributedCheckoutFiles(
+  ref: SessionRef,
+  snapshot: ChangedFilesSnapshot | undefined,
+  candidates: readonly string[],
+): Promise<string[]> {
+  if (snapshot === undefined || candidates.length === 0) return [];
+  return withCheckoutWriteLock(ref.projectDir, async () => {
+    const expected = await checkoutSnapshotExpectations({
+      ref,
+      snapshot,
+      files: candidates,
+      store: entryStoreDir(ref),
+    });
+    const found = await Promise.all(
+      candidates.map(async (path) => {
+        const fingerprint = expected.get(path);
+        return fingerprint !== undefined &&
+          fingerprint === (await readCheckoutFingerprint(ref.projectDir, path))
+          ? path
+          : undefined;
+      }),
+    );
+    return found.filter((path) => path !== undefined);
+  });
+}
 
 export async function persistTaskEvidence(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
@@ -47,6 +81,8 @@ export async function persistTaskEvidence(opts: {
 }): Promise<void> {
   const { wctx, state, task, recordKind, details } = opts;
   try {
+    const checkout = state.workspace?.kind === 'checkout';
+    const resultFiles = checkout ? (details.changedFiles ?? []) : details.changedFiles;
     mutateEvidenceLedger(wctx, (existing) => {
       const ledger = existing ?? loadOrCreateLedger({ ref: wctx, state });
       if (recordKind === 'local') {
@@ -57,7 +93,7 @@ export async function persistTaskEvidence(opts: {
           method: details.method,
           retries: details.retries,
           durationMs: details.durationMs,
-          changedFiles: details.changedFiles,
+          changedFiles: resultFiles,
         });
       }
       return recordRetryOrEscalationEvidence({
@@ -68,7 +104,10 @@ export async function persistTaskEvidence(opts: {
         retries: details.retries,
         durationMs: details.durationMs,
         escalated: details.escalated ?? false,
-        changedFiles: [...(details.initialChangedFiles ?? []), ...(details.changedFiles ?? [])],
+        changedFiles: [
+          ...(checkout ? [] : (details.initialChangedFiles ?? [])),
+          ...(resultFiles ?? []),
+        ],
       });
     });
   } catch (err) {
@@ -98,13 +137,17 @@ export async function persistSkippedBriefFiles(opts: {
       (taskStartSnapshot === undefined
         ? undefined
         : await getChangedFilesSinceSnapshot(wctx.workspaceDir, taskStartSnapshot));
+    const attributed =
+      state.workspace?.kind === 'checkout' && keptFiles !== undefined
+        ? await attributedCheckoutFiles(wctx, taskStartSnapshot, keptFiles)
+        : keptFiles;
     mutateEvidenceLedger(wctx, (existing) =>
       recordSkippedTaskEvidence({
         ledger: existing ?? loadOrCreateLedger({ ref: wctx, state }),
         task,
         reason: opts.reason,
-        keptFiles,
-        remainderFiles: lineageFiles,
+        keptFiles: attributed,
+        remainderFiles: lineageFiles === undefined ? undefined : attributed,
       }),
     );
   } catch (err) {
@@ -125,7 +168,7 @@ export async function persistSkippedBriefFiles(opts: {
  * started that no other brief of the run booked.
  */
 export async function persistStoppedBriefEvidence(
-  ref: SessionRef,
+  ref: SessionRef & { bus?: EventBus | undefined },
   state: WorkflowState,
   workspace: WorkflowState['workspace'],
 ): Promise<void> {
@@ -140,10 +183,16 @@ export async function persistStoppedBriefEvidence(
     workspace.kind === 'checkout' &&
     checkSessionLockStatus({ sessionDir: sessionDir(ref.projectDir, ref.sessionId) }).kind ===
       'exited';
-  const changedSince = (snapshot: ChangedFilesSnapshot) =>
-    atRest
-      ? changedSinceAtRest(ref, snapshot)
-      : getChangedFilesSinceSnapshot(workspace.path, snapshot);
+  const unresolved = new Set<string>();
+  const changedSince = async (snapshot: ChangedFilesSnapshot): Promise<string[]> => {
+    const files = atRest
+      ? await changedSinceAtRest(ref, snapshot)
+      : await getChangedFilesSinceSnapshot(workspace.path, snapshot);
+    if (workspace.kind !== 'checkout') return files;
+    const attributed = new Set(await attributedCheckoutFiles(ref, snapshot, files));
+    for (const file of files) if (!attributed.has(file)) unresolved.add(file);
+    return [...attributed];
+  };
   const inFlight = briefInFlight(state);
   const taskStart = state.changedFilesBaseline?.activeTaskSnapshot;
   if (inFlight !== undefined && taskStart !== undefined) {
@@ -167,6 +216,13 @@ export async function persistStoppedBriefEvidence(
         files,
       }),
     );
+  }
+  if (unresolved.size > 0 && ref.bus !== undefined) {
+    publishWarning({
+      bus: ref.bus,
+      phase: state.phase,
+      message: keptCheckoutPathsMessage([...unresolved].sort()),
+    });
   }
 }
 
@@ -197,15 +253,17 @@ export async function raiseApiApplyRecovery(opts: {
   const { wctx, state, task, result, workspace } = opts;
   const workspacePath = workspace.projectDir;
   const inPlace = state.workspace?.kind === 'checkout';
-  if (inPlace) {
-    await workspace.revert();
-  }
+  const reverted = inPlace ? await workspace.revert() : undefined;
+  const putBack = reverted !== undefined && reverted.restoredFiles.length > 0;
+  const checkoutOutcome = putBack
+    ? 'partial changes put back in your checkout'
+    : 'review your checkout before retrying';
   const landed = result.applied.map((file) => file.path).join(', ');
   const message =
     result.status === 'partial'
-      ? `${task.id}: the response stopped at ${result.failedPath} after applying ${landed}; ${inPlace ? 'partial changes put back in your checkout' : 'partial changes kept in the run workspace'}, and the brief did not advance (${result.error})`
+      ? `${task.id}: the response stopped at ${result.failedPath} after applying ${landed}; ${inPlace ? checkoutOutcome : 'partial changes kept in the run workspace'}, and the brief did not advance (${result.error})`
       : inPlace
-        ? `${task.id}: the outcome of writing ${result.failedPath} was uncertain; the attempt changes were put back in your checkout (${result.error})`
+        ? `${task.id}: the outcome of writing ${result.failedPath} was uncertain; ${checkoutOutcome} (${result.error})`
         : `${task.id}: the outcome of writing ${result.failedPath} is uncertain in the run workspace; reconcile this file before continuing (${result.error})`;
   publishError({ bus: wctx.bus, phase: state.phase, message });
   return raisePendingRecovery(
@@ -220,9 +278,11 @@ export async function raiseApiApplyRecovery(opts: {
       affectedTaskIds: [task.id],
       message,
       details: [
-        inPlace
+        putBack
           ? `The partial writes were put back to the attempt start in your checkout. ${replacedFilesSavedIn(revertedDir(wctx))}.`
-          : `The partial writes stay in the run workspace at ${workspacePath}; the checkout is unchanged.`,
+          : inPlace
+            ? 'Review the files in your checkout before retrying.'
+            : `The partial writes stay in the run workspace at ${workspacePath}; the checkout is unchanged.`,
       ],
       facts: { apiApplyIncomplete: true, workspacePath },
       availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],

@@ -7,6 +7,7 @@ import { error, matches } from '../../../utils/error.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
+import { checkoutWriterAdvanced } from '../../checkout-write.js';
 import { publishWarning } from '../publish/notice.js';
 import { publishRecoveryResolved } from '../publish/recovery.js';
 import { publishFixCycleStarted } from '../publish/review.js';
@@ -27,7 +28,7 @@ import {
   mergeApplyStates,
 } from './merge.js';
 import { restoreApplyBackup } from './restore.js';
-import { candidateOf, captureApplyStates, sameSideEntry, type SideEntry } from './states.js';
+import { candidateOf, captureWorkspaceState, sameSideEntry, type SideEntry } from './states.js';
 import { writeApply } from './write.js';
 import { raiseApplyHalt } from './halt.js';
 import type { ApplyInput, ApplyResult, ApplyRun, ApplyState } from './types.js';
@@ -103,42 +104,47 @@ function halt(run: ApplyRun, shared: ApplyState, issue: RecoveryIssue): ApplyRes
   return { outcome: 'halted', state: shared.state };
 }
 
-/** Merges the three states into the workspace. A side that changed during the merge halts Apply. */
-export async function mergeOrHalt(
+export function mergeCandidate(run: ApplyRun, shared: ApplyState): Promise<ApplyMerge> {
+  const integrated = shared.state.applyIntegrated;
+  return mergeApplyStates(
+    run.states,
+    integrated === undefined
+      ? undefined
+      : new Map(integrated.map((record) => [record.path, record])),
+  );
+}
+
+export function settleChangedSide(
   run: ApplyRun,
   shared: ApplyState,
-): Promise<ApplyMerge | ApplyResult> {
-  const integratedMap =
-    shared.state.applyIntegrated === undefined
-      ? undefined
-      : new Map(shared.state.applyIntegrated.map((record) => [record.path, record]));
-  try {
-    return await mergeApplyStates(run.states, integratedMap);
-  } catch (cause) {
-    if (
-      (matches('apply-checkout-changed')(cause) || matches('apply-workspace-changed')(cause)) &&
-      isRecord(cause.data) &&
-      typeof cause.data.path === 'string'
-    ) {
-      return halt(
-        run,
-        shared,
-        buildApplyConflictRecoveryIssue({
-          conflicts: [
-            {
-              path: cause.data.path,
-              kind: matches('apply-workspace-changed')(cause)
-                ? 'workspace-changed'
-                : 'checkout-changed',
-            },
-          ],
-          workspacePath: run.workspace.path,
-          createdAt: new Date().toISOString(),
-        }),
-      );
-    }
+  cause: unknown,
+): ApplyResult | undefined {
+  if (!matches('apply-checkout-changed')(cause) && !matches('apply-workspace-changed')(cause)) {
     throw cause;
   }
+  if (!isRecord(cause.data) || typeof cause.data.path !== 'string') throw cause;
+  const workspaceChanged = matches('apply-workspace-changed')(cause);
+  if (
+    !workspaceChanged &&
+    shared.state.applying === undefined &&
+    checkoutWriterAdvanced(run.wctx, run.checkoutRevision)
+  ) {
+    return undefined;
+  }
+  return halt(
+    run,
+    shared,
+    buildApplyConflictRecoveryIssue({
+      conflicts: [
+        {
+          path: cause.data.path,
+          kind: workspaceChanged ? 'workspace-changed' : 'checkout-changed',
+        },
+      ],
+      workspacePath: run.workspace.path,
+      createdAt: new Date().toISOString(),
+    }),
+  );
 }
 
 /**
@@ -156,6 +162,10 @@ export async function settleConflicts(
       conflict.kind === 'text' && conflict.markers !== undefined && conflict.ours.kind === 'file',
   );
   if (textConflicts.length === conflicts.length && !run.reviewNone) {
+    const merged = await buildMergedEntries(
+      run.states,
+      textConflicts.map((conflict) => conflict.path),
+    );
     const triage: TriageInput[] = [];
     for (const [index, conflict] of textConflicts.entries()) {
       await writeConfinedEntry(workspace.path, conflict.path, {
@@ -174,10 +184,7 @@ export async function settleConflicts(
     }
     shared.state = transitionAndSave(wctx, handOff(shared.state, textConflicts), {
       type: 'APPLY_REVIEW_START',
-      merged: await buildMergedEntries(
-        run.states,
-        textConflicts.map((conflict) => conflict.path),
-      ),
+      merged,
       triage,
     });
     run.setTrackedState?.(shared.state);
@@ -211,20 +218,16 @@ export async function recheckChangedMerge(
   shared: ApplyState,
 ): Promise<ApplyResult | undefined> {
   const { wctx, workspace, states, reviewNone } = run;
-  const after = await captureApplyStates({
-    projectDir: wctx.projectDir,
-    sessionId: wctx.sessionId,
-    workspace,
-  });
+  const ours = await captureWorkspaceState(workspace.path, states.workspaceIgnoreDir, states.base);
   const reviewed = shared.state.reviewedCandidate ?? candidateOf(states);
-  const now = candidateOf(after);
+  const now = candidateOf({ base: states.base, ours });
   const changed = [...new Set([...Object.keys(reviewed), ...Object.keys(now)])]
     .filter((path) => now[path] !== reviewed[path])
     .filter(
       (path) =>
         reviewed[path] !== undefined ||
         !sameSideEntry(
-          after.ours.get(path) ?? { kind: 'absent' },
+          ours.get(path) ?? { kind: 'absent' },
           states.theirs.get(path) ?? { kind: 'absent' },
         ),
     )
@@ -247,15 +250,17 @@ export async function writeMerged(
   run: ApplyRun,
   shared: ApplyState,
   files: string[],
-): Promise<ApplyResult> {
+): Promise<ApplyResult | undefined> {
   const { wctx, workspace } = run;
   const result = await writeApply({
     scope: wctx,
     state: shared.state,
     states: run.states,
     files,
+    checkoutRevision: run.checkoutRevision,
     setTrackedState: run.setTrackedState,
   });
+  if (result === undefined) return undefined;
   shared.state = result.state;
   switch (result.kind) {
     case 'changed':
@@ -263,7 +268,7 @@ export async function writeMerged(
         run,
         shared,
         buildApplyConflictRecoveryIssue({
-          conflicts: result.files.map((path) => ({ path, kind: 'checkout-changed' })),
+          conflicts: result.files.map((path) => ({ path, kind: result.side })),
           workspacePath: workspace.path,
           createdAt: new Date().toISOString(),
         }),

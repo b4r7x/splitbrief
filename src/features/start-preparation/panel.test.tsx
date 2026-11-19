@@ -8,6 +8,7 @@ import {
   type RunnerAvailabilityVerdict,
 } from '../../core/readiness/checks/availability.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
+import { sessionPreparationError } from '../../core/sessions/errors.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../stores/prompts/approval.js';
 import { ApprovalPrompt } from '../workflow/components/approval-prompt/prompt.js';
@@ -107,27 +108,48 @@ describe('StartPreparationPanel', () => {
   beforeEach(() => resetAllStores());
   afterEach(() => resetAllStores());
 
-  it('leads a failure with the error it raised, never with a blocker count of zero', async () => {
-    const readiness = report([TRUST_BOUNDARY, check('repo.worktree.dirty', 'warning')]);
-    expect(readiness.counts.blocker).toBe(0);
-    const ui = renderPanel({
-      state: {
-        kind: 'failed',
-        report: readiness,
-        error: new Error('Session ownership could not be taken over: 20260804-a91f is held.'),
+  it('shows the session folder failure, keeps diagnostics behind d, and offers only usable keys', async () => {
+    const onOpenSettings = vi.fn();
+    const cause = Object.assign(
+      new Error("EACCES: permission denied, mkdir '.splitbrief/sessions/new-run'"),
+      {
+        code: 'EACCES',
+        path: '.splitbrief/sessions/new-run',
       },
-    });
+    );
+    const ui = renderPanel(
+      {
+        onOpenSettings,
+        state: {
+          kind: 'failed',
+          report: report([TRUST_BOUNDARY]),
+          error: sessionPreparationError.io(
+            'allocate-session',
+            { projectDir: '/project', sessionId: 'new-run' },
+            cause,
+          ),
+        },
+      },
+      { cols: 60, rows: 18 },
+    );
 
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Session ownership could not be taken over');
-    // The warnings are still reported, and still under the error rather than in place of it.
-    expect(frame.indexOf('Session ownership')).toBeLessThan(frame.indexOf('Warnings'));
-    expect(frame.indexOf('Warnings')).toBeLessThan(frame.indexOf('can execute commands'));
-    // The counter is not the diagnosis: no "0 blockers" anywhere, and an action is offered.
-    expect(frame).not.toMatch(/\d+ blockers?/);
-    expect(frame).toContain('Retry the check, or open settings to change the crew.');
+    expect(frame).toContain('Could not create the session folder');
+    expect(frame).toContain('permission denied');
     expect(frame).toContain('r retry');
+    expect(frame).toContain('esc back');
+    expect(frame).toContain('d details');
+    expect(frame).not.toContain('settings');
+    expect(frame).not.toContain('EACCES');
+    expect(frame).not.toContain('Warnings');
+    ui.stdin.write('s');
+    await flushEffects();
+    expect(onOpenSettings).not.toHaveBeenCalled();
+    ui.stdin.write('d');
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('EACCES'));
+    ui.stdin.write('d');
+    await vi.waitFor(() => expect(ui.lastFrame()).toBe(frame));
     ui.unmount();
   });
 
@@ -290,7 +312,7 @@ describe('StartPreparationPanel', () => {
     const hint = frame.split('\n').find((row) => row.includes('r retry')) ?? '';
     expect(hint).toContain('r retry');
     expect(hint).toContain('esc back');
-    expect(hint).toContain('s settings');
+    expect(hint).not.toContain('s settings');
     expect(hint).toContain('scroll');
     expect(
       stripAnsiStyles(frame)
@@ -312,7 +334,7 @@ describe('StartPreparationPanel', () => {
     ui.stdin.write(ESC);
     await tick();
     expect(onRetry).toHaveBeenCalledOnce();
-    expect(onOpenSettings).toHaveBeenCalledOnce();
+    expect(onOpenSettings).not.toHaveBeenCalled();
     expect(onBack).toHaveBeenCalledOnce();
     ui.unmount();
   });
@@ -359,6 +381,8 @@ describe('StartPreparationPanel', () => {
     });
 
     await tick();
+    ui.stdin.write('d');
+    await flushEffects();
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('visible-summary');
     expect(frame).toContain('visible-error');

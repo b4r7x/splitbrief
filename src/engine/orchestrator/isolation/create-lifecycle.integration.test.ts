@@ -21,6 +21,7 @@ import * as sandboxEnv from '../../runners/sandbox/env.js';
 import * as bridge from '../../runners/sandbox/state/bridge.js';
 import * as sandboxPaths from '../../runners/sandbox/state/paths.js';
 import * as stagedProject from '../approval/staged-project/create.js';
+import { withAttemptRestoreScope } from '../task/restore-scope.js';
 import * as acquisition from './acquisition.js';
 import { createRunIsolation } from './create.js';
 import * as entrySnapshot from './entry-snapshot.js';
@@ -82,6 +83,7 @@ function worktreeOf(dir: string): string {
 function who(dir: string, path: string): string {
   if (path === dir || path === realpathSync(dir)) return 'project';
   if (existsSync(join(dir, '.git')) && path === worktreeOf(dir)) return 'worktree';
+  if (path === sessionDir(dir, SESSION_ID)) return 'checkout sandbox';
   if (path.startsWith(join(sessionDir(dir, SESSION_ID), 'stage-'))) return 'staged copy';
   if (basename(path).startsWith('splitbrief-resume-env-')) return 'resumed env';
   return path;
@@ -213,8 +215,9 @@ const OPEN_WORKTREE = [
 ];
 const ATTEMPT_WORKTREE = ['baseline worktree', 'snapshot worktree', 'save record'];
 const DISPOSE_WORKTREE = [
-  'prune npm cache project',
-  'remove temp dirs project',
+  'clear sign-in copies checkout sandbox',
+  'prune npm cache checkout sandbox',
+  'remove temp dirs checkout sandbox',
   'clear sign-in copies worktree',
   'remove temp dirs worktree',
   'remove root worktree',
@@ -281,8 +284,9 @@ describe('run isolation lifecycle', () => {
       'snapshot staged copy',
       'save record',
       'put back staged copy',
-      'prune npm cache project',
-      'remove temp dirs project',
+      'clear sign-in copies checkout sandbox',
+      'prune npm cache checkout sandbox',
+      'remove temp dirs checkout sandbox',
       'clear sign-in copies worktree',
       'remove temp dirs worktree',
       'remove worktree worktree',
@@ -316,8 +320,9 @@ describe('run isolation lifecycle', () => {
       'create worktree worktree',
       'add exclude',
       'baseline worktree',
-      'prune npm cache project',
-      'remove temp dirs project',
+      'clear sign-in copies checkout sandbox',
+      'prune npm cache checkout sandbox',
+      'remove temp dirs checkout sandbox',
       'clear sign-in copies worktree',
       'remove temp dirs worktree',
       'remove resumed envs',
@@ -382,8 +387,9 @@ describe('run isolation lifecycle', () => {
 
       expect(log).toEqual([
         ...steps,
-        'prune npm cache project',
-        'remove temp dirs project',
+        'clear sign-in copies checkout sandbox',
+        'prune npm cache checkout sandbox',
+        'remove temp dirs checkout sandbox',
         'clear sign-in copies worktree',
         'remove temp dirs worktree',
         'remove root worktree',
@@ -412,8 +418,9 @@ describe('run isolation lifecycle', () => {
       ...ATTEMPT_WORKTREE,
       'put back worktree',
       `row ${makeAttemptBrief().task.id} attempt reverted: 2 files`,
-      'prune npm cache project',
-      'remove temp dirs project',
+      'clear sign-in copies checkout sandbox',
+      'prune npm cache checkout sandbox',
+      'remove temp dirs checkout sandbox',
       'clear sign-in copies worktree',
       'remove temp dirs worktree',
       'remove root worktree',
@@ -448,8 +455,9 @@ describe('run isolation lifecycle', () => {
       'save record',
       ...ATTEMPT_WORKTREE,
       'put back worktree',
-      'prune npm cache project',
-      'remove temp dirs project',
+      'clear sign-in copies checkout sandbox',
+      'prune npm cache checkout sandbox',
+      'remove temp dirs checkout sandbox',
       'clear sign-in copies worktree',
       'remove temp dirs worktree',
       'remove root worktree',
@@ -483,8 +491,9 @@ describe('run isolation lifecycle', () => {
       ...ATTEMPT_WORKTREE,
       'put back worktree',
       `row ${makeAttemptBrief().task.id} attempt reverted: 1 file`,
-      'prune npm cache project',
-      'remove temp dirs project',
+      'clear sign-in copies checkout sandbox',
+      'prune npm cache checkout sandbox',
+      'remove temp dirs checkout sandbox',
       'clear sign-in copies worktree',
       'remove temp dirs worktree',
       'remove root worktree',
@@ -512,7 +521,8 @@ describe('run isolation lifecycle', () => {
     expect(log).toEqual([
       ...OPEN_WORKTREE,
       ...ATTEMPT_WORKTREE,
-      'prune npm cache project',
+      'clear sign-in copies checkout sandbox',
+      'prune npm cache checkout sandbox',
       'remove root worktree',
       'remove resumed envs',
       'remove exclude',
@@ -534,8 +544,15 @@ describe('run isolation lifecycle', () => {
 
     const opened = await handle.open({ config });
     const first = await attempt(handle);
-    writeFileSync(join(dir, 'src.txt'), 'attempt\n');
-    writeFileSync(join(dir, 'attempt.txt'), 'attempt\n');
+    await withAttemptRestoreScope({
+      ref: { projectDir: dir, sessionId: SESSION_ID },
+      dir,
+      taskStartSnapshot: first.snapshot,
+      run: async () => {
+        writeFileSync(join(dir, 'src.txt'), 'attempt\n');
+        writeFileSync(join(dir, 'attempt.txt'), 'attempt\n');
+      },
+    });
     first.cleanup();
     const second = await attempt(handle);
     expect(projectFiles(dir)).toEqual(filesBefore);
@@ -548,11 +565,13 @@ describe('run isolation lifecycle', () => {
     expect(opened).toMatchObject({ kind: 'checkout', projectDir: dir });
     expect(log).toEqual([
       'snapshot project',
+      'snapshot project',
       'put back project',
       `row ${makeAttemptBrief().task.id} attempt reverted: 2 files`,
       'snapshot project',
-      'prune npm cache project',
-      'remove temp dirs project',
+      'clear sign-in copies checkout sandbox',
+      'prune npm cache checkout sandbox',
+      'remove temp dirs checkout sandbox',
       'remove resumed envs',
     ]);
     expect(projectFiles(dir)).toEqual({
@@ -578,26 +597,44 @@ describe('run isolation lifecycle', () => {
       throw fault;
     });
     const handle = isolate(dir, 'none', log);
+    const ref = { projectDir: dir, sessionId: SESSION_ID };
 
     const first = await attempt(handle);
-    writeFileSync(join(dir, 'src.txt'), 'first\n');
-    writeFileSync(join(dir, 'first.txt'), 'first\n');
+    await withAttemptRestoreScope({
+      ref,
+      dir,
+      taskStartSnapshot: first.snapshot,
+      run: async () => {
+        writeFileSync(join(dir, 'src.txt'), 'first\n');
+        writeFileSync(join(dir, 'first.txt'), 'first\n');
+      },
+    });
     await first.revert();
     expect(projectFiles(dir)).toEqual(filesBefore);
     const second = await attempt(handle);
-    writeFileSync(join(dir, 'src.txt'), 'second\n');
-    writeFileSync(join(dir, 'kept.txt'), 'kept\n');
+    await withAttemptRestoreScope({
+      ref,
+      dir,
+      taskStartSnapshot: second.snapshot,
+      run: async () => {
+        writeFileSync(join(dir, 'src.txt'), 'second\n');
+        writeFileSync(join(dir, 'kept.txt'), 'kept\n');
+      },
+    });
     await second.discard(['src.txt']);
     await expect(handle.dispose()).rejects.toBe(fault);
     await expect(handle.dispose()).rejects.toBe(fault);
 
     expect(log).toEqual([
       'snapshot project',
+      'snapshot project',
       'put back project',
       `row ${makeAttemptBrief().task.id} attempt reverted: 2 files`,
       'snapshot project',
+      'snapshot project',
       'put back project',
-      'prune npm cache project',
+      'clear sign-in copies checkout sandbox',
+      'prune npm cache checkout sandbox',
       'remove resumed envs',
     ]);
     expect(projectFiles(dir)).toEqual({

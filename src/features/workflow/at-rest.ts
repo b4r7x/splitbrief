@@ -58,7 +58,7 @@ export function openRoundQuestions(
     status.kind === 'open' &&
     status.stop.kind === 'waiting-for-you' &&
     status.stop.on.kind === 'question';
-  return waitsAtQuestion && questions !== null ? questions : [];
+  return waitsAtQuestion || status.kind === 'running' ? (questions ?? []) : [];
 }
 
 /**

@@ -137,6 +137,7 @@ async function runLineage(opts: {
   atPause?: (projectDir: string) => void;
   preSplitFiles?: readonly string[];
   hooks?: (projectDir: string) => HooksConfig;
+  checkout?: true;
 }) {
   const ref = setupProject();
   const hooks = opts.hooks?.(ref.projectDir);
@@ -208,7 +209,18 @@ async function runLineage(opts: {
   });
   let result = await runTaskLoop({
     wctx,
-    initialState: makeImplState([task]),
+    initialState: makeImplState(
+      [task],
+      opts.checkout === true
+        ? {
+            workspace: {
+              kind: 'checkout',
+              path: ref.projectDir,
+              base: { snapshotId: 'base', head: null },
+            },
+          }
+        : undefined,
+    ),
     setTrackedState: vi.fn(),
     setCurrentTask: vi.fn(),
   });
@@ -964,6 +976,7 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
   it('books the kept files of a skipped split child once when the user ends the run at the blocked child', async () => {
     let check = { value: false };
     const { ref, wctx, result, bus } = await runLineage({
+      checkout: true,
       answers: [
         (failing) => {
           check = failing;
@@ -996,17 +1009,8 @@ describe('the booking of a lineage after a rewrite or a split', { timeout: 90_00
     expect(blocked.state.pendingRecovery?.reason).toBe('dependency-blocked');
     const second = loadState(ref);
     if (second === null) throw new Error('Missing blocked state');
-    const checkoutRun = {
-      ...second,
-      workspace: {
-        kind: 'checkout' as const,
-        path: ref.projectDir,
-        base: { snapshotId: 'base', head: null },
-      },
-    };
-    saveState(ref, checkoutRun);
 
-    const ended = await applyRecoveryAction({ ...ref, state: checkoutRun, action: 'end-run', bus });
+    const ended = await applyRecoveryAction({ ...ref, state: second, action: 'end-run', bus });
 
     expect(ended.ok).toBe(true);
     expect(read(ref, 'src/a.ts')).toBe('export const a = 1;\n');

@@ -28,6 +28,7 @@ export type BaseEntry =
 export type ApplyStates = {
   projectDir: string;
   workspaceDir: string;
+  workspaceIgnoreDir: string | null | undefined;
   base: ReadonlyMap<string, BaseEntry>;
   ours: ReadonlyMap<string, SideEntry>;
   theirs: ReadonlyMap<string, SideEntry>;
@@ -77,13 +78,13 @@ async function captureCheckoutState(projectDir: string): Promise<{
   return { entries, baseline };
 }
 
-async function captureWorkspaceState(
-  projectDir: string,
+export async function captureWorkspaceState(
   workspaceDir: string,
+  ignoreProjectDir: string | null | undefined,
   base: ReadonlyMap<string, BaseEntry>,
 ): Promise<ReadonlyMap<string, SideEntry>> {
   const entries = new Map<string, SideEntry>();
-  for await (const entry of walkProjectEntries(workspaceDir, { ignoreProjectDir: projectDir })) {
+  for await (const entry of walkProjectEntries(workspaceDir, { ignoreProjectDir })) {
     if (isInternalGitStatusPath(entry.path) || entry.kind === 'directory') continue;
     if (entry.kind === 'symlink') {
       entries.set(entry.path, {
@@ -104,13 +105,14 @@ async function captureWorkspaceState(
   return entries;
 }
 
-export async function captureApplyStates(input: {
+export async function captureWorkspaceComparison(input: {
   projectDir: string;
   sessionId: string;
-  workspace: NonNullable<WorkflowState['workspace']>;
-}): Promise<ApplyStates> {
-  const { projectDir, sessionId, workspace } = input;
-  const snapshotId = workspace.base.snapshotId;
+  snapshotId: string;
+  workspaceDir: string;
+  workspaceIgnoreDir: string | null | undefined;
+}): Promise<Pick<ApplyStates, 'base' | 'ours'>> {
+  const { projectDir, sessionId, snapshotId, workspaceDir, workspaceIgnoreDir } = input;
   const manifest = await readManifest(projectDir, sessionId, snapshotId);
   const baseline =
     snapshotId === SNAPSHOT_BASELINE_ID
@@ -142,16 +144,38 @@ export async function captureApplyStates(input: {
     if (!isInternalGitStatusPath(path)) base.set(path, { kind: 'symlink', target });
   }
 
+  const ours = await captureWorkspaceState(workspaceDir, workspaceIgnoreDir, base);
+  return { base, ours };
+}
+
+export async function captureApplyStates(input: {
+  projectDir: string;
+  sessionId: string;
+  workspace: NonNullable<WorkflowState['workspace']>;
+}): Promise<ApplyStates> {
+  const { projectDir, sessionId, workspace } = input;
   const workspaceDir = workspace.path;
-  const [checkout, ours] = await Promise.all([
+  const workspaceIgnoreDir =
+    workspace.kind === 'staged-copy'
+      ? workspace.base.head === null
+        ? projectDir
+        : null
+      : undefined;
+  const [checkout, workspaceComparison] = await Promise.all([
     captureCheckoutState(projectDir),
-    captureWorkspaceState(projectDir, workspaceDir, base),
+    captureWorkspaceComparison({
+      projectDir,
+      sessionId,
+      snapshotId: workspace.base.snapshotId,
+      workspaceDir,
+      workspaceIgnoreDir,
+    }),
   ]);
   return {
     projectDir,
     workspaceDir,
-    base,
-    ours,
+    workspaceIgnoreDir,
+    ...workspaceComparison,
     theirs: checkout.entries,
     theirsBaseline: checkout.baseline,
   };
@@ -205,7 +229,7 @@ export function sameAsBase(side: SideEntry, base: BaseEntry): boolean {
  * The run diff of a captured workspace: every path the workspace changed from
  * the run base, a mode-only change included, keyed to its entry fingerprint.
  */
-export function candidateOf(states: ApplyStates): Record<string, string> {
+export function candidateOf(states: Pick<ApplyStates, 'base' | 'ours'>): Record<string, string> {
   const candidate: Record<string, string> = {};
   const paths = [...new Set([...states.base.keys(), ...states.ours.keys()])];
   for (const path of paths) {
@@ -252,7 +276,7 @@ function verifySideEntries(
 export async function verifyApplyStates(states: ApplyStates): Promise<void> {
   const [checkout, ours] = await Promise.all([
     captureCheckoutState(states.projectDir),
-    captureWorkspaceState(states.projectDir, states.workspaceDir, states.base),
+    captureWorkspaceState(states.workspaceDir, states.workspaceIgnoreDir, states.base),
   ]);
   verifySideEntries('theirs', states.theirs, checkout.entries);
   verifySideEntries('ours', states.ours, ours);

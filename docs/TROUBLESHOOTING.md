@@ -6,16 +6,12 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 Stable `stateId` and runner `state` values with copyable remediations are indexed under [Run readiness and doctor diagnostics](#run-readiness-and-doctor-diagnostics). Use `splitbrief doctor --json` for automation.
 
-Use the reported preparation error; a zero-blocker readiness count does not explain a session-ownership failure. Start and continue must acquire current ownership independently of discovery. A live or unknown competing owner is not permission to take over.
+Read the preparation error for the session you tried to open. Each session has one driver. An interactive observer can read an owned session while the original process continues.
 
 When no entry matches:
 
 1. Reproduce with a small run: `splitbrief start --json "minimal repro"` with `workflow.approve: none` in the config. It runs one planning session and no plan card, so it is easy to script.
-2. Read the session log. The last event before the failure usually names the failing phase or task:
-   ```bash
-   cat .splitbrief/active
-   jq . .splitbrief/sessions/$(cat .splitbrief/active)/session.jsonl | less
-   ```
+2. Read the session log. Use the ID of the run that failed. The last event in `.splitbrief/sessions/<session-id>/session.jsonl` usually names its phase or task.
 3. Run headless. `splitbrief start --json …` separates the engine from the TUI, so you see the events without Ink rendering errors.
 4. If the defect looks like an architecture regression (the engine imports React, barrels come back), run the pre-merge grep gates in [INVARIANTS.md](./INVARIANTS.md).
 
@@ -61,9 +57,9 @@ jq 'select(.type == "runner_call_warning") | {callId: .data.callId, phase, warni
 
 Stderr is diagnostic by default. A `call_stderr_delta` from the raw runner stream is not projected into `session.jsonl` as a `runner_call_warning` and does not create a primary warning row. Actionable warnings appear as `runner_call_warning` and carry `code`, `severity`, `source`, `surface`, `fingerprint`, `message`, and optional `rawRef`. Repeated warnings are grouped in the TUI by fingerprint/code/source/surface.
 
-### Active session pointer
+### Default run selection
 
-`.splitbrief/active` stores the active session id. If commands like `splitbrief status` or `splitbrief resume` report "no active session", the pointer is missing or stale — start a new workflow or manually `cat .splitbrief/active`.
+Use `splitbrief status` to see the default run. Use `/sessions` in the TUI to find a different session, then pass its ID or number to `splitbrief resume`. See the [selection rules](./CLI-REFERENCE.md#splitbrief-resume).
 
 ### Headless mode (`--json`)
 
@@ -242,13 +238,12 @@ The error names the file from the project root, also from a subfolder or with `-
 
 ### Symptom: `splitbrief doctor` or `splitbrief start` says Run Readiness is `blocked`
 
-**Likely cause:** A hard local precondition failed before model calls: invalid or unwritable `.splitbrief/config.yaml`, not a git repository, an in-progress git operation (merge, rebase, etc.), or a live `.splitbrief/active` session in the same checkout. `splitbrief doctor` can also report a missing config because it does not bootstrap setup files.
+**Likely cause:** A hard local precondition failed before model calls: invalid or unwritable `.splitbrief/config.yaml`, not a git repository, or an in-progress Git operation such as a merge or rebase. `splitbrief doctor` can also report a missing config because it does not bootstrap setup files.
 
 **Fix:**
 1. Read the `Next action` line. It points to `splitbrief init`, config repair, or cleaning/isolating the repo.
 2. For doctor-only missing config warnings, run `splitbrief init` or `splitbrief init --reconfigure`.
 3. For invalid config, fix `.splitbrief/config.yaml` and re-run `splitbrief doctor --json` to verify (`stateId` / `remediation` per check).
-4. For a live active session, stop the run in the window that runs it, then run `splitbrief continue <session-id>`. `splitbrief resume` refuses a run that is still running.
 
 **Prevention:** Run `splitbrief doctor` after changing runner config or before CI starts a headless run.
 
@@ -1013,10 +1008,10 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: `splitbrief resume` says the run is closed
 
-**Likely cause:** A closed run is the one thing continuing refuses. `state.json` records `closed: { at, as: 'ended' }` — written by **End run** on the stop sheet or a document gate, the `end-run` recovery action, or `/end` — or the run reached `complete` with a passing final review. Closing a run clears `.splitbrief/active`, so `resume` with no argument stops with `no active session to resume.`
+**Likely cause.** The named run ended, was applied or discarded, or completed in checkout mode. With no argument, `resume` falls back to another saved open run when the default one closes.
 
 **Fix:**
-1. Open `/sessions` in the TUI to browse runs. Use `splitbrief status` to check the active run.
+1. Open `/sessions` in the TUI to browse runs. Use `splitbrief status` to check the default run.
 2. Its files are still on disk and its session directory is intact — read `summary.json`, `review.md` and the evidence ledger, or open it with `/sessions` and read the summary at the end of its transcript.
 3. To carry the work on, start a new run: `splitbrief start "<what is left>"`. A closed run is a record, not a workspace.
 4. To continue an older run that is still open, name it: `splitbrief continue <session-id>`.
@@ -1057,17 +1052,11 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ---
 
-### Symptom: a session is reported active but nothing is running
+### Symptom: a read-only run shows only saved activity
 
-**Likely cause:** Each session writes a per-session lockfile at `.splitbrief/sessions/<id>/lockfile.json` that records the PID, heartbeat, and exit marker. If `.splitbrief/active` still points at a non-terminal `state.json`, older versions could treat that pointer as live even when the lockfile already had `exitedAt`.
+A process with a stale heartbeat can still own the run. The viewer shows its last saved activity.
 
-**Fix:**
-1. Run `splitbrief status` to see what the project believes is running.
-2. Run `splitbrief start ...` again. Current versions clear `.splitbrief/active` automatically when the active lockfile has exited or the PID is gone.
-3. If you want to continue that run instead of starting fresh, run `splitbrief continue <session-id>`.
-4. If the lock is fresh and a real process is alive, you have a genuine concurrent session. Finish that one rather than starting another.
-
-**Prevention:** Prefer clean TUI cancellation or `splitbrief continue` for interrupted work.
+Check the terminal that started the run. If it is stuck, stop the original process there. When it exits, press Enter in the viewer to continue an open run. To work on something else, start a different run with `splitbrief start`.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [Diagnostic modes](#diagnostic-modes).
 
@@ -1551,7 +1540,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 **Likely cause:** No built-in flag enforces a drift threshold; you wire it yourself.
 
 **Fix:**
-1. In your CI script, after `splitbrief start --json ...`, resolve the session id from readiness/session output, `.splitbrief/active`, or wrapper state, then parse `.splitbrief/sessions/<id>/summary.json`.
+1. In your CI script, after `splitbrief start --json ...`, resolve that run's session ID from its output or wrapper state, then parse `.splitbrief/sessions/<id>/summary.json`.
 2. Read `driftSummary.passed`, `driftSummary.errorCount`, or `driftSummary.warningCount`. There is no drift score.
 3. Exit non-zero from the wrapper if the counts exceed your threshold:
    `node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1])); process.exit((s.driftSummary?.errorCount ?? 0) > 0 ? 1 : 0)" .splitbrief/sessions/<id>/summary.json`.
@@ -1650,4 +1639,4 @@ chmod 700 .splitbrief
 - [WORKFLOW.md](./WORKFLOW.md) — the expected behavior of each phase.
 - [CHANGELOG.md](../CHANGELOG.md) — recent changes that can cause a regression.
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — the system diagram and the planner and implementer contracts.
-- Open an issue with the session id (`.splitbrief/active`), the contents of `.splitbrief/sessions/<id>/session.jsonl`, and your `.splitbrief/config.yaml` with every `apiKey` value removed.
+- Open an issue with the affected session ID, the contents of `.splitbrief/sessions/<id>/session.jsonl`, and your `.splitbrief/config.yaml` with every `apiKey` value removed.

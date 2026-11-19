@@ -11,6 +11,7 @@ import { runBaseOf } from '../isolation/run-base/tree.js';
 import { resolveRunUniverse, runUserFiles } from '../evidence/review-packet/sections-io.js';
 import { publishConsultAnswered } from '../publish/recovery.js';
 import { publishRunnerCallEvent } from '../publish/runner.js';
+import { readWorkspaceSeed } from '../isolation/seed.js';
 import { askPlannerSession, type PlannerSessionTurn } from '../planner-session.js';
 import { addUsageAndSave } from '../state-ops/usage.js';
 import { transitionAndSave } from '../state-ops/transition.js';
@@ -162,9 +163,11 @@ export async function requestConsult(
       .flatMap((task) => task.suggestedFiles),
     userFiles: await consultUserFiles(ctx, input),
   });
+  // A native planner session predating planning isolation still belongs to the checkout.
+  const plannerDir = (await readWorkspaceSeed(ref)) === null ? ctx.projectDir : ctx.workspaceDir;
   const onCallEvent = (event: RunnerCallEvent): void =>
     publishRunnerCallEvent(
-      { bus: ctx.bus, phase: state.phase, rootDir: ctx.projectDir, taskId: input.task.id },
+      { bus: ctx.bus, phase: state.phase, rootDir: plannerDir, taskId: input.task.id },
       event,
     );
   // A fix task's brief comes from the review, not from the planning thread, so every consult on a
@@ -173,6 +176,7 @@ export async function requestConsult(
   const answer = await askPlannerSession(
     {
       ...ref,
+      workspaceDir: plannerDir,
       bus: ctx.bus,
       planner: ctx.planner,
       config: ctx.config,

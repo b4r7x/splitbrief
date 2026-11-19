@@ -54,6 +54,7 @@ export async function excludeNodeModulesLink(
   projectDir: string,
   gitCommonDir: string,
   sessionId: string,
+  untracked: boolean,
 ): Promise<string | null> {
   if ((await checkIgnoredPaths(projectDir, [NODE_MODULES])).length === 0) return null;
   try {
@@ -63,6 +64,8 @@ export async function excludeNodeModulesLink(
       const current = existsSync(file) ? readFileSync(file, 'utf-8') : '';
       if (current.split('\n').includes(marker)) return file;
       if (hasUnownedNodeModulesExclude(current)) return null;
+      if (!untracked && !current.split('\n').some((line) => line.startsWith(EXCLUDE_MARKER_PREFIX)))
+        return null;
       mkdirSync(dirname(file), { recursive: true });
       const separator = current === '' || current.endsWith('\n') ? '' : '\n';
       appendFileSync(file, `${separator}${marker}\n${ROOT_NODE_MODULES}\n`, 'utf-8');

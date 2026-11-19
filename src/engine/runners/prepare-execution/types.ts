@@ -1,7 +1,7 @@
 import type { collectReadiness } from '../../../core/readiness/collect.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
+import type { createActiveSessionReceipt } from '../../../core/sessions/active-pointer.js';
 import type { prepareNewSession } from '../../../core/sessions/prepare.js';
 import type { RouteCatalogReads } from '../../detection/route-catalog.js';
 import type { VersionProbeReads } from '../cli-tools/probe/declared-readiness.js';
@@ -41,7 +41,7 @@ export type PrepareExecutionDependencies = Readonly<{
   prepareCustomRunnerAdmission: typeof prepareCustomRunnerAdmission;
   resolveCliExecutableAliases: typeof resolveCliExecutableAliases;
   prepareNewSession: typeof prepareNewSession;
-  reactivateExistingSession: typeof reactivateExistingSession;
+  createActiveSessionReceipt: typeof createActiveSessionReceipt;
   newPreparationId: () => string;
 }>;
 

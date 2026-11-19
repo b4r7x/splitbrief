@@ -15,8 +15,13 @@ import { cliError } from '../errors.js';
 export function bootstrapStoresSync(projectDir: string, opts: WorkflowOpts = {}): void {
   initLogger(projectDir);
   createLogger('bootstrap').info('stores bootstrap', { projectDir });
-  initUIChrome();
+  terminalSizeStore.subscribeToResize();
   loadProjectState(projectDir, opts);
+}
+
+export function bootstrapObserverStores(projectDir: string, opts: WorkflowOpts): void {
+  terminalSizeStore.subscribeToResize();
+  loadProjectDisplayState(projectDir, opts);
 }
 
 export async function bootstrapStoresHooks(
@@ -51,19 +56,19 @@ export function teardownStores(): void {
   teardownDiscovery();
 }
 
-function initUIChrome(): void {
-  terminalSizeStore.subscribeToResize();
-}
-
 let historyPersistenceTeardown: (() => void) | null = null;
 
 export function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
+  loadProjectDisplayState(projectDir, opts);
+  historyPersistenceTeardown = installHistoryPersistence();
+}
+
+function loadProjectDisplayState(projectDir: string, opts: WorkflowOpts): void {
   const overrides = workflowOptsToCLIOverrides(opts);
   configStore.load(projectDir, overrides);
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');
   sessionsStore.load(projectDir);
-  historyPersistenceTeardown = installHistoryPersistence();
   const prefs = readUiPrefs(projectDir);
   controlsStore.setSidebar(prefs.sidebarVisible);
 }

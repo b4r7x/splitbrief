@@ -5,6 +5,9 @@ import type { CliHostStateAccess } from '../../../core/runners/cli-tool/auth-cha
 import { defaultCliAuthChannel } from '../../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import type { RunnerRole } from '../../../core/runners/seat-roles.js';
+import { sessionDir } from '../../../core/paths.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
+import { currentProcessScope, type ProcessScope } from '../../../lib/process/registry.js';
 import { SECURE_DIR_MODE } from '../../../lib/fs/secure.js';
 import { createSanitizedChildEnv } from '../../../lib/process/spawn/child-env.js';
 import { error } from '../../../utils/error.js';
@@ -14,6 +17,26 @@ import { clearBridgedStateUnder, bridgeCliState } from './state/bridge.js';
 import { type RunnerLike, runnerAuthEnvKeys, cliChannelStaging } from './auth-env.js';
 import { attachSandboxCredentialValues, sandboxCredentialValues } from './credential-values.js';
 import { sandboxRootCandidates, sandboxRoot, sandboxTempDir } from './state/paths.js';
+
+const checkoutSandboxes = new Map<ProcessScope, SessionRef>();
+
+export function bindCheckoutSandbox(scope: ProcessScope, ref: SessionRef): () => void {
+  checkoutSandboxes.set(scope, ref);
+  return () => {
+    if (checkoutSandboxes.get(scope) === ref) checkoutSandboxes.delete(scope);
+  };
+}
+
+export function checkoutSandboxRef(projectDir: string): SessionRef | undefined {
+  const scope = currentProcessScope();
+  const ref = scope === undefined ? undefined : checkoutSandboxes.get(scope);
+  return ref?.projectDir === projectDir ? ref : undefined;
+}
+
+function runSandboxDir(projectDir: string): string {
+  const ref = checkoutSandboxRef(projectDir);
+  return ref === undefined ? projectDir : sessionDir(projectDir, ref.sessionId);
+}
 
 /**
  * Keeps a resolved CLI's directory first without discarding the sanitized
@@ -184,6 +207,7 @@ export async function createSandboxEnv(options: {
   selectedCli?: CliToolId | undefined;
   hostState?: CliHostStateAccess;
   role?: RunnerRole | undefined;
+  sandboxDir?: string | undefined;
 }): Promise<NodeJS.ProcessEnv> {
   const {
     projectDir,
@@ -191,11 +215,12 @@ export async function createSandboxEnv(options: {
     selectedCli,
     hostState = 'bridged-files',
     role,
+    sandboxDir = projectDir,
   } = options;
   return withSandboxCreationLock(
-    `${projectDir}\u0000${role ?? ''}\u0000${selectedCli ?? ''}`,
+    `${sandboxDir}\u0000${role ?? ''}\u0000${selectedCli ?? ''}`,
     async () => {
-      const root = sandboxRoot(projectDir, role, selectedCli);
+      const root = sandboxRoot(sandboxDir, role, selectedCli);
       const home = join(root, 'home');
       const tmp = sandboxTempDir(root);
       const cache = join(root, 'cache');
@@ -254,10 +279,12 @@ export async function createRunnerSandboxEnv(
   projectDir: string,
   runner: RunnerLike,
   role: RunnerRole,
+  sandboxDir = runSandboxDir(projectDir),
 ): Promise<NodeJS.ProcessEnv> {
   if (runner.kind !== 'cli') {
     return createSandboxEnv({
       projectDir,
+      sandboxDir,
       preserveEnvKeys: runnerAuthEnvKeys(runner),
       hostState: 'none',
       role,
@@ -265,6 +292,7 @@ export async function createRunnerSandboxEnv(
   }
   return createSandboxEnv({
     projectDir,
+    sandboxDir,
     ...cliChannelStaging(runner.tool, defaultCliAuthChannel(runner.tool)),
     role,
   });

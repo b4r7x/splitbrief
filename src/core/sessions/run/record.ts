@@ -16,12 +16,15 @@ export type RunCheckpoint =
       putBack?: Readonly<{ restored: readonly string[]; removed: readonly string[] }> | undefined;
     }>;
 
+export type RunOwner = Readonly<{ kind: 'live' | 'stale'; pid: number }>;
+
 export interface RunRecord {
   ref: SessionRef;
   feature: string;
   startedAt: string | null;
   hydration: OwnedResumeState;
   status: RunStatus;
+  owner?: RunOwner | undefined;
   summary: Summary | null;
   ledger: EvidenceLedger | null;
   checkpoint: RunCheckpoint | null;
@@ -29,10 +32,18 @@ export interface RunRecord {
 
 export interface RunRecordDeps {
   loadResumeState: (ref: SessionRef) => OwnedResumeState;
-  liveness: (ref: SessionRef) => 'alive' | 'not-alive';
+  readOwner: (ref: SessionRef) => RunOwner | undefined;
   readSummary: (ref: SessionRef) => Summary | null;
   readLedger: (ref: SessionRef) => EvidenceLedger | null;
   readCheckpoint: (ref: SessionRef) => RunCheckpoint | null;
+}
+
+export function isRunHeld(record: RunRecord): boolean {
+  return record.owner !== undefined || record.status.kind === 'running';
+}
+
+export function isRunHeldElsewhere(record: RunRecord): boolean {
+  return isRunHeld(record) && record.owner?.pid !== process.pid;
 }
 
 function unreadableState(): RunStatus {
@@ -57,17 +68,21 @@ export function loadRunRecord(
   const hydration = deps.loadResumeState(ref);
   const state = hydration.kind === 'loaded' ? hydration.state : null;
   const summary = deps.readSummary(ref);
+  const owner = deps.readOwner(ref);
   return {
     ref,
     feature: state?.feature ?? summary?.feature ?? '',
     startedAt: state?.startedAt ?? null,
     hydration,
+    ...(owner !== undefined && { owner }),
     status:
       state === null
-        ? unreadableState()
+        ? owner === undefined
+          ? unreadableState()
+          : { kind: 'running' }
         : deriveRunStatus({
             state,
-            liveness: deps.liveness(ref),
+            liveness: owner === undefined ? 'not-alive' : 'alive',
             reviewNone,
           }),
     summary,

@@ -15,18 +15,28 @@ export type CreateWorktreeOptions = {
   // Run isolation places its worktree outside `.trees/` and resolves that path
   // itself; without it the slug names a directory under the project root.
   worktreeDir?: string;
+  pinnedHead?: string | undefined;
+  afterCheckout?: ((worktreeDir: string) => Promise<void>) | undefined;
 };
 
-async function propagateSplitbriefState(projectDir: string, wtPath: string): Promise<void> {
+async function propagateSplitbriefState(
+  projectDir: string,
+  wtPath: string,
+  opts: CreateWorktreeOptions,
+): Promise<void> {
+  const useCurrentSettings = opts.pinnedHead === undefined;
   const baseConfig = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
   if (existsSync(baseConfig)) {
-    await ensureConfigGitignore(wtPath);
+    if (useCurrentSettings && opts.afterCheckout === undefined) await ensureConfigGitignore(wtPath);
     await mkdir(join(wtPath, SPLITBRIEF_DIR), { recursive: true });
-    await cp(baseConfig, join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE));
+    await cp(baseConfig, join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE), { force: useCurrentSettings });
   }
   const baseHooks = join(projectDir, SPLITBRIEF_DIR, HOOKS_DIR);
   if (existsSync(baseHooks)) {
-    await cp(baseHooks, join(wtPath, SPLITBRIEF_DIR, HOOKS_DIR), { recursive: true });
+    await cp(baseHooks, join(wtPath, SPLITBRIEF_DIR, HOOKS_DIR), {
+      recursive: true,
+      force: useCurrentSettings,
+    });
   }
 }
 
@@ -39,8 +49,9 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<strin
   const { projectDir, slug, git } = opts;
   const wtPath = opts.worktreeDir ?? resolveConfinedWorktreePath(projectDir, slug);
 
-  await git.raw(['worktree', 'add', '--detach', wtPath, 'HEAD']);
-  await initWorktreeSubmodules(projectDir, wtPath);
-  await propagateSplitbriefState(projectDir, wtPath);
+  await git.raw(['worktree', 'add', '--detach', wtPath, opts.pinnedHead ?? 'HEAD']);
+  await initWorktreeSubmodules(opts.pinnedHead === undefined ? projectDir : wtPath, wtPath);
+  await opts.afterCheckout?.(wtPath);
+  await propagateSplitbriefState(projectDir, wtPath, opts);
   return wtPath;
 }

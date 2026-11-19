@@ -101,13 +101,13 @@ export async function gateAttemptChanges(opts: {
   let approvedFiles = changedFiles;
   let denial: GateDenial | undefined;
   if (!decision.allow) {
-    const { savedTo, briefKept } = await workspace
+    const { restoredFiles, savedTo, briefKept } = await workspace
       .discard(decision.deniedFiles)
       .catch((err: unknown) => {
         workspace.cleanup();
         throw err;
       });
-    denial = { decision, discardedFiles: decision.deniedFiles, savedTo, briefKept };
+    denial = { decision, discardedFiles: restoredFiles, savedTo, briefKept };
     approvedFiles = changedFiles.filter((file) => !decision.deniedFiles.includes(file));
     if (approvedFiles.length === 0) return { outcome: 'denied', denial };
   }

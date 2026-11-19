@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { SpecMetadata } from '../../../core/sessions/spec-files.js';
@@ -18,6 +17,7 @@ import {
 } from '../../../lib/process/registry.js';
 import { error } from '../../../utils/error.js';
 
+import { bindCheckoutSandbox } from '../../runners/sandbox/env.js';
 import type { PreparedConfig } from '../../runners/prepare-execution/prepared.js';
 import { summaryBaseFromIdentity } from '../summary/seat-identity.js';
 import { publishWarning } from '../publish/notice.js';
@@ -31,14 +31,16 @@ import type { RunWorkflowOptions } from './init/options.js';
 import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 import { acquireLiveness } from './liveness.js';
-import { runBody } from './body.js';
+import { runBody, type ClaimedRunState } from './body.js';
 import { settleRun } from './settle.js';
 import { teardownRun } from './teardown.js';
 import { trackedPhase } from './tracker.js';
 import type { RunTracker, ScopedRun } from './types.js';
 import { followCommittedState } from '../state-ops/commit.js';
 import { readWorkflowStateHead } from '../state-ops/head.js';
-import { sessionDir } from '../../../core/paths.js';
+import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
+import { deriveRunStatus } from '../../../core/sessions/run/status.js';
+import { continueRunCommand } from '../../../core/recovery/resume-command.js';
 
 function resolveSessionStart(savedState: WorkflowState | undefined): number {
   if (!savedState) return Date.now();
@@ -46,32 +48,56 @@ function resolveSessionStart(savedState: WorkflowState | undefined): number {
   return Number.isNaN(original) ? Date.now() : original;
 }
 
-/**
- * A new-workflow run applies START, which the state machine accepts only from
- * `idle`. `prepareNewSession` allocates a session directory that cannot already
- * exist (a non-recursive mkdir plus an exclusive ownership marker), so a
- * new-workflow preparation serves only the run that starts its session. Every
- * later entry into that session is a resume: the TUI run loop prepares the
- * session again as `purpose: 'resume'` before it re-enters a run it started (a
- * halt answered in process, a rewind, a restart), and a seat swap, a continue at
- * rest and the CLI `continue` are resume preparations already. Refusing before
- * the run touches liveness, isolation, or state keeps a caller that breaks this
- * rule an internal invariant instead of a transition error raised half-way into
- * a session it then marks failed.
- */
-function assertNewWorkflowSessionUnstarted(
-  ref: Readonly<{ projectDir: string; sessionId: string }>,
-): void {
-  // A run whose session directory has not been created yet holds no state, and
-  // reading the head would resolve a path that does not exist.
-  if (!existsSync(sessionDir(ref.projectDir, ref.sessionId))) return;
-  const head = readWorkflowStateHead(ref);
-  if (head === null || head.state.phase === 'idle') return;
-  throw error(
-    'workflow-session-already-started',
-    `Internal invariant: session ${ref.sessionId} already holds workflow state at phase ${head.state.phase}; a new-workflow run requires a freshly allocated session.`,
-    { sessionId: ref.sessionId, phase: head.state.phase },
-  );
+function readClaimedRunState(
+  prepared: RunWorkflowOptions['prepared'],
+  requestedState: WorkflowState | undefined,
+): ClaimedRunState {
+  const { purpose, session } = prepared;
+  const { ref, active } = session;
+  let state: WorkflowState | undefined;
+  try {
+    state = readWorkflowStateHead(ref)?.state;
+  } catch (cause) {
+    if (purpose === 'new-workflow') throw cause;
+    return { kind: 'unreadable', cause };
+  }
+  if (purpose === 'new-workflow') {
+    if (state === undefined || state.phase === 'idle')
+      return { kind: 'loaded', savedState: undefined };
+    throw error(
+      'workflow-session-already-started',
+      `Internal invariant: session ${ref.sessionId} already holds workflow state at phase ${state.phase}; a new-workflow run requires a freshly allocated session.`,
+      { sessionId: ref.sessionId, phase: state.phase },
+    );
+  }
+  if (state !== undefined) {
+    const status = deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false });
+    if (status.kind === 'closed') {
+      throw error(
+        'workflow-session-already-closed',
+        `Run ${ref.sessionId} is closed (${status.as}); nothing to resume.`,
+        { sessionId: ref.sessionId, as: status.as },
+      );
+    }
+    if (
+      status.kind === 'ready-to-apply' &&
+      (requestedState === undefined ||
+        deriveRunStatus({
+          state: requestedState,
+          liveness: 'not-alive',
+          reviewNone: false,
+        }).kind !== 'ready-to-apply')
+    ) {
+      const action = state.acceptedAsIs === undefined ? 'apply' : 'apply-as-is';
+      throw error(
+        'workflow-session-ready-to-apply',
+        `Run ${ref.sessionId} is ready to apply. Run '${continueRunCommand(ref.sessionId)} --action ${action}' to apply it.`,
+        { sessionId: ref.sessionId },
+      );
+    }
+  }
+  if (purpose === 'resume') reactivateExistingSession(ref, active);
+  return { kind: 'loaded', savedState: state };
 }
 
 /**
@@ -92,9 +118,6 @@ async function runScopedWorkflow(
   const feature = runtime.feature;
   const projectDir = session.ref.projectDir;
   const sessionId = session.ref.sessionId;
-  if (opts.prepared.purpose === 'new-workflow') {
-    assertNewWorkflowSessionUnstarted({ projectDir, sessionId });
-  }
   const requestedSavedState = opts.savedState ?? runtime.resumeState;
   // A boundary interrupt raised before this run started (Esc-Esc in a dead zone
   // of a previous run that then ended into recovery without passing a call
@@ -131,8 +154,14 @@ async function runScopedWorkflow(
     projectDir,
     sessionId,
     feature,
-    signal: opts.signal,
   });
+  let entry: ClaimedRunState;
+  try {
+    entry = readClaimedRunState(opts.prepared, requestedSavedState);
+  } catch (cause) {
+    await releaseLiveness();
+    throw cause;
+  }
 
   const ref = { projectDir, sessionId };
   const processLedger = {
@@ -157,6 +186,7 @@ async function runScopedWorkflow(
     releaseLiveness,
   };
 
+  const unbindCheckoutSandbox = bindCheckoutSandbox(processScope, ref);
   let stopFollowingState: (() => void) | undefined;
   try {
     // A head a nested call commits reaches the tracked state too, so no event is stamped with
@@ -171,7 +201,7 @@ async function runScopedWorkflow(
         getTrackedState: () => tracker.state,
         getCurrentTask: () => tracker.currentTask,
       },
-      () => runBody(run, tracker),
+      () => runBody(run, tracker, entry),
     );
 
     // Every way out of the run body ends the same way: nothing it spawned outlives it, and the
@@ -181,6 +211,7 @@ async function runScopedWorkflow(
 
     return await settleRun(run, tracker, cancelled);
   } finally {
+    unbindCheckoutSandbox();
     await teardownRun(run, tracker, stopFollowingState);
   }
 }

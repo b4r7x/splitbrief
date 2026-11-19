@@ -25,6 +25,7 @@ import { saveState } from '../../../../core/state/persistence.js';
 import type { SessionRef } from '../../../../core/types/session-ref.js';
 import { createRunIsolation } from '../../isolation/create.js';
 import { captureWorkspaceSnapshot } from '../../isolation/entry-snapshot.js';
+import { withAttemptRestoreScope } from '../../task/restore-scope.js';
 import { applyRecoveryAction } from './apply.js';
 
 const SESSION_ID = '2026-11-16-skip-moved-project';
@@ -56,7 +57,14 @@ async function seatDownHalt(strategy: IsolationStrategy) {
     config,
     brief: { ...makeAttemptBrief(), task },
   });
-  writeFileSync(join(opened.projectDir, PARTIAL), 'export const partial = true;\n');
+  await withAttemptRestoreScope({
+    ref,
+    dir: opened.projectDir,
+    taskStartSnapshot: taskStart,
+    attemptSnapshot: attempt.snapshot,
+    run: async () =>
+      writeFileSync(join(opened.projectDir, PARTIAL), 'export const partial = true;\n'),
+  });
   await attempt.retain?.();
   await isolation.dispose();
   const dispatched = transition(

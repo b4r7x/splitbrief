@@ -48,6 +48,33 @@ function driftWith(changedFiles: string[]): DriftReport {
   };
 }
 
+it('reviews the staged workspace against its saved base while the original checkout changes', async () => {
+  const { projectDir, runStartHead } = makeProject({
+    '.gitignore': '.splitbrief/\n',
+    'input.txt': 'at the base\n',
+  });
+  const ref = { projectDir, sessionId: 'staged-review' };
+  const { manifest } = await createSnapshot({ ...ref, phase: 'manual' });
+  const workspaceDir = join(sessionDir(projectDir, ref.sessionId), 'stage', 'workspace');
+  mkdirSync(workspaceDir, { recursive: true });
+  writeFileSync(join(workspaceDir, '.gitignore'), '.splitbrief/\n');
+  writeFileSync(join(workspaceDir, 'init.txt'), 'init');
+  writeFileSync(join(workspaceDir, 'input.txt'), 'built in the workspace\n');
+  writeFileSync(join(projectDir, 'input.txt'), 'changed in the checkout\n');
+  writeFileSync(join(projectDir, 'unrelated.txt'), 'another session\n');
+
+  const universe = await resolveRunUniverse({
+    workspaceDir,
+    baseline: { head: null, runStartChangedFiles: [] },
+    runBase: { ...ref, snapshotId: manifest.id, head: runStartHead },
+  });
+
+  expect(universe.changedFiles).toEqual(['input.txt']);
+  expect(universe.fullDiff).toContain('-at the base');
+  expect(universe.fullDiff).toContain('+built in the workspace');
+  expect(universe.fullDiff).not.toContain('changed in the checkout');
+});
+
 describe('resolveChangedFiles', () => {
   it('uses the drift report changed files (deduped, sorted) without consulting git or reporting missing', async () => {
     const { projectDir, runStartHead } = makeProject();

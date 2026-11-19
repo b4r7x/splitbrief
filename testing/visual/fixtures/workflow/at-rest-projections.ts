@@ -3614,6 +3614,10 @@ const CRASHED_REVIEW_CHECK = record({
   }),
 });
 
+function follower(source: RunRecord, kind: 'live' | 'stale') {
+  return { ...source, status: { kind: 'running' as const }, owner: { kind, pid: 4107 } };
+}
+
 export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   {
     ...reviewTaskCadenceProjection,
@@ -3635,6 +3639,18 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-at-rest-paused',
     route: { record: AT_REST_PAUSED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-follower',
+    route: { record: follower(CRASHED_BUILD, 'live'), log: CRASHED_BUILD_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-follower-waiting',
+    route: { record: follower(AT_REST_QUESTION, 'live'), log: AT_REST_QUESTION_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-follower-stale',
+    route: { record: follower(CRASHED_BUILD, 'stale'), log: CRASHED_BUILD_LOG },
   }),
   atRestProjection({
     id: 'workflow-at-rest-closed-elsewhere',

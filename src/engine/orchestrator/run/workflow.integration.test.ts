@@ -1337,6 +1337,7 @@ describe('runWorkflow — smoke', () => {
               return { success: true, output: '', usage: null };
             });
             if (continuedIn === 'a new') {
+              expect(failed.errors).toContain(notSaved(sessionId));
               // The failed exit update left this test process's live PID in the lock.
               await markExited(sessionDir(projectDir, sessionId), 1);
               const { prepared } = prepareWorkflow({
@@ -1376,19 +1377,8 @@ describe('runWorkflow — smoke', () => {
               expect(again.thrown).toBeUndefined();
               expect(second).toHaveBeenCalledTimes(1);
             }
-            // A new process restores from the disk only: the declared file goes back, the
-            // undeclared writes of the failed save stay as the call left them.
-            expect(beforeSecondCall).toEqual(
-              continuedIn === 'this'
-                ? taskStart
-                : {
-                    ...taskStart,
-                    'docs/notes.md': 'notes by the call\n',
-                    'docs/old.md': null,
-                    'docs/new.md': 'new by the call\n',
-                    'dirty.txt': 'dirty by the call\n',
-                  },
-            );
+            // The checkout writer record survives a refused session-state save.
+            expect(beforeSecondCall).toEqual(taskStart);
             // A file ignored at the start is not the call's write: no restore deletes it.
             expect(ignoredBeforeSecondCall).toBe('ignored by the call\n');
           },
@@ -1885,6 +1875,53 @@ describe('runWorkflow — smoke', () => {
     ).rejects.toThrow(/still running/);
   });
 
+  it('admits only one simultaneous claim on the same session', async () => {
+    const { acquireLiveness } = await import('./liveness.js');
+    const projectDir = setupProject();
+    const input = { projectDir, sessionId: 'simultaneous-claim', feature: 'claim once' };
+    const results = await Promise.allSettled([acquireLiveness(input), acquireLiveness(input)]);
+
+    try {
+      expect(results.map(({ status }) => status)).toEqual(['fulfilled', 'rejected']);
+      expect(results[1]).toMatchObject({
+        status: 'rejected',
+        reason: { kind: 'workflow-session-already-live' },
+      });
+    } finally {
+      for (const result of results) if (result.status === 'fulfilled') await result.value();
+    }
+    const release = await acquireLiveness(input);
+    await release();
+  });
+
+  it('refuses to take over a stale heartbeat from the process that still holds the session', async () => {
+    const { acquireLiveness } = await import('./liveness.js');
+    const { readLockfile, writeLockfile } = await import('../../../core/sessions/lock/file.js');
+    const projectDir = setupProject();
+    const sessionId = 'stale-running-owner';
+    ensureSessionDir(projectDir, sessionId);
+    const dir = sessionDir(projectDir, sessionId);
+    await writeLockfile(dir, {
+      pid: process.pid,
+      startTimeMs: Date.now(),
+      lastAliveMs: Date.now() - 60_000,
+      sessionId,
+      feature: 'original owner',
+    });
+
+    const original = readLockfile(dir);
+    const claim = acquireLiveness({ projectDir, sessionId, feature: 'competing owner' });
+    try {
+      await expect(claim).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
+      expect(readLockfile(dir)).toEqual(original);
+    } finally {
+      await claim.then(
+        (release) => release(),
+        () => undefined,
+      );
+    }
+  });
+
   it('rejects a concurrent workflow before its planner crosses a provider boundary', async () => {
     const projectDir = setupProject();
     const sessionId = 'concurrent-run-sid';
@@ -2052,6 +2089,75 @@ describe('runWorkflow — smoke', () => {
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
     expect(planner.typedCall).not.toHaveBeenCalled();
+  });
+
+  it('requires Apply when a formerly open run becomes ready during resume preflight', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'ready-during-resume';
+    const ref = { projectDir, sessionId };
+    const open = makeImplStateWithMetadata([makeTask({ id: 'T001' })]);
+    saveState(ref, open);
+    const planner = makePlanner({ isAvailable: vi.fn(async () => false) });
+    const resume = prepareWorkflow({
+      feature: 'stopped run',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks: makeCallbacks().callbacks,
+      sessionId,
+      purpose: 'resume',
+      savedState: open,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: planner,
+    });
+    saveState(ref, {
+      ...open,
+      phase: 'complete',
+      workspace: {
+        kind: 'staged-copy',
+        path: projectDir,
+        base: { snapshotId: 'base', head: null },
+      },
+      reviewStatus: 'passed',
+    });
+    const ready = loadState(ref);
+    await expect(runTrackedWorkflow(resume)).rejects.toMatchObject({
+      kind: 'workflow-session-ready-to-apply',
+    });
+    expect(planner.isAvailable).not.toHaveBeenCalled();
+    expect(loadState(ref)).toEqual(ready);
+  });
+
+  it('leaves the default and seats alone when a resume waits past the run closing', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'closed-during-resume';
+    const ref = { projectDir, sessionId };
+    const open = makeImplStateWithMetadata([makeTask({ id: 'T001' })]);
+    saveState(ref, open);
+    const planner = makePlanner({ isAvailable: vi.fn(async () => false) });
+    const resume = prepareWorkflow({
+      feature: 'stopped run',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks: makeCallbacks().callbacks,
+      sessionId,
+      purpose: 'resume',
+      savedState: open,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: planner,
+    });
+    saveState(ref, { ...open, closed: { at: '2026-11-18T00:00:00Z', as: 'ended' } });
+    const closed = loadState(ref);
+    const otherDefault = 'other-default';
+    rmSync(join(projectDir, SPLITBRIEF_DIR, 'active'));
+    writeActive({ projectDir, sessionId: otherDefault });
+
+    await expect(runTrackedWorkflow(resume)).rejects.toMatchObject({
+      kind: 'workflow-session-already-closed',
+    });
+
+    expect(planner.isAvailable).not.toHaveBeenCalled();
+    expect(loadState(ref)).toEqual(closed);
+    expect(readActive(projectDir)).toBe(otherDefault);
   });
 
   it('drops the stop the halted pass recorded once the run is resumed', async () => {

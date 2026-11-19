@@ -1301,6 +1301,35 @@ describe('visual catalog', () => {
     }
   });
 
+  it.each([
+    ['home-preparation-failed', 'Could not create the session folder', 's settings'],
+    ['workflow-start-readiness-warning', 'This run edits your checkout', 'reverted/'],
+    ['workflow-at-rest-follower', 'Viewing live', '⏎ to continue'],
+    [
+      'workflow-at-rest-follower-waiting',
+      'Waiting for an answer in another terminal',
+      '⏎ to continue',
+    ],
+    ['workflow-at-rest-follower-stale', 'Viewing last saved activity', '⏎ to continue'],
+  ])(
+    'shows the actual start or follow outcome in %s at each terminal size',
+    async (id, shown, hidden) => {
+      const scenario = findVisualScenario(id);
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error(`Missing ${id}`);
+      for (const viewport of REQUIRED_VIEWPORTS) {
+        const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+        try {
+          const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+          expect(frame).toContain(shown);
+          expect(frame).not.toContain(hidden);
+        } finally {
+          await handle.unmount();
+        }
+      }
+    },
+  );
+
   it('retains fixtures for the changed composer, preparation, usage and picker surfaces', () => {
     for (const id of [
       'home-preparing',

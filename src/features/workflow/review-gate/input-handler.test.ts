@@ -291,6 +291,28 @@ describe('review input effects', () => {
   );
 
   it.each([
+    [{ kind: 'apply' }, 'Apply'],
+    [{ kind: 'review', cycle: 0 }, 'the review'],
+  ] as const)(
+    'refuses words for %s before the queue is installed',
+    async (afterLastBrief, step) => {
+      runViewStore.__testReset({ phase: 'final-review', reviewNone: true, afterLastBrief });
+      const document = createDraftDocument('also fix the typo');
+      composerLiveStore.setDraft(document);
+
+      await createReviewInputHandler(makeInputMode('normal')).handleInput(
+        plainUserMessage('also fix the typo'),
+      );
+
+      expect(feedbackStore.get()).toEqual({
+        message: `Cannot send words to ${step}. Clear them.`,
+        isError: false,
+      });
+      expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', document });
+    },
+  );
+
+  it.each([
     ['implementing', 'build', 'BUILD on T003'],
     ['planning', 'plan', 'PLAN'],
     ['final-review', 'review', 'REVIEW'],

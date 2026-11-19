@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs';
 import { chmod, lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import { isolationMarkerPath, SPLITBRIEF_DIR } from '../../../../core/paths.js';
-import { ensureConfigGitignore } from '../../../../core/config/load/document.js';
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow/changed-files.js';
 import {
   pathConfinementError,
@@ -27,6 +26,7 @@ import {
   excludeNodeModulesLink,
   NODE_MODULES,
 } from './node-modules.js';
+import { ensureSeedGitignore } from '../seed.js';
 import { isolationError } from '../errors.js';
 import { createWorktree } from './create.js';
 
@@ -41,7 +41,7 @@ export type EnsureIsolationWorktreeResult =
 // repository: only the project that started the run can answer whether its
 // session still exists. Markers written before this field hold the bare session
 // id and name no owner.
-export type IsolationMarker = { sessionId: string; projectDir: string | null };
+export type IsolationMarker = { sessionId: string; projectDir: string | null; pinnedHead?: string };
 
 function markerObject(text: string): object | null {
   try {
@@ -62,7 +62,14 @@ export function parseIsolationMarker(raw: string): IsolationMarker {
     'projectDir' in record && typeof record.projectDir === 'string' && isAbsolute(record.projectDir)
       ? record.projectDir
       : null;
-  return { sessionId, projectDir };
+  return {
+    sessionId,
+    projectDir,
+    ...('pinnedHead' in record &&
+      typeof record.pinnedHead === 'string' && {
+        pinnedHead: record.pinnedHead,
+      }),
+  };
 }
 
 async function readIsolationMarker(wtPath: string): Promise<IsolationMarker | null> {
@@ -89,16 +96,19 @@ async function writeIsolationMarker(opts: {
   worktreePath: string;
   sessionId: string;
   projectDir: string;
+  pinnedHead: string | undefined;
 }): Promise<void> {
   await mkdir(join(opts.worktreePath, SPLITBRIEF_DIR), { recursive: true });
   await writeFile(
     isolationMarkerPath(opts.worktreePath),
-    JSON.stringify({ sessionId: opts.sessionId, projectDir: opts.projectDir }),
+    JSON.stringify({
+      sessionId: opts.sessionId,
+      projectDir: opts.projectDir,
+      pinnedHead: opts.pinnedHead,
+    }),
     'utf-8',
   );
 }
-
-type SeedResult = { kind: 'ok' } | { kind: 'fallback'; reason: string };
 
 function symlinkedSourceFile(err: AppError<'path-symlink-read'>, sourceDir: string): string {
   const { data } = err;
@@ -112,7 +122,7 @@ function symlinkedSourceFile(err: AppError<'path-symlink-read'>, sourceDir: stri
   return relative(sourceDir, filePath) || filePath;
 }
 
-async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise<SeedResult> {
+async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise<void> {
   // A symlink that stays inside the project is recreated with the same relative
   // target, which resolves inside the worktree. Any other symlink in the source's
   // changed set is refused by the capture itself; the refusal is rethrown under
@@ -155,13 +165,13 @@ async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise
       await chmod(join(wtPath, file), source.mode & 0o777);
     }
   }
-  return { kind: 'ok' };
 }
 
 export async function ensureIsolationWorktree(opts: {
   projectDir: string;
   sessionId: string;
   git: GitClient;
+  pinnedHead?: string | undefined;
   onWorktreeCreated?: (worktreePath: string) => void;
   onNodeModulesExcluded?: (excludeFile: string) => void;
 }): Promise<EnsureIsolationWorktreeResult> {
@@ -180,14 +190,35 @@ export async function ensureIsolationWorktree(opts: {
         reason: `directory ${wtPath} already exists and is not owned by session ${sessionId}`,
       };
     }
+    if (opts.pinnedHead !== undefined && marker.pinnedHead !== opts.pinnedHead) {
+      onWorktreeCreated?.(wtPath);
+      return {
+        kind: 'fallback',
+        reason: 'the earlier copy was not seeded from the recorded Git commit',
+      };
+    }
     reused = true;
   } else {
-    await createWorktree({ projectDir, slug, git, worktreeDir: wtPath });
-    onWorktreeCreated?.(wtPath);
-    await writeIsolationMarker({ worktreePath: wtPath, sessionId, projectDir });
-    const seeded = await seedIsolationWorktree(projectDir, wtPath);
-    if (seeded.kind === 'fallback') return seeded;
-    await ensureConfigGitignore(wtPath);
+    await createWorktree({
+      projectDir,
+      slug,
+      git,
+      worktreeDir: wtPath,
+      pinnedHead: opts.pinnedHead,
+      afterCheckout: async (path) => {
+        onWorktreeCreated?.(path);
+        if (opts.pinnedHead !== undefined) return;
+        await seedIsolationWorktree(projectDir, path);
+        await ensureSeedGitignore({ projectDir, sessionId }, path);
+      },
+    });
+    // A restart can reuse the worktree only after its seed and setup are recorded.
+    await writeIsolationMarker({
+      worktreePath: wtPath,
+      sessionId,
+      projectDir,
+      pinnedHead: opts.pinnedHead,
+    });
     reused = false;
   }
 
@@ -196,8 +227,13 @@ export async function ensureIsolationWorktree(opts: {
   } catch (err) {
     warnError(`Could not link node_modules in run workspace ${wtPath}`, err, 'feedback');
   }
-  if (await untrackedNodeModulesIn(wtPath)) {
-    const excludeFile = await excludeNodeModulesLink(projectDir, gitCommonDir, sessionId);
+  if (existsSync(join(wtPath, NODE_MODULES))) {
+    const untracked = await untrackedNodeModulesIn(wtPath);
+    let excludeFile = await excludeNodeModulesLink(projectDir, gitCommonDir, sessionId, untracked);
+    // Another session can release its exclude between our first status and its file lock.
+    if (excludeFile === null && !untracked && (await untrackedNodeModulesIn(wtPath))) {
+      excludeFile = await excludeNodeModulesLink(projectDir, gitCommonDir, sessionId, true);
+    }
     if (excludeFile !== null) onNodeModulesExcluded?.(excludeFile);
     if (await untrackedNodeModulesIn(wtPath)) {
       return {

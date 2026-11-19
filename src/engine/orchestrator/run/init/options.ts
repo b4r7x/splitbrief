@@ -76,6 +76,7 @@ export type InitializeWorkflowArgs = {
   metadata: SpecMetadata;
   setTrackedState: (s: WorkflowState) => void;
   getTrackedState?: (() => WorkflowState | undefined) | undefined;
+  setTrackedBus?: ((bus: EventBus) => void) | undefined;
   resumeHolder: ResumeContextHolder;
   isolation: RunIsolation;
   savedState?: WorkflowState | undefined;

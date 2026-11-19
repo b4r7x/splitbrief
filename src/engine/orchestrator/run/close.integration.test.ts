@@ -42,6 +42,8 @@ import { markExited, writeLockfile } from '../../../core/sessions/lock/file.js';
 import { recordLocalTaskEvidence } from '../evidence/task.js';
 import { reconcileWorkspaceToBase } from '../isolation/run-base/reader.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
+import { withAttemptRestoreScope } from '../task/restore-scope.js';
+import { ensureRunBaselineSnapshot } from './snapshots.js';
 import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/review-failed.js';
@@ -74,17 +76,28 @@ beforeEach(() => {
  * A checkout run inside its brief T001, which declares lib/lerp.mjs and has written it and an
  * undeclared test file since it started.
  */
-async function checkoutRunInBrief() {
+async function checkoutRunInBrief(options: { unversionedBaseline?: boolean } = {}) {
   const projectDir = createTempDir('close-run-checkout-brief-');
   dirs.push(projectDir);
   createTestGitRepo(projectDir, { 'lib/clamp.mjs': 'export const clamp = 1;\n' });
   const ref = { projectDir, sessionId: SESSION_ID };
   ensureSessionDir(projectDir, SESSION_ID);
-  await createSnapshot({ ...ref, phase: 'manual', name: 'run-baseline' });
+  if (options.unversionedBaseline) {
+    await createSnapshot({ ...ref, phase: 'manual', name: 'run-baseline' });
+  } else {
+    await ensureRunBaselineSnapshot({ ...ref, phase: 'implementing', bus: makeBusRecorder().bus });
+  }
   const taskStart = await captureWorkspaceSnapshot(projectDir, ref);
-  writeFileSync(join(projectDir, 'lib/lerp.mjs'), 'export const lerp = 1;\n');
-  mkdirSync(join(projectDir, 'test'), { recursive: true });
-  writeFileSync(join(projectDir, 'test/lerp.test.mjs'), 'lerp works\n');
+  await withAttemptRestoreScope({
+    ref,
+    dir: projectDir,
+    taskStartSnapshot: taskStart,
+    run: async () => {
+      writeFileSync(join(projectDir, 'lib/lerp.mjs'), 'export const lerp = 1;\n');
+      mkdirSync(join(projectDir, 'test'), { recursive: true });
+      writeFileSync(join(projectDir, 'test/lerp.test.mjs'), 'lerp works\n');
+    },
+  });
   const task = makeTask({ id: 'T001', title: 'Lerp', suggestedFiles: ['lib/lerp.mjs'] });
   const state: WorkflowState = {
     ...createInitialState('Checkout run'),
@@ -735,6 +748,26 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     });
   });
 
+  it('keeps checkout changes when the saved baseline predates write attribution', async () => {
+    const { ref, state } = await checkoutRunInBrief({ unversionedBaseline: true });
+    await exitRunProcess(ref);
+
+    const { closure, result } = await rejectCheckoutRun(
+      { ...ref, bus: makeBusRecorder().bus },
+      state,
+    );
+
+    expect(closure).toBeNull();
+    expect(result).toMatchObject({
+      status: 'rejected',
+      deletedPaths: [],
+      conflictedPaths: ['lib/lerp.mjs', 'test/lerp.test.mjs'],
+    });
+    expect(readFileSync(join(ref.projectDir, 'lib/lerp.mjs'), 'utf8')).toBe(
+      'export const lerp = 1;\n',
+    );
+  });
+
   // A Seat down halt records no kept files: End run after it booked nothing for the halted brief,
   // and the closed Files list left out the files it had written to the checkout.
   it('End run after a Seat down halt in a checkout books what the brief wrote up to the rest, not later user edits', async () => {
@@ -778,20 +811,28 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     });
   });
 
-  // A process killed inside a brief records no rest snapshot: the latest one is older than what
-  // the brief wrote, so End run booked nothing of the brief while its files stayed in the checkout.
-  it('End run after the run process died in a brief books the brief from the checkout as it is', async () => {
+  it('End run after a crash books the settled writes and names files without a write record', async () => {
     const { ref, state } = await checkoutRunInBrief();
     await recordRestSnapshot(ref);
     writeFileSync(join(ref.projectDir, 'lib/smooth.mjs'), 'written after the last rest\n');
     await writeRunLockfile(ref, 99999999);
 
-    const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, state);
+    const { bus, events } = makeBusRecorder();
+    const closure = await closeRunIfOpen({ ...ref, bus }, state);
 
     expect(closure.state.closed?.as).toBe('ended');
     expect(readEvidenceLedger(ref)?.tasks.find((task) => task.id === 'T001')).toMatchObject({
       status: 'in_progress',
-      changedFiles: ['lib/lerp.mjs', 'lib/smooth.mjs', 'test/lerp.test.mjs'],
+      changedFiles: ['lib/lerp.mjs', 'test/lerp.test.mjs'],
     });
+    expect(readFileSync(join(ref.projectDir, 'lib/smooth.mjs'), 'utf8')).toBe(
+      'written after the last rest\n',
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        message: expect.stringContaining('lib/smooth.mjs'),
+      }),
+    );
   });
 });

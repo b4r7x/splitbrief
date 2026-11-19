@@ -73,7 +73,6 @@ import {
   readActive,
   readActiveRecord,
 } from '../../../core/sessions/active-pointer.js';
-import { inspectSessionLiveness } from '../../../core/sessions/liveness.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
 import { saveSummary } from '../../../core/sessions/io.js';
@@ -239,7 +238,7 @@ function reprepareSameSession(requests: PrepareExecutionInput[] = []): PrepareEx
         config: input.effectiveConfig,
         purpose: input.policy.purpose,
         resumeState: input.resumeState,
-        active: reactivateExistingSession(ref, { inspectOwner: inspectSessionLiveness }),
+        active: reactivateExistingSession(ref),
       }),
     };
   };

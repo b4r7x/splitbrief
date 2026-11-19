@@ -1,15 +1,18 @@
 import { awaitsApply } from '../../../core/sessions/run/status.js';
 import { error } from '../../../utils/error.js';
 import { acceptedSentence } from '../../../core/review/accepted.js';
+import { withCheckoutWriteLock } from '../../checkout-write.js';
+import { checkoutWriterRevision } from '../../checkout-writers.js';
 import { publishWarning } from '../publish/notice.js';
 import { heldLiveness } from '../run/liveness.js';
 import { trackActiveApply } from '../session-lifecycle/shutdown.js';
 import { readApplyBackup, removeApplyWriteTemporaries } from './backup.js';
 import {
   answerApplyRecovery,
-  mergeOrHalt,
+  mergeCandidate,
   recheckChangedMerge,
   settleConflicts,
+  settleChangedSide,
   writeMerged,
 } from './flow.js';
 import { bindApplyHandOffs } from './hand-off.js';
@@ -56,6 +59,7 @@ function askOverrideConfirmation(input: ApplyInput): ApplyResult | undefined {
   const accepted = state.acceptedAsIs;
   if (
     accepted === undefined ||
+    !awaitsApply(state) ||
     input.overrideConfirmed === true ||
     state.pendingRecovery !== undefined ||
     state.applying !== undefined
@@ -99,23 +103,42 @@ async function applyRun(input: ApplyInput): Promise<ApplyResult> {
   // A re-run first removes the temporaries the cut write left beside its files, so the capture
   // never reads them as checkout files.
   if (shared.state.applying !== undefined) {
-    await removeApplyWriteTemporaries(
+    const backup = await readApplyBackup(
       wctx.projectDir,
-      await readApplyBackup(wctx.projectDir, wctx.sessionId, shared.state.applying.backupId),
+      wctx.sessionId,
+      shared.state.applying.backupId,
+    );
+    await withCheckoutWriteLock(wctx.projectDir, () =>
+      removeApplyWriteTemporaries(wctx.projectDir, backup),
     );
   }
-  const states = await captureApplyStates({
-    projectDir: wctx.projectDir,
-    sessionId: wctx.sessionId,
-    workspace,
-  });
-  shared.state = bindApplyHandOffs(wctx, shared.state, candidateOf(states));
-  setTrackedState?.(shared.state);
-  const run: ApplyRun = { wctx, reviewNone, setTrackedState, workspace, states };
-  const merged = await mergeOrHalt(run, shared);
-  if ('outcome' in merged) return merged;
-  if (merged.conflicts.length > 0) return settleConflicts(run, shared, merged.conflicts);
-  const rechecked = await recheckChangedMerge(run, shared);
-  if (rechecked !== undefined) return rechecked;
-  return writeMerged(run, shared, merged.promote);
+  while (true) {
+    const checkoutRevision = checkoutWriterRevision(wctx.projectDir);
+    const states = await captureApplyStates({
+      projectDir: wctx.projectDir,
+      sessionId: wctx.sessionId,
+      workspace,
+    });
+    shared.state = bindApplyHandOffs(wctx, shared.state, candidateOf(states));
+    setTrackedState?.(shared.state);
+    const run: ApplyRun = {
+      wctx,
+      reviewNone,
+      setTrackedState,
+      workspace,
+      states,
+      checkoutRevision,
+    };
+    try {
+      const merged = await mergeCandidate(run, shared);
+      if (merged.conflicts.length > 0) return await settleConflicts(run, shared, merged.conflicts);
+      const rechecked = await recheckChangedMerge(run, shared);
+      if (rechecked !== undefined) return rechecked;
+      const written = await writeMerged(run, shared, merged.promote);
+      if (written !== undefined) return written;
+    } catch (cause) {
+      const settled = settleChangedSide(run, shared, cause);
+      if (settled !== undefined) return settled;
+    }
+  }
 }

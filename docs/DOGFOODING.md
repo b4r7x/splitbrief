@@ -79,12 +79,15 @@ Headless: `$SB start --plain "<sentence>" @tasks.md`. The plan card is approved 
 
 ## 3. Watching a run
 
+Open `splitbrief resume <session-id>` in a separate terminal to watch the run. Use that session ID when inspecting files or the process.
+
 ```bash
-ID=$(jq -r .sessionId .splitbrief/active); S=.splitbrief/sessions/$ID
+ID=2026-05-01-add-auth
+S=.splitbrief/sessions/$ID
 jq -r '.phase, (.pendingRecovery.reason // "-"), ([.tasks[] | .id + ":" + .status] | join(" "))' $S/state.json
 tail -n 0 -F $S/session.jsonl | jq --unbuffered -r '(.type // .kind) as $t | select($t | test("text_delta|planner_text|activity|tool_use|usage|heartbeat|cost_update") | not) | .ts + " " + $t + " " + ((.data // {}) | del(.diff, .excerpt, .text) | tostring)[0:240]'
 tmux capture-pane -t sb -p | sed 's/[[:space:]]*$//' | grep -v '^$' | tail -16
-ps -o rss=,etime= -p $(pgrep -f 'dist/cli.js' | head -1)
+ps -o rss=,etime= -p "$(jq -r .pid "$S/lockfile.json")"
 ```
 
 Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_escalating`, `validate{status:"done",passed}`, `runner_call_stalled`, `workflow_complete{review}`.

@@ -95,11 +95,11 @@ Every run is a durable record, kept in a folder on disk under `.splitbrief/sessi
 - **summary.json** — Final cost, timing, outcomes. Written once at the end.
 - **snapshots/** — Content-addressed working-tree snapshots for undo.
 
-One active session at a time per project directory. `.splitbrief/active` contains the current session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
+A project can have several sessions running at once. Each isolated run has its own workspace. One process drives each session, and other terminals can open it in a read-only view.
 
 **An open run is continuable.** A park, gate, halt, error or killed process keeps its place. A passing workspace review, or the end of a REVIEW None run, makes it ready to apply; a ready run awaits Apply or Discard. Apply, Discard or End run closes it. Older runs keep their status rules. See [Run status](./WORKFLOW.md#run-status).
 
-`splitbrief resume` continues the most recent run; `splitbrief continue <session-id>` names one. If the backend supports session persistence (Claude Code, Codex), it reconnects to the thread the tool itself reported. Otherwise it rebuilds context from the JSONL log.
+`splitbrief resume` opens the default run. Both `resume` and `continue` accept a session ID or numeric alias. Open another process's run to watch it. After that process exits, you can continue saved work. If the backend supports session persistence, it reconnects to the saved thread. Otherwise it rebuilds context from the JSONL log. See the [CLI reference](./CLI-REFERENCE.md#splitbrief-resume).
 
 There is no separate results screen. A run stays on the screen it was already on, live or not: opening one from `/sessions` replays its history onto that screen and paints where it stopped, typing a correction flips it back to live in place, and a closed run ends its own transcript with a summary of the run.
 
@@ -126,7 +126,7 @@ The orchestrator never branches on backend type. It calls the planner's typed ca
 
 Both transports use the same run workspace.
 
-SPLITBRIEF creates one worktree or staged copy per run. Direct writers edit it; extracted-code writers return code that SPLITBRIEF writes there. Tasks, retries and validation share that directory.
+SPLITBRIEF creates one worktree or staged copy per run before planning. The planner, tasks, retries, validation and review use that directory. If another run is working directly in your checkout, the isolated run starts from the Git commit at HEAD.
 
 Your checkout receives the assessed result once, at [Apply](./WORKFLOW.md#apply). That section defines the merge, checks, hash guard, backup and Discard path.
 

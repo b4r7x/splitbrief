@@ -538,7 +538,8 @@ const planningPathNoticeProjection: WorkflowFixtureProjection = {
 const START_READINESS_FEATURE = 'Fix the typo in the README';
 
 /** The warnings a checkout-mode start states, worded by readiness itself. */
-const startReadinessWarningText = startReadinessWarnings(
+const checkoutRun = { projectDir: '/Users/dev/app', sessionId: VISUAL_WORKFLOW_SESSION_ID };
+const startReadinessWarningsForFixture = startReadinessWarnings(
   createStartReadinessRecord(
     {
       generatedAt: new Date(FIXED_TS).toISOString(),
@@ -563,8 +564,9 @@ const startReadinessWarningText = startReadinessWarnings(
       ],
       metadata: {},
     },
-    { projectDir: '/Users/dev/app', sessionId: VISUAL_WORKFLOW_SESSION_ID },
+    checkoutRun,
   ),
+  checkoutRun,
 );
 
 const startReadinessWarningProjection: WorkflowFixtureProjection = {
@@ -580,12 +582,12 @@ const startReadinessWarningProjection: WorkflowFixtureProjection = {
         event.type === 'workflow_started' ? { ...event, feature: START_READINESS_FEATURE } : event,
       ),
     { type: 'user_message', ts: FIXED_TS + 20, phase: 'planning', text: START_READINESS_FEATURE },
-    ...startReadinessWarningText.map(
-      (message): EngineEvent => ({
+    ...startReadinessWarningsForFixture.map(
+      (warning): EngineEvent => ({
         type: 'warning',
         ts: FIXED_TS + 21,
         phase: 'planning',
-        message,
+        ...warning,
       }),
     ),
   ],
@@ -595,7 +597,7 @@ const START_VARIANT_FEATURE = 'Review the greeting change';
 const VARIANT_REVIEW_SEAT = { kind: 'cli', tool: 'opencode', variant: 'high' } as const;
 
 /** The warning a start states when OpenCode 2 cannot send the REVIEW variant, worded by readiness itself. */
-const startVariantWarningText = startReadinessWarnings(
+const startVariantWarningsForFixture = startReadinessWarnings(
   createStartReadinessRecord(
     {
       generatedAt: new Date(FIXED_TS).toISOString(),
@@ -617,6 +619,7 @@ const startVariantWarningText = startReadinessWarnings(
     },
     { projectDir: '/Users/dev/app', sessionId: VISUAL_WORKFLOW_SESSION_ID },
   ),
+  undefined,
 );
 
 const startVariantWarningProjection: WorkflowFixtureProjection = {
@@ -631,12 +634,12 @@ const startVariantWarningProjection: WorkflowFixtureProjection = {
         event.type === 'workflow_started' ? { ...event, feature: START_VARIANT_FEATURE } : event,
       ),
     { type: 'user_message', ts: FIXED_TS + 20, phase: 'planning', text: START_VARIANT_FEATURE },
-    ...startVariantWarningText.map(
-      (message): EngineEvent => ({
+    ...startVariantWarningsForFixture.map(
+      (warning): EngineEvent => ({
         type: 'warning',
         ts: FIXED_TS + 21,
         phase: 'planning',
-        message,
+        ...warning,
       }),
     ),
   ],
@@ -9538,6 +9541,10 @@ const projections = [
   questionOutsideFileProjection,
   planningPathNoticeProjection,
   startReadinessWarningProjection,
+  {
+    ...startReadinessWarningProjection,
+    scenarioId: scenarioId('workflow-start-readiness-details'),
+  },
   startVariantWarningProjection,
   planCompiledProjection,
   planCardEditedProjection,
@@ -10252,8 +10259,8 @@ export function assertProjectionBounds(projection: WorkflowFixtureProjection): v
       value !== RED_CHECK_INPUT.text &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
-      !startReadinessWarningText.includes(value) &&
-      !startVariantWarningText.includes(value) &&
+      !startReadinessWarningsForFixture.some((warning) => warning.message === value) &&
+      !startVariantWarningsForFixture.some((warning) => warning.message === value) &&
       measuredProjectionString(projection, value).length >
         WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(

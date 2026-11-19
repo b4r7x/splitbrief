@@ -71,7 +71,7 @@ function blockedReport(): ReadinessReport {
             id: 'runners.preparation.planner',
             severity: 'blocker',
             summary: 'The configured runner could not be admitted.',
-            fix: 'Open settings and review the runner.',
+            fix: 'Check the runner executable.',
           },
         ],
       },
@@ -399,7 +399,8 @@ describe('a resume checking its tools', () => {
     await tick(20);
 
     expect(ui.lastFrame()).toContain('The configured runner could not be admitted.');
-    expect(ui.lastFrame()).toContain('r retry · esc back · s settings');
+    expect(ui.lastFrame()).toContain('r retry · esc back');
+    expect(ui.lastFrame()).not.toContain('s settings');
     expect(ui.lastFrame()).not.toContain(AT_REST_RUN.feature);
 
     // The composer the panel covers takes nothing while it is covered: the panel's keys mean one

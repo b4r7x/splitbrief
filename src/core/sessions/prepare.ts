@@ -14,8 +14,6 @@ import type { Config } from '../schemas/config.js';
 import type { SessionRef } from '../types/session-ref.js';
 import {
   assertSessionOwnershipReceipt,
-  clearActiveReceiptLocked,
-  readActiveRecord,
   withSessionMutationLock,
   writeActiveReceiptLocked,
   type ActiveSessionReceipt,
@@ -24,7 +22,6 @@ import {
   type SessionOwnershipReceipt,
 } from './active-pointer.js';
 import { sessionPreparationError } from './errors.js';
-import { isSessionLive } from './liveness.js';
 import { generateSessionId } from './id.js';
 import {
   assertOwnedDirectory,
@@ -51,6 +48,7 @@ export type PrepareNewSessionInput = Readonly<{
   report: ReadinessReport;
   signal?: AbortSignal | undefined;
   candidate?: SessionOwnershipReceipt | undefined;
+  publishDefault?: boolean | undefined;
   _beforeMutation?: ((boundary: SessionMutationBoundary) => void) | undefined;
 }>;
 
@@ -104,63 +102,54 @@ function cleanupAfterReadinessFailure(session: NewSessionOwnership, keepDirector
   });
 }
 
-// Starting a run is the one flow allowed to clear the active pointer (guards.ts): until
-// then it is what `resume` resumes from. The caller's mutation lock makes the liveness
-// test and the replacing write atomic; a live pointer stays and still conflicts below.
-function clearStaleActiveReceiptLocked(ref: SessionRef): void {
-  const active = readActiveRecord(ref.projectDir);
-  if (active?.kind !== 'v1') return;
-  const recorded: SessionRef = { projectDir: ref.projectDir, sessionId: active.receipt.sessionId };
-  if (isSessionLive(recorded)) return;
-  clearActiveReceiptLocked(recorded, active.receipt);
+function allocateSession(input: PrepareNewSessionInput): {
+  owned: NewSessionOwnership;
+  identity: SessionDirectoryIdentity;
+} {
+  const { projectDir } = input;
+  return withSessionMutationLock(projectDir, () => {
+    const ownership = input.candidate ?? createSessionPreparationCandidate(input);
+    const ref = { projectDir, sessionId: ownership.sessionId };
+    const owned = { ref, ownership };
+    assertOwnershipContext(owned);
+    let identity: SessionDirectoryIdentity | undefined;
+    try {
+      confinedEnsureDir(projectDir, join(SPLITBRIEF_DIR, SESSIONS_DIR));
+      const relativeDirectory = sessionRelativePath(ref.sessionId);
+      assertWritablePathConfined(relativeDirectory, projectDir);
+      const directory = sessionDir(projectDir, ref.sessionId);
+      mkdirSync(directory, { mode: SECURE_DIR_MODE });
+      identity = directoryIdentity(ref, relativeDirectory);
+      const proof: SessionOwnershipProof = {
+        ...ownership,
+        dev: identity.dev.toString(),
+        ino: identity.ino.toString(),
+      };
+      assertWritablePathConfined(ownershipRelativePath(relativeDirectory), projectDir);
+      writeFileSync(join(directory, OWNERSHIP_FILE), `${JSON.stringify(proof)}\n`, {
+        encoding: 'utf8',
+        flag: 'wx',
+        mode: SECURE_FILE_MODE,
+      });
+      assertOwnedDirectory(owned, relativeDirectory, identity);
+      return { owned, identity };
+    } catch (cause) {
+      if (identity !== undefined) {
+        try {
+          removeAllocatedDirectory(ref, identity);
+        } catch (cleanupCause) {
+          throw sessionPreparationError.io('allocate-session', ref, cleanupCause);
+        }
+      }
+      throw sessionPreparationError.io('allocate-session', ref, cause);
+    }
+  });
 }
 
 export function prepareNewSession(input: PrepareNewSessionInput): PrepareNewSessionResult {
-  const ownership =
-    input.candidate ??
-    createSessionPreparationCandidate({
-      projectDir: input.projectDir,
-      feature: input.feature,
-    });
-  assertSessionOwnershipReceipt(ownership);
-  const ref: SessionRef = { projectDir: input.projectDir, sessionId: ownership.sessionId };
-  const owned: NewSessionOwnership = { ref, ownership };
-  assertOwnershipContext(owned);
-
   if (abortBefore(input, 'allocation')) return { kind: 'aborted' };
-  let allocatedIdentity: SessionDirectoryIdentity | undefined;
-  try {
-    confinedEnsureDir(ref.projectDir, join(SPLITBRIEF_DIR, SESSIONS_DIR));
-    const relativeDirectory = sessionRelativePath(ref.sessionId);
-    assertWritablePathConfined(relativeDirectory, ref.projectDir);
-    const directory = sessionDir(ref.projectDir, ref.sessionId);
-    mkdirSync(directory, { mode: SECURE_DIR_MODE });
-    allocatedIdentity = directoryIdentity(ref, relativeDirectory);
-    const proof: SessionOwnershipProof = {
-      version: 1,
-      sessionId: ownership.sessionId,
-      generation: ownership.generation,
-      dev: allocatedIdentity.dev.toString(),
-      ino: allocatedIdentity.ino.toString(),
-    };
-    const marker = join(directory, OWNERSHIP_FILE);
-    assertWritablePathConfined(ownershipRelativePath(relativeDirectory), ref.projectDir);
-    writeFileSync(marker, `${JSON.stringify(proof)}\n`, {
-      encoding: 'utf8',
-      flag: 'wx',
-      mode: SECURE_FILE_MODE,
-    });
-    assertOwnedDirectory(owned, relativeDirectory, allocatedIdentity);
-  } catch (cause) {
-    if (allocatedIdentity) {
-      try {
-        removeAllocatedDirectory(ref, allocatedIdentity);
-      } catch (cleanupCause) {
-        throw sessionPreparationError.io('allocate-session', ref, cleanupCause);
-      }
-    }
-    throw sessionPreparationError.io('allocate-session', ref, cause);
-  }
+  const { owned, identity } = allocateSession(input);
+  const { ref, ownership } = owned;
 
   if (abortBefore(input, 'readiness')) {
     try {
@@ -175,14 +164,14 @@ export function prepareNewSession(input: PrepareNewSessionInput): PrepareNewSess
   let temporaryCleanupError: unknown;
   try {
     const relativeDirectory = sessionRelativePath(ref.sessionId);
-    assertOwnedDirectory(owned, relativeDirectory, allocatedIdentity);
+    assertOwnedDirectory(owned, relativeDirectory, identity);
     const directory = sessionDir(ref.projectDir, ref.sessionId);
     const target = join(directory, READINESS_FILE);
     const temporary = join(directory, `.${READINESS_FILE}.${randomUUID()}.tmp`);
     const record = createStartReadinessRecord(input.report, ref);
     assertWritablePathConfined(sessionRelativePath(ref.sessionId, READINESS_FILE), ref.projectDir);
     writeSecureFile(temporary, `${JSON.stringify(record, null, 2)}\n`);
-    assertOwnedDirectory(owned, relativeDirectory, allocatedIdentity);
+    assertOwnedDirectory(owned, relativeDirectory, identity);
     try {
       linkSync(temporary, target);
     } catch (cause) {
@@ -210,14 +199,13 @@ export function prepareNewSession(input: PrepareNewSessionInput): PrepareNewSess
     return withSessionMutationLock(ref.projectDir, () => {
       try {
         input._beforeMutation?.('active');
-        assertOwnedDirectory(owned, sessionRelativePath(ref.sessionId), allocatedIdentity);
+        assertOwnedDirectory(owned, sessionRelativePath(ref.sessionId), identity);
         if (input.signal?.aborted === true) {
           rollbackPreparedSessionLocked(owned);
           return { kind: 'aborted' };
         }
-        clearStaleActiveReceiptLocked(ref);
         const active: ActiveSessionReceipt = ownership;
-        writeActiveReceiptLocked(ref, active);
+        if (input.publishDefault !== false) writeActiveReceiptLocked(ref, active);
         return { kind: 'prepared', session: { ...owned, active } };
       } catch (cause) {
         try {

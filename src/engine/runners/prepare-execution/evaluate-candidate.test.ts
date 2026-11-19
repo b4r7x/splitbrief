@@ -119,7 +119,7 @@ function preparationContext(
       prepareCustomRunnerAdmission: notCalled('prepareCustomRunnerAdmission'),
       resolveCliExecutableAliases: notCalled('resolveCliExecutableAliases'),
       prepareNewSession: notCalled('prepareNewSession'),
-      reactivateExistingSession: notCalled('reactivateExistingSession'),
+      createActiveSessionReceipt: notCalled('createActiveSessionReceipt'),
       newPreparationId: () => 'preparation-1',
     },
   };

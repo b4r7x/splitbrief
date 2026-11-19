@@ -1,12 +1,13 @@
 import { createStore, storeBase } from '../create.js';
 import { publishFeedbackError, publishFeedbackReset } from '../channels/feedback.js';
 import { assertNever } from '../../utils/type-guards.js';
-import type { RunRecord } from '../../core/sessions/run/record.js';
+import { isRunHeld, isRunHeldElsewhere, type RunRecord } from '../../core/sessions/run/record.js';
 import { applyUnfinished } from '../../core/sessions/run/status.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepare-execution/prepared.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
+import type { SkillMeta } from '../../core/skills/types.js';
 
 /**
  * Whether a process in this session is running the run on screen. `at-rest` is a run read back from
@@ -20,8 +21,20 @@ export type WorkflowExecution =
       steer?: UserMessageInput | undefined;
       /** Set when the run continues by itself after a boundary park that only changed a seat. */
       resumeCause?: 'seat-change' | undefined;
+      selectedSkills?: SkillMeta[] | undefined;
+      observing?: true | undefined;
     }>
-  | Readonly<{ kind: 'at-rest' }>;
+  | Readonly<{ kind: 'at-rest'; observing?: true | undefined }>;
+
+export function atRestExecution(
+  run: RunRecord,
+  observing?: true,
+): Extract<WorkflowExecution, { kind: 'at-rest' }> {
+  return {
+    kind: 'at-rest',
+    ...((observing === true || isRunHeldElsewhere(run)) && { observing: true }),
+  };
+}
 
 type WorkflowPayload = {
   /** Read at navigation and refreshed with its history when session files change at rest. */
@@ -131,7 +144,7 @@ export function isOpenRunAtRest(route: RouteData): boolean {
     route.screen === 'workflow' &&
     route.execution.kind === 'at-rest' &&
     route.run.status.kind !== 'closed' &&
-    route.run.status.kind !== 'running'
+    !isRunHeld(route.run)
   );
 }
 

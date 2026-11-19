@@ -13,7 +13,6 @@ import { recordRejectEvidence } from '../evidence/task.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { publishWarning } from '../publish/notice.js';
 import { publishRunRejected } from '../publish/review.js';
-import { reapOrphanRunners } from './orphan-reaper.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import { commitWorkflowState } from '../state-ops/commit.js';
 import { readWorkflowStateHead, rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
@@ -67,8 +66,6 @@ export async function closeRunIfOpen(
   let patchHandled = false;
   let patch: string | undefined;
   let warning: string | undefined;
-  // A tool left running by a crashed process still writes into the workspace the patch is cut from.
-  await reapOrphanRunners(scope.projectDir);
 
   for (let attempt = 0; ; attempt += 1) {
     // A run stopped before it ever saved a state still closes: the close then

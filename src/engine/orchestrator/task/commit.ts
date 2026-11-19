@@ -10,7 +10,9 @@ import type { BundleApplyResult } from '../../implementers/file-bundle/contract.
 import type { WorkflowContext } from '../types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
-import { persistTaskEvidence } from '../evidence/persistence.js';
+import { attributedCheckoutFiles, persistTaskEvidence } from '../evidence/persistence.js';
+import { keptCheckoutPathsMessage } from '../isolation/checkout-entries.js';
+import { publishWarning } from '../publish/notice.js';
 import { publishTaskComplete } from '../publish/task.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
@@ -101,7 +103,16 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
     opts.taskStartSnapshot === null
       ? []
       : await getChangedFilesSinceSnapshot(opts.workspaceDir, opts.taskStartSnapshot);
-  const bookedFiles = [...new Set([...ownFiles, ...(lineage?.files ?? [])])];
+  const since = lineage?.since ?? opts.taskStartSnapshot;
+  const observedFiles = [...new Set([...ownFiles, ...(lineage?.files ?? [])])];
+  const bookedFiles =
+    state.workspace?.kind === 'checkout'
+      ? await attributedCheckoutFiles({ projectDir, sessionId }, since ?? undefined, observedFiles)
+      : observedFiles;
+  const unresolved = observedFiles.filter((path) => !bookedFiles.includes(path));
+  if (unresolved.length > 0) {
+    publishWarning({ bus, phase: state.phase, message: keptCheckoutPathsMessage(unresolved) });
+  }
   const nextState = transitionAndSave({ projectDir, sessionId }, state, {
     type: transitionType,
   });
@@ -121,7 +132,8 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
   const touchedNotSuggested = touchedNotSuggestedFiles({
     task,
     tasks: state.tasks,
-    taskChangedFiles: opts.taskChangedFiles ?? [],
+    taskChangedFiles:
+      state.workspace?.kind === 'checkout' ? bookedFiles : (opts.taskChangedFiles ?? []),
   });
   if (touchedNotSuggested.length > 0) {
     bus.publish({
@@ -132,7 +144,6 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
       files: touchedNotSuggested,
     });
   }
-  const since = lineage?.since ?? opts.taskStartSnapshot;
   if (since !== null) {
     await captureTaskReviewChanges({
       ref: { projectDir, sessionId },

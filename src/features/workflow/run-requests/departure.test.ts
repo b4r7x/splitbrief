@@ -584,6 +584,19 @@ describe('a quit names the command that continues the run', () => {
     expect(diagnostics).toEqual([]);
   });
 
+  it('quits immediately without a continue line after the observed owner stops', () => {
+    const route = routerStore.get();
+    if (route.screen !== 'workflow') throw new Error('Expected the workflow screen.');
+    routerStore.updateRun({ run: route.run, execution: { kind: 'at-rest', observing: true } });
+    saveState(makeWorkflowState({ phase: 'implementing' }));
+    const exit = vi.fn();
+
+    requestQuit(exit);
+
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(diagnostics).toEqual([]);
+  });
+
   it('names an old draft before the continue line', () => {
     const dir = sessionDir(projectDir, sessionId);
     writeSessionDraft({ projectDir, sessionId }, createDraftDocument('my unsent draft'));

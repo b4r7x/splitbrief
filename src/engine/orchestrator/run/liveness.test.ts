@@ -21,7 +21,7 @@ describe('acquireLiveness', () => {
     try {
       await release();
       expect(loggedDiagnostics(projectDir)).toEqual([
-        'Could not release the run lock: permission denied · .splitbrief/sessions/liveness-session/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds',
+        'Could not release the run lock: permission denied · .splitbrief/sessions/liveness-session/lockfile.json · other SPLITBRIEF processes may have to wait for this process to exit',
       ]);
     } finally {
       chmodSync(dir, 0o755);
@@ -29,7 +29,7 @@ describe('acquireLiveness', () => {
     }
   });
 
-  it('reports a lock it could not write once: its release writes nothing more', async () => {
+  it('refuses to run when its lock cannot be written', async () => {
     const projectDir = createTempDir('liveness-');
     const sessionId = 'liveness-session';
     const dir = sessionDir(projectDir, sessionId);
@@ -37,11 +37,9 @@ describe('acquireLiveness', () => {
     enableDebugLog(projectDir);
     chmodSync(dir, 0o555);
     try {
-      const release = await acquireLiveness({ projectDir, sessionId, feature: 'f' });
-      await release();
-      expect(loggedDiagnostics(projectDir)).toEqual([
-        'Could not write the run lock: permission denied · .splitbrief/sessions/liveness-session/lockfile.json · another SPLITBRIEF process can open this run at the same time',
-      ]);
+      await expect(acquireLiveness({ projectDir, sessionId, feature: 'f' })).rejects.toThrow(
+        /Could not (hold|write) the run lock/,
+      );
     } finally {
       chmodSync(dir, 0o755);
       cleanupTempDir(projectDir);

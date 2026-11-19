@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
@@ -12,6 +12,7 @@ import { saveState } from '../../../core/state/persistence.js';
 import * as stagedProject from '../approval/staged-project/promote.js';
 import { activeApply, awaitActiveWorkflowShutdown } from '../session-lifecycle/shutdown.js';
 import { runApplyAtRest } from './at-rest.js';
+import { undoApply } from './restore.js';
 import * as backup from './backup.js';
 import * as lockfile from '../../../core/sessions/lock/file.js';
 import { resetLoggerForTests } from '../../../lib/logger.js';
@@ -125,6 +126,64 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
     );
   });
 
+  it('rejects a stale Apply selection once the same run has already applied', async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'run result\n');
+      const start = applyAtRest(run);
+      expect((await start()).outcome).toBe('applied');
+
+      await expect(start()).rejects.toMatchObject({ kind: 'apply-not-ready' });
+      expect(readFileSync(join(run.dir, 'a.txt'), 'utf8')).toBe('run result\n');
+    });
+  });
+
+  it('asks again when a stale Apply confirmation was for earlier review findings', async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      writeFileSync(join(run.ws, 'a.txt'), 'run result\n');
+      const selected = makeWorkflowState({
+        ...RUN_CREW,
+        phase: 'complete',
+        reviewStatus: 'failed',
+        workspace: run.workspace,
+        acceptedAsIs: { at: '2026-11-18T12:00:00Z', findings: ['F1'] },
+      });
+      saveState(ref, selected);
+      const acceptedAsIs = { at: '2026-11-18T12:01:00Z', findings: ['F2'] };
+      saveState(ref, { ...selected, acceptedAsIs });
+
+      const result = await runApplyAtRest({
+        wctx: { ...ref, bus: makeBusRecorder().bus },
+        state: selected,
+        reviewNone: false,
+        overrideConfirmed: true,
+      });
+
+      expect(result).toMatchObject({ outcome: 'needs-confirmation', state: { acceptedAsIs } });
+      expect(readFileSync(join(run.dir, 'a.txt'), 'utf8')).toBe('base\n');
+    });
+  });
+
+  it('rejects a stale Undo selection without undoing a later edit in the checkout', async () => {
+    await withApplyRun({ 'a.txt': 'base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      const target = join(run.dir, 'a.txt');
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      writeFileSync(join(run.ws, 'a.txt'), 'run result\n');
+      const applied = await applyAtRest(run)();
+      expect(applied.outcome).toBe('applied');
+      expect((await undoApply(ref, applied.state)).restored).toEqual(['a.txt']);
+      writeFileSync(target, 'run result\n');
+
+      const rejected = await undoApply(ref, applied.state).catch((cause: unknown) => cause);
+
+      expect(readFileSync(target, 'utf8')).toBe('run result\n');
+      expect(rejected).toMatchObject({
+        kind: 'apply-not-undoable',
+        message: 'Apply already undone.',
+      });
+    });
+  });
+
   it('closes the applied run with the time it ran and the time of each stage', async () => {
     await withApplyRun(
       { 'a.txt': 'one\n' },
@@ -169,7 +228,7 @@ describe('runApplyAtRest', { timeout: 60_000 }, () => {
         try {
           expect((await applyAtRest(run)()).outcome).toBe('applied');
           expect(loggedDiagnostics(logDir)).toEqual([
-            `Could not release the run lock: permission denied · .splitbrief/sessions/${SESSION_ID}/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds`,
+            `Could not release the run lock: permission denied · .splitbrief/sessions/${SESSION_ID}/lockfile.json · other SPLITBRIEF processes may have to wait for this process to exit`,
           ]);
         } finally {
           resetLoggerForTests();

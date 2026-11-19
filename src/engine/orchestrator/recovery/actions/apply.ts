@@ -8,6 +8,7 @@ import { assertNever } from '../../../../utils/type-guards.js';
 import { haltCutApply } from '../../apply/halt.js';
 import { recordDecideForMe } from '../../planning/call-loop.js';
 import { endRun } from '../../run/end.js';
+import { withAtRestSession } from '../../run/liveness.js';
 import { recordBriefCorrection } from '../../state-ops/corrections.js';
 import { applyRetryLaterRecoveryAction } from './retry.js';
 import { applyRetrySameWorkerRecoveryAction } from './retry.js';
@@ -19,7 +20,7 @@ import {
   applyReviewCorrectionAction,
 } from './review.js';
 import { applyContinueRecoveryAction } from './continue.js';
-import { blockRecoveryAction, markRecoveryApplying } from './shared.js';
+import { blockRecoveryAction, markRecoveryApplying, readRecoveryActionState } from './shared.js';
 import type { ApplyRecoveryActionOptions, ApplyRecoveryActionResult } from './types.js';
 
 export async function applyRecoveryAction(
@@ -167,9 +168,12 @@ export function applyDecidedRecovery(
   if (opts.state.decideForMe !== true || issue === undefined) return undefined;
   const decided = decidedRecovery(issue);
   if (decided === undefined || (typed?.text.trim() ?? '') !== '') return undefined;
-  return applyRecoveryAction({
-    ...opts,
-    action: 'decide-for-me',
-    entryConfig: entryConfig(),
-  });
+  return withAtRestSession(opts, () =>
+    applyRecoveryAction({
+      ...opts,
+      state: readRecoveryActionState(opts, opts.state),
+      action: 'decide-for-me',
+      entryConfig: entryConfig(),
+    }),
+  );
 }

@@ -1,17 +1,13 @@
 import type { Command } from 'commander';
-import { loadRunRecord } from '../../core/sessions/run/record.js';
-import { defaultRunRecordDeps } from '../../core/sessions/run/record-io.js';
 import { addWorkflowOptions } from '../options/workflow.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
-import { sessionError } from '../../core/sessions/errors.js';
-import { readActive } from '../../core/sessions/active-pointer.js';
 import { checkSessionLiveness } from '../../core/sessions/lock/file.js';
-import { sessionDir } from '../../core/paths.js';
+import { resolveTargetRun } from '../sessions/resolve.js';
 import { resolveRunConfig } from '../build-overrides.js';
 import { emitRecoveryAndFailIfPending, recordWriterFor } from '../headless/outcome.js';
 import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
-import { resumeSavedSession } from './continue/resume.js';
+import { openOwnedRun, resumeSavedSession } from './continue/resume.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface ResumeDeps {
@@ -27,33 +23,21 @@ const defaultResumeDeps: ResumeDeps = {
 export async function resumeCommand(
   opts: { projectDir: string } & WorkflowOpts,
   deps: ResumeDeps = defaultResumeDeps,
+  sessionInput?: string,
 ): Promise<void> {
   const { projectDir } = opts;
 
-  const sessionId = readActive(projectDir);
-  if (!sessionId) {
+  const record = await resolveTargetRun({
+    projectDir,
+    sessionInput,
+    checkLiveness: deps.checkSessionLiveness,
+  });
+  if (record === null) {
     throw cliError('no active session to resume.');
   }
 
-  const status = deps.checkSessionLiveness(sessionDir(projectDir, sessionId));
-  if (status.alive) {
-    throw cliError(sessionError.stillActive(sessionId).message, 1);
-  }
-
-  if (status.processAlive) {
-    throw cliError(
-      `session process ${status.data?.pid} exists but is unresponsive — kill it first`,
-      1,
-    );
-  }
-
-  // The record reads the run once: its state and what it left on disk. Liveness is
-  // already settled above, so the record is told rather than asked.
-  const record = loadRunRecord(
-    { projectDir, sessionId },
-    { ...defaultRunRecordDeps(), liveness: () => 'not-alive' },
-    false,
-  );
+  if (await openOwnedRun(record, opts)) return;
+  const { sessionId } = record.ref;
   const hydrated = record.hydration;
 
   if (hydrated.kind === 'invalid') {
@@ -84,10 +68,12 @@ export function registerResumeCommand(
   program: Command,
   deps: ResumeDeps = defaultResumeDeps,
 ): void {
-  addWorkflowOptions(program.command('resume').description('Resume the most recent run')).action(
-    async (opts: WorkflowOpts) => {
-      const projectDir = await canonicalizeProjectDir(opts);
-      await resumeCommand({ ...opts, projectDir }, deps);
-    },
-  );
+  addWorkflowOptions(
+    program
+      .command('resume [session-id]')
+      .description('Resume the most recent run or select one by id or alias'),
+  ).action(async (sessionInput: string | undefined, opts: WorkflowOpts) => {
+    const projectDir = await canonicalizeProjectDir(opts);
+    await resumeCommand({ ...opts, projectDir }, deps, sessionInput);
+  });
 }

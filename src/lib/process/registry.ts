@@ -30,7 +30,7 @@ type RegisteredProcess = {
 const runningScope = new AsyncLocalStorage<ProcessScope | undefined>();
 const activeProcesses = new Map<ChildProcess, RegisteredProcess>();
 const processTerminations = new WeakMap<ChildProcess, Promise<void>>();
-let processLedger: ProcessLedger | null = null;
+const processLedgers = new Map<ProcessScope | undefined, ProcessLedger>();
 let allProcessesCleanup: Promise<void> | null = null;
 const registryListeners = new Set<(count: number) => void>();
 
@@ -90,11 +90,14 @@ export function processScopeCount(scope: ProcessScope): number {
 }
 
 export function setProcessLedger(ledger: ProcessLedger | null): void {
-  processLedger = ledger;
+  const scope = currentProcessScope();
+  if (ledger === null) processLedgers.delete(scope);
+  else processLedgers.set(scope, ledger);
 }
 
 export function clearProcessLedger(ledger: ProcessLedger): void {
-  if (processLedger === ledger) processLedger = null;
+  const scope = currentProcessScope();
+  if (processLedgers.get(scope) === ledger) processLedgers.delete(scope);
 }
 
 function registeredTargetIsAbsent(entry: RegisteredProcess): boolean {
@@ -134,14 +137,15 @@ export function registerProcess(
   options?: { group?: boolean | undefined },
 ): void {
   const group = options?.group ?? false;
-  const ledger = group ? processLedger : null;
+  const scope = currentProcessScope();
+  const ledger = group ? (processLedgers.get(scope) ?? null) : null;
   const entry: RegisteredProcess = {
     proc,
     pid: proc.pid,
     group,
     ledger,
     releaseMonitor: undefined,
-    scope: runningScope.getStore(),
+    scope,
   };
   activeProcesses.set(proc, entry);
   notifyRegistryChange();

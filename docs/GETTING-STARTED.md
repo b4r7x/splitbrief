@@ -246,11 +246,11 @@ The orchestrator records evidence, and `/run accept` records the tree you accept
 
 Three additional safety nets:
 
-1. **Apply and undo.** Nothing reaches your checkout before Apply. `/run accept` applies a ready run, and `/run reject confirm` discards it before Apply or restores the Apply backup after it ([WORKFLOW.md §Apply](./WORKFLOW.md#apply)). A run without a workspace keeps the older snapshot behaviour ([SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject)).
+1. **Apply and undo.** In a worktree or staged-copy run, Apply writes the result to your checkout. `/run accept` applies a ready run, and `/run reject confirm` discards it before Apply or restores the Apply backup after it ([WORKFLOW.md §Apply](./WORKFLOW.md#apply)). A run without a workspace keeps the older snapshot behaviour ([SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject)).
 2. **Drift detection.** Before the final review, the orchestrator computes a deterministic drift report comparing the actual diff to the Task Brief. Out-of-scope file edits, missing target files, orphan diffs, and missing observed evidence all show up. The review seat sees this report alongside the diff so it cannot rubber-stamp a runaway agent.
 3. **Protected-path confirmation.** Ordinary file writes in the run workspace proceed without a prompt, because a brief's files are suggestions, and SPLITBRIEF records the writes for the reviewer. A write to a protected path — `.git`, `.splitbrief`, CI configuration, env and key files, package manifests and lockfiles — asks for confirmation once per path per run. A protected write that the approved plan lists is already confirmed.
 
-Same-directory parallel writes are out of scope. A future implementer pool may choose the capable worker with the smallest sufficient context window for each Task Brief, but it is still one implementer role running safely against one checkout.
+Start independent runs in the same project with `splitbrief start` in separate terminals. Default isolation opens a separate workspace before planning. Each run works through its briefs one at a time. See [isolation settings](./CONFIGURATION.md#implementer-isolation).
 
 ---
 
@@ -258,7 +258,7 @@ Same-directory parallel writes are out of scope. A future implementer pool may c
 
 Explicit non-goals, so you don't go looking:
 
-- **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
+- **Not a swarm or generic multi-agent manager.** Each workflow has one planner role and runs one Task Brief at a time. An implementer pool selects one capable worker per brief.
 - **Native Windows is not supported.** Use macOS, Linux or run inside WSL. The process and filesystem handling requires POSIX semantics.
 - **No fixed validator language.** The planner names the project gate from the project itself. The reviewer command policy runs any installed program of any language (`mvn test`, `bundle exec rspec`, `make check`), and refuses only what breaks a danger rule, such as shell syntax, a program run by path or a setup command. Every refused command gets a named row. A planner `test` check resolves its command per stack (TypeScript, JavaScript, Python, Go and Rust). On any other stack it needs `validation.test_command`, a project test script or target, or a command the planner discovered. Project commands include a `package.json` `test` script, a `Makefile` or `justfile` `test` target, or a pyproject test section. Without a command, the check is `not-runnable`.
 - **No SPLITBRIEF-defined tool-call protocol for implementers.** SPLITBRIEF does not layer a second control protocol on top of the runner. An implementer either returns file contents that SPLITBRIEF writes (`extracted-code`), or writes into its working directory itself (`direct` — `cli` and `agent` runners) and SPLITBRIEF inspects the resulting diff. Whatever tools the runner exposes internally are the runner's business. See [docs/VISION.md §Strategic decisions](./VISION.md).

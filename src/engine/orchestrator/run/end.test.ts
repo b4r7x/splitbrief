@@ -17,6 +17,7 @@ import { writeRunPatch } from '../apply/patch.js';
 import { removeRunWorkspace } from '../isolation/worktree/remove.js';
 import { applyRecoveryAction } from '../recovery/actions/apply.js';
 import { endRunAtRest } from './end.js';
+import { acquireLiveness } from './liveness.js';
 
 vi.mock('../apply/patch.js', () => ({ writeRunPatch: vi.fn() }));
 vi.mock('../isolation/worktree/remove.js', async (importOriginal) => {
@@ -104,6 +105,33 @@ describe('endRunAtRest', () => {
     expect(readActive(projectDir)).toBe(ref.sessionId);
     expect(readSession(ref)).toBeNull();
     expect(events).toEqual([]);
+  });
+
+  it('keeps a run open if another driver enters after the End action reads it', async () => {
+    projectDir = createTempDir('end-run-live-owner-');
+    const ref = { projectDir, sessionId: 'resumed-while-ending' };
+    const active = reactivateExistingSession(ref);
+    const state: WorkflowState = {
+      ...createInitialState('End a stopped run'),
+      ...RUN_CREW,
+      phase: 'implementing',
+      awaitingContinue: true,
+    };
+    saveState(ref, state);
+    const saved = loadState(ref);
+    const { bus, events } = makeBusRecorder();
+    const release = await acquireLiveness({ ...ref, feature: state.feature });
+
+    try {
+      await expect(endRunAtRest({ ...ref, bus }, state)).rejects.toMatchObject({
+        kind: 'workflow-session-already-live',
+      });
+      expect(loadState(ref)).toEqual(saved);
+      expect(readActive(projectDir)).toBe(active.sessionId);
+      expect(events).toEqual([]);
+    } finally {
+      await release();
+    }
   });
 
   it('closes a stopped run, publishes one cancellation and finalizes the session', async () => {

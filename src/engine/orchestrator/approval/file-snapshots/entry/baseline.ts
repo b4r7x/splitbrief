@@ -1,4 +1,7 @@
-import { collectTrackedFiles } from '../../../../snapshots/files.js';
+import {
+  collectTrackedFiles,
+  type CollectTrackedFilesOptions,
+} from '../../../../snapshots/files.js';
 import { readConfinedEntry, lstatConfinedEntry } from './read.js';
 
 /** What one target file looked like at acquisition; contents are never kept. */
@@ -11,9 +14,12 @@ export type FileEntryFingerprint = { sha256: string; mode: number };
  */
 export type AcquisitionBaseline = ReadonlyMap<string, FileEntryFingerprint>;
 
-export async function captureAcquisitionBaseline(projectDir: string): Promise<AcquisitionBaseline> {
+export async function captureAcquisitionBaseline(
+  projectDir: string,
+  options?: CollectTrackedFilesOptions,
+): Promise<AcquisitionBaseline> {
   const baseline = new Map<string, FileEntryFingerprint>();
-  for (const file of await collectTrackedFiles(projectDir)) {
+  for (const file of await collectTrackedFiles(projectDir, options)) {
     const entry = await readConfinedEntry(projectDir, file);
     if (entry.kind === 'file') baseline.set(file, { sha256: entry.sha256, mode: entry.mode });
   }

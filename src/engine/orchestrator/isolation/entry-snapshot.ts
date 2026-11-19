@@ -9,16 +9,23 @@ import { evidenceError } from '../../../core/evidence/errors.js';
 import { getGitForDir } from '../../../lib/git/client.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
 import { isENOENT } from '../../../utils/errno.js';
+import { withCheckoutWriteLock } from '../../checkout-write.js';
+import {
+  beginCheckoutWriter,
+  checkoutWriterRevision,
+  type CheckoutWrite,
+} from '../../checkout-writers.js';
 import { listWorkspaceEntries } from '../../snapshots/files.js';
 import { getChangedFilesSnapshot, storeEntryBlob } from '../approval/file-snapshots/capture.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 import {
   removeConfinedSymlink,
   writeConfinedEntry,
+  writeConfinedEntryOrLink,
   writeConfinedSymlink,
 } from '../approval/file-snapshots/entry/write.js';
 import { readProjectSymlink } from '../approval/file-snapshots/entry/link.js';
-import { readConfinedEntry } from '../approval/file-snapshots/entry/read.js';
+import { readConfinedEntry, type ChangeEntry } from '../approval/file-snapshots/entry/read.js';
 import {
   entryToRestore,
   restoreDirtyFilesFromSnapshot,
@@ -26,6 +33,11 @@ import {
 } from '../approval/file-snapshots/restore.js';
 import { retentionError } from './retention.js';
 import { recordApiRevertEvidence } from '../evidence/api-apply.js';
+import {
+  checkoutFingerprint,
+  checkoutSnapshotExpectations,
+  readCheckoutFingerprint,
+} from './checkout-entries.js';
 
 /**
  * Snapshots for a directory git cannot describe on its own — a staged copy, or a
@@ -39,7 +51,7 @@ export function entryStoreDir(ref: SessionRef): string {
 
 export async function captureEntrySnapshot(
   dir: string,
-  opts: { ignoreProjectDir: string; store: string },
+  opts: { ignoreProjectDir: string | null; store: string },
 ): Promise<ChangedFilesSnapshot> {
   const entries = await listWorkspaceEntries(dir, { ignoreProjectDir: opts.ignoreProjectDir });
   await mkdir(opts.store, { recursive: true, mode: 0o700 });
@@ -118,11 +130,17 @@ export async function captureWorkspaceSnapshot(
   dir: string,
   ref: SessionRef,
   onEmbeddedRepo?: (dir: string) => void,
+  ignoreProjectDir: string | null = ref.projectDir,
 ): Promise<ChangedFilesSnapshot> {
   const store = entryStoreDir(ref);
-  return (await gitDescribes(dir))
-    ? getChangedFilesSnapshot(dir, onEmbeddedRepo, { store })
-    : captureEntrySnapshot(dir, { ignoreProjectDir: ref.projectDir, store });
+  const checkoutRevision =
+    (await realpath(dir)) === (await realpath(ref.projectDir))
+      ? checkoutWriterRevision(ref.projectDir)
+      : undefined;
+  const snapshot = (await gitDescribes(dir))
+    ? await getChangedFilesSnapshot(dir, onEmbeddedRepo, { store })
+    : await captureEntrySnapshot(dir, { ignoreProjectDir, store });
+  return checkoutRevision === undefined ? snapshot : { ...snapshot, checkoutRevision };
 }
 
 /**
@@ -177,8 +195,12 @@ export async function restoreWorkspaceFiles(input: {
   dir: string;
   snapshot: ChangedFilesSnapshot;
   files: readonly string[] | undefined;
-}): Promise<{ restoredFiles: string[]; savedTo?: string | undefined }> {
+  checkout?: boolean;
+}): Promise<{ restoredFiles: string[]; keptPaths?: string[]; savedTo?: string | undefined }> {
   const { ref, dir, snapshot, files: requested } = input;
+  if (input.checkout) {
+    return withCheckoutWriteLock(ref.projectDir, () => restoreCheckoutFiles(input));
+  }
   if (requested?.length === 0) return { restoredFiles: [] };
   const files = (await restorableFiles(dir, snapshot)).filter(
     (file) => requested === undefined || requested.includes(file),
@@ -208,11 +230,108 @@ export async function restoreWorkspaceFiles(input: {
       entryStoreDir(ref),
     ));
   }
+  recordRemovedPaths(ref, dir, removedPaths);
+  return { restoredFiles, ...(savedTo !== undefined && { savedTo }) };
+}
+
+async function restoreCheckoutFiles(input: {
+  ref: SessionRef;
+  dir: string;
+  snapshot: ChangedFilesSnapshot;
+  files: readonly string[] | undefined;
+}): Promise<{ restoredFiles: string[]; keptPaths: string[]; savedTo?: string | undefined }> {
+  const { ref, dir, snapshot, files: requested } = input;
+  const files = (await getChangedFilesSinceSnapshot(dir, snapshot)).filter(
+    (file) =>
+      (requested === undefined || requested.includes(file)) &&
+      (snapshot.restoreFiles === undefined || snapshot.restoreFiles.includes(file)),
+  );
+  const store = entryStoreDir(ref);
+  const expected = await checkoutSnapshotExpectations({ ref, snapshot, files, store });
+  return putBackCheckoutEntries({
+    ref,
+    files,
+    expected,
+    replacement: (file) => entryToRestore(dir, snapshot, file, store),
+  });
+}
+
+/** Puts back the proven entries under the caller's checkout write lock. */
+export async function putBackCheckoutEntries(input: {
+  ref: SessionRef;
+  files: readonly string[];
+  expected: ReadonlyMap<string, string>;
+  replacement: (file: string) => Promise<ChangeEntry | undefined>;
+}): Promise<{
+  restoredFiles: string[];
+  removedPaths: string[];
+  keptPaths: string[];
+  missingPaths: string[];
+  savedTo?: string | undefined;
+}> {
+  const { ref, files, expected } = input;
+  const dir = ref.projectDir;
+  const restoredFiles: string[] = [];
+  const removedPaths: string[] = [];
+  const keptPaths: string[] = [];
+  const missingPaths: string[] = [];
+  const candidates: { file: string; before: string }[] = [];
+  for (const file of files) {
+    const before = expected.get(file);
+    if (before !== undefined && before === (await readCheckoutFingerprint(dir, file))) {
+      candidates.push({ file, before });
+    } else keptPaths.push(file);
+  }
+  if (candidates.length === 0) return { restoredFiles, removedPaths, keptPaths, missingPaths };
+  const savedTo = await saveReplacedEntries(
+    ref,
+    candidates.map(({ file }) => file),
+  );
+  const writer = beginCheckoutWriter(ref);
+  let recorded: CheckoutWrite[] | undefined = [];
+  try {
+    for (const { file, before } of candidates) {
+      const replacement = await input.replacement(file);
+      if (replacement === undefined) {
+        missingPaths.push(file);
+        continue;
+      }
+      const conflict = restoreError.conflict(file);
+      try {
+        await writeConfinedEntryOrLink(dir, file, replacement, async () => {
+          if (before !== (await readCheckoutFingerprint(dir, file))) throw conflict;
+        });
+      } catch (cause) {
+        if (cause !== conflict) throw cause;
+        keptPaths.push(file);
+        continue;
+      }
+      recorded.push([file, { before, after: checkoutFingerprint(replacement), proven: true }]);
+      restoredFiles.push(file);
+      if (replacement.kind === 'absent') removedPaths.push(file);
+    }
+  } catch (cause) {
+    recorded = undefined;
+    if (restoreError.isStoreCorrupt(cause)) throw retentionError.unavailable();
+    throw cause;
+  } finally {
+    writer.finish(recorded);
+  }
+  recordRemovedPaths(ref, dir, removedPaths);
+  return {
+    restoredFiles,
+    removedPaths,
+    keptPaths: keptPaths.sort(),
+    missingPaths,
+    ...(savedTo !== undefined && { savedTo }),
+  };
+}
+
+function recordRemovedPaths(ref: SessionRef, dir: string, removedPaths: string[]): void {
   if (removedPaths.length > 0 && existsSync(evidenceLedgerPath(ref))) {
     mutateEvidenceLedger(ref, (current) => {
       if (current === null) throw evidenceError.ledgerNotFound();
       return recordApiRevertEvidence({ ledger: current, workspacePath: dir, removedPaths });
     });
   }
-  return { restoredFiles, ...(savedTo !== undefined && { savedTo }) };
 }

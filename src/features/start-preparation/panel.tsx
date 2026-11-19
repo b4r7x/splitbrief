@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useInput } from 'ink';
 import { OverlayPanel, type OverlayCard } from '../../components/overlays/panel.js';
 import { RuleHeader } from '../../components/rule-header.js';
@@ -47,6 +47,12 @@ export function StartPreparationPanel({
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const hasOverlay = overlayStore.use(selectHasOverlay);
   const actionable = state.kind === 'blocked' || state.kind === 'failed';
+  const model = actionable ? panelModel(state) : null;
+  const [expandedError, setExpandedError] = useState<Error | null>(null);
+  const hasDetails =
+    state.kind === 'failed' &&
+    (model?.diagnostic !== undefined || (model?.details.length ?? 0) > 0);
+  const expanded = state.kind === 'failed' && expandedError === state.error;
   const isActive = actionable && !hasOverlay && approvalPrompt === undefined;
 
   useInput(
@@ -59,7 +65,9 @@ export function StartPreparationPanel({
         onRetry();
         return;
       }
-      if (input === 's' || input === 'S') onOpenSettings();
+      if (model?.settings && input.toLowerCase() === 's') onOpenSettings();
+      if (hasDetails && input.toLowerCase() === 'd')
+        setExpandedError(expanded ? null : state.error);
     },
     { isActive },
   );
@@ -69,27 +77,31 @@ export function StartPreparationPanel({
   }
   // A routine check takes no page anywhere: every screen keeps its own chrome and states the
   // check on the fixed status row beside its composer. This panel is for what needs answering.
-  if (state.kind === 'idle' || state.kind === 'preparing') return null;
+  if (model === null) return null;
 
-  const rect = overlayRect({ cols, rows, density: DENSITY });
+  const density = model.failed && !expanded ? 'compact' : DENSITY;
+  const rect = overlayRect({ cols, rows, density });
   // The card is the page while it shows, not an overlay above one, so it keeps no gutter rows.
-  const capacity = Math.max(1, rows - OVERLAY_FRAME_ROWS - CHROME_ROWS);
-  const model = panelModel(state);
+  const capacity = Math.max(1, rows - OVERLAY_FRAME_ROWS - CHROME_ROWS + (model.failed ? 2 : 0));
   // Measured at the full width first: the scrollbar's column is paid for only once the copy is
   // known not to fit, and taking it back would re-wrap every line under the cause.
-  const full = panelLines(model, rect.innerWidth);
+  const full = panelLines(model, rect.innerWidth, expanded);
   const overflows = full.length > capacity;
   const contentWidth = overflows
     ? getScrollViewportContentWidth(rect.innerWidth, 'padding')
     : rect.innerWidth;
-  const lines = overflows ? panelLines(model, contentWidth) : full;
+  const lines = overflows ? panelLines(model, contentWidth, expanded) : full;
   const documentRows: ScrollableDocumentRow[] = lines.map((line) => ({
     key: line.key,
     node:
       line.kind === 'rule' ? (
         <RuleHeader label={line.label} width={contentWidth} />
       ) : (
-        <Text color={toneColor(t, line.tone, model.failed)} wrap="truncate-end">
+        <Text
+          bold={model.failed && line.tone === 'cause'}
+          color={toneColor(t, line.tone, model.failed)}
+          wrap="truncate-end"
+        >
           {line.text === '' ? ' ' : line.text}
         </Text>
       ),
@@ -97,10 +109,16 @@ export function StartPreparationPanel({
 
   return (
     <OverlayPanel
-      title={`Tool preparation${SOFT_SEP}${model.failed ? 'Failed' : 'Blocked'}`}
-      density={DENSITY}
+      title={model.failed ? undefined : `Tool preparation${SOFT_SEP}Blocked`}
+      density={density}
       hint={fitHint(
-        ['r retry', 'esc back', 's settings', ...(overflows ? ['↑↓ scroll'] : [])],
+        [
+          'r retry',
+          'esc back',
+          ...(hasDetails ? [expanded ? 'd hide details' : 'd details'] : []),
+          ...(model.settings ? ['s settings'] : []),
+          ...(overflows ? ['↑↓ scroll'] : []),
+        ],
         rect.innerWidth,
       )}
     >

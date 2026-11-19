@@ -4,6 +4,7 @@ import type { ViewSeatWait } from '../../../core/run-view/reduce.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import type { RunOwner } from '../../../core/sessions/run/record.js';
 import type { RunStatus, StopReason } from '../../../core/sessions/run/status.js';
 import { seatWaitParts } from '../../../core/sessions/seat-wait-line.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
@@ -85,6 +86,9 @@ export function applyByline(apply: ApplyByline, width: number): readonly Convers
 export function openRunBylineParts(
   input: Readonly<{
     status: RunStatus;
+    owner?: RunOwner | undefined;
+    waitingForAnswer?: boolean;
+    observing?: boolean;
     /** The seat wait the run's log states, already dropped for an open run whose seat moved. */
     wait: ViewSeatWait | null;
     /** The run view's `planCard`: a gate stop on a typed plan's card reopens it. */
@@ -100,14 +104,38 @@ export function openRunBylineParts(
   }>,
 ): readonly ConversationRowSegment[] {
   const { status, width, now } = input;
+  if (input.owner?.kind === 'stale') {
+    return fitStatusByline(
+      'Viewing last saved activity',
+      'Run is unresponsive',
+      stateTone('attention'),
+      width,
+    );
+  }
   // A wait whose reset has passed reads as the stop it now is.
   const wait =
     input.wait === null ? null : seatWaitParts(input.wait.tool, input.wait.wait.resetAt, now);
   if (status.kind === 'running' && input.apply !== undefined)
     return applyByline(input.apply, width);
   if (status.kind === 'running') {
+    if (input.waitingForAnswer === true) {
+      return fitStatusByline(
+        'Waiting for an answer in another terminal',
+        'View only',
+        stateTone('attention'),
+        width,
+      );
+    }
     // Another process waits on it now; a wait a steer cut there shows the running line.
     if (input.wait?.live === true && wait !== null) return fitByline(waitByline(wait), width);
+    if (input.owner?.kind === 'live') {
+      return fitStatusByline(
+        'Viewing live',
+        'Another terminal controls this run',
+        stateTone('running'),
+        width,
+      );
+    }
     return fitStatusByline(
       RUNNING_BYLINE.reason,
       RUNNING_BYLINE.action,
@@ -142,7 +170,7 @@ export function openRunBylineParts(
     openByline(status.stop, status.resumeAt, {
       reviewNone: status.reviewNone === true,
       ...input,
-      wordsUnread: statusLeavesWordsUnread(status),
+      wordsUnread: input.observing === true || statusLeavesWordsUnread(status),
     }),
     width,
   );
@@ -181,7 +209,7 @@ function openByline(
     case 'question':
       return {
         reason: [{ text: 'Waiting for your answer', tone: stateTone('attention') }],
-        action: 'Type a reply or ⏎ to continue',
+        action: wordsUnread ? '⏎ to continue' : 'Type a reply or ⏎ to continue',
       };
     case 'halt':
       return {

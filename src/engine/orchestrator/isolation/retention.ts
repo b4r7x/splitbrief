@@ -137,7 +137,7 @@ export async function readWorkspaceRecord(ref: SessionRef): Promise<RetainedWork
   ]))
     assertPathConfined(file, ref.projectDir);
   if (
-    record.snapshot.ignoreProjectDir !== undefined &&
+    record.snapshot.ignoreProjectDir != null &&
     (await realpath(record.snapshot.ignoreProjectDir)) !== (await realpath(ref.projectDir))
   )
     throw retentionError.unavailable();

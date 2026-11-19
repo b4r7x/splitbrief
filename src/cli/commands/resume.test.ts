@@ -86,6 +86,70 @@ describe('resume command', () => {
     tmp = '';
   });
 
+  it('resumes a stopped run by numeric alias without using the active pointer', async () => {
+    tmp = createTempDir('resume-alias');
+    const sessionId = '2026-11-18-paused';
+    writeState(makeSessionDir(tmp, sessionId), 'a paused run');
+    const resumeSavedSession = vi.fn<ResumeDeps['resumeSavedSession']>(async () => {});
+    const program = new Command().exitOverride();
+    registerResumeCommand(program, { checkSessionLiveness, resumeSavedSession });
+
+    await program.parseAsync(['resume', '1', '--project', tmp, '--plain'], { from: 'user' });
+
+    expect(resumeSavedSession).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        sessionId,
+        state: expect.objectContaining({ feature: 'a paused run' }),
+      }),
+    );
+  });
+
+  it.each(['absent', 'closed', 'missing'] as const)(
+    'selects the newest open run when the active pointer is %s',
+    async (pointer) => {
+      tmp = createTempDir('resume-default');
+      const older = '2026-11-18-older';
+      const newer = '2026-11-18-newer';
+      const closed = '2026-11-18-closed';
+      for (const [sessionId, lastAliveMs, extra] of [
+        [older, 1, {}],
+        [newer, 2, {}],
+        [closed, 3, { phase: 'complete', reviewStatus: 'passed' }],
+      ] as const) {
+        const directory = makeSessionDir(tmp, sessionId);
+        writeState(directory, sessionId, {
+          ...extra,
+          startedAt: new Date(lastAliveMs).toISOString(),
+        });
+        writeFileSync(
+          join(directory, 'lockfile.json'),
+          JSON.stringify({
+            version: 1,
+            sessionId,
+            feature: sessionId,
+            pid: process.pid,
+            startTimeMs: lastAliveMs,
+            lastAliveMs,
+            exitedAt: lastAliveMs,
+          }),
+        );
+      }
+      if (pointer !== 'absent') {
+        writeActive({
+          projectDir: tmp,
+          sessionId: pointer === 'closed' ? closed : 'standalone-spec',
+        });
+      }
+      const resumeSavedSession = vi.fn<ResumeDeps['resumeSavedSession']>(async () => {});
+
+      await resumeCommand({ projectDir: tmp }, { checkSessionLiveness, resumeSavedSession });
+
+      expect(resumeSavedSession).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ sessionId: newer }),
+      );
+    },
+  );
+
   it('refuses a stale-live process before loading state, like continue', async () => {
     tmp = createTempDir('resume-stale-live');
     const sessionId = '2025-04-01-unresponsive';

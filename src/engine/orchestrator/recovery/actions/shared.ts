@@ -5,6 +5,9 @@ import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js
 import { type Task, isTaskCompleted } from '../../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import type { UserMessageInput } from '../../../../core/types/user-input.js';
+import type { SessionRef } from '../../../../core/types/session-ref.js';
+import { error } from '../../../../utils/error.js';
+import { rebaseOnPersistedWorkflowState } from '../../state-ops/head.js';
 import {
   publishRecoveryActionSelected,
   publishRecoveryActionFailed,
@@ -24,6 +27,26 @@ import type {
   RecoveryActionBlockedCode,
   ApplyRecoveryActionBlocked,
 } from './types.js';
+
+export function readRecoveryActionState(ref: SessionRef, observed: WorkflowState): WorkflowState {
+  const current = rebaseOnPersistedWorkflowState(ref, observed);
+  const previous = observed.pendingRecovery;
+  const latest = current.pendingRecovery;
+  if (
+    current.closed !== undefined ||
+    previous?.id !== latest?.id ||
+    previous?.taskId !== latest?.taskId ||
+    previous?.status !== latest?.status ||
+    previous?.selectedAction !== latest?.selectedAction ||
+    observed.applying?.backupId !== current.applying?.backupId
+  ) {
+    throw error(
+      'workflow-recovery-changed',
+      `The recovery for run ${ref.sessionId} changed. Open the run again to see what it needs.`,
+    );
+  }
+  return current;
+}
 
 export function reviewIsNone(opts: ApplyRecoveryActionOptions): boolean {
   const nextPass = opts.entryConfig ?? opts.config;

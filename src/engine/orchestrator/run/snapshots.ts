@@ -6,6 +6,7 @@ import { createSnapshot } from '../../snapshots/create.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
 import { recordRunSnapshot } from '../../snapshots/run/ledger.js';
 import { publishWarningFromError } from '../publish/notice.js';
+import { checkoutWriterRevision } from '../../checkout-writers.js';
 
 const RUN_BASELINE_SNAPSHOT_NAME = 'run-baseline';
 const RUN_SNAPSHOT_NAME = 'pre-final-review';
@@ -20,14 +21,22 @@ type RunSnapshotContext = {
 // The "before" state /run reject restores to. Creating a snapshot when the
 // session has no baseline yet writes the baseline manifest itself, so this runs
 // once per run: on resume the baseline already exists and nothing is captured.
-export async function ensureRunBaselineSnapshot(ctx: RunSnapshotContext): Promise<void> {
+export async function ensureRunBaselineSnapshot(
+  ctx: RunSnapshotContext,
+  source?: Pick<
+    Parameters<typeof createSnapshot>[0],
+    'sourceDir' | 'ignoreProjectDir' | 'gitignore'
+  >,
+): Promise<void> {
   try {
     if (await hasBaseline(ctx.projectDir, ctx.sessionId)) return;
     await createSnapshot({
       projectDir: ctx.projectDir,
       sessionId: ctx.sessionId,
+      ...source,
       phase: 'manual',
       name: RUN_BASELINE_SNAPSHOT_NAME,
+      checkoutRevision: checkoutWriterRevision(ctx.projectDir),
       bus: ctx.bus,
       eventPhase: ctx.phase,
     });

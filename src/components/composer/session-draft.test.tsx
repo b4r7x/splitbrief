@@ -11,7 +11,7 @@ import { readSessionDraft, writeSessionDraft } from '../../core/sessions/draft.j
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { handleSessionSelect } from '../../stores/navigation/session-select.js';
+import { handleSessionSelect, showRunAtRest } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -62,6 +62,47 @@ describe('unsent session composer draft', () => {
       execution: { kind: 'at-rest' },
     });
   }
+
+  it('keeps the owner draft untouched when an observer sees another terminal take over', async () => {
+    const ref = { projectDir, sessionId: 'one' };
+    const original = createDraftDocument('Owner draft');
+    const released = makeRunRecord({ ref });
+    const held = makeRunRecord({
+      ref,
+      owner: { kind: 'live', pid: process.pid + 1 },
+      status: { kind: 'running' },
+    });
+    writeSessionDraft(ref, original);
+    await showRunAtRest(held, {
+      loadResumeState: loadOwnerWorkflowState,
+      prepareResume: async () => ({ kind: 'aborted' }),
+      hydrateRun: async () => {},
+      applying: () => false,
+    });
+    const ui = renderFeature(
+      <Composer
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        commands={[]}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    try {
+      await flushEffects();
+      routerStore.updateRun({ run: released });
+      await flushEffects();
+      composerDraftStore.requestDocument(createDraftDocument('Viewer changes'));
+      await flushEffects();
+      routerStore.updateRun({ run: held });
+      await flushEffects();
+      flushSessionDrafts();
+
+      expect(readSessionDraft(ref)).toEqual(original);
+    } finally {
+      ui.unmount();
+    }
+  });
 
   it('restores full ordered content after leaving, isolates other sessions, and survives a disk reload without submitting', async () => {
     open('one');

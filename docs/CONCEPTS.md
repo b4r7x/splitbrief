@@ -221,7 +221,7 @@ The implementer still never sees the planner's prompt: it gets the skills throug
 
 A **SPLITBRIEF session** is one self-contained piece of work from initial feature prompt to final summary. Every session lives in its own folder under `.splitbrief/sessions/<session-id>/`, where `<session-id>` has the form `<ISO-date>-<slug>` (e.g. `2026-04-14-add-email-validator`). Same-day slug collisions get a `-N` suffix (`2026-04-14-add-email-validator-2`).
 
-The active session is pointed to by `.splitbrief/active`, a JSON receipt `{ "version": 1, "sessionId": …, "generation": … }` (`writeActiveReceiptLocked`). An older file that holds a bare session-id still reads. Only **one session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session, and clears a pointer whose run is no longer alive. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
+Several workflow sessions can run in one project directory. Each session permits one driver. Other terminals can open a read-only view. Each isolated run gets its own workspace before planning. See [how to continue or watch a run](./CLI-REFERENCE.md#splitbrief-resume).
 
 This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see [WORKFLOW.md §What it continues on](./WORKFLOW.md#what-it-continues-on)). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened in its place).
 
@@ -333,7 +333,7 @@ Key rules:
 - `summary.json` is saved at the end of every run pass (`saveFinalSession`). A resumed pass drops the stop the last pass wrote as it starts (`reopenSessionRecord`).
 - `session.jsonl` is append-only and the single source of truth for history (see "Events & messages" below).
 - `plan.json` is the plan; `plan.md` and `tasks.md` are rendered from it when it compiles. A run planned by an older engine also holds `research.md`, `spec.md`, `clarifications.md`, `constitution-check.json` or `analyze.json`; a new run writes none of them.
-- `.splitbrief/active` holds the receipt (`version`, `sessionId`, `generation`) of the session that blocks another same-directory `splitbrief start` while it is live. A closed run releases it; a stopped run keeps it, because it is still continuable. An older bare session-id file still reads.
+- `.splitbrief/active` holds the default run for commands with no session ID. Its JSON receipt contains `version`, `sessionId` and `generation`. SPLITBRIEF also reads an older bare session ID.
 
 ---
 

@@ -1,34 +1,38 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { writeConfig } from '../../../src/core/config/load/io.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
-import { SPLITBRIEF_DIR, LOCKFILE, sessionDir } from '../../../src/core/paths.js';
+import {
+  activeFile,
+  LOCKFILE,
+  sessionDir,
+  sessionsRoot,
+  STATE_FILE,
+} from '../../../src/core/paths.js';
 
 let tmp: string;
-let stdinWasTty: boolean | undefined;
 
 beforeEach(() => {
   resetAllStores();
   tmp = createTempDir('cli-start-guard');
   createTestGitRepo(tmp);
-  stdinWasTty = process.stdin.isTTY;
-  process.stdin.isTTY = true;
 });
 
 afterEach(() => {
   cleanupTempDir(tmp);
-  if (stdinWasTty === undefined) delete (process.stdin as { isTTY?: boolean }).isTTY;
-  else process.stdin.isTTY = stdinWasTty;
+  vi.restoreAllMocks();
 });
 
-describe('CLI integration: start with a live session', { timeout: 90_000 }, () => {
-  it('exits non-zero, preserves the live marker, and does not create a new session', async () => {
+describe('CLI integration: start beside a live session', () => {
+  it('reports the preparation failure of a second launch and preserves the live run', async () => {
     const existingId = '2026-04-18-live';
     const sessDir = sessionDir(tmp, existingId);
     mkdirSync(sessDir, { recursive: true });
@@ -41,9 +45,11 @@ describe('CLI integration: start with a live session', { timeout: 90_000 }, () =
         currentTaskIndex: 0,
       },
     );
-    writeFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), `${existingId}\n`);
+    const active = activeFile(tmp);
+    writeFileSync(active, `${existingId}\n`);
+    const lockfile = join(sessDir, LOCKFILE);
     writeFileSync(
-      join(sessDir, LOCKFILE),
+      lockfile,
       JSON.stringify(
         makeSessionLockfile(existingId, {
           feature: 'first',
@@ -52,15 +58,29 @@ describe('CLI integration: start with a live session', { timeout: 90_000 }, () =
       ),
     );
 
-    const { exitCode, stderr } = await runCommand(['start', '--project', tmp, 'another feature']);
+    const localRunner = { kind: 'shell' as const, command: './runner', model: 'fixture' };
+    writeFileSync(join(tmp, 'runner'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    writeConfig(tmp, makeConfig({ planner: localRunner, implementer: localRunner }));
+    const stateFile = join(sessDir, STATE_FILE);
+    const before = { lock: readFileSync(lockfile), state: readFileSync(stateFile) };
+    const writeError = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const runHeadless = vi.fn();
+
+    const { exitCode } = await runCommand(
+      ['start', '--plain', '--project', tmp, 'another feature'],
+      {
+        runHeadless,
+      },
+    );
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain(
-      "Run 2026-04-18-live is still running. Stop it in the window that runs it, then run 'splitbrief continue 2026-04-18-live'.",
-    );
-    expect(readFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), 'utf-8').trim()).toBe(existingId);
-    const sessionsRoot = join(tmp, SPLITBRIEF_DIR, 'sessions');
-    const otherSessions = existsSync(sessionsRoot) ? readdirSync(sessionsRoot) : [];
-    expect(otherSessions).toEqual([existingId]);
+    const stderr = writeError.mock.calls.map(([chunk]) => String(chunk)).join('');
+    expect(stderr).toContain('Configured command is outside the current trust policy.');
+    expect(stderr).not.toContain(`Run ${existingId} is still running.`);
+    expect(runHeadless).not.toHaveBeenCalled();
+    expect(readFileSync(active, 'utf8')).toBe(`${existingId}\n`);
+    expect(readFileSync(lockfile)).toEqual(before.lock);
+    expect(readFileSync(stateFile)).toEqual(before.state);
+    expect(readdirSync(sessionsRoot(tmp))).toEqual([existingId]);
   });
 });

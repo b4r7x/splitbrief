@@ -1,14 +1,25 @@
 import { rmSync, type Stats } from 'node:fs';
-import { cp, copyFile, lstat, mkdir, mkdtemp, readdir, symlink } from 'node:fs/promises';
+import {
+  cp,
+  copyFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { INTERNAL_SKIP_DIRS } from '../../../../core/paths.js';
 import type { Config } from '../../../../core/schemas/config.js';
 import { assertWritablePathConfined } from '../../../../lib/fs/confinement.js';
+import { createGitClient, runGit } from '../../../../lib/git/client.js';
 import { listTrackedAndUntrackedFiles } from '../../../../lib/git/files.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../../lib/git/refs.js';
-import { isGitRepo } from '../../../../lib/git/repository.js';
+import { getRepoToplevel } from '../../../../lib/git/repository.js';
 import { isENOENT } from '../../../../utils/errno.js';
 import { createRunnerSandboxEnv, createSandboxEnv } from '../../../runners/sandbox/env.js';
 import { removeSandboxTempDirs } from '../../../runners/sandbox/state/paths.js';
@@ -51,9 +62,10 @@ export async function lstatIfPresent(source: string): Promise<Stats | null> {
 async function copyProjectFiles(
   projectDir: string,
   stagedProjectDir: string,
+  gitRoot: boolean,
 ): Promise<Record<string, string>> {
   const links: Record<string, string> = {};
-  const entries = await listTrackedAndUntrackedFiles(projectDir);
+  const entries = gitRoot ? await listTrackedAndUntrackedFiles(projectDir) : null;
   if (entries === null) {
     // Copied entry by entry: an owned staged root lives inside the project, and a
     // whole-directory copy into its own subdirectory is refused.
@@ -95,23 +107,50 @@ async function copyProjectFiles(
   return links;
 }
 
+async function copyPinnedTree(
+  projectDir: string,
+  stagedProjectDir: string,
+  head: string,
+): Promise<Record<string, string>> {
+  const temporary = await mkdtemp(join(tmpdir(), 'splitbrief-committed-tree-'));
+  try {
+    const tree = join(temporary, 'tree');
+    await mkdir(tree);
+    const git = createGitClient(projectDir, {
+      indexFile: join(temporary, 'index'),
+      worktreeDir: tree,
+    });
+    await runGit('read-tree', () => git.raw(['read-tree', head]));
+    await runGit('checkout-index', () =>
+      git.raw(['checkout-index', '--all', '--ignore-skip-worktree-bits', `--prefix=${tree}/`]),
+    );
+    return await copyProjectFiles(tree, stagedProjectDir, false);
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
 export async function createStagedProject(input: {
   projectDir: string;
   config?: Config | undefined;
   role?: IsolationRole | undefined;
   ownedRoot?: string | undefined;
+  pinnedHead?: string | undefined;
 }): Promise<IsolatedWorkspace> {
-  const { projectDir, config, role = 'implementer', ownedRoot } = input;
+  const { projectDir, config, role = 'implementer', ownedRoot, pinnedHead } = input;
   // Before the copy, so an edit racing the copy lands on the worker's side of
   // the baseline and is reported as a conflict rather than silently overwritten.
-  const targetBaseline = await captureAcquisitionBaseline(projectDir);
+  const targetBaseline =
+    pinnedHead === undefined ? await captureAcquisitionBaseline(projectDir) : undefined;
   // The staged copy carries only the symlinks that stay inside the project, so
   // the snapshot describes the tree the worker receives: any other source
   // symlink is recorded as absent, not refused — this strategy is the fallback
   // for exactly those sources.
-  const snapshot = (await isGitRepo(projectDir))
+  const top = pinnedHead === undefined ? await getRepoToplevel(projectDir) : null;
+  const gitRoot = top !== null && (await realpath(top)) === (await realpath(projectDir));
+  const snapshot = gitRoot
     ? await getChangedFilesSnapshot(projectDir, undefined, { symlinkedEntriesAsAbsent: true })
-    : { head: GIT_EMPTY_TREE_HASH, files: [], dirtyFileContents: {} };
+    : { head: pinnedHead ?? GIT_EMPTY_TREE_HASH, files: [], dirtyFileContents: {} };
   const stagedRoot =
     ownedRoot ?? (await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-stage-`)));
   try {
@@ -127,9 +166,12 @@ export async function createStagedProject(input: {
     await mkdir(stagedProjectDir, { recursive: true });
     if (ownedRoot !== undefined)
       assertWritablePathConfined(relative(projectDir, stagedProjectDir), projectDir);
-    const symlinks = await copyProjectFiles(projectDir, stagedProjectDir);
+    const symlinks =
+      pinnedHead === undefined
+        ? await copyProjectFiles(projectDir, stagedProjectDir, gitRoot)
+        : await copyPinnedTree(projectDir, stagedProjectDir, pinnedHead);
     const baselineFileHashes = await captureProjectFileHashes(stagedProjectDir, {
-      ignoreProjectDir: projectDir,
+      ignoreProjectDir: pinnedHead === undefined ? projectDir : null,
     });
     const sandboxEnv = config
       ? await createRunnerSandboxEnv(stagedProjectDir, config[role], role)
@@ -137,8 +179,15 @@ export async function createStagedProject(input: {
     return {
       projectDir: stagedProjectDir,
       sandboxEnv,
-      snapshot: { ...snapshot, baselineFileHashes, ignoreProjectDir: projectDir, symlinks },
-      targetBaseline,
+      snapshot: {
+        ...snapshot,
+        baselineFileHashes,
+        ignoreProjectDir: pinnedHead === undefined ? projectDir : null,
+        symlinks,
+      },
+      targetBaseline:
+        targetBaseline ??
+        (await captureAcquisitionBaseline(stagedProjectDir, { ignoreProjectDir: null })),
       cleanup: () => {
         rmSync(stagedRoot, { recursive: true, force: true });
         removeSandboxTempDirs(stagedProjectDir);

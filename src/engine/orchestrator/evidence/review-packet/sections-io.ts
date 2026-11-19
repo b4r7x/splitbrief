@@ -18,6 +18,12 @@ import { type RunStartBase, resolveRunStartBase } from '../../../../lib/git/refs
 import { diffFileEntries } from '../../../../lib/git/entry-diff.js';
 import { splitDiffByFile } from '../../../../lib/git/diff-sections.js';
 import { error } from '../../../../utils/error.js';
+import {
+  candidateOf,
+  captureWorkspaceComparison,
+  normalizeWorkspaceEntry,
+  readBaseBytes,
+} from '../../apply/states.js';
 import { readConfinedEntry } from '../../approval/file-snapshots/entry/read.js';
 import { createRunBaseReader, type RunBaseFile } from '../../isolation/run-base/reader.js';
 import type { RunBase } from '../../isolation/run-base/tree.js';
@@ -75,11 +81,7 @@ async function readRunWorkingTree(
     base.kind === 'working-tree-only'
       ? []
       : userVisibleChangedFiles(await getCommittedFilesSince(workspaceDir, base.ref));
-  // A workspace without its own git (a staged copy) recorded every file at run start, not the
-  // files changed then, so it has no pre-run list to set apart.
-  const preRunFiles = existsSync(join(workspaceDir, '.git'))
-    ? uniqueSorted([...(baseline.runStartChangedFiles ?? [])])
-    : [];
+  const preRunFiles = uniqueSorted([...(baseline.runStartChangedFiles ?? [])]);
   // SPLITBRIEF's own .gitignore lines are neither the user's change nor the run's.
   const setupFiles =
     working.includes('.gitignore') &&
@@ -117,12 +119,57 @@ const runUniverseError = {
     ),
 } as const;
 
+async function compareWorkspace(workspaceDir: string, runBase: RunBase | undefined) {
+  if (runBase === undefined) throw runUniverseError.missingRunBase();
+  const entries = await captureWorkspaceComparison({
+    ...runBase,
+    workspaceDir,
+    // A pinned copy contains the commit's entries even when the checkout changed its ignore list.
+    workspaceIgnoreDir: runBase.head === null ? runBase.projectDir : null,
+  });
+  return { ...entries, changedFiles: Object.keys(candidateOf(entries)).sort() };
+}
+
+async function universeWithoutGit(
+  workspaceDir: string,
+  runBase: RunBase | undefined,
+): Promise<RunUniverse> {
+  const { base, ours, changedFiles } = await compareWorkspace(workspaceDir, runBase);
+  const diffs: string[] = [];
+  for (const path of changedFiles) {
+    const atBase = base.get(path);
+    const current = ours.get(path);
+    const baseBytes = atBase?.kind === 'file' ? await readBaseBytes(path, atBase) : null;
+    if (atBase?.kind === 'file' && baseBytes === null) continue;
+    const file =
+      current?.kind === 'file'
+        ? await normalizeWorkspaceEntry(await readConfinedEntry(workspaceDir, path), path, base)
+        : null;
+    const after = current?.kind === 'symlink' ? current : file?.kind === 'file' ? file : null;
+    const before =
+      atBase?.kind === 'symlink'
+        ? atBase
+        : baseBytes === null
+          ? null
+          : {
+              bytes: baseBytes,
+              mode:
+                (atBase?.kind === 'file' ? atBase.mode : undefined) ??
+                (file?.kind === 'file' ? file.mode : 0o644),
+            };
+    diffs.push(await diffFileEntries({ path, before, after }));
+  }
+  return { fullDiff: diffs.join(''), changedFiles, preRunFiles: [], setupFiles: [] };
+}
+
 export async function resolveRunUniverse(input: {
   workspaceDir: string;
   baseline: PersistedRunBaseline;
   runBase: RunBase | undefined;
 }): Promise<RunUniverse> {
   const { workspaceDir } = input;
+  if (!existsSync(join(workspaceDir, '.git')))
+    return universeWithoutGit(workspaceDir, input.runBase);
   const tree = await readRunWorkingTree(workspaceDir, input.baseline, input.runBase);
   const gitDiff =
     tree.base.kind === 'working-tree-only'
@@ -181,12 +228,15 @@ export async function resolveChangedFiles(opts: {
     uniquePush(missing, 'run-start baseline');
     return [];
   }
+  const inGit = existsSync(join(workspaceDir, '.git'));
   try {
-    const { changedFiles: files } = await readRunWorkingTree(workspaceDir, baseline, opts.runBase);
+    const { changedFiles: files } = inGit
+      ? await readRunWorkingTree(workspaceDir, baseline, opts.runBase)
+      : await compareWorkspace(workspaceDir, opts.runBase);
     if (files.length === 0) uniquePush(missing, 'changed files');
     return files;
   } catch {
-    uniquePush(missing, 'git status');
+    uniquePush(missing, inGit ? 'git status' : 'run workspace base');
     return [];
   }
 }

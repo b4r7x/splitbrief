@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CheckoutStartNoticeSchema } from '../../core/schemas/readiness.js';
 import { readSavedRecoveryActions } from '../../core/schemas/recovery/schemas.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { ApprovalEventSchemas } from './payloads/approval.js';
@@ -41,7 +42,10 @@ const briefKept = z.number().int().nonnegative().optional();
 /** A state the run handled by itself: the session log keeps it; the screen and stderr do not. */
 const OperationalDebugEventSchema = operationalMessageEvent('debug', {});
 const OperationalInfoEventSchema = operationalMessageEvent('info', { briefKept });
-const OperationalWarningEventSchema = operationalMessageEvent('warning', { briefKept });
+const OperationalWarningEventSchema = operationalMessageEvent('warning', {
+  briefKept,
+  checkout: CheckoutStartNoticeSchema.optional(),
+});
 const OperationalErrorEventSchema = operationalMessageEvent('error', {
   briefKept,
   /** When a usage-limit halt's quota comes back, as the ISO instant its `resetAt` names. */

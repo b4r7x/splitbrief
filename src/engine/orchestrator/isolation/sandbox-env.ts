@@ -18,7 +18,12 @@ const NODE_MODULES = 'node_modules';
  * run.
  */
 export function createWorkspaceSandboxEnvs(): {
-  workspaceEnv: (dir: string, role: IsolationRole, config: Config) => Promise<NodeJS.ProcessEnv>;
+  workspaceEnv: (
+    dir: string,
+    role: IsolationRole,
+    config: Config,
+    sandboxDir?: string,
+  ) => Promise<NodeJS.ProcessEnv>;
   resumedEnv: (dir: string, role: IsolationRole, config: Config) => Promise<NodeJS.ProcessEnv>;
   seedImplementerEnv: (dir: string, config: Config, env: NodeJS.ProcessEnv) => void;
   removeResumedRoots: () => Promise<void>;
@@ -40,11 +45,12 @@ export function createWorkspaceSandboxEnvs(): {
     dir: string,
     role: IsolationRole,
     config: Config,
+    sandboxDir: string,
   ): Promise<NodeJS.ProcessEnv> {
-    const key = memoKey(dir, role, config);
+    const key = memoKey(sandboxDir, role, config);
     let env = envMemo.get(key);
     if (env === undefined) {
-      env = createRunnerSandboxEnv(dir, config[role], role);
+      env = createRunnerSandboxEnv(dir, config[role], role, sandboxDir);
       envMemo.set(key, env);
     }
     return env;
@@ -56,7 +62,7 @@ export function createWorkspaceSandboxEnvs(): {
     config: Config,
     sandboxDir: string,
   ): Promise<NodeJS.ProcessEnv> {
-    const env = await sandboxEnvFor(sandboxDir, role, config);
+    const env = await sandboxEnvFor(dir, role, config, sandboxDir);
     let binDir: string;
     try {
       binDir = await realpath(join(dir, NODE_MODULES, '.bin'));
@@ -67,7 +73,8 @@ export function createWorkspaceSandboxEnvs(): {
   }
 
   return {
-    workspaceEnv: (dir, role, config) => envWithProjectBin(dir, role, config, dir),
+    workspaceEnv: (dir, role, config, sandboxDir = dir) =>
+      envWithProjectBin(dir, role, config, sandboxDir),
     resumedEnv: async (dir, role, config) => {
       // Re-entry must never refresh credentials through a stopped workspace path.
       const root = await mkdtemp(join(tmpdir(), 'splitbrief-resume-env-'));

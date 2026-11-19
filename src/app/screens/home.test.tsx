@@ -1113,7 +1113,7 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('failed preparation stays on Home with generic retry back settings and prioritized blockers', async () => {
+  it('a failed start on Home keeps config blockers and their settings action accessible', async () => {
     const checks: ReadinessCheck[] = [
       ...Array.from({ length: 5 }, (_, index) => ({
         id: `runners.warning-${index + 1}`,
@@ -1122,6 +1122,7 @@ describe('HomeScreen', () => {
       })),
       {
         id: 'runners.blocker',
+        nextAction: 'fix-config',
         severity: 'blocker',
         summary: 'A configured runner must be fixed before starting.',
         fix: 'Open settings and review the runner.',
@@ -1141,10 +1142,10 @@ describe('HomeScreen', () => {
 
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Tool preparation · Failed');
-      expect(frame).toContain('A configured runner must be fixed');
-      expect(frame.indexOf('must be fixed')).toBeLessThan(frame.indexOf('Warnings'));
-      expect(frame).toContain('r retry · esc back · s settings');
+      expect(frame).toContain('Fresh tool preparation could not finish.');
+      expect(frame).not.toContain('Warnings');
+      expect(frame).toContain('s settings');
+      expect(frame).toContain('d details');
     });
     expect(routerStore.get()).toEqual({ screen: 'home' });
     expect(existsSync(join(projectDir, '.splitbrief', 'sessions'))).toBe(false);

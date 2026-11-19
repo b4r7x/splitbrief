@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { gitDiscoveryCeiling } from '../../git/discovery.js';
 import { createBoundedOutput, type BoundedOutput } from '../bounded-output.js';
 import { withUserNodeEnv } from './child-env.js';
 import { spawnError, processError } from '../errors.js';
@@ -177,9 +178,11 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
 
     let proc: ChildProcess;
     try {
+      const env = withUserNodeEnv(opts.env ?? process.env);
+      const ceiling = gitDiscoveryCeiling(opts.cwd ?? process.cwd());
       proc = spawn(opts.command, opts.args, {
         cwd: opts.cwd,
-        env: withUserNodeEnv(opts.env ?? process.env),
+        env: ceiling === undefined ? env : { ...env, GIT_CEILING_DIRECTORIES: ceiling },
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: opts.detached ?? false,
         shell: false,

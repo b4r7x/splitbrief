@@ -89,7 +89,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 
 ### `/home`
 
-- **Purpose**: Navigate back to the home screen from the workflow screen. Leaving an active workflow unmounts the workflow UI and aborts the active run.
+- **Purpose**: Go back to the home screen. If this terminal drives the run, leaving stops it. A run in another terminal keeps running.
 - **Screens**: `workflow`.
 - **Args**: none.
 - **Example**: `/home`
@@ -156,7 +156,7 @@ Commands that act on the active run: stop, resume or end the run, manage the que
 - **Phase guard**: `isRunLivePhase(phase)` — a call in progress, a waiting plan card (`reviewing-plan`) or a brief's checks (`validating-task`) — or an open run at rest on the screen in any phase, a gate it waits at included (`isOpenRunAtRest`). Elsewhere the feedback line reads `"No run to resume in this phase"`.
 - **Args**: none. A line with words after `/resume` is refused with `/resume takes no argument. Usage: /resume`, and the line stays in the composer.
 - **Example**: `/resume`
-- **Behavior**: Calls `ctx.resumeRun()` through `continueRun`. A park held by this process continues in place. A run at rest re-enters its saved step; a closed run is refused. A refusal shows its one reason on the feedback line, such as `Finish stopping before resuming.` while a stop is in progress, or `Nothing to resume: the run has not stopped.` while a call runs, a waiting plan card or a brief's checks hold the run, or a question or a recovery panel waits, and the line stays in the composer. The call that runs goes on. `/resume` takes no words: a correction to the step uses `/steer <text>`. Bare Enter continues an open run at rest and a run parked in this process. Ready workspace runs instead offer [the result menu](./FEATURES.md#run-result-menu).
+- **Behavior**: Calls `ctx.resumeRun()` through `continueRun`. A park held by this process continues in place. After another process releases the run, you can continue its saved step. A run at rest re-enters its saved step; a closed run is refused. A refusal shows its one reason on the feedback line, such as `Finish stopping before resuming.` while a stop is in progress, or `Nothing to resume: the run has not stopped.` while a call runs, a waiting plan card or a brief's checks hold the run, or a question or a recovery panel waits, and the line stays in the composer. The call that runs goes on. `/resume` takes no words: a correction to the step uses `/steer <text>`. Bare Enter continues an open run at rest and a run parked in this process. Ready workspace runs instead offer [the result menu](./FEATURES.md#run-result-menu).
 - **Implementation**: the park itself is `stopStore`.
 - **See also**: `/end`, `/quit`.
 

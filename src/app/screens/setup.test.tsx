@@ -165,7 +165,12 @@ function report(checks: ReadinessCheck[]): ReadinessReport {
 function prioritizedReport(): ReadinessReport {
   return report([
     { id: 'warning.first', severity: 'warning', summary: 'A lower-priority warning.' },
-    { id: 'blocker.first', severity: 'blocker', summary: 'The primary blocker.' },
+    {
+      id: 'blocker.first',
+      severity: 'blocker',
+      summary: 'The primary blocker.',
+      nextAction: 'fix-config',
+    },
     { id: 'warning.second', severity: 'warning', summary: 'Another warning.' },
     { id: 'blocker.second', severity: 'blocker', summary: 'Another blocker.' },
     { id: 'warning.third', severity: 'warning', summary: 'A hidden warning.' },
@@ -1811,7 +1816,7 @@ describe('SetupScreen', () => {
     });
   });
 
-  it('failed preparation stays in Setup with generic retry back settings and prioritized blockers', async () => {
+  it('failed preparation keeps Setup available with the config blocker under details', async () => {
     await withTempDir('setup-failed', async (projectDir) => {
       configStore.load(projectDir);
       const request = beginDiscovery();
@@ -1833,10 +1838,10 @@ describe('SetupScreen', () => {
         expect(ui.lastFrame() ?? '').toContain('The runner check did not complete.'),
       );
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Tool preparation · Failed');
-      expect(frame.indexOf('The primary blocker.')).toBeLessThan(
-        frame.indexOf('A lower-priority warning.'),
-      );
+      expect(frame).not.toContain('A lower-priority warning.');
+      expect(frame).toContain('d details');
+      ui.stdin.write('d');
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain('The primary blocker.'));
       expect(frame).toContain('r retry');
       expect(frame).toContain('esc back');
       expect(frame).toContain('s settings');

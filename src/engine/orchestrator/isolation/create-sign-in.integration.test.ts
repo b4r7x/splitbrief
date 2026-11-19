@@ -179,6 +179,43 @@ async function seatDownHalt(dir: string, config: Config, partial = true) {
   return { state, attempt, workspace: opened.projectDir };
 }
 
+describe('concurrent direct run resources', () => {
+  it('ending one checkout run leaves the other run’s sign-in and temp folder intact', async () => {
+    const dir = project();
+    const config = seats('command-code');
+    const first = createRunIsolation({
+      projectDir: dir,
+      sessionId: 'direct-first',
+      strategy: 'none',
+      onFallback: () => {},
+    });
+    const second = createRunIsolation({
+      projectDir: dir,
+      sessionId: 'direct-second',
+      strategy: 'none',
+      onFallback: () => {},
+    });
+    try {
+      const input = { role: 'implementer' as const, config, brief: makeAttemptBrief() };
+      const a = await first.acquire(input);
+      const b = await second.acquire(input);
+      const signIns = [a, b].map((attempt) => signInOf(attempt, 'command-code'));
+      const temps = [a, b].map((attempt) => attempt.sandboxEnv.TMPDIR ?? '');
+      expect(new Set(signIns).size).toBe(2);
+      expect(new Set(temps).size).toBe(2);
+      expect(signIns.map(kindOf)).toEqual(['file', 'file']);
+      expect(temps.map(existsSync)).toEqual([true, true]);
+
+      await first.dispose();
+      expect(signIns.map(kindOf)).toEqual(['absent', 'file']);
+      expect(temps.map(existsSync)).toEqual([false, true]);
+    } finally {
+      await first.dispose();
+      await second.dispose();
+    }
+  });
+});
+
 describe('run isolation sign-in state of a staged copy', () => {
   it.each(Object.keys(SIGN_IN) as SignInTool[])(
     'the end of a run removes the %s sign-in and the temp folder of each seat, and a later run builds the sign-in again',

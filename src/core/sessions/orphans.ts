@@ -3,15 +3,10 @@ import { join } from 'node:path';
 import { assertWritablePathConfined } from '../../lib/fs/confinement.js';
 import { warnError } from '../../lib/warn.js';
 import { projectRelativePathLabel } from '../../utils/path/links.js';
-import {
-  isValidSessionId,
-  READINESS_FILE,
-  sessionDir,
-  sessionsRoot,
-  validateSessionId,
-} from '../paths.js';
+import { isValidSessionId, READINESS_FILE, sessionDir, sessionsRoot } from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';
-import { readActiveRecord, withSessionMutationLock } from './active-pointer.js';
+import { readActive, withSessionMutationLock } from './active-pointer.js';
+import { tryClaimSession } from './lock/ownership.js';
 import { sessionPreparationError } from './errors.js';
 import {
   claimRelativePath,
@@ -45,18 +40,12 @@ export function sessionsRootLabel(projectDir: string): string {
   return projectRelativePathLabel({ path: sessionsRoot(projectDir), rootDir: projectDir });
 }
 
-function activeSessionId(projectDir: string): string | null {
-  const active = readActiveRecord(projectDir);
-  if (active === null) return null;
-  return active.kind === 'legacy' ? active.sessionId : active.receipt.sessionId;
-}
-
 function olderThanGrace(directory: string, nowMs: number): boolean {
   return nowMs - lstatSync(directory).mtimeMs >= ORPHAN_SESSION_GRACE_MS;
 }
 
 function isCollectableOrphan(ref: SessionRef, nowMs: number): boolean {
-  if (activeSessionId(ref.projectDir) === ref.sessionId) return false;
+  if (readActive(ref.projectDir) === ref.sessionId) return false;
   const directory = sessionDir(ref.projectDir, ref.sessionId);
   const entries = readdirSync(directory);
   if (entries.length === 0) return olderThanGrace(directory, nowMs);
@@ -73,7 +62,7 @@ function isCollectableOrphanDirectory(ref: SessionRef, relativeDirectory: string
 }
 
 function discardOrphanSessionDirectoryLocked(ref: SessionRef): boolean {
-  if (activeSessionId(ref.projectDir) === ref.sessionId) return false;
+  if (readActive(ref.projectDir) === ref.sessionId) return false;
   const original = sessionRelativePath(ref.sessionId);
   const originalPath = join(ref.projectDir, original);
   if (!pathExists(originalPath)) return false;
@@ -99,10 +88,20 @@ function discardOrphanSessionDirectoryLocked(ref: SessionRef): boolean {
   return true;
 }
 
-export function discardOrphanSessionDirectory(ref: SessionRef): boolean {
+export function discardOrphanSessionDirectory(ref: SessionRef, nowMs?: number): boolean {
   try {
-    validateSessionId(ref.sessionId);
-    return withSessionMutationLock(ref.projectDir, () => discardOrphanSessionDirectoryLocked(ref));
+    const release = tryClaimSession(ref);
+    if (release === null) return false;
+    try {
+      return withSessionMutationLock(ref.projectDir, () => {
+        const directory = sessionDir(ref.projectDir, ref.sessionId);
+        if (nowMs !== undefined && (!pathExists(directory) || !olderThanGrace(directory, nowMs)))
+          return false;
+        return discardOrphanSessionDirectoryLocked(ref);
+      });
+    } finally {
+      release();
+    }
   } catch (cause) {
     throw sessionPreparationError.io('discard-orphan-session', ref, cause);
   }
@@ -124,7 +123,7 @@ export function pruneOrphanSessions(input: OrphanScanInput): OrphanPruneResult {
   for (const sessionId of sessionIds) {
     try {
       const ref: SessionRef = { projectDir: input.projectDir, sessionId };
-      if (isCollectableOrphan(ref, nowMs) && discardOrphanSessionDirectory(ref)) {
+      if (isCollectableOrphan(ref, nowMs) && discardOrphanSessionDirectory(ref, nowMs)) {
         removed.push(sessionId);
       }
     } catch (err) {

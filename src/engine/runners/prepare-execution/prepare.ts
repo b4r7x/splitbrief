@@ -116,7 +116,7 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
     let session: PreparedExecutionSession;
     if (resume) {
       throwIfPreparationAborted(input.signal, trustPersisted);
-      const active = deps.reactivateExistingSession(input.existingSession);
+      const active = deps.createActiveSessionReceipt(input.existingSession);
       session = { kind: 'existing', ref: input.existingSession, active };
     } else {
       throwIfPreparationAborted(input.signal, trustPersisted);
@@ -126,6 +126,7 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
         config,
         report,
         signal: input.signal,
+        publishDefault: input.policy.purpose !== 'spec',
         ...(input.candidate !== undefined && { candidate: input.candidate }),
       });
       if (preparedSession.kind === 'aborted') {

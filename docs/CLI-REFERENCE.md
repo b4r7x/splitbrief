@@ -36,9 +36,9 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
 | 1 | `splitbrief start` | Launch a workflow (TUI or headless). Also the default command: `splitbrief "feature"` works without `start`. |
 | 2 | `splitbrief spec` | Run the planning session only — write `plan.json`, `plan.md` and `tasks.md`, no implementation. |
 | 3 | `splitbrief init` | Create `.splitbrief/config.yaml` with detected models. |
-| 4 | `splitbrief status` | Show the active session. |
-| 5 | `splitbrief resume` | Resume the most recent run. |
-| 6 | `splitbrief continue` | Continue a run by id, with recovery and Apply actions. |
+| 4 | `splitbrief status` | Show the state of the default run. |
+| 5 | `splitbrief resume` | Continue a saved run or watch one open elsewhere. |
+| 6 | `splitbrief continue` | Open a run or take a recovery or Apply action. |
 | 7 | `splitbrief doctor` | Check run readiness without creating a workflow session. |
 | 8 | `splitbrief review` | Review the working-tree diff in one reviewer call — no session, no planning. |
 
@@ -52,7 +52,7 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
 splitbrief start [feature] [files...] [options]
 ```
 
-Launch a complete plan-and-implement workflow. Without a feature argument the TUI opens to the home screen so you can pick one interactively. With a feature, SPLITBRIEF runs one planning session, shows the plan card (unless `workflow.approve: none`), then dispatches the implementer loop. This is the canonical entry point for ordinary work.
+Launch a complete plan-and-implement workflow. Without a feature argument the TUI opens to the home screen so you can pick one interactively. With a feature, SPLITBRIEF runs one planning session, shows the plan card (unless `workflow.approve: none`), then dispatches the implementer loop. You can start independent runs in the same project. Each run gets its own worktree or staged copy before planning unless you choose [checkout mode](./CONFIGURATION.md#implementer-isolation).
 
 Without a config, the TUI opens Setup and proposes detected ready tools. Setup saves your choices to `.splitbrief/config.yaml`. A headless start (`--plain` or `--json`) saves a detected ready crew before starting; runner flags apply to that invocation. If detection finds no default crew, supplying every seat through runner flags saves that crew instead. REVIEW inherits PLAN unless explicitly set. If any seat is unavailable, start exits with a `splitbrief init` instruction and writes no config.
 
@@ -189,7 +189,6 @@ splitbrief start --plain "fix flaky test in user.test.ts"
 - Before planner or implementer calls, `start` computes Run Readiness. Blockers stop the run. Each warning appears as a Warning row under your request when the run starts, with its details and fix as `splitbrief doctor` prints them, and `--json` also emits it in the readiness report. The compact session artifact is `.splitbrief/sessions/<id>/readiness.json`; it keeps each warning and blocker with its details and fix. Stable `stateId` values and copyable remediations for missing-binary, untrusted-path, version, authentication, endpoint, credential-family, protocol, quota/rate, and conflicting-argument conditions are documented under `splitbrief doctor --json`.
 - Readiness inspects validation configuration and package-script posture only. It runs no validation command, model call or network probe.
 - With `--json`, the first readiness line is `{ "type": "readiness_report", "report": ... }` before model-backed workflow events.
-- `clearStaleSession()` runs before a new session begins. It blocks only a genuinely live active session; if the active session's lockfile has exited or the PID is gone, the stale `.splitbrief/active` pointer is cleared and start continues.
 - The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
 - The `--reviewer-*` flags start from whatever runner currently holds the review seat — the `reviewer` block when config has one, the planner when it does not — and write the result back as the reviewer. `--reviewer` gives a None REVIEW a runner for that run, and the flags start from the planner; if no flag applies, REVIEW stays None. If no `--reviewer-*` flag applies to the resolved runner kind, nothing is written and the planner keeps the review seat; a flag that names the planner's own tool still writes an explicit `reviewer` block, so the seat is admitted, priced and displayed on its own. The nine flags are declared once, so `start`, `resume` and `continue` all accept them.
 - Runner override flags are validated against the resolved runner kind. `--planner-api-base` / `--reviewer-api-base` / `--implementer-api-base` apply only to `api` runners, and `--planner-api-key-env` / `--reviewer-api-key-env` / `--implementer-api-key-env` apply only to `api` runners. Passing one for an incompatible kind drops the value rather than erroring. Its notice (e.g. `--planner-api-base is ignored: the planner 'cli' runner does not use it.`) is a readiness warning (`config.warning`), and its fix reads `Remove the flag from the command.` It shows as a Warning row under your request when the run starts, and on stderr in `--plain`; `--json` emits it in the readiness report. A continue with the flag shows it once under the resume line. `splitbrief spec` and `splitbrief review` print it on stderr.
@@ -245,8 +244,8 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 ### Files affected
 
 - **Reads:** `.splitbrief/config.yaml`, repo files passed to the planner, `~/.splitbrief/trust/hooks.json`.
-- **Writes:** `plan.json`, `plan.md` and `tasks.md` under `.splitbrief/sessions/<id>/`, and the `.splitbrief/active` pointer.
-- **On a failed planner call:** the session directory it allocated is removed again via the preparation rollback (including the `.splitbrief/active` pointer); no directory is left behind.
+- **Writes:** `plan.json`, `plan.md` and `tasks.md` under `.splitbrief/sessions/<id>/`. Planning with `spec` leaves the default workflow selection unchanged.
+- **On a failed planner call:** SPLITBRIEF removes the session directory and preserves the previous default run.
 
 ### See also
 
@@ -399,7 +398,7 @@ splitbrief doctor --probe-seat build
 ### Exit codes
 
 - `0` — ready or ready with warnings. With `--probe-seat`: the call ran, whatever its result, so a failed call also exits `0`.
-- `1` — blocked by a hard local precondition such as no git repo, invalid config, missing config, or a live same-checkout session. With `--json`, the report is still written to stdout before exit. With `--probe-seat`: a seat value other than `plan`, `build` or `review`, a seat that is not a `cli` runner, `review` while REVIEW is None, or an error before the call starts, such as a missing config or executable.
+- `1` — blocked by a hard local precondition such as no git repo, invalid config or missing config. With `--json`, the report is still written to stdout before exit. With `--probe-seat`: a seat value other than `plan`, `build` or `review`, a seat that is not a `cli` runner, `review` while REVIEW is None, or an error before the call starts, such as a missing config or executable.
 
 ### Files affected
 
@@ -578,7 +577,7 @@ splitbrief init --reconfigure
 splitbrief status [--project <dir>]
 ```
 
-Print these lines, in this order: `Feature`, `Status`, `Task`, `Started`, `Session`, `PLAN`, `BUILD`, `REVIEW`, `Done`, `Escalated`, and `Failed`. `Feature` is the feature description. `Status` reads `running`, `waiting for you`, `stopped`, `ready to apply`, or the closed outcome `applied`, `apply undone`, `discarded`, `ended` or `complete`. `Task` names the brief the run is on as `N/M`; once every brief has settled it reads `M/M`, never a brief past the last. A run with no briefs yet prints no `Task` line. `Started` is the time the run started, and `Session` is the session id. `PLAN`, `BUILD`, and `REVIEW` name the tool and model of each seat. `Done`, `Escalated`, and `Failed` count the briefs in that state.
+Show the default run selected by [`resume`](#splitbrief-resume). Print these lines, in this order: `Feature`, `Status`, `Task`, `Started`, `Session`, `PLAN`, `BUILD`, `REVIEW`, `Done`, `Escalated`, and `Failed`. `Feature` is the feature description. `Status` reads `running`, `waiting for you`, `stopped`, `ready to apply`, or the closed outcome `applied`, `apply undone`, `discarded`, `ended` or `complete`. `Task` names the brief the run is on as `N/M`; once every brief has settled it reads `M/M`, never a brief past the last. A run with no briefs yet prints no `Task` line. `Started` is the time the run started, and `Session` is the session id. `PLAN`, `BUILD`, and `REVIEW` name the tool and model of each seat. `Done`, `Escalated`, and `Failed` count the briefs in that state.
 
 ### Usage
 
@@ -614,11 +613,11 @@ splitbrief status --project ../other-repo
 
 ### See also
 
-- `splitbrief resume` — pick up where the active session left off.
+- `splitbrief resume` opens the default run.
 
 ### Behavior notes
 
-- If there is no active session, prints `No active workflow.`
+- If there is no default or other open run, prints `No active workflow.`
 - Without a `reviewer:` block in the config, the planner holds the review seat, so the `REVIEW` line names the same tool and model as `PLAN`, also after the plan seat switches. A switch of the review seat gives `REVIEW` its own tool and model. With `reviewer: none` the `REVIEW` line reads `None`. `--reviewer` gives a None REVIEW a runner for that run, and the `REVIEW` line names it. The line follows a REVIEW change in Crew during the run: after a move to None it reads `None`, and after a move from None to a seat it names that seat, such as `REVIEW:    OpenAI Codex CLI · GPT-5.5`.
 - `Done`, `Escalated`, `Failed` lines only appear when the corresponding count is non-zero.
 
@@ -629,19 +628,21 @@ splitbrief status --project ../other-repo
 **Synopsis**
 
 ```
-splitbrief resume [options]
+splitbrief resume [session-id-or-number] [options]
 ```
 
-Continue the most recent run. A run is a durable record: an open run stays continuable, so this refuses exactly six things — no active pointer, a run whose process is still running, a run whose process exists but is unresponsive, a saved state that is missing or unreadable, a **ready** run (`Run <id> is ready to apply.`, followed by the `continue <id> --action apply` and `--action discard` lines; for a run accepted as is, the first of these lines names `--action apply-as-is`), and a **closed** run. Every other stop — parked, waiting at a gate, halted on a recovery, stopped by an error, killed outright — is picked up at the step it left off.
+Open a run by session ID or numeric alias. With no argument, `resume` selects the most recently started or explicitly continued run. If the default is missing, closed or unavailable, SPLITBRIEF selects the newest saved open run. Watching a run leaves the default selection alone.
 
-Closing a run clears `.splitbrief/active`, so after an `/end` there is nothing for `resume` to find. Use `splitbrief continue <session-id>` for an older open run. Accepts the same workflow flags as `start`.
+If another process drives the session, an interactive terminal opens it in a read-only view. The viewer follows live activity while that process reports a current heartbeat. If the heartbeat is stale, the viewer shows the last saved activity. After that process exits, press Enter or use `/resume` to continue an open run. Ready runs take Apply or Discard.
 
-Without `--json` or `--plain`, `resume` opens the run screen, which needs a terminal. In a shell with no TTY it exits `1` with `interactive mode needs a TTY — use --json or --plain`, as `start` does.
+With `--plain`, `--json` or in CI, the command refuses to drive a session that another process already owns. Display flags apply to the viewer. Runner overrides and `--skills` apply when you continue the run.
+
+The run screen needs a terminal. When starting a continuation without a terminal, use `--json` or `--plain`.
 
 ### Usage
 
 ```
-splitbrief resume \
+splitbrief resume [session-id-or-number] \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
   [--planner-output-format <format>] [--planner-context-length <tokens>] \
@@ -664,6 +665,7 @@ Resume accepts the same workflow override options as `start`. See [`splitbrief s
 
 | Flag | Notes |
 |---|---|
+| `<session-id-or-number>` | Session ID or numeric alias. Omit it to open the default run. |
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
 | `--plain` | Resume the run in headless mode, writing plain lines to stdout. Mutually exclusive with `--json`. |
 | `--on-seat-down <halt\|switch>` | Headless seat-down policy, as on `start`: `halt` stops on a seat-down halt, `switch` applies the declared `fallback`. Unset applies a declared fallback too. |
@@ -673,8 +675,12 @@ Resume accepts the same workflow override options as `start`. See [`splitbrief s
 ### Examples
 
 ```bash
-# Pick up where the last session stopped
+# Open the default run
 splitbrief resume
+
+# Open a named run, or use its number from the session list
+splitbrief resume 2026-05-01-add-auth
+splitbrief resume 1
 
 # Resume in headless mode for CI re-runs
 splitbrief resume --json
@@ -685,13 +691,13 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 
 ### Exit codes
 
-- `0` — resumed successfully (TUI or headless).
-- `1` — no active session, missing or unreadable `state.json`, a schema version `WORKFLOW_STATE_VERSION` cannot load, a closed run, or any downstream failure.
+- `0` if the viewer exits normally or the run continues successfully.
+- `1` if there is no eligible run, the saved state cannot load, the run is ready or closed, a headless command tries to drive an owned session, or the run fails.
 
 ### Files affected
 
-- **Reads:** `.splitbrief/active`, `.splitbrief/sessions/<id>/state.json`, `.splitbrief/config.yaml`.
-- **Writes:** updates to `state.json`, `session.jsonl`, working-tree edits as the run proceeds.
+- **Reads:** `.splitbrief/active`, the saved session state and transcript, and `.splitbrief/config.yaml` when continuing.
+- **Writes during continuation:** run state, transcript and workspace edits. The viewer reads the saved run.
 
 ### See also
 
@@ -704,8 +710,8 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'splitbrief start'.`
 - A session with a pending recovery is not refused headlessly. `resume --plain` and `resume --json` print the issue, the recommended action and the `splitbrief continue … --action …` line to stderr and exit `1`; pass that action to `continue` to carry on.
-- Any open run resumes. `deriveRunStatus` decides; [WORKFLOW.md §Run status](./WORKFLOW.md#run-status) owns the rules. A ready run is refused with `Run <id> is ready to apply.` and the two lines that apply or discard it (`splitbrief continue <id> --action apply|discard`). For a run accepted as is, the apply line names `--action apply-as-is`. A closed run is refused with `Run <id> is closed (<complete|ended|applied|undone|discarded>); nothing to resume.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
-- A short `Resuming: <feature> (task N/M)` line prints before the TUI mounts. A run with no briefs yet prints `Resuming: <feature>` with no position. `N` never exceeds `M`: a run whose briefs have all settled reads `M/M`.
+- A ready run is refused with `Run <id> is ready to apply.` and the two lines that apply or discard it (`splitbrief continue <id> --action apply|discard`). For a run accepted as is, the apply line names `--action apply-as-is`. A closed run is refused with `Run <id> is closed (<complete|ended|applied|undone|discarded>); nothing to resume.` A run killed during validation or escalation re-enters at the start of its brief. SPLITBRIEF restores the brief's changes from its task-start snapshot. In checkout mode it restores recorded writes whose current entries still match. See [run status](./WORKFLOW.md#run-status).
+- A continuation prints a short `Resuming: <feature> (task N/M)` line before the TUI mounts. A run with no briefs yet prints `Resuming: <feature>` with no position. `N` never exceeds `M`: a run whose briefs have all settled reads `M/M`.
 - The plan approval level comes from `workflow.approve`, else `plan`. Resume overwrites the level the run saved with that value. A run saved by an older release continues as one planning session if it stopped before its plan: its saved mode is ignored, and only the plan card (or nothing, under `approve: none`) opens before the build.
 
 ---
@@ -718,7 +724,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 splitbrief continue [session-id-or-number] [--action <skip|retry|restore|switch-seat:<tool>[:<model>][@<word>]|accept-as-is|end-run|apply|apply-as-is|discard>] [resume options]
 ```
 
-Continue a run by name, active session, or numeric alias. The run continues from its saved state. `skip`, `retry`, `restore`, and `switch-seat` first answer a pending recovery. `accept-as-is` answers a halt that offers **Accept as is**, as that row does on the run screen. `end-run` closes an open run, with or without a pending recovery, as End run does on the run screen. If Apply did not finish, restore or retry Apply first. Use `--action apply` or `--action discard` to settle a run whose review passed in its workspace, or a REVIEW None run that waits for Apply. Use `--action apply-as-is` to apply a run that was accepted as is. Any open run can continue. The command refuses a closed run with exit `1`. With `--json`, the refusal writes an error record on stdout: `{"type":"error","message":"Run <id> is closed (<as>); nothing to resume."}`.
+Open a run by session ID or numeric alias. An interactive command without `--action` uses the same default and fallback as `resume`. With `--action`, pass a session ID or number to choose a run. If you omit it, the command acts on the current default only. In an interactive terminal, a command without `--action` can watch a session that another process owns. See [`resume`](#splitbrief-resume). With `--action`, `--plain` or `--json`, the command refuses to drive an owned session. `skip`, `retry`, `restore`, and `switch-seat` first answer a pending recovery. `accept-as-is` answers a halt that offers **Accept as is**, as that row does on the run screen. `end-run` closes an open run, with or without a pending recovery, as End run does on the run screen. If Apply did not finish, restore or retry Apply first. Use `--action apply` or `--action discard` to settle a run whose review passed in its workspace, or a REVIEW None run that waits for Apply. Use `--action apply-as-is` to apply a run that was accepted as is. The command refuses a closed run with exit `1`. With `--json`, the refusal writes an error record on stdout: `{"type":"error","message":"Run <id> is closed (<as>); nothing to resume."}`.
 
 Without `--json` or `--plain`, a continue that carries the run on opens the run screen, which needs a terminal. In a shell with no TTY it exits `1` with `interactive mode needs a TTY — use --json or --plain`, as `start` does, before it answers a recovery: the run stays as it was. `end-run`, `discard` and `restore` never open the run screen. `apply` and `apply-as-is` open it only when the merged result goes through its checks again, and through its review when REVIEW names a seat; without a terminal that run then needs `splitbrief continue <id> --plain`. `accept-as-is` at final review does not carry the run on: the run is then ready to apply or closed. As **Skip review** after a task review, it carries the run on, so it needs a terminal, `--json` or `--plain`, as every continue that goes on does.
 
@@ -726,7 +732,7 @@ Without `--json` or `--plain`, a continue that carries the run on opens the run 
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `<session-id-or-number>` | string \| number (positional) | active | Session ID or numeric alias; omitted to use `.splitbrief/active`. |
+| `<session-id-or-number>` | string \| number (positional) | default run | Session ID or numeric alias. When you pass `--action`, omitting the ID limits the action to the current default. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
@@ -740,7 +746,7 @@ Without `--json` or `--plain`, a continue that carries the run on opens the run 
 ### Examples
 
 ```bash
-# Continue the active session
+# Open the default run
 splitbrief continue
 
 # Continue by numeric alias
@@ -770,8 +776,8 @@ splitbrief continue 2026-05-01-add-auth --action apply-as-is
 
 ### Exit codes
 
-- `0`: The run continued, `--action accept-as-is` recorded the accept at final review, `--action end-run` closed an open run, or `--action apply|apply-as-is|discard` settled it. `end-run` needs no pending recovery. A ready run closes `discarded` and keeps `run.patch`.
-- `1`: No run to continue, a running run, unusable saved state, a closed run, a project config that does not load, or an underlying failure. `end-run` on an already closed run reports `Run <id> is closed (<as>); nothing to end.`. End run during a partial or interrupted Apply reports `Apply did not finish. Restore or retry Apply first, then end the run.`. Both refusals use the same `{"type":"error","message":"..."}` record with `--json`. `skip`, `retry`, `restore`, `switch-seat` and `accept-as-is` need a pending recovery. This code also covers an action the pending recovery does not allow. The refusal names the refused action and the halt reason: `Recovery action "<action>" is not available for <reason>.` `<action>` is the full name of the action, for example `skip-current-task` for `skip`. With `--json`, the `recovery_required` record of the halt lists the actions that the halt offers in `availableActions`. It also covers `--action apply|apply-as-is|discard` on a run that is not ready to apply; `apply-as-is` then reports `Run <id> is not ready to apply; --action apply-as-is settles a run that was accepted as is in its workspace.` It also covers `--action apply` on a run accepted as is, and `--action apply-as-is` on a ready run that was not accepted as is. Each of these two refusals names the word that applies the run.
+- `0`: The viewer exited normally, the run continued, `--action accept-as-is` recorded the accept at final review, `--action end-run` closed an open run, or `--action apply|apply-as-is|discard` settled it. `end-run` needs no pending recovery. A ready run closes `discarded` and keeps `run.patch`.
+- `1`: No run to continue, another process owns the session and observation is unavailable, unusable saved state, a closed run, a project config that does not load, or an underlying failure. `end-run` on an already closed run reports `Run <id> is closed (<as>); nothing to end.`. End run during a partial or interrupted Apply reports `Apply did not finish. Restore or retry Apply first, then end the run.`. Both refusals use the same `{"type":"error","message":"..."}` record with `--json`. `skip`, `retry`, `restore`, `switch-seat` and `accept-as-is` need a pending recovery. This code also covers an action the pending recovery does not allow. The refusal names the refused action and the halt reason: `Recovery action "<action>" is not available for <reason>.` `<action>` is the full name of the action, for example `skip-current-task` for `skip`. With `--json`, the `recovery_required` record of the halt lists the actions that the halt offers in `availableActions`. It also covers `--action apply|apply-as-is|discard` on a run that is not ready to apply; `apply-as-is` then reports `Run <id> is not ready to apply; --action apply-as-is settles a run that was accepted as is in its workspace.` It also covers `--action apply` on a run accepted as is, and `--action apply-as-is` on a ready run that was not accepted as is. Each of these two refusals names the word that applies the run.
 - `130`, `143`, `129`: a headless continue stopped by SIGINT, SIGTERM or SIGHUP. During `--action apply`, `apply-as-is` or `restore`, Apply finishes first and prints its line; the code then follows the signal.
 - `2`: `--action` did not name a continue action. The message is `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], accept-as-is, end-run, apply, apply-as-is, or discard.` The message says `@<effort>`, which fits every tool except opencode and kilo-code; their `@` word is the variant.
 
@@ -782,7 +788,7 @@ splitbrief continue 2026-05-01-add-auth --action apply-as-is
 
 ### See also
 
-- `splitbrief resume` — continue the most recent run.
+- `splitbrief resume` opens a run by ID, numeric alias or default selection.
 
 ### Behavior notes
 
@@ -815,7 +821,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | Path | Owner | Purpose |
 |---|---|---|
 | `.splitbrief/config.yaml` | `init` | Provider, model, workflow, and hooks config. |
-| `.splitbrief/active` | `start`, `spec` | Pointer to the current session while a workflow is active; cleared on final save unless preserved for recovery. |
+| `.splitbrief/active` | Session selection | Points to the last session started or explicitly continued. Each session's lockfile records its liveness. |
 | `.splitbrief/sessions/<id>/plan.json` | planning session | The checked plan: the one source the briefs compile from. |
 | `.splitbrief/sessions/<id>/plan.md` | planning session | Rendering of `plan.json`; the body of the plan card. |
 | `.splitbrief/sessions/<id>/tasks.md` | planning session | Rendering of the compiled Task Briefs. |
@@ -824,7 +830,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | `.splitbrief/sessions/<id>/session.jsonl` | orchestrator | Append-only transcript and event log. |
 | `.splitbrief/sessions/<id>/snapshots/<snap-id>/` | runtime `/run accept` | The run's snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, the `pre-final-review` snapshot, the `post-task-<n>` snapshots of a checkout run and, for a run without a workspace, the accepted-run snapshot `/run accept` records, plus the run ledger. A workspace run restores from its Apply backup instead ([WORKFLOW.md §Apply](./WORKFLOW.md#apply)). |
 | `~/.splitbrief/trust/hooks.json` | `start`/`resume`/`continue`/`spec` trust prompt | Hook trust receipts, owner-only, keyed by checkout. Never inside the project. |
-| `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` | run isolation | The implementer's per-run worktree, detached at the project's current commit; SPLITBRIEF creates no branch for it. Defaults to `~/.local/state/splitbrief/trees/...` when `XDG_STATE_HOME` is unset; `<hash>` is the first 12 hex chars of `sha256(realpath(git-common-dir))` so every linked checkout shares one trees root. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project root (so project-rooted test globs never walk the second copy). `git worktree list` is how you find one that outlived its run. |
+| `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` | run isolation | The run's worktree, detached at the commit chosen before planning. SPLITBRIEF creates no branch for it. Defaults to `~/.local/state/splitbrief/trees/...` when `XDG_STATE_HOME` is unset; `<hash>` is the first 12 hex chars of `sha256(realpath(git-common-dir))` so every linked checkout shares one trees root. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project root (so project-rooted test globs never walk the second copy). `git worktree list` is how you find one that outlived its run. |
 
 ### Headless event stream (`--json`)
 

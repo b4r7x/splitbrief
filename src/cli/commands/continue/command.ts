@@ -2,18 +2,19 @@ import { setupWorkflow } from '../../setup.js';
 import { initStores } from '../../bootstrap/init.js';
 import { renderApp } from '../../render/app.js';
 import { cliError } from '../../errors.js';
-import { sessionError } from '../../../core/sessions/errors.js';
-import { loadRunRecord } from '../../../core/sessions/run/record.js';
-import { defaultRunRecordDeps } from '../../../core/sessions/run/record-io.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { runHeadless } from '../../headless/run.js';
 import { recordWriterFor } from '../../headless/outcome.js';
-import { resolveSessionAlias } from '../../sessions/aliases.js';
-import { assertSessionExists } from '../../sessions/resolve.js';
-import { readActive } from '../../../core/sessions/active-pointer.js';
+import { resolveTargetRun } from '../../sessions/resolve.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run/status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
-import { assertResumeTerminal, ensureHeadlessHooksTrusted, resumeSavedSession } from './resume.js';
+import {
+  assertResumeTerminal,
+  ensureHeadlessHooksTrusted,
+  openOwnedRun,
+  resumeSavedSession,
+} from './resume.js';
 import { settleRequestedApply } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 import { closedChangesSuffix } from '../../../engine/orchestrator/run/close.js';
@@ -42,31 +43,11 @@ export const defaultContinueDeps: ContinueDeps = {
   prepareExecution,
 };
 
-async function resolveTargetSession(
-  sessionInput: string | undefined,
-  projectDir: string,
-): Promise<string> {
-  const resolved = await resolveSessionAlias(sessionInput, projectDir);
-  if (resolved !== undefined) {
-    assertSessionExists(projectDir, resolved);
-    return resolved;
-  }
-
-  const active = readActive(projectDir);
-  if (active) return active;
-
-  throw cliError('no session to continue; start one with `splitbrief start`.', 1);
-}
-
-function loadContinuableRecord(
-  sessionId: string,
+function requireContinuableRecord(
+  record: RunRecord,
   opts: ContinueOpts,
 ): { state: WorkflowState; status: RunStatus } {
-  const record = loadRunRecord(
-    { projectDir: opts.projectDir, sessionId },
-    defaultRunRecordDeps(),
-    false,
-  );
+  const { sessionId } = record.ref;
   const hydrated = record.hydration;
 
   if (hydrated.kind === 'invalid') {
@@ -81,10 +62,6 @@ function loadContinuableRecord(
       `session '${sessionId}' has no usable saved state and is not running — cannot continue. Start a new workflow with \`splitbrief start\`.`,
       1,
     );
-  }
-
-  if (record.status.kind === 'running') {
-    throw cliError(sessionError.stillActive(sessionId).message, 1);
   }
 
   if (record.status.kind === 'closed') {
@@ -126,15 +103,24 @@ export async function continueCommand(
   opts: ContinueOpts,
   deps: ContinueDeps = defaultContinueDeps,
 ): Promise<void> {
-  const sessionId = await resolveTargetSession(sessionInput, opts.projectDir);
-  const record = loadContinuableRecord(sessionId, opts);
+  const record = await resolveTargetRun({
+    sessionInput,
+    projectDir: opts.projectDir,
+    defaultSelection: opts.action === undefined ? 'saved-run' : 'active-pointer',
+  });
+  if (record === null) {
+    throw cliError('no session to continue; start one with `splitbrief start`.', 1);
+  }
+  if (await openOwnedRun(record, opts, deps.renderApp)) return;
+  const { sessionId } = record.ref;
+  const continuable = requireContinuableRecord(record, opts);
   // The revision the operator answered the halt on, read before the switch is applied, so a
   // config that changed underneath the halt is not overwritten by the write that follows.
   const expectedRevision =
     opts.action?.action === 'switch-seat'
       ? readConfigDocument(opts.projectDir).revision?.rawSha256
       : undefined;
-  const resumed = await runAction(sessionId, record, opts);
+  const resumed = await runAction(sessionId, continuable, opts);
   if (resumed === undefined) return;
 
   // A closed run has nothing left to re-enter: `end-run` recorded the close, or `accept-as-is`

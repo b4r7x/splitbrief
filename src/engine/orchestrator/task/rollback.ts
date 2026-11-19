@@ -11,6 +11,7 @@ import { publishWarningFromError } from '../publish/notice.js';
 import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';
 import type { WorkflowContext } from '../types.js';
 import { restoreWorkspaceFiles } from '../isolation/entry-snapshot.js';
+import { keptCheckoutPathsMessage } from '../isolation/checkout-entries.js';
 import { briefKeptFiles } from '../kept-work.js';
 import { replacedAttemptWrites } from './booking.js';
 
@@ -25,18 +26,24 @@ async function restoreSnapshotFiles(opts: {
   failureMessage: string;
 }): Promise<string | undefined> {
   try {
-    const { restoredFiles, savedTo } = await restoreWorkspaceFiles({
+    const { restoredFiles, keptPaths, savedTo } = await restoreWorkspaceFiles({
       ref: { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
       dir: opts.wctx.workspaceDir,
       snapshot: opts.snapshot,
       files: undefined,
+      checkout: loadState(opts.wctx)?.workspace?.kind === 'checkout',
     });
-    if (restoredFiles.length === 0) return undefined;
+    const kept =
+      keptPaths !== undefined && keptPaths.length > 0
+        ? keptCheckoutPathsMessage(keptPaths)
+        : undefined;
+    if (restoredFiles.length === 0) return kept;
     const saved =
       savedTo === undefined
         ? ''
         : `. ${replacedFilesSavedIn(relative(opts.wctx.projectDir, savedTo))}`;
-    return `${opts.restoredMessage(restoredFiles, pluralize(restoredFiles.length, 'change'))}${saved}`;
+    const restored = `${opts.restoredMessage(restoredFiles, pluralize(restoredFiles.length, 'change'))}${saved}`;
+    return kept === undefined ? restored : `${restored}. ${kept}`;
   } catch (err) {
     return labelError(opts.failureMessage, err);
   }
@@ -131,17 +138,19 @@ export async function restoreInterruptedTaskFiles(opts: {
 }): Promise<void> {
   const { wctx, phase, task, taskStartSnapshot } = opts;
   const failureMessage = `Failed to restore ${task.id} from its task-start snapshot`;
-  let ownFiles: string[];
+  const checkout = loadState(wctx)?.workspace?.kind === 'checkout';
+  let ownFiles: string[] = [];
   try {
     // A snapshot head the operator rewrote between the kill and the resume no
     // longer resolves; the run still restarts the brief.
-    ownFiles = await inferTaskOwnChangedFiles(
-      wctx,
-      task,
-      taskStartSnapshot.head,
-      wctx.workspaceDir,
-      taskStartSnapshot,
-    );
+    if (!checkout)
+      ownFiles = await inferTaskOwnChangedFiles(
+        wctx,
+        task,
+        taskStartSnapshot.head,
+        wctx.workspaceDir,
+        taskStartSnapshot,
+      );
   } catch (err) {
     publishWarningFromError({ bus: wctx.bus, phase }, failureMessage, err);
     return;
@@ -149,10 +158,12 @@ export async function restoreInterruptedTaskFiles(opts: {
   const snapshot = savedTaskSnapshot(wctx, taskStartSnapshot);
   const warning = await restoreSnapshotFiles({
     wctx,
-    snapshot: {
-      ...snapshot,
-      restoreFiles: [...new Set([...(snapshot.restoreFiles ?? []), ...ownFiles])],
-    },
+    snapshot: checkout
+      ? { ...snapshot, restoreFiles: undefined }
+      : {
+          ...snapshot,
+          restoreFiles: [...new Set([...(snapshot.restoreFiles ?? []), ...ownFiles])],
+        },
     restoredMessage: (restoredFiles, changes) =>
       `Restored ${restoredFiles.length} unfinished ${changes} from the interrupted ${task.id}: ${restoredFiles.join(', ')}`,
     failureMessage,

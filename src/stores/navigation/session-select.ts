@@ -3,6 +3,7 @@ import type { UserMessageInput } from '../../core/types/user-input.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { OwnedResumeState } from '../../core/state/resume-hydration.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
+import type { SkillMeta } from '../../core/skills/types.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { OverlayType } from '../../core/navigation/types.js';
 import type { RunRecord } from '../../core/sessions/run/record.js';
@@ -17,7 +18,7 @@ import { feedbackStore } from '../ui/feedback.js';
 import { overlayStore } from '../ui/overlay.js';
 import { resetWorkflowControls } from '../workflow/actions/reset.js';
 import { CHECKING_TOOLS_STAGE, preparationStore, type PreparationState } from './preparation.js';
-import { routerStore } from './router.js';
+import { atRestExecution, routerStore } from './router.js';
 import { configStore } from '../project/config.js';
 
 type SessionResumePreparationState =
@@ -102,6 +103,7 @@ export interface SessionSelectDeps {
     input: Readonly<{ ref: SessionRef; state: WorkflowState }>,
     signal: AbortSignal,
   ) => Promise<PreparationOutcome>;
+  loadResumeSkills?: ((ref: SessionRef) => Promise<SkillMeta[] | undefined>) | undefined;
   /** Replays a run's history into the workflow stores; the feature layer owns the replay itself. */
   hydrateRun: (record: RunRecord) => Promise<void>;
   /**
@@ -150,12 +152,20 @@ export function continueRunInPlace(
 function beginPreparation(request: PreparationRequest): Promise<void> {
   const { projectDir, sessionId } = request.record.ref;
   const ref = { projectDir, sessionId };
+  let selectedSkills: SkillMeta[] | undefined;
   const handle = preparationStore.submit({
     origin: 'continue',
     stage: CHECKING_TOOLS_STAGE,
     key: `${projectDir}\0${sessionId}`,
-    prepare: (signal) => request.deps.prepareResume({ ref, state: request.state }, signal),
+    prepare: async (signal) => {
+      if (request.deps.loadResumeSkills !== undefined) {
+        selectedSkills = await request.deps.loadResumeSkills(ref);
+        if (signal.aborted) return { kind: 'aborted' };
+      }
+      return request.deps.prepareResume({ ref, state: request.state }, signal);
+    },
     onPrepared: (execution) => {
+      const current = routerStore.get();
       routerStore.updateRun({
         run: request.record,
         execution: {
@@ -163,6 +173,9 @@ function beginPreparation(request: PreparationRequest): Promise<void> {
           prepared: execution,
           ...(request.steer !== undefined && { steer: request.steer }),
           ...(request.resumeCause !== undefined && { resumeCause: request.resumeCause }),
+          ...(selectedSkills !== undefined && { selectedSkills }),
+          ...(current.screen === 'workflow' &&
+            current.execution.observing === true && { observing: true }),
         },
       });
       lastRequest = undefined;
@@ -237,6 +250,10 @@ export async function handleSessionSelect(
   }
 
   const record = readRunRecord({ projectDir, sessionId: session.id }, configStore.reviewNone());
+  await showRunAtRest(record, deps);
+}
+
+export async function showRunAtRest(record: RunRecord, deps: SessionSelectDeps): Promise<void> {
   cancelSessionPreparation({ restoreOrigin: false });
   preparationStore.reset();
   const generation = routerStore.supersede();
@@ -254,5 +271,15 @@ export async function handleSessionSelect(
   if (record.hydration.kind === 'loaded') {
     skillsStore.setSelected(new Set(record.hydration.state.selectedSkills ?? []));
   }
-  routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
+  const observing =
+    current.screen === 'workflow' &&
+    current.run.ref.projectDir === record.ref.projectDir &&
+    current.run.ref.sessionId === record.ref.sessionId
+      ? current.execution.observing
+      : undefined;
+  routerStore.navigate({
+    to: 'workflow',
+    run: record,
+    execution: atRestExecution(record, observing),
+  });
 }

@@ -19,6 +19,7 @@ import {
 } from './cache/block.js';
 import { eventRowBlock } from './event-rows/dispatch.js';
 import { recoveryRowBlock } from './event-rows/recovery.js';
+import { checkoutFoldKey } from './blocks/callout.js';
 import { checkGroupKey, checkGroupRowBlock } from './blocks/check-group.js';
 import { diffToggleKey } from './row-actions/build.js';
 import { joinsCheckList } from './check-list-spacing.js';
@@ -173,7 +174,10 @@ function buildConversationRowsProjectionWithContext(
       dedupTitle = event.text;
     }
 
-    const expanded = inputs.expandedDiffs.has(diffEventKey(event, globalIndex));
+    const expanded =
+      event.type === 'warning' && event.checkout !== undefined
+        ? inputs.expandedActivityBatches.has(checkoutFoldKey(globalIndex))
+        : inputs.expandedDiffs.has(diffEventKey(event, globalIndex));
     const blockKey: EventBlockCacheKey = {
       width: ctx.width,
       viewportRows: ctx.viewportRows,

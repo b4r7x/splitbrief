@@ -99,6 +99,7 @@ export async function promoteStagedChanges(opts: {
   targetBaseline: AcquisitionBaseline | undefined;
   /** The project symlinks the target held at acquisition; without it the target held none. */
   targetLinks?: ReadonlyMap<string, string>;
+  onWrite?: (file: string, entry: ChangeEntry) => void;
 }): Promise<PromoteStagedChangesResult> {
   const { targetProjectDir, stagedProjectDir, files, targetBaseline, targetLinks } = opts;
   for (const file of files) {
@@ -154,6 +155,7 @@ export async function promoteStagedChanges(opts: {
             throw conflict;
           }
         });
+        opts.onWrite?.(file, entry);
         if (entry.kind === 'file') {
           appliedFiles.push({
             path: file,

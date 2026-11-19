@@ -1,16 +1,27 @@
 import { createElement } from 'react';
-import { App } from '../../../app/root.js';
-import { initStores } from '../../bootstrap/init.js';
+import { App, type AppProps } from '../../../app/root.js';
+import { sessionSelectDeps } from '../../../app/prepare-resume.js';
+import { bootstrapObserverStores, initStores } from '../../bootstrap/init.js';
 import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
 import { oneLineDisplayText } from '../../../utils/display-text/sanitize.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { showRunAtRest } from '../../../stores/navigation/session-select.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
+import type { RunRecord } from '../../../core/sessions/run/record.js';
+import { sessionError } from '../../../core/sessions/errors.js';
 import { hydrateRun } from '../../../features/workflow/run-history.js';
+import { keepRunTerms } from '../../../features/workflow/resume/policy.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { resolveSelectedSkills } from '../../options/skills.js';
 import { runHeadless } from '../../headless/run.js';
 import { assertResumableState } from '../../sessions/resolve.js';
-import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
+import {
+  assertInteractiveTty,
+  isInteractiveTty,
+  setupWorkflow,
+  workflowDisplayOptions,
+} from '../../setup.js';
+import { cliError } from '../../errors.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import { ensureHooksTrusted } from '../../hook-trust-prompt.js';
 import { readSeatIdentities, seatIdentitiesFromConfig } from '../../../core/state/seats/record.js';
@@ -21,6 +32,7 @@ import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ContinueDeps } from './command.js';
+import type { ContinueOpts } from './types.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../../preparation.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare.js';
 import { briefPosition } from '../../../core/state/selectors.js';
@@ -47,6 +59,54 @@ const defaultResumeTailDeps: ResumeTailDeps = {
   setupWorkflow,
   prepareExecution,
 };
+
+export async function openOwnedRun(
+  record: RunRecord,
+  opts: ContinueOpts,
+  renderApp = renderAppOnDemand,
+): Promise<boolean> {
+  const { owner, ref } = record;
+  if (owner === undefined) return false;
+
+  if (
+    opts.action !== undefined ||
+    opts.json === true ||
+    opts.plain === true ||
+    !process.stdin.isTTY ||
+    !isInteractiveTty()
+  ) {
+    if (owner.kind === 'stale') {
+      throw cliError(`session process ${owner.pid} exists but is unresponsive — kill it first`, 1);
+    }
+    throw cliError(sessionError.stillActive(ref.sessionId).message, 1);
+  }
+
+  bootstrapObserverStores(ref.projectDir, opts);
+  keepRunTerms(ref, {
+    allowRepoRunners: opts.allowRepoRunners === true,
+    allowHooks: opts.allowHooks === true,
+  });
+  await showRunAtRest(record, sessionSelectDeps);
+  const { useFullscreen, useMouse, useHover } = workflowDisplayOptions(opts);
+  const app = createElement<AppProps>(App, {
+    workflowDeps: {
+      sessionSelect: {
+        ...sessionSelectDeps,
+        loadResumeSkills: async (candidate) =>
+          candidate.projectDir === ref.projectDir && candidate.sessionId === ref.sessionId
+            ? resolveSelectedSkills(ref.projectDir, opts.skills)
+            : undefined,
+      },
+    },
+  });
+  await renderApp(app, {
+    fullscreen: useFullscreen,
+    mouse: useMouse,
+    hover: useHover,
+    projectDir: ref.projectDir,
+  });
+  return true;
+}
 
 /**
  * A resume that lands on a different crew than the one the run last used says

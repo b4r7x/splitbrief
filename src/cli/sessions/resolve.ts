@@ -4,8 +4,48 @@ import { deriveRunStatus } from '../../core/sessions/run/status.js';
 import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import { continueRunCommand } from '../../core/recovery/resume-command.js';
 import { cliError } from '../errors.js';
-import { sessionError } from '../../core/sessions/errors.js';
-import { clearStaleSession, assertNoLiveSession } from '../../core/sessions/guards.js';
+import { readActive } from '../../core/sessions/active-pointer.js';
+import { listSessions } from '../../core/sessions/io.js';
+import { readRunRecord } from '../../core/sessions/run/record-io.js';
+import type { RunRecord } from '../../core/sessions/run/record.js';
+import { resolveSessionAlias } from './aliases.js';
+
+function isOpenDefault(record: RunRecord): boolean {
+  return record.hydration.kind === 'loaded' && record.status.kind !== 'closed';
+}
+
+export async function resolveTargetRun({
+  sessionInput,
+  projectDir,
+  checkLiveness,
+  defaultSelection = 'saved-run',
+}: {
+  sessionInput?: string | undefined;
+  projectDir: string;
+  checkLiveness?: Parameters<typeof readRunRecord>[2];
+  defaultSelection?: 'saved-run' | 'active-pointer';
+}): Promise<RunRecord | null> {
+  const read = (sessionId: string) =>
+    readRunRecord({ projectDir, sessionId }, false, checkLiveness);
+  const selected = await resolveSessionAlias(sessionInput, projectDir);
+  if (selected !== undefined) {
+    assertSessionExists(projectDir, selected);
+    return read(selected);
+  }
+
+  const active = readActive(projectDir);
+  const current = active === null ? null : read(active);
+  if (defaultSelection === 'active-pointer' || (current !== null && isOpenDefault(current))) {
+    return current;
+  }
+
+  for (const run of listSessions(projectDir)) {
+    if (run.status !== 'open' || run.id === active) continue;
+    const candidate = read(run.id);
+    if (isOpenDefault(candidate)) return candidate;
+  }
+  return current;
+}
 
 export function assertSessionExists(projectDir: string, sessionId: string): void {
   if (!existsSync(sessionDir(projectDir, sessionId))) {
@@ -36,28 +76,5 @@ export function assertResumableState(state: WorkflowState, sessionId: string): v
   }
   if (status.kind === 'ready-to-apply') {
     throw cliError(readyToApplyMessage(sessionId, state), 1);
-  }
-}
-
-// A live session is left in place: preparation readiness reports it as the
-// `repo.active-session-live` blocker with its remediation.
-export function clearStaleSessionForCli(projectDir: string): void {
-  try {
-    clearStaleSession(projectDir);
-  } catch (err) {
-    if (sessionError.isStillActive(err)) return;
-    throw err;
-  }
-}
-
-// For surfaces that only open the TUI (home, setup): refuse to run alongside a
-// live session, but never touch the active pointer — deleting it would break
-// `splitbrief resume` for the stale-but-resumable case.
-export function assertNoLiveSessionForCli(projectDir: string): void {
-  try {
-    assertNoLiveSession(projectDir);
-  } catch (err) {
-    if (sessionError.isStillActive(err)) throw cliError(err.message, 1);
-    throw err;
   }
 }

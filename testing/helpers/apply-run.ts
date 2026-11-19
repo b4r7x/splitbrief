@@ -30,9 +30,13 @@ export async function startApplyRun(
   files: Record<string, string>,
   options: ApplyRunOptions,
 ): Promise<ApplyRun> {
-  const { sessionId, strategy = 'worktree', atBase = () => {} } = options;
   const dir = createTempDir('apply-run');
   createTestGitRepo(dir, files);
+  return openApplyRun(dir, options);
+}
+
+export async function openApplyRun(dir: string, options: ApplyRunOptions): Promise<ApplyRun> {
+  const { sessionId, strategy = 'worktree', atBase = () => {} } = options;
   await createSnapshot({ projectDir: dir, sessionId, phase: 'manual', name: 'baseline' });
   atBase(dir);
   const base = await createSnapshot({

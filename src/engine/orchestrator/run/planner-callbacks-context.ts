@@ -3,6 +3,7 @@ import type { PlannerCallbacksContext, WorkflowContext } from '../types.js';
 export function plannerCallbacksContextOf(wctx: WorkflowContext): PlannerCallbacksContext {
   return {
     projectDir: wctx.projectDir,
+    workspaceDir: wctx.workspaceDir,
     sessionId: wctx.sessionId,
     config: wctx.config,
     callbacks: wctx.callbacks,

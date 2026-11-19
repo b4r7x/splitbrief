@@ -44,6 +44,7 @@ import { stopStore } from '../../stores/workflow/stop.js';
 import { readClipboardImage as readSystemClipboardImage } from '../../core/attachments/clipboard-image.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
+import { isRunHeldElsewhere } from '../../core/sessions/run/record.js';
 import type { listProjectFiles } from '../../lib/fs/listing.js';
 
 export interface ComposerBoxHints {
@@ -96,9 +97,12 @@ export function Composer(props: ComposerProps) {
   // per-owner comment box: it neither restores the draft nor overwrites it with comment text,
   // and the key keeps the two mounts apart so switching modes never carries text across.
   const ownsSessionDraft = props.currentScreen === 'workflow' && props.mode !== 'review';
-  const ref = routerStore.use((route) =>
-    ownsSessionDraft && route.screen === 'workflow' ? route.run.ref : null,
-  );
+  const ref = routerStore.use((route) => {
+    if (!ownsSessionDraft || route.screen !== 'workflow') return null;
+    if (route.execution.observing === true) return null;
+    if (route.execution.kind === 'at-rest' && isRunHeldElsewhere(route.run)) return null;
+    return route.run.ref;
+  });
   return (
     <ComposerInput
       key={

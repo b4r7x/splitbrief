@@ -151,6 +151,15 @@ export interface SetupResult {
   needsSetup?: boolean | undefined;
 }
 
+export function workflowDisplayOptions(
+  opts: WorkflowOpts,
+): Omit<SetupResult, 'projectDir' | 'needsSetup'> {
+  const useFullscreen = opts.fullscreen !== false && isInteractiveTty();
+  const useMouse = opts.mouse !== false && useFullscreen;
+  const useHover = opts.hover === true && useMouse;
+  return { useFullscreen, useMouse, useHover };
+}
+
 export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const projectDir = await canonicalizeProjectDir(opts);
 
@@ -158,14 +167,11 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   await reapOrphanRunners(projectDir);
   await removeClosedRunWorkspaces(projectDir);
 
-  const isInteractive = isInteractiveTty();
-  const useFullscreen = opts.fullscreen !== false && isInteractive;
-  const useMouse = opts.mouse !== false && useFullscreen;
-  const useHover = opts.hover === true && useMouse;
+  const display = workflowDisplayOptions(opts);
 
   if (!existsSync(configPath(projectDir))) {
-    return { projectDir, useFullscreen, useMouse, useHover, needsSetup: true };
+    return { projectDir, ...display, needsSetup: true };
   }
 
-  return { projectDir, useFullscreen, useMouse, useHover };
+  return { projectDir, ...display };
 }

@@ -337,7 +337,7 @@ describe('readiness checks', () => {
     );
   });
 
-  it('warns for dirty repositories and blocks live active sessions', () => {
+  it('warns for dirty repositories and reports live sessions as information', () => {
     const input = baseInput({
       repo: {
         isGitRepo: true,
@@ -350,10 +350,10 @@ describe('readiness checks', () => {
     });
     const report = buildReadinessReport(input);
 
-    expect(report.status).toBe('blocked');
-    expect(report.nextAction.kind).toBe('clean-or-isolate-repo');
-    expect(allCheckIds(input)).toEqual(
-      expect.arrayContaining(['repo.dirty-worktree', 'repo.active-session-live']),
+    expect(report.status).toBe('ready-with-warnings');
+    expect(report.nextAction.kind).toBe('continue');
+    expect(report.sections.flatMap(({ checks }) => checks)).toContainEqual(
+      expect.objectContaining({ id: 'repo.active-session-live', severity: 'info' }),
     );
   });
 

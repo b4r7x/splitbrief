@@ -8,7 +8,8 @@ import {
   SUMMARY_FILE,
   sessionDir,
 } from '../../../../core/paths.js';
-import { checkSessionLiveness } from '../../../../core/sessions/lock/file.js';
+import { isRunHeld } from '../../../../core/sessions/run/record.js';
+import { readRunOwner } from '../../../../core/sessions/run/record-io.js';
 import { LOCKFILE_PING_INTERVAL_MS } from '../../../../engine/orchestrator/run/heartbeat.js';
 import { requestLeaveSession } from '../../run-requests/departure.js';
 import { requestResume } from '../../run-requests/stop-resume.js';
@@ -54,6 +55,7 @@ import {
   routeClosedAtRest,
 } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
+import { AT_REST_PLACEHOLDER } from '../../closed/open-byline.js';
 import { hydrateResume } from '../../resume/hydration.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
 import { plainUserMessage, type UserMessageInput } from '../../../../core/types/user-input.js';
@@ -95,6 +97,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   );
 
   const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
+  const observing = execution?.kind === 'at-rest' && execution.observing === true;
   const atRestProjectDir = atRestRecord?.ref.projectDir;
   const atRestSessionId = atRestRecord?.ref.sessionId;
 
@@ -123,8 +126,15 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     // An owner killed without its exit handler changes no file, so the screen asks for it itself.
     const ownerCheck = setInterval(() => {
       const current = routerStore.get();
-      if (current.screen !== 'workflow' || current.run.status.kind !== 'running') return;
-      if (!checkSessionLiveness(directory).alive) refresh();
+      if (
+        current.screen !== 'workflow' ||
+        current.execution.kind !== 'at-rest' ||
+        !isRunHeld(current.run)
+      )
+        return;
+      const owner = readRunOwner(ref);
+      if (owner?.kind !== current.run.owner?.kind || owner?.pid !== current.run.owner?.pid)
+        refresh();
     }, LOCKFILE_PING_INTERVAL_MS);
     return () => {
       controller.abort();
@@ -144,6 +154,8 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   ): string | undefined => {
     const sessionSelect = deps?.sessionSelect;
     if (run === undefined || sessionSelect === undefined) return undefined;
+    if (isRunHeld(run)) return 'This run is open in another terminal.';
+    if (observing && message.text.trim() !== '') return 'Press Enter to continue this run.';
     const outcome = continueRun({
       ref: run.ref,
       ...(message.text.trim() === '' ? {} : { steer: message }),
@@ -186,7 +198,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     prepared,
     ...(local?.steer !== undefined && { steer: local.steer }),
     ...(local?.resumeCause !== undefined && { resumeCause: local.resumeCause }),
-    selectedSkills: selectedSkillMetas,
+    selectedSkills: local?.selectedSkills ?? selectedSkillMetas,
     inputMode,
     continuation,
     runWorkflow: deps?.runWorkflow,
@@ -240,7 +252,9 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
 
   const inputHint =
     composer !== null
-      ? composer.placeholder
+      ? observing && composer.continuable
+        ? AT_REST_PLACEHOLDER.noWords
+        : composer.placeholder
       : resolveInputHint({ inputHint: inputMode.hint, inputMode: inputMode.mode });
 
   return {
@@ -253,6 +267,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     promptPending,
     /** The run on screen, at rest; undefined while a local process is driving it. */
     atRestRecord,
+    observing,
     /** Whether this process's Apply writes the run on screen. */
     applying,
     closed,
@@ -276,7 +291,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
             ? () => sendFromComposer(requestResume)(plainUserMessage(''))
             : undefined,
     inputHint,
-    commandsOnly: composer?.commandsOnly ?? false,
+    commandsOnly: observing || (composer?.commandsOnly ?? false),
     questionEpoch: inputMode.questionEpoch,
   };
 }

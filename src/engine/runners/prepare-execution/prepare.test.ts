@@ -906,7 +906,7 @@ describe('prepareExecution', () => {
         detectRunnerEvidence: detect,
         resolveCliExecutableAliases: revalidate,
         prepareNewSession: prepareSession,
-        reactivateExistingSession: reactivate,
+        createActiveSessionReceipt: reactivate,
       },
     } satisfies PrepareExecutionInput;
 
@@ -934,10 +934,10 @@ describe('prepareExecution', () => {
     void (conflictingInput satisfies PrepareExecutionInput);
   });
 
-  it.each(['absent', 'legacy', 'v1'] as const)(
-    'reactivates the same session from %s prior state',
+  it.each(['absent', 'legacy', 'v1', 'different', 'dead-other'] as const)(
+    'prepares a resume without changing the %s default',
     async (prior) => {
-      const { project, existingSession, outcome } = await resumeActivation(prior);
+      const { project, existingSession, before, outcome } = await resumeActivation(prior);
 
       expect(outcome.kind).toBe('prepared');
       if (outcome.kind !== 'prepared') return;
@@ -946,44 +946,12 @@ describe('prepareExecution', () => {
         ref: existingSession,
         active: { version: 1, sessionId: existingSession.sessionId },
       });
-      expect(readActiveRecord(project)).toEqual({
-        kind: 'v1',
-        receipt: outcome.execution.session.active,
-      });
+      if (before?.kind === 'v1') {
+        expect(outcome.execution.session.active.generation).not.toBe(before.receipt.generation);
+      }
+      expect(readActiveRecord(project)).toEqual(before);
     },
   );
-
-  it('rotates the generation when reactivating a v1 record', async () => {
-    const { before, outcome } = await resumeActivation('v1');
-
-    expect(before?.kind).toBe('v1');
-    expect(outcome.kind).toBe('prepared');
-    if (before?.kind !== 'v1' || outcome.kind !== 'prepared') return;
-    expect(outcome.execution.session.active.generation).not.toBe(before.receipt.generation);
-  });
-
-  it('refuses to reactivate when another session owns the active record', async () => {
-    const { project, before, outcome } = await resumeActivation('different');
-
-    expect(outcome).toMatchObject({
-      kind: 'failed',
-      error: { kind: 'session-still-active' },
-      report: { status: 'ready', counts: { blocker: 0 } },
-    });
-    expect(readActiveRecord(project)).toEqual(before);
-  });
-
-  it('takes over the active record from a run whose owner is dead', async () => {
-    const { project, existingSession, outcome } = await resumeActivation('dead-other');
-
-    expect(outcome.kind).toBe('prepared');
-    if (outcome.kind !== 'prepared') return;
-    expect(outcome.execution.session.active.sessionId).toBe(existingSession.sessionId);
-    expect(readActiveRecord(project)).toEqual({
-      kind: 'v1',
-      receipt: outcome.execution.session.active,
-    });
-  });
 
   it('prepares only the planner for spec execution', async () => {
     const project = projectDir();
@@ -2045,12 +2013,12 @@ describe('prepareReviewExecution', () => {
     return {
       generatedAt: '2026-09-11T09:00:00.000Z',
       projectDir: project,
-      status: 'blocked',
-      counts: { ok: 1, info: 0, warning: 0, blocker: 1 },
+      status: 'ready',
+      counts: { ok: 1, info: 1, warning: 0, blocker: 0 },
       nextAction: {
-        kind: 'clean-or-isolate-repo',
-        label: 'Clear the session',
-        reason: 'A session is live.',
+        kind: 'continue',
+        label: 'Continue',
+        reason: 'Ready.',
       },
       sections: [
         {
@@ -2064,10 +2032,8 @@ describe('prepareReviewExecution', () => {
           checks: [
             {
               id: 'repo.active-session-live',
-              severity: 'blocker',
+              severity: 'info',
               summary: 'Run live-one is still running.',
-              fix: "Stop it in the window that runs it, then run 'splitbrief continue live-one'.",
-              nextAction: 'clean-or-isolate-repo',
               metadata: { sessionId: 'live-one', live: true },
             },
           ],
@@ -2189,27 +2155,6 @@ describe('prepareReviewExecution', () => {
       ?.checks.find((check) => check.id === 'repo.active-session-live');
     expect(live?.severity).toBe('info');
     expect(outcome.execution.report.status).not.toBe('blocked');
-  });
-
-  it('leaves the same live session blocking a workflow start', async () => {
-    const project = projectDir();
-    const config = reviewConfig();
-
-    const outcome = await prepareExecution({
-      projectDir: project,
-      feature: 'start beside a live session',
-      effectiveConfig: config,
-      configWarnings: [],
-      signal: new AbortController().signal,
-      policy: policy('new-workflow'),
-      deps: {
-        collectArgVectorPreflightChecks: async () => [],
-        collectReadiness: async () => ({ report: liveSessionReport(project), config }),
-        prepareNewSession: () => preparedSession(project, 'never-created'),
-      },
-    });
-
-    expect(outcome.kind).toBe('blocked');
   });
 });
 describe('a seat left on auto', () => {

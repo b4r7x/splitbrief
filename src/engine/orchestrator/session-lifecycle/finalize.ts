@@ -96,7 +96,11 @@ export function finalizeEndedRun(
 
 /** A run settled at rest — no live loop holds its receipt — clears the active session only while it is this run's. */
 export function finalizeRunAtRest(
-  input: Readonly<{ ref: SessionRef; state: WorkflowState }>,
+  input: Readonly<{
+    ref: SessionRef;
+    state: WorkflowState;
+    modelCache?: ModelCacheAccessor | undefined;
+  }>,
 ): Summary {
   const active = readActiveRecord(input.ref.projectDir);
   const receipt =

@@ -1,11 +1,16 @@
 import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { countNoun, pluralize } from '../../utils/pluralize.js';
-import { StartReadinessRecordSchema, type StartReadinessRecord } from '../schemas/readiness.js';
+import {
+  StartReadinessRecordSchema,
+  type CheckoutStartNotice,
+  type StartReadinessRecord,
+} from '../schemas/readiness.js';
 import { ungatedCliReadinessChecks } from './status.js';
 import type { ReadinessCheck, ReadinessReport, ReadinessSection } from './types.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { CONFIG_WARNING_CHECK_ID } from './checks/config.js';
-import { withRunFolder } from './checks/repo.js';
+import { revertedDir } from '../paths.js';
+import { DIRTY_WORKTREE_CHECK, withRunFolder } from './checks/repo.js';
 import { isSettingNotAppliedCheck } from './checks/runner/fields.js';
 import { readinessCheckRemediation } from './json.js';
 
@@ -180,8 +185,20 @@ export function notAppliedWarnings(
 }
 
 /** A recorded start warning as the run states it: what readiness found, its details, then what to do. */
-export function startReadinessWarnings(record: StartReadinessRecord): string[] {
+export function startReadinessWarnings(
+  record: StartReadinessRecord,
+  checkoutRun: SessionRef | undefined,
+): { message: string; checkout?: CheckoutStartNotice }[] {
   return record.checks
     .filter((check) => check.severity === 'warning')
-    .map((check) => readinessCheckLines(check).join('\n'));
+    .map((check) => ({
+      message: readinessCheckLines(check).join('\n'),
+      ...(check.id === DIRTY_WORKTREE_CHECK &&
+        checkoutRun !== undefined && {
+          checkout: {
+            summary: check.summary,
+            details: [...(check.details ?? []), `Backup on revert: ${revertedDir(checkoutRun)}/`],
+          },
+        }),
+    }));
 }

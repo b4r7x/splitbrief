@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { getSplitbriefPath } from '../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool/catalog.js';
 import { writeFakeNodeCli } from './command-shim.js';
 import { hermeticPath } from './compatible-cli-shim.js';
@@ -112,7 +113,7 @@ export async function stopDuringToolCall(dir: string, options: StopOptions): Pro
   const list = (root: string) =>
     existsSync(root) ? readdirSync(root, { recursive: true, encoding: 'utf8' }) : [];
   const signInCopies = () =>
-    [tmp, join(projectDir, '.splitbrief', 'sandbox')].flatMap((root) =>
+    [tmp, getSplitbriefPath(projectDir)].flatMap((root) =>
       list(root).filter((path) => path.endsWith(SIGN_IN_FILE)),
     );
   const child = spawn(

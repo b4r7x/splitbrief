@@ -18,10 +18,16 @@ vi.mock('node:fs', async (importOriginal) => {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { lockSibling } from '../../lib/fs/lock.js';
+import { tryClaimDatabaseLock } from '../../lib/fs/ownership-lock.js';
 import { activeFile, LOCKFILE, READINESS_FILE, sessionDir, STATE_FILE } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
-import { readActive, writeActive, type PreparedNewSession } from './active-pointer.js';
+import {
+  ACTIVE_MUTATION_LOCK,
+  readActive,
+  writeActive,
+  type PreparedNewSession,
+} from './active-pointer.js';
+import type { SessionPreparationOperation } from './errors.js';
 import {
   createSessionPreparationCandidate,
   prepareNewSession,
@@ -41,6 +47,19 @@ function projectDir(): string {
   const dir = createTempDir('prepare-session');
   tempDirs.push(dir);
   return dir;
+}
+
+function mutationLockHeld(project: string): boolean {
+  const release = tryClaimDatabaseLock(project, ACTIVE_MUTATION_LOCK);
+  release?.();
+  return release === null;
+}
+
+function preparationError(operation: SessionPreparationOperation, sessionId: string) {
+  return expect.objectContaining({
+    kind: 'session-prepare-io',
+    data: expect.objectContaining({ operation, sessionId }),
+  });
 }
 
 function preparedSession(input: PrepareNewSessionInput): PreparedNewSession {
@@ -123,19 +142,18 @@ describe('prepareNewSession', () => {
   it('holds the project mutation lock from final ownership validation through active publication and rollback', () => {
     const project = projectDir();
     const sessionId = '2026-08-03-one-lock';
-    const lock = lockSibling(activeFile(project));
     let publishLocked = false;
     let rollbackLocked = false;
     const session = preparedSession({
       ...prepareInput(project, sessionId, new AbortController().signal),
       _beforeMutation: (boundary) => {
-        if (boundary === 'active') publishLocked = existsSync(lock);
+        if (boundary === 'active') publishLocked = mutationLockHeld(project);
       },
     });
 
     rollbackPreparedSession(session, {
       _beforeMutation: (boundary) => {
-        if (boundary === 'directory-claim') rollbackLocked = existsSync(lock);
+        if (boundary === 'directory-claim') rollbackLocked = mutationLockHeld(project);
       },
     });
 
@@ -210,22 +228,53 @@ describe('prepareNewSession', () => {
     expect(existsSync(sessionDir(project, interrupted))).toBe(true);
   });
 
-  it('refuses to publish over a live session and leaves its active pointer intact', () => {
+  it('publishes a new default beside a live run without changing its files', () => {
     const project = projectDir();
     const signal = new AbortController().signal;
     const live = '2026-08-03-live-run';
-    const attempted = '2026-08-03-blocked-by-live';
-    expect(prepareNewSession(prepareInput(project, live, signal)).kind).toBe('prepared');
+    const next = '2026-08-03-next';
+    preparedSession(prepareInput(project, live, signal));
     writeInterruptedState(project, live);
     writeFileSync(
       join(sessionDir(project, live), LOCKFILE),
       JSON.stringify(makeSessionLockfile(live)),
     );
 
-    expect(() => prepareNewSession(prepareInput(project, attempted, signal))).toThrow();
+    const newer = preparedSession(prepareInput(project, next, signal));
 
-    expect(readActive(project)).toBe(live);
-    expect(existsSync(sessionDir(project, attempted))).toBe(false);
+    expect(readActive(project)).toBe(next);
+    expect(existsSync(join(sessionDir(project, live), LOCKFILE))).toBe(true);
+    expect(existsSync(join(sessionDir(project, newer.ref.sessionId), READINESS_FILE))).toBe(true);
+  });
+
+  it('reserves distinct session directories when two preparations choose the same feature', () => {
+    const project = projectDir();
+    const { candidate: _candidate, ...input } = prepareInput(
+      project,
+      'unused-explicit-id',
+      new AbortController().signal,
+    );
+    let competing: PreparedNewSession | undefined;
+
+    const current = preparedSession({
+      ...input,
+      _beforeMutation: (boundary) => {
+        if (boundary === 'allocation') competing = preparedSession(input);
+      },
+    });
+
+    expect(competing).toBeDefined();
+    if (competing === undefined) throw new Error('Competing preparation did not run');
+    expect(current.ref.sessionId).not.toBe(competing.ref.sessionId);
+    expect(readActive(project)).toBe(current.ref.sessionId);
+    for (const prepared of [current, competing]) {
+      expect(existsSync(join(sessionDir(project, prepared.ref.sessionId), READINESS_FILE))).toBe(
+        true,
+      );
+    }
+    rollbackPreparedSession(competing);
+    expect(readActive(project)).toBe(current.ref.sessionId);
+    expect(existsSync(sessionDir(project, current.ref.sessionId))).toBe(true);
   });
 
   it('rolls back only the owned session when aborted at each mutation boundary', () => {
@@ -426,10 +475,7 @@ describe('prepareNewSession', () => {
     );
 
     expect(() => rollbackPreparedSession(session)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'rollback-session', sessionId },
-      }),
+      preparationError('rollback-session', sessionId),
     );
     expect(readActive(project)).toBe(sessionId);
     expect(existsSync(sessionDir(project, sessionId))).toBe(true);
@@ -474,10 +520,7 @@ describe('prepareNewSession', () => {
     vi.resetModules();
     const coldRollbackModule = await import('./prepared-rollback.js');
     expect(() => coldRollbackModule.rollbackPreparedSession(ownership)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'rollback-session', sessionId },
-      }),
+      preparationError('rollback-session', sessionId),
     );
     expect(readActive(project)).toBe(sessionId);
     expect(existsSync(directory)).toBe(true);
@@ -490,12 +533,11 @@ describe('prepareNewSession', () => {
     const sessionId = '2026-08-03-release-one-lock';
     const session = preparedSession(prepareInput(project, sessionId, new AbortController().signal));
     const marker = join(sessionDir(project, sessionId), OWNERSHIP_FILE);
-    const lock = lockSibling(activeFile(project));
     let releaseLocked = false;
 
     releasePreparedSession(session, {
       _beforeMutation: (boundary) => {
-        if (boundary === 'ownership-claim') releaseLocked = existsSync(lock);
+        if (boundary === 'ownership-claim') releaseLocked = mutationLockHeld(project);
       },
     });
 
@@ -523,16 +565,10 @@ describe('prepareNewSession', () => {
     );
 
     expect(() => releasePreparedSession(session)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'release-session', sessionId },
-      }),
+      preparationError('release-session', sessionId),
     );
     expect(() => rollbackPreparedSession(session)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'rollback-session', sessionId },
-      }),
+      preparationError('rollback-session', sessionId),
     );
     expect(readActive(project)).toBe(sessionId);
     expect(existsSync(directory)).toBe(true);
@@ -555,10 +591,7 @@ describe('prepareNewSession', () => {
     writeFileSync(marker, proof, { mode: 0o600 });
 
     expect(() => releasePreparedSession(session)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'release-session', sessionId },
-      }),
+      preparationError('release-session', sessionId),
     );
     expect(readActive(project)).toBe(sessionId);
     expect(existsSync(join(sessionDir(project, sessionId), 'foreign-owner'))).toBe(true);
@@ -582,12 +615,7 @@ describe('prepareNewSession', () => {
           writeFileSync(marker, proof, { mode: 0o600 });
         },
       }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'release-session', sessionId },
-      }),
-    );
+    ).toThrowError(preparationError('release-session', sessionId));
 
     expect(readFileSync(marker, 'utf8')).toBe(proof);
     expect(readFileSync(displaced, 'utf8')).toBe(proof);
@@ -611,12 +639,7 @@ describe('prepareNewSession', () => {
           }
         },
       }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'release-session', sessionId },
-      }),
-    );
+    ).toThrowError(preparationError('release-session', sessionId));
 
     expect(readFileSync(marker, 'utf8')).toBe(proof);
     expect(
@@ -640,12 +663,7 @@ describe('prepareNewSession', () => {
           if (boundary === 'directory-claim') replaceSessionDirectory(project, sessionId);
         },
       }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'rollback-session', sessionId },
-      }),
-    );
+    ).toThrowError(preparationError('rollback-session', sessionId));
 
     expect(existsSync(sessionDir(project, sessionId))).toBe(false);
     expect(existsSync(`${sessionDir(project, sessionId)}.displaced`)).toBe(true);
@@ -672,12 +690,7 @@ describe('prepareNewSession', () => {
           writeFileSync(join(sessionDir(project, sessionId), 'foreign-owner'), 'preserve me');
         },
       }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'rollback-session', sessionId },
-      }),
-    );
+    ).toThrowError(preparationError('rollback-session', sessionId));
 
     expect(readActive(project)).toBe(sessionId);
     expect(existsSync(join(sessionDir(project, sessionId), 'foreign-owner'))).toBe(true);
@@ -700,10 +713,7 @@ describe('prepareNewSession', () => {
     mkdirSync(activeFile(project));
 
     expect(() => rollbackPreparedSession(session)).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'rollback-session', sessionId },
-      }),
+      preparationError('rollback-session', sessionId),
     );
     expect(existsSync(directory)).toBe(true);
     expect(readFileSync(readinessPath, 'utf8')).toBe(readiness);
@@ -744,12 +754,7 @@ describe('prepareNewSession', () => {
         ref: { projectDir: project, sessionId },
         ownership,
       }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'session-prepare-io',
-        data: { operation: 'rollback-session', sessionId },
-      }),
-    );
+    ).toThrowError(preparationError('rollback-session', sessionId));
     expect(readFileSync(readinessPath, 'utf8')).toBe(existing);
   });
 });

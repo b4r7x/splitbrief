@@ -163,6 +163,9 @@ describe('run with no reviewer configured', () => {
       'workflow_started',
       'planner_status',
       'user_message',
+      // The run captures the workspace the planner will read before its first call.
+      'snapshot_created',
+      'snapshot_created',
       'workflow_config',
       // One planning session: it starts, it books its tokens, and plan.md and tasks.md, rendered
       // from the plan, are on disk before the build begins.
@@ -170,8 +173,6 @@ describe('run with no reviewer configured', () => {
       'cost_update',
       'artifact_written',
       'artifact_written',
-      'snapshot_created',
-      'snapshot_created',
       'tasks_planned',
       'task_started',
       'cost_update',

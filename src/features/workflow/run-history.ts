@@ -1,6 +1,6 @@
-import type { RunRecord } from '../../core/sessions/run/record.js';
+import { isRunHeld, type RunRecord } from '../../core/sessions/run/record.js';
 import { readRunEvents } from '../../engine/events/replay.js';
-import { reapOrphanRunners } from '../../engine/orchestrator/run/orphan-reaper.js';
+import { reapSessionOrphans } from '../../engine/orchestrator/run/orphan-reaper.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { resetWorkflowControls } from '../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
@@ -31,8 +31,8 @@ export async function hydrateRun(record: RunRecord): Promise<void> {
  * superseded while it read simply never calls it.
  */
 export async function readRunHistory(record: RunRecord): Promise<() => void> {
-  // A run shown at rest must not change underneath it: a tool its crashed process left running ends first.
-  await reapOrphanRunners(record.ref.projectDir);
+  // A crashed run's tool must finish before its interrupted call is read.
+  if (!isRunHeld(record)) await reapSessionOrphans(record.ref.projectDir, record.ref.sessionId);
   const wentAway = processWentAway(record.status);
   const replay = await readRunEvents(record.ref, { processWentAway: wentAway });
   const cut = wentAway ? interruptedCallEvents(replay.events, record.ref.projectDir) : [];

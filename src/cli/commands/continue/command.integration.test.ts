@@ -14,6 +14,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { continueCommand } from './command.js';
+import { applyPendingRecoveryAction } from './actions.js';
 import type { ContinueDeps } from './command.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -51,6 +52,11 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { setupWorkflow } from '../../setup.js';
 import { registerContinueCommand } from './register.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
+import type { AppProps } from '../../../app/root.js';
+import { atRestResumePolicy } from '../../../features/workflow/resume/policy.js';
+import { configStore } from '../../../stores/project/config.js';
+import { continueRunInPlace } from '../../../stores/navigation/session-select.js';
+import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 
 vi.mock(
   '../../../engine/orchestrator/approval/file-snapshots/entry/write.js',
@@ -346,6 +352,113 @@ describe('continueCommand', () => {
       projectDir,
       state: { phase: 'reviewing-briefs' },
       sessionId,
+    });
+  });
+
+  it('refuses a scripted action on a stale run whose owner process is still alive', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2026-11-18-stale-owner';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { sessionId, lastAliveMs: Date.now() - 60_000 });
+    saveState(
+      { projectDir, sessionId },
+      { ...createInitialState('test-feature'), ...RUN_CREW, phase: 'implementing' },
+    );
+    const path = join(sessDir, 'state.json');
+    const before = readFileSync(path, 'utf8');
+
+    await expect(
+      continueCommand(
+        sessionId,
+        { projectDir, plain: true, action: parseContinueActionOption('end-run') },
+        deps,
+      ),
+    ).rejects.toThrow(/unresponsive/);
+
+    expect(headlessRuns).toHaveLength(0);
+    expect(renderRuns).toHaveLength(0);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('uses the observer command options when this terminal explicitly continues the run', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2026-11-18-observer-options';
+    const ref = { projectDir, sessionId };
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { sessionId });
+    const state = {
+      ...createInitialState('test-feature'),
+      ...RUN_CREW,
+      phase: 'planning' as const,
+    };
+    saveState(ref, state);
+    writeConfig(
+      projectDir,
+      makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'original' } }),
+    );
+    const skillDir = join(projectDir, '.agents', 'skills', 'observer-skill');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      '---\nname: Observer skill\ndescription: Keep the override.\n---\n',
+    );
+    const prepareExecution = vi.fn(prepareResume);
+    let app: AppProps | undefined;
+    const renderApp: ContinueDeps['renderApp'] = async (element) => {
+      app = element.props as AppProps;
+    };
+    const previousTTY = process.stdout.isTTY;
+    process.stdout.isTTY = true;
+    vi.stubEnv('CI', undefined);
+    try {
+      await continueCommand(
+        sessionId,
+        {
+          projectDir,
+          plannerModel: 'viewer-model',
+          skills: ['observer-skill'],
+          allowRepoRunners: true,
+        },
+        createDeps({ prepareExecution, renderApp }),
+      );
+    } finally {
+      if (previousTTY === undefined) delete (process.stdout as { isTTY?: boolean }).isTTY;
+      else process.stdout.isTTY = previousTTY;
+      vi.unstubAllEnvs();
+    }
+    expect(prepareExecution).not.toHaveBeenCalled();
+    expect(configStore.get().config?.planner).toMatchObject({ model: 'viewer-model' });
+    expect(atRestResumePolicy(ref).allowRepoRunners).toBe(true);
+
+    const sessionSelect = app?.workflowDeps?.sessionSelect;
+    if (sessionSelect === undefined)
+      throw new Error('Expected the observer continuation controls.');
+    writeLockfile(sessDir, { sessionId, exitedAt: Date.now() });
+    const run = readRunRecord(ref, false);
+    routerStore.updateRun({ run });
+    await continueRunInPlace({
+      record: run,
+      state,
+      deps: {
+        ...sessionSelect,
+        prepareResume: async ({ state: resumeState }) => {
+          const config = configStore.get().config;
+          if (config === null) throw new Error('Expected the continuation config.');
+          return prepareExecution({
+            existingSession: ref,
+            feature: state.feature,
+            resumeState,
+            effectiveConfig: config,
+            configWarnings: [],
+            signal: new AbortController().signal,
+            policy: atRestResumePolicy(ref),
+          });
+        },
+      },
+    });
+
+    expect(routerStore.get()).toMatchObject({
+      execution: { kind: 'local', selectedSkills: [{ id: 'observer-skill' }] },
     });
   });
 
@@ -713,6 +826,40 @@ describe('continueCommand', () => {
     await continueCommand(sessionId, { projectDir, json: true }, deps);
 
     expect(readFileSync(configFile, 'utf8')).toBe(before);
+  });
+
+  it('does not skip a newer brief when the command answered a different halt', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = 'skip-after-halt-changed';
+    const ref = { projectDir, sessionId };
+    writeConfig(projectDir, makeConfig());
+    const first = makeTask({ id: 'T001', status: 'failed' });
+    const second = makeTask({ id: 'T002', status: 'failed' });
+    const initial = makeWorkflowState({
+      ...RUN_CREW,
+      phase: 'implementing',
+      tasks: [first, second],
+      pendingRecovery: makeRecoveryIssue({ taskId: first.id }),
+    });
+    saveState(ref, initial);
+    const observed = loadState(ref);
+    if (observed === null) throw new Error('Expected the halt state');
+    saveState(ref, {
+      ...observed,
+      currentTaskIndex: 1,
+      pendingRecovery: makeRecoveryIssue({ id: 'later-halt', taskId: second.id }),
+    });
+    const newer = loadState(ref);
+
+    await expect(
+      applyPendingRecoveryAction({
+        sessionId,
+        state: observed,
+        action: { action: 'skip-current-task' },
+        opts: { projectDir, json: true },
+      }),
+    ).rejects.toMatchObject({ kind: 'workflow-recovery-changed' });
+    expect(loadState(ref)).toEqual(newer);
   });
 
   it('ends a recovery run even when the halt does not offer end-run', async () => {

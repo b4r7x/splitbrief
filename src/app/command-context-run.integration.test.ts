@@ -17,7 +17,7 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { STATE_FILE, sessionDir } from '../core/paths.js';
+import { SNAPSHOT_BASELINE_ID, STATE_FILE, sessionDir } from '../core/paths.js';
 import type { WorkflowState } from '../core/schemas/workflow/state.js';
 import { fixCyclesOf } from '../core/state/selectors.js';
 import { readRunRecord } from '../core/sessions/run/record-io.js';
@@ -29,11 +29,12 @@ import { plainUserMessage } from '../core/types/user-input.js';
 import { createEventBus } from '../engine/events/bus.js';
 import type { EngineEventOf } from '../engine/events/types.js';
 import {
+  ensureRunBaselineSnapshot,
   recordCheckoutRunSnapshot,
-  recordRunSnapshotForRun,
 } from '../engine/orchestrator/run/snapshots.js';
 import { continueRun } from '../engine/orchestrator/run/continue.js';
 import { parkStoppedRun } from '../engine/orchestrator/state-ops/halts.js';
+import { withAttemptRestoreScope } from '../engine/orchestrator/task/restore-scope.js';
 import { createSnapshot } from '../engine/snapshots/create.js';
 import * as lifecycle from '../engine/snapshots/run/lifecycle.js';
 import { atRestComposer, atRestRailStages } from '../features/workflow/at-rest.js';
@@ -527,17 +528,7 @@ describe('/run on a checkout run', () => {
     projectDir = '';
   });
 
-  async function checkoutRun(state: Partial<WorkflowState>): Promise<void> {
-    projectDir = createTempDir('run-command-checkout');
-    createTestGitRepo(projectDir, { 'a.txt': FIVE, 'keep.txt': 'keep\n' });
-    const base = await createSnapshot({
-      projectDir,
-      sessionId: SESSION_ID,
-      phase: 'manual',
-      name: 'run-baseline',
-    });
-    writeFileSync(join(projectDir, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
-    writeFileSync(join(projectDir, 'b.txt'), 'created by the run\n');
+  function openCheckoutAtRest(state: Partial<WorkflowState>): void {
     openAtRest(
       projectDir,
       makeWorkflowState({
@@ -546,15 +537,45 @@ describe('/run on a checkout run', () => {
         workspace: {
           kind: 'checkout',
           path: projectDir,
-          base: { snapshotId: base.manifest.id, head: null },
+          base: { snapshotId: SNAPSHOT_BASELINE_ID, head: null },
         },
       }),
+      makeConfig({ workflow: { isolation: 'none' } }),
     );
-    await recordRunSnapshotForRun({
+  }
+
+  async function startCheckoutRun(state: Partial<WorkflowState>): Promise<void> {
+    await ensureRunBaselineSnapshot({
       projectDir,
       sessionId: SESSION_ID,
-      bus: createEventBus(),
       phase: 'implementing',
+      bus: createEventBus(),
+    });
+    openCheckoutAtRest(state);
+  }
+
+  async function writeCheckoutAttempt(write: () => void): Promise<void> {
+    const ref = { projectDir, sessionId: SESSION_ID };
+    await withAttemptRestoreScope({
+      ref,
+      dir: projectDir,
+      taskStartSnapshot: null,
+      run: async () => write(),
+    });
+    await recordCheckoutRunSnapshot({
+      ...ref,
+      bus: createEventBus(),
+      state: savedState(projectDir),
+    });
+  }
+
+  async function checkoutRun(state: Partial<WorkflowState>): Promise<void> {
+    projectDir = createTempDir('run-command-checkout');
+    createTestGitRepo(projectDir, { 'a.txt': FIVE, 'keep.txt': 'keep\n' });
+    await startCheckoutRun(state);
+    await writeCheckoutAttempt(() => {
+      writeFileSync(join(projectDir, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      writeFileSync(join(projectDir, 'b.txt'), 'created by the run\n');
     });
   }
 
@@ -562,36 +583,20 @@ describe('/run on a checkout run', () => {
     projectDir = createTempDir('run-command-checkout-link');
     createTestGitRepo(projectDir, { 'a.txt': FIVE });
     symlinkSync('a.txt', join(projectDir, 'link-before'));
-    const base = await createSnapshot({
-      projectDir,
-      sessionId: SESSION_ID,
-      phase: 'manual',
-      name: 'run-baseline',
-    });
-    writeFileSync(join(projectDir, 'b.txt'), 'created by the run\n');
-    openAtRest(
-      projectDir,
-      makeWorkflowState({
-        ...RUN_CREW,
-        phase: 'implementing',
-        workspace: {
-          kind: 'checkout',
-          path: projectDir,
-          base: { snapshotId: base.manifest.id, head: null },
-        },
-      }),
-    );
-    await recordRunSnapshotForRun({
-      projectDir,
-      sessionId: SESSION_ID,
-      bus: createEventBus(),
-      phase: 'implementing',
+    await startCheckoutRun({ phase: 'implementing' });
+    await writeCheckoutAttempt(() => {
+      writeFileSync(join(projectDir, 'b.txt'), 'created by the run\n');
     });
 
-    await build().rejectRun();
+    expect(await build().rejectRun()).toMatchObject({
+      status: 'rejected',
+      deletedPaths: ['b.txt'],
+      conflictedPaths: [],
+    });
 
     expect(existsSync(join(projectDir, 'b.txt'))).toBe(false);
     expect(lstatSync(join(projectDir, 'link-before')).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(join(projectDir, 'link-before'))).toBe('a.txt');
   });
 
   function savedRevert(file: string): string | undefined {
@@ -663,20 +668,34 @@ describe('/run on a checkout run', () => {
   async function checkoutRunWithoutWrites(): Promise<void> {
     projectDir = createTempDir('run-command-checkout-no-writes');
     writeFileSync(join(projectDir, 'a.txt'), FIVE);
-    const baseline = await createSnapshot({ projectDir, sessionId: SESSION_ID, phase: 'manual' });
-    openAtRest(
-      projectDir,
-      makeWorkflowState({
-        ...RUN_CREW,
-        phase: 'implementing',
-        workspace: {
-          kind: 'checkout',
-          path: projectDir,
-          base: { snapshotId: baseline.manifest.id, head: null },
-        },
-      }),
-    );
+    await startCheckoutRun({ phase: 'implementing' });
   }
+
+  it('/run reject confirm keeps checkout edits when the saved baseline predates write receipts', async () => {
+    projectDir = createTempDir('run-command-legacy-checkout');
+    createTestGitRepo(projectDir, { 'a.txt': FIVE });
+    await createSnapshot({
+      projectDir,
+      sessionId: SESSION_ID,
+      phase: 'manual',
+      name: 'run-baseline',
+    });
+    openCheckoutAtRest({ phase: 'implementing' });
+    await writeCheckoutAttempt(() => {
+      writeFileSync(join(projectDir, 'a.txt'), 'older run edit\n');
+    });
+
+    expect(await build().rejectRun()).toMatchObject({
+      status: 'rejected',
+      restoredPaths: [],
+      deletedPaths: [],
+      conflictedPaths: ['a.txt'],
+    });
+
+    expect(read(projectDir, 'a.txt')).toBe('older run edit\n');
+    expect(savedRevert('a.txt')).toBeUndefined();
+    expect(savedState(projectDir).closed).toBeUndefined();
+  });
 
   it('/run reject confirm on a checkout run that wrote nothing keeps every file and closes the run', async () => {
     await checkoutRunWithoutWrites();
@@ -737,26 +756,25 @@ describe('/run on a checkout run', () => {
     expect(savedState(projectDir).closed?.as).toBe('discarded');
   });
 
-  it('saves created binary files, restores deletions and leaves a link the baseline cannot place', async () => {
+  it('saves run-created binary files and links, restores deletions and keeps a later link', async () => {
     await checkoutRun({ phase: 'implementing' });
     const binary = Buffer.from([0, 255, 1, 2]);
-    writeFileSync(join(projectDir, 'created.bin'), binary);
-    symlinkSync('a.txt', join(projectDir, 'created-link'));
-    rmSync(join(projectDir, 'keep.txt'));
-    await recordRunSnapshotForRun({
-      projectDir,
-      sessionId: SESSION_ID,
-      bus: createEventBus(),
-      phase: 'implementing',
+    await writeCheckoutAttempt(() => {
+      writeFileSync(join(projectDir, 'created.bin'), binary);
+      symlinkSync('a.txt', join(projectDir, 'created-link'));
+      rmSync(join(projectDir, 'keep.txt'));
     });
+    symlinkSync('a.txt', join(projectDir, 'later-user-link'));
 
     const result = await build().rejectRun();
 
     if (result.status !== 'rejected' || result.savedTo === undefined)
       throw new Error('missing revert backup');
     expect(readFileSync(join(projectDir, result.savedTo, 'created.bin'))).toEqual(binary);
+    expect(readlinkSync(join(projectDir, result.savedTo, 'created-link'))).toBe('a.txt');
     expect(existsSync(join(projectDir, 'created.bin'))).toBe(false);
-    expect(readlinkSync(join(projectDir, 'created-link'))).toBe('a.txt');
+    expect(existsSync(join(projectDir, 'created-link'))).toBe(false);
+    expect(readlinkSync(join(projectDir, 'later-user-link'))).toBe('a.txt');
     expect(result.conflictedPaths).toEqual([]);
     expect(read(projectDir, 'keep.txt')).toBe('keep\n');
     expect(savedState(projectDir).closed?.as).toBe('discarded');

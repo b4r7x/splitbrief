@@ -411,25 +411,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     // The panel appears only when preparation needs an answer.
     defineScenario({
       id: 'home-preparation-failed',
-      title: 'Home · preparation failed with no blocker',
+      title: 'Home · session folder permission denied',
       surface: screenSurface('home'),
       checkpoint: {
         id: 'failure',
-        title: 'Failed with warnings only',
+        title: 'Session folder failure with retry and back',
         kind: 'failure',
-        marker: 'Session ownership could not be taken over',
+        marker: 'Could not create the session folder',
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
     defineScenario({
-      id: 'home-preparation-checkout-warning',
-      title: 'Home · uncommitted checkout changes',
+      id: 'home-preparation-failed-details',
+      title: 'Home · session folder error details',
       surface: screenSurface('home'),
       checkpoint: {
         id: 'failure',
-        title: 'Checkout warning names the backup folder',
+        title: 'The expanded failure shows the filesystem diagnostic',
         kind: 'failure',
-        marker: 'reverted/',
+        marker: 'EACCES',
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
@@ -485,18 +485,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'The fix asks for a first commit',
         kind: 'failure',
         marker: 'Make a first commit of your files',
-      },
-      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
-    }),
-    defineScenario({
-      id: 'home-preparation-run-still-running',
-      title: 'Home · preparation blocked by a run still running',
-      surface: screenSurface('home'),
-      checkpoint: {
-        id: 'failure',
-        title: 'The fix asks to stop the running session',
-        kind: 'failure',
-        marker: 'is still running',
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
@@ -829,6 +817,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'start-readiness-warning',
         title: 'Checkout-mode warning under the request',
+        kind: 'planning',
+        marker: 'This run edits your checkout',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Request and its readiness warning' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-start-readiness-details',
+      title: 'Workflow · checkout warning details',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'start-readiness-details',
+        title: 'Expanded warning with paths and backup folder',
         kind: 'planning',
         marker: 'reverted/',
       },
@@ -3494,6 +3498,33 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    ...(
+      [
+        ['at-rest-follower', 'Watching a live run', 'Viewing live'],
+        [
+          'at-rest-follower-waiting',
+          'Waiting for an answer in the owning terminal',
+          'Waiting for an answer in another terminal',
+        ],
+        [
+          'at-rest-follower-stale',
+          'Watching the last saved activity',
+          'Viewing last saved activity',
+        ],
+      ] as const
+    ).map(([id, title, marker]) =>
+      defineScenario({
+        id: `workflow-${id}`,
+        title: `Workflow · ${title}`,
+        surface: screenSurface('workflow'),
+        checkpoint: { id, title, kind: 'ready', marker },
+        elements: [
+          { id: 'header', title: 'Workflow header' },
+          { id: 'transcript', title: 'Saved activity' },
+          { id: 'composer', title: 'Workflow composer' },
+        ],
+      }),
+    ),
     defineScenario({
       id: 'workflow-at-rest-closed-elsewhere',
       title: 'Workflow · a paused run that another process ended',

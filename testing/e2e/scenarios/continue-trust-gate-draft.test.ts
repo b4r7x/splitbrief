@@ -19,6 +19,7 @@ import {
   findMarker,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const VIEWPORT = { cols: 160, rows: 40 };
@@ -159,8 +160,10 @@ async function withTrustGateOverWords(
               .getLine(terminal.buffer.active.viewportY + row)
               ?.translateToString(true) ?? '',
         ).join('\n');
-      const dataListener = child.onData((data) => terminal.write(data));
+      const frames = wholeFrames((data) => terminal.write(data));
+      const dataListener = child.onData(frames.feed);
       const exitListener = child.onExit((event) => {
+        frames.flush();
         didExit = true;
         exited.resolve(event);
       });
@@ -184,9 +187,12 @@ async function withTrustGateOverWords(
         writeFileSync(authHoldPath, '');
 
         child.write('\t');
-        await vi.waitFor(() => expect(screen()).not.toContain('Back to sessions'), {
-          timeout: 10_000,
-        });
+        await vi.waitFor(
+          () => expect(composerText(screen())).toMatch(/^›\s+Type a correction…$/u),
+          {
+            timeout: 10_000,
+          },
+        );
         child.write('\r');
         await vi.waitFor(
           () => {

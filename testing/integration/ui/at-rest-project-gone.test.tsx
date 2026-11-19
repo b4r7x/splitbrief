@@ -16,6 +16,7 @@ import {
   projectGoneMessage,
 } from '../../../src/core/state/resume-hydration.js';
 import { hydrateRun, readRunHistory } from '../../../src/features/workflow/run-history.js';
+import { rereadRunAtRest } from '../../../src/features/workflow/run-requests/end-run.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
@@ -29,6 +30,7 @@ import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { listRowLead } from '../../../src/components/list-row/lead.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { runViewStore } from '../../../src/stores/workflow/run-view.js';
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { useRuntimeCommands } from '../../../src/app/command-context.js';
 import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 
@@ -185,6 +187,23 @@ describe('a run at rest whose project folder moves away', () => {
     });
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.run.hydration.kind).toBe('loaded');
+  });
+
+  it('keeps the loaded transcript when the folder moves between reading state and reading history', async () => {
+    await openRunAtRest();
+    ui?.unmount();
+    ui = undefined;
+    const route = routerStore.get();
+    if (route.screen !== 'workflow') throw new Error('Expected the workflow screen.');
+    const events = eventsStore.get().events;
+
+    const refresh = rereadRunAtRest(route.run.ref);
+    renameSync(projectDir, join(root, 'moved'));
+    await refresh;
+
+    expect(eventsStore.get().events).toBe(events);
+    expect(routerStore.get()).toBe(route);
+    expect(feedbackStore.get()).toEqual({ message: projectGoneMessage(projectDir), isError: true });
   });
 
   it('answers Enter with the same sentence and stays on the run screen', async () => {

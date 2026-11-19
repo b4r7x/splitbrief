@@ -9,7 +9,7 @@ import { assertNever } from '../../../../utils/type-guards.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { runnerActivityBatchRowBlock } from '../activity/rows.js';
 import { borderedCardRowsBlock } from '../blocks/bordered-card.js';
-import { calloutRowsBlock } from '../blocks/callout.js';
+import { calloutRowsBlock, checkoutWarningBlock } from '../blocks/callout.js';
 import { segmentedRow } from '../row-format/rows.js';
 import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } from '../types.js';
 import {
@@ -341,6 +341,8 @@ export function eventRowBlock(options: {
           valueTone: 'textDim',
         });
       }
+      if (event.checkout !== undefined)
+        return checkoutWarningBlock(event.checkout, globalIndex, ctx.width, expanded);
       return calloutRowsBlock({
         keyPrefix,
         label: 'Warning',

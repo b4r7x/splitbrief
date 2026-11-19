@@ -12,6 +12,7 @@ import { runInProcessScope, type ProcessScope } from '../../../lib/process/regis
 export type InstallQueueHandlerOpts = Pick<WorkflowContext, 'modelCache'> & {
   processScope: ProcessScope;
   projectDir: string;
+  workspaceDir?: string | undefined;
   sessionId: string;
   sinks: WorkflowSinks;
   getTrackedState: () => WorkflowState | undefined;
@@ -27,6 +28,7 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
   const serialize = createWriteSequencer();
   const submit = createQueueHandler({
     projectDir: opts.projectDir,
+    workspaceDir: opts.workspaceDir,
     sessionId: opts.sessionId,
     getState: opts.getTrackedState,
     setState: opts.setTrackedState,

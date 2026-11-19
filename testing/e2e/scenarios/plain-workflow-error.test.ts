@@ -1,6 +1,8 @@
+import { realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { sessionsRoot } from '../../../src/core/paths.js';
+import { pathToFileURL } from 'node:url';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { sessionsRoot, SNAPSHOTS_DIR } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -19,27 +21,50 @@ let fixture: StopContinueFixture | undefined;
 afterEach(() => {
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
   fixture = undefined;
+  vi.unstubAllEnvs();
 });
 
-/**
- * The planner's first call puts a file where the session's snapshot folder belongs, so the
- * run baseline cannot be written and the workflow throws once planning is done.
- */
-function blockSnapshotsConsult(tmpDir: string): string {
-  const root = sessionsRoot(join(tmpDir, 'project'));
-  return `() => {
-  const { existsSync, readdirSync, writeFileSync } = process.getBuiltinModule('node:fs');
-  for (const id of readdirSync(${JSON.stringify(root)})) {
-    const path = ${JSON.stringify(root)} + '/' + id + '/snapshots';
-    if (!existsSync(path)) writeFileSync(path, 'not a folder\\n');
+// Put a regular file in the snapshots folder's place when the CLI creates this fixture's session.
+// The same file blocks the baseline on start and on continue, independent of when planning runs.
+function withBlockedSnapshots(): StopContinueFixture {
+  const target = createStopContinueFixture();
+  const sessions = sessionsRoot(realpathSync(target.projectDir));
+  const preload = join(target.tmpDir, 'block-snapshot-folder.mjs');
+  writeFileSync(
+    preload,
+    `import fs from 'node:fs';
+import { dirname, join } from 'node:path';
+import { syncBuiltinESMExports } from 'node:module';
+const mkdirSync = fs.mkdirSync;
+fs.mkdirSync = (path, options) => {
+  const result = mkdirSync(path, options);
+  if (typeof path === 'string' && dirname(path) === ${JSON.stringify(sessions)} && !options?.recursive) {
+    fs.writeFileSync(join(path, ${JSON.stringify(SNAPSHOTS_DIR)}), 'not a folder', { flag: 'wx' });
   }
-  return undefined;
-}`;
+  return result;
+};
+syncBuiltinESMExports();
+`,
+  );
+  vi.stubEnv(
+    'NODE_OPTIONS',
+    `${process.env.NODE_OPTIONS ?? ''} --import=${pathToFileURL(preload).href}`,
+  );
+  return target;
 }
 
 describe('e2e: a headless run whose workflow fails', () => {
+  it('names the session folder and the filesystem reason when start cannot allocate it', async () => {
+    fixture = createStopContinueFixture();
+    writeFileSync(sessionsRoot(fixture.projectDir), 'occupied');
+    const run = await cli(fixture, ['start', 'smoke']);
+    expect(run.exitCode, run.stderr).toBe(1);
+    expect(run.stderr).toContain('Could not create the session folder');
+    expect(run.stderr).toMatch(/file already exists|not a directory/i);
+  });
+
   it('prints the cause on stderr before the pointer to it under start and continue --plain', async () => {
-    fixture = createStopContinueFixture(undefined, { consult: blockSnapshotsConsult });
+    fixture = withBlockedSnapshots();
 
     const run = await cli(fixture, ['start', 'smoke']);
 
@@ -72,22 +97,28 @@ describe('e2e: a headless run whose workflow fails', () => {
     expect(run.stderr).not.toContain(POINTER);
   });
 
-  it('keeps stdout pure NDJSON and carries the cause in an error record under --json', async () => {
-    fixture = createStopContinueFixture(undefined, { consult: blockSnapshotsConsult });
+  it('keeps stdout pure NDJSON and carries the cause in an error record under start and continue --json', async () => {
+    fixture = withBlockedSnapshots();
+    const json = { json: true, timeoutMs: 60_000 };
 
-    const run = await cli(fixture, ['start', 'smoke'], { json: true, timeoutMs: 60_000 });
+    const started = await cli(fixture, ['start', 'smoke'], json);
+    const sessionId = readActive(fixture.projectDir);
+    if (sessionId === null) throw new Error(`the failed run left no session: ${started.stderr}`);
+    const continued = await cli(fixture, ['continue', sessionId], json);
 
-    expect(run.exitCode, run.stderr).toBe(1);
-    const records = run.stdout
-      .split('\n')
-      .filter((line) => line.trim() !== '')
-      .map((line): unknown => JSON.parse(line));
-    expect(records).toContainEqual(
-      expect.objectContaining({
-        type: 'event',
-        data: expect.objectContaining({ type: 'error', message: CAUSE }),
-      }),
-    );
-    expect(run.stderr).not.toContain(CAUSE);
+    for (const run of [started, continued]) {
+      expect(run.exitCode, run.stderr).toBe(1);
+      const records = run.stdout
+        .split('\n')
+        .filter((line) => line.trim() !== '')
+        .map((line): unknown => JSON.parse(line));
+      expect(records).toContainEqual(
+        expect.objectContaining({
+          type: 'event',
+          data: expect.objectContaining({ type: 'error', message: CAUSE }),
+        }),
+      );
+      expect(run.stderr).not.toContain(CAUSE);
+    }
   });
 });

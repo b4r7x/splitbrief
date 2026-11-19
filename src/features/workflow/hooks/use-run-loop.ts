@@ -3,7 +3,7 @@ import type { SkillMeta } from '../../../core/skills/types.js';
 import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { readRunRecord } from '../../../core/sessions/run/record-io.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
-import { routerStore } from '../../../stores/navigation/router.js';
+import { atRestExecution, routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
@@ -147,7 +147,14 @@ export function useRunLoop({
     handoff: boolean,
   ): Promise<RunRecord> => {
     const record = readRunRecord(ref, configStore.reviewNone());
-    if (handoff && !retentionNoticeHandled.current && record.hydration.kind === 'loaded') {
+    const route = routerStore.get();
+    const observing = route.screen === 'workflow' ? route.execution.observing : undefined;
+    if (
+      handoff &&
+      observing !== true &&
+      !retentionNoticeHandled.current &&
+      record.hydration.kind === 'loaded'
+    ) {
       await publishRetainedWorkspaceNotice({
         ...ref,
         state: record.hydration.state,
@@ -162,7 +169,7 @@ export function useRunLoop({
     // not on the execution that just returned.
     setResumeHandler((steer) => continueAtRest?.(record, steer));
     inputMode.resetMode();
-    routerStore.updateRun({ run: record, execution: { kind: 'at-rest' } });
+    routerStore.updateRun({ run: record, execution: atRestExecution(record, observing) });
     sessionsStore.refresh();
     if (wasStopping) {
       if (record.status.kind === 'closed' || record.status.kind === 'ready-to-apply') {

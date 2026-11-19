@@ -39,10 +39,14 @@ export function runResumePolicy(
 
 /** Keeps the terms of a run this process drives, so continuing it after a stop keeps them. */
 export function recordRunTerms(prepared: PreparedExecution): void {
-  admittedRuns.set(runKey(prepared.session.ref), {
+  keepRunTerms(prepared.session.ref, {
     allowHooks: prepared.runtime.allowHooks,
     allowRepoRunners: prepared.runtime.allowRepoRunners,
   });
+}
+
+export function keepRunTerms(ref: SessionRef, terms: RunTerms): void {
+  admittedRuns.set(runKey(ref), terms);
 }
 
 /**

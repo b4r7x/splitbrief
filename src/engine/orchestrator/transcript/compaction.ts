@@ -91,6 +91,7 @@ export type ResumeCompactionResult = TranscriptCompactionResult & {
 
 export async function compactResumeTranscript(opts: {
   projectDir: string;
+  workspaceDir?: string | undefined;
   sessionId: string;
   planner: Pick<Planner, 'summarize' | 'summarizeStructured'>;
   keepRecentCount: number;
@@ -129,7 +130,7 @@ export async function compactResumeTranscript(opts: {
   };
   let usage: TokenDelta | null = null;
   const adapter = bindPlannerToProjectDir(planner, {
-    projectDir,
+    projectDir: opts.workspaceDir ?? projectDir,
     ...(opts.signal !== undefined && { signal: opts.signal }),
     ...(opts.onCallEvent !== undefined && { onCallEvent: opts.onCallEvent }),
     onUsage: (delta) => {

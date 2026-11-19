@@ -23,6 +23,7 @@ import { createChangeDetector } from '../../change-detection.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createRunIsolation } from '../isolation/create.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { runImplementation } from '../task/run-implementation.js';
 import { createValidator } from '../validation/run.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
@@ -1173,7 +1174,15 @@ describe('runRetryStep — gate denial', () => {
         .mockResolvedValue({ decision: 'deny', reason: 'package change denied' }),
     });
     const { bus, events } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const config = makeNoValidationConfig({
+      approval: { feedRejectionsToPlanner: false },
+      workflow: {},
+    });
+    const ref = { projectDir, sessionId };
+    const isolation = makeCopyingIsolation(ref);
+    const workspace = await isolation.open({ config });
+    const workspaceDir = workspace.projectDir;
+    const taskStartSnapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
     const retryWorkspaceDirs: string[] = [];
     // The brief gate formats the changed files first: an attempt that never reaches the gate formats nothing.
     const formatChangedFiles = vi.fn().mockResolvedValue(undefined);
@@ -1181,12 +1190,9 @@ describe('runRetryStep — gate denial', () => {
     const outcome = await runRetryStep({
       ctx: {
         projectDir,
-        workspaceDir: projectDir,
+        workspaceDir,
         sessionId,
-        config: makeNoValidationConfig({
-          approval: { feedRejectionsToPlanner: false },
-          workflow: {},
-        }),
+        config,
         callbacks,
         bus,
         planner: makePlanner(),
@@ -1196,7 +1202,7 @@ describe('runRetryStep — gate denial', () => {
         metadata: TEST_METADATA,
         sinks: TEST_SINKS,
         validator: { formatChangedFiles },
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        isolation,
         taskStartSnapshot,
         dependsOnFiles: [],
       },

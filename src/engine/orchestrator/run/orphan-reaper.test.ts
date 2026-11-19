@@ -11,6 +11,7 @@ import {
 } from '../../../lib/process/start-time.js';
 import { recordRunnerPid, readRunnerPids } from '../../../core/sessions/runner-pids.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
+import { acquireLiveness } from './liveness.js';
 
 const mockedStartTimes = new Map<number, number | null>();
 
@@ -89,6 +90,34 @@ describe('reapOrphanRunners', () => {
     expect(calls).toContainEqual({ pid: -50001, signal: 'SIGTERM' });
     expect(calls).toContainEqual({ pid: -50001, signal: 'SIGKILL' });
     expect(readRunnerPids({ projectDir: tmp, sessionId: 'dead-session' })).toEqual([]);
+  });
+
+  it('keeps another reaper and a new driver out of a session while reaping its children', async () => {
+    vi.useFakeTimers();
+    tmp = createTempDir('orphan-reaper-test');
+    const calls = installKillSpy(new Set([50080]));
+    const ref = { projectDir: tmp, sessionId: 'being-reaped' };
+    writeLockfile(tmp, ref.sessionId, { pid: 40080 });
+    recordRunnerPid(ref, 50080, 111_000);
+    mockedStartTimes.set(50080, 111_000);
+
+    const first = reapOrphanRunners(tmp, reaperDeps());
+    const second = reapOrphanRunners(tmp, reaperDeps());
+    const drive = acquireLiveness({ ...ref, feature: 'resume while reaping' }).then(
+      async (release) => {
+        await release();
+        return 'claimed';
+      },
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    await Promise.all([first, second]);
+
+    expect(await drive).toMatchObject({ kind: 'workflow-session-already-live' });
+    expect(calls.filter(({ signal }) => signal === 'SIGTERM')).toEqual([
+      { pid: -50080, signal: 'SIGTERM' },
+    ]);
+    expect(readRunnerPids(ref)).toEqual([]);
   });
 
   it('a pid recorded by a concurrently resumed session during the SIGKILL grace survives the release', async () => {

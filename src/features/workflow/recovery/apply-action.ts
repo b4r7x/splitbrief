@@ -3,6 +3,8 @@ import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions/apply.js';
+import { withAtRestSession } from '../../../engine/orchestrator/run/liveness.js';
+import { readRecoveryActionState } from '../../../engine/orchestrator/recovery/actions/shared.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { runResumePolicy } from '../resume/policy.js';
@@ -57,17 +59,19 @@ export async function applyAction(
     };
   }
 
-  const { projectDir, sessionId } = prepared.session.ref;
-  const result = await applyRecoveryAction({
-    projectDir,
-    sessionId,
-    state,
-    action,
-    bus: driver.bus,
-    config: prepared.config,
-    // End run reads no config, so a file that does not load cannot keep the run open.
-    ...(action === 'end-run' ? {} : { entryConfig: nextEntryConfig(driver.entry).config }),
-    ...(comment === undefined || comment.text.trim() === '' ? {} : { comment }),
+  const { ref } = prepared.session;
+  return withAtRestSession(ref, async () => {
+    const current = readRecoveryActionState(ref, state);
+    const result = await applyRecoveryAction({
+      ...ref,
+      state: current,
+      action,
+      bus: driver.bus,
+      config: prepared.config,
+      // End run reads no config, so a file that does not load cannot keep the run open.
+      ...(action === 'end-run' ? {} : { entryConfig: nextEntryConfig(driver.entry).config }),
+      ...(comment === undefined || comment.text.trim() === '' ? {} : { comment }),
+    });
+    return settle(driver, result, comment, steer);
   });
-  return settle(driver, result, comment, steer);
 }

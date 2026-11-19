@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { realpathSync } from 'node:fs';
+import { writeLiveSession, writeSessionLockfile } from '#testing/helpers/start-command.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
@@ -26,7 +27,6 @@ import type {
 } from '../../../core/approval/types.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { runInteractiveStart } from './interactive.js';
-import * as readinessModule from '../../sessions/resolve.js';
 import type { InteractiveDispatchArgs, StartDeps } from './types.js';
 
 setupFetchMock();
@@ -75,6 +75,22 @@ function makeDispatch(overrides: Partial<InteractiveDispatchArgs> = {}): Interac
 }
 
 describe('runInteractiveStart', () => {
+  it('opens home while another run is live and preserves its default selection', async () => {
+    const live = 'existing-live-run';
+    writeLiveSession(tmp, live);
+    writeSessionLockfile(tmp, live);
+    vi.spyOn(setupModule, 'setupWorkflow').mockResolvedValue({
+      projectDir: tmp,
+      useFullscreen: false,
+      useMouse: false,
+      useHover: false,
+    });
+
+    await expect(runInteractiveStart(makeDispatch())).resolves.toBeUndefined();
+    expect(routerStore.get().screen).toBe('home');
+    expect(readActive(tmp)).toBe(live);
+  });
+
   it('keeps cold-start progress in the TUI', async () => {
     const setupGate =
       Promise.withResolvers<Awaited<ReturnType<typeof setupModule.setupWorkflow>>>();
@@ -82,7 +98,6 @@ describe('runInteractiveStart', () => {
       .spyOn(setupModule, 'setupWorkflow')
       .mockImplementation(() => setupGate.promise);
     const initSpy = vi.mocked(initStoresModule.initStoresForTuiMount);
-    vi.spyOn(readinessModule, 'assertNoLiveSessionForCli').mockImplementation(() => {});
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     const run = runInteractiveStart(makeDispatch());
@@ -121,7 +136,6 @@ describe('runInteractiveStart', () => {
       useMouse: false,
       useHover: false,
     });
-    vi.spyOn(readinessModule, 'assertNoLiveSessionForCli').mockImplementation(() => {});
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     await runInteractiveStart(makeDispatch());
@@ -140,7 +154,6 @@ describe('runInteractiveStart', () => {
       useMouse: false,
       useHover: false,
     });
-    vi.spyOn(readinessModule, 'assertNoLiveSessionForCli').mockImplementation(() => {});
 
     let renderStarted = false;
     const renderApp: StartDeps['renderApp'] = async () => {

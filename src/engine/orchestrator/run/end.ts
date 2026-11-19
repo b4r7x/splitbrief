@@ -8,6 +8,7 @@ import { publishRecoveryActionSelected, publishRecoveryResolved } from '../publi
 import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { closeRunIfOpen } from './close.js';
+import { withAtRestSession } from './liveness.js';
 
 /**
  * A user stop stopped work only when it left the run open or closed it as ended. End run on a
@@ -60,8 +61,11 @@ export async function endRunAtRest(
   state: WorkflowState,
 ): Promise<{ state: WorkflowState; closedNow: boolean }> {
   const atRestFrom = Date.now();
-  await recordInterruptedCalls(scope, rebaseOnPersistedWorkflowState(scope, state));
-  const closure = await endRun(scope, state, atRestFrom);
-  finalizeRunAtRest({ ref: scope, state: closure.state });
-  return closure;
+  return withAtRestSession(scope, async () => {
+    const current = rebaseOnPersistedWorkflowState(scope, state);
+    await recordInterruptedCalls(scope, current);
+    const closure = await endRun(scope, current, atRestFrom);
+    if (closure.closedNow) finalizeRunAtRest({ ref: scope, state: closure.state });
+    return closure;
+  });
 }

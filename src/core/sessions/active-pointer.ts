@@ -24,15 +24,13 @@ import {
   nameWriteTarget,
   rejectSymlinkTarget,
 } from '../../lib/fs/secure.js';
-import { withFileLock } from '../../lib/fs/lock.js';
+import { tryClaimDatabaseLock } from '../../lib/fs/ownership-lock.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,
 } from '../../lib/fs/confinement.js';
 import { isENOENT } from '../../utils/errno.js';
 import type { SessionRef } from '../types/session-ref.js';
-import { sessionError } from './errors.js';
-import type { SessionLivenessResult } from './liveness.js';
 
 const MAX_ACTIVE_BYTES = 512n;
 
@@ -73,10 +71,6 @@ export type PreparedNewSession = NewSessionOwnership &
   Readonly<{
     active: ActiveSessionReceipt;
   }>;
-
-export type ReactivateSessionOptions = Readonly<{
-  inspectOwner?: ((ref: SessionRef) => SessionLivenessResult) | undefined;
-}>;
 
 export type ActiveSessionRecord =
   | Readonly<{ kind: 'legacy'; sessionId: string }>
@@ -180,12 +174,16 @@ function removeFileBestEffort(filePath: string): void {
   }
 }
 
+export const ACTIVE_MUTATION_LOCK = join(SPLITBRIEF_DIR, 'active-mutation.sqlite');
+
 export function withSessionMutationLock<T>(projectDir: string, mutate: () => T): T {
-  return withFileLock(
-    activeFile(projectDir),
-    () => activeMutationError.timeout(projectDir),
-    mutate,
-  );
+  const release = tryClaimDatabaseLock(projectDir, ACTIVE_MUTATION_LOCK, 500);
+  if (release === null) throw activeMutationError.timeout(projectDir);
+  try {
+    return mutate();
+  } finally {
+    release();
+  }
 }
 
 export function readActiveRecord(projectDir: string): ActiveSessionRecord | null {
@@ -328,7 +326,6 @@ export function writeActiveReceiptLocked(
   if (current?.kind === 'v1' && sameReceipt(current.receipt, receipt)) {
     return;
   }
-  if (current !== null) throw activeMutationError.conflict(ref.projectDir);
   writeActiveBytesLocked(ref.projectDir, snapshot, `${JSON.stringify(receipt)}\n`, options);
 }
 
@@ -357,53 +354,17 @@ export function clearActiveReceipt(
   );
 }
 
-function assertOwnerReplaceable(
-  projectDir: string,
-  owner: string,
-  snapshot: ActiveFileSnapshot,
-  inspectOwner: ReactivateSessionOptions['inspectOwner'],
-): void {
-  if (inspectOwner === undefined) throw activeMutationError.conflict(projectDir);
-  if (!inspectOwner({ projectDir, sessionId: owner }).takeoverMayBeAttempted) {
-    throw sessionError.stillActive(owner);
-  }
-  const reread = activeSnapshot(activeFile(projectDir));
-  if (
-    reread === null ||
-    reread.dev !== snapshot.dev ||
-    reread.ino !== snapshot.ino ||
-    reread.bytes !== snapshot.bytes
-  ) {
-    throw activeMutationError.conflict(projectDir);
-  }
+export function createActiveSessionReceipt(ref: SessionRef): ActiveSessionReceipt {
+  validateSessionId(ref.sessionId);
+  return { version: 1, sessionId: ref.sessionId, generation: randomUUID() };
 }
 
-/**
- * Only an explicit resume passes `inspectOwner`: it may then replace another
- * run's pointer, and only when that run's owner is proven gone.
- */
 export function reactivateExistingSession(
   ref: SessionRef,
-  options: ReactivateSessionOptions = {},
+  receipt: ActiveSessionReceipt = createActiveSessionReceipt(ref),
 ): ActiveSessionReceipt {
-  validateSessionId(ref.sessionId);
-  return withSessionMutationLock(ref.projectDir, () => {
-    const target = activeFile(ref.projectDir);
-    const snapshot = activeSnapshot(target);
-    const current = snapshot === null ? null : parseActiveBytes(target, snapshot.bytes);
-    const currentSessionId =
-      current?.kind === 'legacy' ? current.sessionId : current?.receipt.sessionId;
-    if (snapshot !== null && currentSessionId !== undefined && currentSessionId !== ref.sessionId) {
-      assertOwnerReplaceable(ref.projectDir, currentSessionId, snapshot, options.inspectOwner);
-    }
-    const receipt: ActiveSessionReceipt = {
-      version: 1,
-      sessionId: ref.sessionId,
-      generation: randomUUID(),
-    };
-    writeActiveBytesLocked(ref.projectDir, snapshot, `${JSON.stringify(receipt)}\n`, {});
-    return receipt;
-  });
+  withSessionMutationLock(ref.projectDir, () => writeActiveReceiptLocked(ref, receipt));
+  return receipt;
 }
 
 export function clearActive(ref: SessionRef, options: ActiveMutationOptions = {}): boolean {
