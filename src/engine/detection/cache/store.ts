@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs';
-import { relative } from 'node:path';
 import { getSplitbriefPath } from '../../../core/paths.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
-import { confinedReadFileAsync, confinedUnlinkSync } from '../../../lib/fs/confined.js';
-import { writeConfinedSecureFileAsync } from '../../../lib/fs/secure.js';
+import {
+  confinedReadFileAsync,
+  confinedUnlinkSync,
+  confinedWriteFileInExistingDirAsync,
+} from '../../../lib/fs/confined.js';
 import { snapshotFromCache, buildCache } from './codec.js';
 import {
-  CACHE_FILENAME,
   type DetectionCache,
   DetectionCacheSchema,
   CACHE_RELATIVE_PATH,
@@ -16,10 +17,6 @@ import {
   DEFAULT_TTL_MS,
   type SaveDetectionCacheInput,
 } from './schema.js';
-
-function cachePath(projectDir: string): string {
-  return getSplitbriefPath(projectDir, CACHE_FILENAME);
-}
 
 function parseCache(value: unknown): DetectionCache | null {
   const result = DetectionCacheSchema.safeParse(value);
@@ -134,10 +131,9 @@ export async function saveDetectionCache(input: SaveDetectionCacheInput): Promis
   if (cache === null) return;
 
   try {
-    const path = cachePath(input.projectDir);
-    await writeConfinedSecureFileAsync(
+    await confinedWriteFileInExistingDirAsync(
       input.projectDir,
-      relative(input.projectDir, path),
+      CACHE_RELATIVE_PATH,
       JSON.stringify(cache),
     );
   } catch {

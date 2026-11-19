@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import fs, { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -19,6 +20,8 @@ import { hydrateRun, readRunHistory } from '../../../src/features/workflow/run-h
 import { rereadRunAtRest } from '../../../src/features/workflow/run-requests/end-run.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
+import { getSplitbriefPath } from '../../../src/core/paths.js';
+import { saveDetectionCache } from '../../../src/engine/detection/cache/store.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
@@ -203,6 +206,50 @@ describe('a run at rest whose project folder moves away', () => {
 
     expect(eventsStore.get().events).toBe(events);
     expect(routerStore.get()).toBe(route);
+    expect(feedbackStore.get()).toEqual({ message: projectGoneMessage(projectDir), isError: true });
+  });
+
+  it('keeps the transcript and names the moved folder when a tool-cache save races the rename', async () => {
+    await openRunAtRest();
+    ui?.unmount();
+    ui = undefined;
+    const route = routerStore.get();
+    if (route.screen !== 'workflow') throw new Error('Expected the workflow screen.');
+    const events = eventsStore.get().events;
+    const moved = join(root, 'moved');
+    const metadata = getSplitbriefPath(projectDir);
+    const pathExists = fs.existsSync;
+    const cacheCheck = vi.spyOn(fs, 'existsSync').mockImplementation((path) => {
+      const present = pathExists(path);
+      if (path === metadata && present) renameSync(projectDir, moved);
+      return present;
+    });
+    syncBuiltinESMExports();
+    try {
+      await saveDetectionCache({
+        projectDir,
+        snapshot: {
+          contextKey: 'readiness-context',
+          fetchedAt: 1_000,
+          validatedAt: 1_000,
+          generation: 1,
+          requestId: 1,
+          providers: [],
+          cliTools: [],
+        },
+      });
+    } finally {
+      cacheCheck.mockRestore();
+      syncBuiltinESMExports();
+    }
+    expect(existsSync(moved)).toBe(true);
+
+    await rereadRunAtRest(route.run.ref);
+
+    expect.soft(existsSync(projectDir)).toBe(false);
+    expect.soft(routerStore.get() === route).toBe(true);
+    expect.soft(eventsStore.get().events.some((event) => event.type === 'planner_text')).toBe(true);
+    expect.soft(eventsStore.get().events === events).toBe(true);
     expect(feedbackStore.get()).toEqual({ message: projectGoneMessage(projectDir), isError: true });
   });
 

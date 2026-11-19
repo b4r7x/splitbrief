@@ -16,6 +16,7 @@ import {
   pathConfinementError,
 } from './confinement.js';
 import {
+  atomicSecureWriteAsync,
   writeSecureFile,
   ensureSecureDir,
   nameWriteTarget,
@@ -78,6 +79,15 @@ export function confinedWriteFile(projectDir: string, relativePath: string, cont
   ensureSecureDir(dirname(filePath));
   assertWritablePathConfined(relativePath, projectDir);
   writeSecureFile(filePath, content);
+}
+
+export async function confinedWriteFileInExistingDirAsync(
+  projectDir: string,
+  relativePath: string,
+  content: string,
+): Promise<void> {
+  assertWritablePathConfined(relativePath, projectDir);
+  await atomicSecureWriteAsync(resolve(projectDir, relativePath), content);
 }
 
 export function confinedAppendFileSync(

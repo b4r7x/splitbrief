@@ -72,7 +72,7 @@ export function writeSecureFile(filePath: string, content: string): void {
   }
 }
 
-async function atomicSecureWriteAsync(filePath: string, content: string): Promise<void> {
+export async function atomicSecureWriteAsync(filePath: string, content: string): Promise<void> {
   await rejectSymlinkTargetAsync(filePath);
 
   const dir = dirname(filePath);

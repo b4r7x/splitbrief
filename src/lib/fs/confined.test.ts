@@ -17,6 +17,7 @@ import {
   confinedReadFileAsync,
   confinedReplaceFile,
   confinedWriteFile,
+  confinedWriteFileInExistingDirAsync,
 } from './confined.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -145,6 +146,32 @@ describe.each([
     write(root, join('.splitbrief', 'sessions', 'draft.json'), 'words');
 
     expect(readFileSync(join(root, '.splitbrief', 'sessions', 'draft.json'), 'utf8')).toBe('words');
+  });
+});
+
+describe('confinedWriteFileInExistingDirAsync', () => {
+  it('writes into an existing parent directory', async () => {
+    const root = createTempDir('confined-write-existing-dir');
+    tmpDirs.push(root);
+    mkdirSync(join(root, '.splitbrief'));
+    const relativePath = join('.splitbrief', 'cache.json');
+
+    await confinedWriteFileInExistingDirAsync(root, relativePath, 'cache');
+
+    expect(readFileSync(join(root, relativePath), 'utf8')).toBe('cache');
+  });
+
+  it.each(['parent', 'project root'])('creates nothing when the %s is missing', async (missing) => {
+    const tempDir = createTempDir('confined-write-missing-dir');
+    tmpDirs.push(tempDir);
+    const root = join(tempDir, 'project');
+    const parent = join(root, '.splitbrief');
+    if (missing === 'parent') mkdirSync(root);
+
+    await expect
+      .soft(confinedWriteFileInExistingDirAsync(root, join('.splitbrief', 'cache.json'), 'cache'))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+    expect(existsSync(missing === 'parent' ? parent : root)).toBe(false);
   });
 });
 
