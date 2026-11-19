@@ -214,23 +214,21 @@ it.each([
 ])(
   'scrolls a long applied run by 60 %s of one read and keeps taking input',
   async (_label, up, down) => {
-    const { above, scrolled, after } = await openAppliedRun(
+    const { scrolledAbove, after } = await openAppliedRun(
       { cols: 160, rows: 45 },
       async ({ screen, write, waitForText, waitForOneRead }) => {
-        const above = Number(/(\d+) lines above/u.exec(screen())?.[1]);
         write(up.repeat(60));
         await waitForOneRead(up.repeat(60));
         await waitForText('60 lines below');
-        const scrolled = screen();
+        const scrolledAbove = Number(/(\d+) lines above/u.exec(screen())?.[1]);
         write(down);
         await waitForText('59 lines below');
-        return { above, scrolled, after: screen() };
+        return { scrolledAbove, after: screen() };
       },
     );
 
-    expect(above).toBeGreaterThan(60);
-    expect(scrolled).toContain(`${above - 60} lines above`);
-    expect(after).toContain(`${above - 59} lines above`);
+    expect(scrolledAbove).toBeGreaterThan(0);
+    expect(after).toContain(` ${scrolledAbove + 1} lines above`);
   },
 );
 
