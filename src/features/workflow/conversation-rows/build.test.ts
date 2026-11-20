@@ -43,6 +43,8 @@ import { wrapWidthFor } from './row-format/markers.js';
 import type { ConversationRow } from './types.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
+import { buildSeatDownIssue } from '../../../engine/orchestrator/recovery/builders/seat-down.js';
+import { runnerHaltRow } from '../../../engine/orchestrator/recovery/builders/runner-defect.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 import { buildCheckoutChangedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/isolation.js';
 import { buildRunnerInputTooLargeRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/runner-defect.js';
@@ -464,7 +466,6 @@ describe('automatic recovery from the spent-balance smoke', () => {
       `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${arrowSep()}OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high · automatic fallback`,
       // No Run continued row here: the Recovery row already says the run went on.
       'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file',
-      'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
       'working on src/text.js…',
     ]);
   });
@@ -492,6 +493,26 @@ describe('automatic recovery from the spent-balance smoke', () => {
         .rows.map(rowText)
         .join('\n'),
     ).toContain(words);
+  });
+
+  it('names the replacement seat once through its first activity header', () => {
+    const activity = makeRunnerCallActivity({
+      ts: 1791727013388,
+      sequence: 421,
+      callId: 'implementer-2',
+      taskId: taskId('T001'),
+      runnerName: 'opencode',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      axes: ['high'],
+      kind: 'read',
+      label: 'reading src/text.js',
+      target: 'src/text.js',
+    });
+    const text = project([...events, ...resumedEvents, activity])
+      .rows.map(rowText)
+      .join('\n');
+    expect(text).toContain('BUILD activity');
+    expect(text.match(/via opencode-go/gu)).toHaveLength(1);
   });
 
   it('keeps tool activity and failures from another call', () => {
@@ -3211,6 +3232,30 @@ describe('one recovery reads as one block', () => {
     );
     expect(lines.join(' ').includes('automatic fallback')).toBe(auto);
     expect(lines.join(' ').match(/Balance spent on OpenCode CLI/gu)).toHaveLength(auto ? 1 : 2);
+  });
+
+  it('folds the usage-limit error into its matching recovery and keeps unrelated errors', () => {
+    const task = makeTask({ id: 'T002' });
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      task,
+      phase: 'implementing',
+      runner: makeConfig().implementer,
+      classification: { class: 'rate-limited', resetAt: new Date('2026-10-07T17:00:00Z') },
+      words: 'quota exhausted',
+      createdAt: '2026-10-07T05:54:04.413Z',
+    });
+    const message = runnerHaltRow(issue, 'Ollama', 'quota exhausted');
+    const headline = formatRecoveryHeadline(issue, at.ts);
+    const { lines } = transcript([
+      { ...halt, message: 'Could not read the package file.' },
+      { ...halt, message },
+      { ...prompted, issue, issueId: issue.id, reason: issue.reason, headline },
+    ]);
+    expect(lines).toContain('Could not read the package file.');
+    expect(lines).toContain(`Recovery  ${headline}`);
+    expect(lines).not.toContain(message);
+    expect(lines.filter((line) => line === 'Error')).toHaveLength(1);
   });
 
   it('keeps the prompted card as one quiet row when no error before it names the halt', () => {

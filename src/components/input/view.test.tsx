@@ -28,6 +28,20 @@ it('paints the placeholder with the secondary text token', async () => {
   }
 });
 
+it('shows the start of an unfocused placeholder that exceeds one row', () => {
+  const ui = renderFeature(
+    <ControlledMultilineInput
+      value=""
+      placeholder="Choose an action above, or type a command"
+      focus={false}
+      rows={1}
+      columns={16}
+    />,
+  );
+  expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toMatch(/^Choose an.*…$/u);
+  ui.unmount();
+});
+
 it('remeasures a same-length history value so the cursor row stays visible', async () => {
   const ui = renderFeature(
     <Box width={4}>

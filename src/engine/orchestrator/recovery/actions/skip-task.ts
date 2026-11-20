@@ -51,9 +51,7 @@ export async function applySkipCurrentTaskRecoveryAction(
   const cannot = recoveryFactString(issue.facts, 'cannot');
   const cannotBy = recoveryFactString(issue.facts, 'cannotBy');
   const reason =
-    cannot === undefined || cannotBy === undefined
-      ? `recovery ${issue.reason}: ${issue.message}`
-      : cannotDetail(cannotBy, cannot);
+    cannot === undefined || cannotBy === undefined ? issue.message : cannotDetail(cannotBy, cannot);
   try {
     recordRecoverySkipEvidence({
       projectDir: opts.projectDir,

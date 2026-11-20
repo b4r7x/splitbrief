@@ -228,7 +228,9 @@ describe('stopMenuRows', () => {
       },
     });
 
-    expect(rows.map((row) => row.id)).toEqual(['stop-now']);
+    expect(rows.map((row) => [row.id, row.consequence])).toEqual([
+      ['stop-now', 'park the run; keep it open'],
+    ]);
   });
 
   it('waits for the stop it carries out', () => {
@@ -711,7 +713,7 @@ describe('the stop sheet after a revert or a restore of the running brief', () =
     });
 
     expect(readStopMenuRows().map((row) => row.id)).toEqual(['stop-now', 'end-run']);
-    expect(sheet()).toEqual(NOTHING);
+    expect(sheet()).toEqual({ ...NOTHING, stopNow: 'park the run; keep it open' });
   });
 
   it('keeps nothing once a halt restored the brief to its start', () => {
@@ -735,6 +737,6 @@ describe('the stop sheet after a revert or a restore of the running brief', () =
     });
 
     expect(readStopMenuRows().map((row) => row.id)).toEqual(['stop-now', 'end-run']);
-    expect(sheet()).toEqual(NOTHING);
+    expect(sheet()).toEqual({ ...NOTHING, stopNow: 'park the run; keep it open' });
   });
 });

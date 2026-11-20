@@ -20,7 +20,7 @@ export function deriveWorkflowDisplay(input: {
   if (input.pendingRecovery) return { kind: 'waiting', animate: false, halted: 'failed' };
   if (input.pendingQuestion || input.pendingApproval) return { kind: 'waiting', animate: false };
   if (input.status === 'running' && !input.cancelled) return { kind: 'working', animate: true };
-  if (input.cancelled || input.status === 'cancelled') {
+  if (input.cancelled || input.status === 'cancelled' || input.status === 'paused') {
     return { kind: 'stopped', animate: false, halted: 'cancelled' };
   }
   return { kind: 'stopped', animate: false };

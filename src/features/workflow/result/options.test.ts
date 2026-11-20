@@ -6,7 +6,6 @@ import * as options from './options.js';
 import {
   RESULT_MENU_LEGEND,
   resultMenuHeight,
-  resultMenuNoteLines,
   resultMenuRows,
   resultMenuTitle as titleParts,
   resultRowCommand,
@@ -48,12 +47,15 @@ describe('resultMenuRows', () => {
     expect(rows.find((row) => row.id === 'discard')?.consequence).toContain('run.patch');
   });
 
-  it('promises no patch when the run changed no files', () => {
+  it('offers one way to close a run with no changed files', () => {
     const rows = resultMenuRows({ override: false, findings: [], confirming: false, files: 0 });
+    expect(rows.map((row) => row.label)).toEqual(['Close run']);
+  });
 
-    const discard = rows.find((row) => row.id === 'discard');
-    expect(discard?.consequence).toBe('close the run; it changed no files');
-    expect(discard?.consequence).not.toContain('run.patch');
+  it('separates the title of a recorded finding from its description', () => {
+    expect(
+      openLines({ findings: ['Edge case missing\nsrc/form.ts accepts empty input'] }, 3),
+    ).toEqual(['- Edge case missing — src/form.ts accepts empty input']);
   });
 
   it('closes the run without promising changes on Apply when no files changed', () => {
@@ -196,8 +198,8 @@ describe('resultMenuOpenLines', () => {
     ]);
   });
 
-  it('gives each finding one row, its line breaks read as spaces', () => {
-    expect(openLines({ findings: ['a\nb'] }, 5)).toEqual(['- a b']);
+  it('gives each finding one row with its description after the title', () => {
+    expect(openLines({ findings: ['a\nb'] }, 5)).toEqual(['- a — b']);
   });
 
   it('gives no line when there is no room', () => {
@@ -301,7 +303,7 @@ describe('resultMenuHeight', () => {
     },
   );
 
-  it('adds the row of a one-row note while it asks', () => {
+  it('reserves confirmation rows only for the findings', () => {
     const asking = {
       override: true,
       findings: ['missing null check'],
@@ -310,20 +312,10 @@ describe('resultMenuHeight', () => {
       files: 4,
     };
     expect(resultMenuHeight(asking, 120)).toBe(
-      inlineMenuLayout(resultMenuRows(asking), 120).height + 2,
+      inlineMenuLayout(resultMenuRows(asking), 120).height + 1,
     );
     const menu = { ...asking, confirming: false };
     expect(resultMenuHeight(menu, 120)).toBe(inlineMenuLayout(resultMenuRows(menu), 120).height);
-  });
-
-  it('adds every wrapped row of a long note while it asks', () => {
-    const note = Array.from({ length: 40 }, (_, index) => `word${index}`).join(' ');
-    const asking = { override: true, findings: ['one', 'two'], note, confirming: true, files: 4 };
-    const noteRows = resultMenuNoteLines(note, 80).length;
-    expect(noteRows).toBeGreaterThan(1);
-    expect(resultMenuHeight(asking, 80)).toBe(
-      inlineMenuLayout(resultMenuRows(asking), 80).height + noteRows + 2,
-    );
   });
 });
 

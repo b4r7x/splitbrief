@@ -140,6 +140,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
   const contentRows = visibleSlots.filter((slot) => slot.kind !== 'indicator').length;
   const overflows =
     width !== undefined &&
+    contentRows > 1 &&
     hasScrollbarOverflow({ lineCount: totalSlots, visibleHeight: contentRows });
   const contentWidth =
     width === undefined

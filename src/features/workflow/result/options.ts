@@ -7,7 +7,6 @@ import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { oneLineDisplayText } from '../../../utils/display-text/sanitize.js';
 import { inlineMenuLayout } from '../inline-menu/layout.js';
-import { wrappedProseSegments } from '../conversation-rows/row-format/text.js';
 
 export type ResultRowId = 'apply' | 'show-diff' | 'discard' | 'confirm-apply' | 'back';
 
@@ -25,8 +24,6 @@ export interface ResultMenuInput {
   readonly confirming: boolean;
   /** The files the run changed, or null when it recorded no changed set. */
   readonly files: number | null;
-  /** The note of the Accept as is, named by who accepted it (`acceptedNote`). */
-  readonly note?: string | undefined;
 }
 
 export const RESULT_MENU_LEGEND = formatKeyHints([
@@ -63,18 +60,23 @@ export function resultMenuRows(input: ResultMenuInput): ResultRow[] {
       { id: 'back', label: 'Back', consequence: 'return to the result menu' },
     ];
   }
+  if (input.files === 0)
+    return [
+      {
+        id: 'apply',
+        label: 'Close run',
+        consequence: input.override
+          ? `close the run with ${open.carried}; asks once`
+          : 'close the run; it changed no files',
+      },
+    ];
   return [
     {
       id: 'apply',
       label: input.override ? 'Apply as is' : 'Apply',
-      consequence:
-        input.files === 0
-          ? input.override
-            ? `close the run with ${open.carried}; asks once`
-            : 'close the run; it changed no files'
-          : input.override
-            ? `write the changes with ${open.carried}; asks once`
-            : 'write the run’s changes into your checkout; close the run',
+      consequence: input.override
+        ? `write the changes with ${open.carried}; asks once`
+        : 'write the run’s changes into your checkout; close the run',
     },
     {
       id: 'show-diff',
@@ -84,10 +86,7 @@ export function resultMenuRows(input: ResultMenuInput): ResultRow[] {
     {
       id: 'discard',
       label: 'Discard',
-      consequence:
-        input.files === 0
-          ? 'close the run; it changed no files'
-          : 'close the run; save its changes in run.patch',
+      consequence: 'close the run; save its changes in run.patch',
     },
   ];
 }
@@ -106,7 +105,10 @@ export function resultMenuOpenCount(open: OpenList): number {
 export function resultMenuOpenLines(open: OpenList, budget: number): string[] {
   if (budget <= 0) return [];
   const redChecks = (open.redChecks ?? []).map(redCheckLine);
-  const lines = [...redChecks, ...open.findings].map((line) => `- ${oneLineDisplayText(line)}`);
+  const lines = [
+    ...redChecks,
+    ...open.findings.map((finding) => finding.replace(/\r?\n/u, ' — ')),
+  ].map((line) => `- ${oneLineDisplayText(line)}`);
   if (lines.length <= budget) return lines;
   const shown = budget - 1;
   const hidden = lines.length - shown;
@@ -119,28 +121,10 @@ export function resultMenuOpenLines(open: OpenList, budget: number): string[] {
   return [...lines.slice(0, shown), `+${hidden} more ${hiddenRows}`];
 }
 
-/** The note of the Accept as is, wrapped at the words. The menu cuts a note taller than its box. */
-export function resultMenuNoteLines(note: string | undefined, cols: number): string[] {
-  if (note === undefined) return [];
-  return wrappedProseSegments(
-    [{ text: note, tone: 'text' }],
-    inlineMenuLayout([], cols).width - 4,
-  ).map((line) =>
-    line
-      .map((part) => part.text)
-      .join('')
-      .trimEnd(),
-  );
-}
-
-/**
- * The rows the menu paints: the sheet, plus the note and one row per red check and per open finding
- * while it asks.
- */
 export function resultMenuHeight(input: ResultMenuInput, cols: number): number {
   const sheet = inlineMenuLayout(resultMenuRows(input), cols).height;
   if (!input.confirming) return sheet;
-  return sheet + resultMenuNoteLines(input.note, cols).length + resultMenuOpenCount(input);
+  return sheet + resultMenuOpenCount(input);
 }
 
 export function resultMenuTitle(input: ResultMenuInput): readonly ConversationRowSegment[] {

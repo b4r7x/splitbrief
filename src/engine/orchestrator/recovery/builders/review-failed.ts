@@ -116,7 +116,7 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
   const actions = haltActions('review-failed', [
     noImages ? 'retry-same-worker' : 'revise',
     opts.acceptAsIs === true ? 'accept-as-is' : undefined,
-    opts.cannot !== undefined || opts.question !== undefined ? 'decide-for-me' : undefined,
+    opts.cannot === undefined && opts.question !== undefined ? 'decide-for-me' : undefined,
     'end-run',
   ]);
   const review = reviewName(opts);

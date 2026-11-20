@@ -44,7 +44,14 @@ function isolationHaltIssue(
     details: [...halt.details],
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
-    facts: compactFacts({ tool: getRunnerCatalogDisplayName(opts.runner), changes: halt.changes }),
+    facts: compactFacts({
+      tool: getRunnerCatalogDisplayName(opts.runner),
+      changes: halt.changes,
+      inPlace:
+        halt.reason === 'implementer-left-isolation' && opts.inPlace !== undefined
+          ? true
+          : undefined,
+    }),
     availableActions: halt.actions,
     recommendedAction: chooseRecommended(halt.actions),
     createdAt: opts.createdAt,
@@ -53,13 +60,20 @@ function isolationHaltIssue(
 
 /** A tool call named a path the implementer may not reach, and the call was stopped. */
 export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
-  const evidence = `${getRunnerCatalogDisplayName(opts.runner)} ${opts.toolMessage}`;
+  const toolMessage =
+    opts.inPlace === undefined
+      ? opts.toolMessage
+      : opts.toolMessage.replace(
+          ' (outside the workspace) with ',
+          ' (outside your checkout) with ',
+        );
+  const evidence = `${getRunnerCatalogDisplayName(opts.runner)} ${toolMessage}`;
   const seatSwap = switchSeatOffer(opts.seatSwap);
   return isolationHaltIssue(
     opts,
     {
       reason: 'implementer-left-isolation',
-      message: `${leftIsolationCause(opts.task.id)}${SOFT_SEP}${evidence}`,
+      message: `${leftIsolationCause(opts.task.id, opts.inPlace !== undefined)}${SOFT_SEP}${evidence}`,
       files: taskFiles(opts.task),
       details: [
         evidence,

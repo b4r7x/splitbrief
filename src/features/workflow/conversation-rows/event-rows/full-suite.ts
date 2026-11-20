@@ -12,7 +12,6 @@ import { wrapWidthFor } from '../row-format/markers.js';
 import type { ConversationRowSegment, ConversationRowTone } from '../types.js';
 
 const NOT_RUN = 'not\u00a0run';
-const MAX_SUITE_COMMAND_CELLS = 48;
 const MIN_SUITE_COMMAND_CELLS = 16;
 
 // A wrap never splits a clock: `3m 0s` keeps its space as a no-break space.
@@ -55,12 +54,9 @@ function suiteCommandForRow(
     getTerminalCellWidth(SOFT_SEP) +
     segmentCells(separatedSegments([...verdict, ...clock]));
   const available = wrapWidthFor('message', width) - reserved;
-  return truncateTerminalDisplayText(
-    event.command,
-    available < MIN_SUITE_COMMAND_CELLS
-      ? MAX_SUITE_COMMAND_CELLS
-      : Math.min(MAX_SUITE_COMMAND_CELLS, available),
-  );
+  return available < MIN_SUITE_COMMAND_CELLS
+    ? event.command
+    : truncateTerminalDisplayText(event.command, available);
 }
 
 function segmentCells(segments: readonly ConversationRowSegment[]): number {

@@ -29,6 +29,14 @@ describe('deriveWorkflowDisplay', () => {
     });
   });
 
+  it('marks a paused run as parked in the phase rail', () => {
+    expect(deriveWorkflowDisplay({ ...working, status: 'paused' })).toEqual({
+      kind: 'stopped',
+      animate: false,
+      halted: 'cancelled',
+    });
+  });
+
   it('animates only an active uncancelled workflow', () => {
     expect(deriveWorkflowDisplay(working)).toEqual({ kind: 'working', animate: true });
     expect(deriveWorkflowDisplay({ ...working, cancelled: true })).toEqual({

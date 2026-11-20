@@ -51,6 +51,7 @@ export const STOP_SHEET_PARKED_LEGEND = formatKeyHints([
 export const STOP_SHEET_COMPOSER_HINT = 'Choose an action above…';
 
 export interface StopSheetInput {
+  readonly halted?: boolean;
   readonly currentTaskId: string | null;
   readonly nextTaskId: string | null;
   /** The run has changes to keep. */
@@ -70,8 +71,9 @@ export function stopSheetRows(input: StopSheetInput): StopRow[] {
     {
       id: 'stop-now',
       label: 'Stop now',
-      consequence:
-        input.currentTaskId === null || input.briefKept === 0
+      consequence: input.halted
+        ? 'park the run; keep it open'
+        : input.currentTaskId === null || input.briefKept === 0
           ? 'stop execution; keep the run open'
           : 'stop execution; keep partial changes',
     },
@@ -197,6 +199,7 @@ export function stopMenuRows(input: StopMenuInput): StopRow[] {
   const { briefs, phase, briefKept, reviewNone, halt } = input.view;
   const brief = selectRunningBrief(briefs, phase);
   const rows = stopSheetRows({
+    halted: halt?.issue != null,
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: brief.next?.id ?? null,
     hasChanges: runHasChanges(input),

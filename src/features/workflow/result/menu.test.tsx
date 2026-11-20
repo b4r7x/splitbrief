@@ -11,18 +11,15 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { RedCheck } from '../../../core/schemas/workflow/review-record.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { inlineMenuLayout } from '../inline-menu/layout.js';
 import { UNREAD_WORDS_MESSAGE } from '../inline-menu/use-keys.js';
 import { PASTE_END, PASTE_START } from '../../../lib/terminal/filtered-stdin/paste.js';
 import { ResultMenu } from './menu.js';
-import { resultMenuRows } from './options.js';
 
 const originalColorLevel = chalk.level;
 
 const DOWN = '\x1b[B';
 
 const V1: RedCheck = { id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' };
-const K004: RedCheck = { id: 'K004', lastLine: 'src/a.ts(3,1): TS2322' };
 
 function renderMenu(input: Parameters<typeof menuElement>[0] = {}) {
   const menu = menuElement(input);
@@ -34,7 +31,6 @@ function menuElement(
     override?: boolean;
     findings?: string[];
     redChecks?: RedCheck[];
-    note?: string;
     focused?: boolean;
     height?: number;
   } = {},
@@ -49,7 +45,6 @@ function menuElement(
         override={input.override ?? false}
         findings={input.findings ?? []}
         redChecks={input.redChecks}
-        note={input.note}
         files={4}
         focused={input.focused ?? true}
         height={input.height}
@@ -260,40 +255,6 @@ describe('ResultMenu', () => {
     ui.unmount();
   });
 
-  it('lists the open findings under a long note at 80 and 60 columns', async () => {
-    const note = Array.from(
-      { length: 12 },
-      (_, index) => `Reason ${index + 1}: the documented form behaviour stays as it is.`,
-    ).join(' ');
-    for (const { cols, rows, height, noteRows } of [
-      { cols: 80, rows: 24, height: 16, noteRows: 8 },
-      { cols: 60, rows: 18, height: 10, noteRows: 1 },
-    ]) {
-      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 80 });
-      const { ui } = renderMenu({
-        override: true,
-        findings: ['missing null check', 'stale doc'],
-        note,
-        height,
-      });
-      await flushEffects();
-      ui.stdin.write('\r');
-      await vi.waitFor(() =>
-        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Apply with 2 open findings?'),
-      );
-      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-      const title = lines.findIndex((line) => line.includes('Apply with 2 open findings?'));
-      const firstFinding = lines.findIndex((line) => line.includes('- missing null check'));
-
-      expect(firstFinding - title - 1).toBe(noteRows);
-      expect(lines[firstFinding - 1]).toContain('…');
-      expect(lines[firstFinding + 1]).toContain('- stale doc');
-      expect(lines[firstFinding + 2]).toContain('Apply as is');
-      expect(lines.join('\n')).not.toContain('more open finding');
-      ui.unmount();
-    }
-  });
-
   it('keeps the title in view when a finding carries a line break', async () => {
     const { ui } = renderMenu({
       override: true,
@@ -306,7 +267,7 @@ describe('ResultMenu', () => {
     const title = rows.findIndex((row) => row.includes('Apply with 2 open findings?'));
 
     expect(title).toBeGreaterThan(-1);
-    expect(rows[title + 1]).toContain('- Edge case missing Unicode input is not covered');
+    expect(rows[title + 1]).toContain('- Edge case missing — Unicode input is not covered');
     expect(rows[title + 2]).toContain('- Criterion C1: fail');
     expect(rows[title + 3]).toMatch(/Apply as is {2,}write the changes/);
     ui.unmount();
@@ -348,65 +309,6 @@ describe('ResultMenu', () => {
       }
       expect(rows[titleRow + 1 + list.length]).toMatch(confirm);
       expect(onCommand).not.toHaveBeenCalled();
-      ui.unmount();
-    },
-  );
-
-  it.each([
-    {
-      redChecks: [V1, K004],
-      findings: [],
-      spareRows: 3,
-      noteRows: 1,
-      title: 'Apply with 2 red checks?',
-      list: [
-        '- V1 failed · npm test · Error: 2 specs failed',
-        '- K004 failed · src/a.ts(3,1): TS2322',
-      ],
-    },
-    {
-      redChecks: [V1, K004, { id: 'V2', command: 'npm run lint' }],
-      findings: Array.from({ length: 5 }, (_, index) => `Open finding ${index + 1} needs a fix`),
-      spareRows: 4,
-      noteRows: 2,
-      title: 'Apply with 3 red checks and 5 open findings?',
-      list: [
-        '- V1 failed · npm test · Error: 2 specs failed',
-        '+7 more red checks and open findings',
-      ],
-    },
-  ])(
-    'shares $spareRows spare rows between a long note, the red checks and the open findings: $title',
-    async ({ redChecks, findings, spareRows, noteRows, title, list }) => {
-      const note = Array.from(
-        { length: 12 },
-        (_, index) => `Reason ${index + 1}: the documented form behaviour stays as it is.`,
-      ).join(' ');
-      terminalSizeStore.__testReset({ cols: 80, rows: 24 });
-      const asking = { override: true, redChecks, findings, note, confirming: true, files: 4 };
-      const { ui } = renderMenu({
-        override: true,
-        redChecks,
-        findings,
-        note,
-        height: inlineMenuLayout(resultMenuRows(asking), 80).height + spareRows,
-      });
-      const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
-      await flushEffects();
-      ui.stdin.write('\r');
-      await vi.waitFor(() => expect(frame()).toContain(title));
-      const rows = frame().split('\n');
-      const titleRow = rows.findIndex((row) => row.includes(title));
-      const firstOpen = rows.findIndex((row) => row.includes(list[0] ?? ''));
-
-      expect(firstOpen - titleRow - 1).toBe(noteRows);
-      expect(rows[firstOpen - 1]).toContain('…');
-      for (const [index, line] of list.entries()) {
-        expect(rows[firstOpen + index]).toContain(line);
-      }
-      expect(rows[firstOpen + list.length]).toMatch(/Apply as is {2,}write the changes/);
-      expect(frame()).toMatch(/Back {2,}return to the result menu/);
-      expect(frame()).toContain('tab type a command');
       ui.unmount();
     },
   );

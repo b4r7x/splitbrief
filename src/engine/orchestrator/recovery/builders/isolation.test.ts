@@ -66,7 +66,7 @@ describe('isolation halts of a call that ran in the checkout itself', () => {
     const left = buildLeftIsolationRecoveryIssue({
       task: makeTask({ id: 'T004' }),
       runner,
-      toolMessage: 'wrote to ~/x with Bash: touch ~/x',
+      toolMessage: 'wrote to ~/x (outside the workspace) with Bash: touch ~/x',
       attempts: 0,
       inPlace,
       createdAt,
@@ -80,6 +80,10 @@ describe('isolation halts of a call that ran in the checkout itself', () => {
       createdAt,
     });
 
+    expect(left.message).toContain('T004 wrote outside your checkout');
+    expect(formatRecoveryHeadline(left)).toBe('T004 wrote outside your checkout');
+    expect(left.details[0]).not.toContain('outside the workspace');
+    expect(left.details[0]).toContain('Bash: touch ~/x');
     expect(left.details[1]).toBe('The files this attempt changed stay in your checkout.');
     expect(changed.details[1]).toBe(
       'SPLITBRIEF puts back checkout files it can attribute to this attempt. The replaced files are saved in .splitbrief/sessions/s1/reverted when it puts files back. The git change stays for you to check.',

@@ -63,6 +63,7 @@ export function eventRowBlock(options: {
   dedupTitle?: string | undefined;
   settledSection?: SettledTranscriptSection | undefined;
   causeInRecovery?: boolean | undefined;
+  precedingCrew?: string | undefined;
 }): ConversationRowBlock | null {
   const { event, globalIndex, ctx, expanded } = options;
   const keyPrefix = `event-${globalIndex}-${event.type}`;
@@ -128,6 +129,7 @@ export function eventRowBlock(options: {
     case 'task_started':
       if (options.settledSection !== undefined) {
         return taskStartedCrewRowBlock({
+          precedingCrew: options.precedingCrew,
           keyPrefix,
           event,
           width: ctx.width,
@@ -137,7 +139,7 @@ export function eventRowBlock(options: {
         keyPrefix,
         taskId: event.taskId,
         title: event.title,
-        metadata: taskStartedMetadata(event),
+        metadata: taskStartedMetadata(event, options.precedingCrew),
         width: ctx.width,
       });
     case 'run_rejected':

@@ -170,9 +170,26 @@ export function fitQuestionText(view: ReturnType<typeof fitQuestionView>, draft:
   return {
     mark,
     asked,
-    body: rows
-      .slice(visibleOffset, visibleOffset + bodyHeight)
-      .map((row) => ({ row, text: rowText(row) })),
+    body: rows.slice(visibleOffset, visibleOffset + bodyHeight).map((row, index) => {
+      const continues =
+        index === bodyHeight - 1 &&
+        row.option !== undefined &&
+        rows[visibleOffset + bodyHeight]?.option === row.option;
+      return {
+        row,
+        text: rowText(
+          continues
+            ? {
+                ...row,
+                text: truncateTerminalDisplayText(
+                  row.text.trimEnd() + '…',
+                  Math.max(1, innerWidth - 2),
+                ),
+              }
+            : row,
+        ),
+      };
+    }),
     answerWidth,
     besideQuestion,
   };

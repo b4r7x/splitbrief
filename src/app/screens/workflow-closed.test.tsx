@@ -482,7 +482,7 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(120, 40);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Ended  Plan 0/3 · nothing built');
+    expect(frame).toContain('Ended  Plan · nothing built');
     expect(frame).not.toContain('files not recorded');
 
     ui.unmount();

@@ -1,5 +1,10 @@
 import type { GlyphName } from '../../../lib/glyphs.js';
-import type { ReviewView, ScopeView, SummaryView } from './view-model.js';
+import {
+  stoppedBeforeBuild,
+  type ReviewView,
+  type ScopeView,
+  type SummaryView,
+} from './view-model.js';
 import { formatStageLabel } from '../../../core/phases/labels.js';
 import { isRailCurrent, railStageSeat } from '../../../core/phases/rail.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
@@ -86,9 +91,11 @@ function outcomeSegments(view: SummaryView): OutcomeSpan[][] {
   const stage = stageWord(view);
   return [
     [{ text: ENDED_LEAD, tone: stateTone('attention') }],
-    stage.length === 0
-      ? briefFraction(view)
-      : [...stage, { text: ` ${view.briefs.passed}/${view.briefs.total}`, tone: 'textDim' }],
+    stoppedBeforeBuild(view)
+      ? stage
+      : stage.length === 0
+        ? briefFraction(view)
+        : [...stage, { text: ` ${view.briefs.passed}/${view.briefs.total}`, tone: 'textDim' }],
     ...(stoppedId === null
       ? []
       : [
@@ -187,11 +194,6 @@ function haltedDisposition(view: SummaryView): string {
   if (view.files.partial.size > 0) return 'partial changes kept';
   if (view.files.changed.length > 0) return 'changes kept';
   return 'nothing built';
-}
-
-/** The rail froze before Build, so no brief started: a run with no changed set built nothing. */
-function stoppedBeforeBuild(view: SummaryView): boolean {
-  return view.rail.find((state) => state.stage === 'build')?.status === 'pending';
 }
 
 function filesFact(view: SummaryView): string {

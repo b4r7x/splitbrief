@@ -310,11 +310,8 @@ describe('Rail colors', () => {
       </ThemeProvider>,
     );
     const frame = ui.lastFrame();
-    expect(frame).toContain(
-      `\u001b[1m${paint(theme.implementer, `${DONE} Build`).replace('\u001b[39m', '')}`,
-    );
-    expect(frame).not.toContain(paint(theme.accent, `${DONE} `).replace('\u001b[39m', ''));
-    expect(frame).toContain('\u001b[1m');
+    expect(stripAnsiStyles(frame ?? '')).toContain(`${CANCELLED} Build`);
+    expect(frame).toContain(paint(theme.implementer, 'Build').replace('\u001b[39m', ''));
     ui.unmount();
   });
 

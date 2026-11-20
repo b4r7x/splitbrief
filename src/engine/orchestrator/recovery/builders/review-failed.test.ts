@@ -149,12 +149,7 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expect(formatRecoveryHeadline(issue)).toBe(issue.message);
     expect(issue.seat).toBe('review');
     expect(issue.availableActions).not.toContain('revise');
-    expect(issue.availableActions).toEqual([
-      'retry-same-worker',
-      'accept-as-is',
-      'decide-for-me',
-      'end-run',
-    ]);
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'accept-as-is', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expect(issue.details).toEqual([
       'Planner said: The render criteria need a reviewer that sees images',

@@ -116,6 +116,7 @@ export function repositoryChangedCause(task: string, changes: string | undefined
 }
 
 /** A brief whose tool call named a path outside the run's isolation directory. */
-export function leftIsolationCause(task: string): string {
+export function leftIsolationCause(task: string, inPlace = false): string {
+  if (inPlace) return `${task} wrote outside your checkout`;
   return `${task} left the isolation directory`;
 }

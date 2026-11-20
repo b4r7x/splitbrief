@@ -68,7 +68,14 @@ export function recoveryRowBlock(
       : [];
   // The prompt panel carries the clock; the row names what happened, once.
   const halt =
-    prompted === undefined || recovery.haltAlreadyShown ? [] : recoveryHeadlineSegments(prompted);
+    prompted === undefined || recovery.haltAlreadyShown
+      ? []
+      : recoveryHeadlineSegments(
+          prompted,
+          resolved === undefined &&
+            prompted.reason === 'runner-usage-limit' &&
+            prompted.issue !== undefined,
+        );
   return recoveryCardBlock(
     keyPrefix,
     [
@@ -152,9 +159,10 @@ function recoveryActionSegments(
 
 function recoveryHeadlineSegments(
   event: EngineEventOf<'recovery_prompted'>,
+  keepReset = false,
 ): ConversationRowSegment[] {
   return (event.headlineSpans ?? [{ text: event.headline }]).map((part) => ({
-    text: stripRecoveryResetClause(part.text),
+    text: keepReset ? part.text : stripRecoveryResetClause(part.text),
     tone: part.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[part.seat],
   }));
 }

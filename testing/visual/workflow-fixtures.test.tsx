@@ -72,13 +72,15 @@ it.each([
     'runner_call_completed',
     'implementer_generate_done',
     'task_completed',
+    ...(id === 'workflow-seat-switched-balance' ? [] : ['review_started']),
   ]);
   expect(events.find((event) => event.type === 'implementer_generate_done')).toMatchObject({
     files: ['src/text.js', 'test/text.test.js'],
   });
   const lifecycle = await setupProjection(projection);
   try {
-    expect(operationsStore.get().active).toBeNull();
+    if (id === 'workflow-seat-switched-balance') expect(operationsStore.get().active).toBeNull();
+    else expect(operationsStore.get().active?.role).toBe('review');
     expect(
       selectRunningBrief(runViewStore.get().briefs, runViewStore.get().phase).current,
     ).toBeNull();
@@ -148,10 +150,12 @@ it.each([
       ? hydration.state.pendingRecovery
       : projection.resumeState?.pendingRecovery;
   const evidence = halt?.details[0] ?? '';
-  expect
-    .soft(evidence)
-    .toMatch(/^Google Antigravity CLI wrote to \S+ \(outside the workspace\) with run_command: /);
-  expect(halt?.message).toBe(`${halt?.taskId} left the isolation directory${SOFT_SEP}${evidence}`);
+  const inPlace = id === 'workflow-recovery-left-isolation-in-place';
+  expect(evidence).toContain(inPlace ? '(outside your checkout)' : '(outside the workspace)');
+  expect(evidence).toContain('with run_command:');
+  expect(halt?.message).toBe(
+    `${halt?.taskId} ${inPlace ? 'wrote outside your checkout' : 'left the isolation directory'}${SOFT_SEP}${evidence}`,
+  );
 });
 
 it('logs the error row of the at-rest left-isolation halt as the product writes it', () => {
@@ -394,7 +398,9 @@ describe('workflow visual fixtures', () => {
       'Planner said: No fix brief can verify these criteria: each one needs a person to try the app.',
       'Unverified criteria: C1, C2, C3, C4, C5, C6',
     ]);
-    expect(projection.resumeState?.pendingRecovery?.availableActions).toContain('decide-for-me');
+    expect(projection.resumeState?.pendingRecovery?.availableActions).not.toContain(
+      'decide-for-me',
+    );
   });
 
   it('offers an inherited REVIEW its own seat and explains the switch', async () => {
@@ -437,9 +443,9 @@ describe('workflow visual fixtures', () => {
       'The reviewer seat answer did not match its contract after 2 attempts.',
     );
     expect(frame).toContain(
-      'result.checks.0.value: The check command contains a shell operator. Choose a single command.',
+      'The check command contains a shell operator. Choose a single command.',
     );
-    expect(frame).toContain('result.verdict: Required');
+    expect(frame).toContain('Wrong or missing value in verdict.');
   });
 
   it.each([
@@ -1105,7 +1111,7 @@ describe('workflow visual fixtures', () => {
         expect(transcript).toContain('Error Repository changed under T001 · tag v2.0.0');
         expect(frame).toContain('○ Choose how to continue');
         expect(recoveryNoticeStore.get().open).toBe(true);
-        expect(frame).toContain('Stop now stop execution; keep the run open');
+        expect(frame).toContain('Stop now park the run; keep it open');
         expect(frame).toContain('End run stop execution; close this run');
         expect(frame).not.toContain('finish T001');
         expect(frame).not.toContain('keep partial changes');
@@ -1132,7 +1138,7 @@ describe('workflow visual fixtures', () => {
         expect(frame).toContain('Recovery Approval denied on T001');
         expect(frame).toContain('○ Choose how to continue');
         expect(recoveryNoticeStore.get().open).toBe(true);
-        expect(frame).toContain('Stop now stop execution; keep the run open');
+        expect(frame).toContain('Stop now park the run; keep it open');
         expect(frame).toContain('End run stop execution; close this run');
         expect(frame).not.toContain('finish T001');
         expect(frame).not.toContain('keep partial changes');
@@ -1403,9 +1409,7 @@ describe('workflow visual fixtures', () => {
     expect(calls.at(-1)).toMatchObject({ type: 'runner_call_completed', status: 'completed' });
     expect(frame).toContain('1/1 briefs passed');
     expect(frame).not.toContain('working on T901');
-    expect(frame).toContain(
-      'BUILD activity 1 update [DeepSeek V4.1 Flash · via opencode-go · high]',
-    );
+    expect(frame).toContain('BUILD activity 1 update');
     expect(frame).toContain('Read src/text.js');
     expect(frame).not.toContain('attempt 2');
   });

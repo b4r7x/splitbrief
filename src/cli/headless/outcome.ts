@@ -102,7 +102,11 @@ export function emitRecoveryAndFailIfPending({
   // The stored message names no clock; a quota halt's reset is spelled when the line is printed.
   const reset = formatResetAt(issue.resetAt);
   const diagnostic =
-    issue.reason === 'review-failed' && cause === 'non-zero-exit' ? issue.details[0] : undefined;
+    issue.reason === 'seat-protocol-error'
+      ? issue.details.join('\n')
+      : issue.reason === 'review-failed' && cause === 'non-zero-exit'
+        ? issue.details[0]
+        : undefined;
   // Accept as is also runs with no panel, so a halt that offers it names that command too.
   const accept = issue.availableActions.includes('accept-as-is')
     ? `\n${recoveryActionLabel('accept-as-is', issue)}: ${continueRunCommand(sessionId)} --action accept-as-is [--plain|--json]`

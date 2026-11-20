@@ -555,8 +555,10 @@ describe('TaskSummary', () => {
         state.kind === 'stage' ? 'Review' : 'Review 1',
         state.kind === 'stage' ? defaultTheme.reviewer : defaultTheme.text,
       );
-      expectForeground(frame, ' failed', defaultTheme.error);
-      expect(stripAnsiStyles(frame)).toContain('Review 1 failed');
+      expectForeground(frame, state.kind === 'stage' ? ' failed' : 'failed', defaultTheme.error);
+      expect(stripAnsiStyles(frame)).toContain(
+        state.kind === 'stage' ? 'Review 1 failed' : 'Review 1  failed',
+      );
       expect(stripAnsiStyles(frame).match(/failed/gu)).toHaveLength(1);
       if (state.kind === 'stage') expect(stripAnsiStyles(frame)).toContain('fixes T904 · 8.0s');
 
@@ -625,6 +627,22 @@ describe('TaskSummary', () => {
     },
   );
 
+  it('puts the failed outcome after the file in the detail tail', () => {
+    const ui = renderFeature(
+      <TaskSummary
+        width={100}
+        id="T003"
+        title="Implement book returns"
+        state={{ kind: 'settled', method: 'failed' }}
+        file="src/returns.ts"
+      />,
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(
+      /Implement book returns\s+src\/returns\.ts · failed/,
+    );
+    ui.unmount();
+  });
+
   it('paints the ✗ marker and a single failed word', () => {
     chalk.level = 3;
     const ui = renderFeature(
@@ -639,7 +657,7 @@ describe('TaskSummary', () => {
 
     expect(frame).toContain('T3 wire login route');
     expect(frame).toContain('failed');
-    expect(frame).toContain(paint(defaultTheme.error, ' failed'));
+    expect(frame).toContain(paint(defaultTheme.error, 'failed'));
     expect(frame).toContain(glyph('statusFailed'));
 
     ui.unmount();

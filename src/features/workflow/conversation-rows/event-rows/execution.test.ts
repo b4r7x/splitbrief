@@ -227,11 +227,11 @@ describe('fullSuiteRowBlock', () => {
     },
   );
 
-  it('keeps the 48-cell command cap on a wide check row', () => {
+  it('uses the available cells for a long command on a wide check row', () => {
     const [row] = baseCheckRows(160);
     if (row === undefined) throw new Error('Expected a base check row');
     const command = row.split(' · ')[1] ?? '';
-    expect(getTerminalCellWidth(command)).toBe(48);
+    expect(getTerminalCellWidth(command)).toBe(106);
     expect(command.endsWith(ELLIPSIS)).toBe(true);
   });
 

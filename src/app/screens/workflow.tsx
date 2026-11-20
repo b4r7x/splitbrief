@@ -5,6 +5,7 @@ import { readStopMenuRows } from '../../features/workflow/stop/options.js';
 import { inlineMenuLayout } from '../../features/workflow/inline-menu/layout.js';
 import { resultMenuHeight } from '../../features/workflow/result/options.js';
 import { conversationScrollStore } from '../../stores/workflow/conversation-scroll.js';
+import { completionStore } from '../../stores/ui/completion.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -124,6 +125,7 @@ export function WorkflowScreen({
     },
   });
   const { resultMenuOpen } = panels;
+  const completing = completionStore.use((state) => state.open);
   const panelBelow = stopMenuOpen || resultMenuOpen;
   const displayedSeatLines = useHeaderSeatLines();
   const shortStageCells = useRailCells({
@@ -308,14 +310,18 @@ export function WorkflowScreen({
             compactInput={panelBelow}
             beforeComposer={
               panelBelow ? (
-                <PanelSlot
-                  stopMenuOpen={stopMenuOpen}
-                  height={layout.promptBoxRows}
-                  ready={ready}
-                  panels={panels}
-                  keysHeldAbove={keys.keysHeldAbove}
-                  onCommand={(raw) => model.handleRuntimeCommand(raw, 'row')}
-                />
+                <Box height={layout.promptBoxRows} flexDirection="column">
+                  <Box display={completing ? 'none' : 'flex'} flexDirection="column">
+                    <PanelSlot
+                      stopMenuOpen={stopMenuOpen}
+                      height={layout.promptBoxRows}
+                      ready={ready}
+                      panels={panels}
+                      keysHeldAbove={keys.keysHeldAbove}
+                      onCommand={(raw) => model.handleRuntimeCommand(raw, 'row')}
+                    />
+                  </Box>
+                </Box>
               ) : undefined
             }
             readClipboardImage={readClipboardImage}
@@ -377,20 +383,24 @@ export function WorkflowScreen({
         {...(tail.length > 0 && { transcriptTail: tail })}
         {...(crewChrome !== null && { recordedCrew: crewChrome.seats })}
       />
-      <PromptRegion
-        boxRows={layout.promptBoxRows}
-        cols={cols}
-        stopMenuOpen={stopMenuOpen}
-        model={model}
-        panels={panels}
-        review={review}
-        confirms={reviewConfirms}
-        budgetRows={reviewBudgetRows}
-        recoveryKey={recoveryFocusKey}
-        recoveryIssue={recoveryPromptOpen ? recoveryIssue : null}
-        question={question}
-        keysHeldAbove={keys.keysHeldAbove}
-      />
+      <Box height={panelBelow ? 0 : layout.promptBoxRows} flexDirection="column" flexShrink={0}>
+        <Box display={completing ? 'none' : 'flex'} flexDirection="column">
+          <PromptRegion
+            boxRows={layout.promptBoxRows}
+            cols={cols}
+            stopMenuOpen={stopMenuOpen}
+            model={model}
+            panels={panels}
+            review={review}
+            confirms={reviewConfirms}
+            budgetRows={reviewBudgetRows}
+            recoveryKey={recoveryFocusKey}
+            recoveryIssue={recoveryPromptOpen ? recoveryIssue : null}
+            question={question}
+            keysHeldAbove={keys.keysHeldAbove}
+          />
+        </Box>
+      </Box>
     </ScreenShell>
   );
 }

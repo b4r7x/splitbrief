@@ -2780,7 +2780,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
-  it('reserves a row for the planner note above the override findings it paints', async () => {
+  it('starts the confirmation with its findings after the planner gave the note', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 40 });
     const findings = Array.from(
       { length: 8 },
@@ -2799,75 +2799,11 @@ describe('WorkflowScreen showing a run at rest', () => {
     const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     const title = rows.findIndex((row) => row.includes('Apply with 8 open findings?'));
     expect(title).toBeGreaterThan(-1);
-    expect(rows[title + 1]).toContain("Planner's note: Kept as designed.");
+    expect(rows.slice(title).join('\n')).not.toContain("Planner's note:");
     for (const [index, finding] of findings.entries()) {
-      expect(rows[title + 2 + index]).toContain(`- ${finding}`);
+      expect(rows[title + 1 + index]).toContain(`- ${finding}`);
     }
     expect(rows.join('\n')).not.toContain('more open finding');
-    ui.unmount();
-  });
-
-  it('shows every word of a long planner note on the override confirmation', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
-    const note =
-      'The findings ask for a design the plan does not take, the owner chose this design in the brief, and the last word of this note is keepsake.';
-    readyRun(true, ['Open finding 1 needs a fix'], note);
-
-    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
-      cols: 80,
-      rows: 24,
-    });
-    await flushEffects();
-    ui.stdin.write('\r');
-    await flushEffects();
-
-    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const title = rows.findIndex((row) => row.includes('Apply with 1 open finding?'));
-    const finding = rows.findIndex((row) => row.includes('- Open finding 1 needs a fix'));
-    expect(title).toBeGreaterThan(-1);
-    const noteText = rows
-      .slice(title + 1, finding)
-      .map((row) => row.replace(/[│|]/g, '').trim())
-      .join(' ');
-    expect(noteText).toContain(note);
-    ui.unmount();
-  });
-
-  it('keeps the title, the rows and a count of the findings under a note taller than the terminal', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
-    const note = Array.from({ length: 200 }, (_, index) => `word${index}`).join(' ');
-    const findings = Array.from(
-      { length: 8 },
-      (_, index) => `Open finding ${index + 1} needs a fix`,
-    );
-    readyRun(true, findings, note);
-
-    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
-      cols: 80,
-      rows: 24,
-    });
-    await flushEffects();
-    ui.stdin.write('\r');
-    await flushEffects();
-
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    expect(lines.length).toBeLessThanOrEqual(24);
-    const rows = lines.map((row) => row.replace(/^[\s|]+|[\s|]+$/g, ''));
-    const titleRow = rows.indexOf('Apply with 8 open findings?');
-    expect(titleRow).toBeGreaterThanOrEqual(0);
-    expect(rows[titleRow + 1]).toMatch(/^Planner's note: word0 /);
-    const firstFinding = rows.indexOf('- Open finding 1 needs a fix');
-    expect(rows[firstFinding - 1]).toMatch(/word\d+ ?…$/);
-    expect(rows.slice(firstFinding, firstFinding + 8)).toEqual([
-      '- Open finding 1 needs a fix',
-      '- Open finding 2 needs a fix',
-      '- Open finding 3 needs a fix',
-      '- Open finding 4 needs a fix',
-      '+4 more open findings',
-      expect.stringMatching(/^Apply as is {2,}write the changes; these findings stay open$/),
-      expect.stringMatching(/^Back {2,}return to the result menu$/),
-      '↑↓ select · ⏎ confirm · tab type a command',
-    ]);
     ui.unmount();
   });
 
@@ -3232,6 +3168,27 @@ describe('WorkflowScreen showing a run at rest', () => {
     expect(rows[title + 1]).toContain('- V1 failed · npm test · Error: 2 specs failed');
     expect(rows[title + 2]).toMatch(/Apply as is {2,}write the changes; the red checks stay red/);
     expect(onRuntimeCommand).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('hides the result panel while the command list is open and restores it on Escape', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    readyRun(true, [
+      'The invoice approval flow still needs to show which customer authorized payment for the annual subscription.',
+    ]);
+    const ui = renderFeature(<HaltWithAppCommands deps={workflowDeps} />, { cols: 120, rows: 40 });
+    const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
+    await vi.waitFor(() => expect(frame()).toContain('Show diff'));
+    ui.stdin.write('\r');
+    await vi.waitFor(() => expect(frame()).toContain('annual subscription.'));
+    for (const key of '/sk') {
+      ui.stdin.write(key);
+      await flushEffects();
+    }
+    await vi.waitFor(() => expect(frame()).toContain('/skills'));
+    expect(frame()).not.toContain('annual subscription.');
+    ui.stdin.write('\u001b');
+    await vi.waitFor(() => expect(frame()).toContain('annual subscription.'));
     ui.unmount();
   });
 
@@ -4039,13 +3996,15 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
     });
     const framesBefore = ui.frames.length;
     hold.resolve();
+    const marker = draft.startsWith('/') ? draft : APPROVE_ROW;
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame())).toContain(APPROVE_ROW);
+      expect(runViewStore.get().phase).toBe('reviewing-plan');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(marker);
     });
     const first = ui.frames
       .slice(framesBefore)
       .map((frame) => stripAnsiStyles(frame))
-      .find((frame) => frame.includes(APPROVE_ROW));
+      .find((frame) => frame.includes(marker));
     return { ui, onRuntimeCommand, outcomes, first: first ?? '' };
   }
 

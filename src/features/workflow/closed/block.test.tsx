@@ -169,9 +169,9 @@ describe('closedTranscriptBlock', () => {
       ],
     };
 
-    expect(foldText(reviewed)).toBe('+3 briefs · 1 file · 1 review');
-    expect(foldText(reviewed, 30)).toBe('+3 briefs · 1 file');
-    expect(foldText(reviewed, 24)).toBe('+3 briefs');
+    expect(foldText(reviewed)).toBe('+2 briefs · 1 earlier brief · 1 file · 1 review');
+    expect(foldText(reviewed, 30)).toBe('+2 briefs');
+    expect(foldText(reviewed, 24)).toBe('+2 briefs');
     expect(
       foldText({
         ...rich,

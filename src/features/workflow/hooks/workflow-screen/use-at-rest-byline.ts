@@ -1,3 +1,4 @@
+import { changedFileCount } from '../../closed/projections.js';
 import { MARK_SLOT_CELLS } from '../../../../components/row-leading.js';
 import { seatWaitMoved } from '../../../../core/sessions/held-seat.js';
 import { seatWaitParts } from '../../../../core/sessions/seat-wait-line.js';
@@ -99,6 +100,9 @@ export function useAtRestByline(input: {
             now,
             apply,
             confirming: input.confirming,
+            emptyResult:
+              model.atRestRecord !== undefined &&
+              changedFileCount(model.atRestRecord.summary) === 0,
           });
   // A check running for this run owns Escape and says so on the byline, so the legend above the
   // composer does not offer it for going home at the same time. Neither does a quit queued behind

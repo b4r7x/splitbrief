@@ -3714,7 +3714,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   {
     ...atRestProjection({
       id: 'workflow-ready-seat-moved-auto',
-      route: { record: READY_SEAT_MOVED_AUTO },
+      route: { record: READY_SEAT_MOVED_AUTO, log: READY_LOG },
     }),
     sidebarVisible: true,
   },

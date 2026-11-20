@@ -2,6 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
+import { passingVerdict } from '#testing/helpers/typed-planner.js';
+import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
@@ -70,6 +78,7 @@ async function selectedActions(ref: SessionRef): Promise<string[]> {
 }
 
 let fixture: StopContinueFixture | undefined;
+let restoreShim: (() => void) | undefined;
 let ui: ReturnType<typeof renderFeature> | undefined;
 
 beforeEach(() => resetAllStores());
@@ -79,6 +88,8 @@ afterEach(async () => {
   ui = undefined;
   await settleOpenedRuns();
   resetAllStores();
+  restoreShim?.();
+  restoreShim = undefined;
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
   fixture = undefined;
 });
@@ -98,7 +109,7 @@ describe('e2e: the planner says a brief cannot be done', () => {
     expect(frame).toContain(`T001: cannot be done · ${DIAGNOSIS}`);
     expect(frame).toContain('T001: the planner says it cannot be done');
     expect(frame).toContain(`Planner said: ${REASON}`);
-    for (const row of ['Try again', 'Decide for me', 'Skip brief', 'End run']) {
+    for (const row of ['Try again', 'Skip brief', 'End run']) {
       expect(frame).toContain(row);
     }
 
@@ -106,7 +117,7 @@ describe('e2e: the planner says a brief cannot be done', () => {
     const haltLine = stderr.findIndex((line) => line.startsWith('Error: Needs you'));
     expect(stderr[haltLine + 1]).toBe(`Planner said: ${REASON}`);
     expect(frame).toMatch(/Skip brief {2,}recommended/);
-    expect(frame).toMatch(/Decide for me {2,}skips this brief/);
+    expect(frame).not.toContain('Decide for me');
     expect(frame).not.toMatch(/Try again {2,}recommended/);
     expect(stderr).toContain('Recommended: skip-current-task');
     expect(halted.stderr).toContain(' --action skip');
@@ -146,6 +157,59 @@ describe('e2e: the planner says a brief cannot be done', () => {
       await vi.waitFor(async () => expect(await selectedActions(ref)).toEqual([recommended]));
     },
   );
+
+  it('names the checkout halt, replays its skip reason and explains a refused review answer', async () => {
+    const invalid = {
+      ...passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] }),
+      criteria: [{ id: 'C1', status: 'unknown', evidence: '' }],
+    };
+    fixture = createStopContinueFixture(() => '', {
+      isolation: 'none',
+      consult: () =>
+        `(prompt) => prompt.includes('Final Implementation Review') ? ${JSON.stringify(JSON.stringify(invalid))} : undefined`,
+    });
+    const shim = installCompatibleCliShim({
+      directory: join(fixture.tmpDir, 'bin'),
+      tool: 'codex',
+      invocation: {
+        stdoutLines: [
+          JSON.stringify({
+            type: 'item.started',
+            item: {
+              id: 'write',
+              type: 'command_execution',
+              command: 'touch /srv/splitbrief-fixture/report.txt',
+            },
+          }),
+          JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 4, output_tokens: 2 } }),
+        ],
+      },
+    });
+    restoreShim = activateCompatibleCliShim(shim);
+    const config = loadConfig(fixture.projectDir).config;
+    writeConfig(fixture.projectDir, {
+      ...config,
+      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', contextLength: 200_000 },
+    });
+
+    const halted = await cli(fixture, ['start', 'smoke']);
+    expect(halted.exitCode, halted.stderr).toBe(1);
+    const sessionId = readActive(fixture.projectDir);
+    if (!sessionId) throw new Error(halted.stderr);
+    const ref = { projectDir: fixture.projectDir, sessionId };
+    const halt = loadState(ref)?.pendingRecovery;
+    expect(halt?.reason, halted.stderr).toBe('implementer-left-isolation');
+    expect.soft(halted.stderr).toContain('T001 wrote outside your checkout');
+
+    const reviewed = await cli(fixture, ['continue', sessionId, '--action', 'skip']);
+    expect(reviewed.exitCode, reviewed.stderr).toBe(1);
+    expect(loadState(ref)?.pendingRecovery?.reason, reviewed.stderr).toBe('seat-protocol-error');
+    expect.soft(reviewed.stderr).toContain('Wrong or missing value in status.');
+    expect.soft(reviewed.stderr).not.toContain('criteria.0.status');
+    const { events } = await readRunEvents(ref);
+    expect.soft(events.find((event) => event.type === 'task_skipped')?.reason).toBe(halt?.message);
+    expect(transcriptText(events)).not.toContain('recovery implementer-left-isolation:');
+  });
 
   it('makes no other implementer call and takes the files of the brief back', async () => {
     fixture = createStopContinueFixture(

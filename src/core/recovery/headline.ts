@@ -124,7 +124,7 @@ export function formatRecoveryHeadlineSpans(
         },
       ];
     case 'implementer-left-isolation':
-      return [{ text: leftIsolationCause(taskName(issue)) }];
+      return [{ text: leftIsolationCause(taskName(issue), issue.facts?.inPlace === true) }];
     case 'checkout-changed':
       return [
         {

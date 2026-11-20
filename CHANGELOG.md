@@ -15,6 +15,9 @@
 
 ### Fixed
 
+- Recovery shows the field that needs attention, names the checkout when a tool writes outside it, and keeps the original reason when you skip a brief.
+- The run screen shows which work stopped and which briefs belong to an earlier plan. Command suggestions cover the action panel, and a run with no changed files offers **Close run**.
+
 - Setup keeps crew presets reachable on small terminals and lets you choose a remembered crew after a failed refresh. Continue checks the selected seats.
 - The runner picker keeps tool names and sign-in status readable at narrow widths. A refused config edit names the field to remove.
 - Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.

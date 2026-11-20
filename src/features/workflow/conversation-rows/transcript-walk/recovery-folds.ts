@@ -57,6 +57,17 @@ export function automaticRecoveryFolds(sections: readonly Section<EngineEvent>[]
       } else if (event.type === 'implementer_generate_failed') {
         failure = event;
       } else if (event.type === 'recovery_prompted') {
+        if (
+          event.reason === 'runner-usage-limit' &&
+          previous?.type === 'error' &&
+          previous.phase === event.phase &&
+          event.issue?.reason === event.reason &&
+          event.issue.taskId === event.taskId &&
+          (previous.message === event.issue.message ||
+            previous.message.startsWith(`${event.issue.message} (`)) &&
+          !restatesHalt(previous, event)
+        )
+          hidden.add(previous);
         const existing = issues.get(event.issueId);
         if (existing !== undefined && existing.recovery.selected === undefined) {
           existing.events.push(event);

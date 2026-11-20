@@ -3951,13 +3951,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-ready-empty-diff',
-      title: 'Workflow · Show diff with no changes',
+      title: 'Workflow · close a run with no changed files',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'ready-empty-diff',
         title: 'No changes to show',
         kind: 'ready',
-        marker: 'No run changes to show.',
+        marker: 'Close run',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -4071,9 +4071,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'ready-planner-accept-confirm',
-        title: "Apply as is confirmation with the planner's note",
+        title: 'Apply as is confirmation after the planner accepted the findings',
         kind: 'ready',
-        marker: "Planner's note:",
+        marker: 'Apply with 2 open findings?',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -4087,9 +4087,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'ready-planner-accept-long-note',
-        title: "Apply as is confirmation with a capped planner's note",
+        title: 'Apply as is confirmation after the planner accepted the findings',
         kind: 'ready',
-        marker: "Planner's note:",
+        marker: 'Apply with 2 open findings?',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5768,7 +5768,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'left-isolation',
         title: 'Checkout mode left-isolation recovery menu',
         kind: 'question',
-        marker: 'Seat down · T901 left the isolation directory',
+        marker: 'Seat down · T901 wrote outside your checkout',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -7885,12 +7885,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'workflow-stop-sheet-after-revert',
         title: 'Workflow · stop options after a git change put the attempt back',
-        marker: 'keep the run open',
+        marker: 'park the run',
       },
       {
         id: 'workflow-stop-sheet-after-denial',
         title: 'Workflow · stop options after a denial took back every write',
-        marker: 'keep the run open',
+        marker: 'park the run',
       },
       {
         id: 'workflow-stop-sheet-typed-words',

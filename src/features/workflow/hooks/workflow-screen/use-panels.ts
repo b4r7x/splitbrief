@@ -11,7 +11,6 @@ import { composerDraftStore } from '../../../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { reviewKeysStore } from '../../../../stores/ui/review-keys.js';
 import { resultMenuStore } from '../../../../stores/workflow/result-menu.js';
-import { acceptedNote } from '../../../../core/review/accepted.js';
 import type { RunRecord } from '../../../../core/sessions/run/record.js';
 import { changedFileCount } from '../../closed/projections.js';
 import { reviewDocumentOptions } from '../../prompt-rows/review-document.js';
@@ -76,7 +75,6 @@ export function usePanels(input: {
       ready !== undefined && ready.status.kind === 'ready-to-apply' ? ready.status.override : false,
     findings: accepted?.findings ?? [],
     redChecks: accepted?.redChecks,
-    note: accepted === undefined ? undefined : acceptedNote(accepted),
     confirming,
     files: ready === undefined ? null : changedFileCount(ready.summary),
   };

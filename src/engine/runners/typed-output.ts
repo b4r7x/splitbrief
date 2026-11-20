@@ -103,7 +103,7 @@ const EXTRACTION_ERRORS: Readonly<Record<Exclude<JsonExtraction['kind'], 'ok'>, 
     'The JSON object in the answer is truncated: it never closes. Send the complete object.',
 };
 
-/** `errors` go back to the seat and into the halt; `reasons` say the same in a user's words. */
+/** `errors` guide the seat's repair. The halt reports `reasons` in the user's words. */
 type AnswerFailure = Readonly<{
   errors: readonly string[];
   reasons: readonly string[];
@@ -171,7 +171,7 @@ function seatProtocolError(
     seat,
     attempts,
     transport,
-    errors: failure.errors,
+    errors: failure.reasons,
     answerPreview: redactSecrets(failure.answer).slice(0, ANSWER_PREVIEW_MAX_LENGTH),
   });
 }

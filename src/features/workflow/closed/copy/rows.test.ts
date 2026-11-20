@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { endedInPlanning, makeView } from '#testing/helpers/factories/summary-view.js';
-import type { SummaryView } from '../view-model.js';
+import { taskId } from '../../../../core/schemas/task.js';
+import type { BriefRow, SummaryView } from '../view-model.js';
 import type { RunRow } from './types.js';
 import type { CopySegment } from './types.js';
 import { recordFold, recordRows } from './rows.js';
@@ -27,6 +28,31 @@ describe('runRows and recordRows', () => {
 
   it('omits the duplicate Apply receipt when undo kept no conflicts', () => {
     expect(segmentsFor(makeView({ applyUndo: { conflicts: [] } }), 'Apply')).toBeUndefined();
+  });
+
+  it('names the earlier brief separately when a rewind reused its id', () => {
+    const current: BriefRow = {
+      id: taskId('T001'),
+      title: 'The current brief',
+      state: 'pending',
+      method: null,
+      retries: 0,
+      durationMs: null,
+      file: null,
+      partialFiles: 0,
+    };
+    const view = makeView({
+      briefs: {
+        total: 1,
+        passed: 0,
+        failed: 0,
+        rows: [current],
+        earlierRows: [{ ...current, title: 'The earlier brief' }],
+      },
+    });
+    const fold = recordFold(view, 'labelled').join(' · ');
+    expect(fold).toContain('1 earlier brief');
+    expect(fold).not.toContain('2 briefs');
   });
 
   it('counts blocking findings before files and notes in the labelled fold', () => {

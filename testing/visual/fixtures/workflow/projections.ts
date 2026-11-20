@@ -35,7 +35,7 @@ import {
   approvalWordNudgeProjection,
   approvalWordsStayProjection,
 } from './approval-words-stay-projection.js';
-import { taskId, type Check, type Task } from '../../../../src/core/schemas/task.js';
+import { taskId, type Check, type Task, type TaskId } from '../../../../src/core/schemas/task.js';
 import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
 import { variantWithoutModelChecks } from '../../../../src/core/readiness/checks/runner/fields.js';
 import {
@@ -389,17 +389,23 @@ function stoppedFixtureRoute(
   id: string,
   state: WorkflowState,
   log: readonly EngineEvent[],
+  summary?: Summary,
 ): FixtureAtRestRoute {
   return {
     record: makeRunRecord({
       ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: `visual-${id}` },
       feature: state.feature,
+      summary: summary ?? null,
       startedAt: new Date(FIXED_TS).toISOString(),
       hydration: {
         kind: 'loaded',
         state: { ...state, startedAt: new Date(FIXED_TS).toISOString() },
       },
-      status: deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }),
+      status: deriveRunStatus({
+        state,
+        liveness: 'not-alive',
+        reviewNone: state.reviewerSeat === 'none',
+      }),
     }),
     log,
   };
@@ -1252,44 +1258,48 @@ const validationProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'implementing',
-      feature: WORKFLOW_FEATURE,
-    },
-    FIXTURE_TASKS_PLANNED,
-    {
-      type: 'task_started',
-      ts: FIXED_TS + 100,
-      phase: 'implementing',
-      taskId: WORKFLOW_FIXTURE_TASK_ID,
-      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
-      index: 0,
-      total: 3,
-      file: WORKFLOW_FIXTURE_REVIEW_FILE,
-      files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
-      action: 'modify',
-      tool: 'ollama',
-      model: FIXED_RUNNER_MODEL,
-    },
-    {
-      type: 'validate',
-      ts: FIXED_TS + 400,
-      phase: 'implementing',
-      taskId: WORKFLOW_FIXTURE_TASK_ID,
-      status: 'done',
-      passed: true,
-      exempt: true,
-      stages: { typecheck: true, lint: false, test: false },
-      attempted: { typecheck: true, lint: true, test: true },
-      commands: { typecheck: 'npm run typecheck', lint: 'npm run lint', test: 'npm test' },
-      skipped: { test: true },
-      skippedReason: { test: WORKFLOW_FIXTURE_TEXT.validationSkipReason },
-      duration: 1_800,
-    },
-  ],
+  get events(): EngineEvent[] {
+    return [
+      {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'implementing',
+        feature: WORKFLOW_FEATURE,
+      },
+      FIXTURE_TASKS_PLANNED,
+      {
+        type: 'task_started',
+        ts: FIXED_TS + 100,
+        phase: 'implementing',
+        taskId: WORKFLOW_FIXTURE_TASK_ID,
+        title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+        index: 0,
+        total: 3,
+        file: WORKFLOW_FIXTURE_REVIEW_FILE,
+        files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+        action: 'modify',
+        tool: 'ollama',
+        model: FIXED_RUNNER_MODEL,
+      },
+      {
+        type: 'validate',
+        ts: FIXED_TS + 400,
+        phase: 'implementing',
+        taskId: WORKFLOW_FIXTURE_TASK_ID,
+        status: 'done',
+        passed: true,
+        exempt: true,
+        stages: { typecheck: true, lint: false, test: false },
+        attempted: { typecheck: true, lint: true, test: true },
+        commands: { typecheck: 'npm run typecheck', lint: 'npm run lint', test: 'npm test' },
+        skipped: { test: true },
+        skippedReason: { test: WORKFLOW_FIXTURE_TEXT.validationSkipReason },
+        duration: 1_800,
+      },
+      fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 401),
+      ...nextFixtureBuild(FIXED_TS + 402),
+    ];
+  },
 };
 
 // A run where a brief also changed files its brief did not suggest: its checks pass, the
@@ -1774,6 +1784,35 @@ const taskRowsContextFitProjection: WorkflowFixtureProjection = {
   ],
 };
 
+function fixtureBuildCall(
+  task: TaskId,
+  ts: number,
+  callId: string,
+): EngineEventOf<'runner_call_started'> {
+  return {
+    type: 'runner_call_started',
+    taskId: task,
+    ts,
+    callId,
+    phase: 'implementing',
+    role: 'implementer',
+    backendKind: 'api',
+    runnerName: FIXED_RUNNER_NAME,
+    model: FIXED_RUNNER_MODEL,
+    axes: seatAxisWords(BASE_IMPLEMENTER),
+    attempt: 1,
+    sequence: 0,
+  };
+}
+
+function nextFixtureBuild(ts: number): EngineEvent[] {
+  const brief = { ...FIXTURE_PLANNED_BRIEFS[1], file: WORKFLOW_FIXTURE_SECOND_FILE };
+  return [
+    orphanBriefStarted(brief, ts),
+    fixtureBuildCall(brief.id, ts + 1, `visual-build-${brief.id}`),
+  ];
+}
+
 /** Every brief passed once; the review appended a fix task, and its build is starting. */
 const reviewFixProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_REVIEW_FIX_ID,
@@ -1826,6 +1865,7 @@ const reviewFixProjection: WorkflowFixtureProjection = {
         tool: 'ollama',
         model: FIXED_RUNNER_MODEL,
       },
+      fixtureBuildCall(WORKFLOW_FIXTURE_FIX_TASK_ID, FIXED_TS + 411, 'visual-review-fix'),
     ];
   },
 };
@@ -2329,6 +2369,11 @@ const rejectedRerunProjection: WorkflowFixtureProjection = {
     orphanBriefStarted(
       { ...REJECT_SECOND_BRIEF, file: WORKFLOW_FIXTURE_SECOND_FILE },
       FIXED_TS + 600,
+    ),
+    fixtureBuildCall(
+      REJECT_SECOND_BRIEF.id,
+      FIXED_TS + 609,
+      `visual-rerun-${REJECT_SECOND_BRIEF.id}-${FIXED_TS + 610}`,
     ),
     rerunBuildActivity(REJECT_SECOND_BRIEF, FIXED_TS + 610, 'editing the projection registry'),
   ],
@@ -2878,10 +2923,11 @@ const reviewSubagentRowProjection: WorkflowFixtureProjection = {
   config: { reviewer: CODEX_REVIEW_SEAT },
   events: [
     ...reviewProjection.events,
+    finalReviewStarted(FIXED_TS + 190, CODEX_REVIEW_SEAT),
     {
       type: 'runner_call_activity',
       ts: FIXED_TS + 200,
-      phase: 'reviewing-plan',
+      phase: 'final-review',
       callId: 'visual-review-call-001',
       role: 'review',
       backendKind: 'cli',
@@ -5140,7 +5186,7 @@ const resolvedSkipRecoveryProjection: WorkflowFixtureProjection = {
           phase,
           taskId: brief.taskId,
           title: brief.title,
-          reason: `recovery ${issue.reason}: ${issue.message}`,
+          reason: issue.message,
         });
         publishRecoveryResolved({ ...recovery, outcome: 'skipped-current-task' });
         publishWarning({
@@ -5190,7 +5236,7 @@ const resolvedDependencySkipRecoveryProjection: WorkflowFixtureProjection = {
           phase,
           taskId: first.id,
           title: first.title,
-          reason: `recovery ${checkout.reason}: ${checkout.message}`,
+          reason: checkout.message,
         });
         publishRecoveryResolved({ ...skipFirst, outcome: 'skipped-current-task' });
         bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase });
@@ -5224,7 +5270,7 @@ const resolvedDependencySkipRecoveryProjection: WorkflowFixtureProjection = {
           phase,
           taskId: second.id,
           title: second.title,
-          reason: `recovery ${blocked.reason}: ${blocked.message}`,
+          reason: blocked.message,
         });
         publishRecoveryResolved({ ...skipSecond, outcome: 'skipped-current-task' });
         bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase: 'final-review' });
@@ -6188,6 +6234,9 @@ const balanceSeatSwitchProjection: WorkflowFixtureProjection = {
 const seatSwitchedProjection: WorkflowFixtureProjection = {
   ...balanceSeatSwitchProjection,
   scenarioId: scenarioId('workflow-seat-switched'),
+  get events() {
+    return [...balanceSeatSwitchProjection.events, finalReviewStarted(FIXED_TS + 18, BASE_PLANNER)];
+  },
 };
 
 /**
@@ -6298,9 +6347,14 @@ const crewChangedSeatProjection: WorkflowFixtureProjection = {
 
 // The BUILD and REVIEW seats moved in the crew, REVIEW to a tool that cannot see images while the
 // plan has a render check: the two crew change rows, then the one neutral note the run publishes.
+const NO_IMAGE_REVIEW_RUNNER = {
+  kind: 'cli',
+  tool: 'antigravity',
+  model: 'gemini-3.8-flash-high',
+} as const;
 const NO_IMAGE_REVIEW_SEAT_CREW: VisualConfigOverrides = {
   ...crewChangedSeatProjection.config,
-  reviewer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+  reviewer: NO_IMAGE_REVIEW_RUNNER,
 };
 const NO_IMAGE_REVIEW_SEAT_NOTE = reviewSeatRunNote(
   [{ id: 'K1', kind: 'render' }],
@@ -6313,27 +6367,29 @@ const reviewSeatNoImageProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-seat-review-no-image'),
   config: NO_IMAGE_REVIEW_SEAT_CREW,
   events: crewChangedSeatProjection.events.flatMap((event): EngineEvent[] =>
-    event.type !== 'seat_switched'
-      ? [event]
-      : [
-          event,
-          {
-            ...event,
-            seat: 'review',
-            from: 'Claude Code CLI · Claude Sonnet 4',
-            to: 'Google Antigravity CLI · Gemini 3.8 Flash · high',
-          },
-          ...(NO_IMAGE_REVIEW_SEAT_NOTE === undefined
-            ? []
-            : [
-                {
-                  type: 'info' as const,
-                  ts: event.ts,
-                  phase: event.phase,
-                  message: NO_IMAGE_REVIEW_SEAT_NOTE,
-                },
-              ]),
-        ],
+    event.type === 'review_started'
+      ? [finalReviewStarted(event.ts, NO_IMAGE_REVIEW_RUNNER)]
+      : event.type !== 'seat_switched'
+        ? [event]
+        : [
+            event,
+            {
+              ...event,
+              seat: 'review',
+              from: 'Claude Code CLI · Claude Sonnet 4',
+              to: 'Google Antigravity CLI · Gemini 3.8 Flash · high',
+            },
+            ...(NO_IMAGE_REVIEW_SEAT_NOTE === undefined
+              ? []
+              : [
+                  {
+                    type: 'info' as const,
+                    ts: event.ts,
+                    phase: event.phase,
+                    message: NO_IMAGE_REVIEW_SEAT_NOTE,
+                  },
+                ]),
+          ],
   ),
 };
 
@@ -7444,19 +7500,22 @@ const resumedKeptWorkProjection: WorkflowFixtureProjection = {
 const resumedCutBriefProjection: WorkflowFixtureProjection = {
   ...resumedKeptWorkProjection,
   scenarioId: scenarioId('workflow-resumed-cut-brief'),
-  events: resumedKeptWorkProjection.events.flatMap((event): EngineEvent[] =>
-    event.type === 'workflow_resumed'
-      ? [
-          {
-            type: 'info',
-            ts: event.ts - 1,
-            phase: event.phase,
-            message: `${WORKFLOW_FIXTURE_TASK_ID} continues where the stop left it.`,
-          },
-          event,
-        ]
-      : [event],
-  ),
+  events: [
+    ...resumedKeptWorkProjection.events.flatMap((event): EngineEvent[] =>
+      event.type === 'workflow_resumed'
+        ? [
+            {
+              type: 'info',
+              ts: event.ts - 1,
+              phase: event.phase,
+              message: `${WORKFLOW_FIXTURE_TASK_ID} continues where the stop left it.`,
+            },
+            event,
+          ]
+        : [event],
+    ),
+    ...nextFixtureBuild(FIXED_TS + 31_001),
+  ],
 };
 
 const pausedBoundaryProjection: WorkflowFixtureProjection = {
@@ -8706,12 +8765,6 @@ const reviewCorrectedProjection: WorkflowFixtureProjection = {
     orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 100),
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 200),
     {
-      type: 'warning',
-      ts: FIXED_TS + 300,
-      phase: 'implementing',
-      message: 'pre_task blocked: already covered',
-    },
-    {
       type: 'task_skipped',
       ts: FIXED_TS + 300,
       phase: 'implementing',
@@ -9801,6 +9854,13 @@ const projections = [
           ? [
               event,
               {
+                type: 'user_message',
+                ts: event.ts + 10,
+                phase: event.phase,
+                text: 'Keep the cache key.',
+                qa: [{ question: 'Keep the cache key?', answer: 'Keep the cache key.' }],
+              },
+              {
                 type: 'review_completed',
                 ts: event.ts + 20,
                 phase: event.phase,
@@ -9808,13 +9868,6 @@ const projections = [
                 tool: event.tool,
                 verdict: 'pass',
                 duration: 20,
-              },
-              {
-                type: 'user_message',
-                ts: event.ts + 30,
-                phase: event.phase,
-                text: 'Keep the cache key.',
-                qa: [{ question: 'Keep the cache key?', answer: 'Keep the cache key.' }],
               },
               { ...event, ts: event.ts + 40 },
               { type: 'review_step', ts: event.ts + 40, phase: event.phase, step: 'verdict' },
@@ -10212,6 +10265,73 @@ const projections = [
   finalReviewFindingsProjection,
 ] as const;
 
+function settledReviewProjection(projection: WorkflowFixtureProjection): WorkflowFixtureProjection {
+  const events = projection.events;
+  const end = events.findLast((event) => event.type === 'workflow_complete');
+  if (end === undefined) return projection;
+  const tasks = new Map<string, ReturnType<typeof makeTask>>();
+  for (const event of events) {
+    if (event.type === 'task_completed' || event.type === 'task_skipped')
+      tasks.set(
+        event.taskId,
+        makeTask({
+          id: event.taskId,
+          title: event.title,
+          status: event.type === 'task_skipped' ? 'skipped' : 'done',
+        }),
+      );
+  }
+  const state = makeWorkflowState({
+    phase: 'complete',
+    feature: projection.feature,
+    tasks: [...tasks.values()],
+    currentTaskIndex: tasks.size,
+    reviewStatus: end.review,
+    ...(end.review === 'none' && { reviewerSeat: 'none' }),
+    workspace: {
+      kind: 'worktree',
+      path: '.splitbrief/worktrees/visual/workspace',
+      base: { snapshotId: 'workspace-base', head: null },
+    },
+    ...(end.review === 'failed' && { closed: { as: 'ended', at: new Date(end.ts).toISOString() } }),
+  });
+  const review = events.findLast(
+    (event) => event.type === 'review_completed' && event.scope === 'final',
+  );
+  const skipped = state.tasks.filter((task) => task.status === 'skipped').length;
+  const summary = makeSummary({
+    feature: projection.feature,
+    totalTasks: tasks.size,
+    plannerTool: BASE_PLANNER.tool,
+    plannerModel: BASE_PLANNER.model,
+    implementerTool: BASE_IMPLEMENTER.provider,
+    implementerModel: BASE_IMPLEMENTER.model,
+    ...(end.review === 'none' && { reviewerSeat: 'none' }),
+    completedByLocal: tasks.size - skipped,
+    skipped,
+    totalTime: end.ts - (events[0]?.ts ?? end.ts),
+    ...(review?.type === 'review_completed' && {
+      reviewerTool: review.tool,
+      reviewerModel: review.model,
+      review: {
+        verdict:
+          review.verdict === 'pass-with-notes'
+            ? 'pass_with_notes'
+            : review.verdict === 'pass' || review.verdict === 'fail'
+              ? review.verdict
+              : null,
+        critical: review.findings?.blocking ?? 0,
+        warnings: review.findings?.minor ?? 0,
+        notes: review.findings?.outOfScope ?? 0,
+      },
+    }),
+  });
+  return {
+    ...projection,
+    atRest: stoppedFixtureRoute(projection.scenarioId, state, events, summary),
+  };
+}
+
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
   new Map(
     [
@@ -10224,7 +10344,14 @@ export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixture
       checksFailedProjection,
       checksBaseProjection,
       ...atRestProjections,
-    ].map((projection) => [projection.scenarioId, projection]),
+    ].map((projection) => [
+      projection.scenarioId,
+      /^workflow-review-(?:settled-.+|base-rejected|check-crash|corrected|none-end|resumed|verify-rerun)$/u.test(
+        projection.scenarioId,
+      )
+        ? settledReviewProjection(projection)
+        : projection,
+    ]),
   );
 
 /** The halt on screen: the one the resumed state carries, or the one its run raises. */

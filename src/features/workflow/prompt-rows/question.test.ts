@@ -141,6 +141,19 @@ describe('fitQuestionText', () => {
     ]);
   });
 
+  it('marks the last visible line of an option that continues below the panel', () => {
+    const question: ClarificationQuestion = {
+      ...choice,
+      type: 'choice',
+      options: ['Reviewer or planner '.repeat(12).trim()],
+    };
+    const view = fitQuestionView({ ...box, question, height: 10 });
+    const { body } = fitQuestionText(view, '');
+    const next = view.rows[view.visibleOffset + view.bodyHeight];
+    expect(next?.option).toBe(0);
+    expect(body.at(-1)?.text).toMatch(/…$/u);
+  });
+
   it('puts the mark beside the question at the top of a one-row panel', () => {
     const text = fitQuestionText(fitQuestionView({ ...box, question: choice, height: 1 }), '');
     expect(text).toMatchObject({ mark: '↓ more', asked: ' · ↓ more', besideQuestion: '' });

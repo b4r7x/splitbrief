@@ -39,7 +39,7 @@ describe('measureRailCells', () => {
 
 describe('Rail — a run with REVIEW None', () => {
   it.each([
-    { status: 'paused', cancelled: false, apply: 'active' },
+    { status: 'paused', cancelled: false, apply: 'cancelled' },
     { status: 'running', cancelled: true, apply: 'cancelled' },
     { status: 'paused', cancelled: true, apply: 'cancelled' },
   ] as const)(

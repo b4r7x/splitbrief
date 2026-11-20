@@ -1014,7 +1014,7 @@ function frameRows(ui: ReturnType<typeof renderFeature>): string[] {
   return stripAnsiStyles(ui.lastFrame()).split('\n');
 }
 
-it('says what Accept as is and Decide for me do on a failed review the planner cannot fix, whole at 60x18', async () => {
+it('offers Accept as is and End run on a failed review the planner cannot fix, whole at 60x18', async () => {
   const issue = buildReviewFailedRecoveryIssue({
     createdAt: '2026-09-24T00:00:00.000Z',
     blocking: 1,
@@ -1027,7 +1027,7 @@ it('says what Accept as is and Decide for me do on a failed review the planner c
   const review = rows.findIndex((line) => line.includes('v  Review again'));
   expect(rows[review]).toMatch(/Review again {2,}sends your note to the reviewer/);
   expect(rows.join('\n')).toMatch(/k {2}Accept as is {2,}records the blockers/);
-  expect(rows.join('\n')).toMatch(/d {2}Decide for me {2,}closes this run/);
+  expect(rows.join('\n')).not.toContain('Decide for me');
   expect(rows.join('\n')).toContain('a  End run');
   ui.unmount();
 });

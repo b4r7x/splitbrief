@@ -188,7 +188,10 @@ describe('the words of Decide for me: the step the run takes for this halt', () 
       'Decide for me · lets the next review decide',
     ],
   ])('names the step on %s', (_kind, issue, expected) => {
-    expect(issue.availableActions).toContain('decide-for-me');
+    // Saved issues can still carry this action after a planner refusal.
+    expect(issue.availableActions.includes('decide-for-me')).toBe(
+      issue.facts?.cannot === undefined,
+    );
     expect(recoveryMenuText('decide-for-me', issue)).toBe(expected);
   });
 });

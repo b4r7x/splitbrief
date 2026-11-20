@@ -1,3 +1,4 @@
+import { stoppedBeforeBuild } from '../view-model.js';
 import type { CrewSeatId } from '../../../../core/crew/identity.js';
 import { formatStageLabel } from '../../../../core/phases/labels.js';
 import type { TaskCompletionMethod } from '../../../../core/schemas/enums.js';
@@ -31,6 +32,7 @@ export function planSegments({
 
 export function buildSegments(view: SummaryView): CopyFact[] {
   const { total, passed, failed, rows } = view.briefs;
+  if (view.outcome.kind === 'ended' && stoppedBeforeBuild(view)) return [];
   if (total === 0) return [{ text: 'no briefs', tone: 'textDim' }];
   const consulted = rows.filter((row) => row.method === 'consulted').length;
   const escalated = rows.filter((row) => row.state === 'escalated').length;

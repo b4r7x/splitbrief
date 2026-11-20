@@ -76,9 +76,7 @@ export function taskSummarySpans(
     extraFiles === undefined ? undefined : sanitizeTerminalDisplayText(extraFiles);
   const safeReason = reason === undefined ? undefined : sanitizeTerminalDisplayText(reason);
   const safeNote = note === undefined ? undefined : sanitizeTerminalDisplayText(note);
-  const failed =
-    (state.kind === 'settled' && state.method === 'failed') ||
-    (state.kind === 'stage' && state.outcome === 'failed');
+  const failed = state.kind === 'stage' && state.outcome === 'failed';
   const quiet =
     props.quiet === true ||
     state.kind === 'pending' ||
@@ -154,7 +152,10 @@ function detailRun(input: {
     ];
   }
   if (state.method === 'failed')
-    return [safeFile].filter(isPresent).map((text) => ({ text, tone: 'textDim' }));
+    return [
+      ...(safeFile ? [{ text: safeFile, tone: 'textDim' as const }] : []),
+      { text: 'failed', tone: stateTone('failed') },
+    ];
   if (state.method === 'skipped')
     return [
       ...(safeFile ? [{ text: safeFile, tone: 'textDim' as const }] : []),

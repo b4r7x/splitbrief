@@ -11,6 +11,7 @@ export interface EventBlockCacheKey {
 }
 
 interface ActivityBatchCacheKey {
+  switched?: string | undefined;
   batchKey: string;
   count: number;
   width: number;
@@ -86,6 +87,7 @@ function sameEventKey(a: EventBlockCacheKey, b: EventBlockCacheKey): boolean {
 
 function sameBatchKey(a: ActivityBatchCacheKey, b: ActivityBatchCacheKey): boolean {
   return (
+    a.switched === b.switched &&
     a.batchKey === b.batchKey &&
     a.count === b.count &&
     a.width === b.width &&

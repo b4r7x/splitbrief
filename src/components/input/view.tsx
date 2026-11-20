@@ -4,6 +4,7 @@ import { Box } from 'ink';
 import { buildSegments, type SegmentType } from './segments.js';
 import { computeViewportScroll } from './viewport-scroll.js';
 import { wrapWordVisualLines } from '../../core/editor/grapheme-motions.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import { segmentsForRowText } from '../../utils/display-text/width.js';
 
 export interface TextStyle {
@@ -76,16 +77,29 @@ export function ControlledMultilineInput({
     preCursor[cursorAt]?.value ? caretOffset : -1,
   );
   const contentHeight = visualRows.length;
-  const markerHeight = visualRows.findLastIndex((row) => row.start <= caretOffset) + 1;
-  const paintedParts = visualRows.flatMap((row, index) => [
-    ...(index === 0 ? [] : [{ text: '\n', type: undefined }]),
-    ...segmentsForRowText(parts, row.text, row.start),
-  ]);
+  const placeholderAtTop = value === '' && !focus;
+  const markerHeight = placeholderAtTop
+    ? 1
+    : visualRows.findLastIndex((row) => row.start <= caretOffset) + 1;
 
   const minRows = rows ?? maxRows ?? 1;
   const capRows = maxRows ?? rows ?? 1;
   const effectiveVisibleRows = Math.max(minRows, Math.min(capRows, contentHeight));
 
+  const clipped = placeholderAtTop && contentHeight > effectiveVisibleRows;
+  const paintedParts = (clipped ? visualRows.slice(0, effectiveVisibleRows) : visualRows).flatMap(
+    (row, index) => [
+      ...(index === 0 ? [] : [{ text: '\n', type: undefined }]),
+      ...(clipped && index === effectiveVisibleRows - 1
+        ? [
+            {
+              text: truncateTerminalDisplayText(row.text.trimEnd() + '…', columns),
+              type: 'placeholder' as const,
+            },
+          ]
+        : segmentsForRowText(parts, row.text, row.start)),
+    ],
+  );
   useEffect(() => {
     onVisibleRowsChange?.(effectiveVisibleRows);
   }, [effectiveVisibleRows, onVisibleRowsChange]);

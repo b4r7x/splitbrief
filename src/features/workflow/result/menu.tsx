@@ -12,8 +12,6 @@ import {
   RESULT_MENU_LEGEND,
   RESULT_MENU_UNFOCUSED_LEGEND,
   resultMenuHeight,
-  resultMenuNoteLines,
-  resultMenuOpenCount,
   resultMenuOpenLines,
   resultMenuRows,
   resultMenuTitle,
@@ -26,7 +24,6 @@ export interface ResultMenuProps {
   override: boolean;
   findings: readonly string[];
   redChecks?: ResultMenuInput['redChecks'];
-  note?: string | undefined;
   files: number | null;
   focused: boolean;
   confirming: boolean;
@@ -45,7 +42,6 @@ function ResultMenuBody({
   override,
   findings,
   redChecks,
-  note,
   files,
   focused,
   height,
@@ -57,7 +53,7 @@ function ResultMenuBody({
 }: ResultMenuProps) {
   const t = useTheme();
   const cols = terminalSizeStore.use((state) => state.cols);
-  const input = { override, findings, redChecks, note, confirming, files };
+  const input = { override, findings, redChecks, confirming, files };
   const rows = resultMenuRows(input);
   const layout = inlineMenuLayout(rows, cols);
   const boxHeight = height ?? resultMenuHeight(input, cols);
@@ -89,21 +85,7 @@ function ResultMenuBody({
   });
 
   const legend = focused ? RESULT_MENU_LEGEND : RESULT_MENU_UNFOCUSED_LEGEND;
-  // The red checks and the findings take up to half of the rows the chrome leaves, and the note the
-  // other rows; a note taller than that ends on an ellipsis.
-  const bodyRows = chrome.extraRows;
-  const noteRows = Math.max(
-    Math.min(1, bodyRows),
-    bodyRows - Math.min(resultMenuOpenCount(input), Math.ceil(bodyRows / 2)),
-  );
-  const wrappedNote = confirming && noteRows > 0 ? resultMenuNoteLines(note, cols) : [];
-  const noteLines =
-    wrappedNote.length <= noteRows
-      ? wrappedNote
-      : [...wrappedNote.slice(0, noteRows - 1), `${wrappedNote[noteRows - 1]}…`];
-  const bodyLines = confirming
-    ? [...noteLines, ...resultMenuOpenLines(input, bodyRows - noteLines.length)]
-    : [];
+  const bodyLines = confirming ? resultMenuOpenLines(input, chrome.extraRows) : [];
   const titleParts = resultMenuTitle(input);
   const title = fitKeyLegend(
     titleParts.map((part) => part.text).join(''),

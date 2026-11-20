@@ -3025,6 +3025,12 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
           resumeAt: { kind: 'gate', gate: 'plan' },
         }),
         seed: () => {
+          addEvent({
+            type: 'user_message',
+            ts: STOP_SHEET_TS,
+            phase: 'planning',
+            text: PLAN_GATE_FEATURE,
+          });
           stopStore.request('stop-now');
           stopStore.park('mid-brief', null, null);
           markWorkflowPaused();
@@ -3106,7 +3112,18 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [
     scenarioId('workflow-stop-sheet-planning'),
     // No brief has run, so the sheet has no changes to promise.
-    () => createOverlayFixture({ overlay: 'stop-sheet', underlyingScreen: 'workflow' }),
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        seed: () =>
+          addEvent({
+            type: 'user_message',
+            ts: STOP_SHEET_TS,
+            phase: 'planning',
+            text: 'Inspect visual fixture',
+          }),
+      }),
   ],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-sessions-refused-applying'), createSessionsRefusedApplyingFixture],

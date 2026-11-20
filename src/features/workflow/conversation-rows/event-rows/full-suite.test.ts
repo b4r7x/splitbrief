@@ -16,6 +16,11 @@ function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>): stri
 }
 
 describe('fullSuiteRow', () => {
+  it('shows a long check command in full when the terminal has room', () => {
+    const command = 'npm test -- src/validation/review/changed-files-before-apply.test.ts';
+    expect(fullSuiteRow(reviewCheck({ command, status: 'done', passed: true }))).toContain(command);
+  });
+
   it.each(['lint', 'test'] as const)('names the %s stage that did not run', (stage) => {
     expect(
       fullSuiteRow({

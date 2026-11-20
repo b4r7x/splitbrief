@@ -112,6 +112,7 @@ export function openRunBylineParts(
     apply?: ApplyByline | undefined;
     /** The Apply as is confirmation is open, so its two rows are the only ones on the screen. */
     confirming?: boolean | undefined;
+    emptyResult?: boolean;
   }>,
 ): readonly ConversationRowSegment[] {
   const { status, width, now } = input;
@@ -161,7 +162,9 @@ export function openRunBylineParts(
         action:
           input.confirming === true
             ? 'Pick Apply as is or Back'
-            : `Pick ${status.override ? 'Apply as is' : 'Apply'}, Show diff or Discard`,
+            : input.emptyResult
+              ? 'Pick Close run'
+              : `Pick ${status.override ? 'Apply as is' : 'Apply'}, Show diff or Discard`,
       },
       width,
     );

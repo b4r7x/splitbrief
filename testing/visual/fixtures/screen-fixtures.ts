@@ -1275,7 +1275,15 @@ function createRemovedCommandFixture(): FixtureLifecycle {
       composerDraftStore.request('/revise-plan split the brief');
     },
     teardown: workflow.teardown,
-    afterMount: (write) => write('\r'),
+    afterMount: (write) => {
+      addEvent({
+        type: 'user_message',
+        ts: VISUAL_FIXTURE_EPOCH,
+        phase: 'planning',
+        text: 'Refine terminal navigation',
+      });
+      write('\r');
+    },
   };
 }
 

@@ -1,3 +1,7 @@
+import { formatRecordedSeatChangeIdentities } from '../display/recorded-seat-identity.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { diffEventKey } from '../../../core/sections/events.js';
 import type { Section } from '../../../core/sections/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -102,16 +106,21 @@ function buildConversationRowsProjectionWithContext(
     renderableCount += block.renderableUnits;
   };
 
+  const switchedActivity = new Map<CrewSeatId, string>();
+  let switchedBuild: string | undefined;
   const flushActivityBatch = (batch: RunnerActivityBatch, settled: boolean): void => {
     const batchKey = activityBatchKey(batch.firstIndex, batch.callId);
     const events = [...batch.events];
     const expanded = inputs.expandedActivityBatches.has(batchKey);
-    const key = { batchKey, count: events.length, width: ctx.width, expanded, settled };
+    const seat = seatForRunningCall(batch.lastEvent);
+    const switched = seat === null ? undefined : switchedActivity.get(seat);
+    if (seat !== null) switchedActivity.delete(seat);
+    const key = { batchKey, count: events.length, width: ctx.width, expanded, settled, switched };
     let block = getCachedActivityBatchBlock(batch.lastEvent, key);
     if (block === undefined) {
       const model = buildActivityBatchViewModel({ events, batchKey, expanded });
       block = runnerActivityBatchRowBlock({
-        model,
+        model: model.headerRunner === switched ? { ...model, headerRunner: null } : model,
         width: ctx.width,
       });
       if (settled && block !== null) block = withoutActiveRow(block);
@@ -175,6 +184,17 @@ function buildConversationRowsProjectionWithContext(
       continue;
     }
     const { event, globalIndex } = step;
+    if (event.type === 'seat_switched') {
+      const { to } = formatRecordedSeatChangeIdentities(
+        event.from,
+        event.to,
+        CREW_SEAT_ROLES[event.seat],
+      );
+      switchedActivity.set(event.seat, to);
+      if (event.seat === 'build') switchedBuild = to;
+    }
+    const precedingCrew = event.type === 'task_started' ? switchedBuild : undefined;
+    if (event.type === 'task_started') switchedBuild = undefined;
 
     if (event.type === 'user_message' && dedupTitle === undefined) {
       dedupTitle = event.text;
@@ -203,6 +223,7 @@ function buildConversationRowsProjectionWithContext(
         dedupTitle,
         settledSection: step.settledSection,
         causeInRecovery: step.causeInRecovery,
+        precedingCrew,
       });
       if (step.settledSection !== undefined && block !== null) block = withoutActiveRow(block);
       if (cacheable) rememberEventRowBlock(event, blockKey, block);

@@ -647,7 +647,7 @@ describe('checkGroupRowBlock', () => {
     {
       width: 120,
       header: 'Checks  1 failed · 1 pre-existing · 3 passed · 2 rendered · 1 reused · 4m 12s',
-      command: 48,
+      command: 84,
       kinds: ['activity', 'activity-more', 'activity-child', 'activity-child-last'],
     },
     {

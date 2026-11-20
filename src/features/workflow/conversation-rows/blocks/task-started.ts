@@ -40,6 +40,7 @@ function unusedSpacePlaceholder(text: string): string | null {
 // what fits, so the row says the same thing the sidebar and the editor say.
 export function taskStartedMetadata(
   event: EngineEventOf<'task_started'>,
+  precedingCrew?: string,
 ): readonly ConversationRowSegment[] {
   const [, ...rest] = formatTaskStartedParts(event);
   return [
@@ -54,16 +55,17 @@ export function taskStartedMetadata(
       }),
       tone: 'textDim',
     },
-    ...rest,
+    ...rest.filter((segment) => segment.tone !== 'implementer' || segment.text !== precedingCrew),
   ];
 }
 
 export function taskStartedCrewRowBlock(input: {
   keyPrefix: string;
   event: EngineEventOf<'task_started'>;
+  precedingCrew?: string | undefined;
   width: number;
 }): ConversationRowBlock | null {
-  const [, ...metadata] = taskStartedMetadata(input.event);
+  const [, ...metadata] = taskStartedMetadata(input.event, input.precedingCrew);
   return compositeBlock(
     input.keyPrefix,
     metadata.map((segment, index) =>

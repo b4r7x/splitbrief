@@ -297,3 +297,8 @@ function savedPatch(state: WorkflowState | null, changed: readonly string[] | nu
   if (patch === undefined || changed?.length === 0) return null;
   return sanitizeTerminalDisplayText(patch);
 }
+
+/** The rail froze before Build, so no brief started: a run with no changed set built nothing. */
+export function stoppedBeforeBuild(view: SummaryView): boolean {
+  return view.rail.find((state) => state.stage === 'build')?.status === 'pending';
+}

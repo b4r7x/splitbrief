@@ -1,3 +1,4 @@
+import { stoppedBeforeBuild } from '../view-model.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { formatTime } from '../../../../utils/format/time.js';
 import { countNoun } from '../../../../utils/pluralize.js';
@@ -81,7 +82,11 @@ export function runRows(view: SummaryView, form: SummaryForm = 'whole'): RunRow[
 export function recordFold(view: SummaryView, form: SummaryForm): string[] {
   const notes = view.review.kind === 'written' ? view.digest.notes : [];
   const kinds: readonly (readonly [number, string])[] = [
-    [view.briefs.rows.length + view.briefs.earlierRows.length, 'brief'],
+    [
+      view.outcome.kind === 'ended' && stoppedBeforeBuild(view) ? 0 : view.briefs.rows.length,
+      'brief',
+    ],
+    [view.briefs.earlierRows.length, 'earlier brief'],
     [form === 'whole' ? 0 : notes.filter((note) => note.blocking).length, 'blocking finding'],
     [
       (view.files.changed?.length ?? 0) - (form === 'whole' ? view.digest.leadFiles.length : 0),
@@ -97,7 +102,9 @@ export function recordFold(view: SummaryView, form: SummaryForm): string[] {
   const [first, ...rest] = kinds
     .filter(([count]) => count > 0)
     .map(([count, noun]) => countNoun(count, noun));
-  return first === undefined ? ['more'] : [`+${first}`, ...rest];
+  return first === undefined
+    ? [view.briefs.rows.length > 0 ? 'brief details' : 'more']
+    : [`+${first}`, ...rest];
 }
 
 /**

@@ -72,11 +72,6 @@ export async function runPreTaskHooksAndPublish(opts: {
       throw err;
     }
     if (!pre.allow) {
-      publishWarning({
-        bus: wctx.bus,
-        phase: state.phase,
-        message: `pre_task blocked: ${pre.reason ?? 'hook denied'}`,
-      });
       state = await skipBrief({
         wctx,
         state,

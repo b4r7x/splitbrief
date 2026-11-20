@@ -51,7 +51,7 @@ export function buildRetryExhaustedRecoveryIssue(
   const cannotBy = opts.cannot === undefined ? undefined : 'planner';
   const actions = haltActions('retry-exhausted', [
     opts.allowRetryOverride ? 'retry-same-worker' : undefined,
-    opts.cannot !== undefined || opts.question !== undefined ? 'decide-for-me' : undefined,
+    opts.cannot === undefined && opts.question !== undefined ? 'decide-for-me' : undefined,
     'skip-current-task',
     'end-run',
   ]);

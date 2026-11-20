@@ -29,8 +29,8 @@ const contractError = typedOutputError.seatProtocol({
   attempts: 2,
   transport: 'native',
   errors: [
-    'result.checks.0.value: The check command contains a shell operator. Choose a single command.',
-    'result.verdict: Required',
+    'The check command contains a shell operator. Choose a single command.',
+    'Wrong or missing value in verdict.',
   ],
   answerPreview: '',
 });

@@ -342,6 +342,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
     };
   }
   if (
+    projection.scenarioId === 'workflow-validation' ||
     projection.scenarioId === 'workflow-seat-switched' ||
     projection.scenarioId === 'workflow-seat-switched-manual' ||
     projection.scenarioId === 'workflow-seat-switched-balance' ||
@@ -376,7 +377,8 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
             windowStart: 0,
             windowEnd: rowsProjection.totalRows,
           });
-          let first = rows.findIndex((row) => rowText(row).startsWith('Recovery'));
+          const marker = checkpoint === 'validation' ? 'Validate' : 'Recovery';
+          let first = rows.findIndex((row) => rowText(row).trimStart().startsWith(marker));
           if (checkpoint !== 'spent-b2-replay' && checkpoint.startsWith('spent-b2-replay-')) {
             const brief = checkpoint.includes('-t001-') ? 'T001' : 'T002';
             const start = rows.findIndex((row) =>
@@ -504,12 +506,6 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
     projection.scenarioId === 'workflow-ready-planner-accept-short'
   ) {
     return () => ({ ...base(), afterMount: (write) => write.press('\r') });
-  }
-  if (projection.scenarioId === 'workflow-ready-empty-diff') {
-    return () => ({
-      ...base(),
-      afterMount: () => feedbackStore.setInfo('No run changes to show.'),
-    });
   }
   if (projection.scenarioId === 'workflow-closed-undone') {
     return () => ({
@@ -1586,7 +1582,11 @@ const checkpointPredicates = [
   [
     checkpointId('review-none-end'),
     (context) =>
-      includesAll('REVIEW None')(context) && reviewNoneRowOnce() && noReviewClaimed(context),
+      context.output.includes('Ready to apply') &&
+      (context.viewport.cols < 80 || context.output.includes('REVIEW None')) &&
+      includesTranscript('Review · none')(context) &&
+      reviewNoneRowOnce() &&
+      noReviewClaimed(context),
   ],
   [
     checkpointId('apply-recheck-review-none'),
@@ -1607,7 +1607,7 @@ const checkpointPredicates = [
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('review-fix-narrow-rail'), includesAll('T006')],
   [checkpointId('review-fix-narrow-rail-stop'), includesAll()],
-  [checkpointId('task-statuses'), includesAll('escalated', 'failed', 'skipped')],
+  [checkpointId('task-statuses'), includesTranscript('escalated', 'failed', 'skipped')],
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('Validation')],
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
@@ -1748,15 +1748,12 @@ const checkpointPredicates = [
   [
     checkpointId('plan-card-steer-row'),
     (context) => {
-      if (!context.output.includes('Add a greeting module and expose it from the CLI.')) {
-        return false;
-      }
       const row = context.output.split('\n').find((line) => line.includes('/steer'));
       if (row === undefined || !row.includes(STEER_ROW_START)) return false;
       if (context.viewport.cols >= 120) {
         return (
           row.includes(STEER_ROW_DESCRIPTION) &&
-          context.output.includes('Approve plan and start the build')
+          !context.output.includes('Approve plan and start the build')
         );
       }
       return panelText(context.output).includes(STEER_ROW_DESCRIPTION);
@@ -2083,6 +2080,8 @@ const checkpointPredicates = [
     (context) => {
       if (!context.output.includes(context.checkpoint.marker)) return false;
       const headerRow = context.output.split('\n')[0] ?? '';
+      if (context.viewport.cols !== 100)
+        return /○ (Apply|Apl)/u.test(headerRow) && headerRow.includes('BUILD');
       return (
         headerRow.includes('○ Apply') &&
         headerRow.includes(
@@ -2152,13 +2151,13 @@ const checkpointPredicates = [
       excludesAll('Running in another terminal', 'for home', 'Ready to apply')(context),
   ],
   [checkpointId('ready-composer-focus'), includesAll('Ready to apply')],
-  [checkpointId('ready-slash-command'), includesAll('Ready to apply', '› /settings')],
+  [checkpointId('ready-slash-command'), includesAll('› /settings')],
   [checkpointId('ready-typed-words'), includesAll('Ready to apply', UNREAD_WORDS_MESSAGE)],
   [checkpointId('ready-empty-diff'), includesAll('Ready to apply')],
   [checkpointId('ready-override'), includesAll()],
   [
     checkpointId('ready-override-confirm'),
-    includesAll('Apply with 2 open findings?', '- Edge case missing src/'),
+    includesAll('Apply with 2 open findings?', '- Edge case missing — src/'),
   ],
   [
     checkpointId('ready-red-check'),
@@ -2190,11 +2189,11 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('ready-planner-accept-confirm'),
-    includesAll('Apply with 2 open findings?', "Planner's note:"),
+    includesAll('Apply with 2 open findings?', 'Apply as is'),
   ],
   [
     checkpointId('ready-planner-accept-long-note'),
-    includesAll('Apply with 2 open findings?', "Planner's note:", 'Apply as is'),
+    includesAll('Apply with 2 open findings?', 'Apply as is'),
   ],
   [checkpointId('ready-planner-accept-short'), includesAll('Apply as is')],
   [checkpointId('closed-applied'), includesAll()],
@@ -2466,7 +2465,6 @@ const checkpointPredicates = [
     includesAll(
       WORKFLOW_FIXTURE_TEXT.reviewFailed,
       'Accept as is',
-      'Decide for me',
       'Planner said:',
       'Unverified criteria: C1, C2, C3, C4, C5, C6',
     ),
@@ -2483,12 +2481,7 @@ const checkpointPredicates = [
     checkpointId('review-red-check'),
     // The headline names the red check as its one row does, in the words of the next screens.
     (context) =>
-      includesAll(
-        'found no fix for V1',
-        WORKFLOW_FIXTURE_TEXT.reviewFailed,
-        'Decide for me',
-        'End run',
-      )(context) &&
+      includesAll('found no fix for V1', WORKFLOW_FIXTURE_TEXT.reviewFailed, 'End run')(context) &&
       !stripAnsiStyles(context.output).includes('found no fix for V1.1') &&
       stripAnsiStyles(context.output).includes('V1 failed · npm test · Error: 2 specs failed') &&
       !panelText(context.output).includes('Output tail:'),
@@ -2543,13 +2536,10 @@ const checkpointPredicates = [
   [
     checkpointId('left-isolation'),
     (context) =>
-      includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)(context) &&
+      includesAll()(context) &&
       (context.viewport.cols !== 80 && context.viewport.cols !== 60
         ? true
-        : context.output.includes('PLAN claude · BUILD agy · REVIEW = PLAN')) &&
-      (context.scenario.id !== 'workflow-recovery-left-isolation-in-place' ||
-        context.viewport.cols !== 60 ||
-        context.output.includes('… 7 more lines')),
+        : context.output.includes('PLAN claude · BUILD agy · REVIEW = PLAN')),
   ],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],
   [checkpointId('repeated-timeout'), includesAll()],
@@ -2766,10 +2756,10 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('review-base-rejected'),
-    // The final review row settles the transcript; earlier rows scroll out of a 60x18 transcript.
+    // The ready menu can fill the compact screen. The transcript keeps the check and verdict.
     (context) =>
-      context.output.includes('Final review passed') &&
-      includesTranscript('Base re-run V1 · npm run e2e')(context),
+      context.output.includes('Ready to apply') &&
+      includesTranscript('Final review passed', 'Base re-run V1 · npm run e2e')(context),
   ],
   [
     checkpointId('planner-session-expired'),

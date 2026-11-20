@@ -539,6 +539,27 @@ describe('requestTyped', () => {
 });
 
 describe('requestTyped repair reasons', () => {
+  it('sends the nested field path to the reviewer and names the field in the halt', async () => {
+    const bad = completed('{"checks":[{"value":null}]}');
+    const { call, invokes } = makeSeatCall({
+      seat: 'reviewer',
+      typedOutput: 'fallback',
+      results: [bad, bad],
+    });
+    const result = await requestTyped({
+      call,
+      prompt: 'Review it',
+      schemaName: 'checks',
+      jsonSchema,
+      schema: z.object({ checks: z.array(z.object({ value: z.string() })) }),
+    });
+    expect(invokes[1]?.prompt).toContain('checks.0.value');
+    if (!('error' in result)) throw new Error('Expected a halt');
+    expect(result.error.data.errors).toEqual(['Wrong or missing value in value.']);
+    expect(result.error.message).toContain('Wrong or missing value in value.');
+    expect(result.error.message).not.toContain('checks.0.value');
+  });
+
   it('hands the refused field as the reason before it asks the seat again', async () => {
     const order: string[] = [];
     const { call } = makeSeatCall({

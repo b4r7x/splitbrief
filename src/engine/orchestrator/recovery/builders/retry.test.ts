@@ -40,6 +40,7 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
 
     expect(issue.availableActions).toContain('retry-same-worker');
     expect(issue.recommendedAction).toBe(step);
+    expect(issue.availableActions).not.toContain('decide-for-me');
   });
 
   it('keeps Try again as the recommendation with no cannot from the planner', () => {

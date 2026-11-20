@@ -120,6 +120,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     expect(readFileSync(filePath, 'utf-8')).toBe('export const owner = "user edit";\n');
     expect(result.state.currentTaskIndex).toBe(1);
     expect(result.state.tasks[0]?.status).toBe('skipped');
+    expect(events.find((event) => event.type === 'task_skipped')?.reason).toBe(issue.message);
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
     expect(events.map((event) => event.type)).toEqual(
@@ -229,10 +230,14 @@ describe('applyRecoveryAction: decide-for-me', () => {
   async function decide(name: string, issueFor: (task: Task) => RecoveryIssue) {
     const { projectDir, sessionId } = setupSession(`decide-${name}`);
     const task = makeTask({ id: 'T041', status: 'in_progress' });
+    const issue = issueFor(task);
     const state: WorkflowState = {
       ...implementingState([task]),
       phase: 'escalating',
-      pendingRecovery: issueFor(task),
+      pendingRecovery: {
+        ...issue,
+        availableActions: [...new Set([...issue.availableActions, 'decide-for-me' as const])],
+      },
     };
     saveState({ projectDir, sessionId }, state);
     const { bus, events } = makeBus(projectDir, sessionId);

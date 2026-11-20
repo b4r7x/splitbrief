@@ -215,6 +215,24 @@ describe('ListViewport scrollbar', () => {
     resetAllStores();
   });
 
+  it('uses the more indicator alone when only one item fits', () => {
+    const ui = renderFeature(
+      <ListViewport
+        items={['Stop now', 'End run', 'Back']}
+        selectedIndex={0}
+        width={40}
+        rowBudget={2}
+        getKey={(item) => item}
+        renderItem={(item) => <Text>{item}</Text>}
+      />,
+    );
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Stop now');
+    expect(frame).toContain('↓');
+    expect(barLines(frame)).toEqual([]);
+    ui.unmount();
+  });
+
   it('draws a right-edge bar and narrows contentWidth when the window overflows', async () => {
     const items = Array.from({ length: 20 }, (_, i) => `item-${i}`);
     let lastContentWidth: number | undefined;

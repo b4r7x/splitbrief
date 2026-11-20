@@ -322,7 +322,7 @@ describe('outcomeLineSpans', () => {
       outcomeLineSpans(view, WIDE)
         .map((span) => span.text)
         .join(''),
-    ).toBe('Ended  Plan 0/3 · nothing built');
+    ).toBe('Ended  Plan · nothing built');
   });
 
   it('keeps an unrecorded changed set unrecorded once the build has started', () => {

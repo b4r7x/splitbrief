@@ -971,7 +971,7 @@ describe('visual catalog', () => {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       const row = frame.split('\n').find((line) => line.includes('/steer'));
       expect(row).toContain('Send a correction now; a running call stops first');
-      expect(frame).toContain('Approve plan and start the build');
+      expect(frame).not.toContain('Approve plan and start the build');
     } finally {
       await handle.unmount();
     }
