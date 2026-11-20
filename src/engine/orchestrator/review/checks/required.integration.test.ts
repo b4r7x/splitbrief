@@ -427,7 +427,7 @@ describe('pre-review checks', () => {
       checkIds: ['K2'],
       command: 'tsc --noEmit',
     });
-    expect(result.defects[0]?.text).toContain('K2');
+    expect(result.defects[0]?.text).toContain('tsc --noEmit failed · 1 failure');
     expect(result.defects[0]?.output).toContain('error TS1005');
   });
 
@@ -481,17 +481,17 @@ describe('pre-review checks', () => {
     );
 
     expect(result.defects.map((input) => input.file)).toEqual(['src/a.test.ts', 'src/b.test.ts']);
-    expect(result.defects[0]?.text).toContain(
+    expect(result.defects[0]?.checkDetail).toContain(
       '1 failure\nFailures:\n- src/a.test.ts::adds\n  AssertionError: expected 1 to be 2',
     );
-    expect(result.defects[0]?.text).not.toContain('src/b.test.ts');
-    expect(result.defects[0]?.text).not.toContain('expected 3 to be 4');
-    expect(result.defects[1]?.text).toContain(
+    expect(result.defects[0]?.checkDetail).not.toContain('src/b.test.ts');
+    expect(result.defects[0]?.checkDetail).not.toContain('expected 3 to be 4');
+    expect(result.defects[1]?.checkDetail).toContain(
       '1 failure\nFailures:\n- src/b.test.ts::subtracts\n  AssertionError: expected 3 to be 4',
     );
-    expect(result.defects[1]?.text).not.toContain('src/a.test.ts');
-    expect(result.defects[1]?.text).not.toContain('expected 1 to be 2');
-    for (const input of result.defects) expect(input.text).not.toContain('Output tail:');
+    expect(result.defects[1]?.checkDetail).not.toContain('src/a.test.ts');
+    expect(result.defects[1]?.checkDetail).not.toContain('expected 1 to be 2');
+    for (const input of result.defects) expect(input.checkDetail).not.toContain('Output tail:');
   });
 
   it('keeps an unassigned Rust failure on the required check target', () => {
@@ -518,9 +518,9 @@ describe('pre-review checks', () => {
 
     expect(inputs).toHaveLength(1);
     expect(inputs[0]).toMatchObject({ file: 'src/lib.rs', failureKeys: ['tests::adds'], output });
-    expect(inputs[0]?.text).toContain('1 failure\nFailures:\n- tests::adds');
+    expect(inputs[0]?.checkDetail).toContain('1 failure\nFailures:\n- tests::adds');
     expect(inputs[0]?.text).not.toContain('0 failures');
-    expect(inputs[0]?.text).not.toContain('Output tail:');
+    expect(inputs[0]?.checkDetail).not.toContain('Output tail:');
   });
 
   it('raises an input only for the new failures of a red split at the run base', () => {
@@ -576,7 +576,7 @@ describe('pre-review checks', () => {
 
     expect(inputs).toHaveLength(1);
     expect(inputs[0]?.file).toBeNull();
-    expect(inputs[0]?.text).toMatch(/^Check K1 did not pass/);
+    expect(inputs[0]?.text).toBe('npm test failed · 1 failure');
     expect(inputs[0]?.text).not.toContain('No task changed it.');
   });
 

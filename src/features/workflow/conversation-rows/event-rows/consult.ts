@@ -67,10 +67,7 @@ function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): Conver
     case 'rewrite-task':
       return [
         {
-          text:
-            event.revision === undefined
-              ? `rewrote ${event.taskId}`
-              : `rewrote ${event.taskId} (rev ${event.revision})`,
+          text: `rewrote ${event.taskId}`,
           tone: 'textDim',
         },
       ];
@@ -82,10 +79,7 @@ function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): Conver
     case 'verify':
       return [
         {
-          text:
-            event.checkIds === undefined || event.checkIds.length === 0
-              ? 'verify'
-              : `verify ${event.checkIds.join(', ')}`,
+          text: 'verify',
           tone: 'textDim',
         },
       ];

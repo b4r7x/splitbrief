@@ -165,7 +165,7 @@ describe('conversationViewportWindow', () => {
 
   it.each([
     [20, 2, 2, ['T001 brief 1', 'T002 brief 2'], 0],
-    [6, 4, 1, ['T001 brief 1'], 3],
+    [6, 4, 1, ['T001 brief 1 · +3 more'], 3],
     [20, 5, 3, ['T001 brief 1', 'T002 brief 2'], 3],
   ] as const)(
     'at %i rows with %i pending briefs gives the block %i rows',

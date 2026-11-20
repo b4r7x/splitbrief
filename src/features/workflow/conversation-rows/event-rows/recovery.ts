@@ -117,10 +117,10 @@ function recoveryCardBlock(
   width: number,
   tone: ConversationRowTone,
 ): ConversationRowBlock | null {
-  const empty = first.length === 0 && rest.every((chunk) => chunk.length === 0);
+  if (first.length === 0 && rest.every((chunk) => chunk.length === 0)) return null;
   return wholeSegmentsBlock(
     keyPrefix,
-    [[{ text: empty ? 'Recovery' : 'Recovery  ', tone }, ...first], ...rest],
+    [[{ text: 'Recovery  ', tone }, ...first], ...rest],
     width,
     'card',
   );

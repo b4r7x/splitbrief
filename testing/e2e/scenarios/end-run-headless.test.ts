@@ -142,7 +142,7 @@ describe('headless End run', { timeout: 240_000 }, () => {
       viewportHeight: 50,
       streaming: { taskId: null, lines: [], active: false },
     }).rows.map(rowText);
-    expect(rows.filter((row) => row.includes('current turn interrupted'))).toHaveLength(1);
+    expect(rows.filter((row) => row.includes('interrupted: SPLITBRIEF exited'))).toHaveLength(1);
   });
 
   it('ends a SIGINT-parked run without pending recovery and preserves its patch', async () => {
@@ -265,7 +265,8 @@ describe('headless End run', { timeout: 240_000 }, () => {
             const frame = stripAnsiStyles(ui.lastFrame());
             expect(frame).toContain('Run closed');
             expect(frame).toContain(`${glyph('statusCancelled')} Ended`);
-            expect(frame).toContain('Stopped by you');
+            expect(frame).toContain('Stopped at T001');
+            expect(frame).not.toContain('Stopped by you');
             expect(frame).not.toContain('Resume');
             expect(frame).not.toContain('to continue');
             expect(frame).not.toContain('Workspace kept');
@@ -395,7 +396,8 @@ describe('headless End run', { timeout: 240_000 }, () => {
       viewportHeight: 50,
       streaming: { taskId: null, lines: [], active: false },
     }).rows.map(rowText);
-    expect(rows.filter((row) => row.includes('Stopped by you'))).toHaveLength(1);
+    expect(rows.filter((row) => row.includes('Stopped at T001'))).toHaveLength(1);
+    expect(rows.some((row) => row.includes('Stopped by you'))).toBe(false);
     expect(rows.some((row) => row.includes('run.patch'))).toBe(false);
   });
 });

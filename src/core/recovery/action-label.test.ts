@@ -82,3 +82,7 @@ describe('recoveryActionLabel for an Apply halt', () => {
     },
   );
 });
+
+it('calls the recovery action Skip brief', () => {
+  expect(recoveryActionLabel('skip-current-task')).toBe('Skip brief');
+});

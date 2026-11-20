@@ -85,6 +85,7 @@ export function computeConversationRowScroll(
 ): ConversationRowScrollComputation {
   const scrollViewportHeight = Math.max(0, inputs.viewportHeight);
   const projectionInput = {
+    closed: inputs.closed,
     sections: inputs.sections,
     expandedDiffs: inputs.expandedDiffs,
     expandedActivityBatches: inputs.expandedActivityBatches,

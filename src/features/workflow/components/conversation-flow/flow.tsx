@@ -18,7 +18,6 @@ import { publishTranscriptTail } from '../../conversation-rows/transcript-tail.j
 import { conversationViewportWindow } from '../../conversation-rows/viewport.js';
 import { queuedBriefs } from '../../conversation-rows/queued-briefs.js';
 import { rowLeadingCells } from '../../conversation-rows/row-format/markers.js';
-import { SOFT_SEP } from '../../../../core/separators.js';
 import { ConversationRowView } from './row-view.js';
 import { ConversationTranscriptRows } from './hover-rows.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
@@ -89,6 +88,7 @@ export function ConversationFlow({
     closed: closedAtRest,
   });
   const view = conversationViewportWindow({
+    closed: closedAtRest,
     height,
     pendingTasks,
     isRunning,
@@ -162,9 +162,7 @@ export function ConversationFlow({
             flexShrink={0}
             marginLeft={rowLeadingCells('message')}
           >
-            <Text color={t.textDim}>
-              {`Pending${INLINE_LABEL_GAP}${pendingTasks.length}${view.queued.rows === 1 && view.queued.hidden > 0 ? `${SOFT_SEP}+${view.queued.hidden} more` : ''}`}
-            </Text>
+            <Text color={t.textDim}>{`Pending${INLINE_LABEL_GAP}${pendingTasks.length}`}</Text>
           </Box>
           {view.queued.shown.map((queuedRow) => (
             <Box key={queuedRow.key} height={1} width={conversationWidth} flexShrink={0}>

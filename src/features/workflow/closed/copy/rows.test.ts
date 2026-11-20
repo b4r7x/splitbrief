@@ -25,7 +25,11 @@ describe('runRows and recordRows', () => {
   const stageTimes = (view: SummaryView) =>
     ['Plan', 'Build', 'Review'].map((label) => segmentsFor(view, label)?.at(-1)?.text);
 
-  it.each([{ conflicts: [] }, { conflicts: ['src/later-edit.ts'] }])(
+  it('omits the duplicate Apply receipt when undo kept no conflicts', () => {
+    expect(segmentsFor(makeView({ applyUndo: { conflicts: [] } }), 'Apply')).toBeUndefined();
+  });
+
+  it.each([{ conflicts: ['src/later-edit.ts'] }])(
     'keeps the Apply undo state in attention with conflicts $conflicts',
     ({ conflicts }) => {
       expect(segmentsFor(makeView({ applyUndo: { conflicts } }), 'Apply')).toEqual([
@@ -85,13 +89,13 @@ describe('runRows and recordRows', () => {
   });
 
   it.each([
-    [null, 'Accepted as is · 1 red check: V1'],
+    [null, 'Accepted as is · 1 red check: V1 · npm test'],
     [
       'Your note: The suite is red at the run base too',
-      'Accepted as is · 1 red check: V1 · Your note: The suite is red at the run base too',
+      'Accepted as is · 1 red check: V1 · npm test · Your note: The suite is red at the run base too',
     ],
   ])('names the red checks of an accept as is before its note %s', (note, text) => {
-    const view = makeView({ accepted: { redChecks: '1 red check: V1', note } });
+    const view = makeView({ accepted: { redChecks: '1 red check: V1 · npm test', note } });
     const accepted = { label: '', segments: [{ text, tone: 'text' }], hang: 0 };
 
     const rows = runRows(view);
@@ -115,7 +119,10 @@ describe('runRows and recordRows', () => {
     it.each([
       [
         'your accept',
-        { redChecks: '1 red check: V1', note: 'Your note: The suite is red at the base' },
+        {
+          redChecks: '1 red check: V1 · npm test',
+          note: 'Your note: The suite is red at the base',
+        },
       ],
       [
         "the planner's accept",

@@ -105,7 +105,7 @@ it.each([
   [{ moment: 'brief', command: 'npm test' }, 'Fix check'],
 ] as const)('paints the %s lead for live activity and transcript rows', (suite, lead) => {
   for (const [context, tone] of [
-    ['live', 'accent'],
+    ['live', 'text'],
     ['transcript', 'textDim'],
   ] as const) {
     expect(suiteStageParts(suite, context)).toEqual([
@@ -121,7 +121,7 @@ it.each([
 });
 
 it.each([
-  ['live', 'accent'],
+  ['live', 'text'],
   ['transcript', 'textDim'],
 ] as const)(
   'ends a %s check that has no command on its lead, with no empty slot',
@@ -199,7 +199,9 @@ describe('activeVerb', () => {
         continue;
       expect(activeVerb(phase, null, 'tasks')).toBe(activeVerb(phase, null, null));
     }
-    expect(activeVerb('final-review', 'Sonnet 4.5', null)).toBe('Review · Sonnet 4.5');
+    expect(activeVerb('final-review', 'Sonnet 4.5', null)).toBe(
+      'Review · Sonnet 4.5 · reviewing changes',
+    );
     expect(activeVerb('final-review', null, null)).toBe('Review · reviewing changes');
   });
 });
@@ -292,3 +294,7 @@ function suiteStatusText(input: {
     .map((part) => part.text)
     .join('');
 }
+
+it('names the consult while the planner answers for Build', () => {
+  expect(activeVerb('escalating', null, null)).toMatch(/consult/i);
+});

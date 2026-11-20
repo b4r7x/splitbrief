@@ -7,7 +7,7 @@ import type { TriageInput } from '../../../../core/schemas/review/verdict.js';
 import type { Check, Task } from '../../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { throwIfAborted } from '../../../../utils/abort.js';
-import { capitalize } from '../../../../utils/capitalize.js';
+import { checkFailureSummary } from '../../../../core/review/fix/checks.js';
 import { normalizeProjectRelativePath } from '../../../../utils/path/patterns.js';
 import type { EventBus } from '../../../events/types.js';
 import { runBaseOf } from '../../isolation/run-base/tree.js';
@@ -16,9 +16,9 @@ import { recordTaskCheckRuns } from '../../task/checks.js';
 import { failingFilesFromKeys, fileOwnerSentence } from '../../task/file-owner.js';
 import type { BaseGate } from '../../validation/base-gate.js';
 import {
+  checkFailureText,
   newFailureKeys,
   failureKeysForFile,
-  checkFailureText,
 } from '../../validation/failure-text.js';
 import { createCheckRunner } from '../../validation/checks/runner.js';
 import { checkRegistry } from '../../validation/checks/runner.js';
@@ -79,10 +79,11 @@ export function buildPreReviewInputs(input: {
         kind: 'defect',
         source: 'check',
         file,
-        text: `${owner === undefined ? '' : `${owner}\n`}${capitalize(checkFailureText(run, { file }))}`,
+        text: `${owner === undefined ? '' : `${owner}\n`}${checkFailureSummary(run.command ?? `Check ${run.checkId}`, failureKeys.length || keys.length)}`,
         checkIds: [run.checkId],
         ...(run.command !== undefined && { command: run.command }),
         output: run.output,
+        checkDetail: checkFailureText(run, { file }),
         ...(failureKeys.length > 0 && { failureKeys }),
         ...(run.status === 'fail' && { redKeys: run.failure.keys }),
       });

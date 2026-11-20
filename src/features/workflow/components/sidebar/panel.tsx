@@ -1,6 +1,5 @@
 import { Box } from 'ink';
 import { Divider } from '../../../../components/divider.js';
-import { TextSpans } from '../../../../components/text-spans.js';
 import { useTheme, ThemeText as Text } from '../../../../components/theme.js';
 import { CREW_LABEL_WIDTH } from '../../../../core/crew/identity.js';
 import { deriveCrewSeats, CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
@@ -35,17 +34,16 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
   // body viewport; the parent will render it again as soon as a two-row panel can fit.
   if (height !== undefined && height < 2) return null;
 
-  const { title, innerWidth, visible, aboveLabel, tailLabel, statusCells, outcomeRows, seatRows } =
-    deriveSidebarView({
-      view,
-      seats: config ? deriveCrewSeats({ config, displayNames }) : [],
-      displayNames,
-      running,
-      resolvedModels,
-      recordedCrew,
-      width,
-      height,
-    });
+  const { title, innerWidth, visible, aboveLabel, tailLabel, seatRows } = deriveSidebarView({
+    view,
+    seats: config ? deriveCrewSeats({ config, displayNames }) : [],
+    displayNames,
+    running,
+    resolvedModels,
+    recordedCrew,
+    width,
+    height,
+  });
 
   return (
     <Box
@@ -62,10 +60,10 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
         </Text>
       </Box>
       <Box flexDirection="column" paddingRight={1} flexGrow={1} flexShrink={1} overflow="hidden">
-        {view.items.length === 0 && <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>}
+        {view.items.length === 0 && <Text color={t.textDim}>{`${LIST_INDENT}No briefs yet`}</Text>}
         {aboveLabel !== undefined && <Text color={t.textDim}>{`${LIST_INDENT}${aboveLabel}`}</Text>}
         {visible.map((task) => (
-          <TaskRow key={task.id} task={task} width={width} statusCells={statusCells} />
+          <TaskRow key={task.id} task={task} width={width} />
         ))}
         {tailLabel !== undefined && <Text color={t.textDim}>{`${LIST_INDENT}${tailLabel}`}</Text>}
       </Box>
@@ -75,11 +73,6 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
           <Divider width={innerWidth} />
         </Box>
         <Box flexDirection="column" paddingX={1} flexShrink={0}>
-          {outcomeRows.map((spans, index) => (
-            <Text key={index}>
-              <TextSpans parts={spans} />
-            </Text>
-          ))}
           {seatRows.map(({ seat, rows }) => (
             <Box key={seat.id} flexDirection="column">
               {rows.map((row, index) => (

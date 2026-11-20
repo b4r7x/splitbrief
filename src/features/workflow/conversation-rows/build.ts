@@ -38,12 +38,16 @@ import { segmentedRow } from './row-format/rows.js';
 import { sectionsWithoutReplayMarkers, walkTranscript } from './transcript-walk/walk.js';
 import type { RunnerActivityBatch } from './transcript-walk/types.js';
 
+import { settledQueueMessages } from './event-rows/queue.js';
+
 const MIN_ROW_WIDTH = 1;
 
 export function buildConversationRowsProjection(
   inputs: ConversationRowInputs,
 ): ConversationRowsProjection {
   const ctx: RowBuildContext = {
+    closed: inputs.closed,
+    settledMessages: settledQueueMessages(inputs.sections),
     width: Math.max(MIN_ROW_WIDTH, inputs.cols),
     viewportRows: inputs.viewportHeight,
     streaming: inputs.streaming,
@@ -188,7 +192,7 @@ function buildConversationRowsProjectionWithContext(
       dedupTitle,
       settled: step.settledSection !== undefined,
     };
-    const cacheable = event.type !== 'seat_switched';
+    const cacheable = event.type !== 'seat_switched' && event.type !== 'message_queued';
     let block = cacheable ? getCachedEventRowBlock(event, blockKey) : undefined;
     if (block === undefined) {
       block = eventRowBlock({

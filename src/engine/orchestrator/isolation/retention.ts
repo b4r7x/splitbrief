@@ -1,3 +1,4 @@
+import { movedProjectMessage } from '../../../core/sessions/moved-project.js';
 import { constants } from 'node:fs';
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -30,12 +31,7 @@ export const retentionError = {
       'isolation-retention-unavailable',
       'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.',
     ),
-  moved: (dir: string) =>
-    error(
-      'isolation-project-moved',
-      `This run started in ${dir}. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.`,
-      { dir },
-    ),
+  moved: (dir: string) => error('isolation-project-moved', movedProjectMessage(dir), { dir }),
   failed: (dir: string, cause: unknown) =>
     error(
       'isolation-retention-failed',

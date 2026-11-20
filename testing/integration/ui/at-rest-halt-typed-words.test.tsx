@@ -132,7 +132,7 @@ describe('words typed on a run at rest for a chosen action that reads none', () 
 
       await vi.waitFor(() => {
         expect(feedbackStore.get()).toEqual({
-          message: 'Cannot send words with Accept as is. Clear them.',
+          message: 'Accept as is takes no message. Clear the input first.',
           isError: false,
         });
       });
@@ -189,7 +189,7 @@ describe('words typed on a run at rest for a chosen action that reads none', () 
 
     // The caller that sent the words shows the reason and gives the words back.
     expect(continuation?.handleResume(plainUserMessage(WORDS))).toBe(
-      'Cannot send words to this halt. Clear them first.',
+      'This halt takes no message. Clear the input first.',
     );
     expect(feedbackStore.get().message).toBeNull();
     expect(eventsStore.get().events.map((event) => event.type)).toContain('workflow_started');

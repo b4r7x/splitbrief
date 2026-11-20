@@ -1,5 +1,5 @@
 import { baseSplit, baseSplitNames } from '../../../../core/review/base-split.js';
-import { fixCheckVerdict } from '../../../../core/review/fix/checks.js';
+import { checkFailureSummary, fixCheckVerdict } from '../../../../core/review/fix/checks.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { reusedNote } from '../../../../core/validation/reused-note.js';
@@ -35,6 +35,33 @@ export function fullSuiteSegments(
         ? [{ text: reusedNote(event.reusedAt).replaceAll(' ', '\u00a0'), tone: 'textDim' }]
         : [];
   const outcome = fullSuiteOutcome(event, detail);
+  if (
+    event.status === 'done' &&
+    event.moment === 'brief' &&
+    event.passed === false &&
+    event.ownLeft !== undefined &&
+    event.ownLeft > 0
+  ) {
+    const lead = suiteStageParts({ ...event, command: '' }, 'transcript');
+    const remaining = outcome.verdict.slice(1);
+    const failure = {
+      text: checkFailureSummary('', event.ownLeft),
+      tone: fullSuiteTone(event),
+    };
+    const command = suiteCommandForRow(event, [failure, ...remaining], clock, width);
+    return [
+      ...lead,
+      ...separatedSegments([
+        {
+          text: `${command || event.id || 'Check'} ${failure.text}`,
+          tone: failure.tone,
+        },
+        ...remaining,
+        ...clock,
+        ...outcome.trail,
+      ]),
+    ];
+  }
   const lead = suiteStageParts(
     { ...event, command: suiteCommandForRow(event, outcome.verdict, clock, width) },
     'transcript',

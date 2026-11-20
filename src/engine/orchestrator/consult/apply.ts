@@ -40,32 +40,39 @@ function guardViolation(
   plan: Plan | undefined,
   action: RewriteAction | SplitAction,
 ): string | null {
+  const criteriaText = (ids: readonly string[]) =>
+    ids
+      .map((id) => {
+        const text = plan?.criteria.find((criterion) => criterion.id === id)?.text;
+        return text ? `${id} (“${text}”)` : id;
+      })
+      .join(', ');
   if (action.action === 'rewrite-task') {
     const dropped = droppedCriteria(task, [action.task]);
     const original = new Set(task.criteria ?? []);
     const added = action.task.criteria.filter((criterion) => !original.has(criterion));
     if (dropped.length > 0 && added.length > 0) {
-      return `the rewritten task changes its criteria: drops ${dropped.join(', ')} and adds ${added.join(', ')}`;
+      return `the rewritten brief changes its criteria: drops ${criteriaText(dropped)} and adds ${criteriaText(added)}`;
     }
     if (dropped.length > 0) {
-      return `the rewritten task changes its criteria: drops ${dropped.join(', ')}`;
+      return `the rewritten brief changes its criteria: drops ${criteriaText(dropped)}`;
     }
     if (added.length > 0) {
-      return `the rewritten task changes its criteria: adds ${added.join(', ')}`;
+      return `the rewritten brief changes its criteria: adds ${criteriaText(added)}`;
     }
     const droppedChecks = droppedCriteriaChecks(task, plan, [action.task]);
     if (droppedChecks.length > 0) {
-      return `the rewritten task drops the checks its criteria require: ${droppedChecks.join(', ')}`;
+      return `the rewritten brief drops the checks its criteria require: ${droppedChecks.join(', ')}`;
     }
     return null;
   }
   const dropped = droppedCriteria(task, action.tasks);
   if (dropped.length > 0) {
-    return `the subtasks together drop ${dropped.join(', ')}`;
+    return `the new briefs together drop ${criteriaText(dropped)}`;
   }
   const droppedChecks = droppedCriteriaChecks(task, plan, action.tasks);
   if (droppedChecks.length > 0) {
-    return `the subtasks together drop the checks their criteria require: ${droppedChecks.join(', ')}`;
+    return `the new briefs together drop the checks their criteria require: ${droppedChecks.join(', ')}`;
   }
   return null;
 }

@@ -144,7 +144,7 @@ export function formatRecoveryPrompt(issue: RecoveryIssue): string {
 function formatSubjectLines(issue: RecoveryIssue, width: number): string[] {
   const lines: string[] = [];
   if (issue.reason === 'review-input-too-large') lines.push(issue.message);
-  if (issue.taskId && issue.taskTitle) lines.push(`Task ${issue.taskId} · ${issue.taskTitle}`);
+  if (issue.taskId && issue.taskTitle) lines.push(`Brief ${issue.taskId} · ${issue.taskTitle}`);
   if (issue.files.length > 0) {
     const room = width - getTerminalCellWidth(FACT_INDENT) - getTerminalCellWidth(FILES_LABEL);
     lines.push(`${FILES_LABEL}${fitFileList(issue.files, room)}`);

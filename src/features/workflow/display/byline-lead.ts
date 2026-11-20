@@ -64,7 +64,7 @@ export function deriveBylineLead(input: BylineLeadInput): BylineLead {
       ? { stage: 'apply', status: 'active' }
       : getActiveRailStage(runView.phase);
   const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
-  const fractionText = stageFractionText(taskListView);
+  const fractionText = activeStage?.stage === 'build' ? stageFractionText(taskListView) : '';
   const recoveryWaiting = runView.halt !== null && input.inputMode === 'question';
   // A halt the panel has not opened on yet is a run still going to it, not a stopped run.
   const recoveryStopped = input.recoveryOpen && !recoveryWaiting;

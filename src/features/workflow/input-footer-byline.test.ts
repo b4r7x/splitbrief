@@ -41,22 +41,25 @@ describe('buildInputFooterByline', () => {
       'T007 check K034',
     ],
     ['final-review', { id: 'K1', moment: 'plan', command: 'npm test' }, 'Plan check K1'],
-  ] as const)('keeps the %s running lead accent and its clock dim for %s', (phase, suite, lead) => {
-    for (const cols of [120, 80, 60]) {
-      const byline = buildInputFooterByline({
-        cols,
-        lead: suiteStatusParts(phase, suite),
-        leadClock: '0:42',
-        queuedText: null,
-      });
-      expect(byline).toContainEqual({ text: lead, tone: 'accent' });
-      expect(byline.at(-1)).toEqual({ text: ' 0:42', tone: 'textDim' });
-      if (!('scenario' in suite))
-        expect(byline).toContainEqual({ text: suite.command, tone: 'textDim' });
-      for (const span of byline.filter((part) => part.text === ' · '))
-        expect(span.tone).toBe('textDim');
-    }
-  });
+  ] as const)(
+    'keeps the %s running lead neutral and its clock dim for %s',
+    (phase, suite, lead) => {
+      for (const cols of [120, 80, 60]) {
+        const byline = buildInputFooterByline({
+          cols,
+          lead: suiteStatusParts(phase, suite),
+          leadClock: '0:42',
+          queuedText: null,
+        });
+        expect(byline).toContainEqual({ text: lead, tone: 'text' });
+        expect(byline.at(-1)).toEqual({ text: ' 0:42', tone: 'textDim' });
+        if (!('scenario' in suite))
+          expect(byline).toContainEqual({ text: suite.command, tone: 'textDim' });
+        for (const span of byline.filter((part) => part.text === ' · '))
+          expect(span.tone).toBe('textDim');
+      }
+    },
+  );
 
   it('requires structured lead spans', () => {
     expectTypeOf<Parameters<typeof buildInputFooterByline>[0]['lead']>().toEqualTypeOf<

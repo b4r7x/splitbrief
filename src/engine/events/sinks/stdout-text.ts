@@ -22,7 +22,7 @@ export interface StdoutTextSinkOptions {
 function reviewChecksLine(event: Extract<EngineEvent, { type: 'review_checks' }>): string {
   return event.status === 'off'
     ? 'reviewer checks: off'
-    : 'reviewer checks: none (the plan names no project gate)';
+    : 'reviewer checks: none (the plan names no end-of-run checks)';
 }
 
 /**
@@ -147,7 +147,7 @@ function briefChecks(view: RunView, taskId: string): string {
  *
  *   phase: implementing
  *   task T001: done (2 of 2 checks passed)
- *   reviewer checks: off | reviewer checks: none (the plan names no project gate)
+ *   reviewer checks: off | reviewer checks: none (the plan names no end-of-run checks)
  *   reviewer check V1: passed (<command>) | failed (<command>)
  *   reviewer check V1: <M> new, <N> pre-existing (<command>)
  *   reviewer check V1: [<M> new, <N> pre-existing, ]<K> not verified at the run base · <reason> (<command>)

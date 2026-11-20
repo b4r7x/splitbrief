@@ -16,6 +16,7 @@ interface StreamingProjectionKey {
 }
 
 interface ProjectionCacheEntry {
+  closed: boolean | undefined;
   sections: Section<EngineEvent>[];
   expandedDiffs: Set<string>;
   expandedActivityBatches: Set<string>;
@@ -46,15 +47,9 @@ export function getConversationRowsProjection(
 
   const { sections, expandedDiffs, expandedActivityBatches, cols, viewportHeight, streaming } =
     input;
-  const projection = buildConversationRowsProjection({
-    sections,
-    expandedDiffs,
-    expandedActivityBatches,
-    cols,
-    viewportHeight,
-    streaming,
-  });
+  const projection = buildConversationRowsProjection(input);
   cache = {
+    closed: input.closed,
     sections,
     expandedDiffs,
     expandedActivityBatches,
@@ -114,6 +109,7 @@ function isProjectionCacheHit(entry: ProjectionCacheEntry, input: ConversationRo
     entry.expandedDiffs === input.expandedDiffs &&
     entry.expandedActivityBatches === input.expandedActivityBatches &&
     entry.cols === input.cols &&
+    entry.closed === input.closed &&
     entry.viewportHeight === input.viewportHeight &&
     entry.streaming.active === input.streaming.active &&
     entry.streaming.taskId === input.streaming.taskId &&

@@ -604,3 +604,16 @@ it('shows a /steer row that is true over the waiting plan card', SCENARIO_TIMEOU
     expect(screen()).not.toContain('Stop now and continue');
   });
 });
+
+it(
+  'shows the Plan byline without a Build count while the plan waits for approval',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await scenario(async (run, { screen }) => {
+      unlinkSync(run.hold);
+      await expect.poll(screen, PATIENCE).toContain(APPROVE_ACTIVE);
+      await expect.poll(screen, PATIENCE).toMatch(/Waiting for your answer\s*·\s*Plan/);
+      expect(screen()).not.toMatch(/Waiting for your answer\s*·\s*Plan\s+\d+\/\d+/);
+    });
+  },
+);

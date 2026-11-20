@@ -227,7 +227,7 @@ describe('hydrateRun', () => {
       expect(filesLine[0]).toContain(`${brief.file} · ${brief.test}`);
       expect(filesLine[0]?.split(brief.test)).toHaveLength(2);
     }
-    expect(replayRows.filter((row) => row === 'Report  done')).toHaveLength(2);
+    expect(replayRows).not.toContain('Report  done');
     resetWorkflow();
     for (const event of history) {
       const brief =
@@ -299,7 +299,7 @@ describe('hydrateRun', () => {
     ).toHaveProperty('files', ['src/report.ts']);
     const rows = historyRows(eventsStore.get().events);
     expect(rows.some((row) => row.startsWith('src/report.ts'))).toBe(true);
-    expect(rows).toContain('Report  done');
+    expect(rows).not.toContain('Report  done');
   });
 
   it('settles a truncated review on resume before T002 starts and finishes its call', async () => {
@@ -911,7 +911,7 @@ describe('hydrateRun', () => {
       ).toHaveLength(cut);
       const rows = historyRows(events).join('\n');
       expect(rows.includes('working on')).toBe(cut === 0);
-      if (cut === 1) expect(rows).toContain('current turn interrupted: SPLITBRIEF exited');
+      if (cut === 1) expect(rows).toContain('Stop    interrupted: SPLITBRIEF exited');
     }
   });
 

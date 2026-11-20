@@ -110,13 +110,18 @@ export function deriveLiveStatus(input: {
   if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
   const activeIndex = getRailActiveIndex(input.phase);
   if (activeIndex < 0 || activeStage === null) return null;
-  const tone = input.phase === 'escalating' ? CREW_SEAT_ROLES.plan : stageTone;
+  const consult =
+    activeStage.stage === 'build' &&
+    (input.phase === 'escalating' ||
+      (input.activeOperation?.status === 'running' &&
+        (input.activeOperation.role === 'planner' || input.activeOperation.role === 'escalation')));
+  const tone = consult ? CREW_SEAT_ROLES.plan : stageTone;
   const parts =
     input.phase === 'final-review'
       ? reviewActivitySpans(
           reviewActivityParts(input.activeOperation, input.reviewerLabel, input.reviewNone),
         )
-      : [{ text: activeVerb(input.phase, null, input.plannerCall), tone }];
+      : [{ text: activeVerb(consult ? 'escalating' : input.phase, null, input.plannerCall), tone }];
   if (activeStage.stage === 'build' && input.briefClock !== null) {
     return {
       parts,

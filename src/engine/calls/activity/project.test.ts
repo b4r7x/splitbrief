@@ -257,17 +257,17 @@ describe('projectRunnerCallActivity', () => {
   });
 
   it.each<[string, Record<string, unknown>, string]>([
-    ['Read', { file_path: 'src/app.ts', offset: 120, limit: 40 }, 'src/app.ts :120-159'],
-    ['Read', { file_path: 'src/app.ts', limit: 40 }, 'src/app.ts :1-40'],
-    ['Read', { file_path: 'src/app.ts', offset: 250 }, 'src/app.ts :250-end'],
-    ['read', { path: 'biome.json', offset: 70 }, 'biome.json :70-end'],
-    ['read', { path: 'biome.json', offset: 39, limit: 20 }, 'biome.json :39-58'],
-    ['read_file', { Path: '/project/src/app.ts', StartLine: 1, EndLine: 40 }, 'src/app.ts :1-40'],
-    ['read_file', { Path: '/project/src/app.ts', EndLine: 40 }, 'src/app.ts :1-40'],
+    ['Read', { file_path: 'src/app.ts', offset: 120, limit: 40 }, 'src/app.ts:120-159'],
+    ['Read', { file_path: 'src/app.ts', limit: 40 }, 'src/app.ts:1-40'],
+    ['Read', { file_path: 'src/app.ts', offset: 250 }, 'src/app.ts:250-end'],
+    ['read', { path: 'biome.json', offset: 70 }, 'biome.json:70-end'],
+    ['read', { path: 'biome.json', offset: 39, limit: 20 }, 'biome.json:39-58'],
+    ['read_file', { Path: '/project/src/app.ts', StartLine: 1, EndLine: 40 }, 'src/app.ts:1-40'],
+    ['read_file', { Path: '/project/src/app.ts', EndLine: 40 }, 'src/app.ts:1-40'],
     [
       'read_file',
       { Path: '/project/src/app.ts', StartLine: 10, EndLine: 40, limit: 5 },
-      'src/app.ts :10-40',
+      'src/app.ts:10-40',
     ],
   ])('names the lines that a %s read asks for', (name, input, target) => {
     expect(
@@ -282,10 +282,10 @@ describe('projectRunnerCallActivity', () => {
   it.each<[Record<string, unknown>, string]>([
     [{ paths: ['/project/src/a.ts'] }, 'src/a.ts'],
     [{ paths: ['/project/src/a.ts', '/project/src/b.ts'] }, 'src/a.ts · src/b.ts'],
-    [{ paths: ['/project/src/a.ts'], offset: 420, limit: 80 }, 'src/a.ts :420-499'],
+    [{ paths: ['/project/src/a.ts'], offset: 420, limit: 80 }, 'src/a.ts:420-499'],
     [
       { paths: ['/project/src/a.ts', '/project/src/b.ts'], limit: 140 },
-      'src/a.ts :1-140 · src/b.ts :1-140',
+      'src/a.ts:1-140 · src/b.ts:1-140',
     ],
     [{ paths: ['src/a.ts'] }, 'src/a.ts'],
     [{ paths: ['/elsewhere/src/b.ts'] }, '/elsewhere/src/b.ts'],
@@ -402,8 +402,8 @@ describe('projectRunnerCallActivity', () => {
       ),
     ).toMatchObject({
       kind: 'read',
-      label: 'reading src/app.ts :1-40',
-      target: 'src/app.ts :1-40',
+      label: 'reading src/app.ts:1-40',
+      target: 'src/app.ts:1-40',
     });
     for (const name of ['edit_file', 'write_file']) {
       expect(

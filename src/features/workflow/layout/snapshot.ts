@@ -241,6 +241,7 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     rawScrollOffset: scroll.scrollOffset,
     renderableCountAtScroll: scroll.renderableCountAtScroll,
     heightAtScroll: scroll.heightAtScroll,
+    closed: routeClosedAtRest(routerStore.get()),
     streaming: streamingOutputStore.get(),
     tail: readTranscriptTail(),
   });

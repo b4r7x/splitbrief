@@ -24,7 +24,7 @@ afterEach(() => {
   restorePath = undefined;
 });
 
-it('keeps the arrow and the outcome of a Skip task Recovery row together at 60 columns', async () => {
+it('keeps the arrow and the outcome of a Skip brief Recovery row together at 60 columns', async () => {
   ({ fixture, restorePath } = consultFailureHaltFixture(dependentPlan));
   const sessionId = await startToHalt(fixture);
   const firstSkip = await cli(fixture, ['continue', sessionId, '--plain', '--action', 'skip']);
@@ -40,6 +40,6 @@ it('keeps the arrow and the outcome of a Skip task Recovery row together at 60 c
     .map((line) => line.trimEnd());
   const recoveryAt = lines.findIndex((line) => line.includes('Recovery  Dependency blocked'));
   expect(recoveryAt).toBeGreaterThan(-1);
-  expect(lines[recoveryAt]).toMatch(/Skip task$/);
+  expect(lines[recoveryAt]).toMatch(/Skip brief$/);
   expect(lines[recoveryAt + 1]?.trim()).toMatch(/^\S+ skipped$/);
 });

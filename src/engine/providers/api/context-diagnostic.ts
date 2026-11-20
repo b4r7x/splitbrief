@@ -1,3 +1,4 @@
+import { EVIDENCE_FILE, DRIFT_REPORT_FILE, TASKS_FILE, SPEC_FILE } from '../../../core/paths.js';
 import { z } from 'zod';
 import type { RecoveryFact } from '../../../core/schemas/recovery/schemas.js';
 import { type AppError, error } from '../../../utils/error.js';
@@ -54,10 +55,29 @@ const CAUSE_SENTENCE: Readonly<Record<ApiContextDiagnostic['cause'], string>> = 
  * Qualitative only: the summary names the cause and the sections, never a token
  * estimate. The figures ride in `data.diagnostic` for the details view.
  */
+export function missingContextWords(sections: readonly string[]): string {
+  return sections
+    .map((section) => {
+      switch (section) {
+        case EVIDENCE_FILE:
+          return "the brief's check results";
+        case DRIFT_REPORT_FILE:
+          return 'the scope report';
+        case TASKS_FILE:
+          return 'the task briefs';
+        case SPEC_FILE:
+          return 'the feature specification';
+        default:
+          return section;
+      }
+    })
+    .join(', ');
+}
+
 function summarize(diagnostic: ApiContextDiagnostic): string {
   const sections =
     diagnostic.missingSections.length > 0
-      ? ` Missing: ${diagnostic.missingSections.join(', ')}.`
+      ? ` Missing: ${missingContextWords(diagnostic.missingSections)}.`
       : '';
   return `The ${SEAT_NOUN[diagnostic.seat]} seat was not given the context this call needs, so nothing was dispatched. ${CAUSE_SENTENCE[diagnostic.cause]}${sections}`;
 }

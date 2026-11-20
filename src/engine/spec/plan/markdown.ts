@@ -69,7 +69,7 @@ export function formatPlanMarkdown(plan: PlanProposal, notes: readonly string[])
       plan.checks.map((check) => `- ${formatCheck(check)}`),
     ),
     ...section(
-      '## Project gate',
+      '## End-of-run checks',
       plan.gate.map((command, index) => `- V${index + 1}: ${command}`),
     ),
     '## Tasks',

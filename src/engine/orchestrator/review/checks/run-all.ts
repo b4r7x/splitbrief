@@ -1,3 +1,4 @@
+import { checkFailureSummary } from '../../../../core/review/fix/checks.js';
 import { resolveEndChecks } from '../../../../core/config/runtime/resolve.js';
 import { readEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
 import type { Config } from '../../../../core/schemas/config.js';
@@ -165,16 +166,17 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
         kind: 'defect',
         source: 'check',
         file,
-        text: `Reviewer check ${chosen.id} (${chosen.command}) failed ${
-          notVerified === undefined
-            ? 'with new failures.'
-            : run.base === undefined
-              ? `and SPLITBRIEF could not verify its run base re-run (${notVerified}); the reviewer decides.`
-              : `and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${notVerified}); the reviewer decides.`
-        }${owner === undefined ? '' : ` ${owner}`}\n${checkFailureText(run, { file })}`,
+        text: [
+          checkFailureSummary(chosen.command, failureKeys.length || fresh.length),
+          ...(notVerified === undefined
+            ? []
+            : [`Could not verify the failure at the run base (${notVerified}).`]),
+          ...(owner === undefined ? [] : [owner]),
+        ].join(' '),
         checkIds: [chosen.id],
         command: chosen.command,
         output: run.output,
+        checkDetail: checkFailureText(run, { file }),
         ...(failureKeys.length > 0 && { failureKeys }),
         ...(run.status === 'fail' && { redKeys: run.failure.keys }),
       });

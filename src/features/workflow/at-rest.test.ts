@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { retentionError } from '../../engine/orchestrator/isolation/retention.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -769,4 +770,26 @@ describe('displayedRailStages', () => {
   ])('gives %s the stages the header rail paints', (_label, route, live, expected) => {
     expect(displayedRailStages(route, live)).toEqual(expected);
   });
+});
+
+it('takes commands only after Continue finds that the project moved', () => {
+  const original = '/projects/original';
+  const step = { kind: 'brief', taskId: taskId('T002'), attempt: 0 } as const;
+  const record = makeRunRecord({
+    ref: { projectDir: '/projects/moved', sessionId: 'moved' },
+    status: { kind: 'open', stop: { kind: 'stopped', on: { kind: 'failed' } }, resumeAt: step },
+    hydration: {
+      kind: 'loaded',
+      state: makeWorkflowState({
+        phase: 'implementing',
+        workspace: { kind: 'checkout', path: original, base: { snapshotId: 'base', head: null } },
+        lastFailure: {
+          step,
+          message: retentionError.moved(original).message,
+          at: '2026-10-11T00:00:00.000Z',
+        },
+      }),
+    },
+  });
+  expect(atRestComposer(record)).toMatchObject({ commandsOnly: true, continuable: false });
 });

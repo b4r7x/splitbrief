@@ -280,7 +280,7 @@ it('keeps every action label whole on a 56-column panel', async () => {
   const frame = stripAnsiStyles(ui.lastFrame());
   const rows = frame
     .split('\n')
-    .filter((line) => /Try again|Change REVIEW tool|Skip task|End run/.test(line));
+    .filter((line) => /Try again|Change REVIEW tool|Skip brief|End run/.test(line));
   expect(rows).toHaveLength(4);
   const nameRow = frame.split('\n').findIndex((line) => line.includes('Change REVIEW tool'));
   const name = frame.split('\n')[nameRow] ?? '';
@@ -311,7 +311,7 @@ it('shows each row its key beside its label', async () => {
   const ui = mount(vi.fn(), 80, issue);
   await flushEffects();
   const frame = stripAnsiStyles(ui.lastFrame());
-  expect(frame).toContain('s  Skip task');
+  expect(frame).toContain('s  Skip brief');
   expect(frame).toContain('a  End run');
   ui.unmount();
 });
@@ -685,8 +685,8 @@ it.each([
     );
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame());
-    expect(frame.indexOf('Task T001')).toBeGreaterThan(-1);
-    expect(frame.indexOf('Task T001')).toBeLessThan(frame.indexOf('Files src/auth/session.ts'));
+    expect(frame.indexOf('Brief T001')).toBeGreaterThan(-1);
+    expect(frame.indexOf('Brief T001')).toBeLessThan(frame.indexOf('Files src/auth/session.ts'));
     expect(frame.indexOf('Files src/auth/session.ts')).toBeLessThan(frame.indexOf(asked));
     expect(frame.indexOf(asked)).toBeLessThan(frame.indexOf('Last error: blocked'));
     expect(frame).toContain('──────');
@@ -708,7 +708,7 @@ it("gives the divider's row to the whole question at 80 columns", async () => {
   await flushEffects();
   const rows = frameRows(ui);
   const question = rows.findIndex((row) => row.includes('Question: greet.ts needs'));
-  const task = rows.findIndex((row) => row.includes('Task T001'));
+  const task = rows.findIndex((row) => row.includes('Brief T001'));
   expect(question).toBeGreaterThan(-1);
   expect(task - question).toBe(5);
   expect(rows.some((row) => row.includes('──────'))).toBe(false);
@@ -731,7 +731,7 @@ it('shows the whole question at 80 columns, and the rows after it give way', asy
   await flushEffects();
   const rows = frameRows(ui);
   expect(panelText(rows)).toContain(asked);
-  expect(rows.some((row) => row.includes('Task T001'))).toBe(true);
+  expect(rows.some((row) => row.includes('Brief T001'))).toBe(true);
   expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
   expect(rows.some((row) => row.includes('Attempts: 2'))).toBe(false);
   ui.unmount();
@@ -947,7 +947,7 @@ it.each([
 
 it.each([
   ['a task title', { taskTitle: 'Rotate password: "x and more' }, 'Files src/auth/session.ts'],
-  ['a file name', { files: ['password: "x y.ts'] }, 'Task T001'],
+  ['a file name', { files: ['password: "x y.ts'] }, 'Brief T001'],
 ])('keeps the question on a tall panel below %s with an open quote', async (_label, patch, row) => {
   const ui = mountBox(
     makeRecoveryIssue({
@@ -1037,7 +1037,7 @@ function panelText(rows: readonly string[]): string {
 /** The question as the panel shows it, up to the `…` that cuts it or the task row after it. */
 function shownQuestion(rows: readonly string[]): string {
   const text = panelText(rows);
-  return text.slice(text.indexOf('Question: ')).split(/…|Task T001/)[0] ?? '';
+  return text.slice(text.indexOf('Question: ')).split(/…|Brief T001/)[0] ?? '';
 }
 
 function compact(text: string): string {

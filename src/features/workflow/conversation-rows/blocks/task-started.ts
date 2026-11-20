@@ -99,7 +99,13 @@ export function taskStartedRowBlock(input: {
   const metadata = labels.flatMap((label, index): ConversationRowSegment[] => [
     {
       text:
-        index === 0 ? '  ' : placeholder === null ? SOFT_SEP : ` ${SOFT_SEP.trim()}${placeholder}`,
+        index === 0
+          ? '  '
+          : index === 1
+            ? '\n'
+            : placeholder === null
+              ? SOFT_SEP
+              : ` ${SOFT_SEP.trim()}${placeholder}`,
       tone: 'textDim',
     },
     { ...label, text: placeholder === null ? label.text : label.text.replaceAll(' ', placeholder) },

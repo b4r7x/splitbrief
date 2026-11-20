@@ -9,7 +9,6 @@ import { arrowSep } from '../../../core/separators.js';
 import type { SeatResolvedModel } from '../../../core/run-view/reduce.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import type { RecordedCrew } from '../closed/view-model.js';
-import { getSidebarStatusColumnCells } from './rect.js';
 import { deriveSidebarView } from './sidebar-view.js';
 
 function task(id: string, status: WorkflowTask['status']): WorkflowTask {
@@ -97,7 +96,7 @@ describe('deriveSidebarView — the task list window', () => {
     const view = derive({ tasks, height: 20 });
 
     expect(view.aboveLabel).toBe('6 above');
-    expect(view.tailLabel).toBe('7 queued below');
+    expect(view.tailLabel).toBe('6 queued below');
   });
 
   it('carries both edges on one row when the list has one row to spare for them', () => {
@@ -158,29 +157,12 @@ describe('deriveSidebarView — the task list window', () => {
     expect(ids(view.visible)).toEqual(['2']);
     expect(view.tailLabel).toBe('1 done above · 1 queued below · +2 more');
   });
-
-  it('reserves the status column only when a task carries a status word', () => {
-    expect(derive({ tasks: plan(3), height: undefined }).statusCells).toBe(0);
-    expect(
-      derive({ tasks: [task('1', 'failed'), task('2', 'pending')], height: undefined }).statusCells,
-    ).toBe(getSidebarStatusColumnCells({ hasStatusTail: true }));
-  });
 });
 
-describe('deriveSidebarView — the title and the outcome rows', () => {
+describe('deriveSidebarView — the title', () => {
   it('counts the passed briefs against the plan size in the title', () => {
-    expect(derive({ tasks: [], height: undefined }).title).toBe('Tasks');
-    expect(derive({ tasks: plan(24), height: undefined }).title).toBe('Tasks 11/24');
-  });
-
-  it('adds outcome rows only when a brief escalated or failed', () => {
-    expect(derive({ tasks: plan(3), height: undefined }).outcomeRows).toEqual([]);
-
-    const view = derive({ tasks: [task('1', 'done'), task('2', 'failed')], height: undefined });
-
-    expect(view.outcomeRows.map((spans) => spans.map((span) => span.text).join(''))).toEqual([
-      '1 passed · 1 failed',
-    ]);
+    expect(derive({ tasks: [], height: undefined }).title).toBe('Briefs');
+    expect(derive({ tasks: plan(24), height: undefined }).title).toBe('Briefs 11/24');
   });
 });
 
@@ -260,7 +242,7 @@ describe('deriveSidebarView — the crew rows', () => {
       },
     } satisfies Partial<Record<'plan' | 'build', SeatResolvedModel>>;
 
-    it('adds the resolved id as a row under the seat identity', () => {
+    it('omits resolved ids that name the displayed seat models', () => {
       const bare = derive({ tasks: plan(1), height: undefined, config: aliasCrew });
       const resolved = derive({
         tasks: plan(1),
@@ -269,11 +251,7 @@ describe('deriveSidebarView — the crew rows', () => {
         resolvedModels,
       });
 
-      expect(seatRowsOf(resolved)).toEqual([
-        [...(seatRowsOf(bare)[0] ?? []), 'claude-opus-5-5'],
-        [...(seatRowsOf(bare)[1] ?? []), 'claude-sonnet-5-5'],
-        seatRowsOf(bare)[2],
-      ]);
+      expect(seatRowsOf(resolved)).toEqual(seatRowsOf(bare));
     });
 
     it('drops the resolved rows before it cuts the identities when the crew runs short of rows', () => {

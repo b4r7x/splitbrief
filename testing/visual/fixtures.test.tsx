@@ -1,3 +1,4 @@
+import { workflowFixtureRegistry } from './fixtures/workflow/registry.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -21,7 +22,6 @@ import {
   CLAUDE_CODE_OPTION_CACHE,
   createHomeFixture,
   createSetupFixture,
-  createWorkflowBaseFixture,
   teardownVisualFixture,
   visualConfig,
 } from './fixtures/screen-fixtures.js';
@@ -42,7 +42,14 @@ function requireOverlayFixture(id: string): FixtureFactory {
 
 const SCREEN_CASES: readonly FixtureCase[] = [
   { scenarioId: 'home-empty', factory: createHomeFixture },
-  { scenarioId: 'workflow-idle', factory: createWorkflowBaseFixture },
+  {
+    scenarioId: 'workflow-idle',
+    factory: () => {
+      const factory = workflowFixtureRegistry.get(scenarioId('workflow-idle'));
+      if (factory === undefined) throw new Error('Missing idle workflow fixture');
+      return factory();
+    },
+  },
   { scenarioId: 'setup-initial', factory: createSetupFixture },
 ];
 

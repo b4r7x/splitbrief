@@ -38,75 +38,20 @@ describe('legendText', () => {
   });
 });
 
-it('keeps status receipt text and fitting while coloring Apply undone and Ended', () => {
-  const undone = makeView({ applyUndo: { conflicts: [] } });
-  expect(bylineParts(undone, WIDE)[0]).toEqual({ text: 'Apply undone', tone: 'warning' });
+it('shows an Ended receipt and fits the undo conflict warning to the row', () => {
+  const undone = makeView({ applyUndo: { conflicts: ['src/a.ts'] } });
   const ended = endedInBuild();
   const endedWithPatch = {
     ...ended,
     files: { ...ended.files, patch: '.splitbrief/sessions/run/run.patch' },
   };
   expect(bylineParts(endedWithPatch, WIDE)[0]).toEqual({ text: 'Ended', tone: 'warning' });
-  for (const [width, expected, expectedParts] of [
-    [5, 'Appl…', [{ text: 'Appl…', tone: 'warning' }]],
-    [11, 'Apply undo…', [{ text: 'Apply undo…', tone: 'warning' }]],
-    [12, 'Apply undon…', [{ text: 'Apply undon…', tone: 'warning' }]],
-    [
-      13,
-      'Apply undone…',
-      [
-        { text: 'Apply undone', tone: 'warning' },
-        { text: '…', tone: 'textDim' },
-      ],
-    ],
-    [
-      14,
-      'Apply undone …',
-      [
-        { text: 'Apply undone', tone: 'warning' },
-        { text: ' …', tone: 'textDim' },
-      ],
-    ],
-    [
-      15,
-      'Apply undone ·…',
-      [
-        { text: 'Apply undone', tone: 'warning' },
-        { text: ' ·…', tone: 'textDim' },
-      ],
-    ],
-    [
-      16,
-      'Apply undone · …',
-      [
-        { text: 'Apply undone', tone: 'warning' },
-        { text: ' · ', tone: 'textDim' },
-        { text: '…', tone: 'textDim' },
-      ],
-    ],
-    [
-      20,
-      'Apply undone · noth…',
-      [
-        { text: 'Apply undone', tone: 'warning' },
-        { text: ' · ', tone: 'textDim' },
-        { text: 'noth…', tone: 'textDim' },
-      ],
-    ],
-    [
-      WIDE,
-      'Apply undone · nothing left to undo',
-      [
-        { text: 'Apply undone', tone: 'warning' },
-        { text: ' · ', tone: 'textDim' },
-        { text: 'nothing left to undo', tone: 'textDim' },
-      ],
-    ],
-  ] as const) {
+  const full = 'Apply undone · your later edits were kept';
+  expect(joinedByline(bylineParts(undone, WIDE))).toBe(full);
+  for (const width of [5, 11, 12, 13, 14, 15, 16, 20]) {
     const parts = bylineParts(undone, width);
-    expect(joinedByline(parts)).toBe(expected);
-    expect(bylineText(undone, width)).toBe(expected);
-    expect(parts).toEqual(expectedParts);
+    expect(joinedByline(parts)).toBe(full.slice(0, width - 1) + '…');
+    expect(parts[0]?.tone).toBe('warning');
   }
 });
 
@@ -234,4 +179,8 @@ describe('runClosedLabel', () => {
   it('says only that the run closed when its record kept no time', () => {
     expect(runClosedLabel(null)).toBe('Run closed');
   });
+});
+
+it('leaves the undo receipt in the summary when no conflicts need attention', () => {
+  expect(bylineText(makeView({ applyUndo: { conflicts: [] } }), WIDE)).toBe('');
 });

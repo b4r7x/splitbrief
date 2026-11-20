@@ -1,3 +1,4 @@
+import { retentionError } from '../../../engine/orchestrator/isolation/retention.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { RunStatus } from '../../../core/sessions/run/status.js';
 import { describe, expect, it } from 'vitest';
@@ -93,7 +94,7 @@ describe('bylineText', () => {
       },
       scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
-    expect(bylineText(view, WIDE)).toBe('Read the 2 blocking findings in the packet');
+    expect(bylineText(view, WIDE)).toBe('Read the 2 blocking findings in the summary');
   });
 
   it('points at the scope deviations when nothing is blocking', () => {
@@ -101,7 +102,7 @@ describe('bylineText', () => {
       outcome: { kind: 'needs-attention' },
       scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
-    expect(bylineText(view, WIDE)).toBe('Check the 2 scope deviations in the packet');
+    expect(bylineText(view, WIDE)).toBe('Check the 2 scope deviations in the summary');
   });
 
   it('points at the failed briefs when the review and the scope are clean', () => {
@@ -534,7 +535,7 @@ describe('openRunByline', () => {
   ])('says a run another process holds is running once %s', (_, resetAt, live) => {
     expect(
       openRunByline({ ...OPEN, wait: codexWait(resetAt, live), status: { kind: 'running' } }),
-    ).toBe('Running in another process');
+    ).toBe('Running in another terminal');
   });
 
   it('names the step an interrupted run picks up at', () => {
@@ -570,7 +571,7 @@ describe('openRunByline', () => {
 
   it('says a run another process is driving is not this screen to move', () => {
     expect(openRunByline({ ...OPEN, status: { kind: 'running' } })).toBe(
-      'Running in another process',
+      'Running in another terminal',
     );
   });
 
@@ -680,7 +681,7 @@ describe('openRunByline on a halt whose action was chosen', () => {
 
   it.each([
     ['Needs you', 'retry-same-worker', 'try again', {}],
-    ['Needs you', 'skip-current-task', 'skip task', {}],
+    ['Needs you', 'skip-current-task', 'skip brief', {}],
     ['Needs you', 'end-run', 'end run', {}],
     ['Needs you', 'continue', 'continue', {}],
     ['Needs you', 'revise', 'review again', { reason: 'review-failed' }],
@@ -855,7 +856,7 @@ describe('fitted byline parts', () => {
     ).toEqual({
       text:
         status.kind === 'running'
-          ? 'Running in another process'
+          ? 'Running in another terminal'
           : status.override
             ? 'Ready to apply as is'
             : 'Ready to apply',
@@ -883,4 +884,23 @@ describe('fitted byline parts', () => {
       expect(joinedByline(parts)).toBe(bylineText(view, WIDE));
     },
   );
+});
+
+it('directs a moved project back to its original folder or End run', () => {
+  const text = openRunByline({
+    status: {
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'failed' } },
+      resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    },
+    failure: retentionError.moved('/projects/original').message,
+    wait: null,
+    planCard: false,
+    continuable: false,
+    now: NOW,
+    width: WIDE,
+  });
+  expect(text).toMatch(/move.*back/i);
+  expect(text).toMatch(/end.*run|\/run end/i);
+  expect(text).not.toMatch(/retry|correction/i);
 });

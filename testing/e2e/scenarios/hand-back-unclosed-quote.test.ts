@@ -65,7 +65,7 @@ process.stdout.write(${JSON.stringify(STDOUT)});
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
     const transcript = transcriptText(events);
 
-    expect(transcript).toContain('Report  done · 1 decision');
+    expect(transcript).not.toContain('Report  done');
     expect(transcript).toContain(NARRATION);
     for (const absent of [
       '"status":"done"',

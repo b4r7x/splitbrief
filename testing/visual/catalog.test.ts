@@ -301,7 +301,10 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
     ['120x40', '80x24', '60x18', '80x11', '80x10', '80x9', '80x8', '60x10'],
   ],
   ['workflow-approval-confirm-long-path', ['60x10', '60x12', '60x14', '60x15', '60x16', '80x12']],
-  ['workflow-plan-card-short', ['80x12', '80x10', '80x9', '80x8', '60x10']],
+  [
+    'workflow-plan-card-short',
+    ['120x40', '80x24', '60x18', '80x12', '80x10', '80x9', '80x8', '60x10'],
+  ],
   [
     'workflow-plan-card-long-gate',
     ['120x40', '80x24', '60x18', '160x45', '80x12', '80x10', '80x9', '80x8', '60x10'],
@@ -879,7 +882,7 @@ describe('visual catalog', () => {
     expect(apply?.checkpoints[0]).toMatchObject({
       id: 'apply-recheck-words-refused',
       kind: 'implementation',
-      marker: 'Cannot send words to Apply',
+      marker: 'Apply takes no message',
     });
     expect(apply?.viewports).toEqual(REQUIRED_VIEWPORTS);
     expect(apply?.elements.map((element) => element.id)).toEqual([
@@ -1220,10 +1223,10 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain('npm test failed · 1 failure');
       for (const phrase of [
-        '1 of your 2 failures remains',
         '1 left to T905',
-        '1 of your 2 failures gone',
+        '1 of 2 failures gone',
         '2 others left for their fix tasks or the next review',
       ]) {
         expect(frame).toContain(phrase.replaceAll(' ', '\u00a0'));
@@ -1245,7 +1248,7 @@ describe('visual catalog', () => {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain('Reviewer check V2 · npm test · 1\u00a0new, 0\u00a0pre-existing');
       expect(frame).toContain('fixes T904 T905');
-      expect(frame.match(/Fix check V2 · npm test · /g)).toHaveLength(2);
+      expect(frame.match(/Fix check V2 · npm test(?: failed)? · /g)).toHaveLength(2);
       expect(frame).not.toContain('test-ci');
     } finally {
       await handle.unmount();
@@ -1298,7 +1301,7 @@ describe('visual catalog', () => {
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame.split('\n')[0]).toContain('✗ Plan');
-      expect(frame).toContain('No tasks yet');
+      expect(frame).toContain('No briefs yet');
       expect(frame).not.toContain('Planning stopped');
     } finally {
       await handle.unmount();

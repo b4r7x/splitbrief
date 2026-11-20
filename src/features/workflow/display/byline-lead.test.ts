@@ -413,3 +413,13 @@ describe('deriveBylineLead', () => {
     });
   });
 });
+
+it.each(['reviewing-plan', 'final-review'] as const)(
+  'leaves the brief count off the %s byline',
+  (phase) => {
+    const result = deriveBylineLead(input({ waiting: true, runView: { ...building, phase } }));
+    const lead = result.lead.map((part) => part.text).join('');
+    expect(lead).toContain(phase === 'reviewing-plan' ? 'Plan' : 'Review');
+    expect(lead).not.toContain('2/3');
+  },
+);

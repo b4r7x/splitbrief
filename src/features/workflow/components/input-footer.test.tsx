@@ -1633,7 +1633,7 @@ describe('InputFooter', () => {
       ],
     });
     const ui = renderFeature(<InputFooter width={120} waiting />);
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('Waiting for your answer · Review 2/5');
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('Waiting for your answer · Review');
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme.warning, `${glyph('statusPending')} Waiting for your answer`).replace(
         '\u001b[39m',
@@ -1644,7 +1644,9 @@ describe('InputFooter', () => {
       paint(defaultTheme.reviewer, 'Review').replace('\u001b[39m', ''),
     );
     expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''));
-    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ' 2/5').replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).not.toContain(
+      paint(defaultTheme.textDim, ' 2/5').replace('\u001b[39m', ''),
+    );
     ui.unmount();
   });
 

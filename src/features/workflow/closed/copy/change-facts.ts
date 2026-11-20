@@ -44,7 +44,7 @@ export function changedRows(view: SummaryView, files: readonly FileRow[]): RunRo
 }
 
 export function applyUndoRows(applyUndo: SummaryView['applyUndo']): RunRow[] {
-  if (applyUndo === null) return [];
+  if (applyUndo === null || applyUndo.conflicts.length === 0) return [];
   const conflicts = applyUndo.conflicts.length;
   return [
     {
@@ -53,9 +53,7 @@ export function applyUndoRows(applyUndo: SummaryView['applyUndo']): RunRow[] {
         {
           spans: [
             { text: 'undone', tone: stateTone('attention') },
-            ...(conflicts === 0
-              ? []
-              : [{ text: `, ${countNoun(conflicts, 'conflict')} kept`, tone: 'textDim' as const }]),
+            { text: `, ${countNoun(conflicts, 'conflict')} kept`, tone: 'textDim' },
           ],
         },
       ],

@@ -15,6 +15,8 @@ export interface ClosedRunScreen {
 }
 
 export type ClosedRunLaunch = Readonly<{
+  /** Text from the loaded record that identifies a settled screen. */
+  settledText?: string;
   /** The node arguments that start the CLI from the repository root. */
   argv: readonly string[];
   env: Readonly<Record<string, string>>;
@@ -23,8 +25,7 @@ export type ClosedRunLaunch = Readonly<{
 
 /**
  * Starts the CLI in a PTY, opens the one run of its project from the sessions list, as a user
- * does, and hands its screen to `read` once the closed run settles. The run's history must be
- * taller than the view.
+ * does, and hands its screen to `read` once the closed run settles.
  */
 export async function openClosedRun<T>(
   launch: ClosedRunLaunch,
@@ -81,7 +82,7 @@ export async function openClosedRun<T>(
         child.write('\r');
         // The first frame comes before the run's history: the summary settles once the transcript
         // holds the lines above it.
-        await waitForText('Run closed', 'lines above');
+        await waitForText('Run closed', launch.settledText ?? 'lines above');
         return {
           value: await read({
             screen,

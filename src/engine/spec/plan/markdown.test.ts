@@ -42,7 +42,7 @@ describe('formatPlanMarkdown', () => {
         '',
         '- K9 cmd: npm test',
         '',
-        '## Project gate',
+        '## End-of-run checks',
         '',
         '- V1: npm run release-check',
         '- V2: npm run lint',

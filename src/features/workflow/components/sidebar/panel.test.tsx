@@ -122,32 +122,14 @@ describe('Sidebar — passed count', () => {
     ui.unmount();
   });
 
-  it('uses passed, escalated and failed counts from the task list in the footer', async () => {
-    seedBriefs({
-      tasks: [task('1', 'done'), task('2', 'done'), task('3', 'escalated'), task('4', 'failed')],
-    });
-
-    const ui = renderFeature(<Sidebar width={40} />);
-    await tick();
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('2/4');
-    expect(frame).toContain('2 passed');
-    expect(frame).toContain('1 escalated');
-    expect(frame).toContain('1 failed');
-    expect(frame).not.toContain('2 done');
-
-    ui.unmount();
-  });
-
-  it('shows failed counts without an escalated brief and budgets wrapped footer rows', async () => {
+  it('keeps failed counts in Build and fits the brief list to the sidebar', async () => {
     seedBriefs({
       tasks: [task('1', 'done'), task('2', 'failed'), task('3', 'in_progress')],
     });
     const ui = renderFeature(<Sidebar width={34} height={14} />);
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('1 passed · 1 failed');
+    expect(frame).not.toContain('1 passed · 1 failed');
     expect(frame).toContain('task 3');
     expect(frame.split('\n')).toHaveLength(14);
     ui.unmount();
@@ -284,7 +266,7 @@ describe('Sidebar — passed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('No tasks yet');
+    expect(frame).toContain('No briefs yet');
     expect(frame).not.toMatch(/\bPlan\b/);
     for (const spinner of spinnerFrames()) expect(frame).not.toContain(spinner);
 
@@ -300,7 +282,7 @@ describe('Sidebar — passed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('No tasks yet');
+    expect(frame).toContain('No briefs yet');
     expect(frame).not.toContain('Waiting for your answer');
 
     ui.unmount();
@@ -313,7 +295,7 @@ describe('Sidebar — passed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('No tasks yet');
+    expect(frame).toContain('No briefs yet');
     expect(frame).not.toMatch(/\bPlan\b/);
 
     ui.unmount();
@@ -327,7 +309,7 @@ describe('Sidebar — passed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('No tasks yet');
+    expect(frame).toContain('No briefs yet');
     expect(frame).not.toContain('interrupted');
 
     ui.unmount();
@@ -371,7 +353,7 @@ describe('Sidebar — passed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('No tasks yet');
+    expect(frame).toContain('No briefs yet');
     expect(frame).not.toContain('Planning stopped');
 
     ui.unmount();
@@ -416,16 +398,16 @@ describe('Sidebar — titled border', () => {
     const frame = ui.lastFrame() ?? '';
     const lines = stripAnsiStyles(frame).split('\n');
 
-    expect(lines[0]).toBe(`${border.corner} Tasks 0/3 ${border.rule.repeat(27)}${border.end}`);
+    expect(lines[0]).toBe(`${border.corner} Briefs 0/3 ${border.rule.repeat(26)}${border.end}`);
     expect(frame.split('\n')[0]).toContain(
-      paint(defaultTheme.textDim, ' Tasks 0/3 ').replace('\u001b[39m', ''),
+      paint(defaultTheme.textDim, ' Briefs 0/3 ').replace('\u001b[39m', ''),
     );
     expect(getTerminalCellWidth(lines[0] ?? '')).toBe(40);
     expect(lines[1]).toContain('task 1');
     expect(lines[2]).toContain('task 2');
     expect(lines).toHaveLength(14);
     expect(lines[13]?.startsWith(border.bottom)).toBe(true);
-    expect(lines.filter((line) => line.includes('Tasks'))).toHaveLength(1);
+    expect(lines.filter((line) => line.includes('Briefs'))).toHaveLength(1);
 
     ui.unmount();
   });
@@ -441,11 +423,11 @@ describe('Sidebar — titled border', () => {
     await tick();
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
 
-    expect(lines[0]?.startsWith(`${border.corner} Tasks 0/`)).toBe(true);
+    expect(lines[0]?.startsWith(`${border.corner} Briefs 0/`)).toBe(true);
     expect(lines[0]?.endsWith(`… ${border.end}`)).toBe(true);
     expect(getTerminalCellWidth(lines[0] ?? '')).toBe(24);
     expect(lines).toHaveLength(14);
-    expect(lines.filter((line) => line.includes('Tasks'))).toHaveLength(1);
+    expect(lines.filter((line) => line.includes('Briefs'))).toHaveLength(1);
 
     ui.unmount();
   });
@@ -475,7 +457,7 @@ describe('Sidebar — minimum-height contract', () => {
     ui.rerender(<Sidebar width={34} height={2} />);
     await tick();
 
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Tasks');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Briefs');
     ui.unmount();
   });
 
@@ -613,7 +595,7 @@ describe('Sidebar — title budget', () => {
     ui.unmount();
   });
 
-  it('gives every row one truncation column once any row carries a status word', async () => {
+  it('gives the status column only to a brief with a status word', async () => {
     seedBriefs({
       tasks: [
         task('1', 'in_progress', LONG_TITLE),
@@ -631,13 +613,15 @@ describe('Sidebar — title budget', () => {
 
       expect(rows, `rows at width ${width}`).toHaveLength(3);
       const cuts = rows.map((row) => row.indexOf('…'));
-      expect(new Set(cuts).size, `titles rag at width ${width}: ${JSON.stringify(rows)}`).toBe(1);
+      expect(cuts[0]).toEqual(cuts[2]);
+      expect(cuts[1]).toBeGreaterThan(0);
+      if (cuts[0] !== -1) expect(cuts[1]).toBeLessThan(cuts[0] ?? 0);
 
       ui.unmount();
     }
   });
 
-  it('reserves no status column when nothing is escalated, failed, or skipped', async () => {
+  it('gives a brief without a status word the same title width beside a skipped brief', async () => {
     seedBriefs({ tasks: [task('1', 'in_progress', LONG_TITLE)] });
     const withoutTail = renderFeature(<Sidebar width={34} />);
     await tick();
@@ -658,7 +642,7 @@ describe('Sidebar — title budget', () => {
         .find((line) => line.includes('A task title')) ?? '';
     withTail.unmount();
 
-    expect(sidebarTitleCells(reserved)).toBeLessThan(sidebarTitleCells(plain));
+    expect(sidebarTitleCells(reserved)).toBe(sidebarTitleCells(plain));
   });
 });
 
@@ -699,7 +683,7 @@ describe('Sidebar — persistent task list', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Tasks 1/5');
+    expect(frame).toContain('Briefs 1/5');
     expect(frame).toContain('+3 more');
 
     ui.unmount();
@@ -753,8 +737,8 @@ describe('Sidebar — persistent task list', () => {
     const emptyColumn = (
       stripAnsiStyles(ui.lastFrame() ?? '')
         .split('\n')
-        .find((line) => line.includes('No tasks yet')) ?? ''
-    ).indexOf('No tasks yet');
+        .find((line) => line.includes('No briefs yet')) ?? ''
+    ).indexOf('No briefs yet');
     ui.unmount();
 
     seedBriefs({ tasks: [task('1', 'in_progress', 'A real title')] });
@@ -853,7 +837,7 @@ describe('Sidebar — persistent task list', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     const lines = frame.split('\n');
 
-    expect(frame).toContain('Tasks 30/60');
+    expect(frame).toContain('Briefs 30/60');
     expect(frame).toContain('PLAN');
     expect(frame).toContain('BUILD');
     expect(frame).toContain('REVIEW');
@@ -909,7 +893,7 @@ describe('Sidebar — unbudgeted height', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     const lines = frame.split('\n');
 
-    expect(lines[0]).toBe(`┌ Tasks 2/6 ${'─'.repeat(27)}┐`);
+    expect(lines[0]).toBe(`┌ Briefs 2/6 ${'─'.repeat(26)}┐`);
     expect(lines[1]).toContain('first title');
     expect(lines[2]).toContain('second title');
     expect(frame).toContain('first title');
@@ -1102,23 +1086,6 @@ describe('Sidebar concept colors', () => {
     }
     ui.unmount();
   });
-
-  it('colors the summary state words while keeping counts dim', () => {
-    chalk.level = 3;
-    seedBriefs({ tasks: [task('T001', 'done'), task('T002', 'escalated')] });
-    const ui = renderFeature(<Sidebar width={60} />);
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.success, 'passed').replace('\u001b[39m', ''),
-    );
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.warning, 'escalated').replace('\u001b[39m', ''),
-    );
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.textDim, ' · 1 ').replace('\u001b[39m', ''),
-    );
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('1 passed · 1 escalated');
-    ui.unmount();
-  });
 });
 
 describe('Sidebar — the model a Claude Code seat resolved', () => {
@@ -1171,7 +1138,7 @@ describe('Sidebar — the model a Claude Code seat resolved', () => {
     return ui;
   }
 
-  it('shows the model id a Claude Code call resolved on its own row under the alias', async () => {
+  it('shows the resolved Claude model once when the alias already names it', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: aliasCrew({ tool: 'claude-code', model: 'opus' }),
@@ -1182,7 +1149,7 @@ describe('Sidebar — the model a Claude Code seat resolved', () => {
     addEvent(sessionEvent('opus', 'claude-opus-5-5'));
     await tick();
 
-    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual([...before, 'claude-opus-5-5']);
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual(before);
     ui.unmount();
   });
 
@@ -1220,11 +1187,11 @@ describe('Sidebar — the model a Claude Code seat resolved', () => {
     });
     const ui = await renderCrew();
 
-    addEvent(sessionEvent('opus', 'claude-opus-5-5'));
+    addEvent(sessionEvent('opus', 'claude-fable-5-1'));
     addEvent({ ...sessionEvent('opus'), sequence: 2, nativeSessionId: 'native-plan-2' });
     await tick();
 
-    expect(seatRows(ui.lastFrame() ?? '', 'PLAN').at(-1)).toBe('claude-opus-5-5');
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN').at(-1)).toBe('claude-fable-5-1');
     ui.unmount();
   });
 
@@ -1252,10 +1219,10 @@ describe('Sidebar — the model a Claude Code seat resolved', () => {
     const ui = await renderCrew();
     const before = seatRows(ui.lastFrame() ?? '', 'PLAN');
 
-    addEvent(sessionEvent('opus', 'claude-opus-5-5', 'claude'));
+    addEvent(sessionEvent('opus', 'claude-fable-5-1', 'claude'));
     await tick();
 
-    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual([...before, 'claude-opus-5-5']);
+    expect(seatRows(ui.lastFrame() ?? '', 'PLAN')).toEqual([...before, 'claude-fable-5-1']);
     ui.unmount();
   });
 

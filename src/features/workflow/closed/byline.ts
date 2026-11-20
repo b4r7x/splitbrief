@@ -55,9 +55,10 @@ export function fitByline(byline: Byline, width: number): readonly ConversationR
  */
 export function bylineParts(view: SummaryView, width: number): readonly ConversationRowSegment[] {
   if (view.applyUndo !== null) {
+    if (view.applyUndo.conflicts.length === 0) return [];
     return fitStatusByline(
       'Apply undone',
-      view.applyUndo.conflicts.length > 0 ? 'your later edits were kept' : 'nothing left to undo',
+      'your later edits were kept',
       stateTone('attention'),
       width,
     );
@@ -107,7 +108,11 @@ function bylineFor(view: SummaryView): Byline {
     return { reason: [{ text: 'Ended', tone: stateTone('attention') }], action: BRING_BACK };
   }
   if (view.files.patch !== null) return { reason: null, action: BRING_BACK };
-  if (kind === 'needs-attention') return { reason: null, action: attentionByline(view) };
+  if (
+    kind === 'needs-attention' ||
+    (kind === 'ended' && view.review.kind === 'written' && view.review.counts.critical > 0)
+  )
+    return { reason: null, action: attentionByline(view) };
   // Going home is the legend's: a byline that only repeated it would say nothing.
   return { reason: null, action: '' };
 }
@@ -123,12 +128,12 @@ export function runClosedLabel(closedAt: number | null): string {
 function attentionByline(view: SummaryView): string {
   const blocking = view.review.kind === 'written' ? view.review.counts.critical : 0;
   if (blocking > 0) {
-    return `Read the ${countNoun(blocking, 'blocking finding')} in the packet`;
+    return `Read the ${countNoun(blocking, 'blocking finding')} in the summary`;
   }
   const scope = view.scope;
   const deviations = scope.kind === 'checked' && !scope.passed ? scope.errors + scope.warnings : 0;
   if (deviations > 0) {
-    return `Check the ${countNoun(deviations, 'scope deviation')} in the packet`;
+    return `Check the ${countNoun(deviations, 'scope deviation')} in the summary`;
   }
   const failed = view.briefs.failed;
   if (failed > 0) {

@@ -1,3 +1,5 @@
+import { routerStore } from '../../../../stores/navigation/router.js';
+import { routeClosedAtRest } from '../../at-rest.js';
 import { getSections } from '../../../../stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
@@ -16,6 +18,7 @@ function readConversationRowInputs(): ConversationRowInputs {
     expandedActivityBatches: scroll.expandedActivityBatches,
     cols: snapshot.conversationWidth,
     viewportHeight: snapshot.transcriptViewportHeight,
+    closed: routeClosedAtRest(routerStore.get()),
     streaming: streamingOutputStore.get(),
   };
 }

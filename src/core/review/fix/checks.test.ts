@@ -144,25 +144,25 @@ describe('fixCheckVerdict', () => {
 
   it('says the own failures are gone and the others are left for their fix tasks or the next review', () => {
     expect(words({ ...counts, others: 3 })).toEqual([
-      'your 2 failures gone',
+      '2 failures gone',
       '3 others left for their fix tasks or the next review',
     ]);
   });
 
   it('names the sibling a shared failure is left to', () => {
     expect(words({ ...counts, deferred: 1, deferredTo: ['T025'], others: 1 })).toEqual([
-      '1 of your 2 failures gone',
+      '1 of 2 failures gone',
       '1 left to T025',
       '1 other left for their fix tasks or the next review',
     ]);
     expect(words({ ...counts, deferred: 2, deferredTo: ['T025', 'T026'] })).toEqual([
-      'your 2 failures left to T025 and T026',
+      '2 failures left to T025 and T026',
     ]);
   });
 
   it('counts what remains, what is left to a sibling and the others on a red', () => {
     expect(words({ own: 3, ownLeft: 1, deferred: 1, deferredTo: ['T025'], others: 2 })).toEqual([
-      '1 of your 3 failures remains',
+      '1 of 3 failures remains',
       '1 left to T025',
       '2 others left for their fix tasks or the next review',
     ]);
@@ -170,8 +170,17 @@ describe('fixCheckVerdict', () => {
 
   it('says a check with no failure of the task leaves its failures to others', () => {
     expect(words({ ...counts, own: 0, others: 1 })).toEqual([
-      'no failure of yours',
+      'no failure from this brief',
       '1 other left for their fix tasks or the next review',
     ]);
   });
+});
+
+it('describes cleared failures without addressing the person reading the fix check', () => {
+  const words = fixCheckVerdict({ own: 2, ownLeft: 0, deferred: 0, deferredTo: [], others: 1 })
+    .join(' · ')
+    .replaceAll('\u00a0', ' ');
+  expect(words).toMatch(/2 failures/);
+  expect(words).toMatch(/1 other/);
+  expect(words).not.toMatch(/\byour(?:s)?\b/);
 });

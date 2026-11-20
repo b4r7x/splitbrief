@@ -292,12 +292,12 @@ describe('the workflow screen showing a closed run', () => {
     expect(controlsStore.get().sidebarVisible).toBe(true);
 
     const wide = mount(160, 40);
-    expect(stripAnsiStyles(wide.lastFrame() ?? '')).toContain('Tasks');
+    expect(stripAnsiStyles(wide.lastFrame() ?? '')).toContain('Briefs');
     wide.unmount();
 
     // At the breakpoint no column paints, on a closed run as on an open one.
     const narrow = mount(120, 40);
-    expect(stripAnsiStyles(narrow.lastFrame() ?? '')).not.toContain('Tasks');
+    expect(stripAnsiStyles(narrow.lastFrame() ?? '')).not.toContain('Briefs');
     narrow.unmount();
   });
 
@@ -312,7 +312,7 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(160, 40);
     const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
     await vi.waitFor(() => {
-      expect(frame()).toContain('Tasks');
+      expect(frame()).toContain('Briefs');
       expect(frame()).toMatch(/src\/test\.ts .* ctrl\+d/);
       expect(frame()).toContain('/ for a command…');
     });

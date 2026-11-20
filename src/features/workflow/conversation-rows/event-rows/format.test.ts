@@ -178,17 +178,17 @@ describe('reviewChecksRow', () => {
     expect(reviewChecksSegments(event)).toContainEqual({ text: 'off', tone: 'warning' });
   });
 
-  it('says, in the dim tone, that the plan names no project gate', () => {
+  it('says, in the dim tone, that the plan names no end-of-run checks', () => {
     const event = { type: 'review_checks', ts: 0, phase: 'final-review', status: 'none' } as const;
     expect(reviewChecksRow(event)).toBe(
-      'End-of-run checks · none · the plan names no project gate',
+      'End-of-run checks · none · the plan names no end-of-run checks',
     );
     expect(reviewChecksSegments(event)).toEqual([
       { text: 'End-of-run checks', tone: 'textDim' },
       { text: ' · ', tone: 'textDim' },
       { text: 'none', tone: 'textDim' },
       { text: ' · ', tone: 'textDim' },
-      { text: 'the plan names no project gate', tone: 'textDim' },
+      { text: 'the plan names no end-of-run checks', tone: 'textDim' },
     ]);
   });
 });

@@ -89,6 +89,7 @@ function findingFor(
     ...(Object.keys(failureKeys).length > 0 && { failureKeys }),
     ...(Object.keys(redKeys).length > 0 && { redKeys }),
     ...(input.output !== undefined && { output: input.output }),
+    ...(input.checkDetail !== undefined && { checkDetail: input.checkDetail }),
   };
 }
 

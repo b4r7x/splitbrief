@@ -389,7 +389,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           redKeys: [NEW_RED],
         }),
       ]);
-      expect(state.pendingTriage?.inputs[0]?.text).toContain('Reviewer check V1 (npm test)');
+      expect(state.pendingTriage?.inputs[0]?.text).toContain('npm test failed · 1 failure');
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged).toEqual([
         expect.objectContaining({ id: 'V1', command: 'npm test', exitCode: 1 }),
@@ -500,8 +500,10 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(listing).toContain(
         `New failures:\n- ${NEW_RED}\nPre-existing failures (also red at the run base):\n- ${OLD_RED}`,
       );
-      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(`New failures:\n- ${NEW_RED}`);
-      expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(OLD_RED);
+      expect(outcome.state.pendingTriage?.inputs[0]?.checkDetail).toContain(
+        `New failures:\n- ${NEW_RED}`,
+      );
+      expect(outcome.state.pendingTriage?.inputs[0]?.checkDetail).not.toContain(OLD_RED);
     });
   });
 
@@ -540,10 +542,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(outcome.state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({ id: 'V1.1', file: null }),
       ]);
-      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        'failed with new failures.\ncheck V1 did not pass (fail):',
-      );
-      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('timed out');
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('npm test failed · 1 failure');
+      expect(outcome.state.pendingTriage?.inputs[0]?.checkDetail).toContain('timed out');
       expect(outcome.section).toContain(
         '- V1 `npm test`: failed, 1 new failure(s)\ncheck V1 did not pass (fail):',
       );
@@ -591,7 +591,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        'failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs timed out); the reviewer decides.',
+        'Could not verify the failure at the run base (both runs timed out).',
       );
       expect(outcome.section).toContain(
         '- V1 `npm test`: failed, not verified at the run base (both runs timed out); the reviewer decides\ncheck V1 did not pass (fail):',
@@ -685,7 +685,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        `failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${red.reason}); the reviewer decides.`,
+        `Could not verify the failure at the run base (${red.reason}).`,
       );
       expect(outcome.section).toContain(
         `- V1 \`${red.command}\`: failed, not verified at the run base (${red.reason}); the reviewer decides\ncheck V1 did not pass (fail): ${red.reason.slice('both runs '.length)}\nOutput tail:\n${red.red}`,
@@ -744,7 +744,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(outcome.section).toContain(`Failures:\n- ${NEW_RED}\nOutput tail:`);
       expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        'SPLITBRIEF could not verify its run base re-run (the run base could not be prepared',
+        'Could not verify the failure at the run base (the run base could not be prepared',
       );
       expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(
         'failed at the run base too',
@@ -1008,7 +1008,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(
         rows(events).find((row) => row.moment === 'pre-review' && row.status === 'done'),
       ).toMatchObject({ newFailures: 1, preExisting: 1 });
-      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('src/new.test.ts::adds');
+      expect(outcome.state.pendingTriage?.inputs[0]?.checkDetail).toContain(
+        'src/new.test.ts::adds',
+      );
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toEqual([
         'biome.json:38: the key files.ignore is deprecated',
@@ -1070,7 +1072,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(outcome.state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({ id: 'V1.1', file: null }),
       ]);
-      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('exited with code 1');
+      expect(outcome.state.pendingTriage?.inputs[0]?.checkDetail).toContain('exited with code 1');
       expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain('No task changed it.');
     });
   });
@@ -1115,10 +1117,12 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         ]);
         expect(inputs[0]?.text).toContain('Last changed by T001.');
         expect(inputs[1]?.text).toContain('Last changed by T002.');
-        expect(inputs[0]?.text).toContain(`- ${NEW_RED}`);
-        expect(inputs[0]?.text).not.toContain('src/b.ts');
-        expect(inputs[1]?.text).toContain('- src/b.ts(2,3): error TS2304: Cannot find name x.');
-        expect(inputs[1]?.text).not.toContain('src/a.ts');
+        expect(inputs[0]?.checkDetail).toContain(`- ${NEW_RED}`);
+        expect(inputs[0]?.checkDetail).not.toContain('src/b.ts');
+        expect(inputs[1]?.checkDetail).toContain(
+          '- src/b.ts(2,3): error TS2304: Cannot find name x.',
+        );
+        expect(inputs[1]?.checkDetail).not.toContain('src/a.ts');
       },
     );
   });
@@ -1187,19 +1191,19 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
 
       expect(inputs.map((input) => input.file)).toEqual(['src/a.test.ts', 'src/b.test.ts']);
       expect(inputs[0]?.output).not.toContain('AssertionError');
-      expect(inputs[0]?.text).toContain(
+      expect(inputs[0]?.checkDetail).toContain(
         '12 failures\nFailures:\n- src/a.test.ts::adds 0\n  AssertionError: expected 0 to be 20',
       );
-      expect(inputs[0]?.text.match(/^- /gm)).toHaveLength(10);
-      expect(inputs[0]?.text).toContain('and 2 more');
-      expect(inputs[0]?.text).not.toContain('Output tail:');
-      expect(inputs[0]?.text).not.toContain('src/b.test.ts');
-      expect(inputs[0]?.text).not.toContain('expected 3 to be 4');
-      expect(inputs[1]?.text).toContain(
+      expect(inputs[0]?.checkDetail?.match(/^- /gm)).toHaveLength(10);
+      expect(inputs[0]?.checkDetail).toContain('and 2 more');
+      expect(inputs[0]?.checkDetail).not.toContain('Output tail:');
+      expect(inputs[0]?.checkDetail).not.toContain('src/b.test.ts');
+      expect(inputs[0]?.checkDetail).not.toContain('expected 3 to be 4');
+      expect(inputs[1]?.checkDetail).toContain(
         '1 failure\nFailures:\n- src/b.test.ts::subtracts\n  AssertionError: expected 3 to be 4',
       );
-      expect(inputs[1]?.text).not.toContain('src/a.test.ts');
-      expect(inputs[1]?.text).not.toContain('expected 0 to be 20');
+      expect(inputs[1]?.checkDetail).not.toContain('src/a.test.ts');
+      expect(inputs[1]?.checkDetail).not.toContain('expected 0 to be 20');
       expect(outcome.section.match(/^- src\/[ab].test.ts::/gm)).toHaveLength(10);
     });
   });

@@ -274,13 +274,13 @@ describe('WorkflowBody brief review rendering', () => {
     );
     await flushEffects();
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const titleRow = lines.findIndex((line) => line.includes('Tasks'));
+    const titleRow = lines.findIndex((line) => line.includes('Briefs'));
     const transcriptRow = lines.findIndex((line) => line.includes('First transcript text'));
 
     expect(titleRow).toBe(0);
     expect(transcriptRow).toBe(titleRow);
-    expect(lines[titleRow]?.slice(WORKFLOW_GUTTER_X, WORKFLOW_GUTTER_X + 8)).toBe(
-      `${border.corner} Tasks `,
+    expect(lines[titleRow]?.slice(WORKFLOW_GUTTER_X, WORKFLOW_GUTTER_X + 9)).toBe(
+      `${border.corner} Briefs `,
     );
     expect(lines[titleRow]?.[WORKFLOW_GUTTER_X + 39]).toBe(border.end);
     expect(lines).toHaveLength(20);

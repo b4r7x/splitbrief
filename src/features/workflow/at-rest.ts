@@ -8,6 +8,7 @@ import {
   type RailStageState,
   type RailStageStatus,
 } from '../../core/phases/rail.js';
+import { movedProjectPath } from '../../core/sessions/moved-project.js';
 import type { RunRecord } from '../../core/sessions/run/record.js';
 import { awaitsApply, type StopReason } from '../../core/sessions/run/status.js';
 import type { RunHalt } from '../../core/run-view/halt.js';
@@ -205,7 +206,12 @@ export function atRestComposer(
   record: RunRecord,
   apply?: Readonly<{ queued: DepartureKind | null }>,
 ): AtRestComposer {
-  const continuable = record.status.kind === 'open' && record.hydration.kind === 'loaded';
+  const state = record.hydration.kind === 'loaded' ? record.hydration.state : undefined;
+  const original = movedProjectPath(state?.lastFailure?.message);
+  const continuable =
+    record.status.kind === 'open' &&
+    state !== undefined &&
+    (original === undefined || original === record.ref.projectDir);
   return {
     continuable,
     commandsOnly: !continuable,

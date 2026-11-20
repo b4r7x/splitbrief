@@ -1,3 +1,4 @@
+import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
@@ -83,6 +84,7 @@ import { resetAllStores } from '../../helpers/stores.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import {
   LONG_COMPOSER_DRAFT,
+  VISUAL_FIXTURE_EPOCH,
   type FixtureContext,
   type FixtureLifecycle,
   type FixtureRegistry,
@@ -1146,6 +1148,12 @@ function createWorkflowContinuingFixture(): FixtureLifecycle {
   return {
     setup: async (context) => {
       await workflow.setup(context);
+      addEvent({
+        type: 'user_message',
+        phase: 'planning',
+        ts: VISUAL_FIXTURE_EPOCH,
+        text: CONTINUING_FEATURE,
+      });
       submitHeldCheck('continue');
       // The composer beside the status is live: a correction typed during the check is still there
       // when it lands.

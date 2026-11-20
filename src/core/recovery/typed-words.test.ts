@@ -8,7 +8,7 @@ import { deriveRunStatus, type RunStatus } from '../sessions/run/status.js';
 import type { StepRef } from '../schemas/run-step.js';
 import { taskId } from '../schemas/task.js';
 import type { WorkflowState } from '../schemas/workflow/state.js';
-import { leavesWordsUnread, statusLeavesWordsUnread } from './typed-words.js';
+import { leavesWordsUnread, noWordsRefusal, statusLeavesWordsUnread } from './typed-words.js';
 
 describe('leavesWordsUnread', () => {
   it.each([
@@ -232,4 +232,8 @@ describe('statusLeavesWordsUnread on a run that keeps the review step', () => {
     };
     expect(statusLeavesWordsUnread(statusOf(stop, true))).toBe(false);
   });
+});
+
+it('tells the user how to clear a message before Apply', () => {
+  expect(noWordsRefusal({ kind: 'apply' })).toBe('Apply takes no message. Clear the input first.');
 });

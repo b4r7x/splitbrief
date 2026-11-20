@@ -257,7 +257,7 @@ const READY_TASKS: readonly BriefExecution[] = [
     method: 'local',
 
     retryCount: 0,
-    tool: 'custom-endpoint',
+    tool: 'codex',
     model: 'gpt-5-mini',
   },
   {
@@ -266,7 +266,7 @@ const READY_TASKS: readonly BriefExecution[] = [
     method: 'local',
 
     retryCount: 1,
-    tool: 'custom-endpoint',
+    tool: 'codex',
     model: 'gpt-5-mini',
   },
   {
@@ -275,7 +275,7 @@ const READY_TASKS: readonly BriefExecution[] = [
     method: 'local',
 
     retryCount: 0,
-    tool: 'custom-endpoint',
+    tool: 'codex',
     model: 'gpt-5-mini',
   },
 ];
@@ -395,8 +395,8 @@ const READY_LEDGER: EvidenceLedger = ledger({
   finalReview: { path: packetMarkdownPath(COMPLETE_SESSION), status: 'written' },
 });
 
-const READY_BUILD = { tool: 'custom-endpoint', model: 'gpt-5-mini' } as const;
-const READY_REVIEW = { tool: 'custom-endpoint', model: 'gpt-5-codex' } as const;
+const READY_BUILD = { tool: 'codex', model: 'gpt-5-mini' } as const;
+const READY_REVIEW = { tool: 'codex', model: 'gpt-5-codex' } as const;
 const READY_REVIEW_MS = 65_000;
 
 /** The finished run every fact agrees on: packet written, verdict allows it, scope clean. */
@@ -413,8 +413,7 @@ const READY_SUMMARY: Readonly<Summary> = Object.freeze({
 
   escalationRate: 0,
   taskBreakdown: [...READY_TASKS],
-
-  plannerTool: 'custom-endpoint',
+  plannerTool: 'codex',
   plannerModel: 'gpt-5.1',
   implementerTool: READY_BUILD.tool,
   implementerModel: READY_BUILD.model,
@@ -2203,7 +2202,7 @@ const CLOSED_MIXED_WORKERS = record({
 
 const CLOSED_NEEDS_ATTENTION = record({
   sessionId: NEEDS_ATTENTION_SESSION,
-  status: { kind: 'closed', as: 'complete' },
+  status: { kind: 'closed', as: 'ended' },
   state: savedState({
     phase: 'complete',
     briefs: [
@@ -2211,6 +2210,8 @@ const CLOSED_NEEDS_ATTENTION = record({
       { id: BRIEFS.wire.id, status: 'escalated' },
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
+    reviewStatus: 'failed',
+    closed: { as: 'ended', at: READY_COMPLETED_AT },
     review: FAILED_REVIEW,
     completedAt: READY_COMPLETED_AT,
   }),
@@ -3547,7 +3548,21 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: AT_REST_QUEUED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
   }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
-  atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
+  atRestProjection({
+    id: 'workflow-at-rest-halted',
+    route: {
+      record: AT_REST_HALTED,
+      log: [
+        ...cadenceBrief({ brief: BRIEFS.validator, index: 0, started: 1_000, completed: 61_000 }),
+        {
+          type: 'error',
+          phase: 'implementing',
+          ts: VISUAL_FIXTURE_EPOCH,
+          message: SEAT_DOWN_HALT.message,
+        },
+      ],
+    },
+  }),
   atRestProjection({
     id: 'workflow-at-rest-seat-wait',
     route: { record: AT_REST_SEAT_WAIT, log: seatWaitLog(CODEX_WAIT, true) },

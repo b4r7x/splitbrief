@@ -116,7 +116,7 @@ export function acceptedCounts(
     redCheckIds:
       redChecks === undefined
         ? undefined
-        : `${redChecks}: ${red.map((check) => check.id).join(', ')}`,
+        : `${redChecks}: ${red.map((check) => [check.id, check.command ?? check.lastLine].filter(Boolean).join(SOFT_SEP)).join(', ')}`,
   };
 }
 

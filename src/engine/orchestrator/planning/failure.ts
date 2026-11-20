@@ -12,6 +12,7 @@ import {
 } from '../recovery/planner-call-failure.js';
 import {
   apiContextRecoveryFacts,
+  missingContextWords,
   readApiContextDiagnostic,
 } from '../../providers/api/context-diagnostic.js';
 import { labelError, toErrorMessage } from '../../../utils/format/errors.js';
@@ -80,7 +81,7 @@ export async function handlePlanningFailure(opts: {
       swap: { seat: 'plan', runner: wctx.config.planner },
       details: [
         ...(contextDiagnostic.missingSections.length > 0
-          ? [`Missing: ${contextDiagnostic.missingSections.join(', ')}`]
+          ? [`Missing: ${missingContextWords(contextDiagnostic.missingSections)}`]
           : []),
         `Pick a plan seat with a larger context in /crew plan, then choose ${recoveryActionLabel('retry-same-worker')}.`,
       ],

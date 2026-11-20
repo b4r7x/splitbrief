@@ -1,3 +1,5 @@
+import { routeClosedAtRest } from '../../../../src/features/workflow/at-rest.js';
+import { eventsStore } from '../../../../src/stores/workflow/events/state.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { renderToString } from 'ink';
@@ -452,8 +454,17 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       ...base(),
       afterMount: async (write) => {
         const refused = Promise.withResolvers<void>();
-        const off = feedbackStore.subscribe(() => {
-          if (feedbackStore.get().message === MOVED_PROJECT_MESSAGE) refused.resolve();
+        const off = eventsStore.subscribe(() => {
+          if (
+            eventsStore
+              .get()
+              .events.some(
+                (event) =>
+                  event.type === 'recovery_action_failed' &&
+                  event.message === MOVED_PROJECT_MESSAGE,
+              )
+          )
+            refused.resolve();
         });
         await write.press('s');
         await refused.promise;
@@ -949,6 +960,7 @@ export function workflowTranscriptText(): string {
   const { conversationWidth, transcriptViewportHeight } = readConversationScrollSnapshot();
   const { expandedDiffs, expandedActivityBatches } = conversationScrollStore.get();
   const projection = getConversationRowsProjection({
+    closed: routeClosedAtRest(routerStore.get()),
     sections: getSections(),
     expandedDiffs,
     expandedActivityBatches,
@@ -1140,7 +1152,7 @@ const checkpointPredicates = [
   [
     checkpointId('build-consult-rewrite'),
     (context) =>
-      includesTranscript('rewrote T901 (rev 2)')(context) &&
+      includesTranscript('rewrote T901')(context) &&
       excludesAll('passed · attempt', 'failed · attempt')(context),
   ],
   [
@@ -1270,7 +1282,7 @@ const checkpointPredicates = [
     checkpointId('implementation-handback-unclosed-quote'),
     (context) =>
       implementerMarkdown('src/row.ts')(context) &&
-      includesAll('Report  done · 1 decision')(context) &&
+      excludesAll('Report  done')(context) &&
       excludesAll('"status":"done"', 'REDACTED')(context),
   ],
   [
@@ -1303,10 +1315,10 @@ const checkpointPredicates = [
   ],
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
-  [checkpointId('recovery-resolved-skip'), recoveryRows(['Recovery  Skip task', 'skipped'])],
+  [checkpointId('recovery-resolved-skip'), recoveryRows(['Recovery  Skip brief', 'skipped'])],
   [
     checkpointId('recovery-resolved-dependency-skip'),
-    recoveryRows(['Recovery  Skip task', 'skipped'], ['Recovery  Dependency blocked']),
+    recoveryRows(['Recovery  Skip brief', 'skipped'], ['Recovery  Dependency blocked']),
   ],
   [
     checkpointId('recovery-resolved-apply-retry'),
@@ -1391,7 +1403,7 @@ const checkpointPredicates = [
         includesAll()(context) &&
         (stageMarks === 3 || (stageMarks === 1 && rail.includes('Review'))) &&
         excludesAll('done ·', 'drift not run', 'briefs passed')(context) &&
-        (context.viewport.cols < 160 || context.output.includes('Tasks 4/4')) &&
+        (context.viewport.cols < 160 || context.output.includes('Briefs 4/4')) &&
         // Up to 80 columns the file name does not fit whole, so the path and its count go.
         (context.viewport.cols <= 80 || context.output.includes('+1 file'))
       );
@@ -1405,7 +1417,7 @@ const checkpointPredicates = [
       includesTranscript(
         "verified · kept the interrupted attempt's work",
         'further change',
-      )(context) && /Report {2}done$/m.test(workflowTranscriptText()),
+      )(context) && !/Report {2}done$/m.test(workflowTranscriptText()),
   ],
   [
     checkpointId('resumed-cut-brief'),
@@ -1594,11 +1606,7 @@ const checkpointPredicates = [
   [
     checkpointId('apply-recheck-words-refused'),
     (context) =>
-      includesAll(
-        'Cannot send words to Apply',
-        REFUSED_WORDS,
-        'Checking the merged result',
-      )(context) &&
+      includesAll('Apply takes no message', REFUSED_WORDS, 'Checking the merged result')(context) &&
       reviewNoneRowOnce() &&
       noReviewClaimed(context) &&
       excludesAll('reviewing changes')(context),
@@ -1792,9 +1800,12 @@ const checkpointPredicates = [
     checkpointId('plan-card-edited'),
     (context) => {
       if (!planCardReady(context)) return false;
-      if (!stripAnsiStyles(context.output).includes('Plan 0/2')) return false;
-      const transcript = workflowTranscriptText();
-      return transcript.includes('Plan ready') && transcript.includes('Plan changed');
+      if (stripAnsiStyles(context.output).includes('Plan 0/2')) return false;
+      const rows = workflowTranscriptText().split('\n');
+      return (
+        rows.filter((row) => row.startsWith('Plan ready')).length === 1 &&
+        rows.filter((row) => row.startsWith('Plan changed')).length === 1
+      );
     },
   ],
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
@@ -1821,10 +1832,10 @@ const checkpointPredicates = [
   [checkpointId('consult-answer-typed'), includesAll('Which store?', 'You → redis')],
   [
     checkpointId('paused-mid-brief'),
-    includesAll('⏎ resume', 'Stopped at T', 'Partial changes kept'),
+    includesAll('esc home', 'Stopped at T', 'Partial changes kept'),
   ],
-  [checkpointId('paused-cut-seat'), includesAll('⏎ resume', 'Stopped at T')],
-  [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
+  [checkpointId('paused-cut-seat'), includesAll('esc home', 'Stopped at T')],
+  [checkpointId('paused-boundary'), includesAll('briefs passed', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
   [
     checkpointId('stop-steer-refused'),
@@ -1840,7 +1851,7 @@ const checkpointPredicates = [
   [checkpointId('at-rest-seat-wait'), includesAll()],
   [
     checkpointId('at-rest-seat-wait-elsewhere'),
-    (context) => includesAll()(context) && excludesAll('Running in another process')(context),
+    (context) => includesAll()(context) && excludesAll('Running in another terminal')(context),
   ],
   [
     checkpointId('at-rest-seat-moved'),
@@ -1858,7 +1869,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('at-rest-typed-words'),
-    includesAll('Cannot send words with Restore backup. Clear them.', TYPED_WORDS),
+    includesAll('Restore backup takes no message. Clear the input first.', TYPED_WORDS),
   ],
   [
     checkpointId('at-rest-apply-conflict'),
@@ -1912,7 +1923,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('recovery-apply-partial-words'),
-    includesAll('Cannot send words with', TYPED_WORDS, 'tab back to the actions'),
+    includesAll('takes no message', TYPED_WORDS, 'tab back to the actions'),
   ],
   [
     checkpointId('recovery-review-contract'),
@@ -1982,7 +1993,7 @@ const checkpointPredicates = [
   [
     checkpointId('moved-project-skip'),
     (context) =>
-      includesTranscript('Recovery  Skip task blocked')(context) &&
+      includesTranscript('Recovery  Skip brief blocked')(context) &&
       workflowTranscriptText().replace(/\s+/g, ' ').includes(MOVED_PROJECT_MESSAGE) &&
       context.output.includes('Needs you'),
   ],
@@ -1994,7 +2005,7 @@ const checkpointPredicates = [
       return (
         includesTranscript()(context) &&
         text.includes('Draft not saved: the project folder') &&
-        context.output.includes('to retry the step')
+        context.output.includes('Move the project back or end the run')
       );
     },
   ],
@@ -2005,7 +2016,7 @@ const checkpointPredicates = [
       includesTranscript()(context) &&
       workflowTranscriptText().replace(/\s+/g, ' ').includes(MOVED_PROJECT_MESSAGE) &&
       context.output.includes('The project folder') &&
-      context.output.includes('to retry the step') &&
+      context.output.includes('Move the project back or end the run') &&
       excludesAll('Saved state unreadable', 'no events yet')(context),
   ],
   [
@@ -2047,9 +2058,9 @@ const checkpointPredicates = [
     checkpointId('ready-crew-saved'),
     (context) => {
       if (!context.output.includes(context.checkpoint.marker)) return false;
-      if (context.viewport.cols !== 80) return context.output.includes('PLAN GPT-5.1');
+      if (context.viewport.cols > 80) return context.output.includes('PLAN GPT-5.1');
       const headerRow = context.output.split('\n')[0] ?? '';
-      return headerRow.includes('PLAN custom-endpoint · BUILD custom-endpoint · REVIEW codex');
+      return headerRow.includes('PLAN codex · BUILD codex · REVIEW codex');
     },
   ],
   [
@@ -2112,7 +2123,7 @@ const checkpointPredicates = [
   [
     checkpointId('at-rest-applying-closed-quit-queued'),
     (context) =>
-      includesAll('/ for a command…', 'Quits when')(context) &&
+      includesAll('/ for a command…', 'Quits after cleanup')(context) &&
       excludesAll('for home', 'esc home')(context) &&
       activeApply() !== undefined &&
       departureStore.get()?.kind === 'quit',
@@ -2135,7 +2146,7 @@ const checkpointPredicates = [
   [
     checkpointId('at-rest-other-process-applying'),
     (context) =>
-      includesAll('Running in another process', '● Apply', '/ for a command…')(context) &&
+      includesAll('Running in another terminal', '● Apply', '/ for a command…')(context) &&
       excludesAll('Applying to your checkout', 'for home', 'Ready to apply')(context),
   ],
   // The log names when the other process's Apply began, so its clock counts from there.
@@ -2143,7 +2154,7 @@ const checkpointPredicates = [
     checkpointId('at-rest-other-process-applying-clock'),
     (context) =>
       includesAll('Applying to your checkout · 0:06', '● Apply', '/ for a command…')(context) &&
-      excludesAll('Running in another process', 'for home', 'Ready to apply')(context),
+      excludesAll('Running in another terminal', 'for home', 'Ready to apply')(context),
   ],
   [checkpointId('ready-composer-focus'), includesAll('Ready to apply')],
   [checkpointId('ready-slash-command'), includesAll('Ready to apply', '› /settings')],
@@ -2253,7 +2264,7 @@ const checkpointPredicates = [
     checkpointId('recovery-plan'),
     (context) =>
       includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)(context) &&
-      (context.viewport.cols < 160 || includesAll('No tasks yet')(context)),
+      (context.viewport.cols < 160 || includesAll('No briefs yet')(context)),
   ],
   [
     checkpointId('recovery-plan-checks'),
@@ -2431,7 +2442,7 @@ const checkpointPredicates = [
     includesAll(
       'T901 needs your answer',
       'Question: Projection',
-      'Skip task',
+      'Skip brief',
       'End run',
       'untouched',
     ),
@@ -2584,8 +2595,8 @@ const checkpointPredicates = [
   [
     checkpointId('implementation-tool-details'),
     includesAll(
-      'renewals.ts :120-159',
-      'biome.json :70-end',
+      'renewals.ts:120-159',
+      'biome.json:70-end',
       'Count the action flags',
       '+2 lines',
       'collapse · ctrl+a',
@@ -2597,7 +2608,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('implementation-read-paths'),
-    includesAll('src/a.ts :12-41 · src/b.ts :12-41', 'src/c.ts :40-end'),
+    includesAll('src/a.ts:12-41 · src/b.ts:12-41', 'src/c.ts:40-end'),
   ],
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
   [
@@ -2680,9 +2691,9 @@ const checkpointPredicates = [
     // The verdict wraps at narrow widths; the earlier red row scrolls out of a 60x18 transcript.
     (context) =>
       includesAll(
-        '1 of your 2 failures gone',
+        '1 of 2 failures gone',
         'left to T905',
-        ...(context.viewport.cols >= 120 ? ['1 of your 2 failures remains'] : []),
+        ...(context.viewport.cols >= 120 ? ['2 failures'] : []),
       )({
         ...context,
         output: context.output.replace(/\s+/g, ' '),
@@ -2696,7 +2707,7 @@ const checkpointPredicates = [
       const text = workflowTranscriptText();
       return (
         includesTranscript('Render greet-card · failed')(context) &&
-        text.split('\n').filter((row) => row.includes('verify T901-K1, T901-R1')).length === 1 &&
+        text.split('\n').filter((row) => row.includes('PLAN → T904: verify')).length === 1 &&
         !text.includes("misses the task's criteria checks")
       );
     },

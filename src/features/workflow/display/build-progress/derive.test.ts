@@ -49,7 +49,7 @@ it('names a scheduled review during the build exactly as the final review', () =
       }),
     }),
   );
-  expect(progress.activity).toBe('Review · OpenAI Codex CLI · auto');
+  expect(progress.activity).toBe('Review · OpenAI Codex CLI · auto · reviewing changes');
 });
 
 it.each([
@@ -538,7 +538,7 @@ describe('deriveBuildProgress', () => {
     for (const width of [getChromeContentWidth(120), 80, 60]) {
       const rows = buildProgressRows(progress, width);
       expect(rows[0]?.text.endsWith('Base re-run V1 0:42')).toBe(true);
-      expect(rows[0]?.spans).toContainEqual({ text: 'Base re-run V1', tone: 'accent' });
+      expect(rows[0]?.spans).toContainEqual({ text: 'Base re-run V1', tone: 'text' });
       expect(
         rows
           .slice(1)
@@ -793,7 +793,7 @@ describe('deriveBuildProgress', () => {
         }),
       }),
     );
-    expect(reviewProg.activity).toBe('Review · reviewing');
+    expect(reviewProg.activity).toBe('Review · reviewing changes');
     expect(reviewProg.activity).not.toContain('final-review');
   });
 
@@ -1123,7 +1123,7 @@ describe('buildProgressRows', () => {
     ['final-review', { id: 'V1', moment: 'base', command: 'npm test' }, 'Base re-run V1'],
     ['implementing', { id: 'V1', moment: 'brief', command: 'npm test' }, 'Fix check V1'],
     ['final-review', { id: 'V6', moment: 'verify', command: 'npm test' }, 'Verify V6'],
-  ] as const)('keeps the %s running lead accent and metadata dim for %s', (phase, suite, lead) => {
+  ] as const)('keeps the %s running lead neutral and metadata dim for %s', (phase, suite, lead) => {
     const progress = deriveBuildProgress(
       input({
         runView: phaseView(phase),
@@ -1132,7 +1132,7 @@ describe('buildProgressRows', () => {
     );
     for (const width of [160, 80, 60]) {
       const spans = buildProgressRows(progress, width).flatMap((row) => row.spans);
-      expect(spans).toContainEqual({ text: lead, tone: 'accent' });
+      expect(spans).toContainEqual({ text: lead, tone: 'text' });
       expect(spans).toContainEqual({ text: ' 0:42', tone: 'textDim' });
       if (suite.moment !== 'plan')
         expect(spans).toContainEqual({ text: suite.command, tone: 'textDim' });
@@ -1251,6 +1251,8 @@ describe('buildProgressRows', () => {
       { text: ' · ', tone: 'textDim' },
       { text: 'OpenAI Codex CLI · auto', tone: 'reviewer' },
       { text: ' · ', tone: 'textDim' },
+      { text: 'reviewing changes', tone: 'textDim' },
+      { text: ' · ', tone: 'textDim' },
       { text: 'last event 0s ago', tone: 'textDim' },
     ]);
   });
@@ -1265,15 +1267,15 @@ describe('buildProgressRows', () => {
     },
     {
       suite: { id: 'C1', moment: 'plan', command: 'npm test' },
-      labelSpans: [{ text: 'Plan check C1', tone: 'accent' }],
+      labelSpans: [{ text: 'Plan check C1', tone: 'text' }],
     },
     {
       suite: { id: 'B1', moment: 'base', command: 'npm test' },
-      labelSpans: [{ text: 'Base re-run B1', tone: 'accent' }],
+      labelSpans: [{ text: 'Base re-run B1', tone: 'text' }],
     },
     {
       suite: { id: 'F1', moment: 'brief', command: 'npm test' },
-      labelSpans: [{ text: 'Fix check F1', tone: 'accent' }],
+      labelSpans: [{ text: 'Fix check F1', tone: 'text' }],
     },
     {
       suite: { moment: 'pre-review', command: 'npm test' },
@@ -1317,7 +1319,7 @@ describe('buildProgressRows', () => {
     expect(buildProgressRows(progress, 160)[1]?.spans).toEqual([
       { text: 'Review', tone: 'reviewer' },
       { text: ' · ', tone: 'textDim' },
-      { text: 'Render workflow-x', tone: 'accent' },
+      { text: 'Render workflow-x', tone: 'text' },
       { text: ' · ', tone: 'textDim' },
       { text: 'running', tone: 'accent' },
       { text: ' 0:12', tone: 'textDim' },
@@ -1578,7 +1580,7 @@ describe('the build block during the final review', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Review · OpenAI Codex CLI · GPT-5 · high');
+    expect(progress.activity).toBe('Review · OpenAI Codex CLI · GPT-5 · high · reviewing changes');
   });
 
   it('states no attempt', () => {

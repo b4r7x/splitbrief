@@ -28,7 +28,18 @@ export function settledRowBlock({ section, width }: SettledRowBlockOptions): Con
         file={target === undefined || target.path === '' ? section.summary.file : target.path}
         fileNote={target?.note}
         extraFiles={target?.extraFiles}
-        reason={section.summary.reason}
+        reason={
+          section.summary.method === 'skipped' &&
+          section.items.some(
+            (event) =>
+              event.type === 'consult_answered' &&
+              event.taskId === section.summary.id &&
+              event.action === 'cannot' &&
+              section.summary.reason?.startsWith('Planner said:'),
+          )
+            ? undefined
+            : section.summary.reason
+        }
       />
     ) : (
       <TaskSummary width={width} focused={focused} {...stageSummaryRow(section.summary)} />

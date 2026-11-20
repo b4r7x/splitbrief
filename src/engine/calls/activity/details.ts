@@ -115,7 +115,7 @@ export function toolUseDetails(
           ? undefined
           : (endLine ?? (limit === undefined ? 'end' : start + limit - 1));
       const targets =
-        start === undefined ? readPaths : readPaths.map((path) => `${path} :${start}-${end}`);
+        start === undefined ? readPaths : readPaths.map((path) => `${path}:${start}-${end}`);
       const target = targets.join(SOFT_SEP);
       return { kind: 'read', label: `reading ${target}`, target };
     }

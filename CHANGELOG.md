@@ -16,6 +16,8 @@
 - Review packets label logged BUILD starts and settlements in the routing section.
 - Review packets keep the BUILD route when you skip a brief that already ran.
 - The model catalog cache omits prices for individual model modes.
+- The closed run summary shows the findings that blocked review. Queued messages show whether they reached a seat, and the brief count appears during Build.
+- Opening a file in a graphical editor keeps the workflow visible.
 
 ### Removed
 

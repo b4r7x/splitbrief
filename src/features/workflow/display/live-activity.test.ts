@@ -52,7 +52,7 @@ it.each([
     })
       ?.parts.map((part) => part.text)
       .join(''),
-  ).toBe(`Review · ${label} · GPT-5`);
+  ).toBe(`Review · ${label} · GPT-5 · reviewing changes`);
   resetWorkflow();
 });
 
@@ -77,7 +77,7 @@ it('names the active reviewer from its recorded identity after the configured se
     })
       ?.parts.map((part) => part.text)
       .join(''),
-  ).toBe('Review · OpenAI Codex CLI · GPT-5 · high');
+  ).toBe('Review · OpenAI Codex CLI · GPT-5 · high · reviewing changes');
   resetWorkflow();
 });
 
@@ -97,7 +97,7 @@ it('leads the review byline with the render scenario and its own clock', () => {
     parts: [
       { text: 'Review', tone: 'reviewer' },
       { text: ' · ', tone: 'textDim' },
-      { text: 'Render workflow-x', tone: 'accent' },
+      { text: 'Render workflow-x', tone: 'text' },
     ],
     stageStart: 90_000,
     waitedMs: 0,
@@ -272,7 +272,7 @@ describe('deriveLiveStatus', () => {
                             ? 'Analyzing…'
                             : phase === 'validating-task'
                               ? 'Validating…'
-                              : 'Escalating…',
+                              : 'Answering the consult…',
                 tone,
               },
             ],
@@ -353,7 +353,7 @@ describe('deriveLiveStatus', () => {
       parts: [
         {
           text: moment === 'base' ? 'Base re-run' : 'Pre-review suite',
-          tone: moment === 'base' ? 'accent' : 'textDim',
+          tone: moment === 'base' ? 'text' : 'textDim',
         },
         { text: ' · ', tone: 'textDim' },
         { text: 'npm test', tone: 'textDim' },
@@ -390,7 +390,7 @@ describe('deriveLiveStatus', () => {
                 text: { base: 'Base re-run V1', brief: 'Fix check V1', verify: 'Verify V1' }[
                   moment
                 ],
-                tone: 'accent',
+                tone: 'text',
               },
             ]),
         { text: ' · ', tone: 'textDim' },
@@ -559,7 +559,9 @@ describe('deriveLiveStatus', () => {
       phase: 'final-review',
       activeOperation: running,
     });
-    expect(unconfigured?.parts.map((part) => part.text).join('')).toBe('Review · reviewing');
+    expect(unconfigured?.parts.map((part) => part.text).join('')).toBe(
+      'Review · reviewing changes',
+    );
   });
 
   it('names the recheck of the merged result, not a review, while a REVIEW None run checks it', () => {
@@ -701,7 +703,7 @@ it.each(['planning', 'implementing', 'final-review'] as const)(
               { text: ' · ', tone: 'textDim' },
             ]
           : []),
-        { text: 'Plan check V1', tone: 'accent' },
+        { text: 'Plan check V1', tone: 'text' },
         { text: ' · ', tone: 'textDim' },
         { text: 'npm test', tone: 'textDim' },
       ],
@@ -742,11 +744,13 @@ it('keeps separators inside a working reviewer identity in the seat tone', () =>
     { text: 'Review', tone: 'reviewer' },
     { text: ' · ', tone: 'textDim' },
     { text: 'Codex CLI · GPT-6 Astra', tone: 'reviewer' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'reviewing changes', tone: 'textDim' },
   ]);
   resetWorkflow();
 });
 
-it('keeps Implementing in the build seat tone during a planner consult', () => {
+it('names the planner consult while Build waits for its answer', () => {
   resetWorkflow();
   addEvent(makeRunnerCallStarted({ phase: 'implementing', role: 'planner', ts: 60_000 }));
   expect(
@@ -756,7 +760,7 @@ it('keeps Implementing in the build seat tone during a planner consult', () => {
       activeOperation: operationsStore.get().active,
     }),
   ).toEqual({
-    parts: [{ text: 'Implementing…', tone: 'implementer' }],
+    parts: [{ text: expect.stringMatching(/consult/i), tone: 'planner' }],
     stageStart: 0,
     waitedMs: 0,
   });
@@ -777,7 +781,7 @@ it.each(['planner', 'escalation'] as const)(
         activeOperation: operationsStore.get().active,
       }),
     ).toEqual({
-      parts: [{ text: 'Escalating…', tone: 'planner' }],
+      parts: [{ text: 'Answering the consult…', tone: 'planner' }],
       stageStart: 0,
       waitedMs: 0,
     });

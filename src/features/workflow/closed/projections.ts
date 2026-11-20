@@ -1,9 +1,10 @@
+import { savedFindingText } from '../../../core/review/fix/checks.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { fixCyclesOf } from '../../../core/state/selectors.js';
 import { isTestScript } from '../../../core/validation/stacks/registry.js';
-import { reviewOutcomeOf } from '../../../core/review/verdict.js';
+import { blockingEntries, reviewOutcomeOf } from '../../../core/review/verdict.js';
 import type { PhaseTiming, RunDigest, ScopeView, SummaryView } from './view-model.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import {
@@ -78,11 +79,22 @@ export function runDigest(input: {
     planCriteria: state?.plan?.criteria.length ?? null,
     fixBriefs,
     fixCycles: state === null ? 0 : fixCyclesOf(state).used,
-    notes: (outcome === null ? [] : [...outcome.minor, ...outcome.outOfScope]).map((finding) => ({
-      id: oneLineDisplayText(finding.id),
-      file: finding.file === null ? null : oneLineDisplayText(finding.file),
-      text: oneLineDisplayText(finding.text),
-    })),
+    notes:
+      outcome === null
+        ? []
+        : [
+            ...blockingEntries(outcome).map((finding) => ({
+              id: oneLineDisplayText(finding.id),
+              file: null,
+              text: savedFindingText(finding.text),
+              blocking: true,
+            })),
+            ...[...outcome.minor, ...outcome.outOfScope].map((finding) => ({
+              id: oneLineDisplayText(finding.id),
+              file: finding.file === null ? null : oneLineDisplayText(finding.file),
+              text: savedFindingText(finding.text),
+            })),
+          ],
     criteria:
       criteria.length === 0
         ? null

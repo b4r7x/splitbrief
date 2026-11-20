@@ -292,7 +292,7 @@ describe('review input effects', () => {
 
   it.each([
     [{ kind: 'apply' }, 'Apply'],
-    [{ kind: 'review', cycle: 0 }, 'the review'],
+    [{ kind: 'review', cycle: 0 }, 'The review'],
   ] as const)(
     'refuses words for %s before the queue is installed',
     async (afterLastBrief, step) => {
@@ -305,7 +305,7 @@ describe('review input effects', () => {
       );
 
       expect(feedbackStore.get()).toEqual({
-        message: `Cannot send words to ${step}. Clear them.`,
+        message: `${step} takes no message. Clear the input first.`,
         isError: false,
       });
       expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', document });

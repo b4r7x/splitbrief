@@ -282,7 +282,7 @@ describe('a boundary park of a REVIEW None pass after the last brief', () => {
 
   it('sends a steer to the resume handler, and returns its refusal of the words', () => {
     const settle = parkedAt(REVIEW_STEP, NONE);
-    const refusal = 'Cannot send words to the review. Clear them.';
+    const refusal = 'The review takes no message. Clear the input first.';
     const resume = vi.fn(() => refusal);
     setResumeHandler(resume);
 

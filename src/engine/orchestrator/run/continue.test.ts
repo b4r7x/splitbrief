@@ -310,7 +310,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
       expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps })).toEqual({
         kind: 'refused',
         reason: 'takes-no-words',
-        message: 'Cannot send words with Accept as is. Clear them.',
+        message: 'Accept as is takes no message. Clear the input first.',
       });
       expect(restarted).toEqual([]);
     },
@@ -343,7 +343,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
       expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps })).toEqual({
         kind: 'refused',
         reason: 'takes-no-words',
-        message: `Cannot send words with ${label}. Clear them.`,
+        message: `${label} takes no message. Clear the input first.`,
       });
       expect(restarted).toEqual([]);
     },
@@ -357,7 +357,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
       expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps })).toEqual({
         kind: 'refused',
         reason: 'takes-no-words',
-        message: 'Cannot send words to this halt. Clear them first.',
+        message: 'This halt takes no message. Clear the input first.',
       });
       expect(restarted).toEqual([]);
     },
@@ -388,7 +388,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     expect(continueRun({ reviewNone: false, ref: REF, steer: WORDS, deps })).toEqual({
       kind: 'refused',
       reason: 'takes-no-words',
-      message: 'Cannot send words to Apply. Clear them.',
+      message: 'Apply takes no message. Clear the input first.',
     });
     expect(restarted).toEqual([]);
 
@@ -433,7 +433,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
       expect(continueRun({ reviewNone: true, ref: REF, steer: WORDS, deps })).toEqual({
         kind: 'refused',
         reason: 'takes-no-words',
-        message: 'Cannot send words to the review. Clear them.',
+        message: 'The review takes no message. Clear the input first.',
       });
       expect(restarted).toEqual([]);
 
@@ -456,7 +456,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     const { deps } = makeDeps({ loaded: { kind: 'loaded', state } });
 
     expect(continueRun({ reviewNone: true, ref: REF, steer: WORDS, deps })).toMatchObject({
-      message: 'Cannot send words with Continue. Clear them.',
+      message: 'Continue takes no message. Clear the input first.',
     });
   });
 
@@ -470,7 +470,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
 
   it.each<[string, Partial<RecoveryIssue>]>([
     [
-      'Skip task',
+      'Skip brief',
       { status: 'applying', selectedAction: 'skip-current-task', taskId: taskId('T001') },
     ],
     [
@@ -565,7 +565,7 @@ describe('continueRun on a halt whose action reads no typed words', () => {
       expect(continueRun({ reviewNone: true, ref: REF, steer: WORDS, deps })).toEqual({
         kind: 'refused',
         reason: 'takes-no-words',
-        message: 'Cannot send words to this halt. Clear them first.',
+        message: 'This halt takes no message. Clear the input first.',
       });
       expect(restarted).toEqual([]);
     });
@@ -581,8 +581,12 @@ describe('continueRun on a halt whose action reads no typed words', () => {
     });
 
     it.each([
-      ['Apply on a worktree', WORKTREE, 'Cannot send words to Apply. Clear them.'],
-      ['the review on the checkout', CHECKOUT, 'Cannot send words to the review. Clear them.'],
+      ['Apply on a worktree', WORKTREE, 'Apply takes no message. Clear the input first.'],
+      [
+        'the review on the checkout',
+        CHECKOUT,
+        'The review takes no message. Clear the input first.',
+      ],
     ])('refuses words at a stop in the last task review, at %s', (_label, workspace, message) => {
       const state: WorkflowState = {
         ...openState(),

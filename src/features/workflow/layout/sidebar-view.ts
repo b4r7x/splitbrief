@@ -9,18 +9,11 @@ import type { TaskListView, WorkflowTask } from '../../../core/run-view/briefs.j
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { SeatResolvedModel } from '../../../core/run-view/reduce.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
-import { segmentsForRowText, getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { wrapHard } from '../../../utils/display-text/wrap.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { seatIdentityPieces } from '../closed/copy/crew-line.js';
 import type { RecordedCrew } from '../closed/view-model.js';
-import { taskOutcomeCountsSpans, passedCountSpans } from '../display/build-progress/counts.js';
 import { type RunningSeats, resolvedSeatModel } from '../display/running-seats.js';
-import {
-  getSidebarFooterBudget,
-  getSidebarTaskListRows,
-  getSidebarTaskWindow,
-  getSidebarStatusColumnCells,
-} from './rect.js';
+import { getSidebarFooterBudget, getSidebarTaskListRows, getSidebarTaskWindow } from './rect.js';
 
 // Bar, marker, and the space after it — the cells a task row paints before its title.
 export const LIST_INDENT = '   ';
@@ -55,10 +48,6 @@ function combinedOverflowLabel(above: string, below: string, width: number): str
   const budget = width - SIDEBAR_MARKER_ROW_OVERHEAD;
   if (getTerminalCellWidth(full) <= budget) return full;
   return `${above.replace(' above', '')}${SOFT_SEP}${below.replace(' below', '')}`;
-}
-
-function taskHasStatusTail(task: WorkflowTask): boolean {
-  return task.status === 'escalated' || task.status === 'failed' || task.status === 'skipped';
 }
 
 /** Pieces laid onto as few rows as hold them, broken only between pieces; a piece wider than a row is cut. */
@@ -105,16 +94,6 @@ export function deriveSidebarView({
 }: SidebarViewInput) {
   const tasks = view.items;
   const innerWidth = Math.max(0, width - 4);
-  const outcomeSpans = taskOutcomeCountsSpans(passedCountSpans(`${view.passed}`), view);
-  const outcomeText = outcomeSpans.map((part) => part.text).join('');
-  const outcomeRows =
-    view.escalated > 0 || view.failed > 0 ? wrapHard(outcomeText, innerWidth).split('\n') : [];
-  let outcomeOffset = 0;
-  const outcomeRowSpans = outcomeRows.map((row) => {
-    const spans = segmentsForRowText(outcomeSpans, row, outcomeOffset);
-    outcomeOffset += row.length;
-    return spans;
-  });
   const identityWidth = innerWidth - CREW_LABEL_WIDTH;
   const crewRows = (
     toRows: (
@@ -149,7 +128,7 @@ export function deriveSidebarView({
       };
     });
   const countFooterRows = (crew: readonly SeatRows[]): number =>
-    crew.reduce((total, { rows }) => total + rows.length, outcomeRows.length);
+    crew.reduce((total, { rows }) => total + rows.length, 0);
   const fits = (crew: readonly SeatRows[]): boolean =>
     height === undefined || countFooterRows(crew) <= getSidebarFooterBudget({ height });
   const wrapRows = (pieces: readonly string[]): string[] =>
@@ -188,7 +167,7 @@ export function deriveSidebarView({
 
   return {
     title: truncateTerminalDisplayText(
-      view.total === 0 ? 'Tasks' : `Tasks ${view.passed}/${view.total}`,
+      view.total === 0 ? 'Briefs' : `Briefs ${view.passed}/${view.total}`,
       innerWidth,
     ),
     innerWidth,
@@ -197,8 +176,6 @@ export function deriveSidebarView({
     aboveLabel: listWindow.showAbove ? aboveLabel : undefined,
     /** The row under the visible tasks: the hidden edges and the unannounced count. */
     tailLabel: tail.length > 0 ? tail.join(SOFT_SEP) : undefined,
-    statusCells: getSidebarStatusColumnCells({ hasStatusTail: tasks.some(taskHasStatusTail) }),
-    outcomeRows: outcomeRowSpans,
     seatRows,
   };
 }

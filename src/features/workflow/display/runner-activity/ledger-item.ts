@@ -122,7 +122,7 @@ function runnerActivityLedgerValue(
 ): string {
   const detail = runnerActivityDiagnosticPreview(input);
   if (opts.interrupted) {
-    return detail ? `current turn interrupted: ${detail}` : 'current turn interrupted';
+    return detail ? `interrupted: ${detail}` : 'current turn interrupted';
   }
   // A warning or a failure reads the tool's own message, never the code SPLITBRIEF tagged it with.
   if (detail !== null) return detail;

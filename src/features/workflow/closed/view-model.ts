@@ -98,8 +98,13 @@ export type ScopeView =
 
 export type PhaseTiming = Readonly<{ phase: 'planning' | 'implementing' | 'review'; ms: number }>;
 
-/** A minor finding of the review of record, as the summary quotes it. */
-export type ReviewNoteView = Readonly<{ id: string; file: string | null; text: string }>;
+/** A finding of the review of record, as the summary quotes it. */
+export type ReviewNoteView = Readonly<{
+  id: string;
+  file: string | null;
+  text: string;
+  blocking?: boolean;
+}>;
 
 /**
  * What the closed summary states beyond the ledger rows. A fact the record cannot give is null,

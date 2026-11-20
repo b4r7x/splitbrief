@@ -570,7 +570,7 @@ describe('walkTranscript', () => {
     });
   });
 
-  it('keeps one Recovery fold for Skip task on a brief that never started, after a settled brief', () => {
+  it('keeps one Recovery fold for Skip brief on a brief that never started, after a settled brief', () => {
     const blocked = {
       issueId: 'dep-T002',
       reason: 'dependency-blocked',
@@ -764,6 +764,7 @@ describe('walkTranscript', () => {
     const steps = [...walkTranscript(sections)];
 
     expect(steps.filter((step) => step.kind === 'settled')).toHaveLength(2);
+    expect(steps.some((step) => step.kind === 'event' && step.event === planEvents[1])).toBe(false);
 
     const first = steps[0];
     expect(first?.kind).toBe('settled');
@@ -777,7 +778,7 @@ describe('walkTranscript', () => {
       }
     }
 
-    const second = steps[4];
+    const second = steps[3];
     expect(second?.kind).toBe('settled');
     if (second?.kind === 'settled') {
       expect(second.section.type).toBe('completed-task');
@@ -787,13 +788,13 @@ describe('walkTranscript', () => {
       }
     }
 
-    const third = steps[7];
+    const third = steps[6];
     expect(third?.kind).toBe('event');
     if (third?.kind === 'event') {
       expect(third.event).toBe(t002Start);
     }
 
-    const fourth = steps[8];
+    const fourth = steps[7];
     expect(fourth?.kind).toBe('event');
     if (fourth?.kind === 'event') {
       expect(fourth.event).toBe(t002Generate);

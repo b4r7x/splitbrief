@@ -14,12 +14,7 @@ import { separatedSpans } from '../conversation-rows/row-format/text.js';
 import { stepWord, stopPoint } from '../display/step-words.js';
 import { formatKeyHints } from '../../../components/key-legend.js';
 
-const PARKED_HINT = formatKeyHints([
-  { key: '⏎', verb: 'resume' },
-  { key: '/stop', verb: 'options' },
-  { key: 'esc', verb: 'back to sessions' },
-  { key: 'ctrl+c', verb: 'quit' },
-]);
+import { legendText } from '../closed/byline.js';
 
 export interface StopBylineInput {
   readonly intent: StopIntent;
@@ -184,6 +179,7 @@ export function stopByline(input: StopBylineInput): StopByline | null {
     );
 
   if (input.phase === 'parked') {
+    const hint = input.record == null ? legendText({ width: Infinity, overflow: false }) : '';
     if (input.parked?.kind === 'boundary') {
       const next: StepRef | null =
         input.nextTaskId === null
@@ -195,13 +191,13 @@ export function stopByline(input: StopBylineInput): StopByline | null {
             'Stopped',
             tone,
             ` ${stopPoint(next, 'boundary')}`,
-            `${input.passed} of ${input.total} briefs complete`,
+            `${input.passed}/${input.total} briefs passed`,
           ),
-          PARKED_HINT,
+          hint,
         );
       }
     }
-    return byline(stoppedLead(input, tone), PARKED_HINT);
+    return byline(stoppedLead(input, tone), hint);
   }
 
   // End run closed the run: the closed run's own byline speaks for it.

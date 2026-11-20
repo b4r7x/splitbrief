@@ -149,8 +149,8 @@ function inputLines(inputs: readonly TriageInput[]): string {
           ? input.text
           : [`${headline} (checks: ${checkIds.join(', ')})`, ...details].join('\n');
       return `- **${input.id}** (${input.source} · ${input.kind}) — ${text}${
-        input.file === null ? '' : `\n  File: ${input.file}`
-      }`;
+        input.checkDetail === undefined ? '' : `\n${input.checkDetail}`
+      }${input.file === null ? '' : `\n  File: ${input.file}`}`;
     })
     .join('\n');
 }

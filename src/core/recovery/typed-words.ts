@@ -51,7 +51,11 @@ function haltLeavesWordsUnread(issue: RecoveryIssue, stepReadsNone: boolean): bo
 
 /** The refusal of words that would go to a step that reads none: Apply, or a review with no seat. */
 export function noWordsRefusal(step: StepRef): string {
-  return `Cannot send words to ${step.kind === 'apply' ? 'Apply' : 'the review'}. Clear them.`;
+  return noMessageFor(step.kind === 'apply' ? 'Apply' : 'The review');
+}
+
+export function noMessageFor(target: string): string {
+  return `${target} takes no message. Clear the input first.`;
 }
 
 /**

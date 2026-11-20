@@ -392,7 +392,7 @@ describe('the insufficiency the PLAN seat hands to recovery', () => {
     expect(err.kind).toBe('api-insufficient-context');
     expect(err.data.diagnostic).toEqual(diagnostic);
     expect(err.message).toContain('planning seat');
-    expect(err.message).toContain('spec.md');
+    expect(err.message).toContain('the feature specification');
     // Qualitative only: no figure of any kind reaches the summary.
     expect(err.message).not.toMatch(/\d/);
     expect(err.message).not.toContain('token');

@@ -77,7 +77,7 @@ describe('planner text rows', () => {
     for (const [report, summary] of [
       [
         '{"status":"done","filesChanged":["a.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
-        'Report  done',
+        null,
       ],
       [
         '{"status":"blocked","question":"Where is the schema?","filesNeeded":[]}',
@@ -96,16 +96,16 @@ describe('planner text rows', () => {
         expanded: false,
         ctx: { width: 160, viewportRows: 20, streaming },
       });
-      expect(rows.map(rowText)).toEqual([summary]);
+      expect(rows.map(rowText)).toEqual(summary === null ? [] : [summary]);
     }
   });
 
-  it('replays unmarked hand-backs with plain dim narration and one report row', () => {
+  it('replays unmarked hand-backs with their narration and any blocked report', () => {
     const narration = 'Updated `a.ts` and [b.ts](file:///tmp/b.ts).';
     for (const [report, summary] of [
       [
         '{"status":"done","filesChanged":["a.ts","b.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
-        'Report  done',
+        null,
       ],
       [
         '{"status":"blocked","question":"Where is the schema?","filesNeeded":["schema.ts"]}',
@@ -123,7 +123,10 @@ describe('planner text rows', () => {
           expanded: false,
           ctx: { width: 160, viewportRows: 20, streaming },
         });
-        expect(rows.map(rowText)).toEqual(text === report ? [summary] : [narration, summary]);
+        expect(rows.map(rowText)).toEqual([
+          ...(text === report ? [] : [narration]),
+          ...(summary === null ? [] : [summary]),
+        ]);
         for (const row of rows) {
           expect(row.codeBg).not.toBe(true);
           expect(row.segments).toEqual([{ text: rowText(row), tone: 'textDim', bold: false }]);
@@ -132,7 +135,7 @@ describe('planner text rows', () => {
     }
   });
 
-  it('styles marked hand-back narration and retains one report row', () => {
+  it('styles marked narration and omits the completed report', () => {
     const report = JSON.stringify({
       status: 'done',
       filesChanged: ['src/report.js'],
@@ -162,11 +165,8 @@ describe('planner text rows', () => {
       const text = lines.join('\n');
       const segments = rows.flatMap((row) => row.segments);
 
-      expect(lines).toEqual([
-        'Implemented lowStockItems in src/report.js.',
-        'Report  done · 1 decision',
-      ]);
-      expect(lines.filter((line) => line.startsWith('Report  '))).toHaveLength(1);
+      expect(lines).toEqual(['Implemented lowStockItems in src/report.js.']);
+      expect(lines.filter((line) => line.startsWith('Report  '))).toHaveLength(0);
       expect(text).not.toContain('`');
       expect(text).not.toContain('](file:');
       expect(text).not.toContain('"status"');
@@ -178,11 +178,6 @@ describe('planner text rows', () => {
         href: 'file:///tmp/trees/x/run/src/report.js',
       });
       expect(rows[0]?.segments[0]).toEqual({ text: 'Implemented ', tone: 'textDim' });
-      expect(rows.at(-1)?.segments).toContainEqual({
-        text: 'Report  done · 1 decision',
-        tone: 'textDim',
-        bold: false,
-      });
     }
   });
 
@@ -293,7 +288,7 @@ describe('planner text rows', () => {
     expect(lines.every((line) => getTerminalCellWidth(line) <= 2)).toBe(true);
   });
 
-  it('renders a hand-back with string decisions and a bad field as a report row, not raw JSON', () => {
+  it('retains the narration for a completed hand-back with legacy decision fields', () => {
     const rows = eventRows({
       event: {
         type: 'planner_text',
@@ -312,10 +307,10 @@ describe('planner text rows', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText)).toEqual(['Implemented the row.', 'Report  done · 2 decisions']);
+    expect(rows.map(rowText)).toEqual(['Implemented the row.']);
   });
 
-  it('renders the implementer’s trailing hand-back as one dim report row', () => {
+  it('keeps the narration ahead of a completed implementer hand-back', () => {
     const event: EngineEvent = {
       type: 'planner_text',
       ts: 0,
@@ -337,14 +332,9 @@ describe('planner text rows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(rows.map(rowText)).toEqual(['Implemented the row.', 'Report  done · 1 decision']);
+    expect(rows.map(rowText)).toEqual(['Implemented the row.']);
     expect(text).not.toContain('"status"');
     expect(text).not.toContain('filesChanged');
-    expect(rows.at(-1)?.segments).toContainEqual({
-      text: 'Report  done · 1 decision',
-      tone: 'textDim',
-      bold: false,
-    });
   });
 
   // In a real run, T005 fenced its report, and a bare ```json row stood above `Report  done`.
@@ -375,7 +365,7 @@ describe('planner text rows', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     }).map(rowText);
 
-    expect(lines).toEqual(['Implemented the row.', 'Report  done']);
+    expect(lines).toEqual(['Implemented the row.']);
   });
 
   it('renders a code block in narration before a bare report', () => {
@@ -406,9 +396,7 @@ describe('planner text rows', () => {
     expect(text).toContain('row.render();');
     expect(text).not.toContain('```');
     expect(rows.some((row) => row.codeBg === true)).toBe(true);
-    expect(rows.map(rowText).filter((line) => line.startsWith('Report  '))).toEqual([
-      'Report  done',
-    ]);
+    expect(rows.map(rowText).filter((line) => line.startsWith('Report  '))).toEqual([]);
   });
 
   it('summarizes a blocked hand-back without its JSON', () => {

@@ -759,32 +759,32 @@ describe('the criteria guard question', () => {
     [
       'a rewrite that adds C4',
       rewriteWith(['C1', 'C2', 'C4'], K1),
-      'the rewritten task changes its criteria: adds C4',
+      'the rewritten brief changes its criteria: adds C4',
     ],
     [
       'a rewrite that drops C2',
       rewriteWith(['C1'], K1),
-      'the rewritten task changes its criteria: drops C2',
+      'the rewritten brief changes its criteria: drops C2 (“The greeting is polite”)',
     ],
     [
       'a rewrite that drops C2 and adds C4',
       rewriteWith(['C1', 'C4'], K1),
-      'the rewritten task changes its criteria: drops C2 and adds C4',
+      'the rewritten brief changes its criteria: drops C2 (“The greeting is polite”) and adds C4',
     ],
     [
       'a rewrite that drops its required check',
       rewriteWith(['C1', 'C2'], []),
-      'the rewritten task drops the checks its criteria require: K1',
+      'the rewritten brief drops the checks its criteria require: K1',
     ],
     [
       'a split that drops C2',
       splitInto({ criteria: ['C1'], checks: K1 }, { criteria: ['C3'], checks: [] }),
-      'the subtasks together drop C2',
+      'the new briefs together drop C2 (“The greeting is polite”)',
     ],
     [
       'a split that drops its required check',
       splitInto({ criteria: ['C1'], checks: [] }, { criteria: ['C2'], checks: [] }),
-      'the subtasks together drop the checks their criteria require: K1',
+      'the new briefs together drop the checks their criteria require: K1',
     ],
   ])('names what %s changes, with no Dropped criteria line', async (_change, answer, reason) => {
     const { projectDir, sessionId } = setupRepo(dirs);

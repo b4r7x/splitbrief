@@ -20,7 +20,7 @@ afterEach(() => {
   fixture = undefined;
 });
 
-it('shows Skip task on the last brief as one Recovery row with its outcome', async () => {
+it('shows Skip brief on the last brief as one Recovery row with its outcome', async () => {
   fixture = createStopContinueFixture(escapingImplementerScript);
   const halted = await cli(fixture, ['start', 'smoke']);
   expect(halted.exitCode, halted.stderr).toBe(1);
@@ -37,7 +37,7 @@ it('shows Skip task on the last brief as one Recovery row with its outcome', asy
   });
   const transcript = transcriptText(events);
   expect(transcript.match(/Recovery {2}/g)).toHaveLength(1);
-  expect(transcript.split('\n').find((line) => line.includes('Recovery  Skip task'))).toContain(
+  expect(transcript.split('\n').find((line) => line.includes('Recovery  Skip brief'))).toContain(
     'skipped',
   );
 });

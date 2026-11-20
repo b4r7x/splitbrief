@@ -81,6 +81,13 @@ describe('taskStartedRowBlock continuations', () => {
     }
   });
 
+  it('keeps the crew on line two when the title, path and model would fit together', () => {
+    const rows = pathRows('Count words', 'src/count.ts', 120).map(lineText);
+    expect(rows[0]).toContain('src/count.ts');
+    expect(rows[1] ?? '').toContain('OpenAI Codex CLI');
+    expect(rows[0]).not.toContain('Codex');
+  });
+
   // The reproduction: at 120 columns the old space wrap broke `OpenCode CLI` after `OpenCode` and
   // stripped the leading separator, so the continuation opened with a bare `CLI · model`.
   it('keeps a multi-word tool label whole and strands no separator at the break', () => {
@@ -183,11 +190,8 @@ describe('taskStartedRowBlock continuations', () => {
         ['T901', 'text'],
         [` ${title}`, 'text'],
       ],
-      [
-        ['src/a.ts (modify) · +1 file', 'textDim'],
-        [' · ', 'textDim'],
-        ['OpenAI Codex CLI · GPT-5', 'implementer'],
-      ],
+      [['src/a.ts (modify) · +1 file', 'textDim']],
+      [['OpenAI Codex CLI · GPT-5', 'implementer']],
     ]);
   });
 });

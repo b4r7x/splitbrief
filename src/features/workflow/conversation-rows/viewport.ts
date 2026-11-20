@@ -1,3 +1,6 @@
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { wrapWidthFor } from './row-format/markers.js';
 import { formatTaskHeading } from '../../../core/run-view/brief-labels.js';
 import type { WorkflowTask } from '../../../core/run-view/briefs.js';
 import { isSettledSection, type Section } from '../../../core/sections/types.js';
@@ -72,7 +75,15 @@ export function conversationViewportWindow(
     pendingTaskCount: pendingTasks.length,
   });
   // A block too short for every pending brief spends its last row saying how many it left out,
-  // unless that row would be its only one: then the heading carries the overflow count.
+  // unless that row would be its only one: then the visible brief carries the overflow count.
+  const pendingTail =
+    viewportSplit.queuedRows === 1 && pendingTasks.length > 1
+      ? `${SOFT_SEP}+${pendingTasks.length - 1} more`
+      : '';
+  const titleWidth = Math.max(
+    1,
+    wrapWidthFor('task-header', input.cols) - getTerminalCellWidth(pendingTail),
+  );
   const shownPending =
     pendingTasks.length > viewportSplit.queuedRows && viewportSplit.queuedRows > 1
       ? viewportSplit.queuedRows - 1
@@ -125,7 +136,10 @@ export function conversationViewportWindow(
       shown: pendingTasks.slice(0, shownPending).map((task) =>
         row({
           key: `queued-${task.id}`,
-          text: formatTaskHeading(task),
+          text:
+            pendingTail === ''
+              ? formatTaskHeading(task)
+              : truncateTerminalDisplayText(formatTaskHeading(task), titleWidth) + pendingTail,
           tone: 'textDim',
           kind: 'task-header',
         }),

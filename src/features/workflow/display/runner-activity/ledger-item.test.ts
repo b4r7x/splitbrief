@@ -20,7 +20,7 @@ describe('runnerActivityLedgerItem', () => {
       }),
     ).toMatchObject({
       label: 'STOP',
-      value: 'current turn interrupted: cancelled',
+      value: 'interrupted: cancelled',
       diagnosticPreview: 'cancelled',
       tone: 'warning',
       valueTone: 'warning',
@@ -39,7 +39,7 @@ describe('runnerActivityLedgerItem', () => {
       }),
     ).toMatchObject({
       label: 'STOP',
-      value: 'current turn interrupted: stopped by you',
+      value: 'interrupted: stopped by you',
       rawMarker: null,
     });
   });
@@ -52,7 +52,7 @@ describe('runnerActivityLedgerItem', () => {
         label: "running sed -n '1,240p' CLAUDE.md",
         target: "sed -n '1,240p' CLAUDE.md",
       }),
-    ).toMatchObject({ label: 'READ', value: 'CLAUDE.md :1-240', fitMode: 'start' });
+    ).toMatchObject({ label: 'READ', value: 'CLAUDE.md:1-240', fitMode: 'start' });
 
     expect(
       runnerActivityLedgerItem({
@@ -60,7 +60,7 @@ describe('runnerActivityLedgerItem', () => {
         kind: 'unknown',
         label: '/bin/zsh -lc "rg -n deriveLiveStatus src"',
       }),
-    ).toMatchObject({ label: 'FIND', value: '"deriveLiveStatus"  src' });
+    ).toMatchObject({ label: 'FIND', value: 'deriveLiveStatus · src' });
 
     expect(
       runnerActivityLedgerItem({
@@ -166,7 +166,7 @@ describe('runnerActivityLedgerItem', () => {
         target: "sed -n '1,40p' CLAUDE.md",
         description: 'Read the rules',
       },
-      expected: { label: 'READ', value: 'CLAUDE.md :1-40', fitMode: 'start' },
+      expected: { label: 'READ', value: 'CLAUDE.md:1-40', fitMode: 'start' },
     },
   ])(
     'words a command row from its pretty form, its description or its first line: $case',
@@ -210,7 +210,7 @@ describe('runnerActivityLedgerItem', () => {
         diagnosticPartial: 'cancelled',
         description,
       })?.value,
-    ).toBe('current turn interrupted: cancelled');
+    ).toBe('interrupted: cancelled');
   });
 
   it('keeps every glob in a codex command with adjacent quoted segments', () => {
@@ -329,7 +329,7 @@ describe('runnerActivityLedgerItem', () => {
         label: 'bash',
         target: 'rg -n "foo" src',
       }),
-    ).toMatchObject({ label: 'FIND', value: '"foo"  src' });
+    ).toMatchObject({ label: 'FIND', value: 'foo · src' });
 
     expect(
       runnerActivityLedgerItem({
@@ -473,7 +473,7 @@ describe('runnerActivityLedgerItem', () => {
         label: 'aborted',
         diagnosticPartial: 'stopped by you',
       }),
-    ).toMatchObject({ label: 'STOP', value: 'current turn interrupted: stopped by you' });
+    ).toMatchObject({ label: 'STOP', value: 'interrupted: stopped by you' });
   });
 });
 

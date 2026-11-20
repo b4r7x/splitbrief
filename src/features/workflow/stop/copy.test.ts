@@ -33,7 +33,7 @@ function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
   };
 }
 
-const PARKED_HINT = '⏎ resume · /stop options · esc back to sessions · ctrl+c quit';
+const PARKED_HINT = 'esc home · ctrl+k commands · /sessions · /help';
 
 it('keeps a check seat word and separators distinct during a requested pause', () => {
   expect(
@@ -360,7 +360,7 @@ describe('stopByline', () => {
       ),
     ).toEqual({
       tone: 'warning',
-      hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
+      hint: PARKED_HINT,
       parts: [
         { text: 'Stopped', tone: 'warning' },
         { text: ' at T002', tone: 'text' },
@@ -396,17 +396,13 @@ describe('stopByline', () => {
           parked: { kind: 'boundary', taskId: 'T002', kept: [] },
           passed: 2,
         }),
-      ),
-    ).toEqual({
-      tone: 'warning',
-      hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
-      parts: [
-        { text: 'Stopped', tone: 'warning' },
-        { text: ' before T003', tone: 'text' },
-        { text: ' · ', tone: 'textDim' },
-        { text: '2 of 5 briefs complete', tone: 'textDim' },
-      ],
-    });
+      )?.parts,
+    ).toEqual([
+      { text: 'Stopped', tone: 'warning' },
+      { text: ' before T003', tone: 'text' },
+      { text: ' · ', tone: 'textDim' },
+      { text: '2/5 briefs passed', tone: 'textDim' },
+    ]);
   });
 
   it.each<[string, StepRef, string]>([
@@ -426,12 +422,12 @@ describe('stopByline', () => {
       ),
     ).toEqual({
       tone: 'warning',
-      hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
+      hint: PARKED_HINT,
       parts: [
         { text: 'Stopped', tone: 'warning' },
         { text: point, tone: 'text' },
         { text: ' · ', tone: 'textDim' },
-        { text: '5 of 5 briefs complete', tone: 'textDim' },
+        { text: '5/5 briefs passed', tone: 'textDim' },
       ],
     });
   });
@@ -439,7 +435,7 @@ describe('stopByline', () => {
   it('names the gate a planning stop settled at and claims no changes', () => {
     expect(stopByline(settled({ kind: 'gate', gate: 'plan' }))).toEqual({
       tone: 'warning',
-      hint: PARKED_HINT,
+      hint: '',
       parts: [
         { text: 'Stopped', tone: 'warning' },
         { text: ' at the plan', tone: 'text' },

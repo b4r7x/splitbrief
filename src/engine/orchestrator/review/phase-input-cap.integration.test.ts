@@ -379,8 +379,7 @@ describe('final review input cap', () => {
       events.some(
         (event) =>
           event.type === 'warning' &&
-          event.message.includes('Review input trimmed') &&
-          event.message.includes('task-evidence: Deterministic Drift Report'),
+          event.message === 'Review input trimmed to fit OpenAI Codex CLI',
       ),
     ).toBe(true);
     const issue = (await halt(ref, result)).pendingRecovery;

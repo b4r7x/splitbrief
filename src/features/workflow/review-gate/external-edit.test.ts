@@ -26,7 +26,7 @@ describe('openReviewFileExternally stale-owner feedback', () => {
     reviewStore.reset();
     runViewStore.__testReset({ phase: 'reviewing-plan' });
     lifecycleStore.__testReset({ status: 'running' });
-    vi.stubEnv('VISUAL', 'mock-editor');
+    vi.stubEnv('VISUAL', 'vim');
     setActiveTerminalHandover({
       fullscreen: false,
       mouse: false,
@@ -148,10 +148,10 @@ describe('openReviewFileExternally stale-owner feedback', () => {
       vi.restoreAllMocks();
     }
 
-    // "plan.json open in mock-editor. Close the file to return." is 56 cells: 2 rows at 40 columns.
+    // "plan.json open in vim. Close the file to return." wraps: 2 rows at 40 columns.
     const written = output.join('');
     const erase = '\u001b[3A\r\u001b[J';
-    expect(written).toContain('\r\nplan.json open in mock-editor. Close the file to return.\n');
+    expect(written).toContain('\r\nplan.json open in vim. Close the file to return.\n');
     expect(written.indexOf('<editor closed>')).toBeLessThan(written.indexOf(erase));
     expect(written.indexOf(erase)).toBeLessThan(written.indexOf(terminalSequences.enterAltBuffer));
   });

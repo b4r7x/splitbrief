@@ -202,7 +202,7 @@ export async function prepareReviewCall(
         publishWarning({
           bus,
           phase: state.phase,
-          message: `Review input trimmed to fit ${getRunnerCatalogDisplayName(runner)} (${result.size.toLocaleString('en-US')} of ${limit.max.toLocaleString('en-US')} ${limit.unit}): ${result.dropped.map((drop) => `${drop.trim}: ${drop.items.join(', ')}`).join('; ')}`,
+          message: `Review input trimmed to fit ${getRunnerCatalogDisplayName(runner)}`,
         });
       }
     }

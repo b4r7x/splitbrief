@@ -1,3 +1,5 @@
+import { routerStore } from '../../../stores/navigation/router.js';
+import { routeClosedAtRest } from '../at-rest.js';
 import type { MouseAction, MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { clickAt } from '../../../lib/terminal/mouse-zones.js';
 import { hoverStore } from '../../../stores/ui/hover.js';
@@ -92,6 +94,7 @@ function drawnConversationRowKey(windowIndex: number): string | undefined {
     expandedActivityBatches: scroll.expandedActivityBatches,
     cols: snapshot.conversationWidth,
     viewportHeight: snapshot.transcriptViewportHeight,
+    closed: routeClosedAtRest(routerStore.get()),
     streaming: streamingOutputStore.get(),
     rawScrollOffset: scroll.scrollOffset,
     renderableCountAtScroll: scroll.renderableCountAtScroll,

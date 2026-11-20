@@ -348,7 +348,7 @@ describe('/run on a run with a workspace', () => {
         ).toEqual({
           kind: 'refused',
           reason: 'takes-no-words',
-          message: 'Cannot send words to Apply. Clear them.',
+          message: 'Apply takes no message. Clear the input first.',
         });
         expect(restart).not.toHaveBeenCalled();
 

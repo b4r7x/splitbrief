@@ -1,3 +1,4 @@
+import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-cancel.js';
 import { isSettledSection } from '../../../../core/sections/types.js';
 import { WORKSPACE_KEPT_CODE } from '../../../../core/sessions/workspace-notice.js';
 import type { EngineEvent } from '../../../../engine/events/types.js';
@@ -62,6 +63,13 @@ export function* walkEvent(
     walk.lastRowEvent = event;
     return;
   }
+  if (
+    event.type === 'workflow_cancelled' &&
+    event.reason === WORKFLOW_CANCEL_REASON_USER &&
+    walk.lastRowEvent?.type === 'turn_interrupted' &&
+    walk.lastRowEvent.cause !== 'seat-change'
+  )
+    return;
   if (showsNoRow(reads, scope, event)) return;
   if (isTranscriptRowlessEvent(event)) {
     yield { kind: 'event', event, globalIndex, ...walk.settledContext };
@@ -102,6 +110,17 @@ function showsNoRow(
   event: EngineEvent,
 ): boolean {
   if (reads.hidden.has(event)) return true;
+  if (
+    section.type === 'settled-stage' &&
+    section.summary.stage === 'plan' &&
+    event.type === 'user_message' &&
+    event.text === section.summary.feature &&
+    !event.qa?.length &&
+    !event.attachedInputs?.length &&
+    event.questions === undefined &&
+    section.items.find((item) => item.type === 'user_message') === event
+  )
+    return true;
   if (
     event.type === 'warning' &&
     event.code === WORKSPACE_KEPT_CODE &&

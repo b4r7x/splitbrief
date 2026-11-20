@@ -463,7 +463,8 @@ describe('automatic recovery from the spent-balance smoke', () => {
       `Recovery  Balance spent on OpenCode CLI${arrowSep()}continued on fallback  ctrl+d`,
       `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${arrowSep()}OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high · automatic fallback`,
       // No Run continued row here: the Recovery row already says the run went on.
-      'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
+      'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file',
+      'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
       'working on src/text.js…',
     ]);
   });
@@ -1257,7 +1258,6 @@ describe('buildConversationRows', () => {
       'activity',
       'Validate',
       'Handed back.',
-      'Report',
       'T002 Pre-hook skip',
       'T003 Failed brief',
       'Failure evidence retained',
@@ -1380,7 +1380,7 @@ describe('buildConversationRows', () => {
     expect(renderableCount).toBe(3);
     expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  3 updates  [${CODEX_LABEL} · auto]`);
     expect(text).not.toContain('sed -n');
-    expect(text).toContain(activityLine('READ', 'CLAUDE.md :1-240'));
+    expect(text).toContain(activityLine('READ', 'CLAUDE.md:1-240'));
     expect(text).toContain(activityLine('RUN', 'wc -l CLAUDE.md'));
     expect(text).toContain(activityLine('PLAN', 'rg -n "Task Brief|brief|tasks\\.md"'));
     expect(text).not.toContain('/bin/zsh -lc');
@@ -1631,7 +1631,7 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain(activityLine('STOP', 'current turn interrupted'));
+    expect(text).toContain(activityLine('STOP', 'interrupted: Claude stream interrupted'));
     expect(text).not.toContain('runner_interrupted');
     const header = rows.find((row) => row.kind === 'activity');
     expect(header?.doneAs).toBe('cancelled');
@@ -2174,7 +2174,7 @@ describe('buildConversationRows', () => {
     ui.unmount();
 
     expect(text).toContain('src/clamp.js · tests/clamp.test.js');
-    expect(text).toContain('Report  done');
+    expect(text).not.toContain('Report  done');
     expect(text).not.toContain('Report  done · 0 decisions');
     expect(text).not.toContain('1 file');
     expect(text.match(/\d+\.\ds/g)).toEqual(['9.8s']);
@@ -2612,7 +2612,7 @@ describe('buildConversationRowsProjection check lists', () => {
     ]);
 
     expect(materialize(projection).map(rowText)).toEqual([
-      'End-of-run checks · none · the plan names no project gate',
+      'End-of-run checks · none · the plan names no end-of-run checks',
       'Reviewer check V1 · node --test a.js · passed',
       'Reviewer check V2 · node --test a.js · passed',
     ]);
@@ -2697,7 +2697,7 @@ describe('buildConversationRowsProjection check lists', () => {
     const rows = materialize(projectionFor([header, firstCheck, event, secondCheck]));
 
     expect(rows.map(rowText)).toEqual([
-      'End-of-run checks · none · the plan names no project gate',
+      'End-of-run checks · none · the plan names no end-of-run checks',
       'Reviewer check V1 · node --test a.js · passed',
       '',
       ...boundaryRows.map(rowText),
@@ -2711,10 +2711,10 @@ describe('buildConversationRowsProjection check lists', () => {
     const rows = materialize(projectionFor([header, firstCheck, header, secondCheck]));
 
     expect(rows.map(rowText)).toEqual([
-      'End-of-run checks · none · the plan names no project gate',
+      'End-of-run checks · none · the plan names no end-of-run checks',
       'Reviewer check V1 · node --test a.js · passed',
       '',
-      'End-of-run checks · none · the plan names no project gate',
+      'End-of-run checks · none · the plan names no end-of-run checks',
       'Reviewer check V2 · node --test a.js · passed',
     ]);
     expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(1);
@@ -2889,7 +2889,7 @@ describe('buildConversationRowsProjection check groups', () => {
 
     expect(rows.map(rowText).slice(0, 3)).toEqual([
       'Final review',
-      'End-of-run checks · none · the plan names no project gate',
+      'End-of-run checks · none · the plan names no end-of-run checks',
       'Checks  4 passed',
     ]);
     expect(rows.filter((candidate) => candidate.kind === 'spacer')).toEqual([]);
@@ -3093,6 +3093,21 @@ describe('one recovery reads as one block', () => {
     });
     return { lines: rows.map((row) => rowText(row).trim()).filter((line) => line !== ''), rows };
   }
+
+  it('keeps the stop point once when a user cancellation follows the interruption', () => {
+    const { lines } = transcript([
+      {
+        ...at,
+        type: 'turn_interrupted',
+        source: 'user',
+        step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+        at: 'mid-step',
+      },
+      { ...at, type: 'workflow_cancelled', reason: 'user_cancelled' },
+    ]);
+    expect(lines).toContain('Stopped at T002');
+    expect(lines).not.toContain('Stopped by you');
+  });
 
   it('keeps one Recovery row across an abandoned section and the next brief', () => {
     const start = makeTaskStart({ taskId: taskId('T002') });
@@ -3385,6 +3400,6 @@ describe('one recovery reads as one block', () => {
   it('names a reset outside a recovery in one row', () => {
     const { lines } = transcript([reset]);
 
-    expect(lines).toEqual(['Task reset  T002 back to pending']);
+    expect(lines).toEqual(['Brief reset  T002 back to pending']);
   });
 });

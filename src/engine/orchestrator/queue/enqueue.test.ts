@@ -568,7 +568,7 @@ describe('enqueue', () => {
       },
       makeConfig({ reviewer: 'none' }),
       'phase-unavailable',
-      'Cannot send words to Apply. Clear them.',
+      'Apply takes no message. Clear the input first.',
       0,
     ],
     [
@@ -614,14 +614,18 @@ describe('enqueue', () => {
     [
       'on a worktree',
       { kind: 'worktree', path: '/tmp/wt', base: { snapshotId: 'b', head: null } },
-      'Cannot send words to Apply. Clear them.',
+      'Apply takes no message. Clear the input first.',
     ],
     [
       'on the project checkout',
       { kind: 'checkout', path: '/tmp/project', base: { snapshotId: 'b', head: null } },
-      'Cannot send words to the review. Clear them.',
+      'The review takes no message. Clear the input first.',
     ],
-    ['with no workspace recorded', undefined, 'Cannot send words to the review. Clear them.'],
+    [
+      'with no workspace recorded',
+      undefined,
+      'The review takes no message. Clear the input first.',
+    ],
   ])(
     'refuses a message during a REVIEW None pass %s, as no seat reads it',
     async (_, workspace, refusal) => {
@@ -701,7 +705,7 @@ describe('enqueue', () => {
       expect(result).toEqual({
         status: 'rejected',
         reason: 'phase-unavailable',
-        message: 'Cannot send words to Apply. Clear them.',
+        message: 'Apply takes no message. Clear the input first.',
       });
       expect(queued()).toHaveLength(0);
     });

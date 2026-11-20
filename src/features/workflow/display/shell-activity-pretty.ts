@@ -1,3 +1,4 @@
+import { SOFT_SEP } from '../../../core/separators.js';
 import { scanShellWords } from '../../../utils/parse-shell-command.js';
 
 export interface PrettyShellActivity {
@@ -94,7 +95,7 @@ function prettifySed(args: string[]): PrettyShellActivity | null {
   const end = range?.[2];
   const file = args[2];
   if (start === undefined || end === undefined || file === undefined || isFlag(file)) return null;
-  return { label: 'READ', value: `${file} :${start}-${end}` };
+  return { label: 'READ', value: `${file}:${start}-${end}` };
 }
 
 function prettifyCat(args: string[]): PrettyShellActivity | null {
@@ -135,9 +136,7 @@ function prettifyGrep(args: string[]): PrettyShellActivity | null {
   }
   const [pattern, ...paths] = positional;
   if (pattern === undefined) return null;
-  const quotedPattern = `"${pattern}"`;
-  if (paths.length === 0) return { label: 'FIND', value: quotedPattern };
-  return { label: 'FIND', value: `${quotedPattern}  ${paths.join(' ')}` };
+  return { label: 'FIND', value: [pattern, ...paths].join(SOFT_SEP) };
 }
 
 function prettifyLs(args: string[]): PrettyShellActivity | null {

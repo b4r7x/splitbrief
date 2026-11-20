@@ -84,7 +84,7 @@ function editorName(command: string): string {
   return editorDisplayLabel(command).toLowerCase();
 }
 
-function isTerminalEditor(command: string): boolean {
+export function isTerminalEditor(command: string): boolean {
   return terminalEditors.has(editorName(command));
 }
 

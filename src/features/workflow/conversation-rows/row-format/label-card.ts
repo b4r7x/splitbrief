@@ -1,5 +1,6 @@
 import type { ConversationRowKind, ConversationRowTone } from '../types.js';
 import type { ConversationRow } from '../types.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { row, segmentedRow } from './rows.js';
 import { sanitizeRowDisplayText, wrappedProseTexts } from './text.js';
 
@@ -32,10 +33,17 @@ export function cardRowsLayout(input: {
   const cleanLabel = sanitizeRowDisplayText(input.label);
   const cleanValue = input.value === undefined ? undefined : sanitizeRowDisplayText(input.value);
   const labelText = cleanValue ? `${cleanLabel}${input.labelGap ?? '  '}` : cleanLabel;
+  const indent = getTerminalCellWidth(labelText);
+  const hung =
+    cleanValue && /^(?:Blocking|Set aside)\b/.test(cleanLabel) && indent < input.width / 2
+      ? wrappedProseTexts(cleanValue, input.width - indent).map(
+          (line, i) => (i === 0 ? labelText : ' '.repeat(indent)) + line,
+        )
+      : undefined;
   return {
     labelText,
     hasValue: cleanValue !== undefined && cleanValue !== '',
-    wrapped: wrappedProseTexts(`${labelText}${cleanValue ?? ''}`, input.width),
+    wrapped: hung ?? wrappedProseTexts(`${labelText}${cleanValue ?? ''}`, input.width),
   };
 }
 

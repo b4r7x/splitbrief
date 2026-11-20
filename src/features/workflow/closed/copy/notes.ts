@@ -12,10 +12,12 @@ const NOTE_LINES = 2;
  */
 export function noteRows(view: SummaryView, options: Readonly<{ quoted: boolean }>): RunRow[] {
   if (view.review.kind !== 'written') return [];
-  const notes = options.quoted ? view.digest.notes.slice(0, SUMMARY_NOTES) : view.digest.notes;
+  const notes = options.quoted
+    ? view.digest.notes.filter((note, index) => note.blocking || index < SUMMARY_NOTES)
+    : view.digest.notes;
   const lines = options.quoted ? { maxLines: NOTE_LINES } : {};
   return notes.flatMap((note): RunRow[] => {
-    const lead = `${note.id} `;
+    const lead = `${note.blocking ? 'Blocking ' : ''}${note.id} `;
     if (note.file === null) {
       return [
         {

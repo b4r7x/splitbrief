@@ -16,7 +16,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { arrowSep } from '../../../core/separators.js';
 import { crewLine } from './copy/crew-line.js';
-import { runRows } from './copy/rows.js';
+import { factSpans, runRows } from './copy/rows.js';
 import { bylineParts } from './byline.js';
 import { outcomeLineSpans } from './outcome.js';
 import { deriveSummaryView, type SummaryView } from './view-model.js';
@@ -320,8 +320,8 @@ describe('a run with a workspace', () => {
     {
       redChecks: [{ id: 'V1', command: 'npm test', lastLine: 'Error: 2 specs failed' }],
       note: undefined,
-      accepted: { redChecks: '1 red check: V1', note: null },
-      row: 'Accepted as is · 1 red check: V1',
+      accepted: { redChecks: '1 red check: V1 · npm test', note: null },
+      row: 'Accepted as is · 1 red check: V1 · npm test',
     },
     {
       redChecks: [
@@ -330,10 +330,10 @@ describe('a run with a workspace', () => {
       ],
       note: 'The suite is red at the run base too',
       accepted: {
-        redChecks: '2 red checks: V1, K004',
+        redChecks: '2 red checks: V1 · npm test, K004 · src/a.ts(3,1): TS2322',
         note: 'Your note: The suite is red at the run base too',
       },
-      row: 'Accepted as is · 2 red checks: V1, K004 · Your note: The suite is red at the run base too',
+      row: 'Accepted as is · 2 red checks: V1 · npm test, K004 · src/a.ts(3,1): TS2322 · Your note: The suite is red at the run base too',
     },
     {
       redChecks: [{ id: 'V1\u001b[31m\nnext' }],
@@ -396,7 +396,7 @@ describe('a run with a workspace', () => {
       .map((part) => part.text)
       .join('');
     expect(byline).not.toContain('/run reject');
-    expect(byline.toLowerCase()).toContain('undone');
+    expect(byline).toBe('');
     expect(outcomeLineSpans(view, 120)[0]?.text).toBe('Apply undone');
     expect(view.rail.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'cancelled']);
   });
@@ -1513,4 +1513,64 @@ describe('checkpoint, phases and pass-through', () => {
     expect(view.files.changed).toEqual(['src/a.ts']);
     expect(view.briefs.rows[0]?.title).toBe('wire it up');
   });
+});
+
+it('shows both blockers before the minor note after End run on a failed review', () => {
+  const findings = [
+    { id: 'F1', severity: 'blocking', text: 'Empty addresses pass.' },
+    { id: 'F2', severity: 'blocking', text: 'Invalid addresses pass.' },
+    { id: 'F3', severity: 'minor', text: 'Rename the validator.' },
+  ] as const;
+  const summary = readySummary();
+  const packet = summary.reviewPacket;
+  if (packet === undefined) throw new Error('Expected a review packet.');
+  const view = derive(
+    {
+      ...summary,
+      reviewPacket: {
+        ...packet,
+        finalReviewVerdict: 'fail',
+        finalReviewFindingCounts: { critical: 2, warning: 1, note: 0 },
+      },
+    },
+    {
+      status: { kind: 'closed', as: 'ended' },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          reviewStatus: 'failed',
+          closed: { as: 'ended', at: CLOSED_AT },
+          review: {
+            at: CLOSED_AT,
+            scope: 'final',
+            cycle: 0,
+            outcome: 'fail',
+            verification: [],
+            verdict: {
+              tasks: [],
+              criteria: [],
+              findings: findings.map((finding) => ({
+                ...finding,
+                kind: 'defect',
+                taskId: 'T001',
+                file: 'form.ts',
+                line: null,
+                acceptance: null,
+                checkIds: null,
+                criterionId: null,
+              })),
+            },
+          },
+        }),
+      },
+    },
+  );
+  const words = runRows(view)
+    .flatMap((row) => row.segments.flatMap(factSpans))
+    .map((part) => part.text)
+    .join(' ');
+  for (const finding of findings.slice(0, 2)) expect(words).toContain(finding.text);
+  if (words.includes(findings[2].text))
+    expect(words.indexOf(findings[1].text)).toBeLessThan(words.indexOf(findings[2].text));
 });

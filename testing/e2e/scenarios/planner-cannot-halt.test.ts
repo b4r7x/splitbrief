@@ -98,14 +98,14 @@ describe('e2e: the planner says a brief cannot be done', () => {
     expect(frame).toContain(`T001: cannot be done · ${DIAGNOSIS}`);
     expect(frame).toContain('T001: the planner says it cannot be done');
     expect(frame).toContain(`Planner said: ${REASON}`);
-    for (const row of ['Try again', 'Decide for me', 'Skip task', 'End run']) {
+    for (const row of ['Try again', 'Decide for me', 'Skip brief', 'End run']) {
       expect(frame).toContain(row);
     }
 
     const stderr = halted.stderr.split('\n');
     const haltLine = stderr.findIndex((line) => line.startsWith('Error: Needs you'));
     expect(stderr[haltLine + 1]).toBe(`Planner said: ${REASON}`);
-    expect(frame).toMatch(/Skip task {2,}recommended/);
+    expect(frame).toMatch(/Skip brief {2,}recommended/);
     expect(frame).toMatch(/Decide for me {2,}skips this brief/);
     expect(frame).not.toMatch(/Try again {2,}recommended/);
     expect(stderr).toContain('Recommended: skip-current-task');

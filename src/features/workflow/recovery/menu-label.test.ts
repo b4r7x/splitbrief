@@ -61,7 +61,7 @@ describe('the words of a row that runs a brief again', () => {
       expected: [
         'Try again · continues this brief',
         'Change PLAN tool · continues this brief',
-        'Skip task',
+        'Skip brief',
         'End run',
       ],
     },
@@ -76,7 +76,7 @@ describe('the words of a row that runs a brief again', () => {
         seatSwap: swap('build'),
         createdAt,
       }),
-      expected: ['Try again', 'Change BUILD tool · continues this brief', 'Skip task', 'End run'],
+      expected: ['Try again', 'Change BUILD tool · continues this brief', 'Skip brief', 'End run'],
     },
     {
       kind: 'a first-call BUILD halt',
@@ -90,7 +90,7 @@ describe('the words of a row that runs a brief again', () => {
         seatSwap: swap('build'),
         createdAt,
       }),
-      expected: ['Try again', 'Change BUILD tool · continues this brief', 'Skip task', 'End run'],
+      expected: ['Try again', 'Change BUILD tool · continues this brief', 'Skip brief', 'End run'],
     },
     {
       kind: 'a review-seat halt that names a brief',
@@ -110,7 +110,7 @@ describe('the words of a row that runs a brief again', () => {
     {
       kind: 'a Needs you halt on a PLAN call of a brief',
       issue: makeRecoveryIssue({ reason: 'retry-exhausted', seat: 'plan', taskId: taskId('T003') }),
-      expected: ['Try again · restarts this brief', 'Skip task', 'End run'],
+      expected: ['Try again · restarts this brief', 'Skip brief', 'End run'],
     },
   ])('says what runs again after $kind', ({ issue, expected }) => {
     expect(issue.taskId).toBe('T003');

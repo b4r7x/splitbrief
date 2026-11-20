@@ -47,7 +47,7 @@ describe('showRunDiff', () => {
 
   beforeEach(() => {
     feedbackStore.reset();
-    vi.stubEnv('VISUAL', 'mock-editor --wait');
+    vi.stubEnv('VISUAL', 'vim');
     terminal.isRaw = true;
     terminal.paused = false;
     setActiveTerminalHandover({ fullscreen: false, mouse: false, sourceStdin: terminal });
@@ -61,7 +61,7 @@ describe('showRunDiff', () => {
   });
 
   it.each([
-    { editor: 'mock-editor --wait', instruction: 'Close the file to return.' },
+    { editor: 'vim', instruction: 'Close the file to return.' },
     { editor: '/usr/bin/open -W -t', instruction: 'Quit the editor app to return.' },
     { editor: '/usr/bin/open --wait-apps -t', instruction: 'Quit the editor app to return.' },
   ])('shows the return instruction for $editor while it waits', async ({ editor, instruction }) => {
@@ -79,9 +79,10 @@ describe('showRunDiff', () => {
     });
     try {
       await started.promise;
-      expect(terminal).toMatchObject({ isRaw: false, paused: true });
-      expect(output.join('')).toContain(instruction);
-      expect(output.join('')).toContain('result-run.patch open in');
+      const gui = editor.startsWith('/usr/bin/open');
+      expect(terminal).toMatchObject({ isRaw: gui, paused: !gui });
+      if (gui) expect(output.join('')).not.toContain(instruction);
+      else expect(output.join('')).toContain(instruction);
     } finally {
       child.emit('close', 0, null);
       await editing;
@@ -99,14 +100,14 @@ describe('showRunDiff', () => {
 
     await showRunDiff(readyRecord(), spawnEditor);
 
-    expect(spawnEditor).toHaveBeenCalledWith('mock-editor', ['--wait', patch.path]);
+    expect(spawnEditor).toHaveBeenCalledWith('vim', [patch.path]);
     expect(feedbackStore.get().isError).toBe(false);
     expect(terminal).toMatchObject({ isRaw: true, paused: false });
   });
 
   it.each([
-    { code: 1, signal: null, message: 'mock-editor exited with code 1' },
-    { code: null, signal: 'SIGTERM', message: 'mock-editor exited with SIGTERM' },
+    { code: 1, signal: null, message: 'vim exited with code 1' },
+    { code: null, signal: 'SIGTERM', message: 'vim exited with SIGTERM' },
   ] satisfies { code: number | null; signal: NodeJS.Signals | null; message: string }[])(
     'reports $message and restores the terminal',
     async ({ code, signal, message }) => {

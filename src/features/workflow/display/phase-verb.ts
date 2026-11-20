@@ -10,10 +10,8 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { capitalize } from '../../../utils/capitalize.js';
 import { planCheckName } from '../../../core/validation/plan-check-name.js';
 import { runnerActivityRoleLabel } from './runner-activity/role.js';
-import { isStatusFallback } from '../../../stores/workflow/operations/planner-status.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
-import { stateTone } from '../../../core/theme/state-tone.js';
 const REVIEW_PREFIX_PARTS: readonly ConversationRowSegment[] = [
   { text: 'Review', tone: CREW_SEAT_ROLES.review },
   { text: SOFT_SEP, tone: 'textDim' },
@@ -72,7 +70,7 @@ export function activeVerb(
     case 'validating-task':
       return 'Validating…';
     case 'escalating':
-      return 'Escalating…';
+      return 'Answering the consult…';
     case 'final-review':
       return reviewActivitySpans(
         reviewerLabel === null
@@ -80,7 +78,7 @@ export function activeVerb(
           : {
               prefix: REVIEW_PREFIX_PARTS,
               identity: { text: reviewerLabel, tone: CREW_SEAT_ROLES.review },
-              suffix: [],
+              suffix: [{ text: SOFT_SEP, tone: 'textDim' }, ...REVIEW_WAITING_ACTIVITY.suffix],
             },
       )
         .map((part) => part.text)
@@ -102,26 +100,16 @@ export function reviewActivityParts(
   if (operation?.status !== 'running') return REVIEW_WAITING_ACTIVITY;
   switch (operation.role) {
     case 'review': {
-      const step =
-        operation.answeringAgain === true
-          ? 'answering again'
-          : operation.reviewStep === 'verdict'
-            ? 'reviewing changes'
-            : null;
-      const waiting = isStatusFallback(operation) || step !== null;
+      const step = operation.answeringAgain === true ? 'answering again' : 'reviewing changes';
       const identity =
         reviewerLabel === null ? null : { text: reviewerLabel, tone: CREW_SEAT_ROLES.review };
       return {
         prefix: REVIEW_PREFIX_PARTS,
         identity,
-        suffix: waiting
-          ? [
-              ...(identity === null ? [] : [{ text: SOFT_SEP, tone: 'textDim' as const }]),
-              { text: step ?? 'reviewing changes', tone: 'textDim' },
-            ]
-          : identity === null
-            ? [{ text: 'reviewing', tone: 'textDim' }]
-            : [],
+        suffix: [
+          ...(identity === null ? [] : [{ text: SOFT_SEP, tone: 'textDim' as const }]),
+          { text: step, tone: 'textDim' },
+        ],
       };
     }
     case 'summary':
@@ -161,7 +149,7 @@ export function suiteStageParts(
   suite: Pick<RunningSuiteStage, 'id' | 'taskId' | 'moment' | 'command' | 'scenario'>,
   context: 'live' | 'transcript',
 ): ConversationRowSegment[] {
-  const leadTone = context === 'live' ? stateTone('running') : 'textDim';
+  const leadTone = context === 'live' ? 'text' : 'textDim';
   if (suite.scenario !== undefined) return [{ text: `Render ${suite.scenario}`, tone: leadTone }];
   // A check that did not run has no command to name.
   if (suite.command === '') return suiteMomentParts(suite, leadTone);

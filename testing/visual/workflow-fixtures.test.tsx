@@ -47,7 +47,6 @@ import {
   workflowFixtureProjections,
   type WorkflowFixtureProjection,
 } from './fixtures/workflow/projections.js';
-import { MOVED_PROJECT_MESSAGE } from './fixtures/workflow/at-rest-projections.js';
 import { retentionError } from '../../src/engine/orchestrator/isolation/retention.js';
 import { workflowFixtureRegistry, workflowTranscriptText } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount.js';
@@ -233,7 +232,7 @@ it('counts the saved final review in the packet and the Review row of every clos
       .flatMap((fact) => factSpans(fact).map((span) => span.text))
       .find((text) => /^\d+ notes?$/.test(text));
     const counted = notesFact === undefined ? 0 : Number.parseInt(notesFact, 10);
-    if (counted !== view.digest.notes.length) {
+    if (counted !== view.digest.notes.filter((note) => !note.blocking).length) {
       disagreements.push(
         `${id}: the Review row counts ${counted} notes, the summary quotes ${view.digest.notes.length}`,
       );
@@ -619,7 +618,7 @@ describe('workflow visual fixtures', () => {
           'working on',
         ])
           expect(text).not.toContain(stale);
-        expect(text.match(/Report {2}done$/gm)).toHaveLength(2);
+        expect(text).not.toMatch(/Report {2}done$/m);
         for (const name of ['text', 'preview']) {
           const line = text.split('\n').find((row) => row.startsWith(`src/${name}.js ·`));
           expect(line?.split(`src/${name}.js`)).toHaveLength(2);
@@ -794,7 +793,6 @@ describe('workflow visual fixtures', () => {
           '● T001',
           'lowStockItems',
           '+2 earlier · ctrl+a',
-          'Report  done',
           'Validate',
           'Fix check V1',
           'Keep the stock warning',
@@ -972,7 +970,7 @@ describe('workflow visual fixtures', () => {
         preserveLineBreaks: true,
       });
       const rail = frame.split('\n')[0] ?? '';
-      expect(frame).toContain(`${glyph('stageDone')} 4/4`);
+      expect(frame).toContain('Final review passed');
       if (cols <= 60) {
         expect(rail).toContain(`${glyph('stageDone')} Review`);
         expect(rail.split(glyph('stageDone'))).toHaveLength(2);
@@ -980,7 +978,7 @@ describe('workflow visual fixtures', () => {
         expect(rail.split(glyph('stageDone'))).toHaveLength(4);
         for (const stage of ['Plan', 'Build', 'Review']) expect(rail).toContain(stage);
       }
-      if (cols >= 160) expect(frame).toContain('Tasks 4/4');
+      if (cols >= 160) expect(frame).toContain('Briefs 4/4');
     } finally {
       await handle.unmount();
     }
@@ -1046,7 +1044,7 @@ describe('workflow visual fixtures', () => {
       const frame = stripTerminalControls(await handle.waitForCheckpoint());
       expect(frame).toContain('● Build');
       expect(frame).toContain('finish T002');
-      expect(frame).toContain('Tasks 1/3');
+      expect(frame).toContain('Briefs 1/3');
       expect(frame).toContain('● T001');
       expect(lifecycleStore.get().status).toBe('running');
     } finally {
@@ -1208,7 +1206,8 @@ describe('workflow visual fixtures', () => {
         });
         expect(frame).toContain('Pending 2');
         if (renderViewport.cols === 60 && renderViewport.rows === 18) {
-          expect(frame).toContain('Pending 2 · +1 more');
+          expect(frame).toContain('Pending 2');
+          expect(frame).toContain('+1 more');
         } else {
           expect(frame).toContain('T903 Capture the bounded fixture frame');
         }
@@ -1235,7 +1234,6 @@ describe('workflow visual fixtures', () => {
       await ui.waitForCheckpoint();
       const markers = [label];
       if (id.endsWith('adjacent-narration')) markers.push('I run the two brief checks now.');
-      if (id.endsWith('fenced-handback')) markers.push('Report  done');
       const history = await scrollTranscript(ui, markers);
       expect(history).toContain(label);
       expect(history).not.toContain('](file:');
@@ -1250,7 +1248,7 @@ describe('workflow visual fixtures', () => {
         expect(history).toContain('I run the two brief checks now.');
       }
       if (id.endsWith('fenced-handback')) {
-        expect(history).toContain('Report  done');
+        expect(history).not.toContain('Report  done');
         expect(history).not.toContain('filesChanged');
       }
     } finally {
@@ -1730,18 +1728,18 @@ describe('workflow visual fixtures', () => {
     ).toEqual([
       {
         kind: 'read',
-        target: 'src/loans/renewals.ts :120-159',
-        label: 'reading src/loans/renewals.ts :120-159',
+        target: 'src/loans/renewals.ts:120-159',
+        label: 'reading src/loans/renewals.ts:120-159',
       },
       {
         kind: 'read',
-        target: 'biome.json :70-end',
-        label: 'reading biome.json :70-end',
+        target: 'biome.json:70-end',
+        label: 'reading biome.json:70-end',
       },
       {
         kind: 'read',
-        target: 'biome.json :39-58',
-        label: 'reading biome.json :39-58',
+        target: 'biome.json:39-58',
+        label: 'reading biome.json:39-58',
       },
       {
         kind: 'write',
@@ -1793,9 +1791,9 @@ describe('workflow visual fixtures', () => {
         expect(header).toBeGreaterThanOrEqual(0);
         expect(lines[header + 1]).toContain('collapse · ctrl+a');
         const details = lines.slice(header + 2, header + 8);
-        expect(details[0]).toContain('src/loans/renewals.ts :120-159');
-        expect(details[1]).toContain('biome.json :70-end');
-        expect(details[2]).toContain('biome.json :39-58');
+        expect(details[0]).toContain('src/loans/renewals.ts:120-159');
+        expect(details[1]).toContain('biome.json:70-end');
+        expect(details[2]).toContain('biome.json:39-58');
         expect(details[3]).toContain(`src/loans/renewals.ts${SOFT_SEP}12 lines`);
         expect(details[4]).toContain('Count the action flags');
         if (renderViewport.cols > 60) {
@@ -1806,7 +1804,7 @@ describe('workflow visual fixtures', () => {
         const frameLines = frame.split('\n');
         const disclosureIndex = frameLines.findIndex((line) => line.includes('collapse · ctrl+a'));
         const headerIndex = frameLines.findIndex((line) => line.includes('BUILD activity'));
-        const firstRead = frameLines.find((line) => line.includes('renewals.ts :120-159'));
+        const firstRead = frameLines.find((line) => line.includes('renewals.ts:120-159'));
         const newest = frameLines.find(
           (line) => line.includes(glyph('treeLast')) && line.includes('+2 lines'),
         );
@@ -1904,7 +1902,11 @@ describe('workflow visual fixtures', () => {
     const idleSetup = await setupProjection(idle);
     expect(configStore.get().config).not.toBeNull();
     expect(terminalSizeStore.get()).toMatchObject({ cols: 80, rows: 24, isSmall: true });
-    expect(eventsStore.get().events).toEqual([]);
+    expect(eventsStore.get().events.map((event) => event.type)).toEqual([
+      'replay_started',
+      'user_message',
+      'replay_complete',
+    ]);
     expect(questionPromptStore.get().hint).toBeNull();
     expect(controlsStore.get().inputMode).toBe('normal');
     expect(controlsStore.get().sidebarVisible).toBe(false);
@@ -1940,7 +1942,7 @@ describe('workflow visual fixtures', () => {
   );
 
   it('shows the Apply refusal once and keeps its words in the composer', async () => {
-    const reason = 'Cannot send words to Apply. Clear them.';
+    const reason = 'Apply takes no message. Clear the input first.';
     const apply = await captureGalleryFrame('workflow-apply-recheck-words-refused', 80);
     expect(apply.frame.split(reason)).toHaveLength(2);
     expect(apply.frame).toContain('also fix the typo');
@@ -1979,21 +1981,16 @@ describe('workflow visual fixtures', () => {
     [80, 24],
     [60, 18],
   ])(
-    'shows the whole reason of a Skip refused after the project folder moved in the footer at %ix%i',
+    'shows the moved-folder reason once in the transcript after Skip at %ix%i',
     async (cols, rows) => {
       const skip = await captureGalleryFrame('workflow-moved-project-skip', cols);
       const lines = skip.frame.split('\n');
-      const composer = lines.findIndex((line) => line.trimStart().startsWith('╭'));
-      const divider = lines.slice(0, composer).findLastIndex((line) => line.startsWith('─'));
-      const footer = lines.slice(divider + 1, composer).join('\n');
-      expect(footer.replace(/\s+/g, ''), skip.frame).toBe(
-        `${glyph('statusFailed')}${MOVED_PROJECT_MESSAGE}`.replace(/\s+/g, ''),
-      );
-      expect(footer.replace(/\s+/g, ' ')).toContain('or end the run.');
-      // The footer rows come out of the body, so the header keeps the first row.
-      expect(lines.length, skip.frame).toBeLessThanOrEqual(rows);
+      const receipts = skip.events.filter((event) => event.type === 'recovery_action_failed');
+      expect(receipts).toHaveLength(1);
+      expect(skip.frame).not.toContain('This run started in /Users/me/projects/shop. Move');
+      expect(lines).toHaveLength(rows);
       expect(lines[0]).toContain('Build');
-      expect(skip.frame).toContain('Skip task');
+      expect(skip.frame).toContain('Skip brief');
       expect(skip.frame).toContain('End run');
       expect(skip.frame).toContain('↑↓ select · ⏎ confirm');
     },
@@ -2049,7 +2046,7 @@ describe('workflow visual fixtures', () => {
         'Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.',
       );
       expect(lines.length, frame).toBeLessThanOrEqual(18);
-      for (const action of ['Try again', 'Skip task', 'End run']) expect(frame).toContain(action);
+      for (const action of ['Try again', 'Skip brief', 'End run']) expect(frame).toContain(action);
       expect(frame).not.toContain('↓ more');
     },
   );

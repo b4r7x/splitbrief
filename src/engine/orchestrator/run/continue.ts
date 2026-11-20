@@ -4,7 +4,11 @@ import { plainUserMessage, type UserMessageInput } from '../../../core/types/use
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run/status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
-import { noWordsRefusal, statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
+import {
+  noMessageFor,
+  noWordsRefusal,
+  statusLeavesWordsUnread,
+} from '../../../core/recovery/typed-words.js';
 import { sanitizePasteBody } from '../../../lib/terminal/filtered-stdin/paste.js';
 
 export type ContinueRunOutcome =
@@ -109,6 +113,8 @@ function noWordsMessage(status: Extract<RunStatus, { kind: 'open' }>): string {
   const issue = status.stop.on.issue;
   const chosen = issue.status === 'applying' ? issue.selectedAction : undefined;
   return chosen === undefined
-    ? 'Cannot send words to this halt. Clear them first.'
-    : `Cannot send words with ${recoveryActionLabel(chosen, { reason: issue.reason, reviewNone: status.reviewNone })}. Clear them.`;
+    ? noMessageFor('This halt')
+    : noMessageFor(
+        recoveryActionLabel(chosen, { reason: issue.reason, reviewNone: status.reviewNone }),
+      );
 }

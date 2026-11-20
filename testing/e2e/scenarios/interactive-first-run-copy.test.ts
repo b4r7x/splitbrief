@@ -182,7 +182,7 @@ describe('e2e: interactive first-run copy', () => {
       expect(top).toBeGreaterThanOrEqual(0);
       expect(bottom).toBeGreaterThan(top);
       const sidebar = rows.slice(top, bottom + 1).join('\n');
-      expect(sidebar).toContain('Tasks');
+      expect(sidebar).toContain('Briefs');
       expect(sidebar).toContain('Add a greeting helper');
       expect(sidebar).not.toContain('Waiting for your answer');
       const sessionId = readActive(fixture.projectDir);

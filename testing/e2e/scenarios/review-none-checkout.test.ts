@@ -22,8 +22,8 @@ import { wholeFrames } from '../helpers/whole-frames.js';
 const VIEWPORT = { cols: 120, rows: 40 };
 const NONE_ROW = 'Review · none · no seat reviewed this run';
 const WORDS = 'also fix the typo';
-const REVIEW_REFUSAL = 'Cannot send words to the review. Clear them.';
-const APPLY_REFUSAL = 'Cannot send words to Apply. Clear them.';
+const REVIEW_REFUSAL = 'The review takes no message. Clear the input first.';
+const APPLY_REFUSAL = 'Apply takes no message. Clear the input first.';
 const NO_WORDS_PLACEHOLDER = '/ for a command…';
 
 const TOTAL_FILE = 'src/total.mjs';
@@ -187,7 +187,7 @@ async function startRun({ screen, write }: Tui): Promise<void> {
   write(PTY_SUBMIT_INPUT);
 }
 
-async function pauseAfterLastBrief(tui: Tui, run: Run): Promise<void> {
+async function pauseAfterLastBrief(tui: Tui, run: Run, stopPoint: string): Promise<void> {
   const { screen, write } = tui;
   writeFileSync(run.hold, '');
   await startRun(tui);
@@ -198,7 +198,7 @@ async function pauseAfterLastBrief(tui: Tui, run: Run): Promise<void> {
   write('\r');
   await expect.poll(screen, { timeout: 30_000 }).toContain('Pause requested');
   rmSync(run.hold);
-  await expect.poll(screen, { timeout: 60_000 }).toContain('⏎ resume');
+  await expect.poll(screen, { timeout: 60_000 }).toContain(`${stopPoint} · 1/1 briefs passed`);
 }
 
 async function refusesWords({ screen, write }: Tui, refusal: string): Promise<void> {
@@ -274,8 +274,7 @@ it('a REVIEW None run on the project checkout reads no words once its last brief
   const trustHome = useTrustHome('review-none-co-last-brief');
   try {
     await inTui(run, trustHome.home, async (tui) => {
-      await pauseAfterLastBrief(tui, run);
-      await expect.poll(tui.screen).toContain('Stopped before the review · 1 of 1 briefs complete');
+      await pauseAfterLastBrief(tui, run, 'Stopped before the review');
       await refusesWords(tui, REVIEW_REFUSAL);
       const sessionId = sessionOf(run);
       expect(readState(run.target, sessionId).interruptedStep).toMatchObject({
@@ -395,8 +394,7 @@ it('a REVIEW None run on a worktree names Apply at the stop after its last brief
   try {
     await inTui(run, trustHome.home, async (tui) => {
       const { screen } = tui;
-      await pauseAfterLastBrief(tui, run);
-      await expect.poll(screen).toContain('Stopped at Apply · 1 of 1 briefs complete');
+      await pauseAfterLastBrief(tui, run, 'Stopped at Apply');
       expect(screen()).toContain('│ Stopped at Apply');
       expect(screen()).not.toContain('Stopped before the review');
       const sessionId = sessionOf(run);

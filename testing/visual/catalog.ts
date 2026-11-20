@@ -703,9 +703,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'idle',
-        title: 'Empty workflow',
+        title: 'Run waiting to continue planning',
         kind: 'idle',
-        marker: 'no events yet',
+        marker: 'Type a correction',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1371,7 +1371,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'implementation-fenced-handback',
         title: 'Fenced hand-back report',
         kind: 'implementation',
-        marker: 'Report  done',
+        marker: 'src/row.ts',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1387,7 +1387,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'implementation-handback-unclosed-quote',
         title: 'Hand-back report after an unclosed quote',
         kind: 'implementation',
-        marker: 'Report  done · 1 decision',
+        marker: 'src/row.ts',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1486,7 +1486,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'complete-after-fix-tasks',
         title: 'A passed review reads its stages, never done',
         kind: 'implementation',
-        marker: '4/4',
+        marker: 'Final review passed',
       },
       elements: [{ id: 'header', title: 'Workflow header' }],
     }),
@@ -2026,7 +2026,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'apply-recheck-words-refused',
         title: 'The reason, with the typed words back in the composer',
         kind: 'implementation',
-        marker: 'Cannot send words to Apply',
+        marker: 'Apply takes no message',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -2504,6 +2504,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       title: 'Workflow · plan card in a short terminal',
       surface: screenSurface('workflow'),
       viewports: [
+        ...REQUIRED_VIEWPORTS,
         viewport({ cols: 80, rows: 12 }),
         viewport({ cols: 80, rows: 10 }),
         viewport({ cols: 80, rows: 9 }),
@@ -3486,7 +3487,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'at-rest-typed-words',
         title: 'Restore backup refuses the typed words',
         kind: 'failure',
-        marker: 'Cannot send words',
+        marker: 'takes no message',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3872,7 +3873,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'at-rest-other-process-applying',
         title: 'Apply running in another process',
         kind: 'ready',
-        marker: 'Running in another process',
+        marker: 'Running in another terminal',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -4610,7 +4611,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-moved-project-skip',
-      title: 'Workflow · Skip task refused at a halt after the project folder moved',
+      title: 'Workflow · Skip brief refused at a halt after the project folder moved',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'moved-project-skip',
@@ -5571,7 +5572,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery-apply-partial-words',
         title: 'Apply-partial recovery menu with typed words in the composer',
         kind: 'question',
-        marker: 'Cannot send words with',
+        marker: 'takes no message',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5902,13 +5903,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-resolved-skip',
-      title: 'Workflow · a checkout halt on the last brief resolved with Skip task',
+      title: 'Workflow · a checkout halt on the last brief resolved with Skip brief',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'recovery-resolved-skip',
-        title: 'Halt and Skip task folded into one Recovery row, the restore warning after it',
+        title: 'Halt and Skip brief folded into one Recovery row, the restore warning after it',
         kind: 'implementation',
-        marker: 'Skip task',
+        marker: 'Skip brief',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5917,11 +5918,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-resolved-dependency-skip',
-      title: 'Workflow · a dependency halt after a skipped brief resolved with Skip task',
+      title: 'Workflow · a dependency halt after a skipped brief resolved with Skip brief',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'recovery-resolved-dependency-skip',
-        title: 'Dependency halt and Skip task folded into one Recovery row under the skipped brief',
+        title:
+          'Dependency halt and Skip brief folded into one Recovery row under the skipped brief',
         kind: 'implementation',
         marker: 'Dependency blocked',
       },
@@ -6353,7 +6355,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'implementation-read-paths',
         title: 'Each Read row names its file and its line range',
         kind: 'implementation',
-        marker: 'src/a.ts :12-41 · src/b.ts :12-41',
+        marker: 'src/a.ts:12-41 · src/b.ts:12-41',
       },
       elements: [
         { id: 'header', title: 'Workflow header and build progress' },
@@ -6700,7 +6702,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'fix-check-done',
         title: 'A fix check with a carried failure left, the retry, then all carried failures gone',
         kind: 'implementation',
-        marker: 'your 2 failures gone',
+        marker: '1 of 2 failures gone',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -6748,7 +6750,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'fix-check-red-then-verify',
         title: 'The failed render row of the fix brief, then one verify row and no refusal row',
         kind: 'implementation',
-        marker: 'verify T901-K1, T901-R1',
+        marker: 'PLAN → T904: verify',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

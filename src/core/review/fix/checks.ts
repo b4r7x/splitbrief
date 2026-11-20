@@ -1,3 +1,4 @@
+import { oneLineDisplayText } from '../../../utils/display-text/sanitize.js';
 import { fileFromFailureKey, isTestNodeKey, type FixCheckKeys } from './task.js';
 
 function diagnosticIdentity(key: string): string | null {
@@ -93,6 +94,24 @@ function failures(count: number): string {
   return `${count} ${count === 1 ? 'failure' : 'failures'}`;
 }
 
+export function checkFailureSummary(command: string, count: number): string {
+  const result = command === '' ? 'failed' : `${command} failed`;
+  return count === 0 ? result : `${result} · ${failures(count)}`;
+}
+
+// Earlier ledgers kept the prompt sent to the implementer as the finding text.
+export function savedFindingText(text: string): string {
+  const line = oneLineDisplayText(text);
+  const match =
+    /^(?:(Last changed by \S+?\.|No task changed it\.) )?check (\S+) did not pass \(fail\):\s*(?:(\d+) failures?\b)?/i.exec(
+      line,
+    );
+  if (match === null) return line;
+  return [match[1], checkFailureSummary(`Check ${match[2]}`, Number(match[3] ?? 0))]
+    .filter(Boolean)
+    .join(' ');
+}
+
 /** The fix tasks a failure is left to, as one verdict segment names them. */
 export function leftTo(taskIds: readonly string[]): string {
   return taskIds.length <= 2
@@ -113,25 +132,21 @@ export function fixCheckVerdict(input: FixCheckCounts): string[] {
   const gone = own - deferred;
   const segments =
     own === 0
-      ? ['no failure of yours', ...rest]
+      ? ['no failure from this brief', ...rest]
       : ownLeft > 0
         ? [
             own === 1
-              ? 'your 1 failure remains'
-              : `${ownLeft} of your ${failures(own)} ${ownLeft === 1 ? 'remains' : 'remain'}`,
+              ? '1 failure remains'
+              : `${ownLeft} of ${failures(own)} ${ownLeft === 1 ? 'remains' : 'remain'}`,
             ...(deferred > 0 ? [`${deferred} ${toSibling}`] : []),
             ...rest,
           ]
         : [
             ...(gone > 0
-              ? [
-                  deferred === 0
-                    ? `your ${failures(own)} gone`
-                    : `${gone} of your ${failures(own)} gone`,
-                ]
+              ? [deferred === 0 ? `${failures(own)} gone` : `${gone} of ${failures(own)} gone`]
               : []),
             ...(deferred > 0
-              ? [gone === 0 ? `your ${failures(own)} ${toSibling}` : `${deferred} ${toSibling}`]
+              ? [gone === 0 ? `${failures(own)} ${toSibling}` : `${deferred} ${toSibling}`]
               : []),
             ...rest,
           ];

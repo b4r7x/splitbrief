@@ -74,11 +74,11 @@ describe('e2e: a run that halted in planning, opened at rest', () => {
     routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
     const screen = renderFeature(createElement<AppProps>(App, {}), VIEWPORT);
     try {
-      await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Tasks'));
+      await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Briefs'));
 
       const frame = stripAnsiStyles(screen.lastFrame());
       expect(frame.split('\n')[0]).toContain(`${glyph('statusFailed')} Plan`);
-      expect(frame).toContain('No tasks yet');
+      expect(frame).toContain('No briefs yet');
       expect(frame).not.toContain('Planning stopped');
     } finally {
       screen.unmount();

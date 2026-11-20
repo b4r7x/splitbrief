@@ -78,6 +78,7 @@ export const TriageInputSchema = z.object({
   checkIds: z.array(z.string()).optional(),
   command: z.string().optional(),
   output: z.string().optional(),
+  checkDetail: z.string().optional(),
   /** The failure keys of its red that this input answers. */
   failureKeys: z.array(z.string()).optional(),
   /** Every failure key of the original red, before its run-base split. */

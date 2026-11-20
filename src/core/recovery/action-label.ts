@@ -82,7 +82,7 @@ export function recoveryActionParts(
     case 'decide-for-me':
       return [{ text: 'Decide for me' }];
     case 'skip-current-task':
-      return [{ text: 'Skip task' }];
+      return [{ text: 'Skip brief' }];
     case 'end-run':
       return [{ text: 'End run' }];
   }

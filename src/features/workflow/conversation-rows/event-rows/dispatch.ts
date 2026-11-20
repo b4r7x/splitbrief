@@ -168,7 +168,7 @@ export function eventRowBlock(options: {
     case 'task_full_fail':
       return cardRowsBlock({
         keyPrefix,
-        label: 'Task failed',
+        label: 'Brief failed',
         value: event.taskId,
         width: ctx.width,
         labelTone: 'error',
@@ -219,7 +219,7 @@ export function eventRowBlock(options: {
     case 'task_reset':
       return cardRowsBlock({
         keyPrefix,
-        label: 'Task reset',
+        label: 'Brief reset',
         value: `${event.taskId} back to pending`,
         width: ctx.width,
         labelTone: 'textDim',
@@ -279,7 +279,7 @@ export function eventRowBlock(options: {
     case 'message_injected_native':
     case 'queue_drained':
     case 'queue_cleared':
-      return queueRowBlock(keyPrefix, event, ctx.width);
+      return queueRowBlock(keyPrefix, event, ctx.width, ctx);
     case 'user_message': {
       const body =
         event.qa !== undefined && event.qa.length > 0

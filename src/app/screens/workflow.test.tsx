@@ -990,7 +990,7 @@ describe('WorkflowScreen chrome calibration', () => {
     // the key that lifts it. The block's rows stand down with the attempt that is no longer in
     // flight, so neither the brief fraction nor the freshness line paints over the parked run.
     expect(frame).toContain('Stopped at T001');
-    expect(frame).toContain('⏎ resume');
+    expect(frame).toContain('esc home');
     expect(frame).not.toContain('briefs passed');
     expect(frame).not.toContain('no update yet');
     ui.unmount();
@@ -1069,7 +1069,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
     const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
     await vi.waitFor(() => {
-      expect(frame()).toContain('Tasks');
+      expect(frame()).toContain('Briefs');
       expect(frame()).toMatch(/src\/test\.ts .* ctrl\+d/);
       expect(frame()).toContain('Type a correction…');
     });
@@ -1557,7 +1557,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Waiting for OpenAI Codex CLI');
     expect(frame).toContain('resets');
-    expect(frame).not.toContain('Running in another process');
+    expect(frame).not.toContain('Running in another terminal');
     ui.unmount();
     vi.useRealTimers();
   });
@@ -1920,7 +1920,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     it.each([9, 10, 11, 12])('shows the row Enter acts on at %i rows', async (rows) => {
       const ui = await openHalt(rows);
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain('Skip task');
+      expect(frame).toContain('Skip brief');
       expect(frame).not.toContain('confirmmended');
       ui.unmount();
     });
@@ -1928,7 +1928,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     it('runs nothing on Enter with no row for the menu', async () => {
       const ui = await openHalt(7);
       const before = runWorkflow.mock.calls.length;
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Skip brief');
       ui.stdin.write('\r');
       await flushEffects();
       await tick(60);
@@ -1993,7 +1993,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     it('keeps a row of the menu in view at 80 x 8, and Enter takes it', async () => {
       const ui = await openHalt(8);
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
       const before = runWorkflow.mock.calls.length;
       ui.stdin.write('\r');
       await flushEffects();
@@ -2009,7 +2009,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     });
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Choose an action above…');
@@ -2030,7 +2030,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     });
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
 
@@ -2042,7 +2042,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(onRuntimeCommand).toHaveBeenCalledWith('/settings');
     });
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('tab back to the actions');
     ui.unmount();
   });
@@ -2053,7 +2053,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     });
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
 
@@ -2065,7 +2065,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
     expect(onRuntimeCommand.mock.calls).toEqual([['/scroll top']]);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Skip task');
+    expect(frame).toContain('Skip brief');
     expect(frame).toContain('tab back to the actions');
     ui.unmount();
   });
@@ -2079,7 +2079,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     });
 
     for (const key of '/steer use the old name') {
@@ -2095,7 +2095,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain(NO_CORRECTION);
     expect(frame).toContain(`${glyph('prompt')} /steer use the old name`);
-    expect(frame).toContain('Skip task');
+    expect(frame).toContain('Skip brief');
     expect(runWorkflow).not.toHaveBeenCalled();
     ui.unmount();
   });
@@ -2147,7 +2147,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     });
     ui.stdin.write('\t');
     await flushEffects();
@@ -2174,7 +2174,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     });
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
 
@@ -2198,7 +2198,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     });
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
 
@@ -2210,7 +2210,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Skip task');
+    expect(frame).toContain('Skip brief');
     expect(frame).toContain('tab back to the actions');
     ui.unmount();
   });
@@ -2221,7 +2221,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip brief');
     });
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
     overlayStore.open('stop-sheet');
@@ -2238,7 +2238,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await flushEffects();
     expect(onRuntimeCommand.mock.calls).toEqual([['/settings']]);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Skip task');
+    expect(frame).toContain('Skip brief');
     expect(frame).toContain('tab back to the actions');
     ui.unmount();
   });
@@ -2645,7 +2645,7 @@ describe('WorkflowScreen showing a run at rest', () => {
       await flushEffects();
 
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-        `Applying to your checkout · ${phrase} · 0:00`,
+        `Finishing Apply cleanup · ${kind === 'quit' ? 'Quits after cleanup' : 'Returns home after cleanup'} · 0:00`,
       );
       ui.unmount();
     },
@@ -2662,7 +2662,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Running in another process');
+    expect(frame).toContain('Running in another terminal');
     expect(frame).toContain('/ for a command…');
     expect(frame).not.toContain('⏎ for home');
     expect(frame).not.toContain('Applying to your checkout');
@@ -3892,7 +3892,7 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
 
     release();
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame())).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Skip brief');
     });
     await flushEffects();
     expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select · ⏎ confirm');
@@ -3932,7 +3932,7 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
 
     release();
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame())).toContain('Skip task');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Skip brief');
     });
     expect(stripAnsiStyles(ui.lastFrame())).toContain('Choose an action above…');
 
@@ -3987,7 +3987,9 @@ describe('WorkflowScreen when a menu opens over a draft', () => {
     await flushEffects();
     ui.stdin.write('k');
     await vi.waitFor(() => {
-      expect(feedbackStore.get().message).toBe('Cannot send words with Accept as is. Clear them.');
+      expect(feedbackStore.get().message).toBe(
+        'Accept as is takes no message. Clear the input first.',
+      );
     });
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame())).toContain('tab back to the actions');

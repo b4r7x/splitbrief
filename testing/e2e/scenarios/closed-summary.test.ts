@@ -18,6 +18,10 @@ import {
   fixCycleRun,
   fixCycleRunLog,
 } from '#testing/helpers/factories/fix-cycle-run.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { finding, makeVerdict } from '#testing/helpers/review-verdict.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { openClosedRun, type ClosedRunScreen } from '../helpers/closed-run-screen.js';
 import {
@@ -234,7 +238,7 @@ it('closes the transcript of a long applied run with its summary, and opens the 
   expect(folded).toContain('├ +15 briefs · 62 files · 3 reviews · ctrl+a');
   // The rule under the transcript says that the run is closed, and when: the day and the time.
   expect(folded).toContain('─ Run closed · Sep 14, 16:54 ─');
-  expect(folded).toContain('Tasks 15/15');
+  expect(folded).toContain('Briefs 15/15');
   // One row per stage, not one row per brief, per file or per earlier finding.
   expect(folded).not.toContain('Final review failed');
   expect(folded).not.toContain('Packet');
@@ -347,4 +351,66 @@ it('opens no fold for a wheel step and a click of one write on the row that the 
   );
 
   expect(clicked).toContain('├ collapse · ctrl+a');
+});
+
+it('shows Briefs and the blocking finding when reopening a run ended after a failed review', async () => {
+  const target = createStopContinueFixture(() => '', { isolation: 'none' });
+  fixture = target;
+  const ref = { projectDir: target.projectDir, sessionId: SESSION };
+  const blocker = finding({ severity: 'blocking', text: 'Empty addresses bypass validation.' });
+  const state = makeWorkflowState({
+    feature: 'Validate addresses',
+    phase: 'complete',
+    startedAt: AT,
+    tasks: [makeTask({ title: 'Validate addresses', status: 'done' })],
+    reviewStatus: 'failed',
+    review: {
+      at: AT,
+      scope: 'final',
+      cycle: 0,
+      outcome: 'fail',
+      verification: [],
+      verdict: makeVerdict({ findings: [blocker] }),
+    },
+    closed: { as: 'ended', at: AT },
+  });
+  saveState(ref, state);
+  saveSummary(ref, {
+    id: SESSION,
+    feature: state.feature,
+    startedAt: Date.parse(AT),
+    completedAt: Date.parse(AT),
+    stateVersion: state.stateVersion,
+    status: 'complete',
+    summary: makeSummary({
+      feature: state.feature,
+      totalTasks: 1,
+      completedByLocal: 1,
+      reviewPacket: {
+        generatedAt: AT,
+        jsonPath: 'review-packet.json',
+        markdownPath: 'review-packet.md',
+        finalReviewStatus: 'written',
+        finalReviewVerdict: 'fail',
+        finalReviewFindingCounts: { critical: 1, warning: 0, note: 0 },
+        driftPassed: true,
+        evidenceValidatedTasks: 1,
+        evidenceTotalTasks: 1,
+        missingArtifactCount: 0,
+      },
+    }),
+  });
+  const home = join(target.tmpDir, 'home');
+  mkdirSync(home);
+  const frame = await openClosedRun(
+    {
+      argv: ['--import', 'tsx', 'src/cli.ts', '--project', target.projectDir],
+      env: { ...safeChildEnvironment(home), XDG_STATE_HOME: target.stateHome },
+      viewport: { cols: 160, rows: 45 },
+      settledText: '1 blocking',
+    },
+    async ({ screen }) => screen(),
+  );
+  expect.soft(frame).toContain('Briefs 1/1');
+  expect(frame.slice(frame.indexOf('├ Review'))).toContain(blocker.text);
 });

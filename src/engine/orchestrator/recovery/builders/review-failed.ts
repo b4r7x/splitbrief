@@ -14,6 +14,7 @@ import type { TaskId } from '../../../../core/schemas/task.js';
 import type { ReviewRecord } from '../../../../core/schemas/workflow/review-record.js';
 import {
   apiContextError,
+  missingContextWords,
   apiContextRecoveryFacts,
 } from '../../../providers/api/context-diagnostic.js';
 import type { FinalReviewFailure } from '../../review/types.js';
@@ -80,7 +81,7 @@ function buildNoVerdictReviewIssue(
         ? apiContextError(failure.diagnostic).message
         : failure.message,
     details: [
-      ...(missing.length > 0 ? [`Missing: ${missing.join(', ')}`] : []),
+      ...(missing.length > 0 ? [`Missing: ${missingContextWords(missing)}`] : []),
       ...(failure.kind === 'call-failed' ? (failure.details ?? []) : []),
       ...(opts.details ?? []),
       ...(diagnostic === undefined

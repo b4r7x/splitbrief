@@ -227,7 +227,7 @@ const ROWS: Row[] = [
       rerun: ['shared', 'other'],
       sibling: { status, own: ['shared'] },
       accepted: false,
-      verdict: `1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0remains, 1\u00a0${OTHERS}`,
+      verdict: `1\u00a0of\u00a02\u00a0failures\u00a0remains, 1\u00a0${OTHERS}`,
     }),
   ),
   {
@@ -245,7 +245,7 @@ const ROWS: Row[] = [
     rerun: ['own', 'other'],
     sibling: { status: 'pending', own: ['other'] },
     accepted: false,
-    verdict: `your\u00a01\u00a0failure\u00a0remains, 1\u00a0${OTHERS}`,
+    verdict: `1\u00a0failure\u00a0remains, 1\u00a0${OTHERS}`,
   },
   {
     name: '12 a placeholder red: rejects (unchanged)',
@@ -453,7 +453,7 @@ describe('the texts of a fix check that leaves failures to others', { timeout: 6
       expect(result.acceptance.accepted).toBe(false);
       expect(result.error).toContain(
         [
-          'check V2 did not pass (fail): 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0remains, 1\u00a0left\u00a0to\u00a0T025, 2\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
+          'check V2 did not pass (fail): 1\u00a0of\u00a02\u00a0failures\u00a0remains, 1\u00a0left\u00a0to\u00a0T025, 2\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
           'Your failures that remain:',
           `- ${k('own')}`,
           'Left to T025:',
@@ -1152,9 +1152,9 @@ describe('a failure a sibling carries under another check id', { timeout: 60_000
         fullSuiteSegments(event, 160)
           .map((segment) => segment.text)
           .join(''),
-      ).toContain('1 of your 2 failures gone · 1 left to T003');
+      ).toContain('1 of 2 failures gone · 1 left to T003');
       expect(chunks.join('').split('\n')).toContain(
-        'fix check chk-unit: 1 of your 2 failures gone · 1 left to T003 (npm test)',
+        'fix check chk-unit: 1 of 2 failures gone · 1 left to T003 (npm test)',
       );
     });
   });
@@ -1167,7 +1167,7 @@ describe('a failure a sibling carries under another check id', { timeout: 60_000
         checks: [UNIT],
         red: red('pause', 'swap'),
       });
-      const verdict = '1 of your 2 failures remains, 1 left to T003';
+      const verdict = '1 of 2 failures remains, 1 left to T003';
 
       expect(result.acceptance.accepted).toBe(false);
       expect(result.error).toContain(

@@ -79,14 +79,19 @@ export function runRows(view: SummaryView, form: SummaryForm = 'whole'): RunRow[
  * the fold. The labelled summary quotes no note and lists no file, so the record adds them all.
  */
 export function recordFold(view: SummaryView, form: SummaryForm): string[] {
-  const notes = view.review.kind === 'written' ? view.digest.notes.length : 0;
+  const notes = view.review.kind === 'written' ? view.digest.notes : [];
   const kinds: readonly (readonly [number, string])[] = [
     [view.briefs.rows.length + view.briefs.earlierRows.length, 'brief'],
     [
       (view.files.changed?.length ?? 0) - (form === 'whole' ? view.digest.leadFiles.length : 0),
       'file',
     ],
-    [notes - (form === 'whole' ? Math.min(notes, SUMMARY_NOTES) : 0), 'note'],
+    [
+      notes.filter((note, index) => !note.blocking && (form !== 'whole' || index >= SUMMARY_NOTES))
+        .length,
+      'note',
+    ],
+    [form === 'whole' ? 0 : notes.filter((note) => note.blocking).length, 'blocking finding'],
     [view.failedReviews.length, 'review'],
   ];
   const [first, ...rest] = kinds

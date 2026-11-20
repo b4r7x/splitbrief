@@ -221,12 +221,12 @@ describe('wrappedProseTexts', () => {
   });
 
   it('preserves duration NBSPs when dropping a separator', () => {
-    const row = 'Fix check V2 · npm run test-ci · your 2 failures gone · 3 others left · 3m 0s';
+    const row = 'Fix check V2 · npm run test-ci · 2 failures gone · 3 others left · 3m 0s';
 
-    const lines = wrappedProseTexts(row, 74);
+    const lines = wrappedProseTexts(row, 69);
 
     expect(lines).toEqual([
-      'Fix check V2 · npm run test-ci · your 2 failures gone · 3 others left ',
+      'Fix check V2 · npm run test-ci · 2 failures gone · 3 others left ',
       '3m 0s',
     ]);
     for (const line of lines) expect(line.trimEnd().endsWith('·')).toBe(false);

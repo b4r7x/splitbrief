@@ -46,7 +46,7 @@ export function plannerTextRowBlock(options: {
               width,
               tone: 'textDim',
             });
-    if (handBack === undefined) return narration;
+    if (handBack === undefined || handBack.report.status === 'done') return narration;
     return compositeBlock(keyPrefix, [
       narration,
       wrappedTextBlock({
@@ -124,16 +124,11 @@ function splitImplementerHandBack(
   return undefined;
 }
 
-function reportSummaryLine(report: ImplementerReport): string {
-  const head = `Report  ${report.status}`;
-  if (report.status === 'blocked') {
-    if (report.filesNeeded.length === 0) return head;
-    return `${head}${SOFT_SEP}${countNoun(report.filesNeeded.length, 'file')} needed`;
-  }
-  // The files the call changed are listed by its done row, measured from the workspace; a count
-  // of the files the report claims would be a second, possibly different, list.
-  if (report.decisions.length === 0) return head;
-  return `${head}${SOFT_SEP}${countNoun(report.decisions.length, 'decision')}`;
+function reportSummaryLine(report: Extract<ImplementerReport, { status: 'blocked' }>): string {
+  const head = 'Report  blocked';
+  return report.filesNeeded.length === 0
+    ? head
+    : `${head}${SOFT_SEP}${countNoun(report.filesNeeded.length, 'file')} needed`;
 }
 
 export function isPlannerTextRenderedAsMarkdown(event: EngineEventOf<'planner_text'>): boolean {

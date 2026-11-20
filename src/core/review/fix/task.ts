@@ -160,7 +160,7 @@ export function fixBriefDescription(intent: string, findings: readonly FixFindin
           finding.acceptance === null ? '' : `\nAcceptance: ${finding.acceptance}`
         }${Object.entries(finding.commands ?? {})
           .map(([id, command]) => `\nCommand ${id}: ${command}`)
-          .join('')}`,
+          .join('')}${finding.checkDetail === undefined ? '' : `\n${finding.checkDetail}`}`,
     ),
     ...(own.length > 0
       ? [['Your failures, which this brief fixes:', ...own, FIX_BRIEF_OTHERS_RULE].join('\n')]

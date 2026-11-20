@@ -444,7 +444,7 @@ it('e2e: REVIEW None sends a changed merge back to its checks under Apply, and t
   );
   writeConfig(target.projectDir, { ...loadConfig(target.projectDir).config, reviewer: 'none' });
   const draft = 'also fix the typo';
-  const refusal = 'Cannot send words to Apply. Clear them.';
+  const refusal = 'Apply takes no message. Clear the input first.';
   try {
     await inTui(
       target,
@@ -571,7 +571,7 @@ it('e2e: a move to REVIEW None at rest stops the run at Apply, refuses words, an
           .poll(() => {
             const shown = screen();
             return (
-              shown.includes('Cannot send words to Apply. Clear them.') &&
+              shown.includes('Apply takes no message. Clear the input first.') &&
               shown.includes(`› ${draft}`)
             );
           })
@@ -1265,7 +1265,7 @@ it('e2e: a failed review refuses Accept as is while the composer holds words, ke
   const target = createStopContinueFixture(() => '');
   const trustHome = useTrustHome('review-none-accept-refused');
   const run = prepareFailedReview(target, plan, 'end');
-  const refusal = 'Cannot send words with Accept as is. Clear them.';
+  const refusal = 'Accept as is takes no message. Clear the input first.';
   try {
     await inTui(
       target,

@@ -283,7 +283,10 @@ describe('closedTranscriptBlock', () => {
       ...rich,
       outcome: { kind: 'complete' },
       review: { ...review, verdict: 'fail', counts: { critical: 3, warning: 0, note: 1 } },
-      accepted: { redChecks: '1 red check: V1', note: 'Your note: The suite is red at the base' },
+      accepted: {
+        redChecks: '1 red check: V1 · npm test',
+        note: 'Your note: The suite is red at the base',
+      },
     });
     const rows = blockRows(accepted, { viewportRows: 8, crewNamed: false }).map(rowText);
 

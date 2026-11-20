@@ -99,7 +99,7 @@ it('keeps the default summary at seven rows at width 30 and five at width 120', 
       .filter((row) => row.kind === 'facts-line')
       .map((row) => row.text),
   ).toEqual([
-    '  Task T001 · Fix login ',
+    '  Brief T001 · Fix login ',
     '  validation',
     '  Files src/auth/session.ts',
     '  npm test failed in ',
@@ -277,7 +277,7 @@ it('keeps the blank row above a cut asked row with task, file and later facts', 
   const factsRow = summary[2];
   expect(factsRow?.kind === 'facts' ? factsRow.items : []).toEqual([
     'Question: Which file holds the locale…',
-    'Task T001 · Fix login validation',
+    'Brief T001 · Fix login validation',
     'Files src/auth/session.ts',
     'Last error: blocked',
   ]);
@@ -452,7 +452,7 @@ describe('recovery prompt', () => {
     expect(visible).not.toContain('pause');
     expect(
       getRecoveryPromptActions(issue).map((action) => recoveryMenuText(action, issue)),
-    ).toEqual(['Try again', 'Change BUILD tool · continues this brief', 'Skip task', 'End run']);
+    ).toEqual(['Try again', 'Change BUILD tool · continues this brief', 'Skip brief', 'End run']);
   });
 
   it('builds a compact retry-exhausted summary with only available actions', async () => {
@@ -461,7 +461,7 @@ describe('recovery prompt', () => {
 
     expect(visible).toContain('Needs you · T003 failed');
     expect(visible).not.toContain('after 3 attempts');
-    expect(visible).toContain('Task T003 · Patch auth validation');
+    expect(visible).toContain('Brief T003 · Patch auth validation');
     expect(visible).toContain('Files src/auth/session.ts · src/auth/session.test.ts');
     expect(visible).toContain(
       'Last check test failed: npm test -- auth failed in src/auth/session.test.ts',
@@ -511,7 +511,7 @@ describe('recovery prompt', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
 
     expect(prompt.split('\n')[0]).toBe('Needs you · T003 failed');
-    expect(prompt).toContain('Task T003 · Patch auth validation');
+    expect(prompt).toContain('Brief T003 · Patch auth validation');
     expect(prompt).not.toMatch(/^\S* ?\[/m);
   });
 

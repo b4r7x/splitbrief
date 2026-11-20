@@ -18,7 +18,8 @@ export function settle(
   setInlineResume(result.state);
 
   if (!result.ok) {
-    feedbackStore.setError(result.message);
+    if (result.code === 'isolation-project-moved') feedbackStore.reset();
+    else feedbackStore.setError(result.message);
     // The engine must stay parked on this halt. Returning shouldRun here re-enters the
     // workflow with the same pending issue before the operator can choose another action.
     return null;

@@ -95,7 +95,7 @@ describe('useStopByline', () => {
     stopStore.park('boundary', 'T001', null);
     const ui = renderFeature(<Lead />);
 
-    expect(ui.lastFrame().trim()).toBe('Stopped at Apply · 1 of 1 briefs complete');
+    expect(ui.lastFrame().trim()).toBe('Stopped at Apply · 1/1 briefs passed');
     ui.unmount();
   });
 
@@ -265,4 +265,25 @@ describe('useStopByline', () => {
     expect(ui.lastFrame().trim()).toBe('Finishing T001|Pause requested; no next brief will start');
     ui.unmount();
   });
+});
+
+it('uses the saved run byline after an in-process park hands the run to the at-rest screen', () => {
+  resetAllStores();
+  onTestFinished(resetAllStores);
+  routerStore.init({
+    screen: 'workflow',
+    execution: { kind: 'at-rest' },
+    run: makeRunRecord({
+      status: {
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+        resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+      },
+    }),
+  });
+  stopStore.request('pause-after-brief');
+  stopStore.park('boundary', 'T001', null);
+  const ui = renderFeature(<LeadAndHint />);
+  onTestFinished(ui.unmount);
+  expect(ui.lastFrame()).not.toContain('esc back to sessions');
 });

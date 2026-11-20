@@ -360,6 +360,31 @@ describe('createRecoveryDriver', () => {
     expect(recoveryNoticeStore.get().open).toBe(false);
   });
 
+  it('shows one error after a moved project blocks Skip brief', async () => {
+    const { prepared, state } = setupSession({
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
+    });
+    const moved: WorkflowState = {
+      ...state,
+      workspace: {
+        kind: 'checkout',
+        path: join(prepared.session.ref.projectDir, 'original'),
+        base: { head: null, snapshotId: 'base' },
+      },
+    };
+    saveState(prepared.session.ref, moved);
+    const { inputMode, feedbackAtPrompt } = makeInputMode([rowPick('s'), rowPick('a')]);
+    await runDriver(prepared, moved, inputMode);
+    const errors = eventsStore
+      .get()
+      .events.flatMap((event) =>
+        event.type === 'recovery_action_failed' || event.type === 'error' ? [event.message] : [],
+      );
+    const notices = [...errors, feedbackAtPrompt[1]?.message ?? ''];
+    expect(notices.filter((message) => message.includes('This run started in'))).toHaveLength(1);
+  });
+
   it('keeps the halt menu open when an action cannot be applied', async () => {
     const { prepared, state } = setupSession({
       reason: 'review-failed',
@@ -1359,7 +1384,7 @@ describe('createRecoveryDriver', () => {
     expect(composerDraftStore.get().request).toBeNull();
   });
 
-  it('leaves the composer draft alone when Skip task is chosen beside it', async () => {
+  it('leaves the composer draft alone when Skip brief is chosen beside it', async () => {
     const { prepared, state } = setupSession();
     composerLiveStore.setDraft(createDraftDocument('the prop is optional'));
     const { inputMode, feedbackAtPrompt } = makeInputMode([rowPick('s')]);
@@ -1412,7 +1437,7 @@ describe('createRecoveryDriver', () => {
         const result = await runDriver(prepared, state, inputMode);
 
         expect(feedbackAtPrompt[1]).toEqual({
-          message: `Cannot send words with ${label}. Clear them.`,
+          message: `${label} takes no message. Clear the input first.`,
           isError: false,
         });
         expect(composerDraftStore.get().request).toBeNull();
@@ -1441,7 +1466,7 @@ describe('createRecoveryDriver', () => {
       const result = await runDriver(prepared, state, inputMode);
 
       expect(feedbackAtPrompt[1]).toEqual({
-        message: 'Cannot send words with Re-run Apply. Clear them.',
+        message: 'Re-run Apply takes no message. Clear the input first.',
         isError: false,
       });
       if (!result.shouldRun) throw new Error('expected Re-run Apply to run');
@@ -1468,7 +1493,7 @@ describe('createRecoveryDriver', () => {
       const result = await runDriver(prepared, halted, inputMode);
 
       expect(feedbackAtPrompt[1]).toEqual({
-        message: 'Cannot send words with Accept as is. Clear them.',
+        message: 'Accept as is takes no message. Clear the input first.',
         isError: false,
       });
       expect(result.state?.acceptedAsIs).toBeUndefined();
@@ -1555,7 +1580,7 @@ describe('createRecoveryDriver', () => {
     'abort',
     's',
     'skip',
-    'skip task',
+    'skip brief',
     'skip-current-task',
   ])('takes %s typed in the composer as the correction of Try again', async (word) => {
     const { prepared, state } = setupSession();
@@ -1629,7 +1654,7 @@ describe('createRecoveryDriver', () => {
     expect(result.state?.closed?.as).toBe('ended');
   });
 
-  it('keeps words typed at reopen for the step Skip task runs next, with no refusal', async () => {
+  it('keeps words typed at reopen for the step Skip brief runs next, with no refusal', async () => {
     const { prepared, state } = setupSession({
       reason: 'dependency-blocked',
       availableActions: ['skip-current-task', 'end-run'],
@@ -1933,7 +1958,7 @@ describe('prepared recovery corrections', () => {
       await runDriver(prepared, state, inputMode);
 
       expect(feedbackAtPrompt[1]).toMatchObject({
-        message: 'Cannot send words with Continue. Clear them.',
+        message: 'Continue takes no message. Clear the input first.',
         isError: false,
       });
     });

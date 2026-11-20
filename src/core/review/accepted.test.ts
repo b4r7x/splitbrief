@@ -292,7 +292,7 @@ describe('what an Accept as is leaves open', () => {
         phrase: '1 red check and 2 open findings',
         fact: '1 red check · 2 open findings',
         redChecks: '1 red check',
-        redCheckIds: '1 red check: V1',
+        redCheckIds: '1 red check: V1 · npm test',
       },
     },
     {
@@ -302,7 +302,7 @@ describe('what an Accept as is leaves open', () => {
         phrase: '2 red checks and 1 open finding',
         fact: '2 red checks · 1 open finding',
         redChecks: '2 red checks',
-        redCheckIds: '2 red checks: V1, K004',
+        redCheckIds: '2 red checks: V1 · npm test, K004 · src/a.ts(3,1): TS2322',
       },
     },
     {
@@ -312,7 +312,7 @@ describe('what an Accept as is leaves open', () => {
         phrase: '1 red check',
         fact: '1 red check',
         redChecks: '1 red check',
-        redCheckIds: '1 red check: V1',
+        redCheckIds: '1 red check: V1 · npm test',
       },
     },
     {
@@ -322,7 +322,7 @@ describe('what an Accept as is leaves open', () => {
         phrase: '1 red check',
         fact: '1 red check',
         redChecks: '1 red check',
-        redCheckIds: '1 red check: V1',
+        redCheckIds: '1 red check: V1 · npm test',
       },
     },
     {

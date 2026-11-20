@@ -70,14 +70,14 @@ describe('e2e: Skip on a planner-call halt', () => {
     const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
     // No row comes between the halt and Skip, so one Recovery row names both.
     expect(recoveryRows).toHaveLength(1);
-    expect(recoveryRows[0]).toMatch(/Planner call failed.*Skip task.*skipped\s*$/);
+    expect(recoveryRows[0]).toMatch(/Planner call failed.*Skip brief.*skipped\s*$/);
     const restoredAt = lines.findIndex((line) =>
       line.includes('Restored 1 change of the failing brief'),
     );
     expect(restoredAt).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
   });
 
-  it('shows Skip task on the dependency halt of the next brief as one Recovery row', async () => {
+  it('shows Skip brief on the dependency halt of the next brief as one Recovery row', async () => {
     const { target, sessionId } = await haltOnFailedConsult(dependentPlan);
     const firstSkip = await cli(target, ['continue', sessionId, '--plain', '--action', 'skip']);
     expect(firstSkip.exitCode, `${firstSkip.stdout}\n${firstSkip.stderr}`).toBe(1);
@@ -94,8 +94,8 @@ describe('e2e: Skip on a planner-call halt', () => {
     const lines = transcriptText(events).split('\n');
     const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
     expect(recoveryRows).toHaveLength(2);
-    expect(recoveryRows[0]).toMatch(/Planner call failed.*Skip task.*skipped\s*$/);
-    expect(recoveryRows[1]).toMatch(/Dependency blocked.*Skip task.*skipped\s*$/);
+    expect(recoveryRows[0]).toMatch(/Planner call failed.*Skip brief.*skipped\s*$/);
+    expect(recoveryRows[1]).toMatch(/Dependency blocked.*Skip brief.*skipped\s*$/);
     const settledT002 = lines.findIndex((line) => /T002 Add the beta value .*skipped/.test(line));
     expect(settledT002).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
     expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(settledT002);

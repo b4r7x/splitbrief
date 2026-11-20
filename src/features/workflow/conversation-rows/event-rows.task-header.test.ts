@@ -102,7 +102,9 @@ describe('eventRows task header and planner phase header', () => {
     expect(text).toContain('T001 Route ordinary task');
     expect(text).toContain('OpenAI Codex CLI');
     expect(metadata).toContain('src/app.ts (modify)');
-    expect(first.segments.some((segment) => segment.tone === 'implementer')).toBe(true);
+    expect(
+      rows.slice(1).some((row) => row.segments.some((segment) => segment.tone === 'implementer')),
+    ).toBe(true);
     expect(metadata).not.toContain('worker cheap-cloud');
     expect(metadata).not.toContain('fit');
     expect(metadata).not.toContain('selected cheapest capable');

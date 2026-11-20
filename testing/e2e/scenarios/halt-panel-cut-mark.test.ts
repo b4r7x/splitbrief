@@ -152,7 +152,7 @@ describe('e2e: a halt panel too short for its text', () => {
     const frame = stripAnsiStyles(opened.screen.lastFrame());
 
     expect(frame).toMatch(/… \d+ more lines/);
-    expect(frame).toContain('Skip task');
+    expect(frame).toContain('Skip brief');
     expect(frame).toContain('End run');
     expect(frame).toContain('↑↓ select · ⏎ confirm');
   });
@@ -188,7 +188,7 @@ describe('e2e: a halt panel too short for its text', () => {
     const frame = stripAnsiStyles(opened.screen.lastFrame());
 
     expect(frame, frame).toContain('Question: greet.ts needs');
-    for (const action of ['Try again', 'Decide for me', 'Skip task', 'End run'])
+    for (const action of ['Try again', 'Decide for me', 'Skip brief', 'End run'])
       expect(frame, frame).toContain(action);
     expect(frame, frame).toContain('↑↓ select · ⏎ confirm');
     expect(frame, frame).not.toContain('↓ more');
@@ -203,7 +203,7 @@ describe('e2e: a halt panel too short for its text', () => {
 
     const question = frame.indexOf('Question: greet.ts needs');
     expect(question).toBeGreaterThan(-1);
-    expect(question).toBeLessThan(frame.indexOf('Task T001'));
+    expect(question).toBeLessThan(frame.indexOf('Brief T001'));
     expect(frame).toContain('Files src/greet.ts');
   });
 
@@ -311,7 +311,7 @@ function panelRow(row: string | undefined): string {
   return ((row ?? '').split(/[│|]/u)[1] ?? '').trim();
 }
 
-/** Try again, Decide for me, Skip task and End run: each one off screen sits behind a mark on its side. */
+/** Try again, Decide for me, Skip brief and End run: each one off screen sits behind a mark on its side. */
 function expectHiddenActionsMarked(frame: string, label: string): void {
   if (!/r\s+Try again/.test(frame)) expect(frame, label).toContain('↑ more');
   if (!/a\s+End run/.test(frame)) expect(frame, label).toContain('↓ more');

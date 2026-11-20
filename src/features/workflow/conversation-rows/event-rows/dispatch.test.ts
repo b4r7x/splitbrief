@@ -740,9 +740,9 @@ describe('event row dispatch', () => {
     ]);
   });
 
-  it('colors an unresolved recovery label as warning', () => {
+  it('omits a recovery row until it has a headline, action or outcome', () => {
     const block = recoveryRowBlock('recovery', { firstIndex: 0, issueId: 'issue' }, 200);
-    expect(block?.createRows(0, block.rowCount)[0]?.segments[0]?.tone).toBe('warning');
+    expect(block).toBeNull();
   });
 
   it.each([
@@ -871,7 +871,7 @@ describe('event row dispatch', () => {
       60,
     );
     expect(block?.createRows(0, block.rowCount).map(rowText)).toEqual([
-      'Recovery  Dependency blocked on T902 · Skip task',
+      'Recovery  Dependency blocked on T902 · Skip brief',
       `${arrowSep().trimStart()}skipped`,
     ]);
   });
@@ -1643,10 +1643,20 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText)).toEqual(['Task failed  T001']);
+    expect(rows.map(rowText)).toEqual(['Brief failed  T001']);
     expect(rows[0]?.kind).toBe('summary');
-    expect(rows[0]?.segments).toContainEqual({ text: 'Task failed  ', tone: 'error' });
+    expect(rows[0]?.segments).toContainEqual({ text: 'Brief failed  ', tone: 'error' });
     expect(rows[0]?.segments).toContainEqual({ text: 'T001', tone: 'textDim' });
+  });
+
+  it('calls a reset brief a brief and names its new state', () => {
+    const rows = eventRows({
+      event: { type: 'task_reset', phase: 'implementing', ts: 0, taskId: taskId('T001') },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText)).toEqual(['Brief reset  T001 back to pending']);
   });
 
   it('renders a planner command the stage did not take as one dim validation row', () => {
@@ -1837,7 +1847,7 @@ describe('event row dispatch', () => {
     expect(text).toBe(
       [
         `${CREW_SEAT_LABELS.plan} activity  1 update  [OpenAI Codex CLI · auto]`,
-        activityLine('READ', 'CLAUDE.md :1-260'),
+        activityLine('READ', 'CLAUDE.md:1-260'),
       ].join('\n'),
     );
     expect(text).not.toContain('/bin/zsh -lc');
@@ -1983,7 +1993,7 @@ describe('event row dispatch', () => {
         phase: 'implementing',
         taskId: taskId('T001'),
       },
-      stateWord: 'Task failed',
+      stateWord: 'Brief failed',
       body: 'T001',
     },
     {
@@ -2604,10 +2614,10 @@ describe('event row dispatch', () => {
         ctx: { width: 80, viewportRows: 20, streaming },
       }).map(rowText);
       const text = rows.join('\n');
-      expect(text).toContain('2\u00a0failures');
+      expect(text.replaceAll('\u00a0', ' ')).toContain('2 failures');
       expect(rows.some((row) => row.includes('3m\u00a00s'))).toBe(true);
       if (ownLeft === 0) expect(rows.some((row) => row.includes('3\u00a0others'))).toBe(true);
-      else expect(rows.some((row) => row.includes('2\u00a0of'))).toBe(true);
+      else expect(text).toContain('failed · 2 failures');
     }
     const event: EngineEventOf<'full_suite'> = {
       type: 'full_suite',
@@ -3201,7 +3211,7 @@ describe('consult answer rows', () => {
     ]);
   });
 
-  it('renders a rewritten brief with its new revision', () => {
+  it('names the rewritten brief without its revision counter', () => {
     const rows = rowsFor({
       type: 'consult_answered',
       ts: 0,
@@ -3214,10 +3224,10 @@ describe('consult answer rows', () => {
       revision: 2,
     });
 
-    expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: rewrote T003 (rev 2)`]);
+    expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: rewrote T003`]);
   });
 
-  it('renders a verification request with the checks it named', () => {
+  it('names the verification request without listing check identifiers', () => {
     const rows = rowsFor({
       type: 'consult_answered',
       ts: 0,
@@ -3230,7 +3240,7 @@ describe('consult answer rows', () => {
       checkIds: ['C1', 'C2'],
     });
 
-    expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: verify C1, C2`]);
+    expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: verify`]);
   });
 
   it('renders an ask-user answer as the one row pointing at the user', () => {
@@ -3486,7 +3496,8 @@ describe('review_completed rows', () => {
     expect(rows.map(rowText)).toEqual([
       // The shared wrapper preserves the space at the wrap boundary.
       'Blocking F1  The test file does not ',
-      'contain the four examples.',
+      '             contain the four ',
+      '             examples.',
       '',
       expect.stringMatching(/^Blocking F2 +npm test failed\.$/),
       '',
@@ -3520,7 +3531,7 @@ describe('review_completed rows', () => {
 describe('review_checks rows', () => {
   it.each([
     ['off', 'End-of-run checks · off · no reviewer check ran'],
-    ['none', 'End-of-run checks · none · the plan names no project gate'],
+    ['none', 'End-of-run checks · none · the plan names no end-of-run checks'],
   ] as const)('paints one %s row', (status, text) => {
     const rows = eventRows({
       event: { type: 'review_checks', ts: 0, phase: 'final-review', status },

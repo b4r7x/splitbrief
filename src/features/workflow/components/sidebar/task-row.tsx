@@ -9,7 +9,7 @@ import { stateTone } from '../../../../core/theme/state-tone.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { routeBriefMark } from '../../at-rest.js';
-import { getSidebarTaskTitleWidth } from '../../layout/rect.js';
+import { getSidebarTaskTitleWidth, getSidebarStatusColumnCells } from '../../layout/rect.js';
 
 interface RowSpec {
   bar: string;
@@ -99,19 +99,14 @@ function rowSpec(status: WorkflowTask['status'], t: Theme, restMark: RailHalt | 
   }
 }
 
-export function TaskRow({
-  task,
-  width,
-  statusCells,
-}: {
-  task: WorkflowTask;
-  width: number;
-  statusCells: number;
-}) {
+export function TaskRow({ task, width }: { task: WorkflowTask; width: number }) {
   const t = useTheme();
   const restMark = routerStore.use(routeBriefMark);
   const spec = rowSpec(task.status, t, restMark);
-  const titleCells = getSidebarTaskTitleWidth({ width, reservedTailCells: statusCells });
+  const titleCells = getSidebarTaskTitleWidth({
+    width,
+    reservedTailCells: getSidebarStatusColumnCells({ hasStatusTail: spec.tail !== undefined }),
+  });
   const taskLabel = taskRowLabel(task, titleCells);
   return (
     <Box>

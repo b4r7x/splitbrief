@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makePlannerText as makePlannerTextEvent } from '#testing/helpers/events/planner.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
@@ -10,6 +10,8 @@ import { streamingOutputStore } from '../../../../stores/workflow/streaming-outp
 import { eventsStore } from '../../../../stores/workflow/events/state.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { routerStore } from '../../../../stores/navigation/router.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
 import { addEvent } from '../../../../stores/workflow/actions/event.js';
 import { taskId } from '../../../../core/schemas/task.js';
@@ -426,7 +428,7 @@ describe('ConversationFlow', () => {
         .find((candidate) => candidate.includes(`${CREW_SEAT_LABELS.plan} activity`)) ?? '';
     expect(activityHeader).toContain('1 update');
     expect(activityHeader).toContain('OpenAI Codex CLI');
-    expectActivityLine(frame, 'READ', 'CLAUDE.md :1-260');
+    expectActivityLine(frame, 'READ', 'CLAUDE.md:1-260');
     expect(frame).not.toContain('/bin/zsh -lc');
     expect(frame).not.toContain('activity:');
 
@@ -805,7 +807,7 @@ describe('ConversationFlow', () => {
     ui.unmount();
   });
 
-  it('uses one space after Queued, Delivered and Pending labels', () => {
+  it('replaces the queued message with its delivery receipt and keeps its words', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
     seedBriefs({
@@ -836,10 +838,130 @@ describe('ConversationFlow', () => {
       90,
     );
     const rows = normalizedRows(ui.lastFrame() ?? '');
-    expect(rows).toContain('Queued for BUILD on T003 · read when its call ends');
+    expect(rows).not.toContain('Queued for BUILD on T003 · read when its call ends');
+    expect(rows.join(' ')).toContain('Keep the API');
     expect(rows).toContain('Delivered to BUILD on T003');
     expect(rows).toContain('Pending 1');
     ui.unmount();
+  });
+
+  it('marks an undelivered message on a closed run and keeps the message text', () => {
+    const previous = routerStore.get();
+    routerStore.init({
+      screen: 'workflow',
+      execution: { kind: 'at-rest' },
+      run: makeRunRecord({ status: { kind: 'closed', as: 'ended' } }),
+    });
+    const ui = renderConversation(
+      [
+        {
+          type: 'message_queued',
+          ts: 1,
+          phase: 'implementing',
+          seat: 'build',
+          id: 'm1',
+          preview: 'Keep the API',
+        },
+      ],
+      12,
+      90,
+    );
+    try {
+      const text = normalizedRows(ui.lastFrame()).join(' ');
+      expect(text).toContain('Keep the API');
+      expect(text).toMatch(/not delivered/i);
+      expect(text).not.toContain('read when');
+    } finally {
+      ui.unmount();
+      routerStore.init(previous);
+    }
+  });
+
+  it('replaces a visible queue receipt when delivery arrives in the same section', async () => {
+    runViewStore.__testReset({ phase: 'implementing' });
+    lifecycleStore.__testReset({ status: 'running' });
+    const ui = renderConversation(
+      [
+        {
+          type: 'message_queued',
+          ts: 1,
+          phase: 'implementing',
+          seat: 'build',
+          taskId: 'T003',
+          id: 'message',
+          preview: 'Keep the API',
+        },
+      ],
+      12,
+      90,
+    );
+    try {
+      expect(ui.lastFrame()).toContain('Queued for BUILD on T003');
+      addEvent({
+        type: 'queue_drained',
+        ts: 2,
+        phase: 'implementing',
+        seat: 'build',
+        taskId: 'T003',
+        ids: ['message'],
+        count: 1,
+      });
+      await flushEffects();
+      const frame = ui.lastFrame();
+      expect(frame).toContain('Delivered to BUILD on T003');
+      expect(frame).toContain('Keep the API');
+      expect(frame).not.toContain('Queued for BUILD on T003');
+    } finally {
+      ui.unmount();
+    }
+  });
+
+  it('shows the planner reason once for a skipped brief with a recorded consult', () => {
+    const reason = 'The source is generated.';
+    const started = makeTaskStart({ title: 'Update the form', ts: 1 });
+    const ui = renderConversation(
+      [
+        started,
+        {
+          type: 'consult_answered',
+          ts: 2,
+          phase: 'escalating',
+          taskId: started.taskId,
+          action: 'cannot',
+          reason: 'failed',
+          diagnosis: reason,
+          newTaskIds: null,
+        },
+        {
+          type: 'task_skipped',
+          ts: 3,
+          phase: 'implementing',
+          taskId: started.taskId,
+          title: started.title,
+          reason: `Planner said: ${reason}`,
+        },
+      ],
+      16,
+      120,
+    );
+    const text = normalizedRows(ui.lastFrame()).join(' ');
+    ui.unmount();
+    expect(text).toContain('skipped');
+    expect(text.split(reason)).toHaveLength(2);
+  });
+
+  it('shows the first pending brief before the hidden count when one row fits', () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    seedBriefs({
+      tasks: [
+        { id: 'T002', title: 'Keep the index', status: 'pending' },
+        { id: 'T003', title: 'Read the index', status: 'pending' },
+      ],
+    });
+    const ui = renderConversation(makeActivityReads(['src/a.ts']), 6, 60);
+    const text = normalizedRows(ui.lastFrame()).join(' ');
+    ui.unmount();
+    expect(text).toMatch(/Pending 2.*T002 Keep the index.*\+1 more/);
   });
 
   it('says how many briefs the pending block cannot show, inside its own row budget', () => {

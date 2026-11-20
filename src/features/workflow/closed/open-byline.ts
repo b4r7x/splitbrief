@@ -1,3 +1,4 @@
+import { movedProjectPath } from '../../../core/sessions/moved-project.js';
 import { recoveryHaltLabel, haltOf } from '../../../core/recovery/halt.js';
 import { statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
 import type { ViewSeatWait } from '../../../core/run-view/reduce.js';
@@ -40,7 +41,7 @@ const UNREADABLE_BYLINE: Byline = {
 };
 
 const RUNNING_BYLINE = {
-  reason: 'Running in another process',
+  reason: 'Running in another terminal',
   tone: stateTone('running'),
   action: '',
 };
@@ -48,6 +49,7 @@ const RUNNING_BYLINE = {
 /** An Apply writing the run's result to the checkout: how long it has run, and what waits for it. */
 export interface ApplyByline {
   elapsedMs: number;
+  cleanup?: boolean;
   queued: DepartureKind | null;
 }
 
@@ -64,11 +66,20 @@ export function applyByline(apply: ApplyByline, width: number): readonly Convers
   const clock = `${SOFT_SEP}${formatElapsedClock(apply.elapsedMs)}`;
   const budget = Math.max(1, width - getTerminalCellWidth(clock));
   const reason: ConversationRowSegment = {
-    text: 'Applying to your checkout',
+    text: apply.cleanup ? 'Finishing Apply cleanup' : 'Applying to your checkout',
     tone: stateTone('running'),
   };
   const queued: ConversationRowSegment | null =
-    apply.queued === null ? null : { text: QUEUED_AFTER_APPLY[apply.queued], tone: 'textDim' };
+    apply.queued === null
+      ? null
+      : {
+          text: apply.cleanup
+            ? apply.queued === 'quit'
+              ? 'Quits after cleanup'
+              : 'Returns home after cleanup'
+            : QUEUED_AFTER_APPLY[apply.queued],
+          tone: 'textDim',
+        };
   const whole: ConversationRowSegment[] =
     queued === null ? [reason] : [reason, { ...queued, text: `${SOFT_SEP}${queued.text}` }];
   const fitted =
@@ -129,12 +140,7 @@ export function openRunBylineParts(
     // Another process waits on it now; a wait a steer cut there shows the running line.
     if (input.wait?.live === true && wait !== null) return fitByline(waitByline(wait), width);
     if (input.owner?.kind === 'live') {
-      return fitStatusByline(
-        'Viewing live',
-        'Another terminal controls this run',
-        stateTone('running'),
-        width,
-      );
+      return fitStatusByline('Viewing live', RUNNING_BYLINE.reason, stateTone('running'), width);
     }
     return fitStatusByline(
       RUNNING_BYLINE.reason,
@@ -163,7 +169,11 @@ export function openRunBylineParts(
   if (status.kind === 'closed') {
     return fitByline({ reason: null, action: HOME_AGAIN }, width);
   }
-  if (!input.continuable) return fitByline(UNREADABLE_BYLINE, width);
+  if (!input.continuable) {
+    if (movedProjectPath(input.failure) !== undefined)
+      return fitByline({ reason: null, action: 'Move the project back or end the run' }, width);
+    return fitByline(UNREADABLE_BYLINE, width);
+  }
   // A halt, a question and a gate wait for you and keep their own line.
   if (status.stop.kind === 'stopped' && wait !== null) return fitByline(waitByline(wait), width);
   return fitByline(

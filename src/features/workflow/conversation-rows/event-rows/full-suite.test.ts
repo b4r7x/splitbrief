@@ -503,6 +503,23 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteTone(off)).toBe('textDim');
   });
 
+  it('reports a failed fix check with the command and count in user words', () => {
+    const event = reviewCheck({
+      phase: 'implementing',
+      moment: 'brief',
+      command: 'npm test',
+      status: 'done',
+      duration: 4000,
+      passed: false,
+      own: 2,
+      ownLeft: 2,
+      others: 0,
+    });
+    const text = fullSuiteRow(event).replaceAll('\u00a0', ' ');
+    expect(text).toContain('npm test failed · 2 failures');
+    expect(text).not.toMatch(/\byour\b/);
+  });
+
   // Live run 2026-10-09: a fix brief's row said `failed` while only other tasks' failures were left.
   it('says how many of the failures a fix check answers are gone, which are left to a sibling, and how many others are left', () => {
     const fix = reviewCheck({
@@ -514,15 +531,15 @@ describe('fullSuiteRow for a reviewer check', () => {
     });
     const gone = { ...fix, passed: true, own: 2, ownLeft: 0, others: 3 };
     expect(fullSuiteRow(gone)).toBe(
-      'Fix check V1 · npm run test-ci · your\u00a02\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
+      'Fix check V1 · npm run test-ci · 2\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
     expect(fullSuiteTone(gone)).toBe('success');
     expect(fullSuiteRow({ ...fix, passed: true, own: 1, ownLeft: 0, others: 1 })).toBe(
-      'Fix check V1 · npm run test-ci · your\u00a01\u00a0failure\u00a0gone · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
+      'Fix check V1 · npm run test-ci · 1\u00a0failure\u00a0gone · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
     const remains = { ...fix, passed: false, own: 2, ownLeft: 1, others: 3 };
     expect(fullSuiteRow(remains)).toBe(
-      'Fix check V1 · npm run test-ci · 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0remains · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
+      'Fix check V1 · npm run test-ci failed · 1 failure · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
     expect(fullSuiteTone(remains)).toBe('error');
     const deferred = {
@@ -535,11 +552,11 @@ describe('fullSuiteRow for a reviewer check', () => {
       others: 1,
     };
     expect(fullSuiteRow(deferred)).toBe(
-      'Fix check V1 · npm run test-ci · 1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone · 1\u00a0left\u00a0to\u00a0T025 · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
+      'Fix check V1 · npm run test-ci · 1\u00a0of\u00a02\u00a0failures\u00a0gone · 1\u00a0left\u00a0to\u00a0T025 · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
     expect(fullSuiteTone(deferred)).toBe('success');
     expect(fullSuiteSegments(deferred, 160)).toContainEqual({
-      text: '1\u00a0of\u00a0your\u00a02\u00a0failures\u00a0gone',
+      text: '1\u00a0of\u00a02\u00a0failures\u00a0gone',
       tone: 'success',
     });
     expect(fullSuiteSegments(deferred, 160)).toContainEqual({
@@ -551,16 +568,16 @@ describe('fullSuiteRow for a reviewer check', () => {
       tone: 'textDim',
     });
     expect(fullSuiteRow({ ...gone, others: 0 })).toBe(
-      'Fix check V1 · npm run test-ci · your\u00a02\u00a0failures\u00a0gone · 4.0s',
+      'Fix check V1 · npm run test-ci · 2\u00a0failures\u00a0gone · 4.0s',
     );
     expect(fullSuiteRow({ ...fix, passed: false, own: 1, ownLeft: 1, others: 0 })).toBe(
-      'Fix check V1 · npm run test-ci · your\u00a01\u00a0failure\u00a0remains · 4.0s',
+      'Fix check V1 · npm run test-ci failed · 1 failure · 4.0s',
     );
     expect(fullSuiteRow({ ...fix, passed: false, own: 3, ownLeft: 2, others: 0 })).toBe(
-      'Fix check V1 · npm run test-ci · 2\u00a0of\u00a0your\u00a03\u00a0failures\u00a0remain · 4.0s',
+      'Fix check V1 · npm run test-ci failed · 2 failures · 4.0s',
     );
     expect(fullSuiteRow({ ...fix, passed: true, own: 0, ownLeft: 0, others: 2 })).toBe(
-      'Fix check V1 · npm run test-ci · no\u00a0failure\u00a0of\u00a0yours · 2\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
+      'Fix check V1 · npm run test-ci · no\u00a0failure\u00a0from\u00a0this\u00a0brief · 2\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 4.0s',
     );
   });
 
@@ -580,7 +597,7 @@ describe('fullSuiteRow for a reviewer check', () => {
       }),
     );
     expect(row).toBe(
-      'Fix check V1 · npm run test-ci · your\u00a02\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 3m 0s',
+      'Fix check V1 · npm run test-ci · 2\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 3m 0s',
     );
     expect(fullSuiteRow(reviewCheck({ status: 'done', passed: false, duration: 61_000 }))).toBe(
       'Reviewer check V1 · npm test · failed · 1m 1s',

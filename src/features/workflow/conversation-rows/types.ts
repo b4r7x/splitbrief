@@ -97,6 +97,7 @@ export interface ConversationRowScrollComputation {
 }
 
 export interface ConversationRowInputs {
+  closed?: boolean | undefined;
   sections: Section<EngineEvent>[];
   expandedDiffs: Set<string>;
   expandedActivityBatches: Set<string>;
@@ -114,6 +115,8 @@ export interface ConversationRowScrollInputs extends ConversationRowInputs {
 }
 
 export interface RowBuildContext {
+  closed?: boolean | undefined;
+  settledMessages?: ReadonlySet<string>;
   width: number;
   viewportRows: number;
   streaming: StreamingOutputState;

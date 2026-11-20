@@ -1,7 +1,11 @@
 import { formatSubmissionFailure } from '../../../components/composer/home-hint.js';
 import { prepareDraftSubmission } from '../../../core/composer/submission.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
-import { stepReadsNoWords, leavesWordsUnread } from '../../../core/recovery/typed-words.js';
+import {
+  noMessageFor,
+  stepReadsNoWords,
+  leavesWordsUnread,
+} from '../../../core/recovery/typed-words.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { resumeStep } from '../../../core/sessions/run/status.js';
@@ -146,7 +150,7 @@ export async function askForAction(driver: RecoveryDriverState): Promise<Pending
     const draft = composerLiveStore.get();
     if (!draft.empty && leavesWordsUnread(issue.reason, action, stepReadsNone)) {
       feedbackStore.setMessage(
-        `Cannot send words with ${recoveryActionLabel(action, { reason: issue.reason, reviewNone })}. Clear them.`,
+        noMessageFor(recoveryActionLabel(action, { reason: issue.reason, reviewNone })),
       );
       continue;
     }

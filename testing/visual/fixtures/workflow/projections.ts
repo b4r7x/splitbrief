@@ -217,7 +217,7 @@ export const WORKFLOW_FIXTURE_TASK_ID_3 = taskId('T903');
 export const WORKFLOW_FIXTURE_FIX_TASK_ID = taskId('T904');
 
 export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
-  idle: 'no events yet',
+  idle: WORKFLOW_FEATURE,
   planningNarration: 'Reading the parser before the fixture it pins.',
   planningRead: 'src/engine/streaming/parse-stream-json.ts',
   planningReply: 'The parser keeps the frames out of the reply.',
@@ -385,10 +385,37 @@ const WORKFLOW_PLANNING_CLAUDE_FRAMES_ID = scenarioId('workflow-planning-claude-
 const WORKFLOW_PLANNER_SESSION_EXPIRED_ID = scenarioId('workflow-planner-session-expired');
 const WORKFLOW_PLAN_USAGE_LIMIT_ID = scenarioId('workflow-plan-usage-limit');
 
+function stoppedFixtureRoute(
+  id: string,
+  state: WorkflowState,
+  log: readonly EngineEvent[],
+): FixtureAtRestRoute {
+  return {
+    record: makeRunRecord({
+      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: `visual-${id}` },
+      feature: state.feature,
+      startedAt: new Date(FIXED_TS).toISOString(),
+      hydration: {
+        kind: 'loaded',
+        state: { ...state, startedAt: new Date(FIXED_TS).toISOString() },
+      },
+      status: deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }),
+    }),
+    log,
+  };
+}
+
 const idleProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IDLE_ID,
   feature: WORKFLOW_FEATURE,
-  events: [],
+  events: [{ type: 'user_message', ts: FIXED_TS, phase: 'planning', text: WORKFLOW_FEATURE }],
+  get atRest() {
+    return stoppedFixtureRoute(
+      'idle',
+      makeWorkflowState({ phase: 'planning', feature: WORKFLOW_FEATURE }),
+      this.events,
+    );
+  },
   inputMode: 'normal',
   sidebarVisible: false,
 };
@@ -1479,7 +1506,15 @@ const briefCheckUnranRedProjection: WorkflowFixtureProjection = {
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       results: [{ id: 'K1', status: 'fail' }],
     },
-    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_completed'),
+    {
+      type: 'task_retry',
+      ts: FIXED_TS + 410,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      attempt: 1,
+      maxRetries: 2,
+      error: 'The workspace has no test file for src/loud.test.mjs',
+    },
   ],
 };
 
@@ -2440,6 +2475,20 @@ const finalReviewProjection: WorkflowFixtureProjection = {
 
 const finalReviewFindingsProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_FINAL_REVIEW_FINDINGS_ID,
+  get atRest() {
+    return stoppedFixtureRoute(
+      'final-review-findings',
+      makeWorkflowState({
+        feature: WORKFLOW_FEATURE,
+        phase: 'complete',
+        reviewStatus: 'failed',
+        tasks: FIXTURE_PLANNED_BRIEFS.map((brief) =>
+          makeTask({ id: brief.id, title: brief.title, status: 'done' }),
+        ),
+      }),
+      this.events,
+    );
+  },
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
@@ -2967,6 +3016,7 @@ const planCardProjection: WorkflowFixtureProjection = {
   inputMode: 'review',
   sidebarVisible: true,
   events: [
+    { type: 'user_message', ts: FIXED_TS, phase: 'planning', text: WORKFLOW_FEATURE },
     planCardTasksPlanned(FIXED_TS),
     {
       type: 'workflow_started',
@@ -3579,7 +3629,7 @@ const consultGuardQuestionProjection: WorkflowFixtureProjection = {
       {
         id: 'ask-user',
         type: 'input',
-        text: 'SPLITBRIEF asked the planner to fix T901, but the rewritten task changes its criteria: adds C4. How should T901 proceed?',
+        text: 'SPLITBRIEF asked the planner to fix T901, but the rewritten brief changes its criteria: adds C4 (“Fit output in 60 columns”). How should T901 proceed?',
       },
     ],
   },
@@ -3587,6 +3637,28 @@ const consultGuardQuestionProjection: WorkflowFixtureProjection = {
 
 const failureProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_FAILURE_ID,
+  get atRest() {
+    return stoppedFixtureRoute(
+      'failure',
+      makeWorkflowState({
+        feature: WORKFLOW_FEATURE,
+        phase: 'implementing',
+        tasks: [
+          makeTask({
+            id: WORKFLOW_FIXTURE_TASK_ID,
+            title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+            status: 'in_progress',
+          }),
+        ],
+        lastFailure: {
+          at: new Date(FIXED_TS + 800).toISOString(),
+          message: WORKFLOW_FIXTURE_TEXT.failure,
+          step: { kind: 'brief', taskId: WORKFLOW_FIXTURE_TASK_ID, attempt: 0 },
+        },
+      }),
+      this.events,
+    );
+  },
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: false,
@@ -5283,7 +5355,7 @@ const apiContextRecoveryIssue: RecoveryIssue = {
   affectedTaskIds: [],
   message: 'The planning seat was not given the context this call needs.',
   details: [
-    'Missing: evidence.json, drift-report.json',
+    "Missing: the brief's check results, the scope report",
     'Pick a plan seat with a larger context in /crew plan, then choose Try again.',
   ],
   facts: {
@@ -8054,8 +8126,7 @@ const finalReviewSeatRetryProjection: WorkflowFixtureProjection = {
         type: 'warning',
         ts: FIXED_TS + 530,
         phase: 'final-review',
-        message:
-          'Review input trimmed to fit OpenAI Codex CLI (1,048,376 of 1,048,576 characters): task-evidence: Deterministic Drift Report',
+        message: 'Review input trimmed to fit OpenAI Codex CLI',
       },
       {
         type: 'seat_retry',

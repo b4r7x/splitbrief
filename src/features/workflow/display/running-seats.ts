@@ -19,6 +19,7 @@ import type { SeatIdentity } from '../../../core/providers/seat-identity.js';
 import { recordedSeatIdentityInput } from './recorded-seat-identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import type { SeatResolvedModel } from '../../../core/run-view/reduce.js';
+import { formatModelName } from '../../../core/providers/model-display.js';
 import { resolveCliModel } from '../../../core/providers/automatic-model.js';
 import { recordedSeatTool } from '../../../engine/providers/model/display-names.js';
 import type { ActiveOperation } from '../../../stores/workflow/operations/state.js';
@@ -180,7 +181,8 @@ export function resolvedSeatModel(
   const saved = resolveCliModel(model, tool);
   return recordedSeatTool({ tool: record.runnerName, kind: record.backendKind }) === tool &&
     resolveCliModel(record.model, tool) === saved &&
-    record.resolvedModel !== saved
+    (saved === undefined ||
+      formatModelName(record.resolvedModel, tool) !== formatModelName(saved, tool))
     ? record.resolvedModel
     : undefined;
 }

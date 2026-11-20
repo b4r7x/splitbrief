@@ -33,14 +33,15 @@ export function useAtRestByline(input: {
   // The at-rest and Apply bylines carry no pip, so they open on the text column and their budget is
   // what is left of the chrome row past the mark slot.
   const bylineWidth = Math.max(1, getChromeContentWidth(cols) - MARK_SLOT_CELLS);
-  const config = configStore.useConfig();
+  const config = configStore.use((state) => state.config);
   const atRestStatus = model.atRestRecord?.status;
   const owner = model.atRestRecord?.owner;
   const viewWait = runViewStore.use((view) => view.seatWait);
   // An open run continues with this window's crew, so its saved wait on a tool the seat no longer
   // runs waits no more. A run another process drives waits on the crew that process loaded.
   const wait =
-    viewWait === null || (atRestStatus?.kind === 'open' && seatWaitMoved(viewWait.wait, config))
+    viewWait === null ||
+    (atRestStatus?.kind === 'open' && config !== null && seatWaitMoved(viewWait.wait, config))
       ? null
       : viewWait;
   // The run's log names when an Apply started, here or in another process. A log written before it
@@ -81,8 +82,8 @@ export function useAtRestByline(input: {
         ? undefined
         : applyByline(apply, bylineWidth)
       : model.closedView !== null && owner?.kind !== 'stale'
-        ? apply !== undefined && apply.queued !== null
-          ? applyByline(apply, bylineWidth)
+        ? apply !== undefined
+          ? applyByline({ ...apply, cleanup: true }, bylineWidth)
           : bylineParts(model.closedView, bylineWidth)
         : openRunBylineParts({
             status: atRestStatus,

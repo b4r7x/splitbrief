@@ -1,3 +1,4 @@
+import { savedFindingText } from '../../../core/review/fix/checks.js';
 import { reviewName, finalReviewAnchor } from '../../../core/recovery/causes.js';
 import { namedFailures } from '../../../core/review/base-split.js';
 import type { EvidenceLedger, EvidenceReview } from '../../../core/schemas/evidence.js';
@@ -100,7 +101,7 @@ export function failedReviewViews(ledger: EvidenceLedger | null): FailedReviewVi
             label: label(review, index),
             blocking: review.blocking.map((entry) => ({
               id: oneLineDisplayText(entry.id),
-              text: oneLineDisplayText(entry.text),
+              text: savedFindingText(entry.text),
             })),
             setAside: setAsideView(review),
           },

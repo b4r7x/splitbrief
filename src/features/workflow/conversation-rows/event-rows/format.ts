@@ -110,7 +110,7 @@ export function reviewChecksSegments(
           ]
         : [
             { text: 'none', tone: 'textDim' },
-            { text: 'the plan names no project gate', tone: 'textDim' },
+            { text: 'the plan names no end-of-run checks', tone: 'textDim' },
           ],
     ),
   ];

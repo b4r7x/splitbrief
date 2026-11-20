@@ -5,6 +5,7 @@ import {
   type BriefClockState,
 } from '../../../core/brief-clock.js';
 import { isInfrastructurePhaseEvent } from '../../../core/phases/of-event.js';
+import { releasedMessageIds } from './queue-receipt.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import {
@@ -189,18 +190,11 @@ export function updateQueueDepth(state: LifecycleState, event: EngineEvent): Lif
     if (state.queuedMessageIds.has(event.id)) return state;
     queuedMessageIds = new Set(state.queuedMessageIds);
     queuedMessageIds.add(event.id);
-  } else if (event.type === 'message_injected_native') {
-    if (!state.queuedMessageIds.has(event.id)) return state;
-    queuedMessageIds = new Set(state.queuedMessageIds);
-    queuedMessageIds.delete(event.id);
-  } else if (event.type === 'queue_drained' || event.type === 'queue_cleared') {
-    const ids = event.type === 'queue_drained' ? event.ids : undefined;
-    const deliveredIds = ids ?? [...state.queuedMessageIds].slice(0, event.count);
-    queuedMessageIds = new Set(state.queuedMessageIds);
-    for (const id of deliveredIds) queuedMessageIds.delete(id);
-    if (queuedMessageIds.size === state.queuedMessageIds.size) return state;
   } else {
-    return state;
+    const released = releasedMessageIds(event, state.queuedMessageIds);
+    if (!released?.some((id) => state.queuedMessageIds.has(id))) return state;
+    queuedMessageIds = new Set(state.queuedMessageIds);
+    for (const id of released) queuedMessageIds.delete(id);
   }
   return { ...state, queuedMessageIds, queueDepth: queuedMessageIds.size };
 }
