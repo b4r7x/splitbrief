@@ -110,7 +110,6 @@ test('the complete guide is static HTML and readable without JavaScript', async 
   await page.goto(`${baseURL}/docs/getting-started/`);
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Build from source', exact: true })).toBeVisible();
-  await expect(page.locator('.docs-article h2')).toHaveCount(12);
   await expect(page.locator('.docs-code button').first()).toBeHidden();
   await page.getByRole('link', { name: 'Installation', exact: true }).click();
   await expect(

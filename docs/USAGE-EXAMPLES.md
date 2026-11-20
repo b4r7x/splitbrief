@@ -253,7 +253,7 @@ validate · tsc ✓ lint ✓ test ✓
 
 ---
 
-### 8. Use Claude Code subscription as planner
+### 7. Use Claude Code subscription as planner
 
 **When:** you want PLAN to use your Claude Code sign-in.
 
@@ -293,7 +293,7 @@ validate · tsc ✓ lint ✓ test ✓
 
 ## Safety
 
-### 9. Confirm a protected file write
+### 8. Confirm a protected file write
 
 **When:** the implementer writes a control-plane path, a package manifest or lockfile, CI configuration, or an env or key file. Those writes always ask; no other write does.
 
@@ -323,7 +323,7 @@ A confirmation holds for that path for the rest of the run. A plan that lists th
 
 ---
 
-### 10. Catch agent drift early
+### 9. Catch agent drift early
 
 **When:** you suspect the implementer is editing files outside the brief's scope across multiple tasks.
 
@@ -352,7 +352,7 @@ The drift report compares the briefs with the run's diff and evidence. An `out_o
 
 ## Mid-workflow control
 
-### 11. Edit the plan before the build
+### 10. Edit the plan before the build
 
 **When:** the plan is mostly right but needs a tweak before implementation starts.
 
@@ -386,7 +386,7 @@ phase: implementing
 
 ---
 
-### 12. Request changes to the plan
+### 11. Request changes to the plan
 
 **When:** the plan got the architecture wrong and you want a new one.
 
@@ -416,7 +416,7 @@ A non-empty `comment <text>` (or `c`, then the text) sends the correction and th
 
 ---
 
-### 13. Update a config from before the planning session
+### 12. Update a config from before the planning session
 
 **When:** an older `.splitbrief/config.yaml` still carries `workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit` or `approval.tiers`.
 
@@ -444,7 +444,7 @@ The config still loads: each retired key is ignored, and a retired `approve` val
 
 ---
 
-### 14. Skip a task
+### 13. Skip a task
 
 **When:** one task in the brief is wrong and you want to move on without running it.
 
@@ -484,7 +484,7 @@ Denied tasks land in the evidence ledger as `skipped: <reason>`. There is no `/s
 
 ---
 
-### 15. Skip the plan card
+### 14. Skip the plan card
 
 **When:** you trust the plan checks and want the build to start as soon as the plan passes them.
 
@@ -516,7 +516,7 @@ With `approve: none` the card never opens. A plan that fails its checks still go
 
 ---
 
-### 16. Stop a run cleanly
+### 15. Stop a run cleanly
 
 **When:** something is wrong and you want to stop without losing the partial transcript or the changes already written.
 
@@ -554,7 +554,7 @@ No option writes the run's changes into your checkout or reverts it: the briefs 
 
 ## Headless / CI
 
-### 17. Run in CI without TUI
+### 16. Run in CI without TUI
 
 **When:** you want SPLITBRIEF to run unattended in GitHub Actions or another CI runner.
 
@@ -583,7 +583,7 @@ Each event comes wrapped as `{"type":"event","data":<event>}`. The other records
 
 ---
 
-### 18. Read a headless run without a JSON parser
+### 17. Read a headless run without a JSON parser
 
 **When:** CI or a shell script needs the shape of a run — which phase, which task, what the review said — and piping NDJSON through `jq` is more machinery than the job deserves.
 
@@ -634,7 +634,7 @@ splitbrief start --plain "..." | tail -1                    # the closing line
 
 ---
 
-### 19. Answer a halted run without a TUI
+### 18. Answer a halted run without a TUI
 
 **When:** a `--json` or `--plain` run stopped on a recovery issue in CI, and you want to resolve it from the shell instead of opening the recovery panel.
 
@@ -697,7 +697,7 @@ The second command prints the same sentence first, and the word is the confirmat
 
 ---
 
-### 20. Prime every seat with project skills
+### 19. Prime every seat with project skills
 
 **When:** the repo carries skills — house conventions, a testing standard, a security checklist — and you want a scripted run to use them without opening the picker.
 
@@ -730,7 +730,7 @@ with exit `2`.
 
 ## Power user
 
-### 21. Define project-level coding rules
+### 20. Define project-level coding rules
 
 **When:** you want every seat — planner, implementer and reviewer — to follow project conventions (no React Context, ESM `.js` suffix, etc.).
 
@@ -762,7 +762,7 @@ Interactively, select the skill with `/skills house-rules` before you start.
 
 ---
 
-### 22. Run pre/post task shell hooks
+### 21. Run pre/post task shell hooks
 
 **When:** you want to scan the brief before work starts and log its ID after it succeeds.
 
@@ -815,7 +815,7 @@ The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout —
 
 ## TUI quick reference
 
-### 23. Open the command palette
+### 22. Open the command palette
 
 **When:** you want to discover or quickly invoke any of the slash commands from anywhere in the TUI.
 
@@ -864,7 +864,7 @@ Captured at 80x24 on the workflow screen, in a project with two skills. Their `S
 
 ---
 
-### 24. Confirm a destructive file write
+### 23. Confirm a destructive file write
 
 **When:** a file write is classified as `destructive` (a control-plane path under `.git/**` or `.splitbrief/**`). A protected write always asks; no setting turns it off.
 
@@ -905,7 +905,7 @@ Captured at 80x24 on the workflow screen, in a project with two skills. Their `S
 
 ---
 
-### 25. Adapt the plan from a rejection
+### 24. Adapt the plan from a rejection
 
 **When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run. Planner and implementer roles: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
@@ -942,7 +942,7 @@ On the next turn of the planning session (for example after a correction at the 
 
 ## One-shot review
 
-### 26. Review a diff without starting a run
+### 25. Review a diff without starting a run
 
 **When:** the code is already written — by you, a teammate, or another agent — and you want SPLITBRIEF's review seat on it without a plan, a session, or a state machine.
 

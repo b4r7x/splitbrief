@@ -232,7 +232,7 @@ For every other planner/implementer combination, swap tools and models via the c
 
 ---
 
-## 9. Safety
+## 8. Safety
 
 **Filesystem snapshots preserve records; you own commits.**
 
@@ -248,7 +248,7 @@ Start independent runs in the same project with `splitbrief start` in separate t
 
 ---
 
-## 10. What it doesn't do
+## 9. What it doesn't do
 
 Explicit non-goals, so you don't go looking:
 
@@ -260,7 +260,7 @@ Explicit non-goals, so you don't go looking:
 
 ---
 
-## 11. Current advanced features
+## 10. Current advanced features
 
 These features are active by default unless noted:
 
@@ -270,7 +270,7 @@ These features are active by default unless noted:
 
 ---
 
-## 12. Where to learn more
+## 11. Where to learn more
 
 | If you want to… | Read |
 |---|---|
