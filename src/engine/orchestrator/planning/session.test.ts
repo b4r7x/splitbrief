@@ -17,13 +17,7 @@ import { debugLogEntries, enableDebugLog, loggedDiagnostics } from '#testing/hel
 import { resetLoggerForTests } from '../../../lib/logger.js';
 import { scriptedTypedCall, typedCallAnswering } from '#testing/helpers/typed-planner.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import {
-  PLAN_FILE,
-  PLAN_JSON_FILE,
-  SESSION_LOG_FILE,
-  TASKS_FILE,
-  sessionDir,
-} from '../../../core/paths.js';
+import { PLAN_JSON_FILE, SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import type { PlanResult } from '../../../core/schemas/plan.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -1446,7 +1440,7 @@ describe('the plan card', () => {
     ).toContain('Edited by hand');
   });
 
-  it('shows no Plan or Tasks card again after an edit that leaves both cards as they were', async () => {
+  it('records a changed plan when an edit changes only a brief step', async () => {
     const edited = makePlanProposal({
       tasks: [makeTaskSpec({ steps: ['Write the test', 'Add the module with its export'] })],
     });
@@ -1468,25 +1462,10 @@ describe('the plan card', () => {
     expect(run.result.state.tasks.map((task) => task.implementationSteps)).toEqual([
       ['Write the test', 'Add the module with its export'],
     ]);
-    const cards = run.events.filter((event) => event.type === 'artifact_written');
-    expect(cards.map((event) => event.filename)).toEqual([PLAN_FILE, TASKS_FILE]);
-  });
-
-  it('shows again only the card that an edit of plan.json changed', async () => {
-    const edited = makePlanProposal({
-      tasks: [makeTaskSpec({ intent: 'Return a greeting for any name the caller passes' })],
-    });
-    const onApprovalNeeded = vi
-      .fn()
-      .mockImplementationOnce(editPlanJson(JSON.stringify(edited)))
-      .mockResolvedValue({ approved: true });
-    const run = await plan({ script: [makePlanProposal()], callbacks: { onApprovalNeeded } });
-
-    const cards = run.events.filter((event) => event.type === 'artifact_written');
-    expect(cards.map((event) => event.filename)).toEqual([PLAN_FILE, TASKS_FILE, TASKS_FILE]);
-    const tasksCards = cards.filter((event) => event.filename === TASKS_FILE);
-    expect(tasksCards[1]?.excerpt[1]).toBe('  Return a greeting for any name the caller passes');
-    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.events.filter((event) => event.type === 'plan_compiled')).toMatchObject([
+      { changed: false },
+      { changed: true },
+    ]);
   });
 
   it('compiles an edit that adds a render check with no render command and names it on the card', async () => {

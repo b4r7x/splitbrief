@@ -45,7 +45,33 @@ afterEach(() => {
 });
 
 describe('artifactWrittenRowBlock', () => {
-  it('labels the card with the artifact rather than the verb that produced it', () => {
+  it.each([60, 120])('replays each stored artifact as one labelled link at %i columns', (width) => {
+    configStore.__testReset({ projectDir: PROJECT_DIR });
+    for (const label of ['Research', 'Spec', 'Plan', 'Tasks']) {
+      const filename = `${label.toLowerCase()}.md`;
+      const path = SPEC_PATH.replace(/spec\.md$/u, filename);
+      const rows = rowsFor(
+        artifactEvent({
+          filename,
+          path,
+          excerpt: label === 'Spec' ? [] : ['Project Overview    5 lines', 'T001 Add validator'],
+        }),
+        width,
+      );
+      expect(rows).toHaveLength(1);
+      const row = rowAt(rows, 0);
+      const links = row.segments.filter((segment) => segment.href !== undefined);
+      expect(links).toHaveLength(1);
+      const link = links[0];
+      expect(link?.href).toBe(pathToFileURL(path).href);
+      expect(link?.text.endsWith(filename)).toBe(true);
+      if (width === 60) expect(link?.text).toContain('…');
+      else expect(link?.text).toBe(path.slice(PROJECT_DIR.length + 1));
+      expect(rowText(row).trim().split(/\s+/u)).toEqual([label, link?.text]);
+    }
+  });
+
+  it('labels the stored artifact in the planner tone', () => {
     configStore.__testReset({ projectDir: PROJECT_DIR });
 
     const labels = (['research.md', 'spec.md', 'plan.md', 'tasks.md'] as const).map(
@@ -58,13 +84,12 @@ describe('artifactWrittenRowBlock', () => {
     );
   });
 
-  it('links the last row to the document and keeps the filename through the cut', () => {
+  it('keeps the document link and filename through the cut', () => {
     configStore.__testReset({ projectDir: PROJECT_DIR });
 
     const source = rowAt(rowsFor(artifactEvent(), 60), -1);
     const link = source.segments.at(-1);
 
-    expect(rowText(source)).toContain('+ 12 more sections');
     expect(link?.tone).toBe('reviewFile');
     expect(link?.href).toBe(pathToFileURL(SPEC_PATH).href);
     expect(link?.text.startsWith('.splitbrief/')).toBe(true);
@@ -80,7 +105,7 @@ describe('artifactWrittenRowBlock', () => {
     const dir = `${PROJECT_DIR}/.splitbrief/sessions/2026-08-10-add-tool-calling`;
 
     const labels = (['research.md', 'spec.md', 'plan.md', 'tasks.md'] as const).map((filename) => {
-      const rows = rowsFor(artifactEvent({ filename, path: `${dir}/${filename}` }), 78);
+      const rows = rowsFor(artifactEvent({ filename, path: `${dir}/${filename}` }), 60);
       return rowAt(rows, -1).segments.at(-1)?.text ?? '';
     });
 
@@ -91,41 +116,6 @@ describe('artifactWrittenRowBlock', () => {
       '.splitbrief/…/tasks.md',
     ]);
     expect(new Set(labels.map((label) => label.indexOf('…'))).size).toBe(1);
-  });
-
-  it('still names the document when nothing was left out', () => {
-    configStore.__testReset({ projectDir: PROJECT_DIR });
-
-    const rows = rowsFor(
-      artifactEvent({
-        filename: 'tasks.md',
-        path: `${PROJECT_DIR}/.splitbrief/sessions/2026-08-10-add-tool-calling/tasks.md`,
-        lineCount: 2,
-        excerpt: ['# Tasks', '- T001 Add the tool contract'],
-        omittedCount: 0,
-        omittedUnit: 'line',
-      }),
-    );
-
-    expect(rows.map(rowText)).toEqual([
-      'Tasks',
-      '  # Tasks',
-      '  - T001 Add the tool contract',
-      '  ↳ .splitbrief/sessions/2026-08-10-add-tool-calling/tasks.md',
-    ]);
-  });
-
-  it('renders excerpt lines verbatim and dim, cut at the width rather than wrapped', () => {
-    configStore.__testReset({ projectDir: PROJECT_DIR });
-
-    const excerpt = ['## Heading with `code` and a very long tail '.repeat(4).trimEnd()];
-    const rows = rowsFor(artifactEvent({ excerpt }), 78);
-    const body = rowAt(rows, 1);
-
-    expect(body.segments.at(-1)?.tone).toBe('textDim');
-    expect(rowText(body).trimStart().startsWith('## Heading with `code`')).toBe(true);
-    expect(rowText(body).endsWith('…')).toBe(true);
-    expect(rows).toHaveLength(3);
   });
 
   it('fits every row inside the space the row leading leaves', () => {
@@ -143,19 +133,5 @@ describe('artifactWrittenRowBlock', () => {
 
     expect(source.segments.at(-1)?.text).toBe('spec.md');
     expect(source.segments.at(-1)?.href).toBeUndefined();
-  });
-
-  it('serves a window without shifting row content', () => {
-    configStore.__testReset({ projectDir: PROJECT_DIR });
-    const block = artifactWrittenRowBlock('ev', artifactEvent(), 78);
-    if (block === null) throw new Error('block was null');
-
-    expect(block.createRows(1, 4).map(rowText)).toEqual(
-      block.createRows(0, block.rowCount).slice(1, 4).map(rowText),
-    );
-  });
-
-  it('renders nothing when the excerpt is empty', () => {
-    expect(artifactWrittenRowBlock('ev', artifactEvent({ excerpt: [] }), 78)).toBeNull();
   });
 });

@@ -76,7 +76,7 @@ export function taskStartedCrewRowBlock(input: {
   );
 }
 
-// The header names the brief by its own id, the id the byline, the sidebar and the Tasks card use;
+// The header names the brief by its own id, the id the byline and the sidebar use;
 // a position in the plan (`T2`) would name the same brief two ways.
 export function taskStartedRowBlock(input: {
   keyPrefix: string;

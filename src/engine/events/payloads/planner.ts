@@ -50,6 +50,14 @@ export const PlannerEventSchemas = [
     count: z.number(),
     reason: z.enum(['unsupported-backend', 'capability-degraded']),
   }),
+  phaseEvent('plan_compiled').extend({
+    summary: z.string(),
+    briefs: z.number().int().nonnegative(),
+    criteria: z.number().int().nonnegative(),
+    planPath: z.string(),
+    tasksPath: z.string(),
+    changed: z.boolean(),
+  }),
   phaseEvent('artifact_written').extend({
     filename: z.string(),
     path: z.string(),

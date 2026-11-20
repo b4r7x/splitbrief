@@ -5,6 +5,7 @@
 ### Changed
 
 - Review packets list BUILD routes in settlement order, including briefs a validation hook skips after BUILD runs, and explain routing refusals.
+- The transcript shows each plan’s goal, brief count, criteria count and file links together. Older runs show one link for each planning document.
 
 ### Fixed
 

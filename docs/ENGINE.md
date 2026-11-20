@@ -120,6 +120,7 @@ The bus is synchronous by design so fan-out order matches the pre-bus `addEvent`
 Events cover the full workflow lifecycle. A few examples:
 
 - `workflow_started` / `workflow_complete` — session boundaries
+- `plan_compiled` records each plan's goal, brief and criterion counts, and file paths. Replay reads these values from the event so an earlier plan keeps its own goal and counts after an edit.
 - `task_started` / `task_completed` / `task_full_fail` — task lifecycle with timing, method, retries
 - `review_started` / `review_completed` — review lifecycle with scope, seat, verdict, findings, and timing
 - `planner_text` — streaming planner output chunks. Planner document chunks set

@@ -14,9 +14,7 @@ import {
   reviewPromptTooLargeProjection,
   reviewPromptTooLargeRecoveryIssue,
 } from './halt-text-projections.js';
-import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/plan-files/card.js';
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
-import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
 import type { StepRef } from '../../../../src/core/schemas/run-step.js';
 import type { RunRecord } from '../../../../src/core/sessions/run/record.js';
@@ -99,7 +97,6 @@ import type { ApprovalPromptState } from '../../../../src/stores/prompts/approva
 import type { TieredApprovalRequest } from '../../../../src/core/approval/types.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import { type ScenarioId, scenarioId } from '../../contracts/identifiers.js';
-import { tasksCardProjection } from './artifact-card-projections.js';
 import { outputLimitWarningProjection } from './output-limit-projection.js';
 import { buildReviewFailedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/review-failed.js';
 import {
@@ -702,6 +699,22 @@ const wideCommandActivity = projectRunnerCallActivity(
 );
 if (wideCommandActivity === null) throw new Error('Missing wide command fixture activity');
 
+function compiledPlanEvent(
+  ts: number,
+  sessionId: string,
+  facts: Pick<EngineEventOf<'plan_compiled'>, 'summary' | 'briefs' | 'criteria' | 'changed'>,
+): EngineEventOf<'plan_compiled'> {
+  const dir = `.splitbrief/sessions/${sessionId}`;
+  return {
+    type: 'plan_compiled',
+    ts,
+    phase: 'planning',
+    ...facts,
+    planPath: `${dir}/plan.md`,
+    tasksPath: `${dir}/tasks.md`,
+  };
+}
+
 const firstBriefAfterPlanProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-first-brief-after-plan'),
   feature: WORKFLOW_FEATURE,
@@ -716,17 +729,12 @@ const firstBriefAfterPlanProjection: WorkflowFixtureProjection = {
       feature: WORKFLOW_FEATURE,
     },
     { type: 'user_message', ts: FIXED_TS - 719_990, phase: 'planning', text: WORKFLOW_FEATURE },
-    {
-      type: 'artifact_written',
-      ts: FIXED_TS + 15_000,
-      phase: 'planning',
-      filename: 'plan.md',
-      path: '.splitbrief/sessions/visual-first-brief-after-plan/plan.md',
-      lineCount: 3,
-      excerpt: ['Project the workflow events, register the projection, and capture the frame.'],
-      omittedCount: 0,
-      omittedUnit: 'line',
-    },
+    compiledPlanEvent(FIXED_TS + 15_000, 'visual-first-brief-after-plan', {
+      summary: 'Project the workflow events, register the projection, and capture the frame.',
+      briefs: FIXTURE_TASKS_PLANNED.total,
+      criteria: 2,
+      changed: false,
+    }),
     { type: 'plan_approved', ts: FIXED_TS + 30_000, phase: 'reviewing-plan' },
     {
       ...FIXTURE_TASKS_PLANNED,
@@ -1991,17 +1999,12 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
   config: { reviewer: CODEX_REVIEW_SEAT },
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
-    {
-      type: 'artifact_written',
-      ts: FIXED_TS + 20,
-      phase: 'planning',
-      filename: 'tasks.md',
-      path: '.splitbrief/sessions/visual-review-fix-cycles/tasks.md',
-      lineCount: 18,
-      excerpt: FIXTURE_PLANNED_BRIEFS.map((brief) => `${brief.id}  ${brief.title}`),
-      omittedCount: 0,
-      omittedUnit: 'task',
-    },
+    compiledPlanEvent(FIXED_TS + 20, 'visual-review-fix-cycles', {
+      summary: 'Show workflow activity and validate the completed briefs.',
+      briefs: FIXTURE_PLANNED_BRIEFS.length,
+      criteria: 2,
+      changed: false,
+    }),
     { type: 'plan_approved', ts: FIXED_TS + 30, phase: 'reviewing-plan' },
     FIXTURE_TASKS_PLANNED,
     reviewCheck(
@@ -3154,10 +3157,6 @@ const planCardLongGateProjection: WorkflowFixtureProjection = {
   },
 };
 
-const PLAN_CARD_TASKS = PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, '/nonexistent'));
-
-// The planning session right after its plan passed the checks: the two cards it announces, plan.md
-// and tasks.md, both rendered from plan.json.
 const planCompiledProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-plan-compiled'),
   feature: WORKFLOW_FEATURE,
@@ -3174,22 +3173,38 @@ const planCompiledProjection: WorkflowFixtureProjection = {
       model: BASE_PLANNER.model,
       call: 'plan',
     },
+    compiledPlanEvent(FIXED_TS + 200, 'visual-plan', {
+      summary: PLAN_CARD_PLAN.summary,
+      briefs: PLAN_CARD_PLAN.tasks.length,
+      criteria: PLAN_CARD_PLAN.criteria.length,
+      changed: false,
+    }),
+  ],
+};
+
+const REVISED_CARD_PLAN = {
+  ...PLAN_CARD_PLAN,
+  summary: 'Print a greeting for the supplied name and show the flag in CLI help.',
+};
+const revisedPlanEvent = compiledPlanEvent(FIXED_TS + 425, 'visual-plan', {
+  summary: REVISED_CARD_PLAN.summary,
+  briefs: REVISED_CARD_PLAN.tasks.length,
+  criteria: REVISED_CARD_PLAN.criteria.length,
+  changed: true,
+});
+
+const planChangedProjection: WorkflowFixtureProjection = {
+  ...planCompiledProjection,
+  scenarioId: scenarioId('workflow-plan-changed'),
+  events: [
+    ...planCompiledProjection.events,
     {
-      type: 'artifact_written',
-      ts: FIXED_TS + 200,
-      phase: 'planning',
-      filename: 'plan.md',
-      path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/plan.md',
-      ...buildArtifactExcerpt(formatPlanMarkdown(PLAN_CARD_PLAN, []), 'plan.md'),
+      type: 'user_message',
+      ts: FIXED_TS + 400,
+      phase: 'reviewing-plan',
+      text: 'Include the greeting flag in CLI help.',
     },
-    {
-      type: 'artifact_written',
-      ts: FIXED_TS + 210,
-      phase: 'planning',
-      filename: 'tasks.md',
-      path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/tasks.md',
-      ...buildArtifactExcerpt(formatTasks(PLAN_CARD_TASKS), 'tasks.md', PLAN_CARD_TASKS),
-    },
+    revisedPlanEvent,
   ],
 };
 
@@ -3207,6 +3222,7 @@ const planCardEditedProjection: WorkflowFixtureProjection = {
       phase: 'reviewing-plan',
       comment: '(edited plan.json)',
     },
+    { ...revisedPlanEvent, phase: 'reviewing-plan', summary: PLAN_CARD_PLAN.summary },
     planCardTasksPlanned(FIXED_TS + 450),
     { type: 'plan_card_opened', ts: FIXED_TS + 500, phase: 'reviewing-plan' },
   ],
@@ -9568,6 +9584,7 @@ const projections = [
   },
   startVariantWarningProjection,
   planCompiledProjection,
+  planChangedProjection,
   planCardEditedProjection,
   firstBriefAfterPlanProjection,
   // The same brief while its API seat check has run twelve seconds (held by the registry).
@@ -9928,7 +9945,6 @@ const projections = [
   planCardSessionPathProjection,
   planCardLongGateProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
-  tasksCardProjection,
   questionProjection,
   { ...questionProjection, scenarioId: scenarioId('workflow-question-short') },
   { ...questionProjection, scenarioId: scenarioId('workflow-planner-question-short') },

@@ -1,37 +1,23 @@
-import { taskSummarySpans } from '../components/task-summary/spans.js';
+import {
+  treeBlock,
+  treeLines,
+  treeRow,
+  treeValueWidth,
+  type TreeLine,
+} from '../conversation-rows/row-format/tree.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { GlyphName } from '../../../lib/glyphs.js';
-import { configStore } from '../../../stores/project/config.js';
-import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
-import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
-import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
-import { filePathUrl } from '../../../utils/path/links.js';
-import { wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { foldRow, foldRowKey } from '../conversation-rows/fold-row.js';
 import { segmentedRow } from '../conversation-rows/row-format/rows.js';
-import { rowLeadingCells } from '../conversation-rows/row-format/markers.js';
-import type {
-  ConversationRow,
-  ConversationRowBlock,
-  ConversationRowSegment,
-} from '../conversation-rows/types.js';
+import type { ConversationRow, ConversationRowBlock } from '../conversation-rows/types.js';
 import { crewLine } from './copy/crew-line.js';
 import { recordRows } from './copy/rows.js';
 import { recordFold, runRows } from './copy/rows.js';
-import { factSpans } from './copy/rows.js';
 import type { SummaryForm } from './copy/types.js';
 import type { RecordRow, RunRow } from './copy/types.js';
-import type { CopyFact, CopySegment } from './copy/types.js';
-import { cutFactMiddle, fitFacts } from './fit-facts.js';
+import type { CopySegment } from './copy/types.js';
 import { outcomeLineSpans, outcomeMarker } from './outcome.js';
 import type { SummaryView } from './view-model.js';
-
-/** The label column: the widest label and the two spaces after it. */
-const LABEL_CELLS = 'Session'.length + 2;
-
-/** A count that leads a fact: `3 criteria`, `2/2 briefs passed`. A time (`2m 50s`) is not one. */
-const COUNT_LED = /^(\d+(?:\/\d+)?)( .*)$/u;
 
 /** The settled state behind each outcome mark; the done mark needs none. */
 const DONE_AS: Partial<Record<GlyphName, NonNullable<ConversationRow['doneAs']>>> = {
@@ -56,12 +42,6 @@ export interface ClosedBlockInput {
   expanded: boolean;
 }
 
-interface TreeLine {
-  label: string;
-  seat?: RunRow['seat'];
-  spans: ConversationRowSegment[];
-}
-
 /** One run has one fold, and the scroll store keeps fold state across runs, so the key names the run. */
 export function closedBlockKey(sessionId: string): string {
   return `closed-block:${sessionId}`;
@@ -75,10 +55,10 @@ export function closedBlockKey(sessionId: string): string {
 export function closedTranscriptBlock(input: ClosedBlockInput): ConversationRowBlock {
   const { key, view, width, viewportRows, crewNamed, expanded } = input;
   const header = headerRow(key, view, width);
-  if (view === null) return rowBlock(key, [header]);
+  if (view === null) return treeBlock(key, [header], 0);
 
-  const valueWidth = Math.max(1, width - rowLeadingCells('activity-child') - LABEL_CELLS);
-  const linesOf = (rows: readonly RecordRow[]) => treeLines(rows, width, valueWidth);
+  const valueWidth = treeValueWidth(width);
+  const linesOf = (rows: readonly RecordRow[]) => treeLines(rows, width);
   const crew = linesOf(crewRows(view, valueWidth, crewNamed));
   const whole = [...crew, ...linesOf(runRows(view, 'whole'))];
   // The header and the fold stand with the summary; the outcome must stay on the screen.
@@ -100,7 +80,7 @@ export function closedTranscriptBlock(input: ClosedBlockInput): ConversationRowB
       ? [header, ...body, fold]
       : [header, ...body.slice(0, -1), fold, ...body.slice(-1)];
   return {
-    ...rowBlock(key, rows),
+    ...treeBlock(key, rows, 0),
     foldRowKey: foldRowKey(key),
     toggledRowCount: rows.length + (expanded ? -1 : 1) * (record.length - summary.length),
   };
@@ -118,15 +98,6 @@ function fitLabelled(
   return crew.length + lines.length > room
     ? lines.slice(0, Math.max(0, room))
     : [...crew, ...lines];
-}
-
-function rowBlock(key: string, rows: readonly ConversationRow[]): ConversationRowBlock {
-  return {
-    key,
-    rowCount: rows.length,
-    renderableUnits: 0,
-    createRows: (windowStart, windowEnd) => rows.slice(windowStart, windowEnd),
-  };
 }
 
 /** The verdict is the one bold word; a stage word keeps its seat tone. */
@@ -158,98 +129,4 @@ function crewRows(view: SummaryView, budget: number, crewNamed: boolean): RunRow
     }),
   );
   return spans.length === 0 ? [] : [{ label: 'Crew', segments: [{ spans }] }];
-}
-
-function treeLines(rows: readonly RecordRow[], width: number, valueWidth: number): TreeLine[] {
-  const projectDir = configStore.get().projectDir;
-  return rows.flatMap((row): TreeLine[] =>
-    'brief' in row
-      ? [
-          {
-            label: '',
-            spans: taskSummarySpans({ ...row.brief, width: width - LABEL_CELLS, quiet: true }),
-          },
-        ]
-      : proseLines(row, valueWidth).map((line) => ({
-          label: line.label,
-          ...(line.seat !== undefined && { seat: line.seat }),
-          spans: fitRow(
-            line.label === '' ? line.segments : line.segments.map(countLed),
-            valueWidth,
-          ).map(({ path, ...span }) =>
-            path === undefined || projectDir === ''
-              ? span
-              : { ...span, href: filePathUrl({ path, rootDir: projectDir }) },
-          ),
-        })),
-  );
-}
-
-/**
- * A labelled row opens a branch of the tree; a row without a label continues the one above it. A
- * stage label wears the tone of its seat, and every other label stays behind the facts it names.
- */
-function treeRow(key: string, line: TreeLine, last: boolean): ConversationRow {
-  return segmentedRow(
-    key,
-    [
-      {
-        text: line.label.padEnd(LABEL_CELLS),
-        tone: line.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[line.seat],
-      },
-      ...line.spans,
-    ],
-    last ? 'activity-child-last' : line.label !== '' ? 'activity-child' : 'callout-body',
-  );
-}
-
-/** A fact of one dim span that a count leads sets the count apart from its words. */
-function countLed(fact: CopyFact): CopyFact {
-  const [only, ...more] = factSpans(fact);
-  if (only === undefined || more.length > 0 || only.tone !== 'textDim' || only.path !== undefined)
-    return fact;
-  const [, count, words] = COUNT_LED.exec(only.text) ?? [];
-  return count === undefined || words === undefined
-    ? fact
-    : {
-        spans: [
-          { text: count, tone: 'text' },
-          { text: words, tone: 'textDim' },
-        ],
-      };
-}
-
-/** A row too wide for its column sheds whole facts; one fact too wide is cut in the middle. */
-function fitRow(facts: RunRow['segments'], budget: number): CopySegment[] {
-  const spans = facts.map(factSpans);
-  const fitted = fitFacts(spans, budget);
-  if (fitted.length > 0) return fitted;
-  const [first] = spans;
-  return first === undefined ? [] : cutFactMiddle(first, budget);
-}
-
-/** A prose row wraps at words, each further line under the text after its lead. */
-function proseLines(row: RunRow, width: number): RunRow[] {
-  const [fact] = row.segments;
-  if (row.hang === undefined || fact === undefined || 'spans' in fact) return [row];
-  const text = stripTerminalControls(fact.text);
-  const lead = text.slice(0, row.hang);
-  const indent = ' '.repeat(getTerminalCellWidth(lead));
-  const lineWidth = Math.max(1, width - indent.length);
-  const wrapped = wrapPathAware(text.slice(row.hang), lineWidth).split('\n');
-  const kept = row.maxLines === undefined ? wrapped : wrapped.slice(0, row.maxLines);
-  const last = kept.length - 1;
-  return kept.map((line, index) => ({
-    label: index === 0 ? row.label : '',
-    segments: [
-      {
-        text: `${index === 0 ? lead : indent}${
-          index === last && kept.length < wrapped.length
-            ? truncateTerminalDisplayText(`${line}${ELLIPSIS}`, lineWidth)
-            : line
-        }`,
-        tone: fact.tone,
-      },
-    ],
-  }));
 }

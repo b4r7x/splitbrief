@@ -192,6 +192,7 @@ async function endsTheRun(
   at: Wait,
   closedScreen: readonly string[],
   reach: (run: Run, tui: Tui) => Promise<void>,
+  readClosed?: (tui: Tui) => Promise<void>,
 ) {
   const run = setup(at);
   try {
@@ -209,6 +210,7 @@ async function endsTheRun(
       await expect.poll(() => readState(run.target, sessionId).closed?.as, PATIENCE).toBe('ended');
       for (const text of closedScreen) await expect.poll(screen, PATIENCE).toContain(text);
       expect(screen()).not.toContain(REFUSAL);
+      await readClosed?.(tui);
     });
   } finally {
     cleanupTempDir(run.target.tmpDir);
@@ -216,13 +218,29 @@ async function endsTheRun(
 }
 
 it('ends the run when /end runs over the plan card', SCENARIO_TIMEOUT, async () => {
-  await endsTheRun('plan-card', ENDED_AT_CARD, async (run, { screen, write }) => {
-    await expect.poll(() => existsSync(run.planning), PATIENCE).toBe(true);
-    write(END);
-    await expect.poll(screen, PATIENCE).toContain(`› ${END}`);
-    unlinkSync(run.hold);
-    await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
-  });
+  await endsTheRun(
+    'plan-card',
+    ENDED_AT_CARD,
+    async (run, { screen, write }) => {
+      await expect.poll(() => existsSync(run.planning), PATIENCE).toBe(true);
+      write(END);
+      await expect.poll(screen, PATIENCE).toContain(`› ${END}`);
+      unlinkSync(run.hold);
+      await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
+    },
+    async ({ screen, write }) => {
+      write('/scroll top');
+      await expect.poll(screen, PATIENCE).toContain('› /scroll top');
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain('Scrolled conversation to top');
+      const frame = screen();
+      expect(frame).toMatch(
+        /● Plan ready  1 brief · 1 criterion\s*\n\s*├ Goal     Add a total helper with its test\.\s*\n\s*└ Files    plan\.md · tasks\.md/u,
+      );
+      expect(frame.match(/● Plan ready/gu)).toHaveLength(1);
+      expect(frame).not.toMatch(/Protected operations|more sections/u);
+    },
+  );
 });
 
 it('ends the run when /end runs while a brief check runs', SCENARIO_TIMEOUT, async () => {

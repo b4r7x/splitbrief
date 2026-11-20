@@ -83,9 +83,11 @@ function buildConversationRowsProjectionWithContext(
     sectionBoundary = false,
   ): void => {
     if (block.rowCount === 0) return;
+    const adjacentFiles = eventType === 'artifact_written' && lastAppendedType === eventType;
     if (
       hasRenderableBlock &&
-      (sectionBoundary || !(underReviewHeading || joinsCheckList(lastAppendedType, eventType)))
+      (sectionBoundary ||
+        !(underReviewHeading || adjacentFiles || joinsCheckList(lastAppendedType, eventType)))
     ) {
       blocks.push(sectionSpacerBlock(block.key));
     }

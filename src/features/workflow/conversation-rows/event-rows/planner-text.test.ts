@@ -216,7 +216,6 @@ describe('planner text rows', () => {
     const text = rows.map(rowText).join('\n');
     const heading = rows.find((rowValue) => rowText(rowValue).includes('Description'));
 
-    // No phase header: the artifact card already names Plan in this column.
     expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('id: T001');
     expect(rows[0]?.segments).toContainEqual({ text: 'T001', tone: 'text', bold: true });
     expect(text).toContain('Description');

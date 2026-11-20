@@ -20,6 +20,7 @@ import {
   wrappedSegmentsBlock,
 } from '../blocks/compose.js';
 import { promptTextBlock, wrappedTextBlock } from '../blocks/wrapped-text.js';
+import { planCompiledRowBlock } from './plan-block.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
 import { answeredQuestionsRowBlock, repliedQuestionsRowBlock } from './answered-questions.js';
 import { attachedInputsRowBlock } from './attached-inputs.js';
@@ -246,6 +247,8 @@ export function eventRowBlock(options: {
       return fullSuiteRowBlock(keyPrefix, event, ctx.width);
     case 'escalate':
       return escalateRowBlock(keyPrefix, event, ctx.width);
+    case 'plan_compiled':
+      return planCompiledRowBlock(keyPrefix, event, ctx.width);
     case 'artifact_written':
       return artifactWrittenRowBlock(keyPrefix, event, ctx.width);
     case 'git_commit':

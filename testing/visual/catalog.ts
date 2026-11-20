@@ -866,12 +866,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'plan-compiled',
         title: 'The planning session writes plan.md and tasks.md from plan.json',
         kind: 'planning',
-        marker: 'Planning…',
+        marker: 'Plan ready',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Plan transcript' },
       ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-changed',
+      title: 'Workflow · revised plan',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-changed',
+        title: 'The operator’s requested plan change',
+        kind: 'planning',
+        marker: 'Plan changed',
+      },
+      elements: [{ id: 'transcript', title: 'Revised plan transcript' }],
     }),
     defineScenario({
       id: 'workflow-first-brief-after-plan',
@@ -2528,7 +2540,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'plan-card-edited',
-        title: 'The card open again over one Plan and one Tasks card',
+        title: 'The card opens again over the revised plan',
         kind: 'review',
         marker: 'Approve plan and start the build',
       },
@@ -2808,24 +2820,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         marker: 'Approve plan',
       },
       elements: [{ id: 'header', title: 'Workflow header' }],
-    }),
-    // Seven briefs as `formatTasks` persists them, two with headers past twelve lines: the card
-    // lists every one of them.
-    defineScenario({
-      id: 'workflow-tasks-card',
-      title: 'Workflow · tasks card with long brief headers',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'tasks-card',
-        title: 'Tasks card listing every brief',
-        kind: 'planning',
-        marker: 'T007',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Tasks card transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
     }),
     defineScenario({
       id: 'workflow-question-short',

@@ -716,7 +716,7 @@ The run directory is content-addressed from the normalized selection. Repeating 
 | `workflow-closed-ended` | a run somebody ended inside T003; `× Ended · Build 1/5 · stopped in T003` |
 | `workflow-replayed-history` | the transcript read back from `testing/fixtures/session-log/run.jsonl` |
 
-The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand. `workflow-plan-compiled` shows the planning session's two cards, `plan.md` and `tasks.md`, both rendered from `plan.json`; `workflow-at-rest-quick` is an old quick run at rest, which continues as one planning session.
+The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand. `workflow-plan-compiled` shows the goal, counts and links for the first plan. `workflow-plan-changed` shows the revised plan. `workflow-at-rest-quick` is an old quick run at rest, which continues as one planning session.
 
 `workflow-at-rest-paused` replays T001 and T002 passing, T003 starting, and a mid-step `turn_interrupted` from `paused-mid-brief.jsonl`. `workflow-review-base-mixed` shows the three completed brief rows before its reviewer checks. Both answered consult scenarios carry the planner call's start and completion, so the progress block shows a runner and recent event time.
 

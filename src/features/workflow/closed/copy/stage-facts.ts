@@ -15,8 +15,10 @@ export function stageRow(seat: CrewSeatId, facts: CopyFact[], time: string | und
   return segments.length === 0 ? [] : [{ label: formatStageLabel(seat), seat, segments }];
 }
 
-export function planSegments(view: SummaryView): CopyFact[] {
-  const { plannedBriefs, planCriteria } = view.digest;
+export function planSegments({
+  plannedBriefs,
+  planCriteria,
+}: Pick<SummaryView['digest'], 'plannedBriefs' | 'planCriteria'>): CopyFact[] {
   return [
     ...(plannedBriefs === null || plannedBriefs === 0
       ? []

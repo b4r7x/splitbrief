@@ -1,15 +1,20 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
-import { activeFile, sessionDir } from '../../../src/core/paths.js';
+import { activeFile, SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { writeSessionDraft } from '../../../src/core/sessions/draft.js';
+import { saveState } from '../../../src/core/state/persistence.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { PTY_EXIT_INPUT, PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
@@ -28,7 +33,7 @@ const WAITING = 'Waiting for an answer in another terminal';
 const OWNER_DRAFT = 'Owner-only draft';
 
 async function inTerminal(
-  fixture: StopContinueFixture,
+  fixture: Pick<StopContinueFixture, 'tmpDir' | 'projectDir'>,
   env: Readonly<Record<string, string>>,
   command: readonly string[],
   drive: (terminal: {
@@ -95,6 +100,63 @@ async function inTerminal(
     },
   );
 }
+
+it('opens an old stopped run with one link per artifact and one copy of each pending brief', async () => {
+  const tmpDir = createTempDir('plan-block-replay');
+  const projectDir = join(tmpDir, 'project');
+  const sessionId = 'visual-gate-stopped';
+  const titles = ['Add validator module', 'Wire validator into the signup form'];
+  try {
+    execFileSync('git', ['init', '--quiet', projectDir]);
+    writeConfig(projectDir, makeConfig());
+    writeFileSync(
+      join(tmpDir, 'offline.mjs'),
+      "globalThis.fetch = async () => { throw new Error('offline'); };\n",
+    );
+    saveState(
+      { projectDir, sessionId },
+      makeWorkflowState({
+        feature: 'Add email validation with tests',
+        phase: 'reviewing-plan',
+        tasks: titles.map((title, index) => makeTask({ id: `T00${index + 1}`, title })),
+        interruptedStep: {
+          step: { kind: 'gate', gate: 'plan' },
+          source: 'user',
+          cut: 'boundary',
+          at: '2026-09-14T09:47:46.000Z',
+        },
+      }),
+    );
+    copyFileSync(
+      resolve(import.meta.dirname, '../../fixtures/session-log/gate-stopped.jsonl'),
+      join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE),
+    );
+    const env = { ...safeChildEnvironment(tmpDir), XDG_STATE_HOME: join(tmpDir, 'state') };
+    await inTerminal({ tmpDir, projectDir }, env, [], async ({ screen, write }) => {
+      await expect.poll(screen, WAIT).toContain('Describe your feature');
+      write('/sessions');
+      await expect.poll(screen, WAIT).toContain('› /sessions');
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, WAIT).toContain('Sessions · 1');
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, WAIT).toContain('Stopped at the plan');
+      await expect.poll(screen, WAIT).toContain('tasks.md');
+      const frame = screen();
+      const fileRows = frame
+        .split('\n')
+        .filter((line) => /(?:research|spec|plan|tasks)\.md\s*$/u.test(line));
+      expect(fileRows.map((row) => row.trim().replace(/\s+/gu, ' '))).toEqual(
+        ['Research', 'Spec', 'Plan', 'Tasks'].map(
+          (label) => `${label} .splitbrief/sessions/${sessionId}/${label.toLowerCase()}.md`,
+        ),
+      );
+      expect(frame).not.toMatch(/\d+ lines\s*$|Project Overview|Testing Strategy/mu);
+      for (const title of titles) expect(frame.split(title)).toHaveLength(2);
+    });
+  } finally {
+    cleanupTempDir(tmpDir);
+  }
+});
 
 it.each(['resume', 'continue'])(
   '%s opens a read-only view of the run owned by another terminal',

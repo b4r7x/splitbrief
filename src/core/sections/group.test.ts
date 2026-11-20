@@ -1408,7 +1408,7 @@ describe('groupEventsIntoSections', () => {
   });
 
   // In a real run, under `Completed · 9/9 briefs passed` the transcript painted
-  // first plan's Tasks card (T001–T005), its validation warning and two earlier pre-review cycles.
+  // the first plan, its validation warning and two earlier pre-review cycles.
   // Each stage the run left settles in time order between the briefs; only the live stage is loose.
   describe('the stages a run left settle between its briefs', () => {
     const at = (type: string, phase: Phase, ts: number, fields: Record<string, unknown> = {}) => ({
@@ -1432,7 +1432,14 @@ describe('groupEventsIntoSections', () => {
     const plan = [
       at('workflow_started', 'planning', 1_000, { feature: 'Fix the red tests' }),
       at('user_message', 'planning', 1_000, { text: 'Fix the red tests' }),
-      at('artifact_written', 'planning', 5_000, { filename: 'tasks.md' }),
+      at('plan_compiled', 'planning', 5_000, {
+        summary: 'Fix the red tests',
+        briefs: 2,
+        criteria: 1,
+        changed: false,
+        planPath: 'plan.md',
+        tasksPath: 'tasks.md',
+      }),
       at('warning', 'planning', 5_000, { message: 'The test stage does not take the pattern' }),
       at('plan_approved', 'reviewing-plan', 9_000),
     ];

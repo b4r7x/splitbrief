@@ -1,27 +1,21 @@
+import { join } from 'node:path';
 import type { SpecFileRef, SpecMetadata } from '../../../core/sessions/spec-files.js';
 import { readSpecFile, writeSpecFile } from '../../../core/sessions/spec-files.js';
-import { PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { EventBus } from '../../events/types.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { publishArtifactWritten } from './card.js';
 
 /** Rewrite `tasks.md` from the run's tasks, so every reader of the file sees the current brief list. */
 export function writeTasksArtifact(
   ref: SpecFileRef,
   tasks: readonly Task[],
   metadata: SpecMetadata | null | undefined,
-): string {
-  const tasksMarkdown = formatTasks(tasks);
-  writeSpecFile(ref, TASKS_FILE, tasksMarkdown, metadata);
-  return tasksMarkdown;
+): void {
+  writeSpecFile(ref, TASKS_FILE, formatTasks(tasks), metadata);
 }
 
-/**
- * Persist `plan.md` and `tasks.md`, the projections of `plan.json`, and announce each as one card.
- * Both files are written before either card is published.
- */
 export function writeAndPublishPlanArtifacts(opts: {
   projectDir: string;
   sessionId: string;
@@ -30,25 +24,23 @@ export function writeAndPublishPlanArtifacts(opts: {
   metadata: SpecMetadata | null | undefined;
   planMarkdown: string;
   tasks: Task[];
-  replacedTasks: readonly Task[];
+  summary: string;
+  criteria: number;
 }): void {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
-  const previousPlan = readSpecFile(ref, PLAN_FILE);
-  const previousTasks = readSpecFile(ref, TASKS_FILE);
+  const dir = sessionDir(ref.projectDir, ref.sessionId);
+  const changed = readSpecFile(ref, PLAN_FILE) !== null;
   writeSpecFile(ref, PLAN_FILE, opts.planMarkdown, opts.metadata);
-  const tasksMarkdown = writeTasksArtifact(ref, opts.tasks, opts.metadata);
-  const card = { bus: opts.bus, phase: opts.phase, ...ref };
-  publishArtifactWritten({
-    ...card,
-    filename: PLAN_FILE,
-    text: opts.planMarkdown,
-    replaced: previousPlan === null ? null : { text: previousPlan },
-  });
-  publishArtifactWritten({
-    ...card,
-    filename: TASKS_FILE,
-    text: tasksMarkdown,
-    briefs: opts.tasks,
-    replaced: previousTasks === null ? null : { text: previousTasks, briefs: opts.replacedTasks },
+  writeTasksArtifact(ref, opts.tasks, opts.metadata);
+  opts.bus.publish({
+    type: 'plan_compiled',
+    ts: Date.now(),
+    phase: opts.phase,
+    summary: opts.summary,
+    briefs: opts.tasks.length,
+    criteria: opts.criteria,
+    planPath: join(dir, PLAN_FILE),
+    tasksPath: join(dir, TASKS_FILE),
+    changed,
   });
 }

@@ -73,11 +73,11 @@ describe('e2e: drift out-of-scope detection', () => {
 
     // The write is not dropped: the review packet lists it among the workspace
     // files the run changed.
-    const artifact = ctx.events.find((event) => event.type === 'artifact_written');
-    if (artifact?.type !== 'artifact_written') throw new Error('no session artifact path recorded');
+    const plan = ctx.events.find((event) => event.type === 'plan_compiled');
+    if (plan === undefined) throw new Error('no compiled plan recorded');
     const packet = ReviewPacketSchema.parse(
       JSON.parse(
-        readFileSync(join(dirname(artifact.path), REVIEW_PACKET_JSON_FILE), 'utf8'),
+        readFileSync(join(dirname(plan.planPath), REVIEW_PACKET_JSON_FILE), 'utf8'),
       ) as unknown,
     );
     expect(packet.changes.provenance?.status).toBe('available');

@@ -706,15 +706,15 @@ describe('ConversationFlow', () => {
       { type: 'workflow_started', ts: 1_000, phase: 'planning', feature: 'Fix the red tests' },
       { type: 'user_message', ts: 1_000, phase: 'planning', text: 'Fix the red tests' },
       {
-        type: 'artifact_written',
+        type: 'plan_compiled',
         ts: 5_000,
         phase: 'planning',
-        filename: 'tasks.md',
-        path: '.splitbrief/sessions/run/tasks.md',
-        lineCount: 12,
-        excerpt: ['T001  First brief of the first plan'],
-        omittedCount: 0,
-        omittedUnit: 'task',
+        summary: 'Fix the red tests',
+        briefs: 1,
+        criteria: 1,
+        changed: false,
+        planPath: '.splitbrief/sessions/run/plan.md',
+        tasksPath: '.splitbrief/sessions/run/tasks.md',
       },
       {
         type: 'warning',
@@ -756,7 +756,7 @@ describe('ConversationFlow', () => {
     ui.unmount();
   });
 
-  it('names a pinned brief by its own id, as the byline and the Tasks card do', () => {
+  it('names a pinned brief by its own id, as the byline does', () => {
     const events: EngineEvent[] = [
       { ...makeLongTaskStarted(), taskId: taskId('T002'), index: 1, title: 'Finished task' },
       { ...makeTaskCompleted(), taskId: taskId('T002') },

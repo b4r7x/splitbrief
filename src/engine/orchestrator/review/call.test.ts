@@ -227,7 +227,7 @@ describe('runReviewerCall', () => {
     expect('value' in result.result && result.result.value).toEqual(VERDICT);
   });
 
-  it('streams no seat text and publishes no artifact card for the typed answer', async () => {
+  it('keeps the typed review answer out of the transcript', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();
     const reviewer = typedReviewer(async ({ onOutput }) => {
@@ -250,7 +250,6 @@ describe('runReviewerCall', () => {
     });
 
     expect(events.filter((event) => event.type === 'planner_text')).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
   });
 
   it('publishes the refused first answer with its reasons, and no warning, before it asks again', async () => {

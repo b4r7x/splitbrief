@@ -168,9 +168,7 @@ describe('run with no reviewer configured', () => {
       // One planning session starts, and plan.md and tasks.md, rendered
       // from the plan, are on disk before the build begins.
       'planner_status',
-
-      'artifact_written',
-      'artifact_written',
+      'plan_compiled',
       'tasks_planned',
       'task_started',
 

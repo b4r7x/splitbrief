@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { readSpecFile, type SpecMetadata } from '../../../core/sessions/spec-files.js';
-import { PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { join } from 'node:path';
+import { PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeAndPublishPlanArtifacts } from './write.js';
@@ -54,7 +55,8 @@ describe('writeAndPublishPlanArtifacts', () => {
       metadata: { planner: crew.plan, implementer: crew.build, reviewer: crew.review },
       planMarkdown: '# Plan\n\nSteps.',
       tasks: TASKS,
-      replacedTasks: [],
+      summary: 'Steps.',
+      criteria: 2,
     });
     for (const filename of [PLAN_FILE, TASKS_FILE]) {
       const content = readSpecFile({ projectDir, sessionId: SESSION_ID }, filename);
@@ -67,7 +69,7 @@ describe('writeAndPublishPlanArtifacts', () => {
     }
   });
 
-  it('writes plan.md and tasks.md, then publishes one card for each', () => {
+  it('writes both plan files and publishes their paths and counts together', () => {
     const projectDir = fixtureDir();
     const { bus, events } = makeBusRecorder();
 
@@ -79,38 +81,28 @@ describe('writeAndPublishPlanArtifacts', () => {
       metadata: METADATA,
       planMarkdown: '# Plan\n\nSteps.',
       tasks: TASKS,
-      replacedTasks: [],
+      summary: 'Steps.',
+      criteria: 2,
     });
 
     const ref = { projectDir, sessionId: SESSION_ID };
     expect(readSpecFile(ref, PLAN_FILE)).toContain('generated_by: splitbrief');
     expect(readSpecFile(ref, PLAN_FILE)).toContain('Steps.');
     expect(readSpecFile(ref, TASKS_FILE)).toContain('id: T001');
-    const cards = events.filter((event) => event.type === 'artifact_written');
-    expect(cards.map((event) => event.filename)).toEqual([PLAN_FILE, TASKS_FILE]);
-  });
-
-  it('outlines the tasks card by the briefs it was rendered from', () => {
-    const { bus, events } = makeBusRecorder();
-
-    writeAndPublishPlanArtifacts({
-      projectDir: fixtureDir(),
-      sessionId: SESSION_ID,
-      bus,
-      phase: 'planning',
-      metadata: null,
-      planMarkdown: '# Plan\n\nSteps.',
-      tasks: TASKS,
-      replacedTasks: [],
-    });
-
-    expect(
-      events.find((event) => event.type === 'artifact_written' && event.filename === TASKS_FILE),
-    ).toMatchObject({
-      excerpt: ['T001  Brief 1', 'T002  Brief 2', 'T003  Brief 3'],
-      omittedCount: 0,
-      omittedUnit: 'task',
-    });
+    const directory = sessionDir(projectDir, SESSION_ID);
+    expect(events).toEqual([
+      {
+        type: 'plan_compiled',
+        ts: expect.any(Number),
+        phase: 'planning',
+        summary: 'Steps.',
+        briefs: 3,
+        criteria: 2,
+        changed: false,
+        planPath: join(directory, PLAN_FILE),
+        tasksPath: join(directory, TASKS_FILE),
+      },
+    ]);
   });
 
   it('keeps a null metadata value write-only with no generated frontmatter', () => {
@@ -125,7 +117,8 @@ describe('writeAndPublishPlanArtifacts', () => {
       metadata: null,
       planMarkdown: '# Plan\n\nNo metadata.',
       tasks: TASKS,
-      replacedTasks: [],
+      summary: 'Steps.',
+      criteria: 2,
     });
 
     expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_FILE)).toBe(

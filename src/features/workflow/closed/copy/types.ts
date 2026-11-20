@@ -6,7 +6,7 @@ import type { StateTone } from '../../../../core/theme/state-tone.js';
  * Theme keys, so a row says which colour it wants and the renderer indexes the theme instead of
  * translating a second vocabulary.
  */
-export type CopyTone = 'text' | StateTone | 'planner' | 'implementer' | 'reviewer';
+export type CopyTone = 'text' | 'reviewFile' | StateTone | 'planner' | 'implementer' | 'reviewer';
 
 export interface CopySegment {
   text: string;

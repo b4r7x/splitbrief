@@ -109,7 +109,7 @@ describe('eventRows task header and planner phase header', () => {
     expect(rows.every((row) => getTerminalCellWidth(rowText(row)) <= 120)).toBe(true);
   });
 
-  it('names the brief by its own id, as the byline and the Tasks card do', () => {
+  it('names the brief by its own id, as the byline does', () => {
     const rows = eventRows({
       event: makeTaskStarted({ taskId: taskId('T002'), index: 1, total: 2 }),
       globalIndex: 0,
@@ -207,11 +207,8 @@ describe('eventRows task header and planner phase header', () => {
     }
   });
 
-  // The artifact card names Spec, Plan, Tasks and Research in the same column, so a bare phase
-  // header above it repeated the label without adding a fact. Only escalation, which has no card,
-  // still gets one.
   it.each(['planning', 'researching', 'specifying'] as const)(
-    'prepends no phase header for %s markdown, because the artifact card names the artifact',
+    'starts %s markdown at the first document row',
     (phase) => {
       const event = makeMarkdownPlannerText({ phase });
       const rows = eventRows({

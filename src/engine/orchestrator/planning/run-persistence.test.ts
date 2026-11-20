@@ -6,7 +6,6 @@ import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import { PLAN_FILE, PLAN_JSON_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { parsePlanJson } from '../../../core/sessions/plan-file.js';
 import { loadState } from '../../../core/state/persistence.js';
-import type { EngineEvent } from '../../events/types.js';
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -39,31 +38,8 @@ describe('runPlanningPhase — persistence', () => {
     });
     expect(readSpecFileOrEmpty(ref, PLAN_FILE)).toContain('Plan from the scripted briefs');
     expect(readSpecFileOrEmpty(ref, TASKS_FILE)).toContain('title: Create hello module');
-    expect(
-      events.flatMap((event) => (event.type === 'artifact_written' ? [event.filename] : [])),
-    ).toEqual([PLAN_FILE, TASKS_FILE]);
-  });
-});
-
-/** The excerpt of every tasks.md card the transcript would draw, in order. */
-function briefCards(events: readonly EngineEvent[]): string[] {
-  return events.flatMap((event) =>
-    event.type === 'artifact_written' && event.filename === TASKS_FILE
-      ? [event.excerpt.join('\n')]
-      : [],
-  );
-}
-
-describe('runPlanningPhase — the Task Brief card', () => {
-  it('announces tasks.md once with the compiled briefs', async () => {
-    const { result, projectDir, sessionId, events } = await runTurn({
-      config: makeConfig({ workflow: auto() }),
-    });
-
-    expect(result.disposition).toBe('ready-for-tasks');
-    expect(briefCards(events)).toEqual([expect.stringContaining('Create hello module')]);
-    expect(readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE)).toContain(
-      'title: Create hello module',
-    );
+    expect(events.filter((event) => event.type === 'plan_compiled')).toMatchObject([
+      { summary: 'Plan from the scripted briefs', briefs: 1, criteria: 1, changed: false },
+    ]);
   });
 });

@@ -49,7 +49,7 @@ export function runRows(view: SummaryView, form: SummaryForm = 'whole'): RunRow[
             ...rest,
           ];
   const rows: RunRow[] = [
-    ...stageRow('plan', planSegments(view), times.get('planning')),
+    ...stageRow('plan', planSegments(view.digest), times.get('planning')),
     ...stageRow('build', buildSegments(view), times.get('implementing')),
     ...stageRow('review', reviewFacts, times.get('review')),
     ...(view.review.kind === 'written' ? setAsideRows(view.review.setAside, '') : []),
@@ -105,7 +105,7 @@ export function recordRows(view: SummaryView): RecordRow[] {
   const briefs = (rows: readonly BriefRow[]): RecordRow[] =>
     rows.map((row) => ({ brief: briefRowParts({ row }) }));
   const rows: RecordRow[] = [
-    ...stageRow('plan', planSegments(view), times.get('planning')),
+    ...stageRow('plan', planSegments(view.digest), times.get('planning')),
     ...stageRow('build', buildSegments(view), times.get('implementing')),
     ...briefs(view.briefs.rows),
     ...(view.briefs.earlierRows.length === 0

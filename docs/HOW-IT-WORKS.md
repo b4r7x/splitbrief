@@ -119,7 +119,7 @@ PLAN reads pending messages at its next planner call. A Claude Code planner can 
 
 During planning, `planner_heartbeat` events fire every 2 seconds after a 5-second threshold, carrying `phase`, `elapsedMs` (restarts when `callId` changes), optional `callId`. These are proof-of-life signals during long waits — the TUI shows them as a spinning indicator. The planning session streams no narration, because its answer is typed JSON.
 
-The plan lands as three files in the session folder: `plan.json` (`writePlanJson`), and `plan.md` and `tasks.md`, rendered from it and written with `artifact_written` events. A run planned by an older engine also has `research.md`, `spec.md` and possibly `brief-quality.json`; a new run writes none of them.
+The session folder holds `plan.json` and two documents generated from it, `plan.md` and `tasks.md`. The transcript shows the goal, counts the briefs and criteria, and links to both documents. Each revised plan has its own entry. Older runs show a link for each saved document, including research and spec files.
 
 Planning ends in exactly one of two dispositions: `ready-for-tasks` or
 `terminal` (`PlanningPhaseResult`). A terminal result carries the

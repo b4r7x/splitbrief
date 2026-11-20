@@ -77,9 +77,6 @@ export function markdownPlannerTextRowBlock(input: {
   return compositeBlock(input.keyPrefix, [headerBlock, markdownBlock]);
 }
 
-// The artifact card names the artifact it wrote — Spec, Plan, Tasks, Research — in the same
-// words and the same column. A bare phase header above it repeats the label without adding a
-// fact, so the header gives way wherever a card covers the phase. Escalation has no card.
 export function plannerPhaseHeader(
   phase: Phase | undefined,
 ): { label: string; tone: ConversationRowTone } | null {

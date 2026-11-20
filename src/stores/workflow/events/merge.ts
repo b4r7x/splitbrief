@@ -274,6 +274,7 @@ function isStructuralTranscriptEvent(event: EngineEvent): boolean {
     case 'workflow_started':
     case 'workflow_resumed':
     case 'workflow_config':
+    case 'plan_compiled':
     case 'task_started':
     case 'task_completed':
     case 'task_skipped':

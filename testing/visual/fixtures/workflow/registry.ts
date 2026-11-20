@@ -1122,7 +1122,8 @@ const checkpointPredicates = [
   ],
   [checkpointId('at-rest-follower-stale'), includesAll('Viewing last saved activity')],
   [checkpointId('start-variant-not-applied'), includesAll('Warning', 'variant', 'Planning…')],
-  [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
+  [checkpointId('plan-compiled'), includesAll('Plan ready', 'plan.md', 'tasks.md')],
+  [checkpointId('plan-changed'), includesAll('Plan changed', 'plan.md', 'tasks.md')],
   [
     checkpointId('first-brief-after-plan'),
     (context) => {
@@ -1355,7 +1356,7 @@ const checkpointPredicates = [
         !text.includes('does not take') &&
         workflowTranscriptText()
           .split('\n')
-          .filter((line) => line.trim() === 'Tasks').length === 1
+          .filter((line) => line.startsWith('Plan ready  ')).length === 1
       );
     },
   ],
@@ -1792,18 +1793,10 @@ const checkpointPredicates = [
     (context) => {
       if (!planCardReady(context)) return false;
       if (!stripAnsiStyles(context.output).includes('Plan 0/2')) return false;
-      const rows = workflowTranscriptText()
-        .split('\n')
-        .map((row) => row.trimEnd());
-      return (
-        rows.filter((row) => row === 'Plan').length === 1 &&
-        rows.filter((row) => row === 'Tasks').length === 1
-      );
+      const transcript = workflowTranscriptText();
+      return transcript.includes('Plan ready') && transcript.includes('Plan changed');
     },
   ],
-  // The two briefs whose long headers the card once skipped, beside the first and the last.
-  [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
-  // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
   [checkpointId('question-overflow'), includesAll('Question 2 of 3')],
   [checkpointId('question-default'), includesAll('Question 1 of 1', 'Write your own answer…')],

@@ -180,11 +180,12 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
       }),
     ]);
     const replay = await readRunEvents({ projectDir, sessionId });
-    expect(
-      replay.events
-        .filter((event) => event.type === 'artifact_written')
-        .map((event) => event.filename),
-    ).toEqual(['plan.md', 'tasks.md']);
+    expect(replay.events.filter((event) => event.type === 'plan_compiled')).toMatchObject([
+      {
+        planPath: expect.stringMatching(/\/plan\.md$/u),
+        tasksPath: expect.stringMatching(/\/tasks\.md$/u),
+      },
+    ]);
     const replayedUserMessage = replay.events.find((event) => event.type === 'user_message');
     if (replayedUserMessage?.type !== 'user_message') throw new Error('no replayed user message');
     const block = eventRowBlock({

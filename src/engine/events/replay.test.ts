@@ -165,6 +165,15 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   runner_call_stalled: { phase: 'implementing', ...callContext, silentMs: 60_000 },
   runner_call_stall_cleared: { phase: 'implementing', ...callContext },
   runner_call_heartbeat: { phase: 'implementing', ...callContext },
+  plan_compiled: {
+    phase: 'planning',
+    summary: 'Add a greeting',
+    briefs: 1,
+    criteria: 2,
+    planPath: '.splitbrief/plan.md',
+    tasksPath: '.splitbrief/tasks.md',
+    changed: false,
+  },
   artifact_written: {
     phase: 'specifying',
     filename: 'spec.md',

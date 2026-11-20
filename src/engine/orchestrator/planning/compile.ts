@@ -48,7 +48,8 @@ export function compilePlan(
     metadata: wctx.metadata,
     planMarkdown: formatPlanMarkdown(plan, renderCheckNotes(plan, config, wctx.modelCache)),
     tasks,
-    replacedTasks: state.tasks,
+    summary: plan.summary,
+    criteria: plan.criteria.length,
   });
   const manifest = readManifestCommands(workspaceDir);
   const stack = detectStack(workspaceDir, config.validation.stack);
