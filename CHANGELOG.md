@@ -12,6 +12,7 @@
 - Review packets count validation results for the briefs in the current plan.
 - Review packets identify API and CLI runners by their own names, even when they share a tool name.
 - Review packets label logged BUILD starts and settlements in the routing section.
+- Review packets keep the BUILD route when you skip a brief that already ran.
 - The model catalog cache omits prices for individual model modes.
 
 ### Removed

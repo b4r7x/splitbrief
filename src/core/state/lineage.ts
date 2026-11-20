@@ -34,6 +34,13 @@ export function lineageAttemptsOf(
   return state.lineages?.[lineageIdOf(task)]?.attempts ?? 0;
 }
 
+export function hasDispatchedBrief(
+  state: Pick<WorkflowState, 'lineages'>,
+  task: Pick<Task, 'id' | 'parentId' | 'revision'>,
+): boolean {
+  return state.lineages?.[lineageIdOf(task)]?.dispatchedRevision[task.id] === (task.revision ?? 1);
+}
+
 export function withLineage(
   state: WorkflowState,
   key: TaskId,

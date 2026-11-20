@@ -1,6 +1,8 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { reviewPacketJsonPath, reviewPacketMarkdownPath } from '../../../src/core/paths.js';
+import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
 import { readSessionSummary } from '../../../src/core/sessions/run/record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -29,14 +31,14 @@ afterEach(() => {
   restorePath = undefined;
 });
 
-async function haltOnFailedConsult(planned = plan) {
-  ({ fixture, restorePath } = consultFailureHaltFixture(planned));
+async function haltOnFailedConsult(planned = plan, options?: { retryBeforeHalt?: boolean }) {
+  ({ fixture, restorePath } = consultFailureHaltFixture(planned, options));
   return { target: fixture, sessionId: await startToHalt(fixture) };
 }
 
 describe('e2e: Skip on a planner-call halt', () => {
   it('leaves no brief file behind, so the review and the record do not carry it', async () => {
-    const { target, sessionId } = await haltOnFailedConsult();
+    const { target, sessionId } = await haltOnFailedConsult(plan, { retryBeforeHalt: true });
     const halted = readState(target, sessionId);
     expect(halted.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
     const workspaceDir = halted.workspace?.path ?? target.projectDir;
@@ -52,6 +54,9 @@ describe('e2e: Skip on a planner-call halt', () => {
     const summary = readSessionSummary(ref);
     expect(summary).toBeDefined();
     expect(summary?.changedFiles).not.toContain(ALPHA_FILE);
+    expect
+      .soft(summary?.taskBreakdown)
+      .toMatchObject([{ taskId: 'T001', method: 'skipped', retryCount: 1 }]);
     const { events } = await readRunEvents(ref);
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -84,7 +89,8 @@ describe('e2e: Skip on a planner-call halt', () => {
     const secondSkip = await cli(target, ['continue', sessionId, '--plain', '--action', 'skip']);
 
     expect(secondSkip.exitCode, `${secondSkip.stdout}\n${secondSkip.stderr}`).toBe(0);
-    const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    const ref = { projectDir: target.projectDir, sessionId };
+    const { events } = await readRunEvents(ref);
     const lines = transcriptText(events).split('\n');
     const recoveryRows = lines.filter((line) => line.includes('Recovery  '));
     expect(recoveryRows).toHaveLength(2);
@@ -93,5 +99,19 @@ describe('e2e: Skip on a planner-call halt', () => {
     const settledT002 = lines.findIndex((line) => /T002 Add the beta value .*skipped/.test(line));
     expect(settledT002).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
     expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(settledT002);
+
+    const packet = ReviewPacketSchema.parse(
+      JSON.parse(readFileSync(reviewPacketJsonPath(ref), 'utf8')),
+    );
+    expect
+      .soft(packet.routing.taskRouting)
+      .toMatchObject([
+        { taskId: 'T001', method: 'skipped', tool: 'agent', kind: 'agent', retryCount: 0 },
+      ]);
+    const markdown = readFileSync(reviewPacketMarkdownPath(ref), 'utf8');
+    const routing = markdown.split('## Routing\n')[1]?.split('\n## ')[0];
+    expect.soft(routing).toContain('- Per-task routing entries: 1');
+    expect.soft(routing).toMatch(/^- T001: Agent · Fixture\b/m);
+    expect(routing).not.toMatch(/^- T002:/m);
   });
 });

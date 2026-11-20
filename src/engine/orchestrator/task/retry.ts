@@ -9,7 +9,7 @@ import { publishError } from '../publish/notice.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
 import { raisePendingRecovery } from '../state-ops/halts.js';
 import { transitionAndSave } from '../state-ops/transition.js';
-import { recordSettledBrief } from './record-settlement.js';
+import { recordRoutedBrief } from './record-settlement.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
 import { haltOf } from '../../../core/recovery/halt.js';
@@ -135,7 +135,7 @@ async function escalateAndRecord(
   let nextState = state;
   setTrackedState(nextState);
   if (result.completed || result.method === 'skipped') {
-    recordSettledBrief({
+    recordRoutedBrief({
       wctx,
       state: nextState,
       task,

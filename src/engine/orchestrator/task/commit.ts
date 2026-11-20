@@ -18,7 +18,7 @@ import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/decla
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { readBriefWorkedMs } from './worked-time.js';
 import { lineageRemainder } from './booking.js';
-import { recordSettledBrief } from './record-settlement.js';
+import { recordRoutedBrief } from './record-settlement.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 
 type ValidateCommitOptions = {
@@ -195,7 +195,7 @@ export async function acceptLocalAttempt(opts: {
   const { state } = commitResult;
   opts.setTrackedState(state);
   opts.onTaskAcceptedFiles?.(commitResult.bookedFiles);
-  recordSettledBrief({
+  recordRoutedBrief({
     wctx,
     task,
     method: 'local',

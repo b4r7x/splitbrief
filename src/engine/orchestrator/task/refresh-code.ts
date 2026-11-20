@@ -1,5 +1,6 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
+import { hasDispatchedBrief } from '../../../core/state/lineage.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import { confinedExists, confinedReadFileAsync } from '../../../lib/fs/confined.js';
@@ -121,12 +122,11 @@ export function runsOnOwnFiles(
   task: Task,
   continuation: ContinuationHolder | undefined,
 ): boolean {
-  const lineage = state.lineages?.[lineageIdOf(task)];
   return (
     continuation?.resumesAttempt(
       { kind: 'brief', taskId: task.id, attempt: state.attempt },
       hashTaskBrief([task]),
-    ) === true || lineage?.dispatchedRevision[task.id] === (task.revision ?? 1)
+    ) === true || hasDispatchedBrief(state, task)
   );
 }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
@@ -55,6 +55,7 @@ describe('seatWait byline', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     chalk.level = originalColorLevel;
     configStore.__testReset();
     routerStore.init({ screen: 'home' });
@@ -127,20 +128,19 @@ describe('seatWait byline', () => {
   });
 
   it('hides Implementing and hides a rising clock when seatWait is set in running Build', () => {
+    const now = new Date(2026, 10, 20, 0, 32).getTime();
+    vi.useFakeTimers({ toFake: ['Date'], now });
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    const resetAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const resetAt = new Date(now + 10 * 60 * 1000).toISOString();
     runViewStore.__testReset({
       phase: 'implementing',
-      phaseFirstSeen: { implementing: Date.now() - 42_000 },
+      phaseFirstSeen: { implementing: now - 42_000 },
     });
-    lifecycleStore.__testReset({ status: 'running', startedAt: Date.now() - 42_000 });
+    lifecycleStore.__testReset({ status: 'running', startedAt: now - 42_000 });
     seedWait('codex', resetAt);
     const ui = renderFeature(<InputFooter width={120} />);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    const sentence = seatWaitSentence('codex', resetAt)!;
-    expect(frame).toContain(`${glyph('statusPending')} ${sentence}`);
-    expect(frame).not.toContain('Implementing');
-    expect(frame).not.toContain('0:42');
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '').trim();
+    expect(frame).toBe(`${glyph('statusPending')} Waiting for codex · resets 00:42`);
     ui.unmount();
   });
 

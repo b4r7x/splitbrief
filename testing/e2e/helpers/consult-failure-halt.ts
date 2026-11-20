@@ -6,7 +6,7 @@ import { sessionsRoot } from '../../../src/core/paths.js';
 import type { PlanProposal } from '../../../src/core/schemas/plan.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
-import { passingVerdict } from '#testing/helpers/typed-planner.js';
+import { guidanceConsult, passingVerdict } from '#testing/helpers/typed-planner.js';
 import {
   cli,
   createStopContinueFixture,
@@ -55,7 +55,10 @@ export const dependentPlan = makePlanProposal({
  * planner crashes on the consult, so T001 halts on the failed planner call after its file landed.
  * The caller keeps both values for its cleanup before it starts the run.
  */
-export function consultFailureHaltFixture(planned: PlanProposal): {
+export function consultFailureHaltFixture(
+  planned: PlanProposal,
+  { retryBeforeHalt = false }: { retryBeforeHalt?: boolean } = {},
+): {
   fixture: StopContinueFixture;
   restorePath: () => void;
 } {
@@ -70,6 +73,7 @@ export function consultFailureHaltFixture(planned: PlanProposal): {
   const plannerPath = join(fixture.tmpDir, 'planner.mjs');
   const implementerPath = join(fixture.tmpDir, 'implementer.mjs');
   const failingCheckPath = join(fixture.tmpDir, 'failing-check.mjs');
+  const guidedPath = join(fixture.tmpDir, 'guided');
   // The check fails while the brief's file is in the workspace, so a run that skipped it passes.
   writeFileSync(
     failingCheckPath,
@@ -86,7 +90,8 @@ export function consultFailureHaltFixture(planned: PlanProposal): {
   });
   writeFileSync(
     plannerPath,
-    `const chunks = [];
+    `import { existsSync, writeFileSync } from 'node:fs';
+const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf8');
 const heading = prompt.split('\\n').find((line) => line.startsWith('# '));
@@ -94,8 +99,14 @@ let answer;
 if (prompt.includes('# Task Implementation Review') || prompt.includes('# Final Implementation Review')) {
   answer = ${JSON.stringify(passing)};
 } else if (heading === '# Consult on a failing task' || heading === '# Consult continued') {
-  process.stderr.write('The planner process crashed.\\n');
-  process.exit(1);
+  const guidedPath = ${JSON.stringify(guidedPath)};
+  if (${retryBeforeHalt} && !existsSync(guidedPath)) {
+    writeFileSync(guidedPath, '');
+    answer = ${JSON.stringify(guidanceConsult())};
+  } else {
+    process.stderr.write('The planner process crashed.\\n');
+    process.exit(1);
+  }
 } else if (prompt.includes('# Plan the change')) {
   answer = ${JSON.stringify({ result: planned })};
 } else {
