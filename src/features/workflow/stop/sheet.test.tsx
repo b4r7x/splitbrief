@@ -114,7 +114,7 @@ describe('StopSheet', () => {
     expect(lines.find((line) => line.includes('Stop options'))).toBe('Stop options');
     const legendIndex = lines.findIndex((line) => line.includes('↑↓ select'));
     expect(lines[legendIndex]).toBe('↑↓ select');
-    expect(lines[legendIndex - 1]).toBe('keep changes');
+    expect(lines.slice(0, legendIndex).join(' ')).toMatch(/keep changes$/);
     ui.unmount();
   });
 
@@ -128,7 +128,9 @@ describe('StopSheet', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('start T003');
-    expect(frame).not.toContain('\u2026');
+    expect(frame.replaceAll(/[│|]/gu, ' ').replace(/\s+/gu, ' ')).toContain(
+      'finish T002 including checks and review; do not start T003',
+    );
     expect(frame.split('\n').length).toBeLessThanOrEqual(10);
     ui.unmount();
   });

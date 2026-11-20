@@ -6,6 +6,7 @@
 
 - Review packets list BUILD routes in settlement order, including briefs a validation hook skips after BUILD runs, and explain routing refusals.
 - The transcript shows each plan’s goal, brief count, criteria count and file links together. Older runs show one link for each planning document.
+- Menu shortcuts stay visible while you type. Command lists align names and descriptions. Filtered palettes, completions and confirmations fit their contents. Page Up and Page Down reveal the rest of a long confirmation.
 
 ### Fixed
 

@@ -6,7 +6,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { defaultTheme } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { MenuRows } from '../stop/menu-rows.js';
+import { ListRows } from '../../../components/list-row/rows.js';
 import { stopSheetRows } from '../stop/options.js';
 import { inlineMenuLayout } from './layout.js';
 import { InlineMenuPanel } from './panel.js';
@@ -118,10 +118,11 @@ describe('InlineMenuPanel', () => {
         legend="↑↓ select"
       >
         <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
-          <MenuRows
-            options={layout.options}
+          <ListRows
+            lines={layout.lines}
+            getKey={String}
             selectedIndex={0}
-            cursor="focused"
+            focused
             rowBudget={layout.bodyRows}
             width={layout.width - 4}
           />
@@ -132,13 +133,13 @@ describe('InlineMenuPanel', () => {
     const lines = rows(ui.lastFrame());
     const inner = lines.slice(1, -1).map((row) => row.slice(2, -2).trimEnd());
 
-    expect(layout.options.some((option) => option.lines.length > 1)).toBe(true);
+    expect(layout.lines.some((line) => line.part > 0)).toBe(true);
     expect(lines).toHaveLength(layout.height);
     expect(lines.map(getTerminalCellWidth)).toEqual(Array(layout.height).fill(layout.width));
     expect(inner[0]).toBe('Stop options');
     expect(inner.at(-1)).toBe('↑↓ select');
     expect(inner.slice(1, -1).map((row) => row.slice(2))).toEqual(
-      layout.options.flatMap((option) => option.lines.map((line) => line.trimEnd())),
+      layout.lines.map((line) => (line.name + line.description).trimEnd()),
     );
     ui.unmount();
   });

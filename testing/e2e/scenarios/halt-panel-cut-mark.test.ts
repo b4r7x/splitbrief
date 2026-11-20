@@ -225,7 +225,7 @@ describe('e2e: a halt panel too short for its text', () => {
     expect(panelRow(rows[headline + 2]), rows.join('\n')).toMatch(/^… \d+ more lines?$/);
   });
 
-  it('gives the blank row to the planner reason of a stuck task review at 60x18', async () => {
+  it('keeps the cut planner reason above the task review actions at 60x18', async () => {
     const opened = await openNoProgressHalt();
     expect(opened.state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
@@ -240,11 +240,14 @@ describe('e2e: a halt panel too short for its text', () => {
       row.includes('Needs you · Review T002 made no progress on F1'),
     );
     expect(headline, rows.join('\n')).toBeGreaterThan(-1);
-    const reason = rows.slice(headline + 1, headline + 4).map(panelRow);
-    expect(reason, rows.join('\n')).toHaveLength(3);
+    const actions = rows.findIndex(
+      (row, index) => index > headline && row.includes('Review again'),
+    );
+    expect(actions, rows.join('\n')).toBeGreaterThan(headline + 2);
+    const reason = rows.slice(headline + 1, actions).map(panelRow);
     for (const reasonRow of reason) expect(reasonRow, rows.join('\n')).not.toBe('');
     expect(reason[0]).toContain('Planner said: The type test');
-    expect(reason[2], rows.join('\n')).toMatch(/…$/);
+    expect(reason.at(-1), rows.join('\n')).toMatch(/…$/);
     expect(rows.join('\n')).toContain('End run');
     expect(rows.join('\n')).toContain('↑↓ select · ⏎ confirm');
   });
@@ -280,7 +283,7 @@ describe('e2e: a halt panel too short for its text', () => {
 
       expect(frame, `140x${rows}`).toContain('Needs you');
       expect(frame, `140x${rows}`).toMatch(/… \d+ more lines/);
-      expect(frame, `140x${rows}`).toContain('Try again · recommended');
+      expect(frame, `140x${rows}`).toMatch(/Try again {2,}recommended/);
       expectHiddenActionsMarked(frame, `140x${rows}`);
       expect(frame, `140x${rows}`).toContain('↑↓ select · ⏎ confirm');
     }

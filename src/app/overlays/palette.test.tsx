@@ -683,7 +683,7 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('truncates long palette result rows instead of wrapping them', async () => {
+  it('caps long command names and wraps the full description below them', async () => {
     terminalSizeStore.__testReset({ cols: 50, rows: 24, isSmall: true });
     const longCommand: RuntimeCommandDef = {
       kind: 'noarg',
@@ -703,12 +703,10 @@ describe('CommandPaletteOverlay', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(24);
-    const resultLines = paletteResultRows(frame).filter((line) =>
-      line.includes('/very-long-command'),
-    );
+    const resultLines = paletteResultRows(frame).filter((line) => line.includes('/very-long-'));
     expect(resultLines).toHaveLength(1);
     expect(resultLines[0]).toContain('…');
-    expect(frame).not.toContain('TAIL_SENTINEL_PALETTE');
+    expect(frame.replace(/[\s|]/g, '')).toContain('TAIL_SENTINEL_PALETTE');
 
     instance.unmount();
   });
@@ -1055,11 +1053,11 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('opens the description at one column for the command and skill rows of a section', async () => {
+  it('measures skill names inside Skills and measures the remaining commands after filtering', async () => {
     skillsStore.setAvailable([
       {
         id: 'terminal-layout',
-        name: 'Terminal layout checks for narrow overlay panels',
+        name: 'Terminal layout',
         description: 'Check spacing and terminal-width behavior',
         path: 'fixtures/skills/terminal-layout/SKILL.md',
         scope: 'project',
@@ -1076,20 +1074,24 @@ describe('CommandPaletteOverlay', () => {
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const instance = renderCommandPalette();
-    await tick(1);
-    await tick(1);
+    onTestFinished(instance.unmount);
+    await flushEffects();
 
     const rows = paletteResultRows(instance.lastFrame() ?? '');
-    // The long skill label is wider than half the row, so the shared column cuts it; its
-    // description is found by its own first words.
-    const longSkillRow = stripAnsiStyles(rowContaining(rows, 'Skill · Terminal layout'));
+    const longSkill = 'Skill · Terminal layout';
     const shortSkill = 'Skill · Release checks';
-    const commandColumn = descriptionStart(rowContaining(rows, '/help'), '/help');
+    const longSkillRow = stripAnsiStyles(rowContaining(rows, longSkill));
+    const skillColumn = longSkillRow.indexOf(longSkill) + longSkill.length + 2;
+    expect.soft(descriptionStart(longSkillRow, longSkill)).toBe(skillColumn);
+    expect.soft(descriptionStart(rowContaining(rows, shortSkill), shortSkill)).toBe(skillColumn);
+    expect.soft(descriptionStart(rowContaining(rows, '/help'), '/help')).toBeLessThan(skillColumn);
 
-    expect(longSkillRow).not.toContain('Skill · Terminal layout checks for narrow overlay panels');
-    expect(longSkillRow.indexOf('Check spacing')).toBe(commandColumn);
-    expect(descriptionStart(rowContaining(rows, shortSkill), shortSkill)).toBe(commandColumn);
-    instance.unmount();
+    await write(instance, 'sessions');
+    await vi.waitFor(() => expect(promptLine(instance.lastFrame() ?? '')).toContain('sessions'));
+    const command = stripAnsiStyles(
+      rowContaining(commandRows(instance.lastFrame() ?? ''), '/sessions'),
+    );
+    expect(command).toContain('/sessions  Browse past sessions');
   });
 
   it('puts a typed skill under its own Skills header', async () => {
@@ -1125,7 +1127,7 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('renders the same number of rows for an empty query and a one-match query', async () => {
+  it('uses the palette height as a maximum and brings the hint up under a single result', async () => {
     const feature = 'zzzuniquesessionfeature';
     const session = makeSession({
       id: 'sess-height',
@@ -1138,20 +1140,23 @@ describe('CommandPaletteOverlay', () => {
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const instance = renderCommandPalette();
-    await tick(1);
-    await tick(1);
+    onTestFinished(instance.unmount);
+    await flushEffects();
 
     const browsing = panelHeight(instance.lastFrame() ?? '');
     expect(paletteResultRows(instance.lastFrame() ?? '').length).toBeGreaterThan(1);
 
     await write(instance, feature);
-    await tick(1);
-    await tick(1);
+    await vi.waitFor(() => expect(promptLine(instance.lastFrame() ?? '')).toContain(feature));
 
-    const narrowed = panelHeight(instance.lastFrame() ?? '');
-    expect(paletteResultRows(instance.lastFrame() ?? '')).toHaveLength(1);
-    expect(narrowed).toBe(browsing);
-    instance.unmount();
+    const frame = instance.lastFrame() ?? '';
+    expect(paletteResultRows(frame)).toHaveLength(1);
+    expect.soft(panelHeight(frame)).toBeLessThan(browsing);
+    const lines = stripAnsiStyles(frame).split('\n');
+    const result = lines.findLastIndex((line) => line.includes(feature));
+    const hint = lines.findIndex((line) => line.includes('↑↓ select'));
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(hint - result).toBe(2);
   });
 });
 

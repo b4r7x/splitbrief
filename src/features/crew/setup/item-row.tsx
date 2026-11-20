@@ -7,14 +7,16 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { CREW_IDENTITY_COLUMN, type SeatBlockLayout } from '../format.js';
 import { PresetRowView } from '../preset-row.js';
 import { CrewRowView } from '../row-view.js';
-import { continueText, type SetupItem } from './list-plan.js';
+import { planListRows, type ListLine } from '../../../components/list-row/plan.js';
+import { ListRow } from '../../../components/list-row/row.js';
+import type { SetupItem } from './list-plan.js';
 
 type SetupItemRowProps = Readonly<{
   item: SetupItem;
   isCursor: boolean;
   width: number;
   layout: SeatBlockLayout;
-  presetLabelWidth: number;
+  presetLines: readonly ListLine[];
   unavailableSeats: readonly CrewSeat[];
   canContinue: boolean;
 }>;
@@ -24,21 +26,14 @@ export function SetupItemRow({
   isCursor,
   width,
   layout,
-  presetLabelWidth,
+  presetLines,
   unavailableSeats,
   canContinue,
 }: SetupItemRowProps) {
   const t = useTheme();
   switch (item.kind) {
     case 'preset':
-      return (
-        <PresetRowView
-          preset={item.preset}
-          isCursor={isCursor}
-          width={width}
-          labelWidth={presetLabelWidth}
-        />
-      );
+      return <PresetRowView lines={presetLines} isCursor={isCursor} width={width} />;
     case 'crew': {
       const unavailable = unavailableSeats.some((seat) => seat.id === item.row.id);
       const availabilityWidth = unavailable ? getTerminalCellWidth('  Unavailable') : 0;
@@ -60,13 +55,25 @@ export function SetupItemRow({
         </Box>
       );
     }
-    case 'continue':
-      return (
-        <Text color={isCursor && canContinue ? t.accent : t.textDim} bold={isCursor && canContinue}>
-          {continueText(isCursor)}
-          {!canContinue && `${SOFT_SEP}choose ready seats`}
-        </Text>
+    case 'continue': {
+      const name = 'Continue' + (canContinue ? '' : SOFT_SEP + 'choose ready seats');
+      const [line] = planListRows(
+        [
+          {
+            name,
+            nameParts: [
+              {
+                text: name,
+                color: isCursor && canContinue ? t.accent : t.textDim,
+                bold: isCursor && canContinue,
+              },
+            ],
+          },
+        ],
+        { width },
       );
+      return line && <ListRow line={line} selected={isCursor} width={width} />;
+    }
     default:
       return assertNever(item);
   }

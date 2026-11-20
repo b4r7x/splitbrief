@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { Box, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/panel.js';
-import { ListRow } from '../../components/list-row/row.js';
-import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
-import { ListViewport } from '../../components/pickers/list-viewport.js';
+import { ListRows, planViewportRows } from '../../components/list-row/rows.js';
 import { CLOSE_HINT, formatKeyHints, SCROLL_HINT } from '../../components/key-legend.js';
 import { buildCommandItems } from '../../features/palette/sources.js';
 import { readLatestDiffKey } from '../../features/workflow/conversation-rows/row-actions/read.js';
@@ -30,7 +28,6 @@ import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../stores/workflow/events/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
-import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 
 const PANEL_DENSITY: OverlayDensity = 'roomy';
@@ -114,7 +111,21 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     outerChromeRows: HELP_CHROME_ROWS - OVERLAY_FRAME_ROWS,
   });
   const { innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
-  const labelWidth = commandLabelWidth(commands);
+  const section =
+    listBudget >= SECTION_HEADER_MIN_ROWS ? (i: number) => helpRows[i]?.section ?? '' : undefined;
+  const lines = planViewportRows(
+    helpRows.map((row) => ({
+      name: row.label,
+      wrapName: row.section === SHORTCUTS_SECTION,
+      description: row.description,
+      hint: row.hint,
+      trailing: row.shortcut,
+      group: row.section === SHORTCUTS_SECTION ? 'shortcuts' : 'commands',
+    })),
+    innerWidth,
+    listBudget,
+    section,
+  );
 
   // A scrolled list spends two of its budget rows on the up/down indicators, so a page step of
   // the full budget would carry the cursor past rows that were never rendered.
@@ -123,7 +134,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   useInput((input, key) => {
     const action = resolveScrollKey({ input, key, lineKeys: 'plain' });
     if (action === null) return;
-    const lastIndex = Math.max(0, helpRows.length - 1);
+    const lastIndex = Math.max(0, lines.length - 1);
     setCursor((c) => stepForScrollAction({ action, position: c, page: pageStep, last: lastIndex }));
   });
 
@@ -135,39 +146,16 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
       density={PANEL_DENSITY}
     >
       <Box flexDirection="column" height={listBudget}>
-        <ListViewport
-          barColumn="padding"
-          items={helpRows}
-          selectedIndex={cursor}
-          getKey={(row) => row.key}
+        <ListRows
+          lines={lines}
+          selectedIndex={-1}
+          scrollIndex={cursor}
+          focused={false}
+          getKey={(i) => helpRows[i]?.key ?? ''}
           rowBudget={listBudget}
           width={innerWidth}
           showRemainingCount
-          section={{
-            by: (row) => row.section,
-            headerFor: () => listBudget >= SECTION_HEADER_MIN_ROWS,
-          }}
-          renderItem={(row, ctx) => {
-            // Command names all fit the column, so it never moves for them. A keyboard chord is
-            // spelled out (`shift+↑/↓, pgup/pgdn, home/end`) and teaching it is the whole point of
-            // the row, so a chord past the column pushes its own description right instead of
-            // being cut.
-            const rowLabelWidth = Math.max(labelWidth, getTerminalCellWidth(row.label));
-            return (
-              <ListRow
-                label={row.label}
-                metadata={descriptionColumn({
-                  description: row.description,
-                  hint: row.hint,
-                  shortcut: row.shortcut,
-                  innerWidth: ctx.contentWidth,
-                  labelWidth: rowLabelWidth,
-                })}
-                {...(row.shortcut ? { trailing: row.shortcut } : {})}
-                labelWidth={rowLabelWidth}
-              />
-            );
-          }}
+          section={section}
         />
       </Box>
     </OverlayPanel>

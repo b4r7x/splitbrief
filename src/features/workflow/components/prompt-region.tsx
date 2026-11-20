@@ -52,6 +52,7 @@ export function PromptRegion({
         <ApprovalPrompt
           clampedBoxRows={boxRows}
           focused={panels.gate.focused}
+          onComposerFocus={() => panels.gate.setMenu(false)}
           queues={isQueuePhase(model.phase)}
           {...(review.artifact === null
             ? {}

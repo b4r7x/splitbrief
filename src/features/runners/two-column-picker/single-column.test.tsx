@@ -7,7 +7,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { _resetMouseZones, hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
-import { ListRow } from '../../../components/list-row/row.js';
+import { PickerRow } from '../../../components/list-row/picker-row.js';
 import { defaultTheme, ThemeProvider } from '../../../components/theme.js';
 import { SingleColumnPicker } from './single-column.js';
 
@@ -160,7 +160,7 @@ describe('SingleColumnPicker row zones', () => {
           getKey={(item) => item}
           contentMaxWidth={17}
           renderRow={(item, isCursor, maxWidth) => (
-            <ListRow
+            <PickerRow
               label={item}
               metadata="1.0M"
               state={isCursor ? 'active' : 'default'}

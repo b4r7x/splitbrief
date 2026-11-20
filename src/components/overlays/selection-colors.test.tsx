@@ -4,7 +4,7 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { resolveTheme } from '../../core/theme/resolve.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { FilterableList } from '../pickers/filterable-list.js';
-import { ThemeProvider, ThemeText as Text } from '../theme.js';
+import { ThemeProvider } from '../theme.js';
 
 const savedForceColor = vi.hoisted(() => {
   const saved = process.env.FORCE_COLOR;
@@ -36,7 +36,7 @@ it.each([
           hint="esc close"
           chromeRows={12}
           density="roomy"
-          renderItem={(item) => <Text color={theme.planner}>{item}</Text>}
+          rowModel={(item) => ({ name: item, nameParts: [{ text: item, color: theme.planner }] })}
         />
       </ThemeProvider>,
       viewport,

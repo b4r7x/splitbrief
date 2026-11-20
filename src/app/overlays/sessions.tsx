@@ -5,7 +5,8 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-many.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
-import { SessionRow } from '../../components/session-row.js';
+import { useSharedClock } from '../../hooks/use-shared-clock.js';
+import { sessionRowModel } from '../../components/session-row.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { CLOSE_HINT, formatKeyHints, SELECT_HINT } from '../../components/key-legend.js';
 import {
@@ -25,6 +26,7 @@ const SESSION_PICKER_HINT = formatKeyHints([
 
 export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSelectDeps } = {}) {
   const t = useTheme();
+  const now = useSharedClock({ active: () => true });
   const selectionError = sessionSelectStore.use((s) => s.error);
   const [{ projectDir }, { sessions }] = useStores(configStore, sessionsStore);
 
@@ -55,9 +57,7 @@ export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSel
             : 'No matching sessions'}
         </Text>
       }
-      renderItem={(session, { isCursor }) => (
-        <SessionRow session={session} cursor={{ kind: 'inline', isCursor }} />
-      )}
+      rowModel={(session) => sessionRowModel(session, now, t)}
     />
   );
 }

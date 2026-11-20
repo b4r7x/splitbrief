@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Box } from 'ink';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
-import { ListRow } from '../../components/list-row/row.js';
+import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import {
   CLOSE_HINT,
@@ -16,7 +16,6 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { useStores } from '../../stores/use-many.js';
-import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import {
   GLOBAL_SKILL_SCAN_PATHS,
@@ -87,39 +86,6 @@ function ScanRoots() {
         <Text color={t.textDim}>{`+${hidden} more${SOFT_SEP}resize to see all`}</Text>
       ) : null}
     </Box>
-  );
-}
-
-interface SkillRowProps {
-  skill: SkillMeta;
-  isCursor: boolean;
-  isChecked: boolean;
-  nameColWidth: number;
-  descMaxWidth: number;
-  width: number;
-  showDesc: boolean;
-}
-
-function SkillRow({
-  skill,
-  isCursor,
-  isChecked,
-  nameColWidth,
-  descMaxWidth,
-  width,
-  showDesc,
-}: SkillRowProps) {
-  const desc = truncateTerminalDisplayText(skill.description, descMaxWidth);
-  // Without a description column the name takes the whole row, and the row cuts it at its edge.
-  return (
-    <ListRow
-      state={isCursor ? 'active' : 'default'}
-      label={showDesc ? truncateTerminalDisplayText(skill.name, nameColWidth) : skill.name}
-      width={width}
-      selected={isChecked}
-      {...(showDesc ? { labelWidth: nameColWidth } : {})}
-      {...(showDesc && desc ? { metadata: desc } : {})}
-    />
   );
 }
 
@@ -214,20 +180,12 @@ export function SkillsPicker() {
         by: (skill) => SECTION_LABELS[skill.scope],
         gapBetweenSections: true,
       }}
-      renderItem={(skill, { isCursor, innerWidth }) => {
-        const nameColWidth = Math.max(8, Math.min(26, Math.floor(innerWidth / 4)));
-        return (
-          <SkillRow
-            skill={skill}
-            isCursor={isCursor}
-            isChecked={checked.has(skill.id)}
-            nameColWidth={nameColWidth}
-            descMaxWidth={Math.max(1, innerWidth - 5 - nameColWidth)}
-            width={innerWidth}
-            showDesc={innerWidth >= 70}
-          />
-        );
-      }}
+      rowModel={(skill) => ({
+        name: skill.name,
+        description: skill.description,
+        trailing: checked.has(skill.id) ? glyph('check') : '',
+        trailingParts: [{ text: glyph('check'), tone: 'success' }],
+      })}
     />
   );
 }

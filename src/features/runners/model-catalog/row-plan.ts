@@ -164,7 +164,7 @@ export function planModelRows(input: {
     if (row.kind !== 'axis') return room;
     return Math.max(
       room,
-      2 + row.tree.depth * 3 + getTerminalCellWidth(row.axis) + 1 + getTerminalCellWidth(row.value),
+      2 + row.tree.depth * 3 + getTerminalCellWidth(row.axis) + 2 + getTerminalCellWidth(row.value),
     );
   }, 0);
   const childWidth =

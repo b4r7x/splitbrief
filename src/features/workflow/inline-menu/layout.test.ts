@@ -44,17 +44,15 @@ describe('inlineMenuLayout', () => {
   it('states every consequence, so the sheet is as tall as its rows whichever is selected', () => {
     expect(inlineMenuLayout(building, 120).bodyRows).toBe(3);
     expect(inlineMenuLayout(building, 80).bodyRows).toBe(4);
-    expect(inlineMenuLayout(building, 60).bodyRows).toBe(5);
+    expect(inlineMenuLayout(building, 60).bodyRows).toBe(6);
   });
 
-  it('breaks a wrapped row between clauses and hangs the rest under its label', () => {
-    expect(inlineMenuLayout(building, 80).options[1]?.lines).toEqual([
-      'Pause after this brief · finish T002 including checks and review;',
-      '  do not start T003',
-    ]);
-    expect(inlineMenuLayout(building, 60).options[2]?.lines).toEqual([
-      'End run · stop execution; close this run;',
-      '  keep changes',
-    ]);
+  it('aligns wrapped consequences with their description column', () => {
+    const { lines } = inlineMenuLayout(building, 80);
+    const pause = lines.filter((line) => line.row === 1);
+    const text = pause.map((line) => line.name + line.description);
+    expect(text.length).toBeGreaterThan(1);
+    expect(text.map((line) => line.trim()).join(' ')).toContain('do not start T003');
+    expect(text[0]?.indexOf('finish')).toBe(text[1]?.search(/\S/u));
   });
 });

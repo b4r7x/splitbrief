@@ -9,6 +9,10 @@ import {
 import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
 import { getRecoveryPromptActions } from '../recovery/actions.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
+import { planListRows } from '../../../components/list-row/plan.js';
+import { recoveryMenuRows } from '../recovery/menu-label.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
+import { selectTaskListView } from '../../../core/run-view/briefs.js';
 import { MIN_TEXT_WIDTH } from './measure.js';
 
 const RECOVERY_PROMPT_HORIZONTAL_CHROME = 4;
@@ -27,7 +31,13 @@ export function getRecoveryPromptRows(issue: RecoveryIssue, cols: number): numbe
     1,
     countPromptBodyRows(recoveryPromptSummaryRows(issue, width), width),
   );
-  const actionRows = Math.max(1, getRecoveryPromptActions(issue).length);
+  const view = runViewStore.get();
+  const actions = recoveryMenuRows(
+    issue,
+    selectTaskListView(view.briefs).finished > 0,
+    view.reviewNone,
+  );
+  const actionRows = Math.max(1, planListRows(actions, { width }).length);
   return (
     RECOVERY_PROMPT_BORDER_ROWS +
     summaryRows +
@@ -48,12 +58,17 @@ export function getRecoveryPromptRows(issue: RecoveryIssue, cols: number): numbe
  * no room for that row, the border gives way before it. The list scrolls, so every action stays
  * reachable.
  */
-export function fitRecoveryMenu(input: { issue: RecoveryIssue; width: number; boxRows: number }) {
+export function fitRecoveryMenu(input: {
+  issue: RecoveryIssue;
+  width: number;
+  boxRows: number;
+  actionRows?: number;
+}) {
   const { issue, width, boxRows } = input;
   const innerWidth = Math.max(MIN_TEXT_WIDTH, width - RECOVERY_PROMPT_HORIZONTAL_CHROME);
   const fullSummary = recoveryPromptSummaryRows(issue, innerWidth);
   const fullRows = promptBodyRows(fullSummary, innerWidth);
-  const actionCount = Math.max(getRecoveryPromptActions(issue).length, 1);
+  const actionCount = Math.max(input.actionRows ?? getRecoveryPromptActions(issue).length, 1);
   const listFloor = Math.min(2, actionCount);
   const askedRow = (row: PromptBodyLine): boolean =>
     row.kind === 'facts-line' && isAskedDetail(row.text.trimStart());

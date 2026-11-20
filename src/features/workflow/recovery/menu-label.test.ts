@@ -17,18 +17,19 @@ import {
   usageLimitIssue,
 } from '#testing/helpers/recovery-prompt.js';
 import { getRecoveryPromptActions, recommendedRecoveryAction } from './actions.js';
-import { recoveryMenuActionLabel, recoveryMenuParts } from './menu-label.js';
+import { recoveryMenuActionLabel, recoveryMenuRow } from './menu-label.js';
 
 it('carries the action seat and consequence before formatting the label', () => {
   expect(
-    recoveryMenuParts('switch-seat', makeRecoveryIssue({ seat: 'build' }), false, false),
-  ).toEqual([
-    { text: 'Change ', tone: 'text' },
-    { text: 'BUILD', tone: 'implementer' },
-    { text: ' tool', tone: 'text' },
-    { text: ' · ', tone: 'textDim' },
-    { text: 'restarts this brief', tone: 'textDim' },
-  ]);
+    recoveryMenuRow('switch-seat', makeRecoveryIssue({ seat: 'build' }), false, false),
+  ).toMatchObject({
+    nameParts: [
+      { text: 'Change ', tone: 'text' },
+      { text: 'BUILD', tone: 'implementer' },
+      { text: ' tool', tone: 'text' },
+    ],
+    description: 'restarts this brief',
+  });
 });
 
 describe('the words of a row that runs a brief again', () => {
@@ -119,20 +120,19 @@ describe('the words of a row that runs a brief again', () => {
 
 it('names Continue on a failed review under REVIEW None: no seat reviews again', () => {
   const issue = makeRecoveryIssue({ reason: 'review-failed' });
-  expect(recoveryMenuParts('revise', issue, false, true)).toEqual([
-    { text: 'Continue', tone: 'text' },
-  ]);
+  expect(recoveryMenuRow('revise', issue, false, true)).toMatchObject({
+    nameParts: [{ text: 'Continue', tone: 'text' }],
+  });
   expect(recoveryMenuActionLabel('revise', issue, true)).toBe('Continue');
 });
 
 it('keeps the Review again hint dim', () => {
   expect(
-    recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }), false, false),
-  ).toEqual([
-    { text: 'Review again', tone: 'text' },
-    { text: ' · ', tone: 'textDim' },
-    { text: 'sends your note to the reviewer', tone: 'textDim' },
-  ]);
+    recoveryMenuRow('revise', makeRecoveryIssue({ reason: 'review-failed' }), false, false),
+  ).toMatchObject({
+    nameParts: [{ text: 'Review again', tone: 'text' }],
+    description: 'sends your note to the reviewer',
+  });
 });
 
 it.each([
@@ -208,23 +208,21 @@ it.each([
     'puts back the files Apply replaced and removes the ones it created',
   ],
 ] as const)('keeps the %s %s action consequence dim', (reason, action, label, consequence) => {
-  expect(recoveryMenuParts(action, makeRecoveryIssue({ reason }), false, false)).toEqual([
-    { text: label, tone: 'text' },
-    { text: ' · ', tone: 'textDim' },
-    { text: consequence, tone: 'textDim' },
-  ]);
+  expect(recoveryMenuRow(action, makeRecoveryIssue({ reason }), false, false)).toMatchObject({
+    nameParts: [{ text: label, tone: 'text' }],
+    description: consequence,
+  });
 });
 
 it('End run names its kept changes only after a brief finished', () => {
   const issue = makeRecoveryIssue({ reason: 'apply-conflict' });
-  expect(recoveryMenuParts('end-run', issue, true, false)).toEqual([
-    { text: 'End run', tone: 'text' },
-    { text: ' · ', tone: 'textDim' },
-    { text: 'closes this run, keeps its changes', tone: 'textDim' },
-  ]);
-  expect(recoveryMenuParts('end-run', issue, false, false)).toEqual([
-    { text: 'End run', tone: 'text' },
-  ]);
+  expect(recoveryMenuRow('end-run', issue, true, false)).toMatchObject({
+    nameParts: [{ text: 'End run', tone: 'text' }],
+    description: 'closes this run, keeps its changes',
+  });
+  expect(recoveryMenuRow('end-run', issue, false, false)).toMatchObject({
+    nameParts: [{ text: 'End run', tone: 'text' }],
+  });
 });
 
 describe('recovery prompt', () => {

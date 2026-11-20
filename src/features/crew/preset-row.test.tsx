@@ -7,7 +7,7 @@ import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
-import { PresetRowView } from './preset-row.js';
+import { planPresetRows, PresetRowView } from './preset-row.js';
 
 const DESCRIPTION = 'Claude Code plans and builds; Codex reviews the diff from another lab.';
 
@@ -30,12 +30,7 @@ async function frameFor(
   preset: CrewPreset = PRESET,
 ): Promise<string> {
   const ui = renderFeature(
-    <PresetRowView
-      preset={preset}
-      isCursor={isCursor}
-      width={width}
-      labelWidth={getTerminalCellWidth(PRESET.label)}
-    />,
+    <PresetRowView lines={planPresetRows([preset], width)} isCursor={isCursor} width={width} />,
     { cols, rows: 24 },
   );
   await flushEffects();
@@ -51,12 +46,7 @@ async function lineFor(width: number, cols: number, isCursor = true): Promise<st
 async function themedFrameFor(isCursor: boolean): Promise<string> {
   const ui = renderFeature(
     <ThemeProvider theme={{ ...defaultTheme, accent: 'red' }}>
-      <PresetRowView
-        preset={PRESET}
-        isCursor={isCursor}
-        width={102}
-        labelWidth={getTerminalCellWidth(PRESET.label)}
-      />
+      <PresetRowView lines={planPresetRows([PRESET], 102)} isCursor={isCursor} width={102} />
     </ThemeProvider>,
     { cols: 120, rows: 24 },
   );
@@ -115,14 +105,14 @@ describe('crew preset row', () => {
     expect(line).not.toContain(DESCRIPTION);
   });
 
-  it('keeps the gutter and whole words when the label column fills a narrow row', async () => {
+  it('keeps the gutter and caps the name when the description moves below it', async () => {
     const width = getTerminalCellWidth(PRESET.label) + 3;
     for (const notReady of [[], ['opencode']] as const) {
       const line =
         stripAnsiStyles(await frameFor(width, 40, true, { ...PRESET, notReady })).split('\n')[0] ??
         '';
 
-      expect(line.trimEnd()).toBe(`${listRowLead('active')}${PRESET.label}`);
+      expect(line.trimEnd()).toBe(`${listRowLead('active')}Claude cre…`);
     }
   });
 
@@ -133,10 +123,8 @@ describe('crew preset row', () => {
       const cursored = await themedFrameFor(true);
       const plain = await themedFrameFor(false);
 
-      expect(cursored).toContain(`\u001B[31m${listRowLead('active')}\u001B[1m${PRESET.label}`);
-      expect(plain).toContain(
-        `\u001B[31m${listRowLead('default')}${paint(defaultTheme.text, PRESET.label).replace('\u001B[39m', '')}`,
-      );
+      expect(cursored).toContain(`\u001B[31m${listRowLead('active')}${PRESET.label}`);
+      expect(plain).toContain(paint(defaultTheme.text, PRESET.label).replace('\u001B[39m', ''));
     } finally {
       chalk.level = originalLevel;
     }

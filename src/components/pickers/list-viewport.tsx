@@ -52,7 +52,7 @@ interface ListViewportBaseProps<T> {
   onRowActivate?: ((globalIndex: number) => void) | undefined;
   rowZonePrefix?: string | undefined;
   rowZoneZ?: number | undefined;
-  showRemainingCount?: boolean | undefined;
+  showRemainingCount?: boolean | ((lastVisibleIndex: number) => number) | undefined;
 }
 
 type ListViewportExplicitBudgetProps = {
@@ -129,7 +129,10 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
 
   const visibleItems = visibleSlots.filter((slot) => slot.kind === 'item');
   const lastVisibleItemIndex = visibleItems.at(-1)?.itemIndex ?? -1;
-  const remainingBelow = Math.max(0, items.length - lastVisibleItemIndex - 1);
+  const remainingBelow =
+    typeof showRemainingCount === 'function'
+      ? showRemainingCount(lastVisibleItemIndex)
+      : Math.max(0, items.length - lastVisibleItemIndex - 1);
 
   const contentRows = visibleSlots.filter((slot) => slot.kind !== 'indicator').length;
   const overflows =
@@ -156,7 +159,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
                 key={`indicator-${slot.direction}-${i}`}
                 show
                 direction={slot.direction}
-                {...(showRemainingCount && slot.direction !== 'up'
+                {...(showRemainingCount && remainingBelow > 0 && slot.direction !== 'up'
                   ? { count: remainingBelow }
                   : {})}
               />

@@ -38,6 +38,6 @@ it('says Try again continues the brief on its kept files after its consult stopp
     taskId: 'T001',
   });
   const frame = stripAnsiStyles(ui.lastFrame());
-  expect(frame).toContain('Try again · continues this brief');
+  expect(frame).toMatch(/Try again {2,}continues this brief/);
   expect(frame).not.toContain('restarts this brief');
 });

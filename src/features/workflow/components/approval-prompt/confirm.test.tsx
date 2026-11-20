@@ -88,7 +88,7 @@ describe('ApprovalPrompt confirm tier', () => {
     const first = openApprovalPrompt(makeConfirmRequest('.splitbrief/state.json', 'destructive'));
     await tick(PAST_GRACE);
 
-    expect(ui.lastFrame() ?? '').toContain('control-plane file write');
+    expect(ui.lastFrame() ?? '').toContain('Write to a protected project file');
     expect(ui.lastFrame() ?? '').toContain('.splitbrief/state.json');
 
     const second = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
@@ -140,9 +140,9 @@ describe('ApprovalPrompt confirm tier', () => {
     expect(frame).not.toContain('to proceed');
     // A destructive Confirm row carries no accelerator key, so its key cell is blank and the
     // label column is set by `r` and `x`.
-    expect(frame).toContain(`${bar}    Confirm`);
-    expect(frame).toContain('r   Confirm with a reason');
-    expect(frame).toContain('x   Deny');
+    expect(frame).toContain(`${bar}   Confirm`);
+    expect(frame).toContain('r  Confirm with a reason');
+    expect(frame).toContain('x  Deny');
     expect(frame).toContain('this cannot be undone');
     expect(frame).toContain(CHOOSE_HINTS);
     expect(frame).not.toContain(glyph('cursor'));
@@ -153,12 +153,48 @@ describe('ApprovalPrompt confirm tier', () => {
     ui.unmount();
   });
 
+  it('keeps the key letters and aligns the unkeyed Confirm option when the composer has focus', () => {
+    void openApprovalPrompt(makeConfirmRequest('.git/config'));
+    const ui = renderFeature(<ApprovalPrompt focused={false} />);
+    try {
+      const rows = stripColor(ui.lastFrame()).split('\n');
+      const options = rows.filter(
+        (row) => /(?:Confirm|Deny)\s*[|│┃]$/u.test(row) || row.includes('Confirm with a reason'),
+      );
+      expect(options).toHaveLength(3);
+      const [confirm = '', reason = '', deny = ''] = options;
+      expect.soft(reason).toContain('r  Confirm with a reason');
+      expect.soft(deny).toContain('x  Deny');
+      expect(confirm.slice(1, confirm.indexOf('Confirm')).trim()).toBe('');
+      expect(confirm.indexOf('Confirm')).toBe(reason.indexOf('Confirm'));
+      expect(deny.indexOf('Deny')).toBe(confirm.indexOf('Confirm'));
+    } finally {
+      ui.unmount();
+    }
+  });
+
+  it('fits the confirm frame to its longest line', () => {
+    const viewport = { cols: 120, rows: 40 };
+    const path = '.splitbrief/sessions/previous-release-with-reviewed-changes/state.json';
+    terminalSizeStore.__testReset(viewport);
+    void openApprovalPrompt(makeConfirmRequest(path));
+    const ui = renderFeature(<ApprovalPrompt />, viewport);
+    try {
+      const row = stripColor(ui.lastFrame())
+        .split('\n')
+        .find((line) => line.includes(path));
+      expect(row?.slice(row.indexOf(path) + path.length)).toMatch(/^ [|│┃]$/u);
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('starts on Confirm and confirms an irreversible write on ⏎', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
     await waitPastGrace(ui, '.git/config');
 
-    expect(stripColor(ui.lastFrame())).toContain(`${bar}    Confirm`);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}   Confirm`);
 
     ui.stdin.write(ENTER);
     await expect(pending).resolves.toEqual({
@@ -174,12 +210,12 @@ describe('ApprovalPrompt confirm tier', () => {
     const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
     await waitPastGrace(ui, 'package.json');
 
-    expect(stripColor(ui.lastFrame())).toContain(`${bar}y   Confirm`);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}y  Confirm`);
 
     // Up from the first row wraps to the last; ⏎ then takes Deny.
     ui.stdin.write(UP);
     await tick(20);
-    expect(stripColor(ui.lastFrame())).toContain(`${bar}x   Deny`);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}x  Deny`);
 
     await flushEffects();
     ui.stdin.write(ENTER);
@@ -194,7 +230,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     ui.stdin.write(DOWN);
     await tick(20);
-    expect(stripColor(ui.lastFrame())).toContain(`${bar}r   Confirm with a reason`);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}r  Confirm with a reason`);
 
     ui.stdin.write(ENTER);
     await tick(20);
@@ -225,14 +261,14 @@ describe('ApprovalPrompt confirm tier', () => {
 
     ui.stdin.write(DOWN);
     await tick(20);
-    expect(stripColor(ui.lastFrame())).toContain(`${bar}r   Confirm with a reason`);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}r  Confirm with a reason`);
 
     ui.stdin.write('y');
     await tick(20);
     expect(approvalPromptStore.get().status).toBe('pending');
     const nudged = stripColor(ui.lastFrame());
     expect(nudged).toContain(confirmNudge('destructive'));
-    expect(nudged).toContain(`${bar}    Confirm`);
+    expect(nudged).toContain(`${bar}   Confirm`);
 
     // Any arrow clears the nudge and moves the highlight.
     ui.stdin.write(DOWN);
@@ -240,7 +276,7 @@ describe('ApprovalPrompt confirm tier', () => {
     const cleared = stripColor(ui.lastFrame());
     expect(cleared).not.toContain(confirmNudge('destructive'));
     expect(cleared).toContain(CHOOSE_HINTS);
-    expect(cleared).toContain(`${bar}r   Confirm with a reason`);
+    expect(cleared).toContain(`${bar}r  Confirm with a reason`);
 
     ui.stdin.write(ESC);
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
@@ -252,7 +288,7 @@ describe('ApprovalPrompt confirm tier', () => {
     const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
     await waitPastGrace(ui, 'package.json');
 
-    expect(stripColor(ui.lastFrame())).toContain(`${bar}y   Confirm`);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}y  Confirm`);
     await flushEffects();
 
     ui.stdin.write('y');
@@ -369,7 +405,7 @@ describe('ApprovalPrompt confirm tier', () => {
       // A row count cannot see a clipped line, so the choose step is judged on what it shows: the
       // title, every option with its padded key cell, and the legend its own row.
       const chooseStep = stripColor(ui.lastFrame());
-      const confirmRow = actionClass === 'destructive' ? `${bar}    Confirm` : `${bar}y   Confirm`;
+      const confirmRow = actionClass === 'destructive' ? `${bar}   Confirm` : `${bar}y  Confirm`;
       expect(chooseStep).toContain(approvalTitle(actionClass));
       expect(chooseStep).toContain(confirmRow);
       expect(chooseStep).toContain('Confirm with a reason');
@@ -399,7 +435,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     ui.stdin.write(DOWN);
     await tick(20);
-    expect(stripColor(ui.lastFrame())).toContain(`${bar}r   Confirm with a reason`);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}r  Confirm with a reason`);
     ui.stdin.write('r');
     await tick(20);
     ui.stdin.write('half a reason');
@@ -412,7 +448,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     const frame = stripColor(ui.lastFrame());
     expect(frame).toContain('reset repository');
-    expect(frame).toContain(`${bar}    Confirm`);
+    expect(frame).toContain(`${bar}   Confirm`);
     expect(frame).not.toContain('half a reason');
     expect(frame).not.toContain('Why are you making this change?');
 
@@ -596,6 +632,44 @@ describe('runner trust panel', () => {
     terminalSizeStore.reset();
   });
 
+  it('scrolls through every trust fact before a decision on a short terminal', async () => {
+    const viewport = { cols: 60, rows: 18 };
+    terminalSizeStore.__testReset(viewport);
+    const ui = renderFeature(<ApprovalPrompt />, viewport);
+    const pending = openApprovalPrompt(makeConfirmRequest(TRUST_DISCLOSURE, 'runner_trust'));
+    try {
+      await waitPastGrace(ui, 'Executable:');
+      const first = stripColor(ui.lastFrame());
+      ui.stdin.write('\u001b[6~');
+      await flushEffects();
+      const last = stripColor(ui.lastFrame());
+      const pages = first + '\n' + last;
+      for (const fact of [
+        'Executable:',
+        'Arguments:',
+        'Contract:',
+        'Working directory:',
+        'Staging:',
+        'Environment names:',
+        'Environment access:',
+        'Filesystem:',
+        'Network:',
+        'Result:',
+      ]) {
+        expect.soft(pages).toContain(fact);
+      }
+      expect.soft(last).toContain('reusable receipt.');
+      expect(approvalPromptStore.get().status).toBe('pending');
+      ui.stdin.write('\u001b[5~');
+      await flushEffects();
+      expect(stripColor(ui.lastFrame())).toContain('Executable:');
+      ui.stdin.write(ESC);
+      await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('drops the border and the label before a disclosure line in 60 x 18, and keeps the title and the options', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     const ui = renderFeature(<ApprovalPrompt />, { cols: 60, rows: 18 });
@@ -613,10 +687,10 @@ describe('runner trust panel', () => {
     // The label restates the title, so it goes before any disclosure line.
     expect(frame).not.toContain('runner command from the project config');
     // The count keeps a blank row between it and the options.
-    const confirmRow = lines.findIndex((line) => line.includes('y   Confirm'));
+    const confirmRow = lines.findIndex((line) => line.includes('y  Confirm'));
     expect(lines[confirmRow - 1]?.trim()).toBe('');
     expect(lines[confirmRow - 2]).toContain('… 5 more lines');
-    expect(lines[confirmRow + 1]).toContain('x   Deny');
+    expect(lines[confirmRow + 1]).toContain('x  Deny');
     expect(lines.at(-1)).toContain(CHOOSE_HINTS);
 
     ui.stdin.write(ESC);
@@ -640,11 +714,11 @@ describe('runner trust panel', () => {
       expect(frame).toContain('runner command from the project config');
       expect(frame).toContain('Executable:');
       expect(frame).toContain('Arguments: "--diff" "--strict"');
-      expect(frame).toContain('y   Confirm');
-      expect(frame).toContain('x   Deny');
+      expect(frame).toContain('y  Confirm');
+      expect(frame).toContain('x  Deny');
       expect(lines.at(-2)).toContain(CHOOSE_HINTS);
       // The last subject row and the options keep a blank row between them.
-      const confirmRow = lines.findIndex((line) => line.includes('y   Confirm'));
+      const confirmRow = lines.findIndex((line) => line.includes('y  Confirm'));
       expect(lines[confirmRow - 1]).toMatch(/^\|\s+\|$/);
       expect(lines[confirmRow - 2]).toMatch(lastSubjectRow);
 
@@ -667,10 +741,10 @@ describe('runner trust panel', () => {
     expect(frame).toContain('Executable:');
     expect(frame).toContain('Arguments:');
     expect(frame).not.toContain('Exact confirmation stores');
-    const confirmRow = lines.findIndex((line) => line.includes('y   Confirm'));
+    const confirmRow = lines.findIndex((line) => line.includes('y  Confirm'));
     expect(lines[confirmRow - 1]?.trim()).toBe('');
     expect(lines[confirmRow - 2]).toContain('… 6 more lines');
-    expect(frame).toContain('x   Deny');
+    expect(frame).toContain('x  Deny');
     expect(lines.at(-1)).toContain(CHOOSE_HINTS);
 
     ui.stdin.write(ESC);
@@ -688,7 +762,7 @@ describe('runner trust panel', () => {
     ui.stdin.write('r');
     await tick(20);
     expect(stripColor(ui.lastFrame())).not.toContain(CONFIRM_QUESTION);
-    expect(stripColor(ui.lastFrame())).toContain('y   Confirm');
+    expect(stripColor(ui.lastFrame())).toContain('y  Confirm');
 
     ui.stdin.write('y');
     await expect(pending).resolves.toMatchObject({ decision: 'confirm', phrase: CONFIRM_PHRASE });

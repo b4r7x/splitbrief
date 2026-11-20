@@ -18,6 +18,7 @@ export function useInlineMenuKeys<T>({
   initialIndex,
   focused,
   listRows,
+  lines,
   onSelect,
   onTab,
 }: {
@@ -28,6 +29,7 @@ export function useInlineMenuKeys<T>({
   initialIndex?: number | undefined;
   focused: boolean;
   listRows: number;
+  lines?: readonly { row: number }[] | undefined;
   onSelect: (item: T) => void;
   onTab: () => void;
 }): number {
@@ -56,7 +58,14 @@ export function useInlineMenuKeys<T>({
     const itemIndex = items.findIndex((item) => letterOf?.(item) === letter);
     const inView =
       itemIndex >= 0 &&
-      isItemIndexVisible({ items: [...items], selectedIndex, itemIndex, rowBudget: listRows });
+      (lines
+        ? isItemIndexVisible({
+            items: [...lines],
+            selectedIndex: lines.findIndex((line) => line.row === selectedIndex),
+            itemIndex: lines.findIndex((line) => line.row === itemIndex),
+            rowBudget: listRows,
+          })
+        : isItemIndexVisible({ items: [...items], selectedIndex, itemIndex, rowBudget: listRows }));
     return inView ? items[itemIndex] : undefined;
   };
   // Escape belongs to the app's stop ladder; Tab only lets go of the keys.

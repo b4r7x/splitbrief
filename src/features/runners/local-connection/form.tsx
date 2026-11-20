@@ -1,6 +1,6 @@
 import { Box } from 'ink';
 import { PanelRow } from '../../../components/overlays/row.js';
-import { ListRow } from '../../../components/list-row/row.js';
+import { PickerRow } from '../../../components/list-row/picker-row.js';
 import { OverlayPanel } from '../../../components/overlays/panel.js';
 import { windowSlice } from '../../../components/pickers/scroll-offset.js';
 import { useTheme } from '../../../components/theme.js';
@@ -106,7 +106,7 @@ export function LocalConnectionForm(props: LocalConnectionFormProps) {
       />
       <Box height={1} />
       <PanelRow active={row === 2}>
-        <ListRow
+        <PickerRow
           label={`${checked ? 'Retry' : 'Check'} this connection`}
           state={row === 2 ? 'active' : 'default'}
           width={innerWidth}
@@ -122,7 +122,7 @@ export function LocalConnectionForm(props: LocalConnectionFormProps) {
         const active = modelRows[modelIndex]?.id === model.id;
         return (
           <PanelRow key={model.id} active={active}>
-            <ListRow
+            <PickerRow
               label={model.label}
               state={active ? 'active' : 'default'}
               width={innerWidth}

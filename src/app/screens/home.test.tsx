@@ -1714,8 +1714,7 @@ describe('HomeScreen', () => {
       const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
       const rowOf = (text: string) => lines.findIndex((line) => line.includes(text)) + 1;
       // The panel is a centred card, so a click lands on the column its option keys paint at.
-      const column =
-        (lines.find((line) => line.includes('x   Deny')) ?? '').indexOf('x   Deny') + 1;
+      const column = (lines.find((line) => line.includes('x  Deny')) ?? '').indexOf('x  Deny') + 1;
       let settled: TieredApprovalResponse | undefined;
       void answer.promise.then((response) => {
         settled = response;
@@ -1734,8 +1733,8 @@ describe('HomeScreen', () => {
     }
 
     it.each([
-      ['y   Confirm', { decision: 'confirm', phrase: CONFIRM_PHRASE }],
-      ['x   Deny', { decision: 'deny', reason: 'user_denied' }],
+      ['y  Confirm', { decision: 'confirm', phrase: CONFIRM_PHRASE }],
+      ['x  Deny', { decision: 'deny', reason: 'user_denied' }],
     ])('on the painted %s row takes that row', async (row, expected) => {
       const panel = await openTrustPanel();
       panel.click(panel.rowOf(row));
@@ -1753,7 +1752,7 @@ describe('HomeScreen', () => {
       panel.click(row);
       await tick(20);
       expect(panel.settled()).toBeUndefined();
-      panel.click(panel.rowOf('x   Deny'));
+      panel.click(panel.rowOf('x  Deny'));
       await vi.waitFor(() => expect(panel.settled()).toMatchObject({ decision: 'deny' }), 1000);
       panel.close();
     });

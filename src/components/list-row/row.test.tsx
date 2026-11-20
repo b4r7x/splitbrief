@@ -1,3 +1,4 @@
+import { PickerRow } from './picker-row.js';
 import type { ReactElement } from 'react';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
@@ -5,7 +6,7 @@ import { afterAll, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vi
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../../lib/glyphs.js';
 import { ELLIPSIS } from '../../utils/display-text/truncate.js';
-import { ListGroupHeader, ListRow } from './row.js';
+import { ListGroupHeader } from './row.js';
 import { listRowLead } from './lead.js';
 import { defaultTheme, ThemeProvider } from '../theme.js';
 import { resolveTheme } from '../../core/theme/resolve.js';
@@ -63,54 +64,25 @@ function frameOf(node: ReactElement, width = 40): string {
   return frame;
 }
 
-describe('ListRow', () => {
+describe('PickerRow', () => {
   it('accepts structured labels only with end truncation or whole-word fitting', () => {
     type StructuredLabel = { label: string; labelParts: { text: string }[] };
     expectTypeOf<StructuredLabel & { labelTruncate: 'end' }>().toExtend<
-      Parameters<typeof ListRow>[0]
+      Parameters<typeof PickerRow>[0]
     >();
     expectTypeOf<StructuredLabel & { keepWhole: 'label' }>().toExtend<
-      Parameters<typeof ListRow>[0]
+      Parameters<typeof PickerRow>[0]
     >();
     expectTypeOf<StructuredLabel & { labelTruncate: 'path' }>().not.toExtend<
-      Parameters<typeof ListRow>[0]
+      Parameters<typeof PickerRow>[0]
     >();
     expectTypeOf<StructuredLabel & { labelTruncate: 'start' }>().not.toExtend<
-      Parameters<typeof ListRow>[0]
+      Parameters<typeof PickerRow>[0]
     >();
   });
   beforeEach(() => {
     forceUnicodeGlyphs();
   });
-
-  it.each([true, false])(
-    'keeps structured label colors through the shared fit when active=%s',
-    (active) => {
-      const frame = frameOf(
-        <ListRow
-          label="Change BUILD tool · restarts this brief"
-          labelParts={[
-            { text: 'Change ', color: active ? defaultTheme.accent : defaultTheme.text },
-            { text: 'BUILD', color: defaultTheme.implementer },
-            { text: ' tool', color: active ? defaultTheme.accent : defaultTheme.text },
-            { text: ' · ', color: defaultTheme.textDim },
-            { text: 'restarts this brief', color: defaultTheme.textDim },
-          ]}
-          state={active ? 'active' : 'default'}
-          accelerator="w"
-          acceleratorWidth={1}
-          metadata="recommended"
-          metadataAfterLabel
-          keepWhole="label"
-          width={24}
-        />,
-      );
-      expect(stripAnsiStyles(frame)).toContain('w   Change BUILD tool…');
-      expect(frame).toContain(paint(defaultTheme.implementer, 'BUILD').replace('\u001b[39m', ''));
-      expect(frame).toContain(paint(defaultTheme.textDim, '…'));
-      expect(stripAnsiStyles(frame)).not.toContain('recommended');
-    },
-  );
 
   it('exports listRowLead', () => {
     expect(listRowLead('active')).toBe(`${glyph('liveBar')} `);
@@ -121,10 +93,10 @@ describe('ListRow', () => {
   it('elides a path label at a separator, so what is left is still a whole path', () => {
     const label = 'kilo/anthropic/claude-opus-4.5';
     const wide = stripAnsiStyles(
-      frameOf(<ListRow label={label} labelTruncate="path" width={40} />),
+      frameOf(<PickerRow label={label} labelTruncate="path" width={40} />),
     );
     const narrow = stripAnsiStyles(
-      frameOf(<ListRow label={label} labelTruncate="path" width={24} />),
+      frameOf(<PickerRow label={label} labelTruncate="path" width={24} />),
     );
 
     expect(wide).toContain(label);
@@ -133,7 +105,7 @@ describe('ListRow', () => {
   });
 
   it('renders a default row with no focus or active glyph', () => {
-    const frame = frameOf(<ListRow label="claude code" />);
+    const frame = frameOf(<PickerRow label="claude code" />);
     expect(frame).toContain('claude code');
     expect(frame).not.toContain('▌');
     expect(frame).not.toContain('▸');
@@ -141,10 +113,10 @@ describe('ListRow', () => {
 
   it('renders state context with the liveBar glyph in dim lead and default text colors', () => {
     const activeFrame = frameOf(
-      <ListRow label="claude code" state="active" metadata="active-meta" />,
+      <PickerRow label="claude code" state="active" metadata="active-meta" />,
     );
     const contextFrame = frameOf(
-      <ListRow label="claude code" state="context" metadata="active-meta" />,
+      <PickerRow label="claude code" state="context" metadata="active-meta" />,
     );
 
     // ANSI-stripped equality of glyph and structure between context and active
@@ -166,130 +138,45 @@ describe('ListRow', () => {
 
   it('uses the ascii live bar for state context when the glyph tier is ascii', () => {
     withAsciiTier(() => {
-      const frame = frameOf(<ListRow label="codex" state="context" />);
+      const frame = frameOf(<PickerRow label="codex" state="context" />);
       expect(stripAnsiStyles(frame)).toContain(`${glyph('liveBar', 'ascii')} `);
       expect(frame).not.toContain('▌');
     });
   });
 
   it('leads a non-highlighted row with two blanks and no dot', () => {
-    const frame = frameOf(<ListRow label="codex" />);
+    const frame = frameOf(<PickerRow label="codex" />);
     const line = stripAnsiStyles(frame.split('\n')[0] ?? '');
     expect(line.startsWith('  codex')).toBe(true);
     expect(frame).not.toContain('·');
   });
 
-  it('paints an accelerator key padded to its width after the lead', () => {
-    const line = stripAnsiStyles(
-      frameOf(<ListRow label="codex" accelerator="space" acceleratorWidth={5} />).split('\n')[0] ??
-        '',
-    );
-
-    expect(line.startsWith('  space   codex')).toBe(true);
-  });
-
-  it('paints blank key cells when a row carries no accelerator, so the labels align', () => {
-    const keyed = stripAnsiStyles(
-      frameOf(<ListRow label="codex" accelerator="space" acceleratorWidth={5} />).split('\n')[0] ??
-        '',
-    );
-    const keyless = stripAnsiStyles(
-      frameOf(<ListRow label="codex" acceleratorWidth={5} />).split('\n')[0] ?? '',
-    );
-
-    expect(keyless.startsWith(`${' '.repeat(10)}codex`)).toBe(true);
-    expect(keyless.indexOf('codex')).toBe(keyed.indexOf('codex'));
-  });
-
-  it('paints the key column dim, like the metadata beside it', () => {
-    const frame = frameOf(
-      <ListRow label="codex" accelerator="space" acceleratorWidth={5} metadata="1.2" width={24} />,
-    );
-
-    expect(colorOf(frame, 'space')).toBe(colorOf(frame, '1.2'));
-  });
-
-  it('counts the key column against the row width, so the metadata keeps its edge', () => {
-    const keyed = stripAnsiStyles(
-      frameOf(
-        <ListRow label="tool" metadata="1.2" accelerator="space" acceleratorWidth={5} width={24} />,
-        24,
-      ).split('\n')[0] ?? '',
-    );
-    const plain = stripAnsiStyles(
-      frameOf(<ListRow label="tool" metadata="1.2" width={24} />, 24).split('\n')[0] ?? '',
-    );
-
-    expect(keyed).toContain('space');
-    expect(keyed.indexOf('1.2')).toBe(plain.indexOf('1.2'));
-    expect(keyed.length).toBe(plain.length);
-  });
-
   it('marks an active row with the ▌ accent bar only', () => {
-    const frame = frameOf(<ListRow label="sonnet 4.5" state="active" />);
+    const frame = frameOf(<PickerRow label="sonnet 4.5" state="active" />);
     expect(frame).toContain('▌');
     expect(frame).not.toContain('▸');
   });
 
   it('uses the ascii live bar when the glyph tier is ascii', () => {
     withAsciiTier(() => {
-      const frame = frameOf(<ListRow label="codex" state="active" />);
+      const frame = frameOf(<PickerRow label="codex" state="active" />);
       expect(frame).toContain(`${glyph('liveBar', 'ascii')} `);
       expect(frame).not.toContain('▌');
     });
   });
 
   it('renders dim metadata after the label', () => {
-    const frame = frameOf(<ListRow label="sonnet 4.5" metadata="200k" />);
+    const frame = frameOf(<PickerRow label="sonnet 4.5" metadata="200k" />);
     expect(frame).toContain('sonnet 4.5');
     expect(frame).toContain('200k');
   });
 
-  it('stands the metadata after the label behind a separator when metadataAfterLabel is set', () => {
-    const after = stripAnsiStyles(
-      frameOf(
-        <ListRow label="auto" metadata="recommended" metadataAfterLabel width={40} />,
-        40,
-      ).split('\n')[0] ?? '',
-    );
-    const right = stripAnsiStyles(
-      frameOf(<ListRow label="auto" metadata="recommended" width={40} />, 40).split('\n')[0] ?? '',
-    );
-
-    expect(after.startsWith('  auto · recommended')).toBe(true);
-    expect(right).not.toContain('auto · recommended');
-    expect(right.trimEnd()).toMatch(/^ {2}auto {2,}recommended$/);
-  });
-
-  it.each([
-    [20, '  auto · recommended'],
-    [19, '  auto'],
-  ])(
-    'counts the separator before a tag after the label, and drops both together at width %s',
-    (width, expected) => {
-      const line = stripAnsiStyles(
-        frameOf(
-          <ListRow
-            label="auto"
-            metadata="recommended"
-            metadataAfterLabel
-            keepWhole="label"
-            width={width}
-          />,
-          width,
-        ).split('\n')[0] ?? '',
-      );
-
-      expect(line.trimEnd()).toBe(expected);
-    },
-  );
-
   it('reserves a blank 2-cell check column when selected is false', () => {
     const withoutCheckColumn = stripAnsiStyles(
-      frameOf(<ListRow label="tool" metadata="1.2" width={24} />, 24),
+      frameOf(<PickerRow label="tool" metadata="1.2" width={24} />, 24),
     );
     const withBlankCheckColumn = stripAnsiStyles(
-      frameOf(<ListRow label="tool" metadata="1.2" selected={false} width={24} />, 24),
+      frameOf(<PickerRow label="tool" metadata="1.2" selected={false} width={24} />, 24),
     );
 
     expect(withBlankCheckColumn).not.toContain(glyph('check'));
@@ -298,7 +185,8 @@ describe('ListRow', () => {
 
   it('renders metadata flush right with the check column when selected', () => {
     const line = stripAnsiStyles(
-      frameOf(<ListRow label="tool" metadata="1.2" selected width={24} />, 24).split('\n')[0] ?? '',
+      frameOf(<PickerRow label="tool" metadata="1.2" selected width={24} />, 24).split('\n')[0] ??
+        '',
     );
 
     expect(line.trimEnd().endsWith(`1.2 ${glyph('check')}`)).toBe(true);
@@ -306,8 +194,9 @@ describe('ListRow', () => {
 
   it('truncates label with … when width overflows', () => {
     const line = stripAnsiStyles(
-      frameOf(<ListRow label="a very long label that overflows" width={14} />, 40).split('\n')[0] ??
-        '',
+      frameOf(<PickerRow label="a very long label that overflows" width={14} />, 40).split(
+        '\n',
+      )[0] ?? '',
     );
 
     expect(line).toContain('…');
@@ -317,7 +206,7 @@ describe('ListRow', () => {
   it('long metadata renders with a trailing `…`', () => {
     const line = stripAnsiStyles(
       frameOf(
-        <ListRow
+        <PickerRow
           label="/palette"
           metadata="a very long description that cannot possibly fit on one short row"
           width={40}
@@ -332,7 +221,7 @@ describe('ListRow', () => {
 
   it('right-aligns dim trailing metadata at the row edge', () => {
     const frame = frameOf(
-      <ListRow label="/settings" metadata="planner & model" trailing="ctrl+," labelWidth={12} />,
+      <PickerRow label="/settings" metadata="planner & model" trailing="ctrl+," width={40} />,
       40,
     );
     const line = frame.split('\n')[0] ?? '';
@@ -343,11 +232,11 @@ describe('ListRow', () => {
 
   it('keeps the trailing key visible while truncating an overflowing description', () => {
     const frame = frameOf(
-      <ListRow
+      <PickerRow
         label="/settings"
         metadata="a very long description that cannot possibly fit on one short row"
         trailing="ctrl+,"
-        labelWidth={12}
+        width={40}
       />,
       40,
     );
@@ -357,13 +246,13 @@ describe('ListRow', () => {
   });
 
   it('renders a trailing ✓ only when selected', () => {
-    expect(frameOf(<ListRow label="opus 4.1" selected />)).toContain(glyph('check'));
-    expect(frameOf(<ListRow label="opus 4.1" />)).not.toContain(glyph('check'));
+    expect(frameOf(<PickerRow label="opus 4.1" selected />)).toContain(glyph('check'));
+    expect(frameOf(<PickerRow label="opus 4.1" />)).not.toContain(glyph('check'));
   });
 
   it('uses the ascii check mark when a selected row renders in the ascii tier', () => {
     withAsciiTier(() => {
-      const frame = frameOf(<ListRow label="opus 4.1" selected />);
+      const frame = frameOf(<PickerRow label="opus 4.1" selected />);
       expect(frame).toContain(glyph('check', 'ascii'));
       expect(frame).not.toContain('✓');
     });
@@ -371,7 +260,7 @@ describe('ListRow', () => {
 
   it('right-aligns the multi-select ✓ at the row edge even without trailing metadata', () => {
     const frame = frameOf(
-      <ListRow label="security-review" metadata="auth, secrets" selected labelWidth={20} />,
+      <PickerRow label="security-review" metadata="auth, secrets" selected width={60} />,
       60,
     );
     const line = stripAnsiStyles(frame.split('\n')[0] ?? '');
@@ -379,7 +268,7 @@ describe('ListRow', () => {
   });
 
   it('stays one line tall and strips terminal controls', () => {
-    const frame = frameOf(<ListRow label={'A\x1b[31m\nB'} metadata="meta" />);
+    const frame = frameOf(<PickerRow label={'A\x1b[31m\nB'} metadata="meta" />);
     expect(frame).toContain('A B');
     expect(frame).toContain('meta');
     expect(frame).not.toContain('\x1b[31m');
@@ -388,13 +277,13 @@ describe('ListRow', () => {
 
   it('keeps the same frame length when a tree lead is paid for from the label budget', () => {
     const withoutTree = stripAnsiStyles(
-      frameOf(<ListRow label="effort" selected={false} trailing={' '} width={40} />, 40).split(
+      frameOf(<PickerRow label="effort" selected={false} trailing={' '} width={40} />, 40).split(
         '\n',
       )[0] ?? '',
     );
     const withTree = stripAnsiStyles(
       frameOf(
-        <ListRow label="effort" treeLead="├─ " selected={false} trailing={' '} width={40} />,
+        <PickerRow label="effort" treeLead="├─ " selected={false} trailing={' '} width={40} />,
         40,
       ).split('\n')[0] ?? '',
     );
@@ -406,7 +295,7 @@ describe('ListRow', () => {
 
   it('draws the tree lead between the gutter and the label', () => {
     const frame = stripAnsiStyles(
-      frameOf(<ListRow label="effort" treeLead="AB " width={40} />, 40).split('\n')[0] ?? '',
+      frameOf(<PickerRow label="effort" treeLead="AB " width={40} />, 40).split('\n')[0] ?? '',
     );
 
     expect(frame).toContain('AB ');
@@ -416,7 +305,7 @@ describe('ListRow', () => {
   it('truncates long metadata instead of overflowing when a tree lead is present', () => {
     const line = stripAnsiStyles(
       frameOf(
-        <ListRow
+        <PickerRow
           label="effort"
           treeLead="│  ├─ "
           metadata="a very long description that cannot possibly fit on one short row"
@@ -433,7 +322,7 @@ describe('ListRow', () => {
   it('keeps a tree row metadata visible at a 21-cell width', () => {
     const withTree = stripAnsiStyles(
       frameOf(
-        <ListRow
+        <PickerRow
           label="effort"
           treeLead="│  ├─ "
           metadata="high"
@@ -446,7 +335,7 @@ describe('ListRow', () => {
     );
     const withoutTree = stripAnsiStyles(
       frameOf(
-        <ListRow label="effort" metadata="high" selected={false} trailing={' '} width={21} />,
+        <PickerRow label="effort" metadata="high" selected={false} trailing={' '} width={21} />,
         21,
       ).split('\n')[0] ?? '',
     );
@@ -457,10 +346,10 @@ describe('ListRow', () => {
 
   it('does not change cell text when metadataTone is set', () => {
     const withoutColor = stripAnsiStyles(
-      frameOf(<ListRow label="tool" metadata="warn" width={40} />, 40),
+      frameOf(<PickerRow label="tool" metadata="warn" width={40} />, 40),
     );
     const withColor = stripAnsiStyles(
-      frameOf(<ListRow label="tool" metadata="warn" metadataTone="warning" width={40} />, 40),
+      frameOf(<PickerRow label="tool" metadata="warn" metadataTone="warning" width={40} />, 40),
     );
 
     expect(withColor).toBe(withoutColor);
@@ -470,10 +359,10 @@ describe('ListRow', () => {
     'resolves the %s metadata tone from the theme',
     (tone) => {
       const frame = frameOf(
-        <ListRow label="tool" metadata="value" metadataTone={tone} width={40} />,
+        <PickerRow label="tool" metadata="value" metadataTone={tone} width={40} />,
       );
       const color = tone === 'dim' ? defaultTheme.textDim : defaultTheme[tone];
-      expect(frame).toContain(paint(color, ' value'));
+      expect(colorOf(frame, 'value')).toBe(colorOf(paint(color, 'value'), 'value'));
     },
   );
 
@@ -481,7 +370,7 @@ describe('ListRow', () => {
     const theme = resolveTheme({ variant: 'dark', level: 1, terminalBackground: undefined });
     const frame = frameOf(
       <ThemeProvider theme={theme}>
-        <ListRow label="tool" metadata="value" metadataTone="text" width={40} />
+        <PickerRow label="tool" metadata="value" metadataTone="text" width={40} />
       </ThemeProvider>,
     );
     expect(frame).toContain(' value');
@@ -489,7 +378,7 @@ describe('ListRow', () => {
   });
 });
 
-describe('ListRow keepWhole', () => {
+describe('PickerRow keepWhole', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
   });
@@ -499,7 +388,7 @@ describe('ListRow keepWhole', () => {
 
   it('gives a short label only the cells it fills, so the value beside it stays whole', () => {
     const line = lineOf(
-      <ListRow
+      <PickerRow
         label="effort"
         treeLead="└─ "
         metadata="medium"
@@ -511,13 +400,13 @@ describe('ListRow keepWhole', () => {
       22,
     );
 
-    expect(line).toContain('effort medium');
+    expect(line).toMatch(/effort {2,}medium/);
     expect(line).not.toContain('…');
   });
 
   it('sheds a trailing metadata segment whole instead of cutting into it', () => {
     const line = lineOf(
-      <ListRow
+      <PickerRow
         label="openai"
         treeLead="├─ "
         metadata="signed in · api key"
@@ -538,7 +427,7 @@ describe('ListRow keepWhole', () => {
 
   it('spends its blank alignment cells before it drops a word', () => {
     const line = lineOf(
-      <ListRow
+      <PickerRow
         label="effort"
         treeLead="│  ├─ "
         metadata="auto"
@@ -550,13 +439,13 @@ describe('ListRow keepWhole', () => {
       22,
     );
 
-    expect(line).toMatch(/effort +auto$/);
+    expect(line).toMatch(/effort +auto *$/);
     expect(line).not.toContain('…');
   });
 
   it('keeps the provider whole and drops the sign-in word when both cannot fit', () => {
     const line = lineOf(
-      <ListRow
+      <PickerRow
         label="opencode-go"
         treeLead="└─ "
         metadata="needs sign-in"
@@ -575,7 +464,7 @@ describe('ListRow keepWhole', () => {
 
   it('keeps the value and gives up the axis name when the pair cannot fit', () => {
     const line = lineOf(
-      <ListRow
+      <PickerRow
         label="thinking"
         treeLead="│  ├─ "
         metadata="medium"
@@ -594,22 +483,22 @@ describe('ListRow keepWhole', () => {
 
   it('sheds whole trailing label words so a status word it outranks keeps its place', () => {
     const line = lineOf(
-      <ListRow
+      <PickerRow
         label="Command Code CLI"
         metadata="Unavailable"
         selected={false}
-        width={22}
+        width={23}
         keepWhole="metadata"
       />,
-      22,
+      23,
     );
 
-    expect(line).toContain(`Command${ELLIPSIS} Unavailable`);
+    expect(line).toContain(`Command${ELLIPSIS}  Unavailable`);
   });
 
   it('drops metadata the label outranks before the label sheds a word', () => {
     const line = lineOf(
-      <ListRow label="OpenAI Codex CLI" metadata="1.2.0" selected width={22} keepWhole="label" />,
+      <PickerRow label="OpenAI Codex CLI" metadata="1.2.0" selected width={22} keepWhole="label" />,
       22,
     );
 
@@ -620,7 +509,7 @@ describe('ListRow keepWhole', () => {
 
   it('never leaves a separator hanging before the ellipsis of a shed label', () => {
     const line = lineOf(
-      <ListRow label="output · my-planner --json" width={14} keepWhole="label" />,
+      <PickerRow label="output · my-planner --json" width={14} keepWhole="label" />,
       14,
     );
 

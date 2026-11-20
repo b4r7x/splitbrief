@@ -5,7 +5,7 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { MenuRows } from './menu-rows.js';
+import { ListRows } from '../../../components/list-row/rows.js';
 import { cancelBoundaryPause, requestBoundaryPause } from '../run-requests/boundary.js';
 import { requestStopNow, requestResume } from '../run-requests/stop-resume.js';
 import { requestLeaveSession } from '../run-requests/departure.js';
@@ -98,10 +98,11 @@ export function StopSheet({
       legend={chrome.legend ? legend : undefined}
     >
       <Box height={chrome.listRows} flexDirection="column" flexShrink={0}>
-        <MenuRows
-          options={layout.options}
+        <ListRows
+          lines={layout.lines}
+          getKey={(i) => rows[i]?.id ?? ''}
           selectedIndex={selectedIndex}
-          cursor="focused"
+          focused
           rowBudget={chrome.listRows}
           width={layout.width - 4}
         />

@@ -266,6 +266,57 @@ async function typeLetters({ screen, write }: Tui, typed: string, letters: strin
   }
 }
 
+it(
+  'keeps the confirm option columns across focus changes and aligns the filtered palette row',
+  SCENARIO_TIMEOUT,
+  async () => {
+    await gateOverDraft(async (run, { screen, write }) => {
+      await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
+      for (const _ of DRAFT) write('\x7f');
+      await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
+
+      write('/palette ');
+      await expect.poll(screen, PATIENCE).toContain('⏎ runs the command');
+      write(PTY_SUBMIT_INPUT);
+      await expect.poll(screen, PATIENCE).toContain('Type a command…');
+      write('activity');
+      await expect.poll(screen, PATIENCE).toContain('› activity');
+      await expect.poll(screen, PATIENCE).toContain('▌ /activity');
+      const palette = screen()
+        .split('\n')
+        .find((row) => row.includes('/activity') && row.includes('ctrl+a'));
+      write('\x1b');
+      await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
+
+      const labels = ['Confirm with a reason', 'Deny', 'Confirm'];
+      const optionColumns = () =>
+        labels.map((label) => {
+          const row = screen()
+            .split('\n')
+            .find((line) => line.match(/\b(Confirm with a reason|Confirm|Deny)\b/u)?.[1] === label);
+          expect(row, label).toBeDefined();
+          return row?.lastIndexOf(label);
+        });
+      const composerColumns = optionColumns();
+      const composerFrame = screen();
+      write('\t');
+      await expect.poll(screen, PATIENCE).toContain('↑↓ select · ⏎ confirm');
+      const gateColumns = optionColumns();
+      expect(gateColumns).toEqual(composerColumns);
+      expect(new Set(gateColumns).size).toBe(1);
+      expect.soft(palette).toContain('/activity  Expand or collapse the last folded rows');
+      expect.soft(composerFrame).toContain('r  Confirm with a reason');
+      expect.soft(composerFrame).toContain('x  Deny');
+      expect(screen()).toContain('▌ y  Confirm');
+      write('\t');
+      await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
+      expect(optionColumns()).toEqual(gateColumns);
+      expect(screen()).toContain('r  Confirm with a reason');
+      expect(approvalEvents(run)).toEqual(['approval_prompted']);
+    });
+  },
+);
+
 it('queues the draft for BUILD on ⏎ and the gate keeps waiting', SCENARIO_TIMEOUT, async () => {
   await gateOverDraft(async (run, { screen, write }) => {
     write(PTY_SUBMIT_INPUT);
@@ -303,7 +354,7 @@ it('gives the gate the keys on Tab, and y confirms', SCENARIO_TIMEOUT, async () 
   await gateOverDraft(async (run, { screen, write }) => {
     await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
     write('\t');
-    await expect.poll(screen, PATIENCE).toContain('▌ y   Confirm');
+    await expect.poll(screen, PATIENCE).toContain('▌ y  Confirm');
     write('y');
     await vi.waitFor(() => expect(approvalEvents(run)).toContain('approval_granted'), PATIENCE);
   });
@@ -318,7 +369,7 @@ it(
       async (run, { screen, write }) => {
         await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
         write('\t');
-        await expect.poll(screen, PATIENCE).toContain('▌ y   Confirm');
+        await expect.poll(screen, PATIENCE).toContain('▌ y  Confirm');
         write('no\r');
         await waitForStdinRead(run.target.projectDir, 'no\r');
         const outcome = () => {
@@ -327,7 +378,7 @@ it(
         };
         await expect.poll(outcome, PATIENCE).not.toBe('open');
         expect(outcome()).toBe('nudged');
-        expect(screen()).toContain('▌ y   Confirm');
+        expect(screen()).toContain('▌ y  Confirm');
         expect(approvalEvents(run)).toEqual(['approval_prompted']);
       },
       VIEWPORT,
@@ -342,11 +393,11 @@ it('denies on no and ⏎ of one read once ↓ ↓ chose Deny', SCENARIO_TIMEOUT,
     async (run, { screen, write }) => {
       await expect.poll(screen, PATIENCE).toContain('tab back to the actions');
       write('\t');
-      await expect.poll(screen, PATIENCE).toContain('▌ y   Confirm');
+      await expect.poll(screen, PATIENCE).toContain('▌ y  Confirm');
       write('\u001b[B');
-      await expect.poll(screen, PATIENCE).toContain('▌ r   Confirm with a reason');
+      await expect.poll(screen, PATIENCE).toContain('▌ r  Confirm with a reason');
       write('\u001b[B');
-      await expect.poll(screen, PATIENCE).toContain('▌ x   Deny');
+      await expect.poll(screen, PATIENCE).toContain('▌ x  Deny');
       write('no\r');
       await waitForStdinRead(run.target.projectDir, 'no\r');
       const outcome = () => {
@@ -374,7 +425,7 @@ it(
       await expect.poll(() => screen().includes(`› ${DRAFT}`), PATIENCE).toBe(false);
       await expect.poll(screen, PATIENCE).toContain('tab/⏎ back to the actions');
       write(PTY_SUBMIT_INPUT);
-      await expect.poll(screen, PATIENCE).toContain('▌ y   Confirm');
+      await expect.poll(screen, PATIENCE).toContain('▌ y  Confirm');
     });
   },
 );

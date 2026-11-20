@@ -1671,9 +1671,9 @@ const checkpointPredicates = [
       )(context) &&
       composerLiveStore.get().empty &&
       excludesAll(
-        `${listRowLead('active')}    Confirm`,
-        `${listRowLead('active')}r   Confirm with a reason`,
-        `${listRowLead('active')}x   Deny`,
+        `${listRowLead('active')}   Confirm`,
+        `${listRowLead('active')}r  Confirm with a reason`,
+        `${listRowLead('active')}x  Deny`,
       )(context),
   ],
   [
@@ -1692,7 +1692,7 @@ const checkpointPredicates = [
     (context) =>
       includesAll(
         'Trust and run a configured runner:',
-        `${listRowLead('active')}y   Confirm`,
+        `${listRowLead('active')}y  Confirm`,
         '⏎ trusts this runner · esc deny',
       )(context) && composerLiveStore.get().text === TYPED_WORDS,
   ],
@@ -1758,7 +1758,7 @@ const checkpointPredicates = [
           context.output.includes('Approve plan and start the build')
         );
       }
-      return context.viewport.cols >= 80 || row.includes('…');
+      return panelText(context.output).includes(STEER_ROW_DESCRIPTION);
     },
   ],
   [
@@ -2159,7 +2159,7 @@ const checkpointPredicates = [
     (context) =>
       includesAll()(context) &&
       panelText(context.output).includes(
-        'Apply as is · write the changes with the red checks and the open findings; asks once',
+        'Apply as is write the changes with the red checks and the open findings; asks once',
       ),
   ],
   [
@@ -2174,7 +2174,7 @@ const checkpointPredicates = [
         context.viewport.rows < 24
           ? '+2 more open findings'
           : '- src/form.ts re-validates on every keystroke',
-        'Apply as is · write the changes; the red checks and these findings stay open',
+        'Apply as is write the changes; the red checks and these findings stay open',
       ].map((row) => text.indexOf(row));
       return (
         includesAll()(context) &&
@@ -2320,7 +2320,12 @@ const checkpointPredicates = [
     },
   ],
   [checkpointId('recovery-review'), includesAll()],
-  [checkpointId('recovery-model-pick'), includesAll('Pick another REVIEW model')],
+  [
+    checkpointId('recovery-model-pick'),
+    (context) =>
+      includesAll('Pick another REVIEW', 'recommended')(context) &&
+      (context.viewport.cols < 80 || context.output.includes('Pick another REVIEW model')),
+  ],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-plan-swapped'), includesAll()],
   [
@@ -2459,7 +2464,10 @@ const checkpointPredicates = [
       'Unverified criteria: C1, C2, C3, C4, C5, C6',
     ),
   ],
-  [checkpointId('review-no-image'), includesAll('needs a REVIEW seat', 'Accept as is')],
+  [
+    checkpointId('review-no-image'),
+    includesAll('needs a REVIEW seat', 'Accept as is', 'recommended'),
+  ],
   [
     checkpointId('review-question'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Decide for me'),
@@ -2487,19 +2495,21 @@ const checkpointPredicates = [
       );
       if (!matches(context)) return false;
       if (context.viewport.cols !== 60 || context.viewport.rows !== 18) return true;
-      // The planner's reason is the only fact, so its cut rows take the blank row under the
-      // headline: three reason rows follow it with no gap, and the last one carries the cut mark.
+      // The option description wraps at this width. The remaining fact rows end in a cut mark.
       const rows = stripAnsiStyles(context.output)
         .split('\n')
         .map((row) => row.replace(/[│|]/gu, '').trim());
       const headline = rows.findIndex((row) => row.includes('no progress on F1'));
       if (headline < 0) return false;
-      const reason = rows.slice(headline + 1, headline + 4);
+      const reason = rows.slice(
+        headline + 1,
+        rows.findIndex((row) => row.includes('Review again')),
+      );
       return (
-        reason.length === 3 &&
+        reason.length >= 2 &&
         reason.every((row) => row.length > 0) &&
         reason[0]?.startsWith('Planner said: The type test') === true &&
-        reason[2]?.includes('…') === true
+        reason.at(-1)?.includes('…') === true
       );
     },
   ],

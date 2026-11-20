@@ -360,13 +360,13 @@ describe('WorkflowScreen key ownership', () => {
         expect(legendRows(gate.ui.lastFrame() ?? '')).toEqual(['tab/⏎ back to the actions']),
       );
       expect(stripAnsiStyles(gate.ui.lastFrame() ?? '')).not.toContain(
-        `${listRowLead('active')}y   Confirm`,
+        `${listRowLead('active')}y  Confirm`,
       );
 
       gate.ui.stdin.write('\r');
       await vi.waitFor(() =>
         expect(stripAnsiStyles(gate.ui.lastFrame() ?? '')).toContain(
-          `${listRowLead('active')}y   Confirm`,
+          `${listRowLead('active')}y  Confirm`,
         ),
       );
       expect(gate.settled()).toBeUndefined();
@@ -435,7 +435,7 @@ describe('WorkflowScreen key ownership', () => {
       );
 
       const frame = stripAnsiStyles(gate.ui.lastFrame() ?? '');
-      expect(frame).not.toContain(`${listRowLead('active')}y   Confirm`);
+      expect(frame).not.toContain(`${listRowLead('active')}y  Confirm`);
       expect(legendRows(frame)).toEqual([
         '⏎ queues the typed correction · tab back to the actions',
       ]);
@@ -489,7 +489,7 @@ describe('WorkflowScreen key ownership', () => {
       const lines = () => stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
       const rowOf = (text: string) => lines().findIndex((line) => line.includes(text)) + 1;
       // Every confirm panel paints its Deny row, so a click lands only once the panel is drawn.
-      await vi.waitFor(() => expect(rowOf('x   Deny')).toBeGreaterThan(0));
+      await vi.waitFor(() => expect(rowOf('x  Deny')).toBeGreaterThan(0));
       await flushEffects();
       // The panel sits between the header rule and the rule above the composer.
       const panelRows = () => {
@@ -521,8 +521,8 @@ describe('WorkflowScreen key ownership', () => {
     }
 
     it.each([
-      ['y   Confirm', { decision: 'confirm', phrase: CONFIRM_PHRASE }],
-      ['x   Deny', { decision: 'deny', reason: 'user_denied' }],
+      ['y  Confirm', { decision: 'confirm', phrase: CONFIRM_PHRASE }],
+      ['x  Deny', { decision: 'deny', reason: 'user_denied' }],
     ])('on the painted %s row takes that row', async (row, expected) => {
       const panel = await openPanel(24, trustRequest);
       panel.click(panel.rowOf(row));
@@ -532,7 +532,7 @@ describe('WorkflowScreen key ownership', () => {
 
     it('on the painted reason row asks for the reason, and confirms with the typed one', async () => {
       const panel = await openPanel(24, confirmRequest());
-      panel.click(panel.rowOf('r   Confirm with a reason'));
+      panel.click(panel.rowOf('r  Confirm with a reason'));
       await waitPastGrace(panel.ui, CONFIRM_QUESTION);
       expect(panel.settled()).toBeUndefined();
       panel.ui.stdin.write('pin the lockfile');
@@ -550,22 +550,22 @@ describe('WorkflowScreen key ownership', () => {
 
     it('on the blank row or the legend does nothing', async () => {
       const panel = await openPanel(24, trustRequest);
-      panel.click(panel.rowOf('x   Deny') + 1);
+      panel.click(panel.rowOf('x  Deny') + 1);
       panel.click(panel.rowOf('↑↓ select'));
-      await panel.pressDownAfterClicks('x   Deny');
+      await panel.pressDownAfterClicks('x  Deny');
       expect(panel.settled()).toBeUndefined();
-      panel.click(panel.rowOf('x   Deny'));
+      panel.click(panel.rowOf('x  Deny'));
       await vi.waitFor(() => expect(panel.settled()).toMatchObject({ decision: 'deny' }), 1000);
       panel.close();
     });
 
     describe.each([12, 14, 16])('in a 120x%i terminal', (rows) => {
       const cases = [
-        ['runner trust', trustRequest, ['y   Confirm', 'x   Deny']],
+        ['runner trust', trustRequest, ['y  Confirm', 'x  Deny']],
         [
           'package manifest',
           confirmRequest(),
-          ['y   Confirm', 'r   Confirm with a reason', 'x   Deny'],
+          ['y  Confirm', 'r  Confirm with a reason', 'x  Deny'],
         ],
       ] as const;
 
@@ -586,7 +586,7 @@ describe('WorkflowScreen key ownership', () => {
           await panel.pressDownAfterClicks(options[1]);
           expect(panel.settled()).toBeUndefined();
           expect(options.map(panel.rowOf)).toEqual(optionRows);
-          panel.click(panel.rowOf('y   Confirm'));
+          panel.click(panel.rowOf('y  Confirm'));
           await vi.waitFor(
             () =>
               expect(panel.settled()).toMatchObject({
@@ -601,7 +601,7 @@ describe('WorkflowScreen key ownership', () => {
 
       it.each(cases)('denies on the %s Deny row', async (_, request) => {
         const panel = await openPanel(rows, request);
-        panel.click(panel.rowOf('x   Deny'));
+        panel.click(panel.rowOf('x  Deny'));
         await vi.waitFor(
           () => expect(panel.settled()).toEqual({ decision: 'deny', reason: 'user_denied' }),
           1000,

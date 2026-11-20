@@ -832,20 +832,20 @@ Press `Ctrl+K` from any screen.
 │  › Type a command…                                                       │
 │                                                                          │
 │  Navigate                                                              █ │
-│  ▌ /help                   Show help                            ctrl+/ █ │
-│    /skills                 Skills for every seat  <skill-id …>         █ │
-│    /sessions               Browse past sessions                        █ │
-│    /settings               Crew, fallback, validation, workfl…  ctrl+, █ │
-│    /home                   Return to home screen                       █ │
-│    /quit                   Exit application                     ctrl+q █ │
+│  ▌ /help      Show help                                         ctrl+/ █ │
+│    /skills    Skills for every seat  <skill-id …>                      █ │
+│    /sessions  Browse past sessions                                     █ │
+│    /settings  Crew, fallback, validation, workflow              ctrl+, █ │
+│    /home      Return to home screen                                    █ │
+│    /quit      Exit application                                  ctrl+q █ │
 │  Crew                                                                  │ │
-│    /crew                   Who fills each seat  [plan|build|review]    │ │
-│    /refresh                Re-detect available tools                   │ │
+│    /crew      Who fills each seat  [plan|build|review]                 │ │
+│    /refresh   Re-detect available tools                                │ │
 │  Workflow                                                              │ │
-│    /stop                   Open stop and session options               │ │
-│    /queue                  Show or clear the message queue             │ │
-│    /run                    Apply or discard this run, or undo its App… │ │
-│   ↓ 10 more                                                              │
+│    /stop      Open stop and session options                            │ │
+│    /queue     Show or clear the message queue  [show|clear]            │ │
+│    /run       Apply or discard this run, or undo its Apply             │ │
+│   ↓ 9 more                                                               │
 │                                                                          │
 │  ↑↓ select · ⏎ run or fill in · esc close                                │
 │                                                                          │
@@ -872,19 +872,19 @@ Captured at 80x24 on the workflow screen, in a project with two skills. Their `S
 **You'll see:**
 
 ```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Approval · destructive                                 ┃
-┃                                                        ┃
-┃ control-plane file write                               ┃
-┃ .splitbrief/state.json                                 ┃
-┃ this cannot be undone ──────────────────────────────── ┃
-┃                                                        ┃
-┃ ▌     Confirm                                          ┃
-┃   r   Confirm with a reason                            ┃
-┃   x   Deny                                             ┃
-┃                                                        ┃
-┃ ↑↓ select · ⏎ confirm · esc deny                       ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Destructive action:               ┃
+┃                                   ┃
+┃ Write to a protected project file ┃
+┃ .splitbrief/state.json            ┃
+┃ this cannot be undone ─────────── ┃
+┃                                   ┃
+┃ ▌    Confirm                      ┃
+┃   r  Confirm with a reason        ┃
+┃   x  Deny                         ┃
+┃                                   ┃
+┃ ↑↓ select · ⏎ confirm · esc deny  ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 ```
 
 **Steps:**
@@ -900,7 +900,7 @@ Captured at 80x24 on the workflow screen, in a project with two skills. Their `S
 **Notes:**
 - A confirmation holds for that path for the rest of the run; it is recorded in the run's `evidence.json`, not in a grants file.
 - There are no sticky grants and no tier overrides.
-- A write gate that opens while you type in the composer leaves the keys there: `⏎` queues your text and the gate keeps waiting. Press Tab, or `⏎` on an empty composer, to move to the gate.
+- A write gate that opens while you type in the composer leaves the keys there: `⏎` queues your text and the gate keeps waiting. The option letters stay visible while you type. Press Tab, or `⏎` on an empty composer, to move to the gate. Use Page Up and Page Down to read a long confirmation.
 
 **See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation), recipe 9.
 

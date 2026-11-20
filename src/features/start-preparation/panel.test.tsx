@@ -463,12 +463,11 @@ describe('StartPreparationPanel', () => {
 
       expect(carded.split('\n').length).toBeLessThanOrEqual(rows);
       if (!carded.includes(`Tool preparation${SOFT_SEP}Needs you`)) {
-        // The page has no gutter, so the question's own box takes the whole width and counts its
-        // rows at the width it paints: no row it counted twice shows as a second blank row.
+        // The stand-alone box fits its text and stays within the terminal at either edge.
         const rowsOf = carded.split('\n');
-        for (const border of rowsOf.filter((row) => /^\s*\+-+\+\s*$/.test(row))) {
-          expect(border).toBe(`+${'-'.repeat(cols - 2)}+`);
-        }
+        const borders = rowsOf.filter((row) => /^\s*\+-+\+\s*$/.test(row));
+        expect(borders.every((row) => row.trimEnd().length <= cols)).toBe(true);
+        expect(new Set(borders.map((row) => row.trim().length)).size).toBeLessThanOrEqual(1);
         const inner = rowsOf.map((row) => row.replace(/^\s*[|│]|[|│]\s*$/g, '').trim());
         const legend = inner.findIndex((row) => row.startsWith('↑↓ select'));
         if (legend >= 2) expect(inner.slice(legend - 2, legend)).not.toEqual(['', '']);

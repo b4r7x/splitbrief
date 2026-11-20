@@ -124,9 +124,9 @@ describe('StopMenu changes copy', () => {
 
     expect(frame).toContain('Stop options');
     expect(frame).not.toContain('Stop options ·');
-    expect(frame).toContain('Stop now · stop execution; keep the run open');
+    expect(frame).toMatch(/Stop now {2,}stop execution; keep the run open/);
     const endRun = await selectRow(ui, 1);
-    expect(endRun).toContain('End run · stop execution; close this run');
+    expect(endRun).toMatch(/End run {2,}stop execution; close this run/);
     expect(endRun).not.toContain('keep changes');
     ui.unmount();
   });
@@ -138,9 +138,9 @@ describe('StopMenu changes copy', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Stop options · Changes stay.');
-    expect(frame).toContain('Stop now · stop execution; keep partial changes');
-    expect(await selectRow(ui, 2)).toContain(
-      'End run · stop execution; close this run; keep changes',
+    expect(frame).toMatch(/Stop now {2,}stop execution; keep partial changes/);
+    expect(await selectRow(ui, 2)).toMatch(
+      /End run {2,}stop execution; close this run; keep changes/,
     );
     ui.unmount();
   });
@@ -187,7 +187,7 @@ describe('StopMenu changes copy', () => {
     expect(ui.lastFrame()).toContain('Session options');
     expect(ui.lastFrame()).not.toContain('Session options ·');
     const endRun = await selectRow(ui, 1);
-    expect(endRun).toContain('End run · close this run');
+    expect(endRun).toMatch(/End run {2,}close this run/);
     expect(endRun).not.toContain('keep changes');
     ui.unmount();
   });

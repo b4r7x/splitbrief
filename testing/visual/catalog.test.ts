@@ -296,7 +296,10 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-stop-sheet-fix-inserted', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-sheet', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-sheet-short', ['80x15', '80x14', '80x12', '80x10', '60x12', '40x12']],
-  ['workflow-approval-confirm-short', ['80x11', '80x10', '80x9', '80x8', '60x10']],
+  [
+    'workflow-approval-confirm-short',
+    ['120x40', '80x24', '60x18', '80x11', '80x10', '80x9', '80x8', '60x10'],
+  ],
   ['workflow-approval-confirm-long-path', ['60x10', '60x12', '60x14', '60x15', '60x16', '80x12']],
   ['workflow-plan-card-short', ['80x12', '80x10', '80x9', '80x8', '60x10']],
   [
@@ -977,7 +980,9 @@ describe('visual catalog', () => {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       const row = frame.split('\n').find((line) => line.includes('/steer'));
       expect(row).toContain('Send a correction now');
-      expect(row).toContain('…');
+      expect(frame.replace(/[│▌]/gu, ' ').replace(/\s+/gu, ' ')).toContain(
+        'Send a correction now; a running call stops first',
+      );
     } finally {
       await handle.unmount();
     }

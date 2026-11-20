@@ -137,9 +137,9 @@ describe('End run during Apply recovery', () => {
         },
       );
       if (typeof result !== 'string') throw new Error(result.reason);
-      expect(result).toContain('Resume ·');
-      expect(result).toContain('Back to sessions ·');
-      expect(result).not.toContain('End run ·');
+      expect(result).toMatch(/Resume {2,}continue this run/);
+      expect(result).toMatch(/Back to sessions {2,}return home/);
+      expect(result).not.toContain('End run');
       expect(readFileSync(statePath, 'utf8')).toBe(before);
     },
   );

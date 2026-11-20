@@ -91,7 +91,7 @@ it.each([
       VIEWPORT,
     );
     try {
-      await expect.poll(ui.lastFrame).toMatch(/[▌|] Apply ·/u);
+      await expect.poll(ui.lastFrame).toMatch(/[▌|] Apply {2,}write the run/u);
       await expect.poll(ui.lastFrame).toContain('Final review passed');
       expect(ui.lastFrame()).toMatch(test.collapsed);
 
@@ -101,7 +101,7 @@ it.each([
       publish();
       // The selection change gives us a frame painted after publication.
       ui.pressBytes('\x1b[B');
-      await expect.poll(ui.lastFrame).toMatch(/[▌|] Show diff ·/u);
+      await expect.poll(ui.lastFrame).toMatch(/[▌|] Show diff\b/u);
       expect(ui.lastFrame(), 'The fold is still open after the log replay').toContain(
         test.expanded,
       );

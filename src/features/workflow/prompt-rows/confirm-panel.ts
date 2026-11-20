@@ -1,3 +1,7 @@
+import { planListRows } from '../../../components/list-row/plan.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { SOFT_SEP } from '../../../core/separators.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import { fitKeyLegend } from '../../../components/key-legend.js';
 import type { OverlayCard } from '../../../components/overlays/panel.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
@@ -8,7 +12,6 @@ import { wrapHard } from '../../../utils/display-text/wrap.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import {
   getConfirmOptions,
-  approvalOptionRows,
   chooseLegends,
   CONFIRM_QUESTION,
   CONFIRM_REASON_OPTIONAL,
@@ -39,7 +42,8 @@ interface ConfirmPanelRows {
 
 function confirmPanelRows(actionClass: ActionClass, width: number): ConfirmPanelRows {
   const options = getConfirmOptions(actionClass);
-  const optionRows = approvalOptionRows(options, width);
+  const lines = planListRows(options, { width });
+  const optionRows = options.map((_, i) => lines.filter((line) => line.row === i).length);
   const chooseLegend = Math.max(
     ...chooseLegends(actionClass).map((legend) => wrappedRows(fitKeyLegend(legend, width), width)),
   );
@@ -69,12 +73,56 @@ export type ConfirmFrame =
   | Readonly<{ width: number; kind: 'box' }>
   | Readonly<{ width: number; kind: 'card'; card: OverlayCard }>;
 
-/**
- * The panel's own box, painted across `paintWidth`: the chrome content width on the run screen,
- * the terminal width on a page.
- */
-export function ownConfirmFrame(paintWidth: number): ConfirmFrame {
-  return { width: approvalBoxTextWidth(paintWidth), kind: 'box' };
+type ConfirmSubject = Pick<TieredApprovalRequest, 'actionClass' | 'actionDescription'>;
+
+export function ownConfirmFrame(
+  paintWidth: number,
+  request: ConfirmSubject,
+  composerLegend = '',
+  boxRows?: number,
+): ConfirmFrame {
+  const available = approvalBoxTextWidth(paintWidth);
+  const { actionClass, actionDescription } = request;
+  const options = getConfirmOptions(actionClass);
+  const text = [
+    approvalTitle(actionClass),
+    getApprovalConfirmLabel(actionClass),
+    composerLegend,
+    ...chooseLegends(actionClass),
+    ...formatApprovalActionDescription(actionDescription).split('\n'),
+    ...(options.some((option) => option.key === 'r')
+      ? [CONFIRM_QUESTION, CONFIRM_REASON_OPTIONAL, CONFIRM_REASON_HINTS]
+      : []),
+  ];
+  const widest = Math.max(
+    ...text.map(getTerminalCellWidth),
+    ...planListRows(options, { width: available }).map((line) => line.cells),
+  );
+  const frame = { width: Math.min(available, widest), kind: 'box' } as const;
+  if (boxRows === undefined || frame.width === available) return frame;
+  const fit = fitConfirmPanel({ ...request, frame, boxRows });
+  if (fit.subject.length === 0) {
+    const action = textOfFirstFact(request);
+    const combined = planListRows(
+      options.map((option) => ({ ...option, name: option.name + SOFT_SEP + action })),
+      { width: available },
+    );
+    return {
+      ...frame,
+      width: Math.min(available, Math.max(widest, ...combined.map((line) => line.cells + 1))),
+    };
+  }
+  const titleWithCount =
+    fit.hidden > 0 && fit.title && !fit.markRow
+      ? getTerminalCellWidth(
+          approvalTitle(actionClass) + '  … ' + countNoun(fit.hidden, 'more line'),
+        )
+      : 0;
+  return { ...frame, width: Math.min(available, Math.max(widest, titleWithCount)) };
+}
+
+export function textOfFirstFact(request: ConfirmSubject) {
+  return formatApprovalActionDescription(request.actionDescription).split('\n')[0] ?? '';
 }
 
 /** The blank rows an overlay card keeps: its padding rows and the row under its title. */
@@ -109,6 +157,7 @@ export interface ConfirmPanelFit {
   subject: string[];
   /** The cut rows of text, counted on their own row or, with no row for it, after the title. */
   hidden: number;
+  scroll?: { lines: string[]; start: number; height: number };
   markRow: boolean;
   note: boolean;
   /** How many option rows paint, from the first. */
@@ -147,7 +196,21 @@ export function fitConfirmPanel(input: {
   const { frame } = input;
   const rows = confirmPanelRows(input.actionClass, frame.width);
   const descriptionLines = formatApprovalActionDescription(input.actionDescription).split('\n');
-  const lines = descriptionLines.map((line) => wrapPathAwareText(line, frame.width).split('\n'));
+  const lines = descriptionLines.map((fact) => {
+    const parts = wrapPathAwareText(fact, frame.width).split('\n');
+    // Keep the final words of a disclosure together when the last line would hold one word alone.
+    const last = parts.at(-1);
+    const previous = parts.at(-2);
+    if (last && previous && !last.includes(' ')) {
+      const split = previous.lastIndexOf(' ');
+      const pair = previous.slice(split + 1) + ' ' + last;
+      if (split > 0 && getTerminalCellWidth(pair) <= frame.width) {
+        parts[parts.length - 2] = previous.slice(0, split);
+        parts[parts.length - 1] = pair;
+      }
+    }
+    return parts;
+  });
   const subjectRows = lines.flat();
   const minRows = confirmPanelMinRows(input, frame);
   const spare = input.boxRows - minRows;
@@ -222,6 +285,31 @@ export function fitConfirmPanel(input: {
   room -= (label ? rows.label : 0) + subject.length + (markRow ? 1 : 0);
   const note = room - (markRow ? 1 : 0) >= rows.note;
   if (note) room -= rows.note;
+  const disclosure = [
+    getApprovalConfirmLabel(input.actionClass),
+    ...descriptionLines,
+    ...(rows.note ? [IRREVERSIBLE_NOTE] : []),
+  ];
+  let scroll: ConfirmPanelFit['scroll'];
+  if (options > 0 && (hidden > 0 || (!note && rows.note > 0))) {
+    if (subject.length > 0) {
+      scroll = {
+        lines: [disclosure[0] ?? '', ...subjectRows, ...(rows.note ? [IRREVERSIBLE_NOTE] : [])],
+        start: label ? 0 : 1,
+        height: subject.length + Number(label) + Number(note && rows.note > 0),
+      };
+    } else {
+      const optionWidth = Math.max(
+        ...planListRows(getConfirmOptions(input.actionClass), frame).map((line) => line.cells),
+      );
+      const factWidth = Math.max(1, frame.width - optionWidth - getTerminalCellWidth(SOFT_SEP) - 1);
+      scroll = {
+        lines: disclosure.flatMap((fact) => wrapPathAwareText(fact, factWidth).split('\n')),
+        start: 1,
+        height: 1,
+      };
+    }
+  }
   return {
     framed: false,
     card: NO_CARD_SPACING,
@@ -231,6 +319,7 @@ export function fitConfirmPanel(input: {
     label,
     subject,
     hidden,
+    ...(scroll && { scroll }),
     markRow,
     note,
     options,
@@ -283,5 +372,8 @@ export function getConfirmPanelRows(request: TieredApprovalRequest, frame: Confi
 
 export function getApprovalPromptRows(state: ApprovalPromptState, cols: number): number {
   if (state.status !== 'pending') return 0;
-  return getConfirmPanelRows(state.request, ownConfirmFrame(getChromeContentWidth(cols)));
+  return getConfirmPanelRows(
+    state.request,
+    ownConfirmFrame(getChromeContentWidth(cols), state.request),
+  );
 }

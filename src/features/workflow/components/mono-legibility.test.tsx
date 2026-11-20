@@ -98,7 +98,7 @@ describe('mono legibility — the tiered approval gate without colour (unicode t
     // A destructive Confirm row carries no accelerator, so the key cell is blank; the row after
     // it sets the column with its single letter.
     expect(confirmLine).not.toContain('enter');
-    expect(frame).toContain('r   Confirm with a reason');
+    expect(frame).toContain('r  Confirm with a reason');
     expect(frame).not.toContain(glyph('cursor'));
     expect(frame).toContain('Deny');
     ui.unmount();

@@ -17,6 +17,7 @@ export interface OverlayCard {
 
 interface OverlayPanelProps {
   title?: string | undefined;
+  anchorTop?: boolean | undefined;
   hint?: string | undefined;
   /** `tight` buys back the blank row under the title for panels that budget their own body rows. */
   titleSpacing?: 'gap' | 'tight' | undefined;
@@ -28,6 +29,7 @@ interface OverlayPanelProps {
 
 export function OverlayPanel({
   title,
+  anchorTop,
   hint,
   titleSpacing = 'gap',
   paddingY = 1,
@@ -55,7 +57,13 @@ export function OverlayPanel({
   );
 
   return (
-    <Box width={cols} height={rows} alignItems="center" justifyContent="center">
+    <Box
+      width={cols}
+      height={rows}
+      alignItems={anchorTop ? 'flex-start' : 'center'}
+      paddingTop={anchorTop ? Math.floor((rows - rect.maxOuterRows) / 2) : 0}
+      justifyContent="center"
+    >
       <PanelSurface
         flexDirection="column"
         width={rect.width}

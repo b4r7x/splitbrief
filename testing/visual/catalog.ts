@@ -2440,6 +2440,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       title: 'Workflow · destructive confirm gate in a short terminal',
       surface: screenSurface('workflow'),
       viewports: [
+        viewport({ cols: 120, rows: 40 }),
+        viewport({ cols: 80, rows: 24 }),
+        viewport({ cols: 60, rows: 18 }),
         viewport({ cols: 80, rows: 11 }),
         viewport({ cols: 80, rows: 10 }),
         viewport({ cols: 80, rows: 9 }),
@@ -5634,7 +5637,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-no-image',
         title: 'Review-seat-without-images recovery menu',
         kind: 'question',
-        marker: 'Try again · recommended',
+        marker: 'Try again',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -7091,6 +7094,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Browse past sessions',
       },
       {
+        id: 'overlay-command-palette-typed-name-no-skills',
+        title: 'Overlay · command palette with sessions typed and no skills installed',
+        marker: 'Browse past sessions',
+      },
+      {
         id: 'overlay-command-palette-typed-skill',
         title:
           'Overlay · command palette with a skill name typed after a session of that word was opened',
@@ -7839,7 +7847,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'workflow-stop-sheet-after-continue',
         title: 'Workflow · stop options right after a continue',
-        marker: 'Pause after this brief',
+        marker: 'finish T002',
       },
       {
         id: 'workflow-stop-sheet-after-revert',

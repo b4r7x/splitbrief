@@ -1,9 +1,12 @@
-import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { useTheme } from '../../../components/theme.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { BACK_HINT, formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
-import { listRowLead } from '../../../components/list-row/lead.js';
+import { ListRow } from '../../../components/list-row/row.js';
+import { planListRows } from '../../../components/list-row/plan.js';
+import { overlayRect } from '../../../core/navigation/overlay-rect.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
@@ -11,7 +14,7 @@ import { glyph } from '../../../lib/glyphs.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { PanelRow } from '../../../components/overlays/row.js';
 import { OverlayPanel } from '../../../components/overlays/panel.js';
-import { ContractChip, StepIndicator, tierColor } from './chip.js';
+import { StepIndicator, tierColor } from './chip.js';
 import {
   contractForRunnerKind,
   type CustomCommandRunnerKind,
@@ -46,54 +49,50 @@ function ContractCardView({
   card,
   focused,
   configured,
+  width,
 }: {
   card: ContractCard;
   focused: boolean;
   configured: boolean;
+  width: number;
 }) {
   const t = useTheme();
   const tier = contractForRunnerKind(card.kind);
   const color = tierColor(t, tier);
-  /** The bar marks one row, so only the card's first row carries it. */
-  const lead = (first: boolean) =>
-    first && focused ? <Text color={t.accent}>{listRowLead('active')}</Text> : <Text>{'  '}</Text>;
+  const badge = tier === 'output' ? ' OUTPUT ' : ' DIRECT ';
+  const check = configured ? ' ' + glyph('check') : '';
+  const rows = [
+    {
+      name: badge + ' ' + card.title,
+      nameParts: [
+        { text: badge, color },
+        { text: ' ' + card.title, color: focused ? t.accent : t.text },
+      ],
+      trailing: card.kind + check,
+      trailingParts: [
+        { text: card.kind, color: t.textDim },
+        { text: check, color: t.success },
+      ],
+    },
+    ...[
+      ['result', card.resultClause, t.textDim],
+      ['files ', card.filesClause, color],
+    ].map(([field, value, hue]) => {
+      const label = LEDGER_INDENT + field + SOFT_SEP;
+      return {
+        name: label + value,
+        nameParts: [
+          { text: label, color: t.textDim },
+          { text: value ?? '', color: hue },
+        ],
+      };
+    }),
+  ];
   return (
     <PanelRow active={focused} flexDirection="column">
-      <Box height={1} overflow="hidden">
-        <Box flexShrink={0}>
-          {lead(true)}
-          <ContractChip tier={tier} solid={focused} />
-        </Box>
-        <Box flexGrow={1} minWidth={0} overflow="hidden">
-          <Text color={focused ? t.accent : t.text} wrap="truncate-end">{` ${card.title}`}</Text>
-        </Box>
-        <Box flexShrink={0}>
-          <Text color={t.textDim}>{` ${card.kind}`}</Text>
-          {configured ? <Text color={t.success}>{` ${glyph('check')}`}</Text> : <Text>{'  '}</Text>}
-        </Box>
-      </Box>
-      <Box height={1} overflow="hidden">
-        <Box flexShrink={0}>
-          {lead(false)}
-          <Text color={t.textDim}>{`${LEDGER_INDENT}result${SOFT_SEP}`}</Text>
-        </Box>
-        <Box flexGrow={1} minWidth={0} overflow="hidden">
-          <Text color={t.textDim} wrap="truncate-end">
-            {card.resultClause}
-          </Text>
-        </Box>
-      </Box>
-      <Box height={1} overflow="hidden">
-        <Box flexShrink={0}>
-          {lead(false)}
-          <Text color={t.textDim}>{`${LEDGER_INDENT}files ${SOFT_SEP}`}</Text>
-        </Box>
-        <Box flexGrow={1} minWidth={0} overflow="hidden">
-          <Text color={color} wrap="truncate-end">
-            {card.filesClause}
-          </Text>
-        </Box>
-      </Box>
+      {planListRows(rows, { width }).map((line) => (
+        <ListRow key={line.row} line={line} selected={focused && line.row === 0} width={width} />
+      ))}
     </PanelRow>
   );
 }
@@ -111,6 +110,8 @@ export function ContractChoiceOverlay({
   configuredKind,
   onChoose,
 }: ContractChoiceOverlayProps) {
+  const size = terminalSizeStore.use((state) => state);
+  const { innerWidth } = overlayRect({ ...size, density: 'roomy' });
   const focus = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
 
   useEffect(() => {
@@ -142,6 +143,7 @@ export function ContractChoiceOverlay({
       {CONTRACT_CARDS.map((card, cardIndex) => (
         <Box key={card.kind} flexDirection="column" marginTop={cardIndex === 0 ? 0 : 1}>
           <ContractCardView
+            width={innerWidth}
             card={card}
             focused={cardIndex === index}
             configured={card.kind === configuredKind}

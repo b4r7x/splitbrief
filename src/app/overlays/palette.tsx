@@ -4,9 +4,7 @@ import { Box, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
 import { CLOSE_HINT, formatKeyHints, SELECT_HINT } from '../../components/key-legend.js';
 import { OverlayPanel } from '../../components/overlays/panel.js';
-import { ListRow } from '../../components/list-row/row.js';
-import { commandLabelWidth, descriptionColumn } from '../../components/list-columns.js';
-import { ListViewport } from '../../components/pickers/list-viewport.js';
+import { ListRows, planViewportRows } from '../../components/list-row/rows.js';
 import { isItemIndexVisible } from '../../components/pickers/scroll-window.js';
 import { dropLastGrapheme } from '../../components/input/text-editing.js';
 import { buildPaletteResults } from '../../features/palette/results.js';
@@ -34,7 +32,6 @@ import {
 } from '../../core/navigation/overlay-rect.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
-import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 
@@ -44,13 +41,6 @@ const HINT_ROWS = 2;
 // Below this budget a header costs more rows than it organises, so the 60x18 palette
 // keeps the category order but drops the labels (§Target frames, palette-60x18).
 const SECTION_HEADER_MIN_ROWS = 12;
-// A pathological command name must not swallow the row: past half the panel the label column is
-// truncated instead, so the description column always survives (exercised by the row-truncation
-// test at 50 columns).
-const LABEL_COLUMN_SHARE = 0.5;
-// Cells a widened label leaves behind for the status word a session or task row carries.
-const STATUS_RESERVE = 14;
-
 // Command rows carry a category and are sectioned by it; every other source, skills included, is
 // sectioned by its own name.
 const SOURCE_HEADERS: Record<Exclude<PaletteSource, CategorizedPaletteSource>, string> = {
@@ -112,12 +102,31 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     rows,
     outerChromeRows: PROMPT_ROWS + HINT_ROWS,
   });
-  const section = {
-    by: sectionLabel,
-    headerFor: () => listBudget >= SECTION_HEADER_MIN_ROWS,
-  };
+  const { innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
+  const models = results.map((result) => ({
+    section: sectionLabel(result),
+    name: result.label,
+    description: result.source === 'task' || result.source === 'session' ? '' : result.description,
+    hint: result.hint,
+    trailing:
+      result.source === 'task' || result.source === 'session'
+        ? result.description
+        : result.shortcut,
+    group: result.source,
+  }));
+  const section =
+    listBudget >= SECTION_HEADER_MIN_ROWS
+      ? (index: number) => models[index]?.section ?? ''
+      : undefined;
+  const lines = planViewportRows(models, innerWidth, listBudget, section);
   const canActOnIndex = (index: number) =>
-    isItemIndexVisible({ items: results, selectedIndex: index, rowBudget: listBudget, section });
+    isItemIndexVisible<(typeof lines)[number]>({
+      items: lines,
+      selectedIndex: lines.findIndex((line) => line.row === cursor),
+      itemIndex: lines.findIndex((line) => line.row === index),
+      rowBudget: listBudget,
+      section: section && { by: (line) => section(line.row) },
+    });
 
   const runResult = async (index: number) => {
     const item = results[index];
@@ -168,73 +177,31 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
   );
 
   const t = useTheme();
-  const { innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
-  // Skill rows share the command label column, so one column serves both: the registry's widest
-  // command name widened to the widest discovered skill label. A skill name past the cap is cut
-  // there rather than opening a description column of its own.
-  const labelCeiling = sources.skillItems.reduce(
-    (widest, skill) => Math.max(widest, getTerminalCellWidth(skill.label)),
-    commandLabelWidth(commands),
-  );
   const hint = canActOnIndex(cursor)
     ? formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'run or fill in' }, CLOSE_HINT])
     : formatKeyHints([SELECT_HINT, CLOSE_HINT]);
 
   return (
-    <OverlayPanel hint={hint} density={PANEL_DENSITY}>
+    <OverlayPanel anchorTop hint={hint} density={PANEL_DENSITY}>
       <Box marginBottom={1}>
         <FilterInput filter={query} placeholder="Type a command…" />
       </Box>
 
-      <Box flexDirection="column" height={listBudget}>
-        <ListViewport
-          highlightCursor
-          barColumn="padding"
-          items={results}
-          selectedIndex={cursor}
-          getKey={(result) => result.id}
-          rowBudget={listBudget}
-          width={innerWidth}
-          rowZonePrefix="palette"
-          showRemainingCount
-          onRowActivate={(index) => {
-            void runResult(index);
-          }}
-          section={section}
-          placeholder={<Text color={t.textDim}>No matching commands</Text>}
-          renderItem={(result, ctx) => {
-            // A command or skill row shares one label column so the description edge holds still
-            // down a section and across screens. A session or task title is the whole row, so it
-            // widens its own label instead of being cut to that width.
-            const labelWidth = Math.min(
-              labelCeiling,
-              Math.floor(ctx.contentWidth * LABEL_COLUMN_SHARE),
-            );
-            const rowLabelWidth =
-              result.source === 'command' || result.source === 'skill'
-                ? labelWidth
-                : Math.max(
-                    labelWidth,
-                    Math.min(getTerminalCellWidth(result.label), ctx.contentWidth - STATUS_RESERVE),
-                  );
-            return (
-              <ListRow
-                label={result.label}
-                state={ctx.isCursor ? 'active' : 'default'}
-                metadata={descriptionColumn({
-                  description: result.description,
-                  hint: result.hint,
-                  shortcut: result.shortcut,
-                  innerWidth: ctx.contentWidth,
-                  labelWidth: rowLabelWidth,
-                })}
-                {...(result.shortcut ? { trailing: result.shortcut } : {})}
-                labelWidth={rowLabelWidth}
-              />
-            );
-          }}
-        />
-      </Box>
+      <ListRows
+        lines={lines}
+        selectedIndex={cursor}
+        focused
+        getKey={(i) => results[i]?.id ?? ''}
+        rowBudget={listBudget}
+        width={innerWidth}
+        section={section}
+        rowZonePrefix="palette"
+        showRemainingCount
+        onActivate={(index) => {
+          void runResult(index);
+        }}
+        placeholder={<Text color={t.textDim}>No matching commands</Text>}
+      />
     </OverlayPanel>
   );
 }

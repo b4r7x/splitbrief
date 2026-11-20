@@ -9,7 +9,11 @@ import { haltOf } from '../../../core/recovery/halt.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { SOFT_SEP } from '../../../core/separators.js';
+import {
+  getRecoveryPromptActions,
+  recommendedRecoveryAction,
+  recoveryActionKey,
+} from './actions.js';
 import { isSeatLevelRetry } from '../../../engine/orchestrator/recovery/actions/retry.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 
@@ -60,12 +64,12 @@ export function recoveryMenuActionLabel(
  * it kept; after any other halt the brief starts again. On a short panel the
  * facts above the rows are what drops.
  */
-export function recoveryMenuParts(
+export function recoveryMenuRow(
   action: RecoveryAction,
   issue: RecoveryIssue,
   briefFinished: boolean,
   reviewNone: boolean,
-): ConversationRowSegment[] {
+) {
   const label = recoveryActionParts(action, recoveryMenuContext(issue, reviewNone)).map(
     (part): ConversationRowSegment => ({
       text: part.text,
@@ -76,9 +80,24 @@ export function recoveryMenuParts(
     action === 'end-run' && briefFinished
       ? 'closes this run, keeps its changes'
       : recoveryMenuConsequence(action, issue, reviewNone);
-  return consequence === undefined
-    ? label
-    : [...label, { text: SOFT_SEP, tone: 'textDim' }, { text: consequence, tone: 'textDim' }];
+  return {
+    action,
+    key: recoveryActionKey(action),
+    name: label.map((part) => part.text).join(''),
+    nameParts: label,
+    description: consequence,
+    trailing: action === recommendedRecoveryAction(issue) ? 'recommended' : undefined,
+  };
+}
+
+export function recoveryMenuRows(
+  issue: RecoveryIssue,
+  briefFinished: boolean,
+  reviewNone: boolean,
+) {
+  return getRecoveryPromptActions(issue).map((action) =>
+    recoveryMenuRow(action, issue, briefFinished, reviewNone),
+  );
 }
 
 const DECIDED_STEP_CONSEQUENCE: Partial<Record<RecoveryAction, string>> = {

@@ -1,11 +1,14 @@
 import { PanelSurface } from '../../../../components/overlays/surface.js';
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { Box, useInput } from 'ink';
-import { ListViewport } from '../../../../components/pickers/list-viewport.js';
+import { useState } from 'react';
+import { ListRows } from '../../../../components/list-row/rows.js';
+import { planListRows } from '../../../../components/list-row/plan.js';
+import { resolveScrollKey, stepForScrollAction } from '../../../../core/keybindings/scroll.js';
+import { APPROVAL_HORIZONTAL_CHROME } from '../../prompt-rows/measure.js';
 import { RuleHeader } from '../../../../components/rule-header.js';
 import { OverlayPanel } from '../../../../components/overlays/panel.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
-import { listRowLead } from '../../../../components/list-row/lead.js';
 import { withMark } from '../prompt-body.js';
 import { closeApprovalPrompt } from '../../../../stores/prompts/approval.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
@@ -15,18 +18,17 @@ import {
   CONFIRM_REASON_OPTIONAL,
   IRREVERSIBLE_NOTE,
   CHOOSE_HINTS,
-  approvalKeyColumnWidth,
-  approvalOptionKeyCell,
-  approvalOptionLabelText,
   approvalTitle,
   confirmNudge,
-  formatApprovalActionDescription,
   getApprovalConfirmLabel,
   getConfirmOptions,
   isIrreversibleActionClass,
-  unfocusedPromptLegend,
 } from '../../prompt-rows/approval.js';
-import { fitConfirmPanel, type ConfirmFrame } from '../../prompt-rows/confirm-panel.js';
+import {
+  fitConfirmPanel,
+  textOfFirstFact,
+  type ConfirmFrame,
+} from '../../prompt-rows/confirm-panel.js';
 import {
   INITIAL_CONFIRM_KEY_STATE,
   confirmKeyStep,
@@ -36,9 +38,6 @@ import {
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 import { fitKeyLegend } from '../../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
-import { isCommandDraft } from '../../../../core/composer/submission.js';
-import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.js';
-import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { ELLIPSIS } from '../../../../utils/display-text/truncate.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { useKeyState } from '../../../../hooks/use-key-state.js';
@@ -51,10 +50,11 @@ interface ConfirmApprovalPromptProps {
   promptRows: number;
   clampedBoxRows?: number | undefined;
   isActive: boolean;
-  /** False while the composer keeps the keys: the rows show no cursor and no keys. */
+  /** False while the composer keeps the keys: the rows keep their letters and hide the cursor. */
   focused: boolean;
   /** True in a phase where the composer's plain words queue for a seat (`isQueuePhase`). */
-  queues: boolean;
+  composerLegend: string;
+  onComposerFocus?: (() => void) | undefined;
   graceUntil: number;
 }
 
@@ -65,7 +65,8 @@ export function ConfirmApprovalPrompt({
   clampedBoxRows,
   isActive,
   focused,
-  queues,
+  composerLegend,
+  onComposerFocus,
   graceUntil,
 }: ConfirmApprovalPromptProps) {
   const [keys, setKeys, latestKeys] = useKeyState(INITIAL_CONFIRM_KEY_STATE);
@@ -81,27 +82,32 @@ export function ConfirmApprovalPrompt({
   });
   const irreversible = isIrreversibleActionClass(request.actionClass);
   const options = getConfirmOptions(request.actionClass);
-  const keyWidth = approvalKeyColumnWidth(options);
+  const [scrollOffset, setScrollOffset] = useState<number | null>(null);
+  const scroll = fit.scroll;
+  const page =
+    scroll && scrollOffset !== null
+      ? scroll.lines.slice(
+          Math.min(scrollOffset, scroll.lines.length - scroll.height),
+          Math.min(scrollOffset, scroll.lines.length - scroll.height) + scroll.height,
+        )
+      : null;
+  const inlineFacts = fit.subject.length === 0;
+  const shownFacts = (inlineFacts ? null : page) ?? fit.subject;
   const tone = irreversible ? t.error : t.warning;
   const title = approvalTitle(request.actionClass);
-  const mark = `${ELLIPSIS} ${countNoun(fit.hidden, 'more line')}`;
+  const mark = page
+    ? 'pgup/pgdn scroll'
+    : `${ELLIPSIS} ${countNoun(fit.hidden, 'more line')}${scroll && fit.markRow ? SOFT_SEP + 'pgup/pgdn scroll' : ''}`;
   // One row holds the action and the selected option together, so the panel never asks blind.
-  const rowAction =
-    fit.subject.length === 0
-      ? formatApprovalActionDescription(request.actionDescription).split('\n')[0]
-      : undefined;
-  // Without the keys the panel says what ⏎ does with the draft below and how to reach its rows.
-  // Plain words that no seat takes in this phase stay in the composer, so ⏎ promises nothing.
-  const blankDraft = composerLiveStore.use((draft) => isBlankDraft(draft.document));
-  const commandDraft = composerLiveStore.use((draft) => isCommandDraft(draft.document));
-  const unfocusedLegend = unfocusedPromptLegend({
-    blank: blankDraft,
-    command: commandDraft,
-    words: queues
-      ? { long: '⏎ queues the typed correction', short: '⏎ queues the correction' }
-      : null,
-    width: frame.width,
-  });
+  const rowAction = inlineFacts
+    ? ((keys.step === 'choose' ? page?.[0] : undefined) ?? textOfFirstFact(request))
+    : undefined;
+  const lines = planListRows(
+    rowAction === undefined
+      ? options
+      : options.map((option) => ({ ...option, name: option.name + SOFT_SEP + rowAction })),
+    { width: frame.width },
+  );
 
   const apply = (result: ConfirmKeyResult): void => {
     if (result.kind === 'answer') closeApprovalPrompt(result.answer);
@@ -111,6 +117,24 @@ export function ConfirmApprovalPrompt({
   useInput(
     (input, key) => {
       if (Date.now() < graceUntil) return;
+      if (keys.step === 'choose') {
+        if (key.tab && onComposerFocus) {
+          onComposerFocus();
+          return;
+        }
+        const action = resolveScrollKey({ input, key, lineKeys: 'none' });
+        if (scroll && action) {
+          setScrollOffset((previous) =>
+            stepForScrollAction({
+              action,
+              position: previous ?? scroll.start,
+              page: scroll.height,
+              last: Math.max(0, scroll.lines.length - scroll.height),
+            }),
+          );
+          return;
+        }
+      }
       apply(
         confirmKeyStep(latestKeys(), input, key, {
           actionClass: request.actionClass,
@@ -131,7 +155,7 @@ export function ConfirmApprovalPrompt({
       // A card pads the panel itself.
       paddingX={fit.framed ? 1 : frame.kind === 'box' ? 2 : 0}
       height={fit.bodyRows}
-      width="100%"
+      width={frame.kind === 'box' ? frame.width + APPROVAL_HORIZONTAL_CHROME : '100%'}
       overflow="hidden"
       flexShrink={0}
     >
@@ -149,10 +173,12 @@ export function ConfirmApprovalPrompt({
           <Text color={tone}>{title}</Text>
         ))}
       {fit.gaps.title && <Text> </Text>}
-      {fit.label && <Text color={t.text}>{getApprovalConfirmLabel(request.actionClass)}</Text>}
-      {fit.subject.length > 0 && (
+      {!page && fit.label && (
+        <Text color={t.text}>{getApprovalConfirmLabel(request.actionClass)}</Text>
+      )}
+      {shownFacts.length > 0 && (
         <Text color={t.text} bold>
-          {fit.subject.join('\n')}
+          {shownFacts.join('\n')}
         </Text>
       )}
       {fit.hidden > 0 && fit.markRow && <Text color={t.textDim}>{mark}</Text>}
@@ -160,46 +186,30 @@ export function ConfirmApprovalPrompt({
           and it has to be told apart, because `y` is the primary key on one panel and a refused key on
           the other. The banded warning is the silhouette no other gate has, and it is shape, not hue, so
           it survives a terminal with the colour stripped out. */}
-      {irreversible && fit.note ? (
+      {!page && irreversible && fit.note ? (
         <RuleHeader label={IRREVERSIBLE_NOTE} width={frame.width} labelColor={t.error} />
       ) : null}
       {fit.gaps.options && <Text> </Text>}
       {keys.step === 'choose' ? (
         <>
           <Box flexDirection="column" flexShrink={0}>
-            <ListViewport
-              items={[...options]}
-              highlightCursor={focused && isActive}
+            <ListRows
+              lines={lines}
+              focused={focused && isActive}
               selectedIndex={keys.selectedIndex}
-              getKey={(option) => option.key}
+              getKey={(i) => options[i]?.key ?? ''}
               rowBudget={fit.options}
               width={frame.width}
-              barColumn="padding"
               rowZonePrefix="confirm-option"
               rowZoneZ={PROMPT_ZONE_Z}
-              {...(isActive && {
-                onRowActivate: (index: number) => {
-                  const option = options[index];
-                  if (option !== undefined) apply(confirmRowStep(latestKeys(), option.key));
-                },
-              })}
-              renderItem={(option, ctx) => (
-                <Text wrap="truncate-end">
-                  <Text color={ctx.isCursor && focused ? t.accent : t.textDim}>
-                    {listRowLead(ctx.isCursor && focused ? 'active' : 'default')}
-                  </Text>
-                  <Text color={t.textDim}>
-                    {focused ? approvalOptionKeyCell(option, keyWidth) : ''.padEnd(keyWidth)}
-                  </Text>
-                  {'   '}
-                  <Text color={ctx.isCursor && focused ? t.accent : t.text}>
-                    {approvalOptionLabelText({ option, keyWidth, width: frame.width })}
-                  </Text>
-                  {rowAction !== undefined && (
-                    <Text color={t.text}>{`${SOFT_SEP}${rowAction}`}</Text>
-                  )}
-                </Text>
-              )}
+              onActivate={
+                isActive
+                  ? (index) => {
+                      const option = options[index];
+                      if (option) apply(confirmRowStep(latestKeys(), option.key));
+                    }
+                  : undefined
+              }
             />
           </Box>
           <Box flexGrow={1} minHeight={fit.gaps.legend ? 1 : 0} />
@@ -210,7 +220,7 @@ export function ConfirmApprovalPrompt({
               </Text>
             ) : (
               <Text color={t.textDim}>
-                {fitKeyLegend(focused ? CHOOSE_HINTS : unfocusedLegend, frame.width)}
+                {fitKeyLegend(focused ? CHOOSE_HINTS : composerLegend, frame.width)}
               </Text>
             ))}
         </>

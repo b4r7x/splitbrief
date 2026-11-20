@@ -335,8 +335,8 @@ it('e2e: REVIEW None runs the briefs and ends on one row, and Apply lands the re
         write('\x1b');
         await expect
           .poll(screen, { timeout: 30_000 })
-          .toContain(
-            'Pause after this brief · finish T001 including checks; do not start another brief',
+          .toMatch(
+            /Pause after this brief {2,}finish T001 including checks; do not start another brief/,
           );
         expect(screen()).not.toContain('including checks and review');
         write('\t');
@@ -1146,7 +1146,7 @@ it('e2e: a correction typed on a failed task review after a move to REVIEW None 
 });
 
 const NO_CORRECTION = 'This halt takes no typed correction. Choose an action.';
-const CONTINUE_ROW = 'Continue · recommended';
+const CONTINUE_ROW = /Continue {2,}recommended/;
 const NOTE_WORDS = 'mind the lockfile';
 
 /** A run whose review fails with no progress, so it halts on the failed-review panel. */
@@ -1200,7 +1200,7 @@ async function moveToNoneAtNoteQuestion(tui: Tui, target: StopContinueFixture): 
   await expect.poll(screen, { timeout: 30_000 }).toContain(NOTE_QUESTION);
   await moveReview(tui, target, 'none');
   await expect.poll(screen).not.toContain('Settings');
-  await expect.poll(screen, { timeout: 10_000 }).toContain(CONTINUE_ROW);
+  await expect.poll(screen, { timeout: 10_000 }).toMatch(CONTINUE_ROW);
   expect(screen()).not.toContain(NOTE_QUESTION);
   write('\t');
   await expect.poll(screen).toContain('tab back to the actions');
@@ -1246,7 +1246,7 @@ it.each(['task', 'end'] as const)(
         () => {},
         async (tui) => {
           const sessionId = await moveToNoneOverFailedReview(tui, target);
-          await expect.poll(tui.screen, { timeout: 10_000 }).toContain(CONTINUE_ROW);
+          await expect.poll(tui.screen, { timeout: 10_000 }).toMatch(CONTINUE_ROW);
           expect(tui.screen()).not.toContain('Review again');
           await expectWordsRefused(tui, target, sessionId, run);
         },
@@ -1325,7 +1325,7 @@ it('e2e: a move to REVIEW None over a failed task review with a brief left sends
       async (tui) => {
         const { screen, write } = tui;
         const sessionId = await moveToNoneOverFailedReview(tui, target);
-        await expect.poll(screen, { timeout: 10_000 }).toContain(CONTINUE_ROW);
+        await expect.poll(screen, { timeout: 10_000 }).toMatch(CONTINUE_ROW);
         expect(screen()).not.toContain('Review again');
 
         write(NOTE_WORDS);

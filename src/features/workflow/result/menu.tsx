@@ -6,7 +6,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inlineMenuChrome, inlineMenuLayout } from '../inline-menu/layout.js';
 import { InlineMenuPanel } from '../inline-menu/panel.js';
 import { useInlineMenuKeys } from '../inline-menu/use-keys.js';
-import { MenuRows } from '../stop/menu-rows.js';
+import { ListRows } from '../../../components/list-row/rows.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import {
   RESULT_MENU_LEGEND,
@@ -127,10 +127,11 @@ function ResultMenuBody({
       ))}
       <Box height={chrome.listRows} flexDirection="column" flexShrink={0}>
         {/* The mark follows the keyboard: while the composer holds it, ⏎ answers no row. */}
-        <MenuRows
-          options={layout.options}
+        <ListRows
+          lines={layout.lines}
+          getKey={(i) => rows[i]?.id ?? ''}
           selectedIndex={selectedIndex}
-          cursor={focused ? 'focused' : 'none'}
+          focused={focused}
           rowBudget={chrome.listRows}
           width={layout.width - 4}
         />

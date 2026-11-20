@@ -1,4 +1,5 @@
-import { listRowLead } from '../../../components/list-row/lead.js';
+import { planPresetRows } from '../preset-row.js';
+import type { ListLine } from '../../../components/list-row/plan.js';
 import type { CrewLabVerdict } from '../../../core/crew/labs.js';
 import type { CrewPreset } from '../../../core/crew/presets.js';
 import type { CrewRow } from '../../../core/crew/rows.js';
@@ -23,6 +24,7 @@ const LADDER = [
   { headers: true, gaps: true, presets: true },
   { headers: false, gaps: true, presets: true },
   { headers: false, gaps: false, presets: true },
+  { headers: false, gaps: false, presets: true, compact: true },
   { headers: false, gaps: false, presets: false },
 ] as const;
 
@@ -45,8 +47,9 @@ type SetupListInput = Readonly<{
 function planStage(
   input: SetupListInput,
   stage: (typeof LADDER)[number],
+  lines: readonly ListLine[],
 ): Readonly<{ plan: SetupListPlan; rows: number }> {
-  const presetRows = stage.presets ? input.presets.length : 0;
+  const presetRows = stage.presets ? lines.length : 0;
   const blocks = presetRows > 0 ? 2 : 1;
   const gaps = blocks + (input.signIn ? 1 : 0);
   const around = presetRows + (stage.headers ? blocks : 0) + (stage.gaps ? gaps : 0) + 1;
@@ -67,13 +70,15 @@ function planStage(
   };
 }
 
-export function planSetupList(input: SetupListInput): SetupListPlan {
-  let staged = planStage(input, LADDER[0]);
+export function planSetupList(input: SetupListInput) {
+  let presetLines = planPresetRows(input.presets, input.innerWidth);
+  let staged = planStage(input, LADDER[0], presetLines);
   for (const stage of LADDER.slice(1)) {
-    if (staged.rows <= input.budget) return staged.plan;
-    staged = planStage(input, stage);
+    if (staged.rows <= input.budget) return { ...staged.plan, presetLines };
+    if ('compact' in stage) presetLines = planPresetRows(input.presets, input.innerWidth, true);
+    staged = planStage(input, stage, presetLines);
   }
-  return staged.plan;
+  return { ...staged.plan, presetLines };
 }
 
 export function sectionOf(item: SetupItem): string {
@@ -101,10 +106,4 @@ export function crewKeysHint(item: SetupItem | undefined): string {
     default:
       return assertNever(item);
   }
-}
-
-/** Continue sits on the same left column as the preset and seat labels. */
-export function continueText(isCursor: boolean): string {
-  const gutter = listRowLead(isCursor ? 'active' : 'default');
-  return `${gutter}Continue`;
 }

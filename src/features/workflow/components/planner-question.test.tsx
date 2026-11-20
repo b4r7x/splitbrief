@@ -256,7 +256,7 @@ it('yields keyboard ownership when disabled and preserves selection on resize', 
   expect(onAnswer).not.toHaveBeenCalled();
   ui.rerender(<PlannerQuestion {...props} width={60} disabled={false} />);
   await flushEffects();
-  expect(stripAnsiStyles(ui.lastFrame())).toContain('Builder default');
+  expect(stripAnsiStyles(ui.lastFrame())).toMatch(/Builder +default/);
   ui.stdin.write('\r');
   await flushEffects();
   expect(onAnswer).toHaveBeenCalledExactlyOnceWith('Builder');

@@ -236,8 +236,8 @@ describe('recovery menu and composer keyboard ownership', () => {
       );
       const screen = ui;
       await vi.waitFor(() =>
-        expect(stripAnsiStyles(screen.lastFrame())).toContain(
-          'Review again · sends your note to the reviewer',
+        expect(stripAnsiStyles(screen.lastFrame())).toMatch(
+          /Review again {2,}sends your note to the reviewer/,
         ),
       );
       await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
@@ -323,8 +323,8 @@ describe('the note question of a failed review', () => {
     );
     const screen = ui;
     await vi.waitFor(() =>
-      expect(stripAnsiStyles(screen.lastFrame())).toContain(
-        'Review again · sends your note to the reviewer',
+      expect(stripAnsiStyles(screen.lastFrame())).toMatch(
+        /Review again {2,}sends your note to the reviewer/,
       ),
     );
     await flushEffects();

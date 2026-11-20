@@ -2775,7 +2775,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Apply with 8 open findings?');
     expect(frame).toContain('Open finding 8 needs a fix');
-    expect(frame).toContain('Back · return to the result menu');
+    expect(frame).toMatch(/Back {2,}return to the result menu/);
     expect(frame).toContain('tab type a command');
     ui.unmount();
   });
@@ -2864,8 +2864,8 @@ describe('WorkflowScreen showing a run at rest', () => {
       '- Open finding 3 needs a fix',
       '- Open finding 4 needs a fix',
       '+4 more open findings',
-      'Apply as is · write the changes; these findings stay open',
-      'Back · return to the result menu',
+      expect.stringMatching(/^Apply as is {2,}write the changes; these findings stay open$/),
+      expect.stringMatching(/^Back {2,}return to the result menu$/),
       '↑↓ select · ⏎ confirm · tab type a command',
     ]);
     ui.unmount();
@@ -2897,8 +2897,8 @@ describe('WorkflowScreen showing a run at rest', () => {
       await flushEffects();
 
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toMatch(/Apply as is · write the changes; these findings stay open\s*\|?\n/);
-      expect(frame).toMatch(/Back · return to the result menu\s*\|?\n/);
+      expect(frame).toMatch(/Apply as is {2,}write the changes; these findings stay open\s*\|?\n/);
+      expect(frame).toMatch(/Back {2,}return to the result menu\s*\|?\n/);
       expect(frame.includes('Apply with 8 open findings?')).toBe(title);
       expect(frame.includes('tab type a command')).toBe(legend);
       expect(frame).not.toMatch(/stay open\S/);
@@ -2919,9 +2919,9 @@ describe('WorkflowScreen showing a run at rest', () => {
       await flushEffects();
 
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain('Apply as is · write the changes with the open findings; asks once');
-      expect(frame).toContain('Show diff · open the run’s changes as a patch');
-      expect(frame).toContain('Discard · close the run; save its changes in run.patch');
+      expect(frame).toMatch(/Apply as is {2,}write the changes with the open findings; asks once/);
+      expect(frame).toMatch(/Show diff {2,}open the run’s changes as a patch/);
+      expect(frame).toMatch(/Discard {2,}close the run; save its changes in run\.patch/);
       ui.unmount();
     },
   );
@@ -2947,13 +2947,13 @@ describe('WorkflowScreen showing a run at rest', () => {
       await flushEffects();
       const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
 
-      expect(frame()).toMatch(/\| Apply as is · /);
+      expect(frame()).toMatch(/\| Apply as is\b/);
       ui.stdin.write('\u001B[B');
       await flushEffects();
-      expect(frame()).toMatch(/\| Show diff · /);
+      expect(frame()).toMatch(/\| Show diff\b/);
       ui.stdin.write('\u001B[B');
       await flushEffects();
-      expect(frame()).toMatch(/\| Discard · /);
+      expect(frame()).toMatch(/\| Discard\b/);
       ui.stdin.write('\r');
       await flushEffects();
       expect(onRuntimeCommand).toHaveBeenCalledWith('/run reject confirm', 'row');
@@ -3222,7 +3222,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() =>
       expect(frame()).toContain('Ready to apply as is · 1 red check · 2 files changed'),
     );
-    expect(frame()).toContain('Apply as is · write the changes with the red checks; asks once');
+    expect(frame()).toMatch(/Apply as is {2,}write the changes with the red checks; asks once/);
     expect(frame()).not.toContain('open finding');
 
     ui.stdin.write('\r');
@@ -3230,7 +3230,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const rows = frame().split('\n');
     const title = rows.findIndex((row) => row.includes('Apply with 1 red check?'));
     expect(rows[title + 1]).toContain('- V1 failed · npm test · Error: 2 specs failed');
-    expect(rows[title + 2]).toContain('Apply as is · write the changes; the red checks stay red');
+    expect(rows[title + 2]).toMatch(/Apply as is {2,}write the changes; the red checks stay red/);
     expect(onRuntimeCommand).not.toHaveBeenCalled();
     ui.unmount();
   });
@@ -4469,11 +4469,11 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
       overlayStore.open('stop-sheet');
       await flushEffects();
 
-      expect(frame()).toMatch(/\| Stop now · /);
+      expect(frame()).toMatch(/\| Stop now\b/);
       expect(frame()).not.toMatch(/tab close\S/);
       ui.stdin.write('\u001B[B');
       await flushEffects();
-      expect(frame()).toMatch(/\| Pause after this brief/);
+      expect(frame()).toMatch(/\| Pause after (?:this brief|this bri…|…)/);
       ui.stdin.write('\u001B[B');
       await flushEffects();
       expect(frame()).toMatch(/\| End run/);
@@ -5104,7 +5104,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     it('offers the default as the first row and an empty answer of your own as the second', async () => {
       const { ui, replies } = await openQuestion();
       const frame = frameOf(ui);
-      expect(frame).toContain(`${listRowLead('active')}a, an, and, or, nor default`);
+      expect(frame).toMatch(/\| a, an, and, or, nor {2,}default/);
       expect(frame).toContain('Write your own answer…');
       expect(frame).not.toContain('› a, an');
       expect(questionPromptStore.get().focus).toBe('menu');
@@ -5166,7 +5166,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         expect(replies).toEqual([]);
         const frame = frameOf(ui);
         expect(frame).toContain('Question 1 of 1');
-        expect(frame).toContain('a, an, and, or, nor default');
+        expect(frame).toMatch(/a, an, and, or, nor {2,}default/);
         expect(frame).not.toContain(`nor${command}`);
         ui.unmount();
       },
@@ -5183,7 +5183,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         });
         await flushEffects();
         expect(replies).toEqual([]);
-        expect(frameOf(ui)).toContain('a, an, and, or, nor default');
+        expect(frameOf(ui)).toMatch(/a, an, and, or, nor {2,}default/);
         ui.unmount();
       },
     );
@@ -5199,7 +5199,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
         expect(frameOf(ui)).toContain('Question 2 of 3');
       });
       const frame = frameOf(ui);
-      expect(frame).toContain(`${listRowLead('active')}src/ default`);
+      expect(frame).toMatch(/\| src\/ {2,}default/);
       expect(frame).toContain('Write your own answer…');
       expect(frame).toContain('Previous question');
       expect(frame).not.toContain('› src/');

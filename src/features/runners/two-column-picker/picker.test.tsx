@@ -7,7 +7,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones, hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
-import { ListRow } from '../../../components/list-row/row.js';
+import { PickerRow } from '../../../components/list-row/picker-row.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
@@ -1084,7 +1084,7 @@ describe('TwoColumnPicker', () => {
           items: TOOLS,
           getKey: (t) => t.id,
           renderRow: (t, { isCursor }) => (
-            <ListRow label={t.displayName} state={isCursor ? 'active' : 'default'} />
+            <PickerRow label={t.displayName} state={isCursor ? 'active' : 'default'} />
           ),
         }}
         rightProps={{
@@ -1127,7 +1127,7 @@ describe('TwoColumnPicker', () => {
               // stops forwarding the flag.
               const state = isCursor ? 'active' : isContext === true ? 'context' : 'default';
               leftCalls.push({ id: t.id, isCursor, isSelected, state });
-              return <ListRow label={t.displayName} state={state} />;
+              return <PickerRow label={t.displayName} state={state} />;
             },
           }}
           rightProps={{
@@ -1136,7 +1136,7 @@ describe('TwoColumnPicker', () => {
             renderRow: (m, { isCursor }) => {
               const state = isCursor ? 'active' : 'default';
               rightCalls.push({ id: m.id, isCursor, state });
-              return <ListRow label={m.displayName} state={state} />;
+              return <PickerRow label={m.displayName} state={state} />;
             },
             onLeftChange: (t) => {
               setLeftId(t.id);
@@ -1787,7 +1787,7 @@ describe('TwoColumnPicker', () => {
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
           renderRow: (m, { isCursor }) => (
-            <ListRow label={m.displayName} state={isCursor ? 'active' : 'default'} />
+            <PickerRow label={m.displayName} state={isCursor ? 'active' : 'default'} />
           ),
           customRow: { onSelect: () => {} },
         }}

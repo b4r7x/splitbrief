@@ -1,14 +1,8 @@
-import { ThemeText as Text, useTheme } from '../../../theme.js';
-import { Box } from 'ink';
-import { listRowLead } from '../../../list-row/lead.js';
-import { AlignedOptionRow, getAlignedOptionLabelWidth } from '../aligned-option-row.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { CLOSE_HINT, formatKeyHints, SELECT_HINT } from '../../../key-legend.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
-import { CompletionPanel } from '../panel.js';
+import { CompletionList } from '../list.js';
 
-const MAX_COMMAND_NAME_WIDTH = 18;
-const COMMAND_NAME_GAP = 2;
 const NARROW_FOOTER_COLS = 50;
 
 export interface CommandCompletionRow {
@@ -22,6 +16,8 @@ interface CommandCompletionMenuProps {
   selectedIndex: number;
   fuzzyMatch?: CommandCompletionRow | null;
   maxVisible: number;
+  width?: number | undefined;
+  above?: boolean | undefined;
 }
 
 export function CommandCompletionMenu({
@@ -29,8 +25,9 @@ export function CommandCompletionMenu({
   selectedIndex,
   fuzzyMatch,
   maxVisible,
+  width,
+  above,
 }: CommandCompletionMenuProps) {
-  const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const footer =
     cols < NARROW_FOOTER_COLS
@@ -41,81 +38,19 @@ export function CommandCompletionMenu({
           { key: '⏎', verb: 'run' },
           CLOSE_HINT,
         ]);
-  const nameWidth = getCommandNameWidth(filtered.map((cmd) => cmd.name));
-
+  const items = filtered.length
+    ? filtered
+    : fuzzyMatch
+      ? [{ ...fuzzyMatch, description: `${fuzzyMatch.description} (fuzzy)` }]
+      : [{ name: 'no matching commands' }];
   return (
-    <CompletionPanel
-      items={filtered}
-      selectedIndex={selectedIndex}
+    <CompletionList
+      rows={items}
+      selectedIndex={filtered.length ? selectedIndex : -1}
       maxVisible={maxVisible}
       footer={footer}
-      isOpen
-      itemKey={(cmd) => cmd.name}
-      renderRow={({ item: cmd, isSelected }) => (
-        <CommandRow cmd={cmd} isSelected={isSelected} nameWidth={nameWidth} />
-      )}
-      renderEmpty={() => {
-        if (filtered.length > 0) return null;
-        if (!fuzzyMatch) {
-          return <Text color={t.textDim}>{`${listRowLead('default')}no matching commands`}</Text>;
-        }
-        const labelWidth = getCommandNameWidth([fuzzyMatch.name]);
-        return (
-          <AlignedOptionRow
-            lead={
-              <Box width={2} flexShrink={0}>
-                <Text color={t.accent}>{listRowLead('default')}</Text>
-              </Box>
-            }
-            label={fuzzyMatch.name}
-            labelWidth={labelWidth}
-            labelGap={COMMAND_NAME_GAP}
-            labelColor={t.textDim}
-            detail={`${fuzzyMatch.description} (fuzzy)`}
-            detailColor={t.textDim}
-          />
-        );
-      }}
+      width={width ?? cols}
+      above={above}
     />
-  );
-}
-
-function getCommandNameWidth(names: string[]): number {
-  return getAlignedOptionLabelWidth(names, { maxWidth: MAX_COMMAND_NAME_WIDTH });
-}
-
-function CommandRow({
-  cmd,
-  isSelected,
-  nameWidth,
-}: {
-  cmd: CommandCompletionRow;
-  isSelected: boolean;
-  nameWidth: number;
-}) {
-  const t = useTheme();
-
-  return (
-    <Box width="100%" height={1} overflow="hidden">
-      <Box width={2} flexShrink={0}>
-        <Text color={t.accent}>{listRowLead(isSelected ? 'active' : 'default')}</Text>
-      </Box>
-      <Box width={nameWidth} flexShrink={0} overflow="hidden">
-        <Text color={isSelected ? t.accent : t.text} bold={isSelected} wrap="truncate-end">
-          {cmd.name}
-        </Text>
-      </Box>
-      <Box width={COMMAND_NAME_GAP} flexShrink={0} />
-      <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-        <Text color={t.textDim} wrap="truncate-end">
-          {cmd.description}
-        </Text>
-      </Box>
-      {cmd.trailing ? (
-        <Box flexShrink={0} marginLeft={1}>
-          <Text color={t.textDim}>{cmd.trailing}</Text>
-        </Box>
-      ) : null}
-    </Box>
   );
 }

@@ -1000,17 +1000,19 @@ const createPaletteSessionTaskFixture: FixtureFactory = () => ({
   }),
   afterMount: (write) => write('fixtures'),
 });
-const createPaletteTypedNameFixture: FixtureFactory = () => ({
-  ...createOverlayFixture({
-    overlay: 'command-palette',
-    underlyingScreen: 'workflow',
-    seed: () => {
-      seedSkills();
-      commandPaletteMruStore.record('command:/copy');
-    },
-  }),
-  afterMount: (write) => write('sessions'),
-});
+const createPaletteTypedNameFixture =
+  (withSkills: boolean): FixtureFactory =>
+  () => ({
+    ...createOverlayFixture({
+      overlay: 'command-palette',
+      underlyingScreen: 'workflow',
+      seed: () => {
+        if (withSkills) seedSkills();
+        commandPaletteMruStore.record('command:/copy');
+      },
+    }),
+    afterMount: (write) => write('sessions'),
+  });
 const createPaletteTypedSkillFixture: FixtureFactory = () => ({
   ...createOverlayFixture({
     overlay: 'command-palette',
@@ -2579,7 +2581,11 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help-details'), createHelpDetailsFixture],
   [scenarioId('overlay-command-palette'), createPaletteFixture],
   [scenarioId('overlay-command-palette-session-task'), createPaletteSessionTaskFixture],
-  [scenarioId('overlay-command-palette-typed-name'), createPaletteTypedNameFixture],
+  [scenarioId('overlay-command-palette-typed-name'), createPaletteTypedNameFixture(true)],
+  [
+    scenarioId('overlay-command-palette-typed-name-no-skills'),
+    createPaletteTypedNameFixture(false),
+  ],
   [scenarioId('overlay-command-palette-typed-skill'), createPaletteTypedSkillFixture],
   [scenarioId('overlay-command-palette-typed-activity'), createPaletteTypedActivityFixture],
   [scenarioId('overlay-skills'), createSkillsEmptyFixture],

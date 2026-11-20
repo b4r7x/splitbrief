@@ -1,7 +1,7 @@
 import { Box } from 'ink';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
-import { ListRow } from '../../../components/list-row/row.js';
+import { PickerRow } from '../../../components/list-row/picker-row.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -95,7 +95,7 @@ export function ModelsColumn<L extends FilterableItem, R extends { id: string }>
         if (slot.kind === 'guidance') return rightProps.placeholder ?? null;
         if (isVirtualCustomItem(slot.item)) {
           return (
-            <ListRow
+            <PickerRow
               label="+ Add custom model…"
               state={isCursor ? 'active' : 'default'}
               width={maxWidth}

@@ -30,6 +30,8 @@ Design decisions:
 
 **What the codebase does not use:** No React Context for state (only `ThemeContext` for colours). No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle`. The store pattern makes them unnecessary.
 
+Option lists use `planListRows` to measure terminal cells. Rows share the widest key and name in the filtered group. A description with fewer than 20 cells beside the name wraps beneath it. Focus controls the cursor and keyboard input. Key letters keep their cells when focus moves.
+
 Every colour is a theme token from the palette. Seat words use `CREW_SEAT_ROLES`; state words and marks use `stateTone(StateMeaning)`. Cause prose keeps `text`, and secondary text and separators use `textDim`. Dark `textDim` is `#9fa7bf`. The `dimError`, `dimSuccess` and `validator` tokens are removed. `resolveTheme` maps tokens to readable truecolor, 256-index or ANSI values against the detected background. Components paint no faint (SGR 2) or fixed colours.
 Every `Text` in `src` is `ThemeText`, which drops an `undefined` colour so the terminal's own colour shows.
 

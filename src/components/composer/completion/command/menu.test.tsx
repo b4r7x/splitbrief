@@ -87,6 +87,29 @@ describe('CommandCompletionMenu', () => {
     terminalSizeStore.reset();
   });
 
+  it('fits the completion frame to the widest option including its description', () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
+    const description = 'Copy the command from the most recent failed check';
+    const ui = render(
+      <Box width={100}>
+        <CommandCompletionMenu
+          filtered={[
+            { name: 'brief', description: 'Copy the brief' },
+            { name: 'command', description },
+          ]}
+          selectedIndex={0}
+          maxVisible={3}
+        />
+      </Box>,
+    );
+    try {
+      const row = rowContaining(panelLines(ui.lastFrame() ?? ''), description);
+      expect(row.slice(row.indexOf(description) + description.length)).toMatch(/^ [|│]$/u);
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('keeps command shortcuts visible as a de-badged dim key when descriptions overflow', () => {
     const ui = render(
       <Box width={46}>
@@ -207,53 +230,45 @@ describe('CommandCompletionMenu', () => {
     ui.unmount();
   });
 
-  it('keeps one gap, one column and an ellipsis on every clipped skill row', () => {
+  it('wraps skill descriptions inside the shared column and keeps the scrollbar clear', () => {
     const ui = render(
       <Box width={60}>
-        <CommandCompletionMenu filtered={SKILL_ROWS} selectedIndex={0} maxVisible={4} />
+        <CommandCompletionMenu width={60} filtered={SKILL_ROWS} selectedIndex={0} maxVisible={4} />
       </Box>,
     );
-
     const rows = panelLines(ui.lastFrame() ?? '');
-    const cursorRow = rowContaining(rows, 'splitbrief-add-fe');
-    const pseudoRow = rowContaining(rows, 'agents-root');
-    const shortRow = rowContaining(rows, '2d-games');
-
-    expect(cursorRow).toMatch(/splitbrief-add-fe… {2}\S/);
-    expect(cursorRow.indexOf('splitbrief-add-fe')).toBe(pseudoRow.indexOf('agents-root'));
-    expect(shortRow.indexOf('2d-games')).toBe(pseudoRow.indexOf('agents-root'));
-
-    const spec = rowContaining(rows, 'splitbrief-impl');
-    expect(cursorRow.split('…')).toHaveLength(3);
-    expect(spec.split('…')).toHaveLength(3);
-    expect(shortRow.split('…')).toHaveLength(2);
-    for (const row of [cursorRow, spec, shortRow, pseudoRow]) {
-      expect(row).not.toMatch(/\S↓/);
-    }
+    const first = rowContaining(rows, 'splitbrief-add');
+    const column = first.indexOf('Sprites');
+    expect(first).toMatch(/splitbrief-add[^ ]*… {2}Sprites/);
+    expect(column).toBeGreaterThan(0);
+    const continuation = rows[rows.indexOf(first) + 1] ?? '';
+    expect(continuation.slice(1, column).trim()).toBe('');
+    expect(continuation.slice(column)).toMatch(/^\S/);
+    expect(rows.join('\n')).not.toMatch(/\S↓\d/);
     ui.unmount();
   });
 
-  it('sizes the name column from the whole list, so the description never moves', () => {
-    const ui = render(
+  it('sizes the name column from the whole filtered list as selection scrolls', () => {
+    const menu = (index: number) => (
       <Box width={60}>
-        <CommandCompletionMenu filtered={SKILL_ROWS} selectedIndex={0} maxVisible={4} />
-      </Box>,
+        <CommandCompletionMenu
+          width={60}
+          filtered={SKILL_ROWS}
+          selectedIndex={index}
+          maxVisible={4}
+        />
+      </Box>
     );
-    const firstColumn = rowContaining(panelLines(ui.lastFrame() ?? ''), '2d-games').indexOf(
-      LONG_SKILL_DESCRIPTION.slice(0, 12),
+    const ui = render(menu(0));
+    const firstColumn = rowContaining(panelLines(ui.lastFrame() ?? ''), 'splitbrief-add').indexOf(
+      'Sprites',
     );
-
-    ui.rerender(
-      <Box width={60}>
-        <CommandCompletionMenu filtered={SKILL_ROWS} selectedIndex={11} maxVisible={4} />
-      </Box>,
+    ui.rerender(menu(11));
+    const lastColumn = rowContaining(panelLines(ui.lastFrame() ?? ''), 'typescript').indexOf(
+      'Sprites',
     );
-    const scrolledColumn = rowContaining(panelLines(ui.lastFrame() ?? ''), '3d-games').indexOf(
-      LONG_SKILL_DESCRIPTION.slice(0, 12),
-    );
-
     expect(firstColumn).toBeGreaterThan(0);
-    expect(scrolledColumn).toBe(firstColumn);
+    expect(lastColumn).toBe(firstColumn);
     ui.unmount();
   });
 

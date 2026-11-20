@@ -1,6 +1,5 @@
-import { Box } from 'ink';
 import { type CommandCompletionRow, CommandCompletionMenu } from './command/menu.js';
-import { computeCompletionCap, computeCompletionOverlayRows } from './layout.js';
+import { computeCompletionCap } from './layout.js';
 import { ReferenceCompletionMenu } from './reference/menu.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
@@ -16,6 +15,7 @@ interface CompletionOverlayProps {
   showReference: boolean;
   /** The terminal height and the rows the box shows, which the lists open above. */
   rows: number;
+  width: number;
   visibleRows: number;
 }
 
@@ -26,44 +26,31 @@ export function CompletionOverlay({
   showCommand,
   showReference,
   rows,
+  width,
   visibleRows,
 }: CompletionOverlayProps) {
   const completionCap = computeCompletionCap(rows, visibleRows);
   const referenceSuggestionsCap = Math.min(MAX_REFERENCE_SUGGESTIONS, completionCap);
-  const commandOverlayRows = showCommand
-    ? computeCompletionOverlayRows({
-        itemCount: command.filtered.length,
-        maxVisible: completionCap,
-        hasFuzzyMatch: command.fuzzyMatch !== null,
-        hasEmptyMessage: command.filtered.length === 0 && command.fuzzyMatch === null,
-      })
-    : 0;
-  const referenceOverlayRows = showReference
-    ? computeCompletionOverlayRows({
-        itemCount: reference.filtered.length,
-        maxVisible: referenceSuggestionsCap,
-      })
-    : 0;
   return (
     <>
       {showCommand && (
-        <Box position="absolute" width="100%" marginTop={-commandOverlayRows}>
-          <CommandCompletionMenu
-            filtered={command.filtered}
-            selectedIndex={command.selectedIndex}
-            fuzzyMatch={command.fuzzyMatch}
-            maxVisible={completionCap}
-          />
-        </Box>
+        <CommandCompletionMenu
+          above
+          width={width}
+          filtered={command.filtered}
+          selectedIndex={command.selectedIndex}
+          fuzzyMatch={command.fuzzyMatch}
+          maxVisible={completionCap}
+        />
       )}
       {showReference && (
-        <Box position="absolute" width="100%" marginTop={-referenceOverlayRows}>
-          <ReferenceCompletionMenu
-            filtered={reference.filtered}
-            selectedIndex={reference.selectedIndex}
-            maxVisible={referenceSuggestionsCap}
-          />
-        </Box>
+        <ReferenceCompletionMenu
+          above
+          width={width}
+          filtered={reference.filtered}
+          selectedIndex={reference.selectedIndex}
+          maxVisible={referenceSuggestionsCap}
+        />
       )}
     </>
   );

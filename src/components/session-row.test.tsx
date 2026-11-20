@@ -151,7 +151,7 @@ describe('SessionRow', () => {
     );
     expect(frame).toContain('…');
     expect(frame).not.toContain('jeszcze');
-    expect(frame).toMatch(/… 1m ago|… just now/);
+    expect(frame).toMatch(/… {2}(?:1m ago|just now)/);
   });
 
   it('keeps the words of a multi-line task apart on its one row', () => {
@@ -261,7 +261,7 @@ describe('SessionRow', () => {
         />
       </Box>,
     );
-    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ` just now${SOFT_SEP}complete`));
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, `  just now${SOFT_SEP}complete`));
     ui.unmount();
   });
 

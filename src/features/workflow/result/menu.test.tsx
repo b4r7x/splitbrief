@@ -105,10 +105,7 @@ describe('ResultMenu', () => {
         paint(defaultTheme.text, 'Show diff').replace('\u001b[39m', ''),
       );
       expect(ui.lastFrame()).toContain(
-        paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''),
-      );
-      expect(ui.lastFrame()).toContain(
-        paint(defaultTheme.textDim, ' · open the run’s changes').replace('\u001b[39m', ''),
+        paint(defaultTheme.textDim, '  open the run’s changes').replace('\u001b[39m', ''),
       );
       await flushEffects();
       ui.stdin.write(DOWN);
@@ -117,7 +114,7 @@ describe('ResultMenu', () => {
         paint(defaultTheme.accent, `${listRowLead('active')}Show diff`).replace('\u001b[39m', ''),
       );
       expect(ui.lastFrame()).toContain(
-        paint(defaultTheme.textDim, ' · open the run’s changes').replace('\u001b[39m', ''),
+        paint(defaultTheme.textDim, '  open the run’s changes').replace('\u001b[39m', ''),
       );
       ui.unmount();
     },
@@ -251,7 +248,7 @@ describe('ResultMenu', () => {
     expect(asking).toContain('Apply with 8 open findings?');
     expect(asking).toContain('- Open finding 1 needs a fix');
     expect(asking).toContain('more open findings');
-    expect(asking).toContain('Back · return to the result menu');
+    expect(asking).toMatch(/Back {2,}return to the result menu/);
     expect(asking).toContain('tab type a command');
 
     ui.stdin.write(DOWN);
@@ -311,7 +308,7 @@ describe('ResultMenu', () => {
     expect(title).toBeGreaterThan(-1);
     expect(rows[title + 1]).toContain('- Edge case missing Unicode input is not covered');
     expect(rows[title + 2]).toContain('- Criterion C1: fail');
-    expect(rows[title + 3]).toContain('Apply as is · write the changes');
+    expect(rows[title + 3]).toMatch(/Apply as is {2,}write the changes/);
     ui.unmount();
   });
 
@@ -319,18 +316,19 @@ describe('ResultMenu', () => {
     {
       findings: ['missing null check'],
       ready: 'Ready to apply as is · 1 red check · 1 open finding · 4 files changed',
-      apply: 'Apply as is · write the changes with the red checks and the open findings; asks once',
+      apply:
+        /Apply as is {2,}write the changes with the red checks and the open findings; asks once/,
       title: 'Apply with 1 red check and 1 open finding?',
       list: ['- V1 failed · npm test · Error: 2 specs failed', '- missing null check'],
-      confirm: 'Apply as is · write the changes; the red checks and these findings stay open',
+      confirm: /Apply as is {2,}write the changes; the red checks and these findings stay open/,
     },
     {
       findings: [],
       ready: 'Ready to apply as is · 1 red check · 4 files changed',
-      apply: 'Apply as is · write the changes with the red checks; asks once',
+      apply: /Apply as is {2,}write the changes with the red checks; asks once/,
       title: 'Apply with 1 red check?',
       list: ['- V1 failed · npm test · Error: 2 specs failed'],
-      confirm: 'Apply as is · write the changes; the red checks stay red',
+      confirm: /Apply as is {2,}write the changes; the red checks stay red/,
     },
   ])(
     'shows the red check of an override first, then its open findings: $title',
@@ -339,7 +337,7 @@ describe('ResultMenu', () => {
       const frame = () => stripAnsiStyles(ui.lastFrame() ?? '');
       await flushEffects();
       await vi.waitFor(() => expect(frame()).toContain(ready));
-      expect(frame()).toContain(apply);
+      expect(frame()).toMatch(apply);
 
       ui.stdin.write('\r');
       await vi.waitFor(() => expect(frame()).toContain(title));
@@ -348,7 +346,7 @@ describe('ResultMenu', () => {
       for (const [index, line] of list.entries()) {
         expect(rows[titleRow + 1 + index]).toContain(line);
       }
-      expect(rows[titleRow + 1 + list.length]).toContain(confirm);
+      expect(rows[titleRow + 1 + list.length]).toMatch(confirm);
       expect(onCommand).not.toHaveBeenCalled();
       ui.unmount();
     },
@@ -406,8 +404,8 @@ describe('ResultMenu', () => {
       for (const [index, line] of list.entries()) {
         expect(rows[firstOpen + index]).toContain(line);
       }
-      expect(rows[firstOpen + list.length]).toContain('Apply as is · write the changes');
-      expect(frame()).toContain('Back · return to the result menu');
+      expect(rows[firstOpen + list.length]).toMatch(/Apply as is {2,}write the changes/);
+      expect(frame()).toMatch(/Back {2,}return to the result menu/);
       expect(frame()).toContain('tab type a command');
       ui.unmount();
     },

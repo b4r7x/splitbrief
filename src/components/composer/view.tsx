@@ -450,6 +450,7 @@ function ComposerInput({
           )}
         </Box>
         <CompletionOverlay
+          width={hintBoxWidth}
           command={command}
           reference={reference}
           showCommand={showCommandSuggestions}

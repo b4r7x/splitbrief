@@ -14,6 +14,7 @@ export function CompletionPanel<T>({
   maxVisible,
   footer,
   isOpen,
+  width,
   itemKey,
   renderRow,
   renderEmpty,
@@ -23,12 +24,14 @@ export function CompletionPanel<T>({
   maxVisible: number;
   footer: string;
   isOpen?: boolean | undefined;
+  width?: number | undefined;
   itemKey: (item: T) => string;
   renderRow: (opts: { item: T; globalIndex: number; isSelected: boolean }) => ReactNode;
   renderEmpty?: (() => ReactNode) | undefined;
 }) {
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
+  const panelWidth = width ?? cols;
   const offsetRef = useRef(0);
   if (!(isOpen ?? items.length > 0)) return null;
 
@@ -93,7 +96,7 @@ export function CompletionPanel<T>({
   }
   rows.push(
     <Box key="divider" width="100%" height={1} overflow="hidden">
-      <Text color={t.border}>{glyph('divider').repeat(Math.max(0, cols - 4))}</Text>
+      <Text color={t.border}>{glyph('divider').repeat(Math.max(0, panelWidth - 4))}</Text>
     </Box>,
   );
   rows.push(
@@ -105,8 +108,8 @@ export function CompletionPanel<T>({
   );
 
   return (
-    <Box flexDirection="column" width="100%">
-      <OcclusionBackplate rows={rows.length + 2} width={Math.max(0, cols)} />
+    <Box flexDirection="column" width={width ?? '100%'}>
+      <OcclusionBackplate rows={rows.length + 2} width={Math.max(0, panelWidth)} />
       <PanelSurface
         flexDirection="column"
         width="100%"
@@ -126,10 +129,10 @@ export function CompletionPanel<T>({
 // bordered card renders on top. It starts one cell left of the card, as it already runs past the
 // right border, so a rule the card covers stops short of both borders instead of butting into one.
 function OcclusionBackplate({ rows, width }: { rows: number; width: number }) {
-  const line = ' '.repeat(width + 1);
+  const line = ' '.repeat(width + 2);
   const block = Array.from({ length: rows }, () => line).join('\n');
   return (
-    <Box position="absolute" marginLeft={-1} width={width + 1} height={rows}>
+    <Box position="absolute" marginLeft={-1} width={width + 2} height={rows}>
       <Text>{block}</Text>
     </Box>
   );

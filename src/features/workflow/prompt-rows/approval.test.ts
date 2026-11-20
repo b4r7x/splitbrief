@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   CONFIRM_REASON_HINTS,
   CHOOSE_HINTS,
-  approvalKeyColumnWidth,
   approvalTitle,
   getApprovalConfirmLabel,
   getConfirmOptions,
@@ -20,7 +19,7 @@ describe('confirm gate title and label', () => {
     ],
     ['package_change', 'Change a package manifest:', 'package manifest write'],
     ['sensitive_change', 'Change a CI or secret file:', 'CI or secret file write'],
-    ['destructive', 'Destructive action:', 'control-plane file write'],
+    ['destructive', 'Destructive action:', 'Write to a protected project file'],
     ['write_out_of_scope', "Write outside the brief's declared files:", 'confirm file write'],
   ] as const)('names what a %s request approves', (actionClass, title, label) => {
     expect(approvalTitle(actionClass)).toBe(title);
@@ -38,7 +37,6 @@ describe('confirm gate keys and legends', () => {
 
   it('leaves the Confirm row without a key on a destructive gate, so r sets the column', () => {
     expect(getConfirmOptions('destructive').map((option) => option.key)).toEqual(['', 'r', 'x']);
-    expect(approvalKeyColumnWidth(getConfirmOptions('destructive'))).toBe(1);
     expect(getConfirmOptions('package_change').map((option) => option.key)).toEqual([
       'y',
       'r',
@@ -54,7 +52,7 @@ describe('confirm gate keys and legends', () => {
       'sensitive_change',
       'destructive',
     ] as const) {
-      expect(getConfirmOptions(actionClass).map((option) => option.label)).toContain(
+      expect(getConfirmOptions(actionClass).map((option) => option.name)).toContain(
         'Confirm with a reason',
       );
     }

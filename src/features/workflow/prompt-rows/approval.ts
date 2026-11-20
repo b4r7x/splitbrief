@@ -2,10 +2,8 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
-import { wrapHard } from '../../../utils/display-text/wrap.js';
 import { OVERLAY_FRAME_ROWS } from '../../../core/navigation/overlay-rect.js';
 import { RESULT_MENU_UNFOCUSED_LEGEND } from '../result/options.js';
-import { MIN_TEXT_WIDTH } from './measure.js';
 import {
   formatKeyHints,
   SELECT_HINT,
@@ -73,11 +71,11 @@ export const CONFIRM_REASON_UNSTATED = 'confirmed at the prompt (no reason given
 
 export interface ApprovalOption {
   key: string;
-  label: string;
+  name: string;
 }
 
 export function getApprovalConfirmLabel(actionClass: ActionClass): string {
-  if (actionClass === 'destructive') return 'control-plane file write';
+  if (actionClass === 'destructive') return 'Write to a protected project file';
   if (actionClass === 'package_change') return 'package manifest write';
   if (actionClass === 'sensitive_change') return 'CI or secret file write';
   if (actionClass === 'runner_trust') return 'runner command from the project config';
@@ -97,10 +95,10 @@ export function getConfirmPrimaryKey(actionClass: ActionClass): string {
 
 // A runner trust stores a receipt of the exact runner and nothing else, so it asks for no reason.
 export function getConfirmOptions(actionClass: ActionClass): ReadonlyArray<ApprovalOption> {
-  const confirm = { key: getConfirmPrimaryKey(actionClass), label: 'Confirm' };
-  const deny = { key: 'x', label: 'Deny' };
+  const confirm = { key: getConfirmPrimaryKey(actionClass), name: 'Confirm' };
+  const deny = { key: 'x', name: 'Deny' };
   if (actionClass === 'runner_trust') return [confirm, deny];
-  return [confirm, { key: 'r', label: 'Confirm with a reason' }, deny];
+  return [confirm, { key: 'r', name: 'Confirm with a reason' }, deny];
 }
 
 /**
@@ -111,46 +109,4 @@ export function getConfirmOptions(actionClass: ActionClass): ReadonlyArray<Appro
  */
 export function formatApprovalActionDescription(actionDescription: string): string {
   return sanitizeTerminalDisplayText(actionDescription, { preserveLineBreaks: true });
-}
-
-// The label column is set by the widest key in the set, so a row with a shorter key still aligns
-// with the rest — on a destructive gate that is `r`, one cell, because Confirm carries none.
-export function approvalKeyColumnWidth(options: ReadonlyArray<ApprovalOption>): number {
-  return options.reduce((width, option) => Math.max(width, option.key.length), 0);
-}
-
-export function approvalOptionKeyCell(option: ApprovalOption, keyWidth: number): string {
-  return option.key.padEnd(keyWidth);
-}
-
-// Cursor gutter + key cell + the three-space gap. A label that wraps hangs to this column so a
-// continuation can never land back under the marker and read as another option.
-export function approvalLabelIndent(keyWidth: number): number {
-  return 2 + keyWidth + 3;
-}
-
-export function approvalOptionLabelLines(input: {
-  option: ApprovalOption;
-  keyWidth: number;
-  width: number;
-}): string[] {
-  const indent = approvalLabelIndent(input.keyWidth);
-  return wrapHard(input.option.label, Math.max(MIN_TEXT_WIDTH, input.width - indent)).split('\n');
-}
-
-export function approvalOptionLabelText(input: {
-  option: ApprovalOption;
-  keyWidth: number;
-  width: number;
-}): string {
-  const indent = ' '.repeat(approvalLabelIndent(input.keyWidth));
-  return approvalOptionLabelLines(input).join(`\n${indent}`);
-}
-
-export function approvalOptionRows(
-  options: ReadonlyArray<ApprovalOption>,
-  width: number,
-): number[] {
-  const keyWidth = approvalKeyColumnWidth(options);
-  return options.map((option) => approvalOptionLabelLines({ option, keyWidth, width }).length);
 }

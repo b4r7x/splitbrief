@@ -326,7 +326,7 @@ it('e2e: Accept as is at a final review that a red check blocks records the red 
           await expect.poll(screen, { timeout: 60_000 }).toContain(`Question: ${QUESTION}`);
           await expect.poll(screen).toMatch(/▌.*Review again/);
           halted = screen();
-          expect(halted).toContain('Accept as is · records the blockers');
+          expect(halted).toMatch(/Accept as is {2,}records the blockers/);
           expect(halted).toContain(RED_CHECK);
 
           await moveCursorTo(screen, write, '\x1b[B', /▌.*Accept as is/);
@@ -358,7 +358,7 @@ it('e2e: Accept as is at a final review that a red check blocks records the red 
       },
     );
 
-    expect(halted).toContain('Decide for me · lets the next review decide');
+    expect(halted).toMatch(/Decide for me {2,}lets the next review decide/);
     expect(halted).toContain('End run');
     expect(ready).toContain('write the changes with the red checks; asks once');
     expect(ready).not.toContain('open finding');

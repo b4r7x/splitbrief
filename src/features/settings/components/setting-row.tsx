@@ -1,6 +1,6 @@
 import { Box } from 'ink';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
-import { ListRow } from '../../../components/list-row/row.js';
+import { PickerRow } from '../../../components/list-row/picker-row.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { stripTerminalControls } from '../../../utils/display-text/sanitize.js';
@@ -46,7 +46,7 @@ export function SettingRow({
 
   const boolTrue = def.kind === 'boolean' && value === true;
   return (
-    <ListRow
+    <PickerRow
       label={label}
       state={isCursor ? 'active' : 'default'}
       metadata={boolTrue ? undefined : displayValue(def, value, { detectedContextLength })}

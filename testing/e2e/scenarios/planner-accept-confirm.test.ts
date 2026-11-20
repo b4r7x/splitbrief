@@ -210,8 +210,8 @@ it('confirms a planner-accepted Apply with the note above every open finding', {
           child.write('\r');
           await expect.poll(screen).toContain('Ready to apply as is · 8 open findings');
           const menu = screen();
-          expect(menu).toContain('Show diff · open the run’s changes as a patch');
-          expect(menu).toContain('Discard · close the run; save its changes in run.patch');
+          expect(menu).toMatch(/Show diff {2,}open the run’s changes as a patch/);
+          expect(menu).toMatch(/Discard {2,}close the run; save its changes in run\.patch/);
           expect(menu).not.toContain('Apply with 8 open findings?');
           expect(menu).not.toContain("Planner's note");
           expect(menu).not.toContain('- Open finding 1 needs a fix');

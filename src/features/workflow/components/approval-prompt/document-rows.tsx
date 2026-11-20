@@ -1,11 +1,11 @@
-import { PanelRow } from '../../../components/overlays/row.js';
-import { ThemeText as Text, useTheme } from '../../../components/theme.js';
-import { listRowLead } from '../../../components/list-row/lead.js';
-import { ListViewport } from '../../../components/pickers/list-viewport.js';
-import { TextSpans } from '../../../components/text-spans.js';
-import type { ConversationRowSegment } from '../conversation-rows/types.js';
+import { PanelRow } from '../../../../components/overlays/row.js';
+import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
+import { listRowLead } from '../../../../components/list-row/lead.js';
+import { ListViewport } from '../../../../components/pickers/list-viewport.js';
+import { TextSpans } from '../../../../components/text-spans.js';
+import type { ConversationRowSegment } from '../../conversation-rows/types.js';
 
-export function MenuRows({
+export function DocumentRows({
   options,
   selectedIndex,
   cursor,

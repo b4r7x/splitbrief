@@ -345,7 +345,7 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     await vi.waitFor(() =>
       expect(stripAnsiStyles(screen.lastFrame())).toContain('Question 2 of 3'),
     );
-    expect(stripAnsiStyles(screen.lastFrame())).toContain('src/ default');
+    expect(stripAnsiStyles(screen.lastFrame())).toMatch(/src\/ {2,}default/);
     await key('\u001b[B');
     await key('\r');
     expect(questionPromptStore.get().focus).toBe('answer');

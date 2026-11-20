@@ -57,7 +57,7 @@ describe('FallbackRowView', () => {
       );
 
       expect(lines).toHaveLength(1);
-      expect(lines[0]?.trimEnd()).toMatch(/ · not installed$/);
+      expect(lines[0]?.trimEnd()).toMatch(/ {2,}not installed$/);
       expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(width);
     },
   );

@@ -22,7 +22,7 @@ import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { fitKeyLegend } from '../../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { MARK_SLOT_CELLS } from '../../../../components/row-leading.js';
-import { MenuRows } from '../../stop/menu-rows.js';
+import { DocumentRows } from './document-rows.js';
 import { isCommandDraft } from '../../../../core/composer/submission.js';
 import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
 import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.js';
@@ -119,7 +119,7 @@ export function DocumentReviewPrompt({
           )}
         </Box>
       )}
-      <MenuRows
+      <DocumentRows
         options={options.map((option) => ({
           parts: reviewDocumentRowLines(option, width).map((line, index) => [
             { text: line, tone: 'text' as const },

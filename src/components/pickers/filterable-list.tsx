@@ -10,16 +10,15 @@ import { useStores } from '../../stores/use-many.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { availableRows } from './scroll-offset.js';
-import { ListViewport, type ListSectionConfig } from './list-viewport.js';
+import { ListRows, planViewportRows } from '../list-row/rows.js';
+import type { ListRowModel } from '../list-row/plan.js';
+import type { ListSectionConfig } from './list-viewport.js';
 
 interface FilterableListProps<T> {
   items: T[];
   filterFn: (item: T, query: string) => boolean;
   getKey: (item: T) => string;
-  renderItem: (
-    item: T,
-    ctx: { isCursor: boolean; globalIndex: number; innerWidth: number },
-  ) => ReactNode;
+  rowModel: (item: T) => ListRowModel;
   onConfirm?: (item: T) => void;
   onActivate?: (item: T) => void;
   title?: string;
@@ -39,7 +38,7 @@ export function FilterableList<T>({
   items,
   filterFn,
   getKey,
-  renderItem,
+  rowModel,
   onConfirm,
   onActivate,
   title,
@@ -76,6 +75,9 @@ export function FilterableList<T>({
 
   const { filter, filtered, selectedIndex } = list;
 
+  const sectionOf = section
+    ? (i: number) => (filtered[i] === undefined ? '' : section.by(filtered[i]))
+    : undefined;
   return (
     <OverlayPanel title={title} hint={hint} density={density}>
       <Box marginBottom={1}>
@@ -84,18 +86,22 @@ export function FilterableList<T>({
           {...(filterPlaceholder !== undefined ? { placeholder: filterPlaceholder } : {})}
         />
       </Box>
-      <ListViewport
-        highlightCursor
-        barColumn="padding"
+      <ListRows
+        focused
         width={innerWidth}
-        items={filtered}
+        lines={planViewportRows(
+          filtered.map(rowModel),
+          innerWidth,
+          rowBudget,
+          sectionOf,
+          section?.gapBetweenSections,
+        )}
         selectedIndex={selectedIndex}
-        getKey={getKey}
-        renderItem={(item, ctx) => renderItem(item, { ...ctx, innerWidth: ctx.contentWidth })}
+        getKey={(i) => (filtered[i] === undefined ? '' : getKey(filtered[i]))}
         rowBudget={rowBudget}
         {...(onActivate || onConfirm
           ? {
-              onRowActivate: (index: number) => {
+              onActivate: (index: number) => {
                 const item = filtered[index];
                 if (item === undefined) return;
                 if (onActivate) {
@@ -107,7 +113,12 @@ export function FilterableList<T>({
             }
           : {})}
         {...(placeholder !== undefined ? { placeholder } : {})}
-        {...(section !== undefined ? { section } : {})}
+        {...(section !== undefined
+          ? {
+              section: sectionOf,
+              gapBetweenSections: section.gapBetweenSections,
+            }
+          : {})}
       />
     </OverlayPanel>
   );

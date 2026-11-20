@@ -1,7 +1,10 @@
 import { ThemeText as Text, useTheme } from './theme.js';
 import { Box } from 'ink';
 import { PanelRow } from './overlays/row.js';
-import { listRowLead } from './list-row/lead.js';
+import { ListRow } from './list-row/row.js';
+import { planListRows, type ListRowModel } from './list-row/plan.js';
+import type { Theme } from '../core/theme/palette.js';
+import { useStdout } from 'ink';
 import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
 import type { Session } from '../core/schemas/session.js';
@@ -52,44 +55,28 @@ function isSelected(cursor: SessionRowCursor): boolean {
   }
 }
 
-export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps) {
-  const t = useTheme();
-  const display = getSessionStatusDisplay(session, t);
-  const icon = display.icon;
-  const iconColor = display.color;
-  const now = useSharedClock({ active: () => true });
+export function sessionRowModel(session: Session, now: number, theme: Theme): ListRowModel {
+  const display = getSessionStatusDisplay(session, theme);
   const time = formatRelativeTime(session.completedAt ?? session.startedAt, now);
   const feature = oneLineDisplayText(session.feature);
-  const selected = isSelected(cursor);
-  const row = (
-    <Box width="100%">
-      {cursor.kind === 'inline' && (
-        <Box flexShrink={0}>
-          <Text color={t.accent} bold>
-            {listRowLead(selected ? 'active' : 'default')}
-          </Text>
-        </Box>
-      )}
-      <Box flexShrink={0}>
-        <Text color={iconColor} bold={selected}>
-          {icon}{' '}
-        </Text>
-      </Box>
-      <Box flexGrow={1} flexShrink={1} minWidth={0}>
-        <Text color={selected ? t.accent : t.text} bold={selected} wrap="truncate-end">
-          {feature}
-        </Text>
-      </Box>
-      <Box flexShrink={0} justifyContent="flex-end">
-        <Text wrap="truncate-end">
-          <Text color={t.textDim}> {time}</Text>
-          <Text color={t.textDim}>{SOFT_SEP}</Text>
-          <Text color={t.textDim}>{display.word}</Text>
-        </Text>
-      </Box>
-    </Box>
-  );
+  return {
+    name: display.icon + ' ' + feature,
+    nameParts: [
+      { text: display.icon + ' ', color: display.color },
+      { text: feature, tone: 'text' },
+    ],
+    trailing: time + SOFT_SEP + display.word,
+  };
+}
 
+export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps) {
+  const t = useTheme();
+  const { stdout } = useStdout();
+  const now = useSharedClock({ active: () => true });
+  const selected = isSelected(cursor);
+  const [line] = planListRows([sessionRowModel(session, now, t)], { width: stdout.columns });
+  if (!line) return null;
+  const row = <ListRow line={line} selected={selected} marker={cursor.kind === 'inline'} />;
   if (cursor.kind !== 'outdent') return row;
 
   return (

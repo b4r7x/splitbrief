@@ -339,7 +339,7 @@ describe('a run at rest whose project folder moves away', () => {
     await moveProjectAway();
     const { messages, off } = recordFooter();
     await runCommand('/stop');
-    await vi.waitFor(() => expect(frame()).toContain('End run · close this run'));
+    await vi.waitFor(() => expect(frame()).toMatch(/End run {2,}close this run/));
 
     ui?.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => expect(frame()).toContain(`${listRowLead('active')}End run`));

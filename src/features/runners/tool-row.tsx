@@ -1,4 +1,4 @@
-import { ListRow } from '../../components/list-row/row.js';
+import { PickerRow } from '../../components/list-row/picker-row.js';
 import { glyph } from '../../lib/glyphs.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
@@ -44,7 +44,7 @@ export function renderToolRow({
   const state = isCursor ? 'active' : isContext ? 'context' : 'default';
 
   return (
-    <ListRow
+    <PickerRow
       label={label}
       state={state}
       metadata={metadata}
@@ -85,7 +85,7 @@ export function renderModelRow({
 }: ModelRowParams) {
   if (row.kind === 'action') {
     return (
-      <ListRow
+      <PickerRow
         label={row.text}
         state={isCursor ? 'active' : 'default'}
         width={maxWidth}
@@ -96,7 +96,7 @@ export function renderModelRow({
   if (row.kind === 'route') {
     const { word, dim } = formatRouteAuth({ auth: row.auth });
     return (
-      <ListRow
+      <PickerRow
         treeLead={treeLead(row.tree, row.last)}
         label={sanitizeTerminalDisplayText(row.variant.tag)}
         state={isCursor ? 'active' : 'default'}
@@ -112,7 +112,7 @@ export function renderModelRow({
   }
   if (row.kind === 'axis') {
     return (
-      <ListRow
+      <PickerRow
         treeLead={treeLead(row.tree, row.last)}
         label={row.axis}
         state={isCursor ? 'active' : 'default'}
@@ -127,7 +127,7 @@ export function renderModelRow({
   const planned = plan.rows.get(row.model.id);
   const label = planned?.label ?? row.model.id;
   return (
-    <ListRow
+    <PickerRow
       label={label}
       state={isCursor ? 'active' : 'default'}
       // A namespaced id (`anthropic/claude-opus-4.5`) is named by its tail, and a cut inside a

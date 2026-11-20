@@ -1,7 +1,7 @@
 import { ThemeText as Text, useTheme } from './theme.js';
 import { colorForTone, type TextTone } from '../core/theme/tone-color.js';
 
-type TextSpan = Readonly<{ text: string; bold?: boolean }> &
+export type TextSpan = Readonly<{ text: string; bold?: boolean }> &
   ({ tone: TextTone; color?: never } | { color: string | undefined; tone?: never });
 
 export function TextSpans({

@@ -1,15 +1,14 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
-import { Box } from 'ink';
+import { planListRows } from '../../components/list-row/plan.js';
+import { ListRow } from '../../components/list-row/row.js';
 import type { Theme } from '../../core/theme/palette.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
-import { glyph } from '../../lib/glyphs.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import {
   CREW_COLUMN_GAP,
   CREW_IDENTITY_COLUMN,
-  CREW_MARKER_GUTTER,
   formatCrewRow,
   type SeatBlockLayout,
 } from './format.js';
@@ -32,17 +31,21 @@ export type CrewRowViewProps = Readonly<{
 export function CrewRowView({ row, layout, isCursor }: CrewRowViewProps) {
   const t = useTheme();
   const formatted = formatCrewRow({ row, layout });
-  return (
-    <Box>
-      <Text color={t.accent}>
-        {isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER)}
-      </Text>
-      <Text color={seatHue(t, row)} bold>
-        {formatted.label}
-      </Text>
-      <Text color={t.text}>{`${CREW_COLUMN_GAP}${formatted.content}`}</Text>
-    </Box>
+  const width = CREW_IDENTITY_COLUMN + layout.identityWidth;
+  const identity = `${CREW_COLUMN_GAP}${formatted.content}`;
+  const [line] = planListRows(
+    [
+      {
+        name: formatted.label + identity,
+        nameParts: [
+          { text: formatted.label, color: seatHue(t, row), bold: true },
+          { text: identity, color: t.text },
+        ],
+      },
+    ],
+    { width },
   );
+  return line && <ListRow line={line} selected={isCursor} width={width} />;
 }
 
 export type CrewVerdictLineProps = Readonly<{ verdict: CrewLabVerdict; width: number }>;

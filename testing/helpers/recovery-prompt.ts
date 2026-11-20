@@ -1,7 +1,7 @@
 import type { RecoveryAction } from '../../src/core/schemas/enums.js';
 import type { RecoveryIssue, SwitchSeatOffer } from '../../src/core/schemas/recovery/schemas.js';
 import { taskId } from '../../src/core/schemas/task.js';
-import { recoveryMenuParts } from '../../src/features/workflow/recovery/menu-label.js';
+import { recoveryMenuRow } from '../../src/features/workflow/recovery/menu-label.js';
 
 export const baseIssue: RecoveryIssue = {
   id: 'rec_test',
@@ -29,9 +29,8 @@ export const baseIssue: RecoveryIssue = {
 };
 
 export function recoveryMenuText(action: RecoveryAction, issue: RecoveryIssue): string {
-  return recoveryMenuParts(action, issue, false, false)
-    .map((part) => part.text)
-    .join('');
+  const row = recoveryMenuRow(action, issue, false, false);
+  return [row.name, row.description].filter(Boolean).join(' · ');
 }
 
 export function usageLimitIssue(candidates: SwitchSeatOffer['candidates']): RecoveryIssue {

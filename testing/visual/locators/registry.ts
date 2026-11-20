@@ -29,7 +29,7 @@ import {
 } from '../fixtures/workflow/registry.js';
 import { getFeedbackRows } from '../../../src/features/workflow/components/feedback-row.js';
 import { homeFixtureFeedback } from '../fixtures/screen-fixtures.js';
-import type { Cell, CellGrid } from '../contracts/cells.js';
+import type { CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
 import { resolveMarkerRect } from './markers.js';
@@ -171,6 +171,18 @@ function cellAt(grid: CellGrid, x: number, y: number): string | undefined {
   return grid.cells[y - grid.rect.y]?.[x - grid.rect.x]?.grapheme;
 }
 
+function borderWidth(
+  grid: CellGrid,
+  x: number,
+  y: number,
+  stroke: string,
+  end: string,
+): number | undefined {
+  let right = x + 1;
+  while (cellAt(grid, right, y) === stroke) right++;
+  return right > x + 1 && cellAt(grid, right, y) === end ? right - x + 1 : undefined;
+}
+
 function projectionFor(context: LocatorContext): WorkflowFixtureProjection {
   const projection = workflowFixtureProjectionFor(context.scenario.id, context.checkpoint.id);
   if (projection === undefined) {
@@ -254,8 +266,7 @@ function resolveWorkflowTranscript(context: LocatorContext): CellRect {
 
 function resolveWorkflowComposer(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  // The workflow composer renders inside the gutter: its box spans the terminal minus one gutter on
-  // each side, so the card the completion locator walks shares those edge columns.
+  // The workflow composer leaves a gutter at either edge of the terminal.
   return CellRectSchema.parse({
     x: WORKFLOW_GUTTER_X,
     y: rows - DEFAULT_INPUT_ROWS - 1,
@@ -288,12 +299,19 @@ function resolveWorkflowApprovalPanel(context: LocatorContext): CellRect {
         )
       : getWorkflowFixturePromptRows(projection, cols);
   const height = Math.min(promptRows, transcript.height);
-  return CellRectSchema.parse({
-    x: transcript.x,
-    y: transcript.y + transcript.height - height,
-    width: transcript.width,
-    height,
-  });
+  const y = transcript.y + transcript.height - height;
+  if (projection.approval || projection.approvalAfterMount) {
+    const x = transcript.x + WORKFLOW_GUTTER_X;
+    const left = cellAt(context.grid, x, y);
+    const width =
+      left === '┏'
+        ? borderWidth(context.grid, x, y, '━', '┓')
+        : left === '+'
+          ? borderWidth(context.grid, x, y, '-', '+')
+          : undefined;
+    if (width !== undefined) return CellRectSchema.parse({ x, y, width, height });
+  }
+  return CellRectSchema.parse({ x: transcript.x, y, width: transcript.width, height });
 }
 
 function resolveWorkflowQuestionPanel(context: LocatorContext): CellRect {
@@ -314,32 +332,23 @@ function resolveWorkflowQuestionPanel(context: LocatorContext): CellRect {
   });
 }
 
-// The completion menu opens upward out of the composer, so its height follows the suggestion count
-// and cannot be stated as a constant. It is a bordered card as wide as the composer and flush with
-// the composer's input box, and the only thing painted there that carries a cell in both of the
-// composer's edge columns, so walking that run upward measures the card the frame actually holds.
-// A composer rect taller than the input box reserves rows above it — home's hint line — and the
-// card paints over them, so the input box's top edge is where the card stops, not the rect's.
+// Both menus touch the composer. Their painted corners supply the width and height of the crop.
 function resolveCompletionMenuAbove(context: LocatorContext, composer: CellRect): CellRect {
-  const left = composer.x;
-  const right = composer.x + composer.width - 1;
-  const bottom = composer.y + composer.height - DEFAULT_INPUT_ROWS;
-  let y = bottom;
-  while (y > context.grid.rect.y && isCardRow(context.grid, y - 1, left, right)) y -= 1;
-  if (y === bottom) {
+  const { grid } = context;
+  const x = composer.x;
+  const bottom = composer.y + composer.height - DEFAULT_INPUT_ROWS - 1;
+  const ascii = cellAt(grid, x, bottom) === '+';
+  const width = borderWidth(grid, x, bottom, ascii ? '-' : '─', ascii ? '+' : '╯');
+  let top = bottom - 1;
+  while (top > grid.rect.y && cellAt(grid, x, top) === (ascii ? '|' : '│')) top--;
+  if (
+    cellAt(grid, x, bottom) !== (ascii ? '+' : '╰') ||
+    width === undefined ||
+    cellAt(grid, x, top) !== (ascii ? '+' : '╭')
+  ) {
     throw new Error('No completion menu is painted above the composer');
   }
-  return CellRectSchema.parse({ x: composer.x, y, width: composer.width, height: bottom - y });
-}
-
-function isCardRow(grid: CellGrid, y: number, left: number, right: number): boolean {
-  const row = grid.cells[y - grid.rect.y];
-  if (row === undefined) return false;
-  return isPaintedCell(row[left - grid.rect.x]) && isPaintedCell(row[right - grid.rect.x]);
-}
-
-function isPaintedCell(cell: Cell | undefined): boolean {
-  return cell !== undefined && cell.grapheme.trim() !== '';
+  return CellRectSchema.parse({ x, y: top, width, height: bottom - top + 1 });
 }
 
 function resolveFullFrame(context: LocatorContext): CellRect {

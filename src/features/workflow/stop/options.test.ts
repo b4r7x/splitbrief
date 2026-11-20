@@ -41,18 +41,10 @@ describe('stopSheetRows', () => {
       [{ label: 'Run all', consequence: 'run commands; read output' }],
       34,
     );
-    expect(layout.options[0]?.parts).toEqual([
-      [
-        { text: 'Run all', tone: 'text' },
-        { text: ' · ', tone: 'textDim' },
-        { text: 'run commands;', tone: 'textDim' },
-      ],
-      [
-        { text: '  ', tone: 'textDim' },
-        { text: 'read output', tone: 'textDim' },
-      ],
+    expect(layout.lines.map((line) => line.name + line.description.trimStart())).toEqual([
+      'Run all',
+      'run commands; read output',
     ]);
-    expect(layout.options[0]?.lines).toEqual(['Run all · run commands;', '  read output']);
   });
   it('names the brief it would finish and the one it would not start', () => {
     const rows = stopSheetRows({

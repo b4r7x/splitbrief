@@ -338,9 +338,14 @@ describe('runner row grammar', () => {
     );
     try {
       expect(unavailableUi.lastFrame()).toContain(
-        paint(theme.warning, ` ${formatPickerStatusLabel(unavailable.status) ?? ''}`),
+        paint(theme.warning, formatPickerStatusLabel(unavailable.status) ?? '').replace(
+          '\u001b[39m',
+          '',
+        ),
       );
-      expect(readyUi.lastFrame()).toContain(paint(theme.textDim, ' 1.2.3'));
+      expect(readyUi.lastFrame()).toContain(
+        paint(theme.textDim, '  1.2.3').replace('\u001b[39m', ''),
+      );
     } finally {
       unavailableUi.unmount();
       readyUi.unmount();

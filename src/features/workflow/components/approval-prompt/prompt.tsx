@@ -1,3 +1,8 @@
+import { composerLiveStore } from '../../../../stores/ui/composer-live.js';
+import { isCommandDraft } from '../../../../core/composer/submission.js';
+import { isBlankDraft } from '../../../../components/composer/use-paste-drafts.js';
+import { unfocusedPromptLegend } from '../../prompt-rows/approval.js';
+import { approvalBoxTextWidth } from '../../prompt-rows/measure.js';
 import { useRef, useState } from 'react';
 import { approvalPromptStore } from '../../../../stores/prompts/approval.js';
 import { overlayStore, selectHasOverlay } from '../../../../stores/ui/overlay.js';
@@ -38,6 +43,7 @@ interface ApprovalPromptProps {
   focused?: boolean;
   /** True in a phase where the composer below queues its plain words for a seat. */
   queues?: boolean;
+  onComposerFocus?: (() => void) | undefined;
 }
 
 type PromptIdentity = ((response: TieredApprovalResponse) => void) | null;
@@ -48,7 +54,9 @@ export function ApprovalPrompt({
   review,
   focused = true,
   queues = false,
+  onComposerFocus,
 }: ApprovalPromptProps) {
+  const draft = composerLiveStore.use((state) => state.document);
   const state = approvalPromptStore.use((s) => s);
   const graceUntilRef = useRef(0);
   const promptIdentityRef = useRef<PromptIdentity>(null);
@@ -82,11 +90,20 @@ export function ApprovalPrompt({
     kind: 'card',
     card,
   };
+  const paintWidth = card === undefined ? getChromeContentWidth(cols) : cols;
+  const composerLegend = unfocusedPromptLegend({
+    blank: isBlankDraft(draft),
+    command: isCommandDraft(draft),
+    words: queues
+      ? { long: '⏎ queues the typed correction', short: '⏎ queues the correction' }
+      : null,
+    width: approvalBoxTextWidth(paintWidth),
+  });
   const frame =
     cardFrame !== undefined && confirmCardFits(state.request, cardFrame, clampedBoxRows ?? rows)
       ? cardFrame
-      : // Only a page gives a card, and a page has no gutter, so its box paints across the terminal.
-        ownConfirmFrame(card === undefined ? getChromeContentWidth(cols) : cols);
+      : // The box can use the page's whole width when the facts need it.
+        ownConfirmFrame(paintWidth, state.request, composerLegend, clampedBoxRows ?? rows);
 
   return (
     <ConfirmApprovalPrompt
@@ -97,7 +114,8 @@ export function ApprovalPrompt({
       clampedBoxRows={clampedBoxRows}
       isActive={isActive}
       focused={focused}
-      queues={queues}
+      composerLegend={composerLegend}
+      onComposerFocus={onComposerFocus}
       graceUntil={graceUntilRef.current}
     />
   );

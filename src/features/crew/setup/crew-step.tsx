@@ -13,7 +13,6 @@ import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore, selectHasOverlay } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { crewActivate } from '../rows.js';
 import { CrewVerdictLine } from '../row-view.js';
@@ -80,7 +79,7 @@ export function CrewStep({
     (note === undefined ? 0 : NOTE_BLOCK_ROWS) -
     signInRows -
     (notice?.rows ?? 0);
-  const { layout, showPresets, showHeaders, showGaps } = planSetupList({
+  const { layout, presetLines, showPresets, showHeaders, showGaps } = planSetupList({
     crewRows,
     verdict,
     presets,
@@ -96,11 +95,6 @@ export function CrewStep({
     ...crewRows.map((row): SetupItem => ({ kind: 'crew', row, key: crewRowKey(row) })),
     { kind: 'continue', key: 'continue' },
   ];
-  const presetLabelWidth = Math.max(
-    0,
-    ...presets.map((preset) => getTerminalCellWidth(preset.label)),
-  );
-
   const list = useFilterableList<SetupItem>({
     items,
     getKey: (item) => item.key,
@@ -173,7 +167,11 @@ export function CrewStep({
             isCursor={ctx.isCursor}
             width={ctx.contentWidth}
             layout={layout}
-            presetLabelWidth={presetLabelWidth}
+            presetLines={
+              item.kind === 'preset'
+                ? presetLines.filter((line) => presets[line.row]?.id === item.preset.id)
+                : []
+            }
             unavailableSeats={unavailableSeats}
             canContinue={canContinue}
           />

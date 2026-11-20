@@ -13,7 +13,8 @@ import {
 } from '../prompt-rows/question.js';
 import { MultilineInput } from '../../../components/input/field.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
-import { listRowLead } from '../../../components/list-row/lead.js';
+import { ListRow } from '../../../components/list-row/row.js';
+import { planListRows } from '../../../components/list-row/plan.js';
 import { formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
 import { fitKeyLegend } from '../../../components/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -167,38 +168,51 @@ export function PlannerQuestion({
         </Text>
       )}
       <Box height={bodyHeight} flexDirection="column" flexShrink={0} overflow="hidden">
-        {body.map(({ row, text }, index) => (
-          <PanelRow
-            key={visibleOffset + index}
-            active={row.option === selected && focused && !disabled}
-          >
-            <Text
-              color={
-                row.option === selected && focused ? t.accent : row.navigation ? t.textDim : t.text
-              }
-              bold={row.option === undefined && row.text !== ''}
-              wrap="truncate-end"
-            >
-              {row.option === undefined
-                ? ''
-                : listRowLead(
-                    focused && row.first && row.option === selected ? 'active' : 'default',
-                  )}
-              {text || (row.defaultLabel ? '' : ' ')}
-              {row.defaultLabel && (
+        {body.map(({ row, text }, index) => {
+          const active = row.option === selected && focused && !disabled;
+          const beside = chrome.titled ? '' : asked;
+          if (row.option === undefined)
+            return (
+              <Text
+                key={visibleOffset + index}
+                color={t.text}
+                bold={row.text !== ''}
+                wrap="truncate-end"
+              >
+                {text || ' '}
                 <Text color={t.textDim} bold={false}>
-                  {' '}
-                  {row.defaultLabel}
+                  {beside}
                 </Text>
-              )}
-              {!chrome.titled && (
-                <Text color={t.textDim} bold={false}>
-                  {asked}
-                </Text>
-              )}
-            </Text>
-          </PanelRow>
-        ))}
+              </Text>
+            );
+          // In a one-row panel the option shares its right edge with the scroll mark and question.
+          const inlineDefault = beside && row.defaultLabel ? ' ' + row.defaultLabel : '';
+          const [line] = planListRows(
+            [
+              {
+                name: text + inlineDefault + beside,
+                nameParts: [
+                  { text, color: active ? t.accent : row.navigation ? t.textDim : t.text },
+                  { text: inlineDefault + beside, color: t.textDim },
+                ],
+                trailing: beside ? undefined : row.defaultLabel,
+              },
+            ],
+            { width: innerWidth },
+          );
+          return (
+            line && (
+              <PanelRow key={visibleOffset + index} active={active}>
+                <ListRow
+                  line={line}
+                  state={row.first && active ? 'active' : 'default'}
+                  selected={active}
+                  width={innerWidth}
+                />
+              </PanelRow>
+            )
+          );
+        })}
       </Box>
       {showAnswer && (
         <Box height={answerRows} flexShrink={0}>

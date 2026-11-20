@@ -31,7 +31,7 @@ import { buildRetryExhaustedRecoveryIssue } from '../../../engine/orchestrator/r
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
-import { recoveryMenuParts } from '../recovery/menu-label.js';
+import { recoveryMenuRow } from '../recovery/menu-label.js';
 import { getRecoveryPromptActions, recoveryActionKey } from '../recovery/actions.js';
 
 afterEach(() => {
@@ -210,23 +210,23 @@ it.each([
   [
     'the final review, on an inherited tool',
     { seat: 'review', taskId: undefined, phase: 'final-review' },
-    'Change REVIEW tool · runs the review again',
+    'Change REVIEW tool  runs the review again',
   ],
   [
     "a brief's consult",
     { seat: 'plan', phase: 'escalating' },
-    'Change PLAN tool · continues this brief',
+    'Change PLAN tool  continues this brief',
   ],
   [
     'a planning step',
     { seat: 'plan', taskId: undefined, phase: 'planning' },
-    'Change PLAN tool · runs this step again',
+    'Change PLAN tool  runs this step again',
   ],
   // Saved before halts named their seat: the applier reads the planner phase as the plan seat's.
   [
     'a planning step, saved without its seat',
     { seat: undefined, taskId: undefined, phase: 'planning' },
-    'Change PLAN tool · runs this step again',
+    'Change PLAN tool  runs this step again',
   ],
 ] as const)('names what the swap runs again after a halt on %s', async (_halt, halt, label) => {
   const issue = makeRecoveryIssue({
@@ -245,7 +245,7 @@ it.each([
 // On a consult halt "Try again" reads as retrying the consult alone, but the brief continues on
 // the files it kept; a retry that re-runs the call the halt stopped needs no second clause.
 it.each([
-  ["a brief's consult", { seat: 'plan', phase: 'escalating' }, 'Try again · continues this brief'],
+  ["a brief's consult", { seat: 'plan', phase: 'escalating' }, 'Try again  continues this brief'],
   ['a planning step', { seat: 'plan', taskId: undefined, phase: 'planning' }, 'Try again'],
   ['a BUILD call', { seat: 'build', phase: 'implementing' }, 'Try again'],
 ] as const)('says what a retry after a halt on %s runs', async (_halt, halt, label) => {
@@ -260,7 +260,7 @@ it.each([
   const retryRow = stripAnsiStyles(ui.lastFrame())
     .split('\n')
     .find((line) => line.includes('Try again'));
-  expect(retryRow).toContain(label);
+  expect(retryRow?.replace(/ {2,}/g, ' ')).toContain(label.replace(/ {2,}/g, ' '));
   ui.unmount();
 });
 
@@ -282,7 +282,10 @@ it('keeps every action label whole on a 56-column panel', async () => {
     .split('\n')
     .filter((line) => /Try again|Change REVIEW tool|Skip task|End run/.test(line));
   expect(rows).toHaveLength(4);
-  expect(frame).toContain('Change REVIEW tool · runs the review again');
+  const nameRow = frame.split('\n').findIndex((line) => line.includes('Change REVIEW tool'));
+  const name = frame.split('\n')[nameRow] ?? '';
+  const detail = frame.split('\n')[nameRow + 1] ?? '';
+  expect(detail.indexOf('runs the review again')).toBe(name.indexOf('Change REVIEW tool'));
   for (const row of rows) expect(row).not.toContain('…');
   ui.unmount();
 });
@@ -308,12 +311,34 @@ it('shows each row its key beside its label', async () => {
   const ui = mount(vi.fn(), 80, issue);
   await flushEffects();
   const frame = stripAnsiStyles(ui.lastFrame());
-  expect(frame).toContain('s   Skip task');
-  expect(frame).toContain('a   End run');
+  expect(frame).toContain('s  Skip task');
+  expect(frame).toContain('a  End run');
   ui.unmount();
 });
 
-it('stands the recommended marker after the label behind a separator and highlights that row', async () => {
+it('keeps the recovery key beside the seat change while the composer has focus', () => {
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={seatSwapIssue()}
+      width={80}
+      clampedBoxRows={14}
+      focused={false}
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  try {
+    const row = stripAnsiStyles(ui.lastFrame())
+      .split('\n')
+      .find((line) => line.includes('Change BUILD tool'));
+    expect(row).toContain('w  Change BUILD tool');
+    expect(row?.slice(1, row.indexOf('w  Change BUILD tool')).trim()).toBe('');
+  } finally {
+    ui.unmount();
+  }
+});
+
+it('aligns the recommendation at the right edge of the selected row', async () => {
   const issue = makeRecoveryIssue({
     reason: 'dependency-blocked',
     availableActions: ['skip-current-task', 'end-run'],
@@ -324,11 +349,12 @@ it('stands the recommended marker after the label behind a separator and highlig
   const row = stripAnsiStyles(ui.lastFrame())
     .split('\n')
     .find((line) => line.includes('End run'));
-  expect(row).toContain(`${listRowLead('active')}a   End run · recommended`);
+  expect(row).toContain(`${listRowLead('active')}a  End run`);
+  expect(row).toMatch(/End run {2,}recommended [|│]$/u);
   ui.unmount();
 });
 
-it('stands the recommended marker after the consequence of its row behind a separator', async () => {
+it('keeps the recommendation beside the consequence', async () => {
   const issue = makeRecoveryIssue({
     reason: 'review-failed',
     availableActions: ['revise', 'end-run'],
@@ -339,9 +365,8 @@ it('stands the recommended marker after the consequence of its row behind a sepa
   const row = stripAnsiStyles(ui.lastFrame())
     .split('\n')
     .find((line) => line.includes('Review again'));
-  expect(row).toContain(
-    `${listRowLead('active')}v   Review again · sends your note to the reviewer · recommended`,
-  );
+  expect(row).toContain(`${listRowLead('active')}v  Review again  sends your note to the reviewer`);
+  expect(row).toMatch(/reviewer {2,}recommended [|│]$/u);
   ui.unmount();
 });
 
@@ -577,14 +602,14 @@ it.each([true, false])(
       paint(focused ? defaultTheme.accent : defaultTheme.text, 'Change ').replace('\u001b[39m', ''),
     );
     expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.textDim, ' · restarts this brief').replace('\u001b[39m', ''),
+      paint(defaultTheme.textDim, '  restarts this brief').replace('\u001b[39m', ''),
     );
     ui.unmount();
     chalk.level = colorLevel;
   },
 );
 
-it('preserves the action whole-word cut and seat tone at width 30', () => {
+it('keeps the key and recommendation inside a narrow row and wraps the consequence', () => {
   const colorLevel = chalk.level;
   chalk.level = 3;
   const ui = mount(
@@ -599,13 +624,9 @@ it('preserves the action whole-word cut and seat tone at width 30', () => {
   const line = stripAnsiStyles(ui.lastFrame())
     .split('\n')
     .find((line) => line.includes('Change'));
-  expect(line).toContain('w   Change BUILD tool…');
+  expect(line).toContain('w  Change …  recommended');
   expect(getTerminalCellWidth(line ?? '')).toBe(30);
-  expect(ui.lastFrame()).toContain(
-    paint(defaultTheme.implementer, 'BUILD').replace('\u001b[39m', ''),
-  );
-  expect(ui.lastFrame()).toContain(paint(defaultTheme.accent, ' tool').replace('\u001b[39m', ''));
-  expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, '…'));
+  expect(stripAnsiStyles(ui.lastFrame())).toContain('restarts this brief');
   ui.unmount();
   chalk.level = colorLevel;
 });
@@ -691,7 +712,7 @@ it("gives the divider's row to the whole question at 80 columns", async () => {
   expect(question).toBeGreaterThan(-1);
   expect(task - question).toBe(5);
   expect(rows.some((row) => row.includes('──────'))).toBe(false);
-  expect(rows.filter((row) => /^[│|] [▌|]? +[rdsa] {3}/.test(row))).toHaveLength(4);
+  expect(rows.filter((row) => /^[│|] [▌|]? +[rdsa] {2}/.test(row))).toHaveLength(4);
   ui.unmount();
 });
 
@@ -999,14 +1020,12 @@ it('says what Accept as is and Decide for me do on a failed review the planner c
   });
   const ui = await mountPanel(issue, 18, 60);
   const rows = frameRows(ui);
-  for (const row of [
-    'v   Review again · sends your note to the reviewer',
-    'k   Accept as is · records the blockers',
-    'd   Decide for me · closes this run',
-    'a   End run',
-  ]) {
-    expect(rows.join('\n')).toContain(row);
-  }
+  const review = rows.findIndex((line) => line.includes('v  Review again'));
+  expect(rows[review]).toMatch(/Review again {2,}sends your note to {2,}recommended/);
+  expect(rows[review + 1]?.indexOf('the reviewer')).toBe(rows[review]?.indexOf('sends your'));
+  expect(rows.join('\n')).toMatch(/k {2}Accept as is {2,}records the blockers/);
+  expect(rows.join('\n')).toMatch(/d {2}Decide for me {2,}closes this run/);
+  expect(rows.join('\n')).toContain('a  End run');
   ui.unmount();
 });
 
@@ -1026,10 +1045,10 @@ function compact(text: string): string {
 }
 
 function actionShown(rows: readonly string[], issue: RecoveryIssue, action: RecoveryAction) {
-  const label = recoveryMenuParts(action, issue, false, false)
-    .map((part) => part.text)
-    .join('')
-    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const label = recoveryMenuRow(action, issue, false, false).name.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    '\\$&',
+  );
   const row = new RegExp(`\\b${recoveryActionKey(action)}\\s+${label}`);
   return rows.some((text) => row.test(text));
 }
@@ -1239,7 +1258,7 @@ it.each([
       const action = FOUR_ACTIONS[(start + step) % FOUR_ACTIONS.length];
       if (action === undefined) throw new Error('no action');
       expect(cursor()).toHaveLength(1);
-      expect(cursor()[0]).toContain(` ${recoveryActionKey(action)}   `);
+      expect(cursor()[0]).toContain(` ${recoveryActionKey(action)}  `);
     }
     ui.stdin.write('\r');
     await flushEffects();
@@ -1283,7 +1302,7 @@ it('names the changes End run keeps once a brief finished', async () => {
   runViewStore.__testReset({
     briefs: { tasks: [{ id: 'T001', title: 'Done first', status: 'done' }] },
   });
-  expect(await row()).toContain('End run · closes this run, keeps its changes');
+  expect(await row()).toMatch(/End run {2,}closes this run, keeps its changes/);
 });
 
 it('leaves a 7-row panel on the headline that carries the cut mark', async () => {
@@ -1324,7 +1343,7 @@ it.each([12, 13, 14, 15, 16])(
     expect(rows).toHaveLength(panelBoxRows(terminalRows));
     expect(rows.some((row) => row.includes('T901 failed'))).toBe(true);
     expect(rows.some((row) => /… \d+ more lines/.test(row))).toBe(true);
-    expect(rows.some((row) => row.includes('Try again · recommended'))).toBe(true);
+    expect(rows.some((row) => /Try again {2,}recommended/.test(row))).toBe(true);
     expectHiddenActionsMarked(rows, issue);
     expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
     ui.unmount();

@@ -1102,8 +1102,8 @@ describe('workflow visual fixtures', () => {
         expect(transcript).toContain('Error Repository changed under T001 · tag v2.0.0');
         expect(frame).toContain('○ Choose how to continue');
         expect(recoveryNoticeStore.get().open).toBe(true);
-        expect(frame).toContain('Stop now · stop execution; keep the run open');
-        expect(frame).toContain('End run · stop execution; close this run');
+        expect(frame).toContain('Stop now stop execution; keep the run open');
+        expect(frame).toContain('End run stop execution; close this run');
         expect(frame).not.toContain('finish T001');
         expect(frame).not.toContain('keep partial changes');
         expect(frame).not.toContain('keep changes');
@@ -1129,8 +1129,8 @@ describe('workflow visual fixtures', () => {
         expect(frame).toContain('Recovery Approval denied on T001');
         expect(frame).toContain('○ Choose how to continue');
         expect(recoveryNoticeStore.get().open).toBe(true);
-        expect(frame).toContain('Stop now · stop execution; keep the run open');
-        expect(frame).toContain('End run · stop execution; close this run');
+        expect(frame).toContain('Stop now stop execution; keep the run open');
+        expect(frame).toContain('End run stop execution; close this run');
         expect(frame).not.toContain('finish T001');
         expect(frame).not.toContain('keep partial changes');
         expect(frame).not.toContain('keep changes');
