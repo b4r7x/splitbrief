@@ -311,6 +311,8 @@ An unreadable audit publishes `isolation_audit_failed` and lets the call stand. 
 
 A halt offers only the actions of its kind (`allowedActionsForHalt`). *Needs you* allows `continue`, `retry-same-worker`, `revise`, `accept-as-is`, `restore-backup`, `decide-for-me`, `skip-current-task` and `end-run`. *Seat down* allows `switch-seat`, `retry-later` (only with a reset), `retry-same-worker`, `accept-as-is` (only as **Skip review** on `review-input-too-large`), `skip-current-task` and `end-run`. Each reason offers the subset that its situation allows, in the order of `RECOVERY_ACTIONS`. When a reason names no preference, the recommended action is the first action that it offers.
 
+**Skip brief.** If every brief is skipped, the run ends after the last skip. SPLITBRIEF skips final review and creates no fix briefs. The last Skip brief row warns that it ends the run when nothing was built.
+
 **Recovery reasons and their available actions:**
 
 Account halts name their cause: `Balance spent on <tool>`, `Account issue with <tool>`, `Quota spent on <tool>` or `Access refused by <tool>`. An access refusal is a model that the plan does not include (Cursor). Its halt reads `Access refused by <tool>. Check what the <tool> account allows, or change the <SEAT> tool, then continue.` and quotes the tool's own words. It has no reset, and a seat with a fallback moves to it, once per run.

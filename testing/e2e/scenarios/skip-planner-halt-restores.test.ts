@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { reviewPacketJsonPath, reviewPacketMarkdownPath } from '../../../src/core/paths.js';
-import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
+import { reviewPacketJsonPath } from '../../../src/core/paths.js';
 import { readSessionSummary } from '../../../src/core/sessions/run/record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -37,7 +36,7 @@ async function haltOnFailedConsult(planned = plan, options?: { retryBeforeHalt?:
 }
 
 describe('e2e: Skip on a planner-call halt', () => {
-  it('leaves no brief file behind, so the review and the record do not carry it', async () => {
+  it('leaves no brief file behind when the run ends after the skip', async () => {
     const { target, sessionId } = await haltOnFailedConsult(plan, { retryBeforeHalt: true });
     const halted = readState(target, sessionId);
     expect(halted.pendingRecovery).toMatchObject({ reason: 'planner-call-failed', taskId: 'T001' });
@@ -100,18 +99,10 @@ describe('e2e: Skip on a planner-call halt', () => {
     expect(settledT002).toBeGreaterThan(lines.indexOf(recoveryRows[0] ?? ''));
     expect(lines.indexOf(recoveryRows[1] ?? '')).toBeGreaterThan(settledT002);
 
-    const packet = ReviewPacketSchema.parse(
-      JSON.parse(readFileSync(reviewPacketJsonPath(ref), 'utf8')),
-    );
-    expect
-      .soft(packet.routing.taskRouting)
-      .toMatchObject([
-        { taskId: 'T001', method: 'skipped', tool: 'agent', kind: 'agent', retryCount: 0 },
-      ]);
-    const markdown = readFileSync(reviewPacketMarkdownPath(ref), 'utf8');
-    const routing = markdown.split('## Routing\n')[1]?.split('\n## ')[0];
-    expect.soft(routing).toContain('- Per-task routing entries: 1');
-    expect.soft(routing).toMatch(/^- T001: Agent · Fixture\b/m);
-    expect(routing).not.toMatch(/^- T002:/m);
+    expect(readState(target, sessionId).closed).toMatchObject({ as: 'ended' });
+    expect(existsSync(reviewPacketJsonPath(ref))).toBe(false);
+    expect(readSessionSummary(ref)?.taskBreakdown).toMatchObject([
+      { taskId: 'T001', method: 'skipped', tool: 'agent', kind: 'agent', retryCount: 0 },
+    ]);
   });
 });

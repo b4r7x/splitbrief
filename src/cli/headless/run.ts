@@ -1,6 +1,7 @@
 import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { resolveReviewCadence } from '../../core/config/runtime/resolve.js';
 import type { Config } from '../../core/schemas/config.js';
+import { allBriefsSkipped } from '../../core/schemas/task.js';
 import { deriveRunStatus } from '../../core/sessions/run/status.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import type { SeatDownPolicy } from '../../core/types/config-options.js';
@@ -195,7 +196,12 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     finalState === null
       ? null
       : deriveRunStatus({ state: finalState, liveness: 'not-alive', reviewNone: false });
-  if (status?.kind === 'closed' && status.as === 'complete') return;
+  if (
+    status?.kind === 'closed' &&
+    (status.as === 'complete' ||
+      (status.as === 'ended' && finalState !== null && allBriefsSkipped(finalState.tasks)))
+  )
+    return;
   failIfSessionFailed(finalState, sessionId, run.writeRecord, run.lastError);
   failIfFinalReviewIncomplete(finalState, sessionId, run.writeRecord);
   failIfSessionInterrupted(projectDir, sessionId, run.writeRecord);

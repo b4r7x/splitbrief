@@ -217,6 +217,31 @@ describe('buildPaletteSources command items', () => {
 });
 
 describe('buildPaletteSources registry rows', () => {
+  it('shows only custom actions that name registered commands', () => {
+    const { customItems } = buildPaletteSources({
+      commands: createRuntimeCommands(makeCtx()),
+      screen: 'home',
+      config: {
+        ...makeConfig(),
+        palette: {
+          customActions: [
+            { id: 'retired', label: 'Retired action', command: '/usage' },
+            { id: 'unknown', label: 'Unknown action', command: '/not-registered show' },
+            { id: 'queue', label: 'Show queue', command: '/QUEUE show' },
+          ],
+        },
+      },
+      phase: 'idle',
+      tasks: [],
+      sessions: [],
+      projectDir: '/tmp/splitbrief-test',
+      onRuntimeCommand: noop,
+      onSessionSelect: noopSessionSelect,
+    });
+
+    expect(customItems.map((item) => item.id)).toEqual(['queue']);
+  });
+
   it('gives every row a distinct slash-command label', () => {
     const labels = buildRegistrySources().map((item) => item.label);
 

@@ -204,6 +204,27 @@ function sortPaletteResults(
   return [...results].sort(compare).map((ranked) => ranked.result);
 }
 
+function matchesDescriptionTerm(term: string, text: string): boolean {
+  const query = term.toLowerCase();
+  // A match that spans words starts at each word's first letter. Keep shorter matches too,
+  // since the next word may start with a letter already matched in this word.
+  const matchedLengths = new Set([0]);
+  for (const word of text.toLowerCase().split(/\s+/)) {
+    if (fuzzyMatch(query, word) !== null) return true;
+    for (let start = query.length - 1; start >= 0; start--) {
+      if (!matchedLengths.has(start) || word[0] !== query[start]) continue;
+      let end = start;
+      for (let index = 0; index < word.length; index++) {
+        if (word[index] !== query[end]) continue;
+        end++;
+        if (end === query.length) return true;
+        matchedLengths.add(end);
+      }
+    }
+  }
+  return false;
+}
+
 export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
   const candidates = buildCandidates(inputs);
   const terms = inputs.query.trim();
@@ -231,12 +252,13 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
       .join(' ');
     if (
       candidate.source === 'command' &&
-      !termList.every((term) => {
-        if (target.toLowerCase().includes(term.toLowerCase())) return true;
-        if (fuzzyMatch(term, candidate.label) !== null) return true;
-        const words = [candidate.description, candidate.hint ?? ''].join(' ').split(/\s+/);
-        return words.some((word) => fuzzyMatch(term, word) !== null);
-      })
+      !termList.every(
+        (term) =>
+          target.toLowerCase().includes(term.toLowerCase()) ||
+          fuzzyMatch(term, candidate.label) !== null ||
+          matchesDescriptionTerm(term, candidate.description) ||
+          (candidate.hint !== null && matchesDescriptionTerm(term, candidate.hint)),
+      )
     )
       continue;
     const match = fuzzyMatchExtended(terms, target);

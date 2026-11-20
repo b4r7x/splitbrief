@@ -116,7 +116,11 @@ describe('applyRecoveryAction: persisted success effects', () => {
       bus,
     });
 
-    expect(result).toMatchObject({ ok: true, status: 'skipped-current-task' });
+    expect(result).toMatchObject({
+      ok: true,
+      status: 'closed',
+      state: { closed: { as: 'ended' } },
+    });
     expect(readFileSync(filePath, 'utf-8')).toBe('export const owner = "user edit";\n');
     expect(result.state.currentTaskIndex).toBe(1);
     expect(result.state.tasks[0]?.status).toBe('skipped');
@@ -221,6 +225,7 @@ describe('applyRecoveryAction: the phase of what it publishes', () => {
       ).toEqual([
         [action === 'skip-current-task' ? 'task_skipped' : 'task_reset', 'implementing'],
         ['recovery_resolved', 'implementing'],
+        ...(action === 'skip-current-task' ? [['info', 'implementing']] : []),
       ]);
     },
   );
@@ -261,7 +266,11 @@ describe('applyRecoveryAction: decide-for-me', () => {
       }),
     );
 
-    expect(result).toMatchObject({ ok: true, status: 'skipped-current-task' });
+    expect(result).toMatchObject({
+      ok: true,
+      status: 'closed',
+      state: { closed: { as: 'ended' } },
+    });
     expect(result.state.decideForMe).toBe(true);
     expect(saved?.decideForMe).toBe(true);
     expect(saved?.tasks[0]?.status).toBe('skipped');

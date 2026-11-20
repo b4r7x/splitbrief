@@ -52,6 +52,10 @@ async function applyClaimedRecoveryAction(
       sessionId: args.sessionId,
       sink: (event) => {
         if (event.type === 'warning') process.stderr.write(`${event.message}\n`);
+        if (event.type === 'info') {
+          if (args.opts.json === true) recordWriterFor(false)({ type: 'event', data: event });
+          else process.stderr.write(`${event.message}\n`);
+        }
       },
     }),
     config,
@@ -77,7 +81,11 @@ export function applyPendingRecoveryAction(
   args: RecoveryActionInput,
 ): ReturnType<typeof applyClaimedRecoveryAction> {
   const ref = { projectDir: args.opts.projectDir, sessionId: args.sessionId };
-  return withAtRestSession(ref, () => applyClaimedRecoveryAction(args));
+  return withAtRestSession(ref, async () => {
+    const resumed = await applyClaimedRecoveryAction(args);
+    if (resumed.state.closed !== undefined) finalizeRunAtRest({ ref, state: resumed.state });
+    return resumed;
+  });
 }
 
 export async function endRunAction(args: Omit<RecoveryActionInput, 'action'>): Promise<Resumed> {

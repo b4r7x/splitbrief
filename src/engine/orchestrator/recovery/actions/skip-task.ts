@@ -1,11 +1,14 @@
-import { cannotDetail } from '../../../../core/recovery/causes.js';
+import { ALL_BRIEFS_SKIPPED_NOTICE, cannotDetail } from '../../../../core/recovery/causes.js';
 import { recoveryFactString } from '../../../../core/schemas/recovery/facts.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
+import { allBriefsSkipped } from '../../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { toErrorMessage } from '../../../../utils/format/errors.js';
-import { publishWarning } from '../../publish/notice.js';
+import { publishInfo, publishWarning } from '../../publish/notice.js';
 import { publishRecoveryResolved } from '../../publish/recovery.js';
 import { assertProjectNotMoved, retentionError } from '../../isolation/retention.js';
 import { runCodeDir } from '../../kept-work.js';
+import { closeRunIfOpen } from '../../run/close.js';
 import { transitionAndSave } from '../../state-ops/transition.js';
 import { skipHaltedBrief } from '../../task/skip-brief.js';
 import {
@@ -20,6 +23,15 @@ export async function applySkipCurrentTaskRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): Promise<ApplyRecoveryActionResult> {
+  // A previous pass can record the skip and stop before it closes the run.
+  if (
+    issue.status === 'applying' &&
+    issue.selectedAction === 'skip-current-task' &&
+    allBriefsSkipped(opts.state.tasks)
+  ) {
+    return settleSkip(opts, issue, opts.state);
+  }
+
   const target = currentRecoveryTask(opts.state, issue);
   if (!target) {
     return blockRecoveryAction({
@@ -86,24 +98,52 @@ export async function applySkipCurrentTaskRecoveryAction(
     taskStartSnapshot: opts.state.changedFilesBaseline?.activeTaskSnapshot,
     expectedRevision: applying.stateRevision ?? 0,
   });
-  const state = transitionAndSave(
-    opts,
-    skipped.state,
-    {
-      type: 'RESOLVE_PENDING_RECOVERY',
-    },
-    { expectedRevision: skipped.state.stateRevision ?? 0 },
-  );
-  publishRecoveryResolved({
-    bus: opts.bus,
-    phase: state.phase,
-    issue,
-    action: opts.action,
-    outcome: 'skipped-current-task',
-  });
-  if (skipped.restoreWarning !== undefined) {
-    publishWarning({ bus: opts.bus, phase: state.phase, message: skipped.restoreWarning });
+  return settleSkip(opts, issue, skipped.state, skipped.restoreWarning);
+}
+
+async function settleSkip(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+  skipped: WorkflowState,
+  restoreWarning?: string,
+): Promise<ApplyRecoveryActionResult> {
+  const resolved = (state: WorkflowState) => {
+    publishRecoveryResolved({
+      bus: opts.bus,
+      phase: state.phase,
+      issue,
+      action: opts.action,
+      outcome: 'skipped-current-task',
+    });
+  };
+  const closure = allBriefsSkipped(skipped.tasks)
+    ? await closeRunIfOpen({ ...opts, onClosed: resolved }, skipped)
+    : undefined;
+  const state =
+    closure?.state ??
+    transitionAndSave(
+      opts,
+      skipped,
+      { type: 'RESOLVE_PENDING_RECOVERY' },
+      { expectedRevision: skipped.stateRevision ?? 0 },
+    );
+  if (closure === undefined) resolved(state);
+  if (restoreWarning !== undefined) {
+    publishWarning({ bus: opts.bus, phase: state.phase, message: restoreWarning });
+  }
+  if (closure?.closedNow) {
+    publishInfo({
+      bus: opts.bus,
+      phase: state.phase,
+      message: ALL_BRIEFS_SKIPPED_NOTICE,
+    });
   }
 
-  return { ok: true, action: opts.action, issue, state, status: 'skipped-current-task' };
+  return {
+    ok: true,
+    action: opts.action,
+    issue,
+    state,
+    status: closure === undefined ? 'skipped-current-task' : 'closed',
+  };
 }

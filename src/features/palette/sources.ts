@@ -4,6 +4,7 @@ import type { Session } from '../../core/schemas/session.js';
 import { sessionStatusWord } from '../../core/sessions/display.js';
 import type { SkillMeta } from '../../core/skills/types.js';
 import type { Screen } from '../../core/navigation/types.js';
+import { findRuntimeCommand, splitRuntimeCommandLine } from '../../core/runtime/commands/lookup.js';
 import type { CommandGuardContext, RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -67,7 +68,7 @@ export function buildPaletteSources({
     skillItems: buildSkillItems(skills.available, skills.selected),
     taskItems: buildTaskItems(tasks, phase),
     sessionItems: buildSessionItems(sessions, projectDir, onSessionSelect),
-    customItems: buildCustomItems(config, onRuntimeCommand),
+    customItems: buildCustomItems(config, commands, onRuntimeCommand),
   };
 }
 
@@ -176,14 +177,21 @@ function buildSessionItems(
 
 function buildCustomItems(
   config: Config,
+  commands: RuntimeCommandDef[],
   onRuntimeCommand: (raw: string) => unknown,
 ): PaletteSources['customItems'] {
-  return (config.palette?.customActions ?? []).map((a) => ({
-    id: a.id,
-    label: a.label,
-    description: a.description ?? '',
-    action: () => {
-      void onRuntimeCommand(a.command);
-    },
-  }));
+  const items: PaletteSources['customItems'] = [];
+  for (const item of config.palette?.customActions ?? []) {
+    const { name } = splitRuntimeCommandLine(item.command);
+    if (findRuntimeCommand(commands, name) === null) continue;
+    items.push({
+      id: item.id,
+      label: item.label,
+      description: item.description ?? '',
+      action: () => {
+        void onRuntimeCommand(item.command);
+      },
+    });
+  }
+  return items;
 }

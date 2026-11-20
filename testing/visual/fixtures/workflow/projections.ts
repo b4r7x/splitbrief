@@ -157,6 +157,7 @@ import {
   publishReviewChecks,
 } from '../../../../src/engine/orchestrator/publish/review.js';
 import { publishInfo } from '../../../../src/engine/orchestrator/publish/notice.js';
+import { ALL_BRIEFS_SKIPPED_NOTICE } from '../../../../src/core/recovery/causes.js';
 import { publishDebug } from '../../../../src/engine/orchestrator/publish/notice.js';
 import { publishError } from '../../../../src/engine/orchestrator/publish/notice.js';
 import { revertedDir } from '../../../../src/core/paths.js';
@@ -5154,14 +5155,45 @@ const resolvedRetryRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
-// The halted brief was the last one and the person chose Skip task: the halt and the skip read as
-// one error and one Recovery row, the warning naming the file the skip took back follows it, and
-// the final review opens below them.
+function allSkippedRecoveryRoute(id: string, events: readonly EngineEvent[]): FixtureAtRestRoute {
+  const tasks = events.flatMap((event) =>
+    event.type === 'task_skipped'
+      ? [makeTask({ id: event.taskId, title: event.title, status: 'skipped' })]
+      : [],
+  );
+  return stoppedFixtureRoute(
+    id,
+    makeWorkflowState({
+      phase: 'implementing',
+      feature: WORKFLOW_FEATURE,
+      tasks,
+      currentTaskIndex: tasks.length,
+      closed: { as: 'ended', at: new Date(FIXED_TS).toISOString() },
+    }),
+    events,
+    makeSummary({
+      feature: WORKFLOW_FEATURE,
+      totalTasks: tasks.length,
+      completedByLocal: 0,
+      skipped: tasks.length,
+      changedFiles: [],
+      plannerTool: BASE_PLANNER.tool,
+      plannerModel: BASE_PLANNER.model,
+      implementerTool: BASE_IMPLEMENTER.provider,
+      implementerModel: BASE_IMPLEMENTER.model,
+    }),
+  );
+}
+
+// Skip ends the run. The Recovery row precedes the restore warning and the close notice.
 const resolvedSkipRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-recovery-resolved-skip'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: false,
+  get atRest() {
+    return allSkippedRecoveryRoute(this.scenarioId, this.events);
+  },
   get events(): EngineEvent[] {
     const brief = { ...retriedBriefStart, total: 1 };
     return [
@@ -5194,8 +5226,7 @@ const resolvedSkipRecoveryProjection: WorkflowFixtureProjection = {
           phase,
           message: `Restored 1 change of the failing brief to its start: ${WORKFLOW_FIXTURE_REVIEW_FILE}`,
         });
-        bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase: 'final-review' });
-        bus.publish(finalReviewStarted(FIXED_TS, BASE_PLANNER));
+        publishInfo({ bus, phase, message: ALL_BRIEFS_SKIPPED_NOTICE });
       }),
     ];
   },
@@ -5209,6 +5240,9 @@ const resolvedDependencySkipRecoveryProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: false,
+  get atRest() {
+    return allSkippedRecoveryRoute(this.scenarioId, this.events);
+  },
   get events(): EngineEvent[] {
     const tasks = FIXTURE_TASKS_PLANNED.tasks.slice(0, 2);
     const [first, second] = tasks;
@@ -5273,8 +5307,7 @@ const resolvedDependencySkipRecoveryProjection: WorkflowFixtureProjection = {
           reason: blocked.message,
         });
         publishRecoveryResolved({ ...skipSecond, outcome: 'skipped-current-task' });
-        bus.publish({ type: 'workflow_resumed', ts: FIXED_TS, phase: 'final-review' });
-        bus.publish(finalReviewStarted(FIXED_TS, BASE_PLANNER));
+        publishInfo({ bus, phase, message: ALL_BRIEFS_SKIPPED_NOTICE });
       }),
     ];
   },

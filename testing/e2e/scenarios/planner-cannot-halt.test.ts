@@ -116,7 +116,7 @@ describe('e2e: the planner says a brief cannot be done', () => {
     const stderr = halted.stderr.split('\n');
     const haltLine = stderr.findIndex((line) => line.startsWith('Error: Needs you'));
     expect(stderr[haltLine + 1]).toBe(`Planner said: ${REASON}`);
-    expect(frame).toMatch(/Skip brief {2,}recommended/);
+    expect(frame).toMatch(/Skip brief {2,}ends the run, nothing was built +recommended/u);
     expect(frame).not.toContain('Decide for me');
     expect(frame).not.toMatch(/Try again {2,}recommended/);
     expect(stderr).toContain('Recommended: skip-current-task');
@@ -158,7 +158,7 @@ describe('e2e: the planner says a brief cannot be done', () => {
     },
   );
 
-  it('names the checkout halt, replays its skip reason and explains a refused review answer', async () => {
+  it('names the checkout halt, replays its skip reason and ends before asking for review', async () => {
     const invalid = {
       ...passingVerdict({ kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] }),
       criteria: [{ id: 'C1', status: 'unknown', evidence: '' }],
@@ -201,12 +201,11 @@ describe('e2e: the planner says a brief cannot be done', () => {
     expect(halt?.reason, halted.stderr).toBe('implementer-left-isolation');
     expect.soft(halted.stderr).toContain('T001 wrote outside your checkout');
 
-    const reviewed = await cli(fixture, ['continue', sessionId, '--action', 'skip']);
-    expect(reviewed.exitCode, reviewed.stderr).toBe(1);
-    expect(loadState(ref)?.pendingRecovery?.reason, reviewed.stderr).toBe('seat-protocol-error');
-    expect.soft(reviewed.stderr).toContain('Wrong or missing value in status.');
-    expect.soft(reviewed.stderr).not.toContain('criteria.0.status');
+    const skipped = await cli(fixture, ['continue', sessionId, '--action', 'skip']);
+    expect(skipped.exitCode, skipped.stderr).toBe(0);
+    expect(loadState(ref)?.closed).toMatchObject({ as: 'ended' });
     const { events } = await readRunEvents(ref);
+    expect.soft(events.some((event) => event.type === 'review_started')).toBe(false);
     expect.soft(events.find((event) => event.type === 'task_skipped')?.reason).toBe(halt?.message);
     expect(transcriptText(events)).not.toContain('recovery implementer-left-isolation:');
   });

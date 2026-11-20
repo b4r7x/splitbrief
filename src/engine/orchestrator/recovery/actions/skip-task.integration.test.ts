@@ -25,6 +25,7 @@ import { saveState } from '../../../../core/state/persistence.js';
 import type { SessionRef } from '../../../../core/types/session-ref.js';
 import { createRunIsolation } from '../../isolation/create.js';
 import { captureWorkspaceSnapshot } from '../../isolation/entry-snapshot.js';
+import { ensureRunWorkspace } from '../../run/workspace.js';
 import { withAttemptRestoreScope } from '../../task/restore-scope.js';
 import { applyRecoveryAction } from './apply.js';
 
@@ -50,6 +51,12 @@ async function seatDownHalt(strategy: IsolationStrategy) {
   const config = makeConfig();
   const task = makeTask({ id: 'T001', status: 'in_progress' });
   const isolation = createRunIsolation({ ...ref, strategy, onFallback: () => {} });
+  const started = await ensureRunWorkspace(
+    ref,
+    { config, isolation, bus: makeBusRecorder().bus },
+    makeImplState([task]),
+    true,
+  );
   const opened = await isolation.open({ config });
   const taskStart = await captureWorkspaceSnapshot(opened.projectDir, ref);
   const attempt = await isolation.acquire({
@@ -68,19 +75,15 @@ async function seatDownHalt(strategy: IsolationStrategy) {
   await attempt.retain?.();
   await isolation.dispose();
   const dispatched = transition(
-    makeImplState([task], {
-      workspace: {
-        kind: opened.kind,
-        path: opened.projectDir,
-        base: { snapshotId: 'seat-down', head: opened.head },
-      },
+    {
+      ...started,
       changedFilesBaseline: {
         head: null,
         fingerprints: {},
         activeTaskSnapshot: { ...taskStart, restoreFiles: [] },
       },
       pendingRecovery: makeRecoveryIssue({ reason: 'runner-usage-limit', phase: 'implementing' }),
-    }),
+    },
     { type: 'RECORD_DISPATCH', taskId: task.id },
   );
   // The brief's start names the attempt's write, as the restore scope of an attempt records it.
@@ -144,7 +147,11 @@ describe('a recovery Skip after the project folder moved', () => {
       renameSync(moved.projectDir, ref.projectDir);
       const skipped = await skip(ref, state);
 
-      expect(skipped).toMatchObject({ ok: true, status: 'skipped-current-task' });
+      expect(skipped).toMatchObject({
+        ok: true,
+        status: 'closed',
+        state: { closed: { as: 'ended' } },
+      });
       expect(skipped.state.tasks.map((task) => task.status)).toEqual(['skipped']);
       expect(existsSync(join(workspace, PARTIAL))).toBe(false);
     },

@@ -54,7 +54,10 @@ export function closedChangesSuffix(ref: SessionRef, state: WorkflowState): stri
 }
 
 export async function closeRunIfOpen(
-  scope: SessionRef & { bus?: EventBus | undefined },
+  scope: SessionRef & {
+    bus?: EventBus | undefined;
+    onClosed?: (state: WorkflowState) => void;
+  },
   state: WorkflowState,
   as?: 'discarded',
 ): Promise<{ state: WorkflowState; closedNow: boolean }> {
@@ -115,6 +118,7 @@ export async function closeRunIfOpen(
       }),
     });
     if (result.kind === 'committed') {
+      scope.onClosed?.(result.state);
       await persistStoppedBriefEvidence(scope, latest, workspaceForClosure);
       // A checkout run closes as discarded only after a reject put its changes back.
       if (

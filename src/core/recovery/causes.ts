@@ -4,6 +4,9 @@ import { CREW_SEAT_LABELS } from '../crew/identity.js';
 import type { SeatLineSpan } from '../crew/seat-line/collapse.js';
 import { SOFT_SEP } from '../separators.js';
 
+export const ALL_BRIEFS_SKIPPED_NOTICE =
+  'All briefs were skipped, so nothing was built. The run ended without changes.';
+
 /** The review a halt names, in the transcript's words: a task review by the brief it judged. */
 export function reviewName(
   review: Readonly<{ scope?: string | undefined; afterTaskId?: string | undefined }>,

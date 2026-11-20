@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
@@ -751,6 +752,63 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
 });
 
 describe('runTasksAndReview', { timeout: 120_000 }, () => {
+  it.each([false, true])(
+    'ends an all-skipped run without review, last skip already saved: %s',
+    async (alreadySkipped) => {
+      const { projectDir, sessionId, head } = setupProject();
+      const ref = { projectDir, sessionId };
+      const tasks = [
+        makeTask({ id: 'T001', status: 'skipped', suggestedFiles: ['src/alpha.ts'] }),
+        makeTask({
+          id: 'T002',
+          dependsOn: [taskId('T001')],
+          suggestedFiles: ['src/beta.ts'],
+          status: alreadySkipped ? 'skipped' : 'pending',
+        }),
+      ];
+      const state = {
+        ...reviewedState(tasks, head, alreadySkipped ? 2 : 1),
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'dependency-blocked',
+          taskId: taskId('T002'),
+          availableActions: ['skip-current-task', 'end-run'],
+          recommendedAction: 'skip-current-task',
+          ...(alreadySkipped && { status: 'applying', selectedAction: 'skip-current-task' }),
+        }),
+      };
+      saveState(ref, state);
+      const { options, events, reviewPrompts } = runOptions({
+        ...ref,
+        state,
+        review: (prompt) => passingReviewVerdict(prompt),
+        onComplete: vi.fn(),
+      });
+
+      const skipped = await applyRecoveryAction({
+        ...ref,
+        state,
+        action: 'skip-current-task',
+        bus: options.wctx.bus,
+      });
+      if (skipped.status === 'skipped-current-task') {
+        await runTasksAndReview({ ...options, state: skipped.state });
+      }
+
+      expect.soft(reviewPrompts).toHaveLength(0);
+      expect.soft(skipped).toMatchObject({ ok: true, status: 'closed' });
+      expect(loadState(ref)).toMatchObject({
+        closed: { as: 'ended' },
+        tasks: [{ status: 'skipped' }, { status: 'skipped' }],
+      });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'info',
+          message: 'All briefs were skipped, so nothing was built. The run ended without changes.',
+        }),
+      );
+    },
+  );
+
   it('a failing review returns its fix task and the next review passes', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];

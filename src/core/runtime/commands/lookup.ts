@@ -5,6 +5,11 @@ export function isRuntimeCommandLine(text: string): boolean {
   return /^\/[^/\s]*(?:\s|$)/.test(text);
 }
 
+export function splitRuntimeCommandLine(raw: string): { name: string; typed: string } {
+  const [name = '', ...args] = raw.split(' ');
+  return { name: name.toLowerCase(), typed: args.join(' ').trim() };
+}
+
 export function findRuntimeCommand(
   commands: RuntimeCommandDef[],
   name: string,

@@ -10,6 +10,7 @@ import { publishRetainedWorkspaceNotice } from '../../engine/orchestrator/isolat
 import { applyDecidedRecovery } from '../../engine/orchestrator/recovery/actions/apply.js';
 import type { ApplyRecoveryActionResult } from '../../engine/orchestrator/recovery/actions/types.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
+import { finalizeRunAtRest } from '../../engine/orchestrator/session-lifecycle/finalize.js';
 import { emitRecoveryAndFailIfPending } from './outcome.js';
 import type { HeadlessRun } from './types.js';
 
@@ -22,7 +23,10 @@ export function loadOwnedState(ref: SessionRef): WorkflowState | null {
 export function recoveryBus(run: HeadlessRun): EventBus {
   return createRecoveryBus({
     ...run.ref,
-    sink: (event) => run.writeRecord({ type: 'event', data: event }),
+    sink: (event) => {
+      if (run.plain && event.type === 'info') process.stderr.write(`${event.message}\n`);
+      else run.writeRecord({ type: 'event', data: event });
+    },
   });
 }
 
@@ -54,21 +58,22 @@ export async function takeDecidedStep(
   run: HeadlessRun,
   state: WorkflowState | null,
 ): Promise<ApplyRecoveryActionResult | undefined> {
-  return state === null ||
+  if (
+    state === null ||
     (run.onSeatDown === 'halt' &&
       state.pendingRecovery !== undefined &&
       haltOf(state.pendingRecovery.reason) === 'seat-down')
-    ? undefined
-    : applyDecidedRecovery(
-        {
-          ...run.ref,
-          state,
-          bus: recoveryBus(run),
-          config: run.prepared.config,
-        },
-        () => run.prepared.config,
-        undefined,
-      );
+  )
+    return undefined;
+  const decided = await applyDecidedRecovery(
+    { ...run.ref, state, bus: recoveryBus(run), config: run.prepared.config },
+    () => run.prepared.config,
+    undefined,
+  );
+  if (decided?.ok && decided.status === 'closed' && decided.action === 'skip-current-task') {
+    finalizeRunAtRest({ ref: run.ref, state: decided.state });
+  }
+  return decided;
 }
 
 /**

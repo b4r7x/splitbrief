@@ -1860,7 +1860,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
     const halted = makeWorkflowState({
       phase: 'implementing',
-      tasks: [makeTask({ status: 'in_progress' })],
+      tasks: [makeTask({ status: 'in_progress' }), makeTask({ id: 'T002' })],
       pendingRecovery: issue,
     });
     const record = openRun({

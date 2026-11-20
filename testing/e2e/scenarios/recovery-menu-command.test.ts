@@ -15,7 +15,7 @@ import {
   dependentPlan,
   startToHalt,
 } from '../helpers/consult-failure-halt.js';
-import { openHaltedRun } from '../helpers/halted-run-screen.js';
+import { openHaltedRun, settleOpenedRuns } from '../helpers/halted-run-screen.js';
 import {
   cli,
   createStopContinueFixture,
@@ -26,9 +26,10 @@ import {
 let fixture: StopContinueFixture | undefined;
 let ui: ReturnType<typeof renderFeature> | undefined;
 
-afterEach(() => {
+afterEach(async () => {
   ui?.unmount();
   ui = undefined;
+  await settleOpenedRuns();
   resetAllStores();
   vi.unstubAllEnvs();
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
@@ -110,6 +111,24 @@ async function openDependencyBlockedRun(draft?: string) {
   expect(opened.state.pendingRecovery?.reason).toBe('dependency-blocked');
   return opened;
 }
+
+it('warns before the last skip and shows the ended run without opening review', async () => {
+  const { screen, ref, runWorkflow } = await openDependencyBlockedRun();
+  expect
+    .soft(stripAnsiStyles(screen.lastFrame()))
+    .toMatch(/Skip brief +ends the run, nothing was built/u);
+
+  screen.stdin.write('s');
+  await vi.waitFor(() => {
+    expect(loadState(ref)?.closed).toMatchObject({ as: 'ended' });
+    const frame = stripAnsiStyles(screen.lastFrame());
+    expect(frame).toContain('Ended');
+    expect(frame).toContain(
+      'All briefs were skipped, so nothing was built. The run ended without changes.',
+    );
+  });
+  expect(runWorkflow).not.toHaveBeenCalled();
+});
 
 it('gives back the whole /steer line with its reason on a halt that takes no typed correction', async () => {
   const { screen, ref, state, runWorkflow } = await openDependencyBlockedRun();

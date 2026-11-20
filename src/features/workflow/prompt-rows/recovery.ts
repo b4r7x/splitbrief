@@ -13,7 +13,6 @@ import { listRowLead } from '../../../components/list-row/lead.js';
 import { planListRows, type ListLine } from '../../../components/list-row/plan.js';
 import { recoveryMenuRows } from '../recovery/menu-label.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { selectTaskListView } from '../../../core/run-view/briefs.js';
 import { MIN_TEXT_WIDTH } from './measure.js';
 
 const RECOVERY_PROMPT_HORIZONTAL_CHROME = 4;
@@ -33,11 +32,7 @@ export function getRecoveryPromptRows(issue: RecoveryIssue, cols: number): numbe
     countPromptBodyRows(recoveryPromptSummaryRows(issue, width), width),
   );
   const view = runViewStore.get();
-  const actions = recoveryMenuRows(
-    issue,
-    selectTaskListView(view.briefs).finished > 0,
-    view.reviewNone,
-  );
+  const actions = recoveryMenuRows(issue, view.briefs, view.reviewNone);
   const actionRows = Math.max(1, planListRows(actions, { width }).length);
   return (
     RECOVERY_PROMPT_BORDER_ROWS +

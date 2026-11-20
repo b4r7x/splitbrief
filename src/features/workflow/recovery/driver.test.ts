@@ -342,7 +342,7 @@ describe('createRecoveryDriver', () => {
     saveState(prepared.session.ref, saved);
     const { inputMode } = makeInputMode([rowPick('s')]);
     const result = await runDriver(prepared, saved, inputMode);
-    expect(result.shouldRun).toBe(true);
+    expect(result.shouldRun).toBe(false);
     const ledger = readEvidenceLedger(prepared.session.ref);
     expect(ledger).not.toBeNull();
     expect(ledger).not.toHaveProperty('mode');
@@ -355,7 +355,7 @@ describe('createRecoveryDriver', () => {
     const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(1);
-    expect(result.shouldRun).toBe(true);
+    expect(result.shouldRun).toBe(false);
     expect(feedbackStore.get().severity).toBe('info');
     expect(recoveryNoticeStore.get().open).toBe(false);
   });
@@ -598,11 +598,11 @@ describe('createRecoveryDriver', () => {
       const result = await runDriver(prepared, state, inputMode, words);
 
       expect(feedbackAtPrompt).toHaveLength(0);
-      if (!result.shouldRun) throw new Error('expected the skip to run');
-      expect(result.state.tasks[0]?.status).toBe('skipped');
-      expect(result.state.messageQueue).toEqual([]);
-      expect(result.steer).toBeUndefined();
-      expect(result.correctionTaken).toBeUndefined();
+      expect(result.shouldRun).toBe(false);
+      expect(result.state?.tasks[0]?.status).toBe('skipped');
+      expect(result.state?.messageQueue).toEqual([]);
+      expect(result).not.toHaveProperty('steer');
+      expect(result).not.toHaveProperty('correctionTaken');
     });
   });
 
@@ -844,7 +844,7 @@ describe('createRecoveryDriver', () => {
       const result = await runDriver(prepared, state, inputMode);
 
       expect(feedbackAtPrompt).toHaveLength(1);
-      expect(result.shouldRun).toBe(true);
+      expect(result.shouldRun).toBe(false);
       const saved = loadState(prepared.session.ref);
       expect(saved?.decideForMe).toBe(true);
       expect(saved?.tasks[0]?.status).toBe('skipped');
@@ -894,7 +894,7 @@ describe('createRecoveryDriver', () => {
 
       expect(feedbackAtPrompt).toHaveLength(0);
       expect(notices.opens).toHaveLength(0);
-      expect(result.shouldRun).toBe(true);
+      expect(result.shouldRun).toBe(false);
       expect(loadState(prepared.session.ref)?.tasks[0]?.status).toBe('skipped');
     });
 
@@ -1400,7 +1400,8 @@ describe('createRecoveryDriver', () => {
     const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(1);
-    expect(result.shouldRun && result.state.tasks[0]?.status).toBe('skipped');
+    expect(result.shouldRun).toBe(false);
+    expect(result.state?.tasks[0]?.status).toBe('skipped');
     expect(composerDraftStore.get().request).toBeNull();
   });
 
@@ -1668,11 +1669,13 @@ describe('createRecoveryDriver', () => {
       availableActions: ['skip-current-task', 'end-run'],
       recommendedAction: 'skip-current-task',
     });
+    const withNext = { ...state, tasks: [...state.tasks, makeTask({ id: 'T002' })] };
+    saveState(prepared.session.ref, withNext);
     const { inputMode, feedbackAtPrompt } = makeInputMode([rowPick('s')]);
 
     const result = await runDriver(
       prepared,
-      state,
+      withNext,
       inputMode,
       plainUserMessage('mind the lockfile'),
     );
@@ -2634,7 +2637,7 @@ describe('the order of the steps of one halt', () => {
       'remove the abort listener',
       'notice closed',
     ]);
-    expect(result.shouldRun).toBe(true);
+    expect(result.shouldRun).toBe(false);
   });
 
   it('stops following the config, then removes its abort listener and closes the notice on an abort', async () => {

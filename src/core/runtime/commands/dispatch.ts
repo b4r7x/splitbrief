@@ -1,7 +1,12 @@
 import type { Phase } from '../../schemas/enums.js';
 import type { Screen } from '../../navigation/types.js';
 import type { RuntimeCommandDef } from './types.js';
-import { findRuntimeCommand, removedCommandPointer, suggestRuntimeCommand } from './lookup.js';
+import {
+  findRuntimeCommand,
+  removedCommandPointer,
+  splitRuntimeCommandLine,
+  suggestRuntimeCommand,
+} from './lookup.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 
 interface CommandExecutionOptions {
@@ -24,9 +29,7 @@ export async function executeRuntimeCommand(
   raw: string,
   options: CommandExecutionOptions,
 ): Promise<void> {
-  const parts = raw.split(' ');
-  const name = (parts[0] ?? '').toLowerCase();
-  const typed = parts.slice(1).join(' ').trim();
+  const { name, typed } = splitRuntimeCommandLine(raw);
   const cmd = findRuntimeCommand(commands, name);
   if (!cmd) {
     const pointer = removedCommandPointer(name);

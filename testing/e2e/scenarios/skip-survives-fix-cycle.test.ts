@@ -20,6 +20,7 @@ import {
 } from '../helpers/stop-continue-fixture.js';
 
 const ALPHA_FILE = 'src/alpha.mjs';
+const BETA_FILE = 'src/beta.mjs';
 const alpha = makeTaskSpec({
   id: 'T001',
   title: 'Add the alpha value',
@@ -29,18 +30,31 @@ const alpha = makeTaskSpec({
   checks: [{ id: 'T001-K1', kind: 'test', value: ALPHA_FILE }],
 });
 const plan = makePlanProposal({
-  summary: 'Add one value.',
+  summary: 'Add two values.',
   decisions: [],
-  criteria: [{ id: 'C1', text: 'Alpha is the string alpha.', checkIds: ['T001-K1'] }],
-  tasks: [alpha],
+  criteria: [
+    { id: 'C1', text: 'Alpha is the string alpha.', checkIds: ['T001-K1'] },
+    { id: 'C2', text: 'Beta is the string beta.', checkIds: ['T002-K1'] },
+  ],
+  tasks: [
+    alpha,
+    makeTaskSpec({
+      id: 'T002',
+      title: 'Add the beta value',
+      intent: 'Return the beta value.',
+      criteria: ['C2'],
+      suggestedFiles: [BETA_FILE],
+      checks: [{ id: 'T002-K1', kind: 'test', value: BETA_FILE }],
+    }),
+  ],
 });
 const fix = makeTaskSpec({
-  id: 'T002',
+  id: 'T003',
   title: 'Create the alpha module',
   intent: 'Create the alpha module the review found missing.',
   criteria: [],
   suggestedFiles: [ALPHA_FILE],
-  checks: [{ id: 'T002-K1', kind: 'test', value: ALPHA_FILE }],
+  checks: [{ id: 'T003-K1', kind: 'test', value: ALPHA_FILE }],
 });
 const finding: ReviewAnswer['findings'][number] = {
   id: 'F1',
@@ -71,7 +85,7 @@ afterEach(() => {
 
 /**
  * A run whose implementer reports T001 blocked and whose planner crashes on the consult, so
- * T001 halts. Its first final review fails with one fix brief and the next one passes.
+ * T001 halts. The independent T002 builds after Skip. The first final review then asks for one fix.
  */
 async function haltOnFailedConsult() {
   fixture = createStopContinueFixture(() => '');
@@ -125,17 +139,21 @@ process.stdout.write(JSON.stringify(answer));
   );
   writeFileSync(
     implementerPath,
-    `import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+    `import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 for await (const _chunk of process.stdin);
-const first = !existsSync(${JSON.stringify(callsPath)});
+const calls = existsSync(${JSON.stringify(callsPath)})
+  ? readFileSync(${JSON.stringify(callsPath)}, 'utf8').length
+  : 0;
 appendFileSync(${JSON.stringify(callsPath)}, 'c');
+const value = calls === 1 ? 'beta' : 'alpha';
+const file = calls === 1 ? ${JSON.stringify(BETA_FILE)} : ${JSON.stringify(ALPHA_FILE)};
 mkdirSync('src', { recursive: true });
-writeFileSync(${JSON.stringify(ALPHA_FILE)}, "export const alpha = 'alpha';\\n");
-console.log(JSON.stringify(first
+writeFileSync(file, 'export const ' + value + ' = ' + JSON.stringify(value) + ';\\n');
+console.log(JSON.stringify(calls === 0
   ? { status: 'blocked', question: 'Which module should export alpha?', filesNeeded: [] }
   : {
       status: 'done',
-      filesChanged: [${JSON.stringify(ALPHA_FILE)}],
+      filesChanged: [file],
       touchedNotSuggested: [],
       notes: null,
       decisions: [],
@@ -159,7 +177,7 @@ console.log(JSON.stringify(first
 }
 
 describe('e2e: a skipped brief through a review fix cycle', { timeout: 240_000 }, () => {
-  it('runs only the fix brief, and the closed Briefs block keeps the skipped brief skipped', async () => {
+  it('builds the independent and fix briefs, and the closed Briefs block keeps the skipped brief skipped', async () => {
     const { target, sessionId } = await haltOnFailedConsult();
     expect(readState(target, sessionId).pendingRecovery).toMatchObject({
       reason: 'planner-call-failed',
@@ -172,13 +190,14 @@ describe('e2e: a skipped brief through a review fix cycle', { timeout: 240_000 }
     const ref = { projectDir: target.projectDir, sessionId };
     const { events } = await readRunEvents(ref);
     expect(events.find((event) => event.type === 'review_fix_started')).toMatchObject({
-      taskIds: ['T002'],
+      taskIds: ['T003'],
     });
     const starts = events.flatMap((event) => (event.type === 'task_started' ? [event.taskId] : []));
-    expect(starts).toEqual(['T001', 'T002']);
+    expect(starts).toEqual(['T001', 'T002', 'T003']);
     expect(readState(target, sessionId).tasks.map((task) => [task.id, task.status])).toEqual([
       ['T001', 'skipped'],
       ['T002', 'done'],
+      ['T003', 'done'],
     ]);
     const applied = await cli(target, ['continue', sessionId, '--action', 'apply']);
     expect(applied.exitCode, `${applied.stdout}\n${applied.stderr}`).toBe(0);
@@ -187,6 +206,7 @@ describe('e2e: a skipped brief through a review fix cycle', { timeout: 240_000 }
     expect(view.briefs.rows.map((row) => briefRowParts({ row }))).toMatchObject([
       { id: 'T001', state: { kind: 'settled', method: 'skipped' } },
       { id: 'T002', state: { kind: 'settled', method: 'local' } },
+      { id: 'T003', state: { kind: 'settled', method: 'local' } },
     ]);
   });
 });

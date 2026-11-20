@@ -220,9 +220,10 @@ describe('e2e: a staged-copy run with a copied sign-in', { timeout: 120_000 }, (
 
     const state = readState(target, ref.sessionId);
     expect(state.tasks.map((task) => task.status)).toEqual(['skipped']);
-    expect(deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind).toBe(
-      'ready-to-apply',
-    );
+    expect(deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false })).toEqual({
+      kind: 'closed',
+      as: 'ended',
+    });
     expect(existsSync(join(workspace, MARKER_FILE))).toBe(false);
     expect(signInFilesUnder(sandbox)).toEqual([]);
     expect(sandboxTempFolders(temp).filter((name) => kept.includes(name))).toEqual([]);
@@ -262,9 +263,10 @@ describe('e2e: a staged-copy run with a copied sign-in', { timeout: 120_000 }, (
 
     const state = readState(target, ref.sessionId);
     expect(state.tasks.map((task) => task.status)).toEqual(['skipped']);
-    expect(deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false }).kind).toBe(
-      'ready-to-apply',
-    );
+    expect(deriveRunStatus({ state, liveness: 'not-alive', reviewNone: false })).toEqual({
+      kind: 'closed',
+      as: 'ended',
+    });
     expect(existsSync(join(workspace, MARKER_FILE))).toBe(false);
     expect(signInFilesUnder(sandbox)).toEqual([]);
     expect(sandboxTempFolders(temp).filter((name) => kept.includes(name))).toEqual([]);

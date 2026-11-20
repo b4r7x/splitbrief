@@ -371,6 +371,11 @@ describe('a command name typed in the palette', () => {
       guardContext,
     });
     const offered = items.map((item) => item.label);
+
+    it(`shows no unrelated command for usage on ${screenName}`, () => {
+      const results = buildPaletteResults(makeInputs({ query: 'usage', commandItems: items }));
+      expect(results).toEqual([]);
+    });
     const mruLists = (name: string) => {
       const another = offered.find((label) => label !== name) ?? name;
       return [[], [`command:${another}`], ['command:/copy', 'session:S1', 'skill:crew']];
@@ -412,6 +417,32 @@ describe('a command name typed in the palette', () => {
       expect(misses).toEqual([]);
     });
   }
+
+  it.each([
+    ['bps', '/sessions'],
+    ['brpa', '/sessions'],
+    ['brpase', '/sessions'],
+    ['bropsn', '/sessions'],
+    ['browpas', '/sessions'],
+    ['pastse', '/sessions'],
+    ['pses', '/sessions'],
+    ['shhe', '/help'],
+    ['showhe', '/help'],
+    ['sfes', '/skills'],
+    ['skfoev', '/skills'],
+    ['skfrst', '/skills'],
+    ['skillsseat', '/skills'],
+  ])('finds %s in the description of %s', (query, label) => {
+    const { screen, guardContext } = screens.home;
+    const commandItems = buildCommandItems({
+      commands,
+      screen,
+      onRuntimeCommand: noop,
+      guardContext,
+    });
+    const results = buildPaletteResults(makeInputs({ query, commandItems }));
+    expect(results.map((result) => result.label)).toContain(label);
+  });
 
   it.each([[[]], [['command:/copy']], [['command:/review']]])(
     'ranks /crew first for `crew review` with the recent list %j',

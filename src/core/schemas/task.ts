@@ -38,6 +38,19 @@ export function isTaskSettled(status: Task['status']): boolean {
   return isTaskCompleted(status) || status === 'skipped';
 }
 
+export function allBriefsSkipped(
+  tasks: readonly { id: string; status: Task['status'] }[],
+  skippingId?: string,
+): boolean {
+  return (
+    tasks.length > 0 &&
+    tasks.every(
+      (task) =>
+        task.status === 'skipped' || (task.id === skippingId && !isTaskCompleted(task.status)),
+    )
+  );
+}
+
 export function formatTaskId(n: number): TaskId {
   return taskId(`T${String(n).padStart(3, '0')}`);
 }

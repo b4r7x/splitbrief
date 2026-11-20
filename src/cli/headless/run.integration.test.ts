@@ -18,6 +18,7 @@ import {
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { ensureSessionDir } from '../../core/sessions/spec-files.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
+import { recordSeatIdentities } from '../../core/state/seats/record.js';
 import { readConfigDocument } from '../../core/config/load/document.js';
 import { loadConfig, writeConfig } from '../../core/config/load/io.js';
 import { HeadlessJsonRecordSchema } from '../../engine/events/public-json.js';
@@ -2041,9 +2042,10 @@ describe('runHeadless — the seat-down policy and the record', () => {
     expect(loadConfig(projectDir).config.implementer).toMatchObject({ tool: 'claude-code' });
   });
 
-  it('takes the seat swap, the resume preflight, the run and the decided step in that order', async () => {
+  it('takes the seat swap and ends when the decided step skips the last brief', async () => {
     const { projectDir, sessionId, state: seeded } = seedAutoSwitchSession('headless-step-order');
     const ref = { projectDir, sessionId };
+    recordSeatIdentities(ref, loadConfig(projectDir).config);
     const first = makeTask({ id: 'T001' });
     const second = makeTask({ id: 'T002' });
     const cannot = (task: Task) =>
@@ -2112,8 +2114,9 @@ describe('runHeadless — the seat-down policy and the record', () => {
       'recovery_action_selected',
       'task_skipped',
       'recovery_resolved',
-      'run:claude-code:none',
+      'info',
     ]);
+    expect(loadState(ref)?.closed).toMatchObject({ as: 'ended' });
   });
 
   it('prints no error of an earlier pass as the cause when the last pass fails without one', async () => {

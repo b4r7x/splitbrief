@@ -6,9 +6,11 @@ import {
 } from '../../../core/recovery/action-label.js';
 import { decidedRecovery } from '../../../core/recovery/decide.js';
 import { haltOf } from '../../../core/recovery/halt.js';
+import { type RunBriefs, selectTaskListView } from '../../../core/run-view/briefs.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import { allBriefsSkipped } from '../../../core/schemas/task.js';
 import {
   getRecoveryPromptActions,
   recommendedRecoveryAction,
@@ -69,6 +71,7 @@ export function recoveryMenuRow(
   issue: RecoveryIssue,
   briefFinished: boolean,
   reviewNone: boolean,
+  skipEndsRun = false,
 ) {
   const label = recoveryActionParts(action, recoveryMenuContext(issue, reviewNone)).map(
     (part): ConversationRowSegment => ({
@@ -77,9 +80,11 @@ export function recoveryMenuRow(
     }),
   );
   const consequence =
-    action === 'end-run' && briefFinished
-      ? 'closes this run, keeps its changes'
-      : recoveryMenuConsequence(action, issue, reviewNone);
+    action === 'skip-current-task' && skipEndsRun
+      ? 'ends the run, nothing was built'
+      : action === 'end-run' && briefFinished
+        ? 'closes this run, keeps its changes'
+        : recoveryMenuConsequence(action, issue, reviewNone);
   return {
     action,
     key: recoveryActionKey(action),
@@ -91,13 +96,13 @@ export function recoveryMenuRow(
   };
 }
 
-export function recoveryMenuRows(
-  issue: RecoveryIssue,
-  briefFinished: boolean,
-  reviewNone: boolean,
-) {
+export function recoveryMenuRows(issue: RecoveryIssue, briefs: RunBriefs, reviewNone: boolean) {
+  const list = selectTaskListView(briefs);
+  const taskId = issue.taskId ?? briefs.tasks[briefs.currentTask - 1]?.id;
+  const skipEndsRun =
+    taskId !== undefined && list.unannounced === 0 && allBriefsSkipped(list.items, taskId);
   return getRecoveryPromptActions(issue).map((action) =>
-    recoveryMenuRow(action, issue, briefFinished, reviewNone),
+    recoveryMenuRow(action, issue, list.finished > 0, reviewNone, skipEndsRun),
   );
 }
 

@@ -315,6 +315,31 @@ it('shows each row its key beside its label', async () => {
   ui.unmount();
 });
 
+it('warns when Skip brief would end a run with no built briefs', async () => {
+  const issue = makeRecoveryIssue({
+    reason: 'dependency-blocked',
+    taskId: taskId('T002'),
+    availableActions: ['skip-current-task', 'end-run'],
+    recommendedAction: 'skip-current-task',
+  });
+  runViewStore.__testReset({
+    briefs: {
+      tasks: [
+        { id: 'T001', title: 'First brief', status: 'skipped' },
+        { id: 'T002', title: 'Last brief', status: 'pending' },
+      ],
+      totalTasks: 2,
+    },
+  });
+  const ui = mount(vi.fn(), 88, issue);
+  try {
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toMatch(/Skip brief +ends the run, nothing was built/u);
+  } finally {
+    ui.unmount();
+  }
+});
+
 it('keeps the recovery key beside the seat change while the composer has focus', () => {
   const ui = renderFeature(
     <RecoveryMenu

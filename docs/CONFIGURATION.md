@@ -964,6 +964,7 @@ approval:
 ## 10. `palette`
 
 Custom slash-command actions for the in-TUI command palette.
+SPLITBRIEF ignores entries that name an unknown slash command.
 
 ### Schema
 

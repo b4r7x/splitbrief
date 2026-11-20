@@ -26,6 +26,24 @@ vi.mock('../../lib/git/files.js', async (importOriginal) => ({
   listTrackedAndUntrackedFiles: async () => null,
 }));
 
+const mounted = new Set<() => void>();
+
+function mountComposer(
+  ...args: Parameters<typeof renderFeature>
+): ReturnType<typeof renderFeature> {
+  const ui = renderFeature(...args);
+  const unmount = () => {
+    mounted.delete(unmount);
+    ui.unmount();
+  };
+  mounted.add(unmount);
+  return { ...ui, unmount };
+}
+
+function unmountComposers(): void {
+  for (const unmount of mounted) unmount();
+}
+
 const document: DraftDocument = {
   version: 1,
   parts: [
@@ -51,6 +69,7 @@ describe('unsent session composer draft', () => {
     projectDir = createTempDir('session-draft-');
   });
   afterEach(() => {
+    unmountComposers();
     flushSessionDrafts();
     cleanupTempDir(projectDir);
   });
@@ -79,7 +98,7 @@ describe('unsent session composer draft', () => {
       hydrateRun: async () => {},
       applying: () => false,
     });
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="normal"
@@ -118,7 +137,7 @@ describe('unsent session composer draft', () => {
         onRuntimeCommand={() => {}}
       />
     );
-    const ui = renderFeature(composer());
+    const ui = mountComposer(composer());
     await flushEffects();
     composerDraftStore.requestDocument(document);
     await flushEffects();
@@ -134,13 +153,13 @@ describe('unsent session composer draft', () => {
     ui.unmount();
     await flushEffects();
     open('two');
-    const other = renderFeature(composer());
+    const other = mountComposer(composer());
     await flushEffects();
     expect(other.lastFrame()).not.toContain('after');
     other.unmount();
     await flushEffects();
     open('one');
-    const restored = renderFeature(composer('question'));
+    const restored = mountComposer(composer('question'));
     await flushEffects();
     expect(restored.lastFrame()).toContain('[image #1]');
     expect(restored.lastFrame()).toContain('pasted two');
@@ -152,7 +171,7 @@ describe('unsent session composer draft', () => {
 
   it('keeps the draft behind a filled-in command when the session is left', async () => {
     open('one');
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="normal"
@@ -185,7 +204,7 @@ describe('unsent session composer draft', () => {
         onRuntimeCommand={() => {}}
       />
     );
-    const ui = renderFeature(composer());
+    const ui = mountComposer(composer());
     await flushEffects();
     composerDraftStore.requestDocument(document);
     await flushEffects();
@@ -207,7 +226,7 @@ describe('unsent session composer draft', () => {
     expect(readSessionDraft({ projectDir, sessionId: 'one' })).toEqual(kept);
 
     open('one');
-    const restored = renderFeature(composer());
+    const restored = mountComposer(composer());
     await flushEffects();
     expect(restored.lastFrame()).toContain('[image #1]');
     expect(restored.lastFrame()).toContain('/steer stop touching the header');
@@ -216,7 +235,7 @@ describe('unsent session composer draft', () => {
 
   it('keeps only the draft behind a command edited back to its prefill when the session is left', async () => {
     open('one');
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="normal"
@@ -245,7 +264,7 @@ describe('unsent session composer draft', () => {
 
   it('keeps typed edits with their session when switching a mounted composer', async () => {
     open('one');
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="normal"
@@ -282,7 +301,7 @@ describe('unsent session composer draft', () => {
     writeSessionDraft(ref, createDraftDocument('send this'));
     open('one');
     const onSubmit = vi.fn();
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="normal"
@@ -307,7 +326,7 @@ describe('unsent session composer draft', () => {
     writeSessionDraft(ref, createDraftDocument('planner answer'));
     open('one');
     const onSubmit = vi.fn();
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="question"
@@ -333,7 +352,7 @@ describe('unsent session composer draft', () => {
     writeSessionDraft(ref, createDraftDocument('recovery note'));
     open('one');
     const onSubmit = vi.fn();
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="question"
@@ -358,7 +377,7 @@ describe('unsent session composer draft', () => {
     const ref = { projectDir, sessionId: 'one' };
     open('one');
     const onSubmit = vi.fn();
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="normal"
@@ -391,7 +410,7 @@ describe('unsent session composer draft', () => {
       flushSessionDrafts();
       expect(readSessionDraft(ref)).toBeNull();
     });
-    const ui = renderFeature(
+    const ui = mountComposer(
       <Composer
         currentScreen="workflow"
         mode="normal"
@@ -413,7 +432,7 @@ describe('unsent session composer draft', () => {
     chmodSync(dir, 0o555);
     try {
       open('one');
-      const ui = renderFeature(
+      const ui = mountComposer(
         <Composer
           currentScreen="workflow"
           mode="normal"
@@ -452,6 +471,7 @@ describe('an emptied composer over an old draft that cannot be removed', () => {
     chmodSync(dir, 0o555);
   });
   afterEach(() => {
+    unmountComposers();
     chmodSync(dir, 0o755);
     flushSessionDrafts();
     cleanupTempDir(projectDir);
@@ -476,7 +496,7 @@ describe('an emptied composer over an old draft that cannot be removed', () => {
 
   async function emptyTheComposer() {
     open('one');
-    const ui = renderFeature(composer());
+    const ui = mountComposer(composer());
     await flushEffects();
     expect(ui.lastFrame()).toContain('my unsent draft');
     composerDraftStore.requestDocument(createDraftDocument(''));
@@ -494,7 +514,7 @@ describe('an emptied composer over an old draft that cannot be removed', () => {
     expect(draftRefusalStore.get()).toBeNull();
 
     open('one');
-    const reopened = renderFeature(composer());
+    const reopened = mountComposer(composer());
     await flushEffects();
     expect(reopened.lastFrame()).not.toContain('my unsent draft');
     reopened.unmount();
@@ -548,15 +568,13 @@ describe('an emptied composer over an old draft that cannot be removed', () => {
 
 describe('unsent home composer draft', () => {
   let projectDir: string;
-  let mounted: ReturnType<typeof renderFeature>[];
   beforeEach(() => {
-    mounted = [];
     resetAllStores();
     projectDir = createTempDir('home-draft-');
     configStore.__testReset({ projectDir });
   });
   afterEach(() => {
-    for (const ui of mounted) ui.unmount();
+    unmountComposers();
     cleanupTempDir(projectDir);
   });
 
@@ -572,9 +590,7 @@ describe('unsent home composer draft', () => {
   );
 
   function mountHome() {
-    const ui = renderFeature(home());
-    mounted.push(ui);
-    return ui;
+    return mountComposer(home());
   }
 
   async function leaveForRunAndReturn(ui: ReturnType<typeof renderFeature>) {
@@ -612,7 +628,7 @@ describe('unsent home composer draft', () => {
     const ui = mountHome();
     await flushEffects();
     ui.stdin.write('Home draft keep this');
-    await flushEffects();
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('Home draft keep this'));
     composerDraftStore.requestCommand('/crew ');
     await vi.waitFor(() => expect(ui.lastFrame()).toContain('/crew'));
 

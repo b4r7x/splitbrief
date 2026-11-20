@@ -16,9 +16,13 @@
 ### Fixed
 
 - Short recovery panels keep the question in view as you scroll through the actions. Page Up and Page Down let you read a question that spans several screens.
+- The command palette finds abbreviations across words in command descriptions and hides custom actions that name unknown commands.
+- If you skip the last brief and every brief was skipped, the run ends without a final review. The Skip brief row warns you before you choose it.
 - Recovery shows the field that needs attention, names the checkout when a tool writes outside it, and keeps the original reason when you skip a brief.
 - The run screen shows which work stopped and which briefs belong to an earlier plan. Command suggestions cover the action panel, and a run with no changed files offers **Close run**.
-
+- A blocked start keeps your draft and attachments on Home. Press Enter to retry with the current draft or Ctrl+D to read the diagnostic. A blocked Continue keeps the conversation visible.
+- Narrow halt menus keep action names and make room for the reason. The stop menu shows the full pause action at 60 columns.
+- Completion counts hidden entries and highlights every visible line of the selected entry. Each Help shortcut starts on its own row.
 - Setup keeps crew presets reachable on small terminals and lets you choose a remembered crew after a failed refresh. Continue checks the selected seats.
 - The runner picker keeps tool names and sign-in status readable at narrow widths. A refused config edit names the field to remove.
 - Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.

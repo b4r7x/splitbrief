@@ -18,7 +18,6 @@ import { fitRecoveryMenu } from '../prompt-rows/recovery.js';
 import { isCommandDraft } from '../../../core/composer/submission.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { selectTaskListView } from '../../../core/run-view/briefs.js';
 import { haltReadsNoWords } from '../../../core/run-view/halt.js';
 
 interface RecoveryMenuProps {
@@ -39,10 +38,10 @@ export function RecoveryMenu({
   onResolve,
 }: RecoveryMenuProps) {
   const t = useTheme();
-  const briefFinished = runViewStore.use((view) => selectTaskListView(view.briefs).finished > 0);
+  const briefs = runViewStore.use((view) => view.briefs);
   const reviewNone = runViewStore.use((view) => view.reviewNone);
   const stepReadsNone = runViewStore.use(haltReadsNoWords);
-  const actions = recoveryMenuRows(issue, briefFinished, reviewNone);
+  const actions = recoveryMenuRows(issue, briefs, reviewNone);
   const fullLines = planListRows(actions, { width: Math.max(1, width - 4) });
   const initialAction = Math.max(
     0,

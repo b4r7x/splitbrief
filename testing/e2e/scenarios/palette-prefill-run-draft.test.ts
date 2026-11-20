@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { readSessionDraft } from '../../../src/core/sessions/draft.js';
@@ -54,6 +55,15 @@ describe('e2e: a command taken from the palette over a typed run draft', {
   ] as const)('$title when the run is left and reopened', async (step, context) => {
     fixture = createStopContinueFixture(escapingImplementerScript);
     const target = fixture;
+    if (step.command === 'usage') {
+      const { config } = loadConfig(target.projectDir);
+      writeConfig(target.projectDir, {
+        ...config,
+        palette: {
+          customActions: [{ id: 'retired', label: 'Retired billing action', command: '/usage' }],
+        },
+      });
+    }
     const halted = await cli(target, ['start', 'smoke']);
     expect(halted.exitCode, halted.stderr).toBe(1);
     const [sessionId = ''] = readdirSync(sessionsRoot(target.projectDir));
@@ -139,15 +149,22 @@ describe('e2e: a command taken from the palette over a typed run draft', {
           if (step.command === 'usage') {
             child.write('\x0b');
             await shows('Type a command…');
-            child.write('brws');
-            await shows(/brws[▏|]/u);
-            expect.soft(text()).toContain('Browse past sessions');
-            child.write('\x7f'.repeat('brws'.length));
-            await shows('Type a command…');
+            for (const query of ['brws', 'bps', 'brpa']) {
+              child.write(query);
+              await shows(new RegExp(`${query}[▏|]`, 'u'));
+              expect.soft(text(), query).toContain('Browse past sessions');
+              child.write('\x7f'.repeat(query.length));
+              await shows('Type a command…');
+            }
             child.write('usage');
             await shows(/usage[▏|]/u);
             expect.soft(text()).toContain('No matching commands');
             expect.soft(text()).not.toMatch(/▌\s+\/usage\b/u);
+            child.write('\x7f'.repeat('usage'.length));
+            await shows('Type a command…');
+            child.write('Retired billing action');
+            await shows(/Retired billing action[▏|]/u);
+            expect.soft(text()).toContain('No matching commands');
             child.write('\x1b');
             await shows('Type a correction…');
 

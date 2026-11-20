@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { PLAN_CORRECTION_GOES_AGAIN } from '../../../core/recovery/causes.js';
+import { EMPTY_BRIEFS } from '../../../core/run-view/briefs.js';
 import { fitRecoveryMenu, getRecoveryPromptRows } from './recovery.js';
 import { clipPromptBodyRows, countPromptBodyRows, promptBodyRows } from './body.js';
 import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
@@ -47,7 +48,7 @@ describe('getRecoveryPromptRows', () => {
 
 describe('fitRecoveryMenu', () => {
   function fitMenu(issue: ReturnType<typeof makeRecoveryIssue>, width: number, boxRows: number) {
-    const actionLines = planListRows(recoveryMenuRows(issue, false, false), {
+    const actionLines = planListRows(recoveryMenuRows(issue, EMPTY_BRIEFS, false), {
       width: Math.max(1, width - 4),
     });
     return fitRecoveryMenu({ issue, width, boxRows, actionLines });
