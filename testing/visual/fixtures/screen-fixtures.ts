@@ -77,7 +77,7 @@ import {
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { makeConfig } from '../../helpers/factories/config.js';
-import { cliDetectionFor } from '../../helpers/factories/detection.js';
+import { cliDetectionFor, failedDiscoveryResult } from '../../helpers/factories/detection.js';
 import { createTestGitRepo } from '../../helpers/git.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { resetAllStores } from '../../helpers/stores.js';
@@ -519,9 +519,11 @@ export function createSetupFixture(
 ): FixtureLifecycle {
   let restoreFetch: (() => void) | undefined;
   let releaseToolChecks: (() => Promise<void>) | undefined;
+  let focusPreset = false;
   return {
     setup: (context) => {
       setupVisualFixture(context);
+      focusPreset = context.checkpoint.id === 'focused-preset';
       // The first-run panel calls the roll of the tools under check: one answered while its model
       // list still runs, one waiting, one past ten seconds.
       if (state === 'detecting') {
@@ -581,7 +583,10 @@ export function createSetupFixture(
             apiBase: 'http://127.0.0.1:12434/v1',
           },
         };
-        if (state === 'api-override') loadVisualProjectWithoutConfig(overrides);
+        if (state === 'api-override')
+          loadVisualProjectWithoutConfig({
+            implementer: { ...overrides.implementer, tool: 'ollama' },
+          });
         else {
           seedVisualConfig({ implementer: { model: 'custom-coder' } });
           const persisted = configStore.get().diskConfig;
@@ -605,21 +610,7 @@ export function createSetupFixture(
         });
         const request = detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
         if (state === 'cached-failure') {
-          detectionStore.publishLane({
-            request,
-            lane: {
-              lane: 'readiness',
-              outcome: {
-                kind: 'failed',
-                source: 'readiness',
-                contextKey: request.contexts.readiness,
-                generation: 2,
-                requestId: request.id,
-                checkedAt: VISUAL_PUBLISHED_AT,
-                error: { kind: 'request-failed', message: 'Tool discovery failed.' },
-              },
-            },
-          });
+          detectionStore.publish({ request, result: failedDiscoveryResult(request, 2) });
         }
       } else if (state === 'detecting')
         detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
@@ -691,6 +682,11 @@ export function createSetupFixture(
     ...((state === 'saved' || state === 'saved-ignore-rule') && {
       afterMount: async (write) => {
         for (const key of ['\x1b[A', '\x1b[A', '\x1b[A', '\r']) await write.press(key);
+      },
+    }),
+    ...(state === 'signed-out' && {
+      afterMount: async (write) => {
+        if (focusPreset) await write.press('\x1b[H');
       },
     }),
     ...(state === 'unavailable' && {

@@ -44,6 +44,7 @@ export interface LeftRowMeta {
 }
 
 export interface LeftColumnProps<L> {
+  minRowWidth?: number | undefined;
   items: L[];
   label?: string | undefined;
   filterBy?: ((item: L, query: string) => boolean) | undefined;

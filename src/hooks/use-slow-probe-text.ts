@@ -1,3 +1,4 @@
+import { CLI_TOOL_CATALOG } from '../core/runners/cli-tool/catalog.js';
 import { useSyncExternalStore } from 'react';
 import {
   type ProbeActivitySnapshot,
@@ -16,7 +17,7 @@ export function useProbeActivity(): Readonly<{ snapshot: ProbeActivitySnapshot; 
 }
 
 /** The slow check's tool or provider name and the check with its time, kept apart so a short row can cut the name. */
-export type SlowProbeText = Readonly<{ name: string; check: string }>;
+export type SlowProbeText = Readonly<{ name: string; shortName?: string; check: string }>;
 
 /**
  * The check that has run ten seconds or more (`OpenCode CLI`, `sign-in 12s`), else null.
@@ -30,5 +31,9 @@ export function useSlowProbeText(provider?: string): SlowProbeText | null {
       : snapshot.probes.filter((probe) => 'provider' in probe && probe.provider === provider);
   const slowest = slowestProbe(probes, now);
   if (!slowest) return null;
-  return { name: probeSubjectName(slowest), check: probeCheckText(slowest, now) };
+  return {
+    name: probeSubjectName(slowest),
+    ...('tool' in slowest && { shortName: CLI_TOOL_CATALOG[slowest.tool].shortName }),
+    check: probeCheckText(slowest, now),
+  };
 }

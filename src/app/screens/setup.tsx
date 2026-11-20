@@ -61,7 +61,8 @@ function useSetupStep(noConfig: boolean) {
       (source) =>
         source.outcome === 'failed' || (source.outcome === 'stale' && source.error !== null),
     );
-  const effectiveStep = step === 'discovery' && hasRememberedDiscovery && !noConfig ? 'crew' : step;
+  const rememberedCrew = hasRememberedDiscovery && (!noConfig || warmRefreshFailed);
+  const effectiveStep = rememberedCrew ? 'crew' : step;
 
   useEffect(() => {
     if (

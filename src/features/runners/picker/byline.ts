@@ -1,6 +1,6 @@
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
+import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import {
@@ -51,40 +51,6 @@ function laneStatus(lane: CatalogLane): string | undefined {
   return undefined;
 }
 
-/**
- * The byline drops capability words, then the version the tool row already prints, then the clause that qualifies
- * the source, then the provenance itself.
- */
-function fitToolsByline(input: {
-  toolName: string;
-  version: string | undefined;
-  count: string;
-  provenance: string | undefined;
-  trust: string | undefined;
-  capabilities: readonly string[];
-  budget: number;
-}): string {
-  const compose = (kept: number, version: boolean, trust: boolean, provenance: boolean): string =>
-    [
-      input.toolName,
-      version ? input.version : undefined,
-      input.count,
-      provenance ? input.provenance : undefined,
-      provenance && trust ? input.trust : undefined,
-      ...input.capabilities.slice(0, kept),
-    ]
-      .filter((part): part is string => part !== undefined)
-      .join(SOFT_SEP);
-  const rungs: string[] = [];
-  for (let kept = input.capabilities.length; kept >= 0; kept--) {
-    rungs.push(compose(kept, true, true, true));
-  }
-  rungs.push(compose(0, false, true, true));
-  rungs.push(compose(0, false, false, true));
-  const floor = compose(0, false, false, false);
-  return rungs.find((line) => getTerminalCellWidth(line) <= input.budget) ?? floor;
-}
-
 /** The catalog status the byline must show whichever column has focus, or undefined when there is none. */
 export function bylineDiagnostic(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
@@ -104,16 +70,15 @@ export function bylineDiagnostic(input: {
   if (diagnostic.kind !== 'probe-failed' || diagnostic.failure !== 'command-failed') {
     return formatCatalogDiagnostic(diagnostic, input.toolName);
   }
-  let causeCells = getTerminalCellWidth(diagnostic.cause);
-  let fitted = commandFailedCopy(input.toolName, diagnostic.cause);
-  while (causeCells > 0 && wrapOnWords(fitted, input.budget, 2).cut) {
-    causeCells -= 1;
-    fitted = commandFailedCopy(
-      input.toolName,
-      truncateTerminalDisplayText(diagnostic.cause, causeCells),
-    );
+  const words = diagnostic.cause.trim().split(/\s+/u);
+  for (let kept = words.length; kept > 0; kept--) {
+    const cause = words.slice(0, kept).join(' ') + (kept < words.length ? ELLIPSIS : '');
+    const line = commandFailedCopy(input.toolName, cause);
+    const wrapped = wrapOnWords(line, input.budget, 2);
+    if (!wrapped.cut && wrapped.lines.every((row) => getTerminalCellWidth(row) <= input.budget))
+      return line;
   }
-  return fitted;
+  return commandFailedCopy(input.toolName, ELLIPSIS);
 }
 
 /**
@@ -124,10 +89,7 @@ export function formatToolsByline(input: {
   toolName: string;
   version: string | undefined;
   modelCount: number;
-  rowNoun: string;
-  rowNounPlural: string;
-  source: string | undefined;
-  unverifiedForPlan: boolean;
+  toolId: string;
   diagnostic: ModelCatalogDiagnostic | undefined;
   lane: CatalogLane;
   capabilities: readonly string[];
@@ -142,19 +104,14 @@ export function formatToolsByline(input: {
   if (status !== undefined) return status;
 
   const lane = laneStatus(input.lane);
-  const provenance = lane ?? input.source;
-  // The lane status replaces the source, so a lane that is not ready carries no trust clause.
-  const trust =
-    lane === undefined && input.unverifiedForPlan ? 'not verified for your plan' : undefined;
-  return fitToolsByline({
-    toolName: input.toolName,
-    version: input.version,
-    count: countNoun(input.modelCount, input.rowNoun, input.rowNounPlural),
-    provenance,
-    trust,
-    capabilities: input.capabilities,
-    budget: input.budget,
-  });
+  const count = input.toolId === 'claude-code' ? undefined : countNoun(input.modelCount, 'model');
+  const compose = (version: string | undefined, capabilities: readonly string[]) =>
+    [input.toolName, version, count, lane, ...capabilities].filter(Boolean).join(SOFT_SEP);
+  for (let kept = input.capabilities.length; kept >= 0; kept--) {
+    const line = compose(input.version, input.capabilities.slice(0, kept));
+    if (getTerminalCellWidth(line) <= input.budget) return line;
+  }
+  return compose(undefined, []);
 }
 
 /**
@@ -168,9 +125,7 @@ export function formatModelsByline(input: {
   autoRow?: { toolName: string } | undefined;
 }): string {
   if (input.autoRow !== undefined) {
-    return [input.label, 'no --model flag', `${input.autoRow.toolName} runs its own default`].join(
-      SOFT_SEP,
-    );
+    return `${input.autoRow.toolName} chooses the model`;
   }
   const parts = [input.label];
   if (input.id !== '' && input.id !== input.label) parts.push(input.id);

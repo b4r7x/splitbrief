@@ -143,7 +143,7 @@ describe('deriveCliStatus for a tool that stores no credential', () => {
   it.each([
     ['its model list serves only the tool’s own gateway', ['opencode/big-pickle']],
     ['its model list was not read', undefined],
-  ])('reads Auth required when %s', (_case, ids) => {
+  ])('reads Needs sign-in when %s', (_case, ids) => {
     const status = deriveCliStatus(CLI_TOOL_CATALOG.opencode, listing(ids));
 
     expect(status).toEqual({

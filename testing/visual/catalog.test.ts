@@ -193,9 +193,9 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['home-empty', ['120x40', '80x24', '60x18', '41x18', '40x18']],
   ['home-cold-detecting', ['80x40', '120x40']],
   ['home-preparing-slow-long', ['60x18', '68x20', '80x24']],
-  ['home-starting-slow-long', ['60x18', '68x20', '80x24']],
-  ['setup-starting-slow-long', ['60x18', '68x20', '80x24']],
-  ['workflow-continuing-slow-long', ['60x18', '68x20', '80x24']],
+  ['home-starting-slow-long', ['60x18', '68x20', '80x24', '120x40']],
+  ['setup-starting-slow-long', ['60x18', '68x20', '80x24', '120x40']],
+  ['workflow-continuing-slow-long', ['60x18', '68x20', '80x24', '120x40']],
   ['home-preparation-runner-trust', ['120x40', '80x24', '60x18', '42x30', '39x40']],
   ['home-cold-crew', ['120x40', '80x24', '60x18', '200x50']],
   ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
@@ -446,7 +446,7 @@ describe('visual catalog', () => {
   );
 
   it.each([
-    ['overlay-picker-version-timeout-signed-out', 'Auth required', 'Sign in to OpenAI Codex CLI'],
+    ['overlay-picker-version-timeout-signed-out', 'Needs sign-in', 'Sign in to OpenAI Codex CLI'],
     ['overlay-picker-version-timeout-signed-in', 'Unverified', 'Verify OpenAI Codex CLI against'],
   ])('names the next step after a slow version probe in %s', async (id, state, step) => {
     const scenario = findVisualScenario(id);
@@ -480,7 +480,7 @@ describe('visual catalog', () => {
     ['overlay-picker-unread-version', 'Unverified', 'Verify OpenAI Codex CLI against'],
     [
       'overlay-picker-signed-out-stale',
-      'Auth required',
+      'Needs sign-in',
       'Sign in to OpenAI Codex CLI, then ctrl+r.',
     ],
   ])('names the status and the remedy in %s', async (id, state, remedy) => {

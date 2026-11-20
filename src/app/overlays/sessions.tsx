@@ -37,8 +37,6 @@ export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSel
     return () => sessionSelectStore.clearError();
   }, []);
 
-  const hint = selectionError ? selectionError : SESSION_PICKER_HINT;
-
   return (
     <FilterableList
       items={sessions}
@@ -46,7 +44,8 @@ export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSel
       getKey={(session) => session.id}
       onConfirm={(session) => handleSessionSelect(session, projectDir, deps)}
       title={`Sessions${SOFT_SEP}${sessions.length}`}
-      hint={hint}
+      hint={SESSION_PICKER_HINT}
+      notice={selectionError}
       chromeRows={12}
       listFloor={0}
       density="roomy"

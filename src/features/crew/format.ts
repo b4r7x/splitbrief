@@ -44,7 +44,7 @@ function rowLabel(row: CrewRow): string {
 }
 
 export function formatCrewRow(
-  input: Readonly<{ row: CrewRow; layout: SeatBlockLayout }>,
+  input: Readonly<{ row: CrewRow; layout: Pick<SeatBlockLayout, 'identityWidth'> }>,
 ): Readonly<{
   label: string;
   content: string;

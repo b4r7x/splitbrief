@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { CliReadinessState } from '../../../core/discovery/detection/tool.js';
 import type { CrewSeat } from '../../../core/crew/seats.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { unavailableCrewSeats } from '../../../engine/detection/crew.js';
@@ -45,5 +46,15 @@ export function useSeatAvailability(config: Config) {
     return () => controller.abort();
   }, [config, persisted, detection]);
 
-  return { unavailableSeats, canContinue: checked && unavailableSeats.length === 0 };
+  const seatStatuses = new Map<CrewSeat['id'], CliReadinessState>();
+  for (const seat of unavailableSeats) {
+    const runner = seat.runner;
+    const cli =
+      runner?.kind === 'cli' && detection.cliTools.find((tool) => tool.tool === runner.tool);
+    seatStatuses.set(
+      seat.id,
+      cli && cli.diagnostic.state !== 'ready' ? cli.diagnostic.state : 'unavailable',
+    );
+  }
+  return { seatStatuses, canContinue: checked && unavailableSeats.length === 0 };
 }

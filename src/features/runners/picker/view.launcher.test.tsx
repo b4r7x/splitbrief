@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeActions, pickerCatalog, zeroCounts } from '#testing/helpers/runner-picker.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
@@ -31,6 +32,37 @@ describe('PickerView tool filtering', () => {
     forceUnicodeGlyphs();
     terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
     overlayStore.reset();
+  });
+
+  it('fits the full tool name beside its status at 80 columns', async () => {
+    const viewport = { cols: 80, rows: 24 };
+    terminalSizeStore.__testReset(viewport);
+    const items = buildPickerOptions(
+      'planner',
+      assemblePickerDescriptors(),
+      { cliTools: [cliDetectionFor('unavailable', 'antigravity')], providers: [] },
+      undefined,
+    );
+    const catalog = pickerCatalog({
+      items,
+      rightModels: [],
+      currentItem: items[0],
+      selectedItemId: items[0]?.id,
+      roleLabel: 'PLAN',
+      modelCounts: zeroCounts,
+    });
+    const ui = renderFeature(
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
+      viewport,
+    );
+    try {
+      await flushEffects();
+      ui.stdin.write('antigravity');
+      await flushEffects();
+      expect(stripAnsiStyles(ui.lastFrame())).toMatch(/Google Antigravity CLI +Unavailable/u);
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('shows no command launcher or preview before or after filtering tools', async () => {

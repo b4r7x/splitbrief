@@ -1,5 +1,6 @@
 import { planPresetRows } from '../preset-row.js';
 import type { ListLine } from '../../../components/list-row/plan.js';
+import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import type { CrewLabVerdict } from '../../../core/crew/labs.js';
 import type { CrewPreset } from '../../../core/crew/presets.js';
 import type { CrewRow } from '../../../core/crew/rows.js';
@@ -18,19 +19,17 @@ export type SetupItem =
 /**
  * The panel yields in one order until it fits: the cross-lab verdict first (inside
  * `planSeatBlock`), then the section headers, then the blank rows between blocks and under the
- * sign-in step, then the ready-made crews.
+ * sign-in step, then ready-made crew descriptions. The list scrolls when the items exceed the budget.
  */
 const LADDER = [
-  { headers: true, gaps: true, presets: true },
-  { headers: false, gaps: true, presets: true },
-  { headers: false, gaps: false, presets: true },
-  { headers: false, gaps: false, presets: true, compact: true },
-  { headers: false, gaps: false, presets: false },
+  { headers: true, gaps: true },
+  { headers: false, gaps: true },
+  { headers: false, gaps: false },
+  { headers: false, gaps: false, compact: true },
 ] as const;
 
 type SetupListPlan = Readonly<{
   layout: SeatBlockLayout;
-  showPresets: boolean;
   showHeaders: boolean;
   showGaps: boolean;
 }>;
@@ -39,6 +38,7 @@ type SetupListInput = Readonly<{
   crewRows: readonly CrewRow[];
   verdict: CrewLabVerdict | undefined;
   presets: readonly CrewPreset[];
+  focusedPresetId: string | undefined;
   signIn: boolean;
   innerWidth: number;
   budget: number;
@@ -49,7 +49,7 @@ function planStage(
   stage: (typeof LADDER)[number],
   lines: readonly ListLine[],
 ): Readonly<{ plan: SetupListPlan; rows: number }> {
-  const presetRows = stage.presets ? lines.length : 0;
+  const presetRows = lines.length;
   const blocks = presetRows > 0 ? 2 : 1;
   const gaps = blocks + (input.signIn ? 1 : 0);
   const around = presetRows + (stage.headers ? blocks : 0) + (stage.gaps ? gaps : 0) + 1;
@@ -62,7 +62,6 @@ function planStage(
   return {
     plan: {
       layout,
-      showPresets: presetRows > 0,
       showHeaders: stage.headers,
       showGaps: stage.gaps,
     },
@@ -71,12 +70,22 @@ function planStage(
 }
 
 export function planSetupList(input: SetupListInput) {
-  let presetLines = planPresetRows(input.presets, input.innerWidth);
+  const focusedId = input.focusedPresetId;
+  let presetLines = planPresetRows(input.presets, input.innerWidth, { focusedId });
   let staged = planStage(input, LADDER[0], presetLines);
   for (const stage of LADDER.slice(1)) {
     if (staged.rows <= input.budget) return { ...staged.plan, presetLines };
-    if ('compact' in stage) presetLines = planPresetRows(input.presets, input.innerWidth, true);
+    if ('compact' in stage) {
+      presetLines = planPresetRows(input.presets, input.innerWidth, { focusedId, compact: true });
+    }
     staged = planStage(input, stage, presetLines);
+  }
+  if (staged.rows > input.budget) {
+    presetLines = planPresetRows(
+      input.presets,
+      getScrollViewportContentWidth(input.innerWidth, 'padding'),
+      { focusedId, compact: true },
+    );
   }
   return { ...staged.plan, presetLines };
 }

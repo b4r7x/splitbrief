@@ -4,7 +4,7 @@ import type { PickerOption } from '../model-catalog/options.js';
 import { planModelRows } from '../model-catalog/row-plan.js';
 import type { RightRow } from '../model-catalog/types.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { formatPickerStatusLabel } from './labels.js';
+import { formatPickerStatusLabel } from '../../../core/readiness/cli-remediation.js';
 import { rowPlansFor } from './row-plans.js';
 
 function tool(id: string, displayName: string, status: PickerOption['status']): PickerOption {

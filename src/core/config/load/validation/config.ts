@@ -1,3 +1,5 @@
+import { outputFormatConflict } from '../../errors.js';
+import { CLI_TOOL_CATALOG } from '../../../runners/cli-tool/catalog.js';
 import type { z } from 'zod';
 import { ConfigSchema } from '../../../schemas/config.js';
 import { REMOVED_RUNNER_KINDS } from '../../../schemas/runner/fields.js';
@@ -99,7 +101,7 @@ function outputFormatConflictError(path: string, block: unknown): ConfigError | 
   if (!includes(STRUCTURED_TERMINAL_TOOL_IDS, runner.tool)) return undefined;
   return {
     path: `${path}.outputFormat`,
-    message: `Configured outputFormat cannot replace the ${runner.tool} terminal contract; the backend's native parser and terminal protocol stay authoritative.`,
+    message: outputFormatConflict(CLI_TOOL_CATALOG[runner.tool].displayName, path),
   };
 }
 

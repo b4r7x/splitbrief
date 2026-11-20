@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { makeCtx } from '#testing/helpers/runtime-commands.js';
+import { viewCommands } from '../runtime/commands/defs/view.js';
 import type { Screen } from '../navigation/types.js';
 import { getShortcutsForScreen } from './registry.js';
 
@@ -75,11 +77,13 @@ describe('workflow scroll shortcut', () => {
     });
   });
 
-  it('advertises activity expansion by its key chord', () => {
+  it('describes the activity toggle in Help with the command description', () => {
+    const command = viewCommands(makeCtx({})).find((entry) => entry.name === '/activity');
+    expect(command?.description).toMatch(/expand or collapse/iu);
     const activity = getShortcutsForScreen('workflow').find((s) => s.id === 'activity');
     expect(activity).toMatchObject({
       key: 'ctrl+a',
-      description: 'Expand the last folded rows',
+      description: command?.description,
     });
     expect(activity?.key).not.toContain('Alt+A');
   });

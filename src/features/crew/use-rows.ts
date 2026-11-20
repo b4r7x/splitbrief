@@ -25,20 +25,27 @@ export function useCrew(): Crew {
   const displayNames = useCrewDisplayNames(config);
   const rows = deriveCrewRows({ config, displayNames });
 
+  const presets = computeCrewPresets({
+    config,
+    detection: {
+      cliTools,
+      providers: [],
+      cliCatalog: (tool) => modelCacheStore.getCliCatalogRuntime({ tool }),
+    },
+  });
+  const relevant = new Set([
+    ...rows.flatMap(({ seat }) => (seat.runner?.kind === 'cli' ? [seat.runner.tool] : [])),
+    ...presets.flatMap((preset) => preset.notReady),
+  ]);
+
   return {
     rows,
     verdict: crewVerdict(rows),
-    presets: computeCrewPresets({
-      config,
-      detection: {
-        cliTools,
-        providers: [],
-        cliCatalog: (tool) => modelCacheStore.getCliCatalogRuntime({ tool }),
-      },
-    }),
+    presets,
     signedOut: cliTools
       .filter(
         (detection) =>
+          relevant.has(detection.tool) &&
           detection.diagnostic.state === 'unauthenticated' &&
           servedProviders({
             tool: detection.tool,

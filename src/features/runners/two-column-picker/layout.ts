@@ -12,14 +12,20 @@ const HEAD_GAP = 2;
 const VISIBLE_ROWS_CAP = 18;
 
 export function pickerLayout(input: {
+  minRowWidth?: number | undefined;
   cols: number;
   rows: number;
   title: string;
   stepLabel: string | undefined;
 }) {
   const { cols, rows, title, stepLabel } = input;
-  const singlePane = cols < 80;
   const totalBoxWidth = overlayWidth({ cols, density: 'wide' });
+  const splitWidth = Math.floor((totalBoxWidth - COLUMN_GAP) / 2);
+  // Each list reserves two cells for the scrollbar, in addition to the panel padding.
+  const singlePane =
+    input.minRowWidth === undefined
+      ? cols < 80
+      : splitWidth - INNER_PADDING - 2 < input.minRowWidth;
   // The columns reserve every wrapped label row so the header stays inside the viewport.
   const headStacked =
     stepLabel !== undefined &&
@@ -39,7 +45,7 @@ export function pickerLayout(input: {
   );
   const columnHeight = maxVisible + INNER_CHROME_ROWS;
   // The odd cell goes to the Models column, which carries the longer strings.
-  const leftBoxWidth = singlePane ? totalBoxWidth : Math.floor((totalBoxWidth - COLUMN_GAP) / 2);
+  const leftBoxWidth = singlePane ? totalBoxWidth : splitWidth;
   const rightBoxWidth = singlePane ? totalBoxWidth : totalBoxWidth - COLUMN_GAP - leftBoxWidth;
   const leftContentWidth = Math.max(1, leftBoxWidth - INNER_PADDING);
   const rightContentWidth = Math.max(1, rightBoxWidth - INNER_PADDING);

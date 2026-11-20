@@ -1,7 +1,7 @@
 import { workflowFixtureRegistry } from './fixtures/workflow/registry.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/ink.js';
@@ -11,6 +11,7 @@ import { ConfigSchema } from '../../src/core/schemas/config.js';
 import { ModelsDevCatalogSchema } from '../../src/core/schemas/models-dev.js';
 import { resolveModelCatalog } from '../../src/engine/providers/model/catalog.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
+import { configStore } from '../../src/stores/project/config.js';
 import { detectionStore } from '../../src/stores/discovery/detection.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
@@ -142,6 +143,46 @@ describe('visual screen and overlay fixtures', () => {
         expect(frame).toContain(label);
       }
       expect(frame.split('\n').length).toBeLessThanOrEqual(size.rows);
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('shows the refused Settings save from the actual edit in the error scenario', async () => {
+    const save = vi.spyOn(configStore, 'save');
+    try {
+      const handle = await mountGalleryScenario(fixtureContext('overlay-settings-error-path'));
+      try {
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+        expect(save).toHaveBeenCalled();
+        await expect(save.mock.results.at(-1)?.value).resolves.toMatchObject({ ok: false });
+        expect(frame).toContain('Settings');
+        expect(frame).toMatch(/failed to save config|config changed on disk/iu);
+      } finally {
+        await handle.unmount();
+      }
+    } finally {
+      save.mockRestore();
+    }
+  });
+
+  it('shows the API provider and model together in the endpoint override scenario', async () => {
+    const context = fixtureContext('setup-api-endpoint-override');
+    const handle = await mountGalleryScenario({
+      ...context,
+      viewport: viewport({ cols: 120, rows: 40 }),
+    });
+    try {
+      const frame = stripAnsiStyles(handle.lastFrame() ?? '');
+      expect(configStore.get().config?.implementer).toMatchObject({
+        kind: 'api',
+        provider: 'ollama',
+        model: 'custom-coder',
+        apiBase: 'http://127.0.0.1:12434/v1',
+      });
+      expect(frame.split('\n').find((line) => line.includes('BUILD'))).toMatch(
+        /Ollama.*Custom Coder/iu,
+      );
     } finally {
       await handle.unmount();
     }

@@ -8,7 +8,7 @@ import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import { routeNoCredential, routeSignInCommand } from '../../../core/runners/route-auth.js';
 import type { PickerSlot, SeatPickerRole } from '../../../core/runners/seat-roles.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { assertNever } from '../../../utils/type-guards.js';
+import { formatPickerStatusLabel } from '../../../core/readiness/cli-remediation.js';
 import type { PickerOption } from '../model-catalog/options.js';
 import type { RunnerPermissionPosture } from '../model-catalog/posture.js';
 import type { PickerOptionStatus } from '../model-catalog/status.js';
@@ -48,27 +48,6 @@ export function isPickerItemDisabled(item: PickerOption): boolean {
     return false;
   }
   return !item.available;
-}
-
-export function formatPickerStatusLabel(status: PickerOptionStatus): string | undefined {
-  switch (status.state) {
-    case 'ready':
-      return undefined;
-    case 'unavailable':
-      return 'Unavailable';
-    case 'unauthenticated':
-      return 'Auth required';
-    case 'incompatible':
-      return 'Incompatible';
-    case 'untrusted':
-      return 'Untrusted';
-    case 'unverified':
-      return 'Unverified';
-    case 'disabled':
-      return 'Disabled';
-    default:
-      return assertNever(status);
-  }
 }
 
 export function notReadyPane(input: {

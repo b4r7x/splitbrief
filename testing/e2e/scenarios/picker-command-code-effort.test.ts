@@ -355,7 +355,7 @@ process.exit(1);`,
   });
 });
 
-describe('e2e: a click on a tool that reads Auth required keeps the seat', {
+describe('e2e: a click on a tool that reads Needs sign-in keeps the seat', {
   timeout: 120_000,
 }, () => {
   it('saves nothing on ⏎ after the click, and ↓ moves the tool cursor', async (context) => {
@@ -364,7 +364,7 @@ describe('e2e: a click on a tool that reads Auth required keeps the seat', {
       prefix: 'picker-click-not-ready',
       steps: async (screen, projectDir) => {
         await screen.shows('GPT-6-Luna', 30_000);
-        await screen.shows(/Command Code CLI +Auth required/);
+        await screen.shows(/Command Code CLI +Needs sign-in/);
         const configPath = join(projectDir, '.splitbrief', 'config.yaml');
         const before = YAML.parse(readFileSync(configPath, 'utf8')).implementer;
         const lines = screen.text().split('\n');

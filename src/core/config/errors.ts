@@ -37,6 +37,10 @@ function stringifyRedacted(value: unknown): string {
   return json ?? String(value);
 }
 
+export function outputFormatConflict(toolName: string, block: string): string {
+  return `${toolName} rejects outputFormat, so remove it from ${block}.`;
+}
+
 export const configError = {
   invalidYaml: (path: string, cause: unknown) =>
     error(

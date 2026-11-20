@@ -2,7 +2,7 @@ import { wholeWordLabelForms } from '../../../components/list-row/fit.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import type { PickerOption } from '../model-catalog/options.js';
 import { type ModelRowPlan, planModelRows } from '../model-catalog/row-plan.js';
-import { formatPickerStatusLabel } from './labels.js';
+import { formatPickerStatusLabel } from '../../../core/readiness/cli-remediation.js';
 import type { PickerCatalog } from './use-catalog.js';
 
 /** What a tool row spends beside its name and its word: the lead and the check column. */
@@ -32,6 +32,16 @@ export function rowPlansFor(catalog: Pick<PickerCatalog, 'items' | 'rightRows' |
   let rowPlan: ModelRowPlan | undefined;
   let statusPlan: { width: number; fits: boolean } | undefined;
   return {
+    toolRowWidth: Math.max(
+      0,
+      ...catalog.items.map((item) => {
+        const status = formatPickerStatusLabel(item.status);
+        return (
+          TOOL_ROW_CHROME +
+          getTerminalCellWidth(status ? `${item.displayName} ${status}` : item.displayName)
+        );
+      }),
+    ),
     rowPlanAt: (width: number): ModelRowPlan => {
       if (rowPlan?.width !== width)
         rowPlan = planModelRows({

@@ -9,6 +9,8 @@ interface ShortcutInfo {
   inputModes?: readonly InputMode[] | undefined;
 }
 
+export const ACTIVITY_DESCRIPTION = 'Expand or collapse the last folded rows';
+
 const SHORTCUTS: ShortcutInfo[] = [
   {
     id: 'exit',
@@ -64,7 +66,7 @@ const SHORTCUTS: ShortcutInfo[] = [
   {
     id: 'activity',
     key: 'ctrl+a',
-    description: 'Expand the last folded rows',
+    description: ACTIVITY_DESCRIPTION,
     screens: ['workflow'],
   },
 ];

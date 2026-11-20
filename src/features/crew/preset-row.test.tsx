@@ -30,7 +30,11 @@ async function frameFor(
   preset: CrewPreset = PRESET,
 ): Promise<string> {
   const ui = renderFeature(
-    <PresetRowView lines={planPresetRows([preset], width)} isCursor={isCursor} width={width} />,
+    <PresetRowView
+      lines={planPresetRows([preset], width, { focusedId: isCursor ? preset.id : undefined })}
+      isCursor={isCursor}
+      width={width}
+    />,
     { cols, rows: 24 },
   );
   await flushEffects();
@@ -95,14 +99,23 @@ describe('crew preset row', () => {
     expect(plain).not.toContain('·');
   });
 
+  it('shows the tools a focused unavailable preset needs on a second narrow row', async () => {
+    const preset = { ...PRESET, notReady: ['claude-code', 'codex'] } satisfies CrewPreset;
+    const [label, reason] = stripAnsiStyles(await frameFor(50, 60, true, preset)).split('\n');
+
+    expect(label).toContain(PRESET.label);
+    expect(label).toContain('Unavailable');
+    expect(reason?.trim()).toMatch(/^needs Claude Code CLI, OpenAI Codex CLI$/iu);
+    expect(label).not.toMatch(/need|…/u);
+  });
+
   it('names the tools an unavailable crew needs in place of its description', async () => {
     const frame = await frameFor(102, 120, true, { ...PRESET, notReady: ['claude-code', 'codex'] });
-    const line = stripAnsiStyles(frame).split('\n')[0] ?? '';
+    const [label, reason] = stripAnsiStyles(frame).split('\n');
 
-    expect(line).toContain(
-      `${PRESET.label}  Unavailable · needs Claude Code CLI, OpenAI Codex CLI`,
-    );
-    expect(line).not.toContain(DESCRIPTION);
+    expect(label).toContain(`${PRESET.label}  Unavailable`);
+    expect(reason?.trim()).toBe('needs Claude Code CLI, OpenAI Codex CLI');
+    expect(frame).not.toContain(DESCRIPTION);
   });
 
   it('keeps the gutter and caps the name when the description moves below it', async () => {

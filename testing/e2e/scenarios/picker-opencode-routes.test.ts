@@ -229,6 +229,37 @@ async function addCustomModel(screen: Screen): Promise<void> {
 }
 
 describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () => {
+  it('shows full tool names and their status in the 80-column picker', async (context) => {
+    await withOpencodeHome(
+      'picker-full-tool-name',
+      {
+        signedIn: { id: 'deepseek', name: 'DeepSeek' },
+        served: { id: 'deepseek-flash', providerID: 'deepseek' },
+        buildModel: 'deepseek/deepseek-flash',
+      },
+      async (screen) => {
+        screen.write('/crew build');
+        await screen.shows('/crew build');
+        screen.write('\r');
+        await screen.shows('BUILD · tool, model, effort');
+        screen.write('\x1b[D');
+        await screen.shows(/▌ OpenCode CLI/u);
+        screen.write('antigravity');
+        await screen.shows(/› antigravity/u);
+        await screen.shows(/▌ Google/u);
+        const tool = screen
+          .text()
+          .split('\n')
+          .find((row) => row.includes('▌ Google'));
+        expect(tool).toMatch(
+          /▌ Google Antigravity CLI +(?:Unavailable|Unverified|Incompatible|Untrusted|Disabled|Needs sign-in)\b/u,
+        );
+      },
+      (reason) => context.skip(reason),
+      { cols: 80, rows: 24 },
+    );
+  });
+
   it('uses the completion background inside Settings and fills its active row', async (context) => {
     await withOpencodeHome(
       'settings-overlay-color',
@@ -295,7 +326,7 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
         await screen.shows('› deepseek');
         expect(screen.text()).not.toContain('› opencode');
 
-        screen.resize(80, 24);
+        screen.resize(120, 24);
         await screen.shows(columns);
         const filters = screen
           .text()
@@ -304,7 +335,7 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
         expect(filters).toContain('  opencode');
         expect(filters).not.toContain('› opencode');
         expect(screen.text()).toMatch(/▌ DeepSeek V4\.1 Flash/);
-        screen.resize(79, 24);
+        screen.resize(80, 24);
         await vi.waitFor(() => {
           expect(screen.text()).not.toMatch(columns);
           expect(screen.text()).toContain('› deepseek');
@@ -316,7 +347,7 @@ describe('e2e: the BUILD picker on an OpenCode seat', { timeout: 120_000 }, () =
         expect(readFileSync(path, 'utf8')).toBe(before);
       },
       (reason) => context.skip(reason),
-      { cols: 79, rows: 24 },
+      { cols: 80, rows: 24 },
     );
   });
 

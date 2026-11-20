@@ -1,31 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { customModelEntryCopy, pickerListingSource } from './listing-source.js';
+import { customModelEntryCopy } from './listing-source.js';
 import type { ModelOption } from '../model-catalog/recency.js';
 import type { RightRow } from '../model-catalog/types.js';
-
-describe('pickerListingSource', () => {
-  it('names the listing each tool really has', () => {
-    expect(pickerListingSource('copilot')).toEqual({
-      source: 'from copilot help config',
-      rowNoun: 'model',
-      rowNounPlural: 'models',
-      unverifiedForPlan: true,
-    });
-    expect(pickerListingSource('claude-code').rowNounPlural).toBe('aliases');
-    expect(pickerListingSource('claude-code').source).not.toContain('--help');
-    expect(pickerListingSource('cursor').unverifiedForPlan).toBe(false);
-    expect(pickerListingSource('opencode').unverifiedForPlan).toBe(false);
-    expect(pickerListingSource('kilo-code').unverifiedForPlan).toBe(false);
-    expect(pickerListingSource('codex').unverifiedForPlan).toBe(false);
-    expect(pickerListingSource('anthropic')).toEqual({
-      source: 'from models.dev',
-      rowNoun: 'model',
-      rowNounPlural: 'models',
-      unverifiedForPlan: true,
-    });
-    expect(pickerListingSource(undefined)).toEqual(pickerListingSource('anthropic'));
-  });
-});
 
 describe('customModelEntryCopy', () => {
   const listed = (

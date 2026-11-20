@@ -6,7 +6,6 @@ import {
   modelBylineAxes,
   wrapOnWords,
 } from './byline.js';
-import { pickerListingSource } from './listing-source.js';
 import { formatCatalogDiagnostic, type ModelCatalogDiagnostic } from './catalog-guidance.js';
 import { formatPermissionLabels } from './labels.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -51,10 +50,7 @@ describe('formatToolsByline', () => {
       toolName: 'GitHub Copilot CLI',
       version: '1.0.77',
       modelCount: 24,
-      rowNoun: 'model',
-      rowNounPlural: 'models',
-      source: 'from copilot help config',
-      unverifiedForPlan: true,
+      toolId: 'copilot',
       diagnostic: undefined,
       lane: 'ready',
       capabilities: ['network', 'shell'],
@@ -81,6 +77,25 @@ describe('formatToolsByline', () => {
     expect(wrapOnWords(line, budget, 2).cut).toBe(false);
   });
 
+  it('cuts the reported cause at a word boundary and keeps the retry key', () => {
+    const cause =
+      'Server returned an unexpected health response while listing the available models';
+    for (const budget of [50, 51, 52, 53, 54, 55, 56]) {
+      const line = byline({
+        toolName: 'OpenCode CLI',
+        diagnostic: { kind: 'probe-failed', failure: 'command-failed', cause },
+        budget,
+      });
+      const prefix = 'OpenCode CLI could not list models: ';
+      expect(line).toContain(prefix + 'Server');
+      expect(line).toContain('ctrl+r to retry');
+      const shown = line.slice(prefix.length).split(SOFT_SEP)[0]?.replace(/…$/u, '').trimEnd();
+      expect(shown).toBeTruthy();
+      expect(cause.startsWith(`${shown} `), line).toBe(true);
+      expect(wrapOnWords(line, budget, 2).cut).toBe(false);
+    }
+  });
+
   it('names an earlier listing and its refresh key for a ready tool', () => {
     expect(
       byline({
@@ -95,12 +110,6 @@ describe('formatToolsByline', () => {
     const single = byline({ modelCount: 1 });
     expect(single).toContain('1 model');
     expect(single).not.toContain('1 models');
-    expect(byline({ modelCount: 1, rowNoun: 'alias', rowNounPlural: 'aliases' })).toContain(
-      '1 alias',
-    );
-    expect(byline({ modelCount: 9, rowNoun: 'alias', rowNounPlural: 'aliases' })).toContain(
-      '9 aliases',
-    );
   });
 
   it('shows the catalog status whichever column has focus', () => {
@@ -160,10 +169,9 @@ describe('formatToolsByline', () => {
     },
   );
 
-  it('carries the source phrase and the row noun ahead of the capability words', () => {
+  it('puts the model count before the capabilities', () => {
     const parts = segments(byline());
     expect(parts).toContain('24 models');
-    expect(parts.some((s) => s.startsWith('from copilot help config'))).toBe(true);
     expect(parts.indexOf('24 models')).toBeLessThan(parts.indexOf('network'));
   });
 
@@ -198,19 +206,15 @@ describe('formatToolsByline', () => {
     );
   });
 
-  it('keeps the source phrase for an alias lane whose confirmed count is always zero', () => {
+  it('omits a count for the Claude alias list', () => {
     const line = byline({
       toolName: 'Claude Code CLI',
       version: '2.1.265',
       modelCount: 9,
-      rowNoun: 'aliases',
-      rowNounPlural: 'aliases',
-      source: "from Claude's documented aliases",
-      unverifiedForPlan: false,
+      toolId: 'claude-code',
       diagnostic: { kind: 'unsupported' },
     });
-    expect(line).toContain('9 aliases');
-    expect(line).toContain("from Claude's documented aliases");
+    expect(line).not.toMatch(/9 (?:aliases|models)/u);
     expect(line).not.toContain('does not support model listing');
   });
 
@@ -224,15 +228,9 @@ describe('formatToolsByline', () => {
     expect(surviving).toEqual(['network', 'shell']);
   });
 
-  it('attaches the trust clause to the source phrase', () => {
-    expect(byline()).toContain('from copilot help config · not verified for your plan');
-    expect(byline({ unverifiedForPlan: false })).not.toContain('not verified');
-  });
-
-  it('replaces the source segment with the catalog lane', () => {
+  it('shows pending and failed catalog status', () => {
     const pending = byline({ lane: 'pending' });
     expect(pending).toContain('Loading models…');
-    expect(pending).not.toContain('from copilot help config');
     expect(pending).toContain('24 models');
 
     const failed = byline({ lane: 'failed' });
@@ -245,17 +243,14 @@ describe('formatToolsByline', () => {
     expect(byline({ version: undefined })).not.toContain('1.0.77');
   });
 
-  it('keeps the source phrase and drops the version before it', () => {
-    const withoutVersion = 'Claude Code CLI · 10 aliases · Loading models…';
+  it('drops the version before the loading message', () => {
+    const withoutVersion = 'Claude Code CLI · Loading models…';
     const budget = getTerminalCellWidth(withoutVersion);
     const line = formatToolsByline({
       toolName: 'Claude Code CLI',
       version: '2.0.0',
       modelCount: 10,
-      rowNoun: 'alias',
-      rowNounPlural: 'aliases',
-      source: "from Claude's documented aliases",
-      unverifiedForPlan: false,
+      toolId: 'claude-code',
       diagnostic: undefined,
       lane: 'pending',
       capabilities: ['network', 'shell'],
@@ -271,15 +266,11 @@ describe('formatToolsByline', () => {
     const budget = overlayWidth({ cols: 120, density: 'wide' });
     for (const tool of ['claude-code', 'codex'] as const) {
       const descriptor = CLI_TOOL_CATALOG[tool];
-      const listing = pickerListingSource(tool);
       const line = formatToolsByline({
         toolName: descriptor.displayName,
         version: '2.0.0',
         modelCount: 9,
-        rowNoun: listing.rowNoun,
-        rowNounPlural: listing.rowNounPlural,
-        source: listing.source,
-        unverifiedForPlan: listing.unverifiedForPlan,
+        toolId: tool,
         diagnostic: undefined,
         lane: 'ready',
         capabilities: formatPermissionLabels(cliPermissions(descriptor, 'implementer')),
@@ -314,7 +305,7 @@ describe('formatModelsByline', () => {
     ).toBe('GPT-5.5 · openai/gpt-5.5');
   });
 
-  it('names the tool on the Auto row', () => {
+  it('describes the automatic model choice in one clause', () => {
     expect(
       formatModelsByline({
         label: 'Auto',
@@ -322,7 +313,7 @@ describe('formatModelsByline', () => {
         axes: [],
         autoRow: { toolName: 'Cursor Agent CLI' },
       }),
-    ).toBe('Auto · no --model flag · Cursor Agent CLI runs its own default');
+    ).toBe('Cursor Agent CLI chooses the model');
   });
 });
 

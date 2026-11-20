@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import {
-  fallbackInheritanceNotice,
-  formatPermissionLabels,
-  formatPickerStatusLabel,
-  notReadyPane,
-} from './labels.js';
+import { fallbackInheritanceNotice, formatPermissionLabels, notReadyPane } from './labels.js';
 import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
-import { cliReadinessRemediation } from '../../../core/readiness/cli-remediation.js';
+import {
+  cliReadinessRemediation,
+  formatPickerStatusLabel,
+} from '../../../core/readiness/cli-remediation.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { PickerOptionStatus } from '../model-catalog/status.js';
 
@@ -41,6 +39,12 @@ const codexFacts = {
   testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
   compatibility: 'compatible',
 } as const;
+
+it('labels a signed-out picker tool with the step it needs', () => {
+  expect(formatPickerStatusLabel({ state: 'unauthenticated', remediation: 'Sign in.' })).toBe(
+    'Needs sign-in',
+  );
+});
 
 describe('notReadyPane', () => {
   const savedRunner: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5.4' };

@@ -6,6 +6,7 @@ import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
+import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import {
   CREW_COLUMN_GAP,
   CREW_IDENTITY_COLUMN,
@@ -24,14 +25,19 @@ function seatHue(theme: Theme, row: CrewRow): string | undefined {
 
 export type CrewRowViewProps = Readonly<{
   row: CrewRow;
-  layout: SeatBlockLayout;
+  layout: Pick<SeatBlockLayout, 'identityWidth'>;
   isCursor: boolean;
+  status?: string | undefined;
 }>;
 
-export function CrewRowView({ row, layout, isCursor }: CrewRowViewProps) {
+export function CrewRowView({ row, layout, isCursor, status }: CrewRowViewProps) {
   const t = useTheme();
-  const formatted = formatCrewRow({ row, layout });
   const width = CREW_IDENTITY_COLUMN + layout.identityWidth;
+  const statusWidth = status ? getTerminalCellWidth(CREW_COLUMN_GAP + status) : 0;
+  const formatted = formatCrewRow({
+    row,
+    layout: { identityWidth: layout.identityWidth - statusWidth },
+  });
   const identity = `${CREW_COLUMN_GAP}${formatted.content}`;
   const [line] = planListRows(
     [
@@ -41,6 +47,8 @@ export function CrewRowView({ row, layout, isCursor }: CrewRowViewProps) {
           { text: formatted.label, color: seatHue(t, row), bold: true },
           { text: identity, color: t.text },
         ],
+        trailing: status,
+        trailingParts: status ? [{ text: status, tone: 'warning' }] : undefined,
       },
     ],
     { width },

@@ -1,10 +1,10 @@
-import { Box } from 'ink';
-import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { useTheme } from '../../../components/theme.js';
+import { formatPickerStatusLabel } from '../../../core/readiness/cli-remediation.js';
+import type { CliReadinessState } from '../../../core/discovery/detection/tool.js';
 import type { CrewSeat } from '../../../core/crew/seats.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { CREW_IDENTITY_COLUMN, type SeatBlockLayout } from '../format.js';
+import { CREW_IDENTITY_COLUMN } from '../format.js';
 import { PresetRowView } from '../preset-row.js';
 import { CrewRowView } from '../row-view.js';
 import { planListRows, type ListLine } from '../../../components/list-row/plan.js';
@@ -15,9 +15,8 @@ type SetupItemRowProps = Readonly<{
   item: SetupItem;
   isCursor: boolean;
   width: number;
-  layout: SeatBlockLayout;
   presetLines: readonly ListLine[];
-  unavailableSeats: readonly CrewSeat[];
+  seatStatuses: ReadonlyMap<CrewSeat['id'], CliReadinessState>;
   canContinue: boolean;
 }>;
 
@@ -25,36 +24,23 @@ export function SetupItemRow({
   item,
   isCursor,
   width,
-  layout,
   presetLines,
-  unavailableSeats,
+  seatStatuses,
   canContinue,
 }: SetupItemRowProps) {
   const t = useTheme();
   switch (item.kind) {
     case 'preset':
       return <PresetRowView lines={presetLines} isCursor={isCursor} width={width} />;
-    case 'crew': {
-      const unavailable = unavailableSeats.some((seat) => seat.id === item.row.id);
-      const availabilityWidth = unavailable ? getTerminalCellWidth('  Unavailable') : 0;
+    case 'crew':
       return (
-        <Box>
-          <CrewRowView
-            row={item.row}
-            layout={
-              unavailable
-                ? {
-                    ...layout,
-                    identityWidth: width - availabilityWidth - CREW_IDENTITY_COLUMN,
-                  }
-                : layout
-            }
-            isCursor={isCursor}
-          />
-          {unavailable && <Text color={t.warning}>{'  Unavailable'}</Text>}
-        </Box>
+        <CrewRowView
+          row={item.row}
+          layout={{ identityWidth: width - CREW_IDENTITY_COLUMN }}
+          isCursor={isCursor}
+          status={formatPickerStatusLabel({ state: seatStatuses.get(item.row.id) ?? 'ready' })}
+        />
       );
-    }
     case 'continue': {
       const name = 'Continue' + (canContinue ? '' : SOFT_SEP + 'choose ready seats');
       const [line] = planListRows(

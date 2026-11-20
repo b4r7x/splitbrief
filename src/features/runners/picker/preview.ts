@@ -22,7 +22,6 @@ import {
   bylineDiagnostic,
 } from './byline.js';
 import { CUSTOM_COMMAND_PANE_LINES, notReadyPane, formatPermissionLabels } from './labels.js';
-import { pickerListingSource } from './listing-source.js';
 import { formatRouteRemedy } from './route-auth.js';
 import type { PickerCatalog } from './use-catalog.js';
 
@@ -66,10 +65,8 @@ export function terminalPaneFor(
       verb: 'confirm',
       lines: [
         'No seat reviews the run.',
-        'Each brief runs its own',
-        'checks. No end-of-run',
-        'check and no render',
-        'check run.',
+        'Each brief runs its own checks.',
+        'No end-of-run check and no render check run.',
       ],
     };
   }
@@ -78,8 +75,7 @@ export function terminalPaneFor(
       label: PLANNER_INHERITANCE.mark,
       verb: 'confirm',
       lines: [
-        'Review uses the same',
-        'tool and model:',
+        'Review uses the same tool and model:',
         { whole: catalog.plannerIdentity },
         { whole: formatPermissionLabels(item.permissions).join(SOFT_SEP) },
         '',
@@ -167,15 +163,11 @@ export function resolvePreview(
     stale === undefined ? 0 : getTerminalCellWidth(stale) + getTerminalCellWidth(SOFT_SEP);
 
   const toolsByline = (): string => {
-    const listing = pickerListingSource(toolId);
     return formatToolsByline({
       toolName: tool.displayName,
       version: tool.version,
       modelCount: catalog.modelRowCount,
-      rowNoun: listing.rowNoun,
-      rowNounPlural: listing.rowNounPlural,
-      source: listing.source,
-      unverifiedForPlan: listing.unverifiedForPlan,
+      toolId: tool.id,
       diagnostic: catalog.catalogDiagnostic,
       lane: catalog.catalogLane,
       capabilities: formatPermissionLabels(tool.permissions),

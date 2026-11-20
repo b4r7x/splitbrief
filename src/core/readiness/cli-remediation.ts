@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import type { CliReadinessStateSchema } from '../discovery/detection/tool.js';
+import type { CliReadinessState, CliReadinessStateSchema } from '../discovery/detection/tool.js';
 import {
   cliAuthChannelPlatformSupported,
   cliAuthChannelHostStateAccess,
@@ -12,6 +12,20 @@ import {
   deriveCliReadinessStatus,
   cliReadinessCheckId,
 } from '../schemas/readiness.js';
+
+const STATUS_LABELS: Readonly<Record<CliReadinessState, string | undefined>> = {
+  ready: undefined,
+  unavailable: 'Unavailable',
+  unauthenticated: 'Needs sign-in',
+  incompatible: 'Incompatible',
+  untrusted: 'Untrusted',
+  unverified: 'Unverified',
+  disabled: 'Disabled',
+};
+
+export function formatPickerStatusLabel<T extends { state: CliReadinessState }>(status: T) {
+  return STATUS_LABELS[status.state];
+}
 
 const PLATFORM_NAMES: Readonly<Record<string, string>> = {
   darwin: 'macOS',

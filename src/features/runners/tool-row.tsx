@@ -6,7 +6,7 @@ import type { PickerOption } from './model-catalog/options.js';
 import type { RightRow, TreeLead } from './model-catalog/types.js';
 import type { ModelRowPlan } from './model-catalog/row-plan.js';
 import { formatRouteAuth } from './picker/route-auth.js';
-import { formatPickerStatusLabel } from './picker/labels.js';
+import { formatPickerStatusLabel } from '../../core/readiness/cli-remediation.js';
 import { isExpandableRow, type RouteAuthContext } from './right-column/policy.js';
 
 interface ToolRowParams {

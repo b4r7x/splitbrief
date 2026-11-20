@@ -5,7 +5,6 @@ import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import type { SkillMeta } from '../../core/skills/types.js';
-import { GLOBAL_SKILL_SCAN_PATHS, PROJECT_SKILL_SCAN_PATHS } from '../../core/skills/scan-paths.js';
 import { skillsStore } from '../../stores/project/skills.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';
@@ -36,6 +35,23 @@ describe('SkillsPicker', () => {
 
   afterEach(() => {
     resetAllStores();
+  });
+
+  it('shows one project skill folder and only the close key when no skills exist', async () => {
+    const ui = renderFeature(<SkillsPicker />);
+    try {
+      await flushEffects();
+      const frame = stripAnsiStyles(ui.lastFrame());
+      expect(frame).toContain('No skills');
+      expect(frame).toContain('.splitbrief/skills');
+      expect(frame.match(/\.splitbrief\/skills/gu)).toHaveLength(1);
+      expect(frame).not.toMatch(
+        /\.claude\/skills|No matching skills|↑↓ select|ctrl\+a all|⏎ confirm/iu,
+      );
+      expect(frame).toMatch(/esc close/iu);
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('toggles the highlighted skill after PageDown navigation', async () => {
@@ -268,35 +284,6 @@ describe('SkillsPicker', () => {
     ui.unmount();
   });
 
-  it.each([80, 100, 120, 160])(
-    'pairs the scanned roots into scope columns in the empty state at %i cols',
-    async (cols) => {
-      terminalSizeStore.__testReset({ cols, rows: 40, isSmall: cols < 120 });
-      skillsStore.setAvailable([]);
-
-      const ui = renderFeature(<SkillsPicker />);
-      await tick(20);
-
-      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      const lines = frame.split('\n');
-      for (const root of [...PROJECT_SKILL_SCAN_PATHS, ...GLOBAL_SKILL_SCAN_PATHS]) {
-        expect(lines.filter((line) => line.includes(root))).not.toHaveLength(0);
-      }
-      expect(frame).not.toContain('~/');
-
-      const lineOf = (needle: string) => lines.findIndex((line) => line.includes(needle));
-      const headerLine = lineOf('Project');
-      expect(lineOf('Global')).toBe(headerLine);
-      expect(lineOf(PROJECT_SKILL_SCAN_PATHS[0] ?? '')).toBe(headerLine + 1);
-      expect(lines[headerLine + 1]).toContain(GLOBAL_SKILL_SCAN_PATHS[0] ?? '');
-
-      for (const line of lines) {
-        expect(line.replace(/[\s│]+$/u, '').endsWith('·')).toBe(false);
-      }
-      ui.unmount();
-    },
-  );
-
   it('keeps the empty state inside the panel at the 60x18 floor', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     skillsStore.setAvailable([]);
@@ -305,14 +292,15 @@ describe('SkillsPicker', () => {
     await tick(20);
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    const lines = frame.split('\n');
+    const lines = frame.trim().split('\n');
+    expect(lines.length).toBeLessThanOrEqual(18);
     const isPanelEdge = (line: string | undefined) =>
       line !== undefined && line.trim().length > 0 && /^[\s+\-─╭╮╰╯]+$/u.test(line);
     expect(isPanelEdge(lines[0])).toBe(true);
     expect(isPanelEdge(lines[lines.length - 1])).toBe(true);
-    expect(frame).toContain('Skills for every seat · 0 selected');
+    expect(frame).toContain('Skills for every seat');
     expect(frame).toContain('esc close');
-    expect(frame).toMatch(/\+\d+ more/u);
+    expect(frame).toContain('No skills found');
     ui.unmount();
   });
 

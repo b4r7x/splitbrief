@@ -58,7 +58,7 @@ export function CrewStep({
   const { cols, rows: terminalRows } = terminalSizeStore.use((state) => state);
   const hasOverlay = overlayStore.use(selectHasOverlay);
   const feedback = feedbackStore.use((state) => state);
-  const { unavailableSeats, canContinue } = useSeatAvailability(config);
+  const { seatStatuses, canContinue } = useSeatAvailability(config);
 
   const { innerWidth, innerRows } = overlayRect({
     cols,
@@ -79,19 +79,8 @@ export function CrewStep({
     (note === undefined ? 0 : NOTE_BLOCK_ROWS) -
     signInRows -
     (notice?.rows ?? 0);
-  const { layout, presetLines, showPresets, showHeaders, showGaps } = planSetupList({
-    crewRows,
-    verdict,
-    presets,
-    signIn: signIn !== undefined,
-    innerWidth,
-    budget,
-  });
-
   const items: SetupItem[] = [
-    ...(showPresets
-      ? presets.map((preset): SetupItem => ({ kind: 'preset', preset, key: `preset:${preset.id}` }))
-      : []),
+    ...presets.map((preset): SetupItem => ({ kind: 'preset', preset, key: `preset:${preset.id}` })),
     ...crewRows.map((row): SetupItem => ({ kind: 'crew', row, key: crewRowKey(row) })),
     { kind: 'continue', key: 'continue' },
   ];
@@ -115,6 +104,17 @@ export function CrewStep({
     },
   });
   const focusedItem = list.filtered[list.selectedIndex];
+  const { layout, presetLines, showHeaders, showGaps } = planSetupList({
+    crewRows,
+    verdict,
+    presets,
+    focusedPresetId: focusedItem?.kind === 'preset' ? focusedItem.preset.id : undefined,
+    signIn: signIn !== undefined,
+    innerWidth,
+    budget,
+  });
+  const listBudget = budget - (presetLines.length - presets.length);
+
   const keys =
     focusedItem?.kind === 'continue' && !canContinue
       ? 'change unavailable seats'
@@ -147,7 +147,7 @@ export function CrewStep({
         items={list.filtered}
         selectedIndex={list.selectedIndex}
         getKey={(item) => item.key}
-        rowBudget={budget}
+        rowBudget={listBudget}
         section={{
           by: sectionOf,
           gapBetweenSections: showGaps,
@@ -166,13 +166,12 @@ export function CrewStep({
             item={item}
             isCursor={ctx.isCursor}
             width={ctx.contentWidth}
-            layout={layout}
             presetLines={
               item.kind === 'preset'
                 ? presetLines.filter((line) => presets[line.row]?.id === item.preset.id)
                 : []
             }
-            unavailableSeats={unavailableSeats}
+            seatStatuses={seatStatuses}
             canContinue={canContinue}
           />
         )}

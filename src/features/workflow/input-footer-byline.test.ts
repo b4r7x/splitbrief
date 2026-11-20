@@ -481,8 +481,21 @@ describe('fitCheckingRow', () => {
   const row = {
     frame: '⠋',
     stage: 'Checking tools',
-    slowProbe: { name: 'Google Antigravity CLI', check: 'model list 59s' },
+    slowProbe: {
+      name: 'Google Antigravity CLI',
+      shortName: 'Antigravity',
+      check: 'model list 59s',
+    },
   };
+
+  it('keeps the identifying tool name in a narrow slow-check row', () => {
+    const slowProbe = { ...row.slowProbe, shortName: 'Antigravity' };
+    const text = fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 50 });
+
+    expect(text).toContain('Antigravity model list 59s');
+    expect(text).toContain('esc cancel');
+    expect(getTerminalCellWidth(`${row.frame} ${text}`)).toBeLessThanOrEqual(50);
+  });
 
   it('keeps the whole row when it fits', () => {
     expect(fitCheckingRow({ ...row, cancellable: true, width: 69 })).toBe(
@@ -493,20 +506,17 @@ describe('fitCheckingRow', () => {
     );
   });
 
-  it.each([56, 58, 64, 66])(
-    'keeps the stage and esc cancel whole in %i cells and shortens the slow check',
-    (width) => {
-      const text = fitCheckingRow({ ...row, cancellable: true, width });
+  it.each([56, 58, 64, 66])('keeps the catalog name and esc cancel whole in %i cells', (width) => {
+    const text = fitCheckingRow({ ...row, cancellable: true, width });
 
-      expect(text).toMatch(/^Checking tools · Google ….* model list 59s · esc cancel$/u);
-      expect(getTerminalCellWidth(`${row.frame} ${text}`)).toBeLessThanOrEqual(width);
-    },
-  );
+    expect(text).toMatch(/Antigravity( CLI)? model list 59s · esc cancel$/u);
+    expect(getTerminalCellWidth(`${row.frame} ${text}`)).toBeLessThanOrEqual(width);
+  });
 
   // The crew panel's hint row at 60 columns: the stage goes before the name of what is slow.
   it('keeps the name, the check and esc cancel when the stage does not fit', () => {
     expect(fitCheckingRow({ ...row, cancellable: true, width: 50 })).toBe(
-      'Google … CLI model list 59s · esc cancel',
+      'Antigravity model list 59s · esc cancel',
     );
     const slowProbe = { name: 'Ollama', check: 'model list 12s' };
     expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 50 })).toBe(
@@ -515,9 +525,9 @@ describe('fitCheckingRow', () => {
   });
 
   it('keeps the check whole past a minute, when its time has two words', () => {
-    const slowProbe = { name: 'OpenCode CLI', check: 'sign-in 1m 5s' };
+    const slowProbe = { name: 'OpenCode CLI', shortName: 'OpenCode', check: 'sign-in 1m 5s' };
     expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 56 })).toBe(
-      'Checking tools · OpenCode … sign-in 1m 5s · esc cancel',
+      'Checking tools · OpenCode sign-in 1m 5s · esc cancel',
     );
     expect(fitCheckingRow({ ...row, slowProbe, cancellable: true, width: 48 })).toBe(
       'OpenCode CLI sign-in 1m 5s · esc cancel',

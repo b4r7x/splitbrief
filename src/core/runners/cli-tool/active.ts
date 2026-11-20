@@ -12,6 +12,7 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
   'claude-code': activeCliToolDeclaration({
     id: 'claude-code',
     displayName: 'Claude Code CLI',
+    shortName: 'Claude Code',
     command: 'claude',
     executableAliases: ['claude'],
     category: 'cli',
@@ -43,6 +44,7 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
   codex: activeCliToolDeclaration({
     id: 'codex',
     displayName: 'OpenAI Codex CLI',
+    shortName: 'Codex',
     command: 'codex',
     executableAliases: ['codex'],
     category: 'cli',
@@ -73,6 +75,7 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
   opencode: activeCliToolDeclaration({
     id: 'opencode',
     displayName: 'OpenCode CLI',
+    shortName: 'OpenCode',
     command: 'opencode',
     executableAliases: ['opencode'],
     category: 'cli',
@@ -107,6 +110,7 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
   copilot: activeCliToolDeclaration({
     id: 'copilot',
     displayName: 'GitHub Copilot CLI',
+    shortName: 'Copilot',
     command: 'copilot',
     executableAliases: ['copilot'],
     category: 'cli',
@@ -138,6 +142,7 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
   'kilo-code': activeCliToolDeclaration({
     id: 'kilo-code',
     displayName: 'Kilo Code CLI',
+    shortName: 'Kilo',
     command: 'kilo',
     executableAliases: ['kilo'],
     category: 'cli',
@@ -168,6 +173,7 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
   cursor: activeCliToolDeclaration({
     id: 'cursor',
     displayName: 'Cursor Agent CLI',
+    shortName: 'Cursor',
     command: 'cursor-agent',
     executableAliases: ['cursor-agent', 'agent'],
     category: 'cli',
@@ -199,6 +205,7 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
   'command-code': activeCliToolDeclaration({
     id: 'command-code',
     displayName: 'Command Code CLI',
+    shortName: 'Command Code',
     command: 'cmd',
     executableAliases: ['cmd'],
     category: 'cli',
@@ -229,6 +236,7 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
   antigravity: activeCliToolDeclaration({
     id: 'antigravity',
     displayName: 'Google Antigravity CLI',
+    shortName: 'Antigravity',
     command: 'agy',
     executableAliases: ['agy'],
     category: 'cli',

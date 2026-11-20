@@ -5,7 +5,7 @@ import {
   type RuntimeCommandContext,
   type ScrollCommandTarget,
 } from '../types.js';
-import { getShortcutKey } from '../../../keybindings/registry.js';
+import { ACTIVITY_DESCRIPTION, getShortcutKey } from '../../../keybindings/registry.js';
 import type { TaskStatus } from '../../../schemas/enums.js';
 import { includes } from '../../../../utils/type-guards.js';
 
@@ -66,7 +66,7 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
       kind: 'noarg',
       name: '/activity',
       label: 'activity',
-      description: 'Expand or collapse the last folded rows',
+      description: ACTIVITY_DESCRIPTION,
       shortcut: getShortcutKey('activity'),
       category: 'view',
       validScreens: ['workflow'],

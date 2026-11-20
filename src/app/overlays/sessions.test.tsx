@@ -292,6 +292,11 @@ describe('SessionsPicker', () => {
         'Apply is still writing to your checkout. Cannot open "another run".',
       );
     });
+    const lines = stripAnsiStyles(instance.lastFrame() ?? '').split('\n');
+    const refusalRow = lines.findIndex((line) => line.includes('Apply is still writing'));
+    const hintRow = lines.findIndex((line) => line.includes('esc close'));
+    expect(hintRow).toBeGreaterThan(refusalRow);
+    expect(lines[hintRow]).toContain('⏎ open');
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.run).toBe(onScreen);
     expect(overlayStore.get().active).toBe('sessions');

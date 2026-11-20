@@ -14,6 +14,7 @@ export interface ListRowModel {
   key?: string | undefined;
   trailingParts?: readonly TextSpan[] | undefined;
   description?: string | null | undefined;
+  descriptionBelow?: boolean;
   hint?: string | null | undefined;
   trailing?: string | null | undefined;
   /** Names in the same group share a column, even across category headings. */
@@ -54,13 +55,15 @@ export function planListRows(rows: readonly ListRowModel[], frame: { width: numb
     );
     const tail = trailing ? getTerminalCellWidth(trailing) + trailingGap.length : 0;
     const hasDescription = Boolean(row.description || row.hint);
-    const nameWidth = hasDescription
-      ? Math.min(names.get(row.group ?? '') ?? 0, Math.floor(width * 0.4), Math.max(1, room - tail))
-      : Math.max(1, room - tail);
+    const labelRoom = Math.max(1, room - tail);
+    const nameWidth =
+      hasDescription && !row.descriptionBelow
+        ? Math.min(names.get(row.group ?? '') ?? 0, Math.floor(width * 0.4), labelRoom)
+        : labelRoom;
     const label = truncateTerminalDisplayText(name, nameWidth);
     const column = nameWidth + 2;
     const beside = room - column - tail;
-    const below = hasDescription && beside < 20;
+    const below = hasDescription && (row.descriptionBelow || beside < 20);
     const detailWidth = below ? room : Math.max(1, beside);
     const detail = stripTerminalControls(row.description ?? '');
     const withHint = row.hint ? [detail, row.hint].filter(Boolean).join('  ') : detail;

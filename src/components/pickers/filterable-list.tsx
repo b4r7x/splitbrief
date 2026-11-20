@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import type { Key } from 'ink';
 import { OverlayPanel } from '../overlays/panel.js';
+import { ThemeText as Text, useTheme } from '../theme.js';
+import { wrapPathAware } from '../../utils/display-text/wrap.js';
 import { FilterInput } from '../filter-input.js';
 import type { FilterableListKeyContext } from '../../hooks/use-filterable-list.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
@@ -23,6 +25,7 @@ interface FilterableListProps<T> {
   onActivate?: (item: T) => void;
   title?: string;
   hint?: string;
+  notice?: string | null;
   placeholder?: ReactNode;
   chromeRows: number;
   maxVisible?: number;
@@ -43,6 +46,7 @@ export function FilterableList<T>({
   onActivate,
   title,
   hint,
+  notice,
   placeholder,
   chromeRows,
   maxVisible: maxVisibleProp,
@@ -55,7 +59,10 @@ export function FilterableList<T>({
 }: FilterableListProps<T>) {
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const { innerWidth } = overlayRect({ cols, rows, density });
-  const available = availableRows({ rows, chromeRows, floor: listFloor });
+  const t = useTheme();
+  const message = notice ? wrapPathAware(notice, innerWidth) : undefined;
+  const messageRows = message === undefined ? 0 : 1 + message.split('\n').length;
+  const available = availableRows({ rows, chromeRows: chromeRows + messageRows, floor: listFloor });
   const rowBudget =
     maxVisibleProp === undefined
       ? available
@@ -120,6 +127,11 @@ export function FilterableList<T>({
             }
           : {})}
       />
+      {message !== undefined && (
+        <Box marginTop={1}>
+          <Text color={t.warning}>{message}</Text>
+        </Box>
+      )}
     </OverlayPanel>
   );
 }

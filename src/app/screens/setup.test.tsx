@@ -12,7 +12,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
-import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { cliDetectionFor, failedDiscoveryResult } from '#testing/helpers/factories/detection.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection/tool.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
@@ -23,10 +23,7 @@ import { computeCrewPresets } from '../../core/crew/presets.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { prepareNewSession } from '../../core/sessions/prepare.js';
-import type {
-  DetectionRefreshOutcomes,
-  DetectionServiceResult,
-} from '../../engine/detection/service/types.js';
+import type { DetectionServiceResult } from '../../engine/detection/service/types.js';
 import { createProductionDetectionDeps } from '../../engine/detection/deps.js';
 import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare.js';
 import type {
@@ -112,37 +109,9 @@ function freshDiscovery(
 }
 
 function failedDiscovery(request: DiscoveryRefreshRequest, generation: number): void {
-  const failed = (source: 'readiness' | 'cli-models') => ({
-    kind: 'failed' as const,
-    source,
-    contextKey: source === 'readiness' ? request.contexts.readiness : request.contexts.cliModels,
-    generation,
-    requestId: request.id,
-    checkedAt: generation,
-    error: { kind: 'request-failed' as const, message: 'Tool discovery failed.' },
-  });
-  const outcomes: DetectionRefreshOutcomes = {
-    readiness: failed('readiness'),
-    modelsDev: {
-      kind: 'failed',
-      source: 'models-dev',
-      contextKey: request.contexts.modelsDev,
-      generation,
-      requestId: request.id,
-      checkedAt: generation,
-      failure: { kind: 'request-failed', message: 'Model discovery failed.' },
-    },
-    cliModels: failed('cli-models'),
-  };
-  const result: DetectionServiceResult = {
-    providers: [],
-    cliTools: [],
-    catalog: null,
-    cliModels: [],
-    generation,
-    outcomes,
-  };
-  expect(detectionStore.publish({ result, request })).toBe(true);
+  expect(
+    detectionStore.publish({ result: failedDiscoveryResult(request, generation), request }),
+  ).toBe(true);
 }
 
 function report(checks: ReadinessCheck[]): ReadinessReport {
@@ -360,10 +329,11 @@ describe('SetupScreen', () => {
         expect(frame).toContain('.splitbrief/config.yaml');
         expect(frame).not.toContain('No config.');
         expect(frame.split('\n').length).toBeLessThanOrEqual(size.rows);
-        for (const label of ['PLAN', 'BUILD', 'REVIEW', 'Continue', '↑↓ select']) {
-          expect(frame).toContain(label);
-        }
+        expect(frame).toContain('↑↓ select');
       });
+      for (const label of ['PLAN', 'BUILD', 'REVIEW', 'Continue']) {
+        await focusRow(ui, DOWN, label);
+      }
       const rows = contentRows(ui);
       const noticeIndex = rows.findIndex((row) => row.startsWith('Saved '));
       expect(noticeIndex).toBeGreaterThan(0);
@@ -647,7 +617,34 @@ describe('SetupScreen', () => {
     },
   );
 
-  it('waits for a fresh proposal after abandoned Setup and a failed cached refresh', async () => {
+  it('opens the remembered crews after a failed refresh before the first save', async () => {
+    await withTempDir('setup-remembered-crews', async (projectDir) => {
+      configStore.load(projectDir);
+      detectionStore.hydrate({
+        ...INSTALLED_RUNNERS,
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 1,
+        requestId: 1,
+        contexts: DISCOVERY_CONTEXTS,
+      });
+      failedDiscovery(beginDiscovery(), 2);
+      const ui = renderFeature(<SetupScreen />, { cols: 120, rows: 40 });
+      try {
+        await flushEffects();
+        const frame = stripAnsiStyles(ui.lastFrame());
+        expect(frame).toContain(CREW_TITLE);
+        expect(frame).toContain('Refresh failed · remembered results');
+        expect(frame).toContain('Claude crew, Codex review');
+        expect(frame).toContain('Continue');
+        expect(existsSync(configPath(projectDir))).toBe(false);
+      } finally {
+        ui.unmount();
+      }
+    });
+  });
+
+  it('opens the remembered crew after abandoned Setup and a failed cached refresh', async () => {
     await withTempDir('setup-abandoned-cache', async (projectDir) => {
       configStore.load(projectDir);
       freshDiscovery(beginDiscovery(), 1, {
@@ -681,10 +678,8 @@ describe('SetupScreen', () => {
       expect(ui.lastFrame() ?? '').not.toContain('Continue');
       expect(ui.lastFrame() ?? '').not.toContain('Ollama');
       failedDiscovery(request, 2);
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool check failed'));
-      expect(ui.lastFrame() ?? '').not.toContain('Continue');
-      ui.stdin.write(ENTER);
-      await tick(20);
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+      expect(ui.lastFrame() ?? '').toContain('Continue');
       expect(existsSync(configPath(projectDir))).toBe(false);
 
       freshDiscovery(beginDiscovery(), 3, {
@@ -1190,7 +1185,34 @@ describe('SetupScreen', () => {
     expect(frame).toContain(PRESET_SECTION);
   });
 
-  it('yields the blank spacer rows, never a seat, and keeps a save error to one line at the smallest supported viewport', async () => {
+  it('keeps the focused preset reachable while a save notice takes list rows', async () => {
+    await withTempDir('setup-scroll-presets', async (projectDir) => {
+      configStore.load(projectDir);
+      const viewport = { cols: 60, rows: 18 };
+      terminalSizeStore.__testReset(viewport);
+      freshDiscovery(beginDiscovery(), 1);
+      const ui = renderFeature(<SetupScreen />, viewport);
+      try {
+        const first = 'Claude crew, Codex review';
+        await vi.waitFor(() => expect(ui.lastFrame()).toContain(CREW_TITLE));
+        ui.stdin.write('\u001b[H');
+        await vi.waitFor(() => expect(markedRows(ui).join(' ')).toContain(first));
+        ui.stdin.write(ENTER);
+        await vi.waitFor(() => expect(feedbackStore.get().message).toContain('Saved Claude crew'));
+        await flushEffects();
+        expect(markedRows(ui).join(' ')).toContain(first);
+        ui.stdin.write('\u001b[F');
+        await vi.waitFor(() => expect(markedRows(ui).join(' ')).toContain('Continue'));
+        expect(ui.lastFrame().trimEnd().split('\n').length).toBeLessThanOrEqual(viewport.rows);
+        ui.stdin.write('\u001b[H');
+        await vi.waitFor(() => expect(markedRows(ui).join(' ')).toContain(first));
+      } finally {
+        ui.unmount();
+      }
+    });
+  });
+
+  it('keeps the presets and seats reachable and the save error on one line at the smallest supported viewport', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
     freshDiscovery(beginDiscovery(), 1);
     const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
@@ -1215,19 +1237,17 @@ describe('SetupScreen', () => {
     const lines = stripAnsiStyles(ui.lastFrame() ?? '')
       .split('\n')
       .filter((line) => line.trim() !== '');
-    ui.unmount();
 
     const unbroken = (line: string | undefined) => line !== undefined && !/\s/.test(line.trim());
     expect(unbroken(lines.at(0))).toBe(true);
     expect(unbroken(lines.at(-1))).toBe(true);
     expect(lines.filter((line) => line.includes('Failed to save config'))).toHaveLength(1);
     expect(lines.join('\n')).not.toContain('splitbrief.yaml');
-    expect(lines.join('\n')).toContain('Continue');
-    // The save notice and the seats keep their rows; ready-made crews yield to the save error.
     expect(lines.length).toBeLessThanOrEqual(18);
     expect(lines.join('\n')).toContain('No config. Setup saves .splitbrief/config.yaml.');
-    expect(lines.join('\n')).not.toContain('Claude crew, Codex review');
-    for (const seat of ['PLAN', 'BUILD', 'REVIEW']) expect(lines.join('\n')).toContain(seat);
+    await focusRow(ui, UP, 'Claude crew, Codex review');
+    for (const label of ['PLAN', 'BUILD', 'REVIEW', 'Continue']) await focusRow(ui, DOWN, label);
+    ui.unmount();
   });
 
   it('strips terminal control sequences from a save error', async () => {
@@ -1328,6 +1348,38 @@ describe('SetupScreen', () => {
     });
   });
 
+  it('uses the picker sign-in status on the signed-out Setup seat', async () => {
+    await withTempDir('setup-seat-status', async (projectDir) => {
+      configStore.load(projectDir);
+      await configStore.save(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'codex' },
+          implementer: { kind: 'cli', tool: 'claude-code' },
+        }),
+      );
+      const viewport = { cols: 120, rows: 40 };
+      terminalSizeStore.__testReset(viewport);
+      freshDiscovery(beginDiscovery(), 1, {
+        cliTools: [
+          cliDetectionFor('unauthenticated', 'codex'),
+          cliDetectionFor('ready', 'claude-code'),
+        ],
+        providers: [],
+      });
+      const ui = renderFeature(<SetupScreen />, viewport);
+      try {
+        await vi.waitFor(() => {
+          const plan = contentRows(ui).find(
+            (line) => line.includes('PLAN') && line.includes('OpenAI Codex CLI'),
+          );
+          expect(plan).toContain('Needs sign-in');
+        });
+      } finally {
+        ui.unmount();
+      }
+    });
+  });
+
   it('gives a saved crew the same in-screen check for a signed-out tool, not init', async () => {
     await withTempDir('setup-signed-out-saved', async (projectDir) => {
       configStore.load(projectDir);
@@ -1348,6 +1400,39 @@ describe('SetupScreen', () => {
       expect(frame).toContain('Sign in to OpenAI Codex CLI, then ⏎ on a seat and ctrl+r.');
       expect(frame).not.toContain('splitbrief init');
       ui.unmount();
+    });
+  });
+
+  it('names only the signed-out tools used by a seat or a shown preset', async () => {
+    await withTempDir('setup-relevant-tools', async (projectDir) => {
+      configStore.load(projectDir);
+      await configStore.save(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'cursor' },
+          implementer: { kind: 'cli', tool: 'opencode' },
+        }),
+      );
+      const viewport = { cols: 120, rows: 40 };
+      terminalSizeStore.__testReset(viewport);
+      freshDiscovery(beginDiscovery(), 1, {
+        cliTools: [
+          cliDetectionFor('unauthenticated', 'cursor'),
+          cliDetectionFor('unauthenticated', 'codex'),
+          cliDetectionFor('unauthenticated', 'antigravity'),
+          cliDetectionFor('ready', 'opencode'),
+        ],
+        providers: [],
+      });
+      const ui = renderFeature(<SetupScreen />, viewport);
+      try {
+        await flushEffects();
+        const instruction = contentRows(ui).find((line) => line.includes('Sign in to'));
+        expect(instruction).toContain('Cursor Agent CLI');
+        expect(instruction).toContain('OpenAI Codex CLI');
+        expect(instruction).not.toContain('Antigravity');
+      } finally {
+        ui.unmount();
+      }
     });
   });
 

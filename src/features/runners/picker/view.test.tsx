@@ -310,7 +310,7 @@ describe('PickerView previews', () => {
     expect(initialFrame).toContain('direct write');
     expect.soft(initialFrame).not.toContain('subscription');
     expect(initialFrame).toContain('1 model');
-    expect(initialFrame).toContain('from opencode api GET /api/model --standalone');
+    expect(initialFrame).not.toContain('opencode api GET');
 
     await flushEffects();
     ui.stdin.write('\u001B[C');
@@ -521,7 +521,7 @@ describe('PickerView previews', () => {
         if (status.state === 'ready') throw new Error('a signed-out tool has no card');
         const rows = await bylineRows(diagnostic);
         const frame = rows.join('\n');
-        expect(frame).toContain('Auth required');
+        expect(frame).toContain('Needs sign-in');
         expect(frame).toContain(status.remediation);
         expect(frame).toContain('Its models show here when it is ready.');
         expect(frame).not.toContain('Model detection timed out');
@@ -536,7 +536,7 @@ describe('PickerView previews', () => {
     it('keeps the sign-in step when the card wraps at 80 columns', async () => {
       const rows = await bylineRows({ kind: 'probe-failed', failure: 'timeout' }, 80);
       const frame = rows.join('\n');
-      expect(frame).toContain('Auth required');
+      expect(frame).toContain('Needs sign-in');
       expect(frame).toContain('Sign in to OpenCode CLI');
       expect(frame).toContain('ctrl+r.');
       expect(frame).toContain('Its models show here');
@@ -861,33 +861,33 @@ describe('PickerView feedback', () => {
   it('shows a neutral refusal on the byline in place of the tool line', async () => {
     const ui = renderFeedbackPicker();
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('from codex debug models');
+    expect(ui.lastFrame() ?? '').toContain('OpenAI Codex CLI · 1 model');
 
     feedbackStore.setMessage(refusal);
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(refusal);
-    expect(frame).not.toContain('from codex debug models');
+    expect(frame).not.toContain('OpenAI Codex CLI · 1 model');
     expect(feedbackStore.get()).toEqual({ message: refusal, isError: false });
 
     feedbackStore.setMessage(null);
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('from codex debug models');
+    expect(ui.lastFrame() ?? '').toContain('OpenAI Codex CLI · 1 model');
     ui.unmount();
   });
 
   it('keeps save failures in the error voice', async () => {
     const ui = renderFeedbackPicker();
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('from codex debug models');
+    expect(ui.lastFrame() ?? '').toContain('OpenAI Codex CLI · 1 model');
 
     feedbackStore.setError(saveFailure);
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(saveFailure);
-    expect(frame).not.toContain('from codex debug models');
+    expect(frame).not.toContain('OpenAI Codex CLI · 1 model');
     expect(feedbackStore.get()).toEqual({ message: saveFailure, isError: true });
     ui.unmount();
   });

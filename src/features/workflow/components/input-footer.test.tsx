@@ -34,6 +34,7 @@ import { clearAllHandlers } from '../run-requests/registry.js';
 import { requestSeatChangeAtBoundary } from '../run-requests/boundary.js';
 import { trackProbe } from '../../../engine/probe-activity.js';
 import { InputFooter } from './input-footer.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import {
@@ -181,7 +182,7 @@ describe('InputFooter', () => {
   });
 
   it.each([60, 68])(
-    'keeps the stage and esc cancel whole at %i columns and shortens the slow check',
+    'keeps the stage, short tool name and cancel key at %i columns',
     async (cols) => {
       terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 80 });
       const preparation = Promise.withResolvers<{ kind: 'aborted' }>();
@@ -203,8 +204,8 @@ describe('InputFooter', () => {
         await flushEffects();
 
         const row = stripAnsiStyles(ui.lastFrame() ?? '').trimEnd();
-        expect(row).toMatch(/^. Checking tools · Google .*….* · esc cancel$/u);
-        expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(cols - 4);
+        expect(row).toMatch(/^. Checking tools · Antigravity model list 59s · esc cancel$/u);
+        expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(getChromeContentWidth(cols));
         ui.unmount();
       } finally {
         models.resolve();

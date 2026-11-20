@@ -1,3 +1,4 @@
+import { outputFormatConflict } from '../../../core/config/errors.js';
 import { error } from '../../../utils/error.js';
 import type { OutputFormat } from '../../../core/schemas/enums.js';
 import { getLineParser } from '../../streaming/parse/select.js';
@@ -89,7 +90,7 @@ export function withOutputFormat(
   if (adapter.outputContract.kind === 'structured-terminal') {
     throw error(
       'cli-output-format-conflict',
-      `Configured outputFormat cannot replace the ${adapter.descriptor.id} ${adapter.outputContract.terminalEvent} terminal contract; the backend's native parser and terminal protocol stay authoritative.`,
+      outputFormatConflict(adapter.descriptor.displayName, adapter.role),
     );
   }
   const parseLine = getLineParser(format);

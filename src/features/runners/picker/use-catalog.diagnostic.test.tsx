@@ -12,7 +12,6 @@ import type { ProbeOutcomeKind } from '../../../core/discovery/runner-evidence.j
 import type { ScopedCliCatalogAttempt } from '../../../engine/detection/cli-catalog-outcomes.js';
 import type { DetectionServiceResult } from '../../../engine/detection/service/types.js';
 import { formatToolsByline } from './byline.js';
-import { pickerListingSource } from './listing-source.js';
 import { formatCatalogDiagnostic } from './catalog-guidance.js';
 import { usePickerCatalog, type PickerCatalog } from './use-catalog.js';
 
@@ -239,15 +238,11 @@ describe('usePickerCatalog catalog diagnostic', () => {
     });
     expect(capturedCatalog?.modelRowCount).toBeGreaterThan(0);
 
-    const listing = pickerListingSource('opencode');
     const line = formatToolsByline({
       toolName: 'OpenCode CLI',
       version: undefined,
       modelCount: capturedCatalog?.modelRowCount ?? 0,
-      rowNoun: listing.rowNoun,
-      rowNounPlural: listing.rowNounPlural,
-      source: listing.source,
-      unverifiedForPlan: listing.unverifiedForPlan,
+      toolId: 'opencode',
       diagnostic: capturedCatalog?.catalogDiagnostic,
       lane: 'ready',
       capabilities: ['Network', 'Shell'],

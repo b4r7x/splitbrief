@@ -14,7 +14,7 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import { resolveTheme } from '../../core/theme/resolve.js';
-import { formatPickerStatusLabel } from './picker/labels.js';
+import { formatPickerStatusLabel } from '../../core/readiness/cli-remediation.js';
 import { buildLeftItems } from './picker/left-items.js';
 import { ELLIPSIS } from '../../utils/display-text/truncate.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';
@@ -138,7 +138,7 @@ describe('runner row grammar', () => {
     const cases: Array<{ status: PickerOption['status']; label: string }> = [
       {
         status: { state: 'unauthenticated', remediation: 'Set API key.' },
-        label: 'Auth required',
+        label: 'Needs sign-in',
       },
       {
         status: { state: 'incompatible', remediation: 'Install tested version.' },

@@ -25,6 +25,7 @@ import type { RouteAuthContext } from '../right-column/policy.js';
 import type { PreviewContext } from '../two-column-picker/picker.js';
 import { formatCatalogDiagnostic } from './catalog-guidance.js';
 import { resolvePreview, terminalPaneFor } from './preview.js';
+import { wrapPaneLines } from '../two-column-picker/pane-lines.js';
 import type { PickerCatalog } from './use-catalog.js';
 
 const kilo = cliTool({ id: 'kilo-code', displayName: 'Kilo Code CLI' });
@@ -56,6 +57,16 @@ describe('terminalPaneFor', () => {
     );
   });
 
+  it('wraps review sentences to the pane width', () => {
+    const pane = terminalPaneFor(reviewNoneOption({ isCurrent: false }), catalog);
+    if (!pane) throw new Error('The None row needs its review preview.');
+    const wide = wrapPaneLines(pane, 80);
+    expect(wide.join('\n')).toContain('Each brief runs its own checks.');
+    const narrow = wrapPaneLines(pane, 20);
+    expect(narrow.join(' ')).toBe(wide.join(' '));
+    expect(narrow.every((line) => line.length <= 20)).toBe(true);
+  });
+
   it('says what a review seat set to None leaves out', () => {
     const pane = terminalPaneFor(reviewNoneOption({ isCurrent: false }), catalog);
 
@@ -71,9 +82,8 @@ describe('terminalPaneFor', () => {
     );
 
     expect(pane?.label).toBe(PLANNER_INHERITANCE.mark);
-    expect(pane?.lines.slice(0, 3)).toEqual([
-      'Review uses the same',
-      'tool and model:',
+    expect(pane?.lines.slice(0, 2)).toEqual([
+      'Review uses the same tool and model:',
       { whole: catalog.plannerIdentity },
     ]);
   });
@@ -111,7 +121,7 @@ describe('terminalPaneFor', () => {
     };
     const saved = catalogFor({ currentItem: signedOut, savedRunner });
 
-    expect(terminalPaneFor({ ...signedOut, isCurrent: true }, saved)?.label).toBe('Auth required');
+    expect(terminalPaneFor({ ...signedOut, isCurrent: true }, saved)?.label).toBe('Needs sign-in');
     expect(terminalPaneFor({ ...signedOut, isCurrent: true }, saved)?.lines).toEqual([
       'Sign in to Kilo Code CLI.',
       '',
@@ -166,6 +176,16 @@ describe('resolvePreview', () => {
       ...input,
     };
   }
+
+  it('leaves the listing command and alias count out of the tool byline', () => {
+    const claude = cliTool({ id: 'claude-code', displayName: 'Claude Code CLI' });
+    for (const tool of [claude, kilo]) {
+      const catalog = catalogFor({ currentItem: tool, modelRowCount: 9 });
+      const byline = resolvePreview(context({ leftItem: tool }), { catalog, auth });
+      expect(byline).toContain(tool.displayName);
+      expect(byline).not.toMatch(/aliases|from kilo models|documented aliases/u);
+    }
+  });
 
   it('previews nothing without a tool, or on the None rows', () => {
     const empty = catalogFor({ currentItem: undefined });
@@ -231,7 +251,7 @@ describe('resolvePreview', () => {
     ]);
   });
 
-  it('says that the automatic row passes no model flag', () => {
+  it('names the tool that chooses the automatic model', () => {
     const auto: RightRow = {
       kind: 'model',
       model: { id: 'auto', displayName: 'Auto Marker' },
@@ -243,7 +263,7 @@ describe('resolvePreview', () => {
 
     expect(
       resolvePreview(context({ activeColumn: 'right', rightItem: auto }), { catalog, auth }),
-    ).toBe(`Auto Marker${SOFT_SEP}no --model flag${SOFT_SEP}Kilo Code CLI runs its own default`);
+    ).toBe('Kilo Code CLI chooses the model');
   });
 
   it('puts the stale count after the Tools byline', () => {

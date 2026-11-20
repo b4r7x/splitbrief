@@ -71,7 +71,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     rightBoxWidth,
     leftContentWidth,
     rightContentWidth,
-  } = pickerLayout({ cols, rows, title, stepLabel });
+  } = pickerLayout({ cols, rows, title, stepLabel, minRowWidth: leftProps.minRowWidth });
 
   const nav = useTwoColumnState<L, R>({
     leftProps,

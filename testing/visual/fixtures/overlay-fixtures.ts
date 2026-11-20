@@ -1,5 +1,6 @@
+import { configPath } from '../../../src/core/config/load/document.js';
 import { eventsStore } from '../../../src/stores/workflow/events/state.js';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type OverlayType, seatAxisFocus } from '../../../src/core/navigation/types.js';
 import { LISTED_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool/catalog.js';
@@ -76,7 +77,6 @@ import {
   formatConfigSaveSuccess,
   reportConfigSaveFailure,
 } from '../../../src/stores/project/save-feedback.js';
-import { configError } from '../../../src/core/config/errors.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { saveSessionDraft } from '../../../src/stores/ui/session-drafts.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
@@ -418,7 +418,7 @@ function seedLongTaskSession(): Session {
   const session = makeSession({
     id: 'visual-session-long-task',
     feature:
-      'Add generated JSON data fixtures, as one task:\n\n- Add `scripts/gen-json.js` (CommonJS) that writes them',
+      'Add generated JSON data fixtures in one task.\n\n- Add `scripts/gen-json.js` (CommonJS) that writes them',
     startedAt: VISUAL_FIXTURE_EPOCH - 60_000,
     status: 'open',
     stop: 'stopped',
@@ -1264,9 +1264,12 @@ const createSettingsSavedDuringRunFixture: FixtureFactory = () => ({
   },
 });
 const createSettingsErrorPathFixture: FixtureFactory = () => ({
-  ...createOverlayFixture({ overlay: 'settings' }),
-  afterMount: () => {
-    feedbackStore.setError(RUN_LOCK_NOT_RELEASED);
+  ...createSettingsEndChecksFixture(),
+  afterMount: async (write) => {
+    // An external edit changes the revision between opening Settings and saving the toggle.
+    const path = configPath(VISUAL_FIXTURE_PROJECT_DIR);
+    appendFileSync(path, '\n# Edited outside Settings\n');
+    await write.press(' ');
   },
 });
 // The picker closed on a saved route that needs a sign-in: Settings carries the save message and
@@ -1981,19 +1984,15 @@ const createSaveRefusedFixture: FixtureFactory = () => ({
     seed: seedClaudeAliasRows,
     focus: 'tool:claude-code',
   }),
-  afterMount: () => {
-    const path = '.splitbrief/config.yaml';
-    reportConfigSaveFailure({
-      kind: 'failure',
-      ok: false,
-      error: configError.saveFailed(
-        path,
-        configError.validationFailed(path, [
-          `Configuration errors in ${path}:`,
-          "  planner.outputFormat: Configured outputFormat cannot replace the claude-code terminal contract; the backend's native parser and terminal protocol stay authoritative.",
-        ]),
-      ),
-    });
+  afterMount: async () => {
+    const config = configStore.get().config;
+    if (config?.planner.kind !== 'cli') throw new Error('Expected a CLI planner');
+    reportConfigSaveFailure(
+      await configStore.save({
+        ...config,
+        planner: { ...config.planner, outputFormat: 'text' },
+      }),
+    );
   },
 });
 const createCustomModelKiloFixture: FixtureFactory = () =>
@@ -2010,7 +2009,6 @@ const createImplementerPickerFixture: FixtureFactory = () =>
     overlay: 'implementer-picker',
     seed: seedConfig({ implementer: BUILD_CODEX_SEAT }),
   });
-// The build seat on OpenCode: the tools byline names the listing its models come from.
 const createImplementerPickerOpencodeFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'implementer-picker',

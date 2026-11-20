@@ -94,7 +94,7 @@ export function PickerView({
   };
 
   const rightRows = keyRows(catalog.rightRows);
-  const { rowPlanAt, statusesFitAt } = rowPlansFor(catalog);
+  const { rowPlanAt, statusesFitAt, toolRowWidth } = rowPlansFor(catalog);
 
   return (
     <TwoColumnPicker<PickerOption, KeyedRightRow>
@@ -108,6 +108,7 @@ export function PickerView({
       preview={(ctx) => resolvePreview(ctx, { catalog, auth: authContext })}
       leftProps={{
         items: catalog.items,
+        minRowWidth: toolRowWidth,
         label: 'Tools',
         getKey: (item) => item.id,
         // Clearing a fallback and adding a command stay reachable under any filter.

@@ -1,87 +1,8 @@
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
-import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
+import { declaredCatalogProbe } from '../../../engine/runners/cli-tools/probe/catalog.js';
 import type { ResolvedModelMembership } from '../../../engine/providers/model/types.js';
 import type { RightRow } from '../model-catalog/types.js';
-
-export interface ListingSource {
-  readonly source: string;
-  /** The noun the tool's own list uses for one row. */
-  readonly rowNoun: string;
-  /** The same noun for more than one row; `alias` does not take a bare `s`. */
-  readonly rowNounPlural: string;
-  readonly unverifiedForPlan: boolean;
-}
-
-/**
- * Where each tool's rows really come from, in the tool's own words. Checked against
- * `declaredCatalogProbe` (`engine/runners/cli-tools/probe/catalog.ts`) and the tools themselves on
- * 2026-09-09: claude-code 2.1.265 prints no alias table, copilot 1.0.77 prints its 25-id enum,
- * cursor-agent 2026.09.08-6caf4ff prints 223 model rows.
- */
-const LISTING_SOURCES: Readonly<Record<CliToolId, ListingSource>> = {
-  'claude-code': {
-    source: "from Claude's documented aliases",
-    rowNoun: 'alias',
-    rowNounPlural: 'aliases',
-    unverifiedForPlan: false,
-  },
-  copilot: {
-    source: 'from copilot help config',
-    rowNoun: 'model',
-    rowNounPlural: 'models',
-    unverifiedForPlan: true,
-  },
-  cursor: {
-    source: 'from cursor-agent --list-models',
-    rowNoun: 'model',
-    rowNounPlural: 'models',
-    unverifiedForPlan: false,
-  },
-  opencode: {
-    source: 'from opencode api GET /api/model --standalone',
-    rowNoun: 'model',
-    rowNounPlural: 'models',
-    unverifiedForPlan: false,
-  },
-  'kilo-code': {
-    source: 'from kilo models --verbose',
-    rowNoun: 'model',
-    rowNounPlural: 'models',
-    unverifiedForPlan: false,
-  },
-  codex: {
-    source: 'from codex debug models',
-    rowNoun: 'model',
-    rowNounPlural: 'models',
-    unverifiedForPlan: false,
-  },
-  'command-code': {
-    source: 'from cmd --list-models',
-    rowNoun: 'model',
-    rowNounPlural: 'models',
-    unverifiedForPlan: false,
-  },
-  antigravity: {
-    source: 'from agy models',
-    rowNoun: 'model',
-    rowNounPlural: 'models',
-    unverifiedForPlan: false,
-  },
-};
-
-/** A provider that is not a CLI tool lists through the shared catalog, which knows no account. */
-const CATALOG_LISTING_SOURCE: ListingSource = {
-  source: 'from models.dev',
-  rowNoun: 'model',
-  rowNounPlural: 'models',
-  unverifiedForPlan: true,
-};
-
-export function pickerListingSource(toolId: string | undefined): ListingSource {
-  if (toolId !== undefined && isCliToolId(toolId)) return LISTING_SOURCES[toolId];
-  return CATALOG_LISTING_SOURCE;
-}
 
 const CUSTOM_MODEL_EXAMPLE_COUNT = 3;
 /** Rows the tool itself listed or ships as its floor; models.dev suggestions and custom rows are not its spelling. */
@@ -115,7 +36,9 @@ export function customModelEntryCopy(
     ids.push(id);
   }
   const [first, ...rest] = ids;
-  return first === undefined
-    ? { placeholder: `an id ${pickerListingSource(input.toolId).source}`, examples: [] }
-    : { placeholder: `e.g. ${first}`, examples: rest };
+  if (first !== undefined) return { placeholder: `e.g. ${first}`, examples: rest };
+  const probe = isCliToolId(input.toolId) ? declaredCatalogProbe(input.toolId) : undefined;
+  const placeholder =
+    probe?.kind === 'catalog' ? `an id from ${probe.command.join(' ')}` : 'Model id';
+  return { placeholder, examples: [] };
 }

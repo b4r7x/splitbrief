@@ -10,6 +10,9 @@
 
 ### Fixed
 
+- Setup keeps crew presets reachable on small terminals and lets you choose a remembered crew after a failed refresh. Continue checks the selected seats.
+- The runner picker keeps tool names and sign-in status readable at narrow widths. A refused config edit names the field to remove.
+
 - Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.
 - Review packets count validation results for the briefs in the current plan.
 - Review packets identify API and CLI runners by their own names, even when they share a tool name.

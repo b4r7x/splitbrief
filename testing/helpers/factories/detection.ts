@@ -1,3 +1,8 @@
+import type {
+  DetectionRefreshOutcomes,
+  DetectionServiceResult,
+} from '../../../src/engine/detection/service/types.js';
+import type { DiscoveryRefreshRequest } from '../../../src/stores/discovery/model-cache/types.js';
 import { mkdirSync } from 'node:fs';
 import type {
   CliReadinessState,
@@ -129,4 +134,40 @@ export async function rememberDetectedTools(
       cliCatalogs,
     },
   });
+}
+
+export function failedDiscoveryResult(
+  request: DiscoveryRefreshRequest,
+  generation: number,
+): DetectionServiceResult {
+  const failed = (source: 'readiness' | 'cli-models') => ({
+    kind: 'failed' as const,
+    source,
+    contextKey: source === 'readiness' ? request.contexts.readiness : request.contexts.cliModels,
+    generation,
+    requestId: request.id,
+    checkedAt: generation,
+    error: { kind: 'request-failed' as const, message: 'Tool discovery failed.' },
+  });
+  const outcomes: DetectionRefreshOutcomes = {
+    readiness: failed('readiness'),
+    modelsDev: {
+      kind: 'failed',
+      source: 'models-dev',
+      contextKey: request.contexts.modelsDev,
+      generation,
+      requestId: request.id,
+      checkedAt: generation,
+      failure: { kind: 'request-failed', message: 'Model discovery failed.' },
+    },
+    cliModels: failed('cli-models'),
+  };
+  return {
+    providers: [],
+    cliTools: [],
+    catalog: null,
+    cliModels: [],
+    generation,
+    outcomes,
+  };
 }

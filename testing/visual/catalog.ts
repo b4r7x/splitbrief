@@ -377,9 +377,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Home header' },
         { id: 'composer', title: 'Feature composer' },
       ],
-      // A long tool name and check at the widths where the row is cut: the CLI started this check
-      // before Home mounted, so the row has no key; the stage stays whole and the check gives up
-      // its middle words.
+      // The CLI started this check before Home mounted, so the row has no cancel key.
       viewports: [
         viewport({ cols: 60, rows: 18 }),
         viewport({ cols: 68, rows: 20 }),
@@ -400,12 +398,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Home header' },
         { id: 'composer', title: 'Feature composer' },
       ],
-      // The user submitted this start on Home, so Esc cancels it: the stage and the key stay
-      // whole and the check gives up its middle words.
       viewports: [
         viewport({ cols: 60, rows: 18 }),
         viewport({ cols: 68, rows: 20 }),
         viewport({ cols: 80, rows: 24 }),
+        viewport({ cols: 120, rows: 40 }),
       ],
     }),
     // The panel appears only when preparation needs an answer.
@@ -6121,12 +6118,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'composer', title: 'Workflow composer' },
       ],
-      // A long tool name and check at the widths where the row is cut: the stage and the key stay
-      // whole and the check gives up its middle words.
       viewports: [
         viewport({ cols: 60, rows: 18 }),
         viewport({ cols: 68, rows: 20 }),
         viewport({ cols: 80, rows: 24 }),
+        viewport({ cols: 120, rows: 40 }),
       ],
     }),
     defineScenario({
@@ -6833,12 +6829,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         marker: 'esc cancel',
       },
       elements: [{ id: 'setup-panel', title: 'Setup panel' }],
-      // The saved crew moves into the start's check on the panel's hint row: the stage and the key
-      // stay whole and the check gives up its middle words.
       viewports: [
         viewport({ cols: 60, rows: 18 }),
         viewport({ cols: 68, rows: 20 }),
         viewport({ cols: 80, rows: 24 }),
+        viewport({ cols: 120, rows: 40 }),
       ],
     }),
     defineScenario({
@@ -6862,9 +6857,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('setup'),
       checkpoint: {
         id: 'ready',
-        title: 'Retry without saving an unavailable crew',
+        title: 'Choose a crew from remembered tools',
         kind: 'ready',
-        marker: 'Tool check failed',
+        marker: 'remembered results',
       },
       elements: [
         { id: 'header', title: 'Setup header' },
@@ -6950,12 +6945,15 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'setup-signed-out-tools',
       title: 'Setup · tools not signed in',
       surface: screenSurface('setup'),
-      checkpoint: {
-        id: 'ready',
-        title: 'Signed-out tools named',
-        kind: 'ready',
-        marker: 'Sign in to',
-      },
+      checkpoint: [
+        { id: 'ready', title: 'Signed-out tools named', kind: 'ready', marker: 'Sign in to' },
+        {
+          id: 'focused-preset',
+          title: 'The focused crew names both tools it needs',
+          kind: 'ready',
+          marker: 'needs Claude Code CLI, OpenAI Codex CLI',
+        },
+      ],
       elements: [
         { id: 'header', title: 'Setup header' },
         { id: 'setup-panel', title: 'Setup panel' },
@@ -6969,7 +6967,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'ready',
         title: 'Ready invocation and persisted crew',
         kind: 'ready',
-        marker: 'Custom Coder',
+        marker: 'Ollama · Custom Coder',
       },
       elements: [
         { id: 'header', title: 'Setup header' },
@@ -7266,8 +7264,8 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       {
         id: 'overlay-settings-error-path',
-        title: 'Overlay · settings · an error that names a long path',
-        marker: 'lockfile.json',
+        title: 'Overlay · settings · a change refused after an external edit',
+        marker: 'Config changed on disk',
       },
       {
         id: 'overlay-settings-saved-route-sign-in',

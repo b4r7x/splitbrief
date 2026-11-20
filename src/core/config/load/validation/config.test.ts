@@ -600,15 +600,16 @@ describe('validateConfig', () => {
     });
   });
 
-  it('outputFormat on a structured-terminal tool is refused at load', () => {
+  it('names the tool and the field to remove when a config save is refused', () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code', outputFormat: 'text' },
     });
 
     expect(validateConfig(config).errors).toContainEqual({
       path: 'planner.outputFormat',
-      message:
-        "Configured outputFormat cannot replace the claude-code terminal contract; the backend's native parser and terminal protocol stay authoritative.",
+      message: expect.stringMatching(
+        /^Claude Code CLI .+outputFormat[^.]*remove it from planner\.?$/iu,
+      ),
     });
     expect(
       validateConfig(

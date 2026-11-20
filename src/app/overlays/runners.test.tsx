@@ -1101,9 +1101,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     await flushEffects();
     ui.stdin.write('\r'); // select the tool; the cursor lands on the auto row
     await vi.waitFor(() => {
-      // The byline resolves the highlighted model row, so the automatic selection is asserted in
-      // its own words ("no --model flag") rather than in the cursor's glyph and spacing.
-      expect(frameText(ui)).toContain('no --model flag');
+      expect(frameText(ui)).toContain('Claude Code CLI chooses the model');
     });
     await flushEffects();
     ui.stdin.write('\r');
@@ -1494,14 +1492,14 @@ describe('ToolModelPicker on a tool that is not ready', () => {
     ui.unmount();
   });
 
-  it('saves nothing on ⏎ after a click on a tool that reads Auth required', async () => {
+  it('saves nothing on ⏎ after a click on a tool that reads Needs sign-in', async () => {
     const { ui, saveConfig } = await openOnEffort([
       cliDetectionFor('ready', 'claude-code'),
       cliDetectionFor('unauthenticated', 'codex'),
     ]);
 
     await clickTool(ui, 'codex', 'OpenAI Codex CLI');
-    expect(cursorText(ui)).toContain('Auth required');
+    expect(cursorText(ui)).toContain('Needs sign-in');
     expect(frameText(ui)).toContain(NO_MODELS_YET);
     await enterThenDown(ui, saveConfig, 'Command Code CLI');
     ui.unmount();
@@ -1538,7 +1536,7 @@ describe('ToolModelPicker on a tool that is not ready', () => {
       .map(modelCursorOf)
       .filter((cursor) => cursor.length !== 1 || cursor[0] !== row);
 
-  it('keeps the keys on the model column of a ready tool when another tool turns Auth required', async () => {
+  it('keeps the keys on the model column of a ready tool when another tool turns Needs sign-in', async () => {
     const { ui, saveConfig } = await openOnEffort([
       cliDetectionFor('ready', 'claude-code'),
       cliDetectionFor('ready', 'codex'),
@@ -1554,7 +1552,7 @@ describe('ToolModelPicker on a tool that is not ready', () => {
         cliDetectionFor('ready', 'codex'),
       ],
     });
-    await vi.waitFor(() => expect(frameText(ui)).toContain('Auth required'));
+    await vi.waitFor(() => expect(frameText(ui)).toContain('Needs sign-in'));
     await flushEffects();
 
     expect(ui.frames.length).toBeGreaterThan(start);

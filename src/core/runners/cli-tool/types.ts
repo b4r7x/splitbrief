@@ -91,6 +91,7 @@ export type ImageInputSupport = 'flag' | 'stdin' | 'none';
 export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   id: Id;
   displayName: string;
+  shortName: string;
   command: string;
   executableAliases: readonly string[];
   category: 'cli';
