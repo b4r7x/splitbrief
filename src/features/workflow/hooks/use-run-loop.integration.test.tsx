@@ -269,8 +269,10 @@ function errorMessages(): string[] {
 }
 
 /** A run halted on a brief whose panel offers a retry, saved where the loop reads it back. */
-function saveHaltedRun(sessionId: string): WorkflowState {
-  const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+function saveHaltedRun(sessionId: string, nextBrief?: ReturnType<typeof makeTask>): WorkflowState {
+  const tasks = [makeTask({ id: 'T001', status: 'failed' })];
+  if (nextBrief !== undefined) tasks.push(nextBrief);
+  const halted = makeImplState(tasks, {
     ...RUN_CREW,
     pendingRecovery: makeRecoveryIssue(),
   });
@@ -2357,7 +2359,7 @@ describe('useRunLoop', () => {
       const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
       const run = recordedEngine({
         1: async () => {
-          saveHaltedRun(sessionId);
+          saveHaltedRun(sessionId, makeTask({ id: 'T002' }));
           return makeSummary();
         },
       });
@@ -2370,9 +2372,13 @@ describe('useRunLoop', () => {
 
       expect(run.entered.map((entry) => entry.purpose)).toEqual(['new-workflow', 'resume']);
       expect(run.entered[1]?.session.ref).toEqual(prepared.session.ref);
-      expect(loadState(prepared.session.ref)?.tasks.map((task) => task.status)).toEqual([
-        'skipped',
-      ]);
+      expect(loadState(prepared.session.ref)).toMatchObject({
+        currentTaskIndex: 1,
+        tasks: [
+          { id: 'T001', status: 'skipped' },
+          { id: 'T002', status: 'pending' },
+        ],
+      });
       expect(errorMessages()).toEqual([expect.stringContaining('is not available')]);
 
       inst.unmount();

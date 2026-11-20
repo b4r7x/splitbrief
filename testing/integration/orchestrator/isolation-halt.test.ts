@@ -398,19 +398,14 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
         bus: createEventBus(),
         config: agentConfig(),
       });
-      expect(skipped.ok).toBe(true);
-
-      const events: EngineEvent[] = [];
-      const finished = await run({
-        projectDir,
-        sessionId,
-        calls,
-        events,
-        resumeState: skipped.state,
+      expect(skipped).toMatchObject({ ok: true, status: 'closed' });
+      const finished = loadState({ projectDir, sessionId });
+      expect(finished).toMatchObject({
+        closed: { as: 'ended' },
+        tasks: [{ id: 'T001', status: 'skipped' }],
       });
-
+      expect(finished?.pendingRecovery).toBeUndefined();
       expect(calls).toHaveLength(1);
-      expect(finished.tasks[0]?.status).toBe('skipped');
       expect(existsSync(join(projectDir, TARGET))).toBe(false);
     });
   });

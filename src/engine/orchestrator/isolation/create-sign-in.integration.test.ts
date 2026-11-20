@@ -20,11 +20,13 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import { sessionDir, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { clearBridgedCliState } from '../../runners/sandbox/state/bridge.js';
 import { sandboxRoot, sandboxTempDir } from '../../runners/sandbox/state/paths.js';
 import * as keptWork from '../kept-work.js';
 import { applyRecoveryAction } from '../recovery/actions/apply.js';
+import { ensureRunWorkspace } from '../run/workspace.js';
 import * as acquisition from './acquisition.js';
 import { createRunIsolation } from './create.js';
 import * as entrySnapshot from './entry-snapshot.js';
@@ -154,9 +156,21 @@ const PARTIAL = 'partial.ts';
  * The BUILD seat of T001 went down: the run kept its attempt, with one partial file when `partial`,
  * and the halt that it saved offers Skip.
  */
-async function seatDownHalt(dir: string, config: Config, partial = true) {
+async function seatDownHalt(
+  dir: string,
+  config: Config,
+  { partial = true, nextBrief }: { partial?: boolean; nextBrief?: Task } = {},
+) {
+  const ref = { projectDir: dir, sessionId: SESSION_ID };
   const task = makeTask({ id: 'T001', status: 'in_progress' });
+  const tasks = nextBrief === undefined ? [task] : [task, nextBrief];
   const handle = isolate(dir);
+  const started = await ensureRunWorkspace(
+    ref,
+    { config, isolation: handle, bus: makeBusRecorder().bus },
+    makeImplState(tasks),
+    true,
+  );
   const opened = await handle.open({ config });
   const attempt = await handle.acquire({
     role: 'implementer',
@@ -166,16 +180,12 @@ async function seatDownHalt(dir: string, config: Config, partial = true) {
   if (partial) writeFileSync(join(opened.projectDir, PARTIAL), 'export const partial = true;\n');
   await attempt.retain?.();
   await endRun(dir, handle);
-  const state = makeImplState([task], {
-    workspace: {
-      kind: 'staged-copy',
-      path: opened.projectDir,
-      base: { snapshotId: 'seat-down', head: null },
-    },
+  const state = {
+    ...started,
     changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: attempt.snapshot },
     pendingRecovery: makeRecoveryIssue({ reason: 'runner-usage-limit', phase: 'implementing' }),
-  });
-  saveState({ projectDir: dir, sessionId: SESSION_ID }, state);
+  };
+  saveState(ref, state);
   return { state, attempt, workspace: opened.projectDir };
 }
 
@@ -349,10 +359,12 @@ describe('run isolation sign-in state of a staged copy', () => {
     async ({ partial }) => {
       const dir = project();
       const config = seats('command-code');
-      const { state, attempt, workspace } = await seatDownHalt(dir, config, partial);
+      const { state, attempt, workspace } = await seatDownHalt(dir, config, { partial });
       const signIn = signInOf(attempt, 'command-code');
       const temp = attempt.sandboxEnv.TMPDIR ?? '';
       expect(kindOf(signIn)).toBe('file');
+      expect(existsSync(temp)).toBe(true);
+      expect(existsSync(join(workspace, PARTIAL))).toBe(partial);
 
       const skipped = await applyRecoveryAction({
         projectDir: dir,
@@ -362,13 +374,13 @@ describe('run isolation sign-in state of a staged copy', () => {
         bus: makeBusRecorder().bus,
       });
 
-      expect(skipped.ok).toBe(true);
-      expect(existsSync(join(workspace, PARTIAL))).toBe(false);
-
-      const last = isolate(dir);
-      await last.open({ config });
-      await endRun(dir, last);
-
+      expect(skipped).toMatchObject({
+        ok: true,
+        status: 'closed',
+        state: { closed: { as: 'ended' } },
+      });
+      expect(skipped.state.closed?.patch).toBeUndefined();
+      expect(existsSync(workspace)).toBe(false);
       expect(kindOf(signIn)).toBe('absent');
       expect(existsSync(temp)).toBe(false);
     },
@@ -377,7 +389,8 @@ describe('run isolation sign-in state of a staged copy', () => {
   it('a Skip whose put-back failed keeps the stopped attempt, so the next brief puts its file back', async () => {
     const dir = project();
     const config = seats('command-code');
-    const { state, workspace } = await seatDownHalt(dir, config);
+    const nextBrief = makeTask({ id: 'T002' });
+    const { state, workspace } = await seatDownHalt(dir, config, { nextBrief });
     vi.spyOn(entrySnapshot, 'restoreWorkspaceFiles').mockRejectedValueOnce(
       new Error('the fixture fails the put-back'),
     );
@@ -391,7 +404,11 @@ describe('run isolation sign-in state of a staged copy', () => {
       bus,
     });
 
-    expect(skipped.ok).toBe(true);
+    expect(skipped).toMatchObject({
+      ok: true,
+      status: 'skipped-current-task',
+      state: { currentTaskIndex: 1 },
+    });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'warning',
@@ -401,11 +418,11 @@ describe('run isolation sign-in state of a staged copy', () => {
     expect(existsSync(join(workspace, PARTIAL))).toBe(true);
 
     const next = isolate(dir);
-    await next.open({ config });
+    await expect(next.open({ config })).resolves.toMatchObject({ projectDir: workspace });
     await next.acquire({
       role: 'implementer',
       config,
-      brief: { ...makeAttemptBrief(), task: makeTask({ id: 'T002' }) },
+      brief: { ...makeAttemptBrief(), task: nextBrief },
     });
 
     expect(existsSync(join(workspace, PARTIAL))).toBe(false);
@@ -415,7 +432,8 @@ describe('run isolation sign-in state of a staged copy', () => {
   it('a Skip whose start cannot be compared keeps the stopped attempt, so the next brief puts its file back', async () => {
     const dir = project();
     const config = seats('command-code');
-    const { state, workspace } = await seatDownHalt(dir, config);
+    const nextBrief = makeTask({ id: 'T002' });
+    const { state, workspace } = await seatDownHalt(dir, config, { nextBrief });
     vi.spyOn(entrySnapshot, 'restoreWorkspaceFiles').mockRejectedValueOnce(
       new Error('the fixture cannot compare the start'),
     );
@@ -430,15 +448,19 @@ describe('run isolation sign-in state of a staged copy', () => {
     });
     kept.mockRestore();
 
-    expect(skipped.ok).toBe(true);
+    expect(skipped).toMatchObject({
+      ok: true,
+      status: 'skipped-current-task',
+      state: { currentTaskIndex: 1 },
+    });
     expect(existsSync(join(workspace, PARTIAL))).toBe(true);
 
     const next = isolate(dir);
-    await next.open({ config });
+    await expect(next.open({ config })).resolves.toMatchObject({ projectDir: workspace });
     await next.acquire({
       role: 'implementer',
       config,
-      brief: { ...makeAttemptBrief(), task: makeTask({ id: 'T002' }) },
+      brief: { ...makeAttemptBrief(), task: nextBrief },
     });
 
     expect(existsSync(join(workspace, PARTIAL))).toBe(false);

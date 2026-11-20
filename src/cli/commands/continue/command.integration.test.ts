@@ -540,7 +540,7 @@ describe('continueCommand', () => {
           ...createInitialState('test-feature'),
           ...RUN_CREW,
           phase: testCase.phase,
-          tasks: [makeTask({ id: 'T001' })],
+          tasks: [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })],
           pendingRecovery: makeRecoveryIssue(testCase.issue),
         },
       );
@@ -554,6 +554,15 @@ describe('continueCommand', () => {
       const resumed = headlessRuns.find((run) => run.sessionId === sessionId);
       expect(resumed, testCase.id).toBeDefined();
       expect(resumed?.state?.pendingRecovery, testCase.id).toBeUndefined();
+      if (testCase.id === 'skip') {
+        expect(resumed?.state).toMatchObject({
+          currentTaskIndex: 1,
+          tasks: [
+            { id: 'T001', status: 'skipped' },
+            { id: 'T002', status: 'pending' },
+          ],
+        });
+      }
     }
   });
 

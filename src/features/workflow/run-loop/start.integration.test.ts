@@ -261,9 +261,10 @@ describe('runTuiWorkflow', () => {
   });
 
   it('asks the panel first on a re-entry at a halt, and gives the re-entry steer and resume cause to the pass after it when the answer takes no words', async () => {
+    const halted = haltedOnT001();
     const loop = start(async () => {}, {
       resumeCause: 'seat-change',
-      resumeState: haltedOnT001(),
+      resumeState: { ...halted, tasks: [...halted.tasks, makeTask({ id: 'T002' })] },
       answers: [{ ...plainAnswer('s'), row: true }],
     });
 
@@ -271,7 +272,13 @@ describe('runTuiWorkflow', () => {
 
     expect(loop.steps).toEqual(['ask', 'engine', 'settle handoff=true']);
     expect(passInputs(loop)).toEqual([{ steer: 'carry on', resumeCause: 'seat-change' }]);
-    expect(loop.runWorkflow.mock.calls[0]?.[0].savedState?.tasks[0]?.status).toBe('skipped');
+    expect(loop.runWorkflow.mock.calls[0]?.[0].savedState).toMatchObject({
+      currentTaskIndex: 1,
+      tasks: [
+        { id: 'T001', status: 'skipped' },
+        { id: 'T002', status: 'pending' },
+      ],
+    });
   });
 
   it('saves each halt for the next re-entry under the preparation it started with, also after the session is admitted again', async () => {
