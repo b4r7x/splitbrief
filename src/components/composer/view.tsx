@@ -204,6 +204,7 @@ function ComposerInput({
   const { clearDraft } = useDraftSync({
     mode,
     questionEpoch,
+    inputEpoch,
     actions: {
       setDocument: draft.replaceDocument,
       holdDocument: draft.holdDocument,

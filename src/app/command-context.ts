@@ -264,14 +264,18 @@ export function useRuntimeCommands({
         applyUnfinished: isApplyUnfinishedAtRest(routerStore.get()),
         applying: applyBefore !== undefined,
         onError: (message, line, outcome) => {
-          if (outcome === 'failed') feedbackStore.setError(message);
-          else feedbackStore.setWarning(message);
+          const show = outcome === 'failed' ? feedbackStore.setError : feedbackStore.setWarning;
           if (sentBy === 'answer') {
             const { drafts, index } = questionPromptStore.get();
             if (drafts[index]?.text === '') questionPromptStore.setFocus('answer', line);
           } else if (sentBy !== 'row' && composerLiveStore.get().empty) {
-            composerDraftStore.requestPrepend(createDraftDocument(line));
+            const previous = feedbackStore.get();
+            composerDraftStore.requestPrepend(createDraftDocument(line), () => {
+              if (feedbackStore.get() === previous) show(message);
+            });
+            return;
           }
+          show(message);
         },
       });
       // A command that started an Apply reports it when Apply settles; the next command runs now.

@@ -4,16 +4,15 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { draftDocumentText } from './input-history.js';
 
-interface ComposerDraftDocumentRequest {
-  /**
-   * A `command` stands in front of the draft rather than in its place: the draft comes back once
-   * the box is empty again. A `prepend` goes in front of the draft, joined on a new line.
-   */
-  kind: 'document' | 'command' | 'prepend';
+type DraftUpdate = { document: DraftDocument } & (
+  | { kind: 'document' | 'command' }
+  | { kind: 'prepend'; afterCommit?: (() => void) | undefined }
+);
+
+type ComposerDraftDocumentRequest = DraftUpdate & {
   epoch: number;
   value: string;
-  document: DraftDocument;
-}
+};
 
 interface ComposerDraftImageRequest {
   kind: 'image';
@@ -26,16 +25,12 @@ export type ComposerDraftRequest = ComposerDraftDocumentRequest | ComposerDraftI
 
 const store = createStore<{ request: ComposerDraftRequest | null }>({ request: null });
 
-function requestDocument(
-  kind: ComposerDraftDocumentRequest['kind'],
-  document: DraftDocument,
-): void {
+function requestDocument(update: DraftUpdate): void {
   store.set((s) => ({
     request: {
-      kind,
+      ...update,
       epoch: (s.request?.epoch ?? 0) + 1,
-      value: draftDocumentText(document),
-      document,
+      value: draftDocumentText(update.document),
     },
   }));
 }
@@ -53,11 +48,14 @@ function requestImage(attachment: Attachment): void {
 
 export const composerDraftStore = {
   ...storeBase(store),
-  request: (value: string) => requestDocument('document', createDraftDocument(value)),
-  requestCommand: (value: string) => requestDocument('command', createDraftDocument(value)),
-  requestDocument: (document: DraftDocument) => requestDocument('document', document),
+  request: (value: string) =>
+    requestDocument({ kind: 'document', document: createDraftDocument(value) }),
+  requestCommand: (value: string) =>
+    requestDocument({ kind: 'command', document: createDraftDocument(value) }),
+  requestDocument: (document: DraftDocument) => requestDocument({ kind: 'document', document }),
   /** A refused send comes back in front of what the composer holds now, so neither is lost. */
-  requestPrepend: (document: DraftDocument) => requestDocument('prepend', document),
+  requestPrepend: (document: DraftDocument, afterCommit?: () => void) =>
+    requestDocument({ kind: 'prepend', document, afterCommit }),
   requestImage,
   clear: () => store.set((s) => (s.request === null ? s : { request: null })),
 };

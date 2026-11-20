@@ -58,6 +58,7 @@ import { addEvent } from '../stores/workflow/actions/event.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../stores/workflow/run-view.js';
+import { stopStore } from '../stores/workflow/stop.js';
 import { queueCopy } from '../features/workflow/queue-copy.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
@@ -699,6 +700,26 @@ describe('useRuntimeCommands', () => {
     expect(inputHistoryStore.get().workflowEntries).toEqual([document]);
   });
 
+  it('shows the typed steer in the first frame that refuses it during a stop', async () => {
+    projectDir = createTempDir('command-composer-stopping');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
+    stopStore.request('stop-now');
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+
+    const line = '/steer also fix the typo';
+    ui.stdin.write(line);
+    await expect.poll(() => stripAnsiStyles(ui.lastFrame())).toContain(`> ${line}`);
+    ui.stdin.write('\r');
+
+    const reason = 'Finish stopping before steering.';
+    await expect.poll(() => stripAnsiStyles(ui.lastFrame())).toContain(reason);
+    const firstRefusal = ui.frames.map(stripAnsiStyles).find((frame) => frame.includes(reason));
+    expect(firstRefusal).toContain(`> ${line}`);
+  });
+
   it('keeps /steer use @/missing/x.md in the composer with one refusal line', async () => {
     projectDir = createTempDir('command-composer-missing');
     configStore.__testReset({ projectDir, config: makeConfig() });
@@ -816,28 +837,20 @@ describe('useRuntimeCommands', () => {
   });
 
   it('shows a refused command as a warning and gives the line back', async () => {
-    let model: ReturnType<typeof useRuntimeCommands> | undefined;
-    const ui = renderFeature(
-      createElement(RuntimeCommandsHarness, {
-        onModel: (m) => {
-          model = m;
-        },
-      }),
-    );
+    const line = '/totally-unknown-xyz';
+    const ui = renderFeature(createElement(HomeCommandComposerHarness));
     onTestFinished(ui.unmount);
-    await tick();
-
-    model?.handleRuntimeCommand('/totally-unknown-xyz', 'home');
-    await tick();
+    await flushEffects();
+    ui.stdin.write(line);
+    await expect.poll(() => composerLiveStore.get().text).toBe(line);
+    ui.stdin.write('\r');
+    await expect.poll(() => feedbackStore.get().severity).toBe('warning');
 
     const feedback = feedbackStore.get();
     expect(feedback.severity).toBe('warning');
     expect(feedback.message).toContain('Unknown command');
     expect(feedback.message).toContain('/totally-unknown-xyz');
-    expect(composerDraftStore.get().request).toMatchObject({
-      kind: 'prepend',
-      value: '/totally-unknown-xyz',
-    });
+    expect(composerLiveStore.get().text).toBe(line);
   });
 
   it('shows a refused steer attachment in the warning voice', async () => {
@@ -855,7 +868,7 @@ describe('useRuntimeCommands', () => {
     onTestFinished(ui.unmount);
     await tick();
 
-    model?.handleRuntimeCommand('/steer use @/definitely-missing/context.txt', 'workflow');
+    model?.handleRuntimeCommand('/steer use @/definitely-missing/context.txt', 'workflow', 'row');
     await tick();
 
     expect(feedbackStore.get()).toEqual({
@@ -865,7 +878,7 @@ describe('useRuntimeCommands', () => {
   });
 
   // `afterSend` runs when the line left its field, before SPLITBRIEF refuses it.
-  async function refuseSteer(sentBy?: 'row' | 'answer', afterSend?: () => void) {
+  async function refuseSteer(sentBy: 'row' | 'answer', afterSend?: () => void) {
     let model: ReturnType<typeof useRuntimeCommands> | undefined;
     const ui = renderFeature(
       createElement(RuntimeCommandsHarness, {
@@ -888,19 +901,21 @@ describe('useRuntimeCommands', () => {
   }
 
   it('gives a refused command line back to the composer', async () => {
-    await refuseSteer();
-
-    expect(composerDraftStore.get().request).toMatchObject({
-      kind: 'prepend',
-      value: '/steer words',
-    });
+    const line = '/steer words';
+    const ui = await typeRefusedLine(line, 'idle');
+    await expect
+      .poll(() => stripAnsiStyles(ui.lastFrame()))
+      .toContain('No run to steer in this phase');
   });
 
-  async function typeRefusedLine(line: string) {
+  async function typeRefusedLine(line: string, phase: Phase = 'implementing') {
     projectDir = createTempDir('command-composer-refused');
     configStore.__testReset({ projectDir, config: makeConfig() });
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
-    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 120, rows: 30 });
+    const ui = renderFeature(createElement(CommandComposerHarness, { phase }), {
+      cols: 120,
+      rows: 30,
+    });
     onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write(line);
@@ -1288,7 +1303,7 @@ describe('useRuntimeCommands while Apply writes the run at rest', () => {
   ])('refuses %s at once with one line', async (command, line) => {
     const ui = await startApply();
 
-    model?.handleRuntimeCommand(command, 'workflow');
+    model?.handleRuntimeCommand(command, 'workflow', 'row');
     await tick();
 
     expect(feedbackStore.get()).toMatchObject({ severity: 'warning', message: line });

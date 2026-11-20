@@ -20,6 +20,7 @@ interface ComposerDraftActions {
 interface UseDraftSyncParams {
   mode: InputMode;
   questionEpoch: number | undefined;
+  inputEpoch: number;
   actions: ComposerDraftActions;
 }
 
@@ -51,7 +52,7 @@ function applyComposerDraft(request: ComposerDraftRequest, actions: ComposerDraf
   actions.bumpEpoch();
 }
 
-export function useDraftSync({ mode, questionEpoch, actions }: UseDraftSyncParams): {
+export function useDraftSync({ mode, questionEpoch, inputEpoch, actions }: UseDraftSyncParams): {
   clearDraft: () => void;
 } {
   const [{ request: draftRequest }] = useStores(composerDraftStore);
@@ -59,6 +60,7 @@ export function useDraftSync({ mode, questionEpoch, actions }: UseDraftSyncParam
   // asking a question or not. Only a new question replacing one that owned the composer clears,
   // because text typed against the previous question is a stale answer, not a draft.
   const previousRef = useRef({ mode, epoch: questionEpoch });
+  const afterCommitRef = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
     const previous = previousRef.current;
@@ -68,8 +70,16 @@ export function useDraftSync({ mode, questionEpoch, actions }: UseDraftSyncParam
     if (staleAnswer) applyComposerDocument(createDraftDocument(''), actions);
   }, [mode, questionEpoch]);
 
+  // The request bumps the input epoch. Its notice must wait for the draft in that commit.
+  useEffect(() => {
+    const afterCommit = afterCommitRef.current;
+    afterCommitRef.current = undefined;
+    afterCommit?.();
+  }, [inputEpoch]);
+
   useEffect(() => {
     if (!draftRequest) return;
+    afterCommitRef.current = draftRequest.kind === 'prepend' ? draftRequest.afterCommit : undefined;
     applyComposerDraft(draftRequest, actions);
     // Consuming the request keeps it from replaying into the composer of the next screen.
     composerDraftStore.clear();

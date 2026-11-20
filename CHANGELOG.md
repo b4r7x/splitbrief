@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- When `/steer` is refused during a stop, the warning appears with the command ready to retry.
 - Short recovery panels keep the question in view as you scroll through the actions. Page Up and Page Down let you read a question that spans several screens.
 - The command palette finds abbreviations across words in command descriptions and hides custom actions that name unknown commands.
 - If you skip the last brief and every brief was skipped, the run ends without a final review. The Skip brief row warns you before you choose it.

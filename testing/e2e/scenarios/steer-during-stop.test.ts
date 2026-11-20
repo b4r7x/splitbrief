@@ -54,6 +54,7 @@ const REVIEW_REPLY = JSON.stringify(
 
 type Tui = Readonly<{
   screen: () => string;
+  paintedFrames: readonly string[];
   write: (keys: string) => void;
   foregroundAt: (phrase: string, offset?: number) => TerminalForeground;
 }>;
@@ -168,7 +169,10 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
           { length: VIEWPORT.rows },
           (_, row) => terminal.buffer.active.getLine(row)?.translateToString(true) ?? '',
         ).join('\n');
-      const frames = wholeFrames((data) => terminal.write(data));
+      const paintedFrames: string[] = [];
+      const frames = wholeFrames((data) =>
+        terminal.write(data, () => paintedFrames.push(screen())),
+      );
       const dataListener = child.onData(frames.feed);
       const exitListener = child.onExit((event) => {
         frames.flush();
@@ -178,6 +182,7 @@ async function inTui(run: Run, home: string, drive: (tui: Tui) => Promise<void>)
       try {
         await drive({
           screen,
+          paintedFrames,
           write: (keys) => child.write(keys),
           foregroundAt: (phrase, offset) =>
             readForegroundAtText(terminal.buffer.active, phrase, offset),
@@ -208,7 +213,7 @@ it('names the stop as the reason when /steer runs before the run stopped, and st
 }, async () => {
   const run = setup();
   try {
-    await inTui(run, trustHome.home, async ({ screen, write, foregroundAt }) => {
+    await inTui(run, trustHome.home, async ({ screen, paintedFrames, write, foregroundAt }) => {
       await expect.poll(screen, RUN).toContain('Describe your feature');
       write('add a total helper');
       await expect.poll(screen, PAINT).toContain('› add a total helper');
@@ -234,7 +239,7 @@ it('names the stop as the reason when /steer runs before the run stopped, and st
       const firstLetter = foregroundAt(STOP_REASON, 0);
       expect(firstLetter).toEqual(foregroundAt(STOP_REASON, 'Finish '.length));
       expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.text });
-      expect(screen()).toContain(`› ${LINE}`);
+      expect(paintedFrames.find((frame) => frame.includes(STOP_REASON))).toContain(`› ${LINE}`);
 
       await expect.poll(screen, PAINT).toContain('○ Stopped at T001');
       expect(screen()).not.toContain(NO_RUN_REASON);
