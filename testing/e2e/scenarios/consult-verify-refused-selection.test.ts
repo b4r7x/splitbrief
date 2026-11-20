@@ -218,9 +218,11 @@ describe('e2e: a consult verify selection that misses a due check', { timeout: 2
       { taskId: 'T002', method: 'consulted' },
     ]);
     const transcript = transcriptText(events);
-    const verifyRows = transcript.split('\n').filter((line) => /\bverify T00\d/.test(line));
+    const verifyRows = transcript
+      .split('\n')
+      .filter((line) => /\bPLAN (?:->|→) T\d+: verify\b/u.test(line));
     expect(verifyRows, transcript).toHaveLength(1);
-    expect(verifyRows[0]).toContain('verify T001-K1, T002-K1');
+    expect(verifyRows[0]?.trim()).toMatch(/^PLAN (?:->|→) T002: verify$/u);
     expect(transcript).not.toContain('did not match its contract');
   });
 });

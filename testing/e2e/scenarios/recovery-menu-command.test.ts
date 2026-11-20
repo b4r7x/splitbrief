@@ -39,7 +39,10 @@ async function openCheckoutChangedRun(draft?: string) {
   fixture = createStopContinueFixture(escapingImplementerScript);
   const halted = await cli(fixture, ['start', 'smoke']);
   expect(halted.exitCode, halted.stderr).toBe(1);
-  const opened = await openHaltedRun(fixture, { heading: 'Needs you', draft });
+  const opened = await openHaltedRun(fixture, {
+    heading: draft === undefined ? 'Needs you' : 'Choose how to continue',
+    draft,
+  });
   ui = opened.screen;
   expect(opened.state.pendingRecovery?.reason).toBe('checkout-changed');
   return opened;
@@ -82,11 +85,13 @@ it('leaves the keys and the command list with a saved slash draft when the recov
   const { screen } = await openCheckoutChangedRun('/scr');
   const frame = stripAnsiStyles(screen.lastFrame());
   expect(frame).toContain('/scroll  Scroll conversation');
+  expect(frame).not.toContain('Needs you');
   expect(frame).not.toContain('tab type a correction');
   expect(completionStore.get().open).toBe(true);
 
   screen.stdin.write('\x1b');
   await vi.waitFor(() => expect(completionStore.get().open).toBe(false));
+  await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Needs you'));
   screen.stdin.write('\x1b');
   await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Stop options'));
 });

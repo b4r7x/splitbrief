@@ -3,6 +3,8 @@ import { join, resolve } from 'node:path';
 import XtermHeadless from '@xterm/headless';
 import { expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
@@ -13,6 +15,7 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 const VIEWPORT = { cols: 120, rows: 40 };
 
@@ -125,7 +128,7 @@ console.log('Implemented ' + title);
 `;
 }
 
-it('confirms a planner-accepted Apply with the note above every open finding', {
+it('shows the planner note once in the transcript and all open findings in the Apply confirmation', {
   timeout: 300_000,
 }, async () => {
   const target = createStopContinueFixture(() => '');
@@ -237,13 +240,20 @@ it('confirms a planner-accepted Apply with the note above every open finding', {
     ]);
     const title = confirm.findIndex((row) => row.includes('Apply with 8 open findings?'));
     expect(title, confirm.join('\n')).toBeGreaterThan(-1);
-    expect(confirm[title + 1]).toContain(`Planner's note: ${NOTE}`);
     for (const [index, finding] of FINDINGS.entries()) {
-      expect(confirm[title + 2 + index]).toContain(`- ${finding}`);
+      expect(confirm[title + 1 + index]).toContain(`- ${finding}`);
     }
+    expect(confirm.slice(title).join('\n')).not.toContain(NOTE);
     expect(confirm.join('\n')).not.toContain('more open finding');
     expect(confirm.join('\n')).toContain('Ready to apply as is · pick Apply as is or Back');
     expect(confirm.join('\n')).not.toContain('Show diff or Discard');
+    const sessionId = readActive(target.projectDir);
+    if (sessionId === null) throw new Error('The run has no active session.');
+    const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    const transcript = transcriptText(events);
+    const noteRows = transcript.split('\n').filter((row) => row.includes(NOTE));
+    expect(noteRows, transcript).toHaveLength(1);
+    expect(noteRows[0]).toContain(`accepts the blockers: ${NOTE}`);
   } finally {
     trustHome.restore();
     cleanupTempDir(target.tmpDir);

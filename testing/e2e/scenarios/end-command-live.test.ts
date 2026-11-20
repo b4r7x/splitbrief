@@ -25,8 +25,9 @@ const RESUME = '/resume';
 const RESUME_REFUSAL = 'Nothing to resume: the run has not stopped.';
 const NO_RESUME_REFUSAL = 'No run to resume in this phase';
 const PLAN_CARD = 'Approve plan and start the build';
+const PLAN_WAITING = 'Waiting for your answer · Plan';
 // The closed screen of each place is the one that its End run row gives.
-const ENDED_AT_CARD = ['× Ended  Plan 0/1 · nothing built', 'Run closed · '];
+const ENDED_AT_CARD = ['× Ended  Plan · nothing built', 'Run closed · '];
 const ENDED_IN_CHECK = [
   '× Ended  Build 0/1 · stopped at T001 · changes saved in run.patch',
   'Ended · bring the changes back with git apply on the Patch file',
@@ -226,7 +227,9 @@ it('ends the run when /end runs over the plan card', SCENARIO_TIMEOUT, async () 
       write(END);
       await expect.poll(screen, PATIENCE).toContain(`› ${END}`);
       unlinkSync(run.hold);
-      await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
+      await expect.poll(screen, PATIENCE).toContain(PLAN_WAITING);
+      expect(screen()).toContain('/end  Close the run, saving unapplied changes');
+      expect(screen()).not.toContain(PLAN_CARD);
     },
     async ({ screen, write }) => {
       write('/scroll top');
@@ -299,7 +302,8 @@ it.each(['plan-card', 'brief-check'] as const)(
           write(RESUME);
           await expect.poll(screen, PATIENCE).toContain(`› ${RESUME}`);
           unlinkSync(run.hold);
-          await expect.poll(screen, PATIENCE).toContain(PLAN_CARD);
+          await expect.poll(screen, PATIENCE).toContain(PLAN_WAITING);
+          expect(screen()).not.toContain(PLAN_CARD);
         } else {
           await expect.poll(() => existsSync(run.checking), PATIENCE).toBe(true);
           await expect.poll(screen, PATIENCE).toContain('Check T001-K1');

@@ -242,11 +242,16 @@ async function scenario(
   }
 }
 
-async function openCardOverDraft(run: Run, { screen, write }: Tui, draft: string) {
+async function openCardOverDraft(
+  run: Run,
+  { screen, write }: Tui,
+  draft: string,
+  heading = APPROVE_ROW,
+) {
   write(draft);
   await expect.poll(screen, PATIENCE).toContain(`› ${draft}`);
   unlinkSync(run.hold);
-  await expect.poll(screen, PATIENCE).toContain(APPROVE_ROW);
+  await expect.poll(screen, PATIENCE).toContain(heading);
 }
 
 const replanned = (run: Run) =>
@@ -398,7 +403,9 @@ it(
     await scenario(async (run, tui) => {
       const { screen, write } = tui;
       const command = '/nosuch';
-      await openCardOverDraft(run, tui, command);
+      await openCardOverDraft(run, tui, command, 'Waiting for your answer · Plan');
+      expect(screen()).toContain('no matching commands');
+      expect(screen()).not.toContain(APPROVE_ROW);
 
       write(PTY_SUBMIT_INPUT);
       await expect.poll(screen, PATIENCE).toContain(`Unknown command: ${command}`);

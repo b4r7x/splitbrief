@@ -179,7 +179,7 @@ async function selectBuildFallback(screen: Screen): Promise<void> {
 }
 
 describe('e2e: the BUILD fallback picker refuses its own seat', { timeout: 120_000 }, () => {
-  it('shows the neutral refusal in the byline and saves nothing', async (context) => {
+  it('shows the refusal as a warning in the byline and saves nothing', async (context) => {
     const skipped = await withCodexHome(WIDE, async (screen, configPath) => {
       await selectBuildFallback(screen);
       const configBefore = readFileSync(configPath, 'utf8');
@@ -199,9 +199,13 @@ describe('e2e: the BUILD fallback picker refuses its own seat', { timeout: 120_0
       screen.write('\r');
 
       await screen.shows(REFUSAL);
+      expect(screen.foregroundAt('⚠ BUILD runs')).toEqual({
+        mode: 'rgb',
+        color: SCREEN_THEME.warning,
+      });
       expect(screen.foregroundAt('choose another tool or model')).toEqual({
         mode: 'rgb',
-        color: SCREEN_THEME.textDim,
+        color: SCREEN_THEME.text,
       });
       expect(screen.text()).toContain('BUILD fallback · tool, model, effort');
       expect(readFileSync(configPath, 'utf8')).toBe(configBefore);
@@ -209,7 +213,7 @@ describe('e2e: the BUILD fallback picker refuses its own seat', { timeout: 120_0
     if (skipped !== undefined) context.skip(skipped);
   });
 
-  it('shows the neutral refusal in a terminal of 50 columns and saves nothing', async (context) => {
+  it('shows the refusal as a warning in a terminal of 50 columns and saves nothing', async (context) => {
     const skipped = await withCodexHome(NARROW, async (screen, configPath) => {
       await selectBuildFallback(screen);
       const configBefore = readFileSync(configPath, 'utf8');
@@ -234,9 +238,13 @@ describe('e2e: the BUILD fallback picker refuses its own seat', { timeout: 120_0
       expect(acrossNoticeEdges(screen.text())).toContain(
         'BUILD runs OpenAI Codex CLI · GPT-6-Sol now',
       );
+      expect(screen.foregroundAt('⚠ BUILD runs')).toEqual({
+        mode: 'rgb',
+        color: SCREEN_THEME.warning,
+      });
       expect(screen.foregroundAt('choose another tool or model')).toEqual({
         mode: 'rgb',
-        color: SCREEN_THEME.textDim,
+        color: SCREEN_THEME.text,
       });
       expect(screen.text()).toContain('BUILD fallback · tool, model, effort');
       expect(readFileSync(configPath, 'utf8')).toBe(configBefore);

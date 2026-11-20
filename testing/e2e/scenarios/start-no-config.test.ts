@@ -14,7 +14,6 @@ import { detectionStore } from '../../../src/stores/discovery/detection.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
-import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -86,10 +85,11 @@ if (args.includes('--help')) { console.log('Claude Code fixture'); process.exit(
 if (args[0] === 'auth') { console.log(JSON.stringify({ loggedIn: true })); process.exit(0); }
 const emit = value => console.log(JSON.stringify(value));
 const answer = text => {
-  const seat = text.includes('Final Implementation Review') ? 'review' : text.startsWith('# Plan the change') ? 'plan' : 'build';
+  const repairing = text.includes("The plan failed SPLITBRIEF's checks:");
+  const seat = text.includes('Final Implementation Review') ? 'review' : repairing ? 'plan-repair' : text.startsWith('# Plan the change') ? 'plan' : 'build';
   fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ seat, args }) + '\\n');
   if (seat === 'build') { fs.mkdirSync('src', { recursive: true }); fs.writeFileSync('src/greet.mjs', "export const greet = () => 'hello';\\n"); }
-  const value = seat === 'plan' ? ${JSON.stringify(plan)} : seat === 'review' ? ${JSON.stringify(review)} : 'Done.';
+  const value = seat === 'plan' || seat === 'plan-repair' ? ${JSON.stringify(plan)} : seat === 'review' ? ${JSON.stringify(review)} : 'Done.';
   emit({ type: 'system', subtype: 'init', session_id: 'first-run-ready' });
   emit({ type: 'result', session_id: 'first-run-ready', result: typeof value === 'string' ? value : JSON.stringify(value), ...(typeof value === 'string' ? {} : { structured_output: value }), usage: { input_tokens: 10, output_tokens: 5 } });
 };
@@ -311,29 +311,36 @@ globalThis.fetch = async input => {
   });
 
   it.each([
-    { source: 'flag', args: ['--implementer-context-length', '200000'] },
+    { source: 'flag', args: ['--implementer-context-length', '32'] },
     { source: 'env', args: [] },
   ])(
-    'keeps the detected crew and applies a Prompt budget from the $source on a first run',
+    'keeps the detected crew and blocks an oversized brief at the first-run Prompt budget from the $source',
     async ({ source, args }) => {
       const { target, bin, calls, home } = freshProject();
       readyClaude(bin, calls, home);
-      if (source === 'env') vi.stubEnv('SPLITBRIEF_CONTEXT_LENGTH', '200000');
+      if (source === 'env') vi.stubEnv('SPLITBRIEF_CONTEXT_LENGTH', '32');
 
       const run = await cli(target, ['start', ...args, 'Add a greeting helper'], {
         timeoutMs: 90_000,
       });
 
-      expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+      expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
       const saved = loadConfig(target.projectDir).config.implementer;
       expect(saved).toMatchObject({ kind: 'cli', tool: 'claude-code' });
       expect(saved.contextLength).toBeUndefined();
-      expect(readFileSync(calls, 'utf8')).toContain('"seat":"build"');
+      const seatCalls = readFileSync(calls, 'utf8');
+      expect(seatCalls).toContain('"seat":"plan"');
+      expect(seatCalls).toContain('"seat":"plan-repair"');
+      expect(seatCalls).not.toContain('"seat":"build"');
       const session = readActive(target.projectDir);
-      if (session === null) throw new Error('Expected a ready run');
-      const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId: session });
-      expect(events.find((event) => event.type === 'task_started')).toMatchObject({
-        contextLength: 200_000,
+      if (session === null) throw new Error('Expected a halted run');
+      expect(readState(target, session).pendingRecovery).toMatchObject({
+        reason: 'plan-checks-failed',
+        details: expect.arrayContaining([
+          expect.stringMatching(
+            /^The brief needs about [\d,]+ tokens\. The BUILD seat can take at most 32\.$/u,
+          ),
+        ]),
       });
     },
   );
