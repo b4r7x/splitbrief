@@ -6,14 +6,14 @@ import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { availableRows } from '../../components/pickers/scroll-offset.js';
+import { overlayListRows } from '../../components/pickers/scroll-offset.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
-import { buildSettingsItems } from '../../features/settings/items.js';
-import { settingsHelpLines } from '../../features/settings/help.js';
+import { buildSettingsItems, type SettingsItem } from '../../features/settings/items.js';
+import { helpTextRows, settingsHelpLines } from '../../features/settings/help.js';
 import { settingsListWindow } from '../../features/settings/list-window.js';
 import { settingRowModel } from '../../features/settings/components/setting-row.js';
-import { DESCRIPTION_ROWS, HelpBlock } from '../../features/settings/components/help-block.js';
+import { HelpBlock } from '../../features/settings/components/help-block.js';
 import { parseSettingsFocus } from '../../features/settings/focus.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
@@ -30,12 +30,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { useStores } from '../../stores/use-many.js';
 import { FilterInput } from '../../components/filter-input.js';
-import {
-  layoutPanelNotice,
-  PANEL_NOTICE_ROWS,
-  PanelNotice,
-  panelNoticeRows,
-} from '../../components/notice.js';
+import { layoutPanelNotice, PANEL_NOTICE_ROWS, Notice } from '../../components/notice.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import {
   CANCEL_HINT,
@@ -46,7 +41,7 @@ import {
 } from '../../components/key-legend.js';
 
 const DESCRIPTION_MIN_TERMINAL_ROWS = 19;
-const BASE_CHROME_ROWS = 9;
+const HEADER_ROWS = 2;
 const FORM_DENSITY: OverlayDensity = 'roomy';
 /** The `Crew` header above the block and the scroll indicator under it. */
 const CREW_BLOCK_RESERVED_ROWS = 2;
@@ -75,12 +70,6 @@ export function SettingsOverlay() {
     width: rect.innerWidth,
     maxRows: PANEL_NOTICE_ROWS,
   });
-  const listBudget = availableRows({
-    rows: rect.height,
-    chromeRows:
-      BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0) + panelNoticeRows(notice),
-  });
-
   const items = buildSettingsItems({
     config,
     defs: SETTINGS_DEFS,
@@ -91,17 +80,28 @@ export function SettingsOverlay() {
   });
   const crewRows = items.filter((item) => item.kind === 'crew').map((item) => item.row);
   const verdict = crewVerdict(crewRows);
-  const layout = planSeatBlock({
-    rows: crewRows,
-    verdict,
-    innerWidth: rect.innerWidth,
-    rowBudget: listBudget - CREW_BLOCK_RESERVED_ROWS,
-  });
-  const listWindow = settingsListWindow({
-    items,
-    rowBudget: listBudget,
-    verdict: layout.verdict,
-  });
+  function layoutFor(item: SettingsItem | undefined) {
+    const helpLines =
+      showDescription && item ? helpTextRows(settingsHelpLines(item, config), rect.innerWidth) : [];
+    const detailRows = helpLines.length > 0 ? 1 + helpLines.length : 0;
+    const listBudget = overlayListRows(
+      rect.innerRows,
+      HEADER_ROWS,
+      detailRows + (notice?.height ?? 0),
+    );
+    const layout = planSeatBlock({
+      rows: crewRows,
+      verdict,
+      innerWidth: rect.innerWidth,
+      rowBudget: listBudget - CREW_BLOCK_RESERVED_ROWS,
+    });
+    const listWindow = settingsListWindow({
+      items,
+      rowBudget: listBudget,
+      verdict: layout.verdict,
+    });
+    return { listBudget, listWindow, helpLines };
+  }
 
   const {
     filter,
@@ -124,11 +124,12 @@ export function SettingsOverlay() {
     onActivateFallback: (item) => {
       fallbackActivate({ row: item.row, config });
     },
-    pageSize: listWindow.pageSize,
-    canActOnIndex: listWindow.canActOnIndex,
+    pageSize: (ctx) => layoutFor(ctx.filtered[ctx.selectedIndex]).listWindow.pageSize(ctx),
+    canActOnIndex: (list, index) => layoutFor(list[index]).listWindow.canActOnIndex(list, index),
     showDescription,
   });
 
+  const { listBudget, listWindow, helpLines } = layoutFor(selectedItem);
   const actionable =
     selectedItem !== undefined &&
     listWindow.canActOnIndex(filtered, effectiveIndex) &&
@@ -143,19 +144,12 @@ export function SettingsOverlay() {
   const verdictLine =
     verdict === undefined ? null : <CrewVerdictLine verdict={verdict} width={rect.innerWidth} />;
 
-  const detail =
-    selectedItem === undefined
-      ? undefined
-      : {
-          label:
-            selectedItem.kind === 'crew'
-              ? CREW_SEAT_LABELS[selectedItem.row.id]
-              : selectedItem.kind === 'fallback'
-                ? `${CREW_SEAT_LABELS[selectedItem.row.id]} fallback`
-                : (selectedItem.def.readLabel?.(config) ?? selectedItem.def.label),
-          lines: settingsHelpLines(selectedItem, config),
-        };
-  const help = showDescription && detail !== undefined ? detail : null;
+  const helpLabel =
+    selectedItem?.kind === 'crew'
+      ? CREW_SEAT_LABELS[selectedItem.row.id]
+      : selectedItem?.kind === 'fallback'
+        ? `${CREW_SEAT_LABELS[selectedItem.row.id]} fallback`
+        : selectedItem && (selectedItem.def.readLabel?.(config) ?? selectedItem.def.label);
 
   const listBody = (
     <>
@@ -200,15 +194,21 @@ export function SettingsOverlay() {
 
   return (
     <OverlayPanel title="Settings" hint={hintText} titleSpacing="tight" density={FORM_DENSITY}>
-      <Box marginBottom={1}>
+      <Box flexShrink={0}>
         <FilterInput filter={filter} />
       </Box>
+      <Box height={1} flexShrink={1} />
 
       {listBody}
 
-      {help && <HelpBlock label={help.label} lines={help.lines} width={rect.innerWidth} />}
+      {helpLines.length > 0 && helpLabel && (
+        <>
+          <Box height={1} flexShrink={1} />
+          <HelpBlock label={helpLabel} lines={helpLines} width={rect.innerWidth} />
+        </>
+      )}
 
-      {notice !== null && <PanelNotice notice={notice} />}
+      {notice !== null && <Notice layout={notice} />}
     </OverlayPanel>
   );
 }

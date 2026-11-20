@@ -746,6 +746,20 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
+  it('fills the last row above the key legend when results scroll', async () => {
+    enterWorkflowScreen();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    const ui = renderCommandPalette();
+    try {
+      await flushEffects();
+      const lines = (ui.lastFrame() ?? '').split('\n');
+      const legend = lines.findIndex((line) => line.includes('esc close'));
+      expect(lines[legend - 1]).toMatch(/↓ \d+ more/u);
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('sizes the result window from terminal rows instead of a fixed window', async () => {
     enterWorkflowScreen();
     terminalSizeStore.__testReset({ cols: 100, rows: 12, isSmall: false });

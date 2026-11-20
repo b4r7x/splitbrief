@@ -201,6 +201,34 @@ describe('e2e: a refused attachment on Home', { timeout: 120_000 }, () => {
   );
 });
 
+function seedEightSessions(projectDir: string): void {
+  for (let index = 0; index < 8; index++) {
+    const id = `recent-${index}`;
+    mkdirSync(sessionDir(projectDir, id), { recursive: true });
+    saveSummary(
+      { projectDir, sessionId: id },
+      makeSession({ id, feature: `Feature ${index}`, startedAt: 1000 + index }),
+    );
+  }
+}
+
+it('shows all eight sessions when /sessions opens at 60x18', async (context) => {
+  await onHome(
+    { cols: 60, rows: 18 },
+    async ({ rows, write }) => {
+      write('/sessions');
+      await vi.waitFor(() => expect(rows().join('\n')).toContain('› /sessions'));
+      write(PTY_SUBMIT_INPUT);
+      await vi.waitFor(() => expect(rows().join('\n')).toContain('Sessions · 8'));
+      const frame = rows().join('\n');
+      expect(frame.match(/Feature \d/gu)).toHaveLength(8);
+      expect(frame).not.toContain('↓ more');
+    },
+    (reason) => context.skip(reason),
+    seedEightSessions,
+  );
+});
+
 describe('e2e: the Home heading on a small terminal', { timeout: 120_000 }, () => {
   it('keeps the wordmark above the crew over a long draft and eight sessions at 60x18', async (context) => {
     await onHome(
@@ -226,16 +254,7 @@ describe('e2e: the Home heading on a small terminal', { timeout: 120_000 }, () =
         });
       },
       (reason) => context.skip(reason),
-      (projectDir) => {
-        for (let index = 0; index < 8; index++) {
-          const id = `recent-${index}`;
-          mkdirSync(sessionDir(projectDir, id), { recursive: true });
-          saveSummary(
-            { projectDir, sessionId: id },
-            makeSession({ id, feature: `Feature ${index}`, startedAt: 1000 + index }),
-          );
-        }
-      },
+      seedEightSessions,
     );
   });
 

@@ -40,14 +40,14 @@ export function OverlayPanel({
 
   // Surface titles stay quiet dim metadata (§1.1 accent budget).
   const titleNode = title && (
-    <Box marginBottom={titleSpacing === 'tight' ? 0 : 1}>
+    <Box flexShrink={0} marginBottom={titleSpacing === 'tight' ? 0 : 1}>
       <Text color={t.textDim}>{title}</Text>
     </Box>
   );
 
   // A key legend sheds whole trailing keys; any other hint, such as an error or a status, truncates.
   const hintNode = hint && (
-    <Box marginTop={1} width={rect.innerWidth}>
+    <Box width={rect.innerWidth} flexShrink={0}>
       <Text color={t.textDim} wrap="truncate-end">
         {hint.includes(SOFT_SEP) ? fitKeyLegend(hint, rect.innerWidth) : hint}
       </Text>

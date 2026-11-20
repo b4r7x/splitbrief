@@ -15,6 +15,11 @@ export function availableRows(opts: {
   );
 }
 
+/** The key legend takes one row. A list gets the rest of its panel after its header and details. */
+export function overlayListRows(bodyRows: number, headerRows: number, detailRows = 0): number {
+  return availableRows({ rows: bodyRows, chromeRows: headerRows + detailRows + 1 });
+}
+
 export function computeScrollOffset(opts: {
   index: number;
   windowSize: number;

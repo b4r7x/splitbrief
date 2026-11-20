@@ -152,7 +152,6 @@ describe('HelpOverlay', () => {
     expect(roomyFrame).toContain('Keyboard shortcuts');
     roomy.unmount();
 
-    // 60x18: 18 rows - 0 gutter - 7 chrome = 11 list slots, below the 12-slot header threshold.
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     const floorCommands = Array.from({ length: 12 }, (_, i) => command(`/cmd-${i}`, ['home']));
     const floor = renderFeature(<HelpOverlay currentScreen="home" commands={floorCommands} />);
@@ -161,9 +160,18 @@ describe('HelpOverlay', () => {
     const floorFrame = floor.lastFrame() ?? '';
     expect(floorFrame).not.toContain('Navigate');
     expect(floorFrame).not.toContain('Keyboard shortcuts');
-    // 11 slots minus the single "N more" indicator row leaves 10 command rows.
     expect((floorFrame.match(/\/cmd-/g) ?? []).length).toBeGreaterThanOrEqual(7);
     floor.unmount();
+  });
+
+  it('fills the last row above the key legend when help scrolls', async () => {
+    const commands = Array.from({ length: 40 }, (_, i) => command(`/cmd-${i}`, ['home']));
+    const ui = renderFeature(<HelpOverlay currentScreen="home" commands={commands} />);
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    const lines = ui.lastFrame().split('\n');
+    const legend = lines.findIndex((line) => line.includes('esc close'));
+    expect(lines[legend - 1]).toMatch(/↓ \d+ more/u);
   });
 
   it('keeps a long shortcut on one name line at 80 columns', async () => {

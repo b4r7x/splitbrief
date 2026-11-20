@@ -34,7 +34,6 @@ it.each([
           onConfirm={() => {}}
           title="Options"
           hint="esc close"
-          chromeRows={12}
           density="roomy"
           rowModel={(item) => ({ name: item, nameParts: [{ text: item, color: theme.planner }] })}
         />

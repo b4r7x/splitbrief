@@ -146,8 +146,8 @@ describe('SessionsPicker', () => {
   });
 
   it('shows all sessions without a false more row when they fit the terminal', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 32, isSmall: false });
-    for (let i = 0; i < 6; i++) {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    for (let i = 0; i < 8; i++) {
       writeSessionSummary(
         tmp,
         makeSession({
@@ -163,7 +163,7 @@ describe('SessionsPicker', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       expect(frame).toContain(`session feature ${i}`);
     }
     expect(frame).not.toContain('more');
@@ -419,7 +419,7 @@ describe('SessionsPicker', () => {
 
   it.each([
     { rows: 18, compact: false },
-    { rows: 10, compact: true },
+    { rows: 10, compact: false },
     { rows: 6, compact: true },
   ])(
     'keeps the title, hint and long filter text visible at 80x$rows',
@@ -452,6 +452,8 @@ describe('SessionsPicker', () => {
         expect(frame).not.toContain('No matching sessions');
         expect(frame).not.toContain('╭');
         expect(frame).not.toContain('╰');
+      } else {
+        expect(frame).toContain('No matching sessions');
       }
 
       instance.unmount();

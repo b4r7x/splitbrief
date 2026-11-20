@@ -1,12 +1,12 @@
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
-import { availableRows } from '../../../components/pickers/scroll-offset.js';
+import { overlayListRows } from '../../../components/pickers/scroll-offset.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { BYLINE_ROWS } from './hint.js';
 import { wrapOnWords } from '../picker/byline.js';
 import { overlayRect } from '../../../core/navigation/overlay-rect.js';
 
 const INNER_PADDING = 4;
 export const COLUMN_GAP = 3;
-const OUTER_CHROME_ROWS = 6;
 export const INNER_CHROME_ROWS = 4;
 /** The least room between the title and a step label that shares its row. */
 const HEAD_GAP = 2;
@@ -33,10 +33,8 @@ export function pickerLayout(input: {
     : stepLabel
       ? [stepLabel]
       : [];
-  const maxVisible = availableRows({
-    rows: height,
-    chromeRows: OUTER_CHROME_ROWS + INNER_CHROME_ROWS + (headStacked ? stepLabelLines.length : 0),
-  });
+  const headerRows = 2 + (headStacked ? stepLabelLines.length : 0);
+  const maxVisible = overlayListRows(height - INNER_CHROME_ROWS, headerRows, BYLINE_ROWS + 1);
   const columnHeight = maxVisible + INNER_CHROME_ROWS;
   // The odd cell goes to the Models column, which carries the longer strings.
   const leftBoxWidth = singlePane ? totalBoxWidth : splitWidth;

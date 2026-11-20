@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import type { Key } from 'ink';
 import { OverlayPanel } from '../overlays/panel.js';
-import { layoutPanelNotice, PANEL_NOTICE_ROWS, PanelNotice, panelNoticeRows } from '../notice.js';
+import { layoutPanelNotice, Notice, PANEL_NOTICE_ROWS } from '../notice.js';
 import { FilterInput } from '../filter-input.js';
 import type { FilterableListKeyContext } from '../../hooks/use-filterable-list.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
@@ -10,7 +10,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-many.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { availableRows } from './scroll-offset.js';
+import { overlayListRows } from './scroll-offset.js';
 import { ListRows, planViewportRows } from '../list-row/rows.js';
 import type { ListRowModel } from '../list-row/plan.js';
 import type { ListSectionConfig } from './list-viewport.js';
@@ -22,13 +22,10 @@ interface FilterableListProps<T> {
   rowModel: (item: T) => ListRowModel;
   onConfirm?: (item: T) => void;
   onActivate?: (item: T) => void;
-  title?: string;
-  hint?: string;
+  title: string;
+  hint: string;
   notice?: string | null;
   placeholder?: ReactNode;
-  chromeRows: number;
-  maxVisible?: number;
-  listFloor?: number;
   density: OverlayDensity;
   filterPlaceholder?: string | undefined;
   shouldAppendChar?: (ch: string) => boolean;
@@ -47,9 +44,6 @@ export function FilterableList<T>({
   hint,
   notice,
   placeholder,
-  chromeRows,
-  maxVisible: maxVisibleProp,
-  listFloor = 0,
   density,
   filterPlaceholder,
   shouldAppendChar,
@@ -57,21 +51,14 @@ export function FilterableList<T>({
   section,
 }: FilterableListProps<T>) {
   const [{ cols, rows }] = useStores(terminalSizeStore);
-  const { innerWidth } = overlayRect({ cols, rows, density });
-  const listRoom = availableRows({ rows, chromeRows });
+  const { innerWidth, innerRows } = overlayRect({ cols, rows, density });
+  // Both the title and the filter use one line and one row of spacing.
+  const listRoom = overlayListRows(innerRows, 4);
   const warning = layoutPanelNotice(
     { message: notice ?? null, severity: 'warning' },
     { width: innerWidth, maxRows: Math.min(PANEL_NOTICE_ROWS, listRoom - 4) },
   );
-  const available = availableRows({
-    rows,
-    chromeRows: chromeRows + panelNoticeRows(warning),
-    floor: listFloor,
-  });
-  const rowBudget =
-    maxVisibleProp === undefined
-      ? available
-      : Math.max(0, Math.min(available, Math.floor(maxVisibleProp)));
+  const rowBudget = Math.max(0, listRoom - (warning?.height ?? 0));
 
   const list = useFilterableList<T>({
     items,
@@ -132,7 +119,7 @@ export function FilterableList<T>({
             }
           : {})}
       />
-      {warning !== null && <PanelNotice notice={warning} />}
+      {warning !== null && <Notice layout={warning} />}
     </OverlayPanel>
   );
 }

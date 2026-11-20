@@ -232,9 +232,13 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
     </Box>
   );
 
+  // Keep an indivisible section heading with its first row and the scroll marker at the viewport edge.
+  const headroom = totalSlots > resolvedRows ? Math.max(0, resolvedRows - visibleSlots.length) : 0;
   return (
     <Box
       flexDirection="row"
+      flexShrink={0}
+      marginTop={headroom}
       width={overflows && barColumn === 'padding' && width !== undefined ? width + 1 : undefined}
     >
       {content}

@@ -36,7 +36,8 @@ describe('FilterableList row activation', () => {
         getKey={(item) => item}
         onConfirm={(item) => confirmed.push(item)}
         onActivate={(item) => activated.push(item)}
-        chromeRows={12}
+        title="Options"
+        hint="esc close"
         density="wide"
         rowModel={(item) => ({ name: item })}
       />,
@@ -69,7 +70,8 @@ describe('FilterableList row activation', () => {
         filterFn={(item, query) => item.includes(query)}
         getKey={(item) => item}
         onConfirm={(item) => confirmed.push(item)}
-        chromeRows={12}
+        title="Options"
+        hint="esc close"
         density="wide"
         rowModel={(item) => ({ name: item })}
       />,
@@ -85,6 +87,7 @@ describe('FilterableList row activation', () => {
   });
 
   it('uses the rendered row budget for page navigation and confirmation', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 11 });
     const confirmed: string[] = [];
     const ui = renderFeature(
       <FilterableList
@@ -92,8 +95,8 @@ describe('FilterableList row activation', () => {
         filterFn={(item, query) => item.includes(query)}
         getKey={(item) => item}
         onConfirm={(item) => confirmed.push(item)}
-        chromeRows={0}
-        maxVisible={2}
+        title="Options"
+        hint="esc close"
         density="wide"
         rowModel={(item) => ({ name: item })}
       />,

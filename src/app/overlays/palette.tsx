@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
 import { CLOSE_HINT, formatKeyHints, SELECT_HINT } from '../../components/key-legend.js';
+import { overlayListRows } from '../../components/pickers/scroll-offset.js';
 import { OverlayPanel } from '../../components/overlays/panel.js';
 import { ListRows, planViewportRows } from '../../components/list-row/rows.js';
 import { isItemIndexVisible } from '../../components/pickers/scroll-window.js';
@@ -25,11 +26,7 @@ import { runViewStore } from '../../stores/workflow/run-view.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
-import {
-  overlayInnerRowCapacity,
-  overlayRect,
-  type OverlayDensity,
-} from '../../core/navigation/overlay-rect.js';
+import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { navigateIndex } from '../../utils/indexing.js';
@@ -37,7 +34,6 @@ import { sessionSelectDeps } from '../prepare-resume.js';
 
 const PANEL_DENSITY: OverlayDensity = 'roomy';
 const PROMPT_ROWS = 2;
-const HINT_ROWS = 2;
 // Below this budget a header costs more rows than it organises, so the 60x18 palette
 // keeps the category order but drops the labels (§Target frames, palette-60x18).
 const SECTION_HEADER_MIN_ROWS = 12;
@@ -98,11 +94,8 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     ...sources,
   });
 
-  const listBudget = overlayInnerRowCapacity({
-    rows,
-    outerChromeRows: PROMPT_ROWS + HINT_ROWS,
-  });
-  const { innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
+  const { innerRows, innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
+  const listBudget = overlayListRows(innerRows, PROMPT_ROWS);
   const models = results.map((result) => ({
     section: sectionLabel(result),
     name: result.label,

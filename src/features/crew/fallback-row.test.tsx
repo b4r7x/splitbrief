@@ -50,7 +50,7 @@ describe('fallbackRowModel', () => {
     expect(lines[0]).toContain(`${PLANNER_INHERITANCE.mark} · ${FALLBACK_NONE_WORDS}`);
   });
 
-  it.each([48, 60, 78])(
+  it.each([29, 48, 60, 78])(
     'keeps the warning whole when the identity is cut at %i columns',
     async (width) => {
       const lines = await rowLines(

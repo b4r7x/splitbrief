@@ -1405,7 +1405,7 @@ describe('visual catalog', () => {
     }
   });
 
-  it('keeps more than one session visible below a narrow refusal', async () => {
+  it('uses all session rows above a narrow refusal', async () => {
     const scenario = findVisualScenario('overlay-sessions-refused-applying');
     const checkpoint = scenario?.checkpoints[0];
     const size = REQUIRED_VIEWPORTS.find(({ cols }) => cols === 60);
@@ -1413,8 +1413,11 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-      expect(frame).toContain('Apply is still writing to your checkout.');
-      expect(frame.match(/◌ /gu)?.length).toBeGreaterThan(1);
+      expect(acrossNoticeEdges(frame)).toContain('Apply is still writing to your checkout.');
+      const rows = frame.split('\n');
+      const notice = rows.findIndex((row) => row.includes('Apply is still writing'));
+      expect(rows[notice - 1]).toContain('↓ more');
+      expect(rows.filter((row) => /[◌●] /u.test(row))).toHaveLength(5);
     } finally {
       await handle.unmount();
     }

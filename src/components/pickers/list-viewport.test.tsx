@@ -98,6 +98,26 @@ describe('ListViewport', () => {
     ui.unmount();
   });
 
+  it('keeps the scroll marker on the last row when the next section needs two rows', () => {
+    const ui = renderFeature(
+      <ListViewport
+        items={['alpha', 'bravo', 'charlie', 'delta']}
+        selectedIndex={0}
+        getKey={(name) => name}
+        rowBudget={5}
+        section={{ by: (name) => (name < 'charlie' ? 'Project' : 'Global') }}
+        renderItem={(name) => <Text>{name}</Text>}
+      />,
+    );
+    try {
+      const lines = ui.lastFrame().split('\n');
+      expect(lines[4]?.trim()).toBe('↓ more');
+      expect(lines.join('\n')).not.toContain('Global');
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('collapses list content when the viewport has no safe rows', async () => {
     const ui = renderFeature(
       <ListViewport

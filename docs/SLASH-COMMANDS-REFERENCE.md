@@ -39,7 +39,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+/`.
 - **Example**: `/help`
-- **Behavior**: Opens the `help` overlay. Help uses the same filter as the command palette (`buildCommandItems`). It leaves out `hidden` commands, commands for another screen and commands that a `guard` blocks now. Command rows follow the five categories, and a **Keyboard shortcuts** section follows them. Help lists `ctrl+d` when there are preparation details or a conversation row has details to show or hide. Category headers appear when the panel has room for at least 12 rows (`SECTION_HEADER_MIN_ROWS`); a smaller panel keeps the order without headers. Press `Esc` to close.
+- **Behavior**: Opens the `help` overlay. Help uses the same filter as the command palette (`buildCommandItems`). It leaves out `hidden` commands, commands for another screen and commands that a `guard` blocks now. Command rows follow the five categories, and a **Keyboard shortcuts** section follows them. Help lists `ctrl+d` when there are preparation details or a conversation row has details to show or hide. Category headings appear when the list has room for at least 13 rows. Shorter lists keep the same command order. Press `Esc` to close.
 - **Implementation**: opens overlay via `overlayStore.open`.
 - **See also**: `/palette`.
 

@@ -1,6 +1,7 @@
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { useState } from 'react';
 import { Box, useInput } from 'ink';
+import { overlayListRows } from '../../components/pickers/scroll-offset.js';
 import { OverlayPanel } from '../../components/overlays/panel.js';
 import { ListRows, planViewportRows } from '../../components/list-row/rows.js';
 import { CLOSE_HINT, formatKeyHints, SCROLL_HINT } from '../../components/key-legend.js';
@@ -8,12 +9,7 @@ import { buildCommandItems } from '../../features/palette/sources.js';
 import { readLatestDiffKey } from '../../features/workflow/conversation-rows/row-actions/read.js';
 import { getShortcutsForScreen } from '../../core/keybindings/registry.js';
 import { resolveScrollKey, stepForScrollAction } from '../../core/keybindings/scroll.js';
-import {
-  OVERLAY_FRAME_ROWS,
-  overlayInnerRowCapacity,
-  overlayRect,
-  type OverlayDensity,
-} from '../../core/navigation/overlay-rect.js';
+import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
 import type { Screen } from '../../core/navigation/types.js';
 import { plannerSupportsImages } from '../../engine/providers/capabilities.js';
 import { COMMAND_CATEGORIES, COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
@@ -32,12 +28,9 @@ import { runViewStore } from '../../stores/workflow/run-view.js';
 import { activeApply } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 
 const PANEL_DENSITY: OverlayDensity = 'roomy';
-// border, pad, title, blank, hint, pad, border — the panel is asked for a tight title, so the
-// blank row it would otherwise spend under the title goes to the list instead.
-const HELP_CHROME_ROWS = 7;
 // Below this budget a header costs more rows than it organises, so the 60x18 help keeps the
 // category order but drops the labels (§Target frames).
-const SECTION_HEADER_MIN_ROWS = 12;
+const SECTION_HEADER_MIN_ROWS = 13;
 const SHORTCUTS_SECTION = 'Keyboard shortcuts';
 
 interface HelpRow {
@@ -110,11 +103,8 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     })),
   ];
 
-  const listBudget = overlayInnerRowCapacity({
-    rows,
-    outerChromeRows: HELP_CHROME_ROWS - OVERLAY_FRAME_ROWS,
-  });
-  const { innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
+  const { innerRows, innerWidth } = overlayRect({ cols, rows, density: PANEL_DENSITY });
+  const listBudget = overlayListRows(innerRows, 1);
   const section =
     listBudget >= SECTION_HEADER_MIN_ROWS ? (i: number) => helpRows[i]?.section ?? '' : undefined;
   const lines = planViewportRows(

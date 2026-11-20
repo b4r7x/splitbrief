@@ -492,8 +492,6 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  // The help block is a fixed DESCRIPTION_ROWS = 5 tall and pays for a wrapped description out of
-  // the spacer above its rule, so a description that wraps must not grow the panel by a row.
   it('keeps the frame height identical between a 1-line and a 2-line description row', async () => {
     // Inner width at 70 cols / roomy density is 60 cells (70 - 4 - OVERLAY_FRAME_COLS).
     const shortDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.isolation');
@@ -664,14 +662,32 @@ describe('SettingsOverlay', () => {
     overlayStore.open('settings', 'validation.endChecks');
     expect(configStore.get().config?.validation.endChecks).toBe(true);
 
-    const ui = renderAt(100, 8);
+    const ui = renderAt(100, 7);
     await flushEffects();
+    expect(ui.lastFrame()).not.toContain('End-of-run checks');
 
     ui.stdin.write(' ');
     await tick(20);
 
     expect(configStore.get().config?.validation.endChecks).toBe(true);
     ui.unmount();
+  });
+
+  it('toggles the focused setting when one row fits at eight rows', async () => {
+    seed({ validation: { endChecks: true } });
+    overlayStore.open('settings', 'validation.endChecks');
+    const ui = renderAt(100, 8);
+    try {
+      await flushEffects();
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('End-of-run checks');
+      ui.stdin.write(' ');
+      await vi.waitFor(() =>
+        expect(feedbackStore.get().message).toContain('End-of-run checks · off'),
+      );
+      expect(configStore.get().config?.validation.endChecks).toBe(false);
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('names the context-length row after the implementer kind', async () => {
@@ -810,9 +826,10 @@ describe('SettingsOverlay', () => {
     const ui = renderAt(40, 30);
     await tick(20);
 
-    expect(panelText(lineWith(frameLines(ui), '↑↓ select') ?? '').trim()).toBe(
-      '↑↓ select · ⏎ change seat',
-    );
+    expect(
+      panelText(lineWith(frameLines(ui), '↑↓ select') ?? '').trim(),
+      stripAnsiStyles(ui.lastFrame()),
+    ).toBe('↑↓ select · ⏎ change seat');
 
     ui.unmount();
   });
@@ -910,6 +927,34 @@ describe('SettingsOverlay', () => {
     expect(lines.slice(options + 1, legend).every((line) => panelText(line) === '')).toBe(true);
 
     ui.unmount();
+  });
+
+  it.each([
+    { cols: 60, rows: 18, footer: '↑↓ select' },
+    { cols: 80, rows: 24, footer: 'help' },
+  ])('fills the list up to its footer at $cols×$rows', async ({ cols, rows, footer }) => {
+    const ui = renderAt(cols, rows);
+    try {
+      await flushEffects();
+      const lines = frameLines(ui);
+      const end =
+        footer === 'help'
+          ? lines.findIndex((line) => RULE_ROW.test(line))
+          : indexOfLine(lines, footer);
+      expect(lines[end - 1]).toContain('↓ more');
+    } finally {
+      ui.unmount();
+    }
+  });
+
+  it('keeps the filter visible beside a full list at 60×18', async () => {
+    const ui = renderAt(60, 18);
+    try {
+      await flushEffects();
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('Type to filter');
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('spends a blank row between sections only where the list has rows to spare', async () => {

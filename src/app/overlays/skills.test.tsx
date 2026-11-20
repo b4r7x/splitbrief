@@ -117,14 +117,22 @@ describe('SkillsPicker', () => {
     ui.unmount();
   });
 
-  it('shows all skills without a false more row when they fit the terminal', async () => {
-    const skills = Array.from({ length: 6 }, (_, i) => skill(`skill-${i}`));
+  it.each([
+    { cols: 60, rows: 18 },
+    { cols: 80, rows: 24 },
+    { cols: 120, rows: 40 },
+  ])('shows every skill when the group fits at $cols×$rows', async (viewport) => {
+    terminalSizeStore.__testReset(viewport);
+    const skills = Array.from({ length: viewport.rows - 10 }, (_, i) => ({
+      ...skill(`skill-${i}`),
+      description: '',
+    }));
     skillsStore.setAvailable(skills);
 
-    const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
+    const ui = renderFeature(<SkillsPicker />, viewport);
+    await flushEffects();
 
-    const frame = ui.lastFrame() ?? '';
+    const frame = ui.lastFrame();
     for (const item of skills) {
       expect(frame).toContain(item.name);
     }
