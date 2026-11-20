@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useInput } from 'ink';
 import { OverlayPanel, type OverlayCard } from '../../components/overlays/panel.js';
 import { RuleHeader } from '../../components/rule-header.js';
@@ -12,11 +12,12 @@ import {
   overlayRect,
   type OverlayDensity,
 } from '../../core/navigation/overlay-rect.js';
-import { overlayStore, selectHasOverlay } from '../../stores/ui/overlay.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-many.js';
-import type { StartPreparationState } from './use-controller.js';
-import { fitHint, panelLines, panelModel, type LineTone } from './panel-lines.js';
+import type { PreparationViewState } from '../../stores/navigation/preparation.js';
+import { fitHint, panelModel } from '../../components/preparation-problem.js';
+import { panelLines, type LineTone } from './panel-lines.js';
 
 const DENSITY: OverlayDensity = 'roomy';
 // Title, the blank under it, the hint and the blank above it — the border and the padding are the
@@ -24,10 +25,8 @@ const DENSITY: OverlayDensity = 'roomy';
 const CHROME_ROWS = 4;
 const QUESTION_TITLE = `Tool preparation${SOFT_SEP}Needs you`;
 export type StartPreparationPanelProps = Readonly<{
-  state: StartPreparationState;
-  onRetry: () => void;
+  state: PreparationViewState;
   onBack: () => void;
-  onOpenSettings: () => void;
   /**
    * A question to answer before the tools are ready. It paints this card itself, with the title and
    * density given, so it can budget the card's rows; a terminal too short for every line of the
@@ -38,36 +37,20 @@ export type StartPreparationPanelProps = Readonly<{
 
 export function StartPreparationPanel({
   state,
-  onRetry,
   onBack,
-  onOpenSettings,
   approvalPrompt,
 }: StartPreparationPanelProps) {
   const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
-  const hasOverlay = overlayStore.use(selectHasOverlay);
-  const actionable = state.kind === 'blocked' || state.kind === 'failed';
-  const model = actionable ? panelModel(state) : null;
-  const [expandedError, setExpandedError] = useState<Error | null>(null);
-  const hasDetails =
-    state.kind === 'failed' &&
-    (model?.diagnostic !== undefined || (model?.details.length ?? 0) > 0);
-  const expanded = state.kind === 'failed' && expandedError === state.error;
-  const isActive = actionable && !hasOverlay && approvalPrompt === undefined;
-
+  const active = overlayStore.use((snapshot) => snapshot.active);
+  const model = panelModel(state);
+  const isActive =
+    model !== null &&
+    (active === 'none' || active === 'preparation-details') &&
+    approvalPrompt === undefined;
   useInput(
-    (input, key) => {
-      if (key.escape) {
-        onBack();
-        return;
-      }
-      if (input === 'r' || input === 'R') {
-        onRetry();
-        return;
-      }
-      if (model?.settings && input.toLowerCase() === 's') onOpenSettings();
-      if (hasDetails && input.toLowerCase() === 'd')
-        setExpandedError(expanded ? null : state.error);
+    (_input, key) => {
+      if (key.escape) onBack();
     },
     { isActive },
   );
@@ -79,18 +62,16 @@ export function StartPreparationPanel({
   // check on the fixed status row beside its composer. This panel is for what needs answering.
   if (model === null) return null;
 
-  const density = model.failed && !expanded ? 'compact' : DENSITY;
-  const rect = overlayRect({ cols, rows, density });
-  // The card is the page while it shows, not an overlay above one, so it keeps no gutter rows.
-  const capacity = Math.max(1, rows - OVERLAY_FRAME_ROWS - CHROME_ROWS + (model.failed ? 2 : 0));
+  const rect = overlayRect({ cols, rows, density: DENSITY });
+  const capacity = Math.max(1, rows - OVERLAY_FRAME_ROWS - CHROME_ROWS);
   // Measured at the full width first: the scrollbar's column is paid for only once the copy is
   // known not to fit, and taking it back would re-wrap every line under the cause.
-  const full = panelLines(model, rect.innerWidth, expanded);
+  const full = panelLines(model, rect.innerWidth);
   const overflows = full.length > capacity;
   const contentWidth = overflows
     ? getScrollViewportContentWidth(rect.innerWidth, 'padding')
     : rect.innerWidth;
-  const lines = overflows ? panelLines(model, contentWidth, expanded) : full;
+  const lines = overflows ? panelLines(model, contentWidth) : full;
   const documentRows: ScrollableDocumentRow[] = lines.map((line) => ({
     key: line.key,
     node:
@@ -109,18 +90,9 @@ export function StartPreparationPanel({
 
   return (
     <OverlayPanel
-      title={model.failed ? undefined : `Tool preparation${SOFT_SEP}Blocked`}
-      density={density}
-      hint={fitHint(
-        [
-          'r retry',
-          'esc back',
-          ...(hasDetails ? [expanded ? 'd hide details' : 'd details'] : []),
-          ...(model.settings ? ['s settings'] : []),
-          ...(overflows ? ['↑↓ scroll'] : []),
-        ],
-        rect.innerWidth,
-      )}
+      title={`Tool preparation${SOFT_SEP}Details`}
+      density={DENSITY}
+      hint={fitHint(['esc close', ...(overflows ? ['↑↓ scroll'] : [])], rect.innerWidth)}
     >
       <ScrollableDocument
         rows={documentRows}

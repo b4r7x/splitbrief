@@ -61,6 +61,7 @@ export function seatAxisFocusSeat(focus: string | undefined): string | undefined
 export const ACTIVE_OVERLAYS = [
   'help',
   'command-palette',
+  'preparation-details',
   'skills',
   'settings',
   ...SEAT_PICKER_OVERLAYS,

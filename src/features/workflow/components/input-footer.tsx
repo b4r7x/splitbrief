@@ -1,5 +1,8 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
+import { panelModel, preparationHint } from '../../../components/preparation-problem.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
+import { sessionSelectStore } from '../../../stores/navigation/session-select.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { useStores } from '../../../stores/use-many.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -134,12 +137,22 @@ export function InputFooter({
     now,
   });
 
+  const problem = panelModel(sessionSelectStore.use((state) => state.preparation));
   const byline = fitInputFooterByline({
     cols: width ?? cols,
     lead,
     leadClock,
     hintText,
-    recordByline: stopped === null ? givenByline : undefined,
+    recordByline: problem
+      ? [
+          {
+            text: preparationHint(problem, getChromeContentWidth(width ?? cols) - MARK_SLOT_CELLS),
+            tone: 'textDim',
+          },
+        ]
+      : stopped === null
+        ? givenByline
+        : undefined,
     queued:
       lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
         ? runQueueCopy(runView, operations, lifecycle.queueDepth)

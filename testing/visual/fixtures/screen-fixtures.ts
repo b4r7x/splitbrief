@@ -1,3 +1,4 @@
+import { runnerAvailabilityCheck } from '../../../src/core/readiness/checks/availability.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -894,8 +895,8 @@ const heldPreparation: NonNullable<FixtureLifecycle['prepareExecution']> = () =>
   new Promise(() => {});
 
 /** A start the user submitted on Home: the screen owns the check, so esc cancels it. */
-function createHomeStartingFixture(): FixtureLifecycle {
-  const home = createHomeFixture();
+function createHomeStartingFixture(options?: HomeFixtureOptions): FixtureLifecycle {
+  const home = createHomeFixture(options);
   return {
     setup: async (context) => {
       await home.setup(context);
@@ -977,53 +978,63 @@ function preparationReport(
   };
 }
 
-/** The contradiction this panel exists to prevent: an execution error with no blocker at all. */
-function createHomePreparationFailedFixture(): FixtureLifecycle {
-  const home = createHomeFixture();
+function homePreparationProblem(
+  outcome: () => PreparationOutcome,
+  details = false,
+  options?: HomeFixtureOptions,
+): FixtureLifecycle {
   return {
-    setup: async (context) => {
-      await home.setup(context);
-      const path = '.splitbrief/sessions';
-      const cause = Object.assign(new Error(`EACCES: permission denied, mkdir '${path}'`), {
-        code: 'EACCES',
-        path,
-      });
-      submitSettledCheck({
-        kind: 'failed',
-        report: preparationReport([TRUST_BOUNDARY_CHECK]),
-        error: sessionPreparationError.io(
-          'allocate-session',
-          { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: VISUAL_WORKFLOW_SESSION_ID },
-          cause,
-        ),
-      });
+    ...createHomeStartingFixture(options),
+    prepareExecution: async () => outcome(),
+    afterMount: async (write) => {
+      await write.press('\r');
+      if (details) await write.press('\x04');
     },
-    teardown: home.teardown,
   };
+}
+
+export function createHomePreparationFailedFixture(details = false): FixtureLifecycle {
+  return homePreparationProblem(() => {
+    const path = '.splitbrief/sessions';
+    const cause = Object.assign(new Error(`EACCES: permission denied, mkdir '${path}'`), {
+      code: 'EACCES',
+      path,
+    });
+    return {
+      kind: 'failed',
+      report: preparationReport([TRUST_BOUNDARY_CHECK]),
+      error: sessionPreparationError.io(
+        'allocate-session',
+        { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: VISUAL_WORKFLOW_SESSION_ID },
+        cause,
+      ),
+    };
+  }, details);
 }
 
 function createHomePreparationBlockedFixture(
   warnings: readonly ReadinessCheck[],
 ): FixtureLifecycle {
-  const home = createHomeFixture();
-  return {
-    setup: async (context) => {
-      await home.setup(context);
-      submitSettledCheck({
-        kind: 'blocked',
-        report: preparationReport([
-          {
-            id: 'runners.planner.available',
-            severity: 'blocker',
-            summary: 'Ollama is not reachable at http://localhost:11434/v1',
-            details: ['Start Ollama with: ollama serve', 'Then retry this connection.'],
+  return homePreparationProblem(
+    () => ({
+      kind: 'blocked',
+      report: preparationReport([
+        runnerAvailabilityCheck({
+          label: 'PLAN Ollama',
+          fact: {
+            slot: { role: 'planner' },
+            provider: 'ollama',
+            endpoint: 'http://localhost:11434/v1',
+            verdict: { state: 'unavailable', diagnostic: 'connection refused' },
           },
-          ...warnings,
-        ]),
-      });
-    },
-    teardown: home.teardown,
-  };
+          isDefaultImplementer: false,
+        }),
+        ...warnings,
+      ]),
+    }),
+    warnings.length > 0,
+    { config: { planner: BASE_IMPLEMENTER } },
+  );
 }
 
 /**
@@ -1074,54 +1085,40 @@ function createHomePreparationRunnerTrustFixture(executableChanged: boolean): Fi
  * the `fix-config` next action `collect.ts` and `status.ts` produce.
  */
 function createHomePreparationIsolationBlockedFixture(): FixtureLifecycle {
-  const home = createHomeFixture();
-  return {
-    setup: async (context) => {
-      await home.setup(context);
-      const manifestDir = join(VISUAL_FIXTURE_WORK_DIR, 'isolation-workspace-manifest');
-      mkdirSync(manifestDir, { recursive: true });
-      writeFileSync(
-        join(manifestDir, 'package.json'),
-        JSON.stringify({
-          name: 'isolation-workspace-fixture',
-          private: true,
-          workspaces: ['packages/*'],
-        }),
-      );
-      const checks = buildIsolationChecks(manifestDir, undefined);
-      rmSync(manifestDir, { recursive: true, force: true });
-      submitSettledCheck({
-        kind: 'blocked',
-        report: preparationReport(checks, {
-          section: { id: 'repo', title: 'Repository' },
-        }),
-      });
-    },
-    teardown: home.teardown,
-  };
+  return homePreparationProblem(() => {
+    const manifestDir = join(VISUAL_FIXTURE_WORK_DIR, 'isolation-workspace-manifest');
+    mkdirSync(manifestDir, { recursive: true });
+    writeFileSync(
+      join(manifestDir, 'package.json'),
+      JSON.stringify({
+        name: 'isolation-workspace-fixture',
+        private: true,
+        workspaces: ['packages/*'],
+      }),
+    );
+    const checks = buildIsolationChecks(manifestDir, undefined);
+    rmSync(manifestDir, { recursive: true, force: true });
+    return {
+      kind: 'blocked',
+      report: preparationReport(checks, { section: { id: 'repo', title: 'Repository' } }),
+    };
+  });
 }
 
 /** A repository with no commits: the blocker and its fix line come from `buildRepoChecks`. */
 function createHomePreparationNoCommitsFixture(): FixtureLifecycle {
-  const home = createHomeFixture();
-  return {
-    setup: async (context) => {
-      await home.setup(context);
-      submitSettledCheck({
-        kind: 'blocked',
-        report: preparationReport(
-          buildRepoChecks({
-            isGitRepo: true,
-            hasCommits: false,
-            dirtyFiles: [],
-            untrackedFiles: [],
-          }),
-          { section: { id: 'repo', title: 'Repository' } },
-        ),
-      });
-    },
-    teardown: home.teardown,
-  };
+  return homePreparationProblem(() => ({
+    kind: 'blocked',
+    report: preparationReport(
+      buildRepoChecks({
+        isGitRepo: true,
+        hasCommits: false,
+        dirtyFiles: [],
+        untrackedFiles: [],
+      }),
+      { section: { id: 'repo', title: 'Repository' } },
+    ),
+  }));
 }
 
 const CONTINUING_FEATURE = 'Refine terminal navigation';
@@ -1216,6 +1213,12 @@ function createWorkflowContinueRepoRunnerBlockedFixture(): FixtureLifecycle {
   return {
     setup: async (context) => {
       await workflow.setup(context);
+      addEvent({
+        type: 'user_message',
+        phase: 'planning',
+        ts: VISUAL_FIXTURE_EPOCH,
+        text: CONTINUING_FEATURE,
+      });
       submitSettledCheck({
         kind: 'blocked',
         report: preparationReport([
@@ -1698,11 +1701,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('home-starting-slow-long'),
     () => withSlowToolCheck(createHomeStartingFixture(), { slowModelList: 'antigravity' }),
   ],
-  [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
-  [
-    scenarioId('home-preparation-failed-details'),
-    () => ({ ...createHomePreparationFailedFixture(), afterMount: (write) => write.press('d') }),
-  ],
+  [scenarioId('home-preparation-failed'), () => createHomePreparationFailedFixture()],
   [scenarioId('home-preparation-blocked'), () => createHomePreparationBlockedFixture([])],
   [
     scenarioId('home-preparation-setting-not-applied'),

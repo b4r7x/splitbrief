@@ -96,6 +96,7 @@ import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
 import { VISUAL_FIXTURE_EPOCH } from './common.js';
 import {
+  createHomePreparationFailedFixture,
   opencodeApiModels,
   opencodeConfigOnlyModels,
   publishVisualDiscovery,
@@ -2575,6 +2576,7 @@ const createEditorProjectGoneFixture: FixtureFactory = () => ({
 });
 
 export const overlayFixtureRegistry: FixtureRegistry = new Map([
+  [scenarioId('home-preparation-failed-details'), () => createHomePreparationFailedFixture(true)],
   [scenarioId('overlay-help'), createHelpFixture],
   [scenarioId('overlay-help-details'), createHelpDetailsFixture],
   [scenarioId('overlay-command-palette'), createPaletteFixture],

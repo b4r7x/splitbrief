@@ -1678,15 +1678,18 @@ describe('SetupScreen', () => {
       await continueSetup(ui);
 
       const ignorePath = join(projectDir, '.gitignore');
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool preparation · Blocked'));
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain('The primary blocker.'));
+      expect(ui.lastFrame()).toContain(CREW_TITLE);
+      expect(ui.lastFrame()).not.toContain('blocker.first');
       expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n');
       const before = 'node_modules/\n';
       writeFileSync(ignorePath, before);
+      await flushEffects();
       ui.stdin.write(ESC);
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+      await vi.waitFor(() => expect(ui.lastFrame()).not.toContain('The primary blocker.'));
       await continueSetup(ui);
 
-      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool preparation · Blocked'));
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain('The primary blocker.'));
       expect(readFileSync(ignorePath, 'utf8')).toBe(before);
       ui.unmount();
     });
@@ -1737,12 +1740,10 @@ describe('SetupScreen', () => {
 
       await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('The primary blocker.'));
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('Another hidden warning.');
-      expect(frame.indexOf('The primary blocker.')).toBeLessThan(
-        frame.indexOf('A lower-priority warning.'),
-      );
+      expect(frame).toContain('Set up your crew');
+      expect(frame).not.toContain('Another hidden warning.');
       expect(frame).toContain('r retry');
-      expect(frame).toContain('esc back');
+      expect(frame).toContain('esc dismiss');
       expect(frame).toContain('s settings');
       expect(routerStore.get().screen).toBe('setup');
 
@@ -1926,11 +1927,11 @@ describe('SetupScreen', () => {
       );
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain('A lower-priority warning.');
-      expect(frame).toContain('d details');
-      ui.stdin.write('d');
-      await vi.waitFor(() => expect(ui.lastFrame()).toContain('The primary blocker.'));
+      expect(frame).toContain('ctrl+d details');
+      ui.stdin.write('\x04');
+      await vi.waitFor(() => expect(overlayStore.get().active).toBe('preparation-details'));
       expect(frame).toContain('r retry');
-      expect(frame).toContain('esc back');
+      expect(frame).toContain('esc dismiss');
       expect(frame).toContain('s settings');
       expect(routerStore.get().screen).toBe('setup');
       ui.unmount();

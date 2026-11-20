@@ -1,28 +1,17 @@
-import type { ReadinessReport, ReadinessCheck } from '../../core/readiness/types.js';
-import { sessionPreparationError } from '../../core/sessions/errors.js';
-import { sanitizeTerminalDiagnosticText } from '../../utils/display-text/diagnostic.js';
-import { SOFT_SEP } from '../../core/separators.js';
+import type { PreparationProblem } from '../../components/preparation-problem.js';
+import { readinessCheckLines } from '../../core/readiness/format.js';
+import { readinessCheckRemediation } from '../../core/readiness/json.js';
+import type { ReadinessCheck } from '../../core/readiness/types.js';
 import { glyph } from '../../lib/glyphs.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text/sanitize.js';
 import { splitTerminalGraphemes, getTerminalCellWidth } from '../../utils/display-text/width.js';
-import type { StartPreparationState } from './use-controller.js';
 
 const INDENT = '  ';
-/** `blocker`, the longest severity word a problem carries, so the detail IDs line up. */
-const SEVERITY_WIDTH = 7;
-
 export type LineTone = 'cause' | 'text' | 'dim';
 
 type PanelLine =
   | Readonly<{ kind: 'text'; key: string; text: string; tone: LineTone }>
   | Readonly<{ kind: 'rule'; key: string; label: string }>;
-
-function checksOf(report: ReadinessReport | undefined, severity: ReadinessCheck['severity']) {
-  if (!report) return [];
-  return report.sections
-    .flatMap((section) => section.checks)
-    .filter((check) => check.severity === severity);
-}
 
 function hardSplit(word: string, budget: number): string[] {
   const parts: string[] = [];
@@ -99,24 +88,16 @@ function blank(key: string): PanelLine {
 }
 
 function checkLines(check: ReadinessCheck, index: number, budget: number): PanelLine[] {
-  const lines = paragraph({
-    key: `${check.id}:${index}:summary`,
-    text: sanitizeTerminalDisplayText(check.summary),
-    tone: 'text',
-    budget,
-  });
-  if (check.fix === undefined) return lines;
-  return [
-    ...lines,
-    ...paragraph({
-      key: `${check.id}:${index}:fix`,
-      text: sanitizeTerminalDisplayText(check.fix),
-      tone: 'dim',
-      budget,
-      indent: INDENT,
-      marker: glyph('connectorHandoff'),
-    }),
-  ];
+  return readinessCheckLines({ ...check, remediation: readinessCheckRemediation(check) }).flatMap(
+    (text, line) =>
+      paragraph({
+        key: `${check.id}:${index}:${line}`,
+        text: sanitizeTerminalDisplayText(text),
+        tone: line === 0 ? 'text' : 'dim',
+        budget,
+        indent: line === 0 ? '' : INDENT,
+      }),
+  );
 }
 
 /** Every entry gets its own air: two checks with no row between them read as one paragraph. */
@@ -126,99 +107,12 @@ function spaced(key: string, groups: readonly PanelLine[][]): PanelLine[] {
   );
 }
 
-/**
- * The technical identity of a check and the prose that qualifies it — the check ID, the probe
- * output, the trust-boundary paragraphs — belong under their own rule, below the cause and the
- * action. Nothing is dropped: the panel scrolls, so every line stays reachable. The severity rides
- * with the ID so a check carrying no prose is still a whole entry rather than a bare name.
- */
-function detailLines(checks: readonly ReadinessCheck[], budget: number): PanelLine[] {
-  return spaced(
-    'details',
-    checks.map((check, index) => [
-      ...paragraph({
-        key: `${check.id}:${index}:id`,
-        text: sanitizeTerminalDisplayText(check.id),
-        tone: 'text',
-        budget,
-        marker: check.severity.padEnd(SEVERITY_WIDTH),
-      }),
-      ...(check.details ?? []).flatMap((detail, detailIndex) =>
-        paragraph({
-          key: `${check.id}:${index}:detail:${detailIndex}`,
-          text: sanitizeTerminalDisplayText(detail),
-          tone: 'dim',
-          budget,
-          indent: INDENT,
-        }),
-      ),
-    ]),
-  );
-}
-
 function section(label: string, lines: PanelLine[]): PanelLine[] {
   if (lines.length === 0) return [];
   return [blank(`${label}:gap`), { kind: 'rule', key: `${label}:rule`, label }, ...lines];
 }
 
-interface PanelModel {
-  failed: boolean;
-  cause: string;
-  action?: string | undefined;
-  reason?: string | undefined;
-  diagnostic?: string | undefined;
-  settings: boolean;
-  blockers: readonly ReadinessCheck[];
-  warnings: readonly ReadinessCheck[];
-  details: readonly ReadinessCheck[];
-}
-
-/**
- * The cause leads, and it is never a count: a failure with no blocker at all still has to say what
- * went wrong. A blocked check leads with the first blocker it found and that blocker's own fix; a
- * failed one leads with the error it raised.
- */
-export function panelModel(
-  state: Extract<StartPreparationState, { kind: 'blocked' | 'failed' }>,
-): PanelModel {
-  const blockers = checksOf(state.report, 'blocker');
-  const warnings = checksOf(state.report, 'warning');
-  const details = [...blockers, ...warnings];
-  const settings = blockers.some((check) => check.nextAction === 'fix-config');
-  if (state.kind === 'failed') {
-    const failure = state.error;
-    const session = sessionPreparationError.isIo(failure) ? failure.data : undefined;
-    const cause = sanitizeTerminalDiagnosticText(session?.title ?? failure.message).trim();
-    return {
-      failed: true,
-      settings,
-      cause: cause || 'Tool preparation failed.',
-      reason: session?.reason,
-      diagnostic:
-        failure.cause instanceof Error
-          ? sanitizeTerminalDiagnosticText(failure.cause.message)
-          : undefined,
-      blockers,
-      warnings,
-      details,
-    };
-  }
-  const [lead, ...rest] = blockers;
-  return {
-    failed: false,
-    settings,
-    cause:
-      lead === undefined
-        ? sanitizeTerminalDisplayText(state.report.nextAction.reason)
-        : sanitizeTerminalDisplayText(lead.summary),
-    action: lead?.fix === undefined ? undefined : sanitizeTerminalDisplayText(lead.fix),
-    blockers: rest,
-    warnings,
-    details,
-  };
-}
-
-export function panelLines(model: PanelModel, budget: number, expanded: boolean): PanelLine[] {
+export function panelLines(model: PreparationProblem, budget: number): PanelLine[] {
   const lead = [
     ...paragraph({ key: 'cause', text: model.cause, tone: 'cause', budget }),
     ...(model.reason ? paragraph({ key: 'reason', text: model.reason, tone: 'text', budget }) : []),
@@ -232,9 +126,17 @@ export function panelLines(model: PanelModel, budget: number, expanded: boolean)
         })
       : []),
   ];
-  if (model.failed && !expanded) return lead;
   return [
     ...lead,
+    ...model.details.flatMap((text, index) =>
+      paragraph({
+        key: `lead-detail:${index}`,
+        text: sanitizeTerminalDisplayText(text),
+        tone: 'dim',
+        budget,
+        indent: INDENT,
+      }),
+    ),
     ...(model.diagnostic
       ? section(
           'File error',
@@ -255,13 +157,5 @@ export function panelLines(model: PanelModel, budget: number, expanded: boolean)
         model.warnings.map((check, index) => checkLines(check, index, budget)),
       ),
     ),
-    ...section('Details', detailLines(model.details, budget)),
   ];
-}
-
-/** The keys shed from the tail, so the repair actions survive the narrowest panel. */
-export function fitHint(segments: readonly string[], budget: number): string {
-  const kept = [...segments];
-  while (kept.length > 1 && getTerminalCellWidth(kept.join(SOFT_SEP)) > budget) kept.pop();
-  return kept.join(SOFT_SEP);
 }

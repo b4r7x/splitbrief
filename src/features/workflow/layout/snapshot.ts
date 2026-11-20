@@ -1,3 +1,4 @@
+import { panelModel } from '../../../components/preparation-problem.js';
 import { getRailActiveIndex } from '../../../core/phases/rail.js';
 import { seatLineText } from '../../../core/crew/seat-line/collapse.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
@@ -39,6 +40,7 @@ import { queuedBriefs } from '../conversation-rows/queued-briefs.js';
 import { resultMenuStore } from '../../../stores/workflow/result-menu.js';
 import { routeClosedAtRest } from '../at-rest.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { sessionSelectStore } from '../../../stores/navigation/session-select.js';
 import { getFeedbackRows } from '../components/feedback-row.js';
 
 export interface ConversationScrollSnapshot {
@@ -116,7 +118,11 @@ function readProgressRows(promptRows: number): number {
 
 // The footer's message rows, asked from the store the row paints from.
 function readFeedbackRows(): number {
-  return getFeedbackRows(feedbackStore.get(), terminalSizeStore.get().cols);
+  return getFeedbackRows(
+    feedbackStore.get(),
+    terminalSizeStore.get().cols,
+    panelModel(sessionSelectStore.get().preparation),
+  );
 }
 
 function readRailFraction(): string {

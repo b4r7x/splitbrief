@@ -377,7 +377,7 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('passes the display feature, separate file context, and attachment metadata through preparation retries', async () => {
+  it('retries the visible draft with its attachments when Enter follows a failed start', async () => {
     const externalDir = createTempDir('home-outside-files-');
     const textPath = join(externalDir, 'notes.md');
     const imagePath = join(externalDir, 'shot.png');
@@ -422,18 +422,14 @@ describe('HomeScreen', () => {
         plannerContext,
         attachedInputs,
       });
-      writeFileSync(textPath, 'Changed after submission');
       await flushEffects();
-      ui.stdin.write('r');
+      ui.stdin.write(ENTER);
       await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledTimes(2));
       expect(prepareExecutionMock.mock.calls[1]?.[0]).toMatchObject({
         feature,
         plannerContext,
         attachedInputs,
       });
-      expect(prepareExecutionMock.mock.calls[1]?.[0].attachedInputs).toBe(
-        prepareExecutionMock.mock.calls[0]?.[0].attachedInputs,
-      );
     } finally {
       ui.unmount();
       cleanupTempDir(externalDir);
@@ -1071,7 +1067,10 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('cached ready cannot bypass a fresh blocked preparation', async () => {
+  it('shows a fresh blocker above the editable Home draft even when cached tools were ready', async ({
+    onTestFinished,
+  }) => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
     detectionStore.hydrate({
       providers: [],
       cliTools: [cliDetectionFor('ready', 'claude-code')],
@@ -1081,7 +1080,7 @@ describe('HomeScreen', () => {
       requestId: 1,
       contexts: DISCOVERY_CONTEXTS,
     });
-    prepareExecutionMock.mockResolvedValue({
+    prepareExecutionMock.mockResolvedValueOnce({
       kind: 'blocked',
       report: readinessReport([
         {
@@ -1094,14 +1093,25 @@ describe('HomeScreen', () => {
     });
 
     const ui = renderHome();
+    onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('fresh denial');
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('fresh denial'));
     await flushEffects();
     ui.stdin.write(ENTER);
 
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('The configured planner could not be verified.');
-    });
+    await vi.waitFor(() =>
+      expect(ui.lastFrame()).toContain('The configured planner could not be verified.'),
+    );
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain('/crew to change');
+    expect(frame).toContain('⚠ The configured planner could not be verified.');
+    expect(frame).toContain('Review the configured runner and retry.');
+    expect(frame).not.toContain('runners.planner.fresh-evidence');
+    expect(frame).toContain('› fresh denial');
+    expect(frame.indexOf('Review the configured runner')).toBeLessThan(
+      frame.indexOf('› fresh denial'),
+    );
     expect(prepareExecutionMock).toHaveBeenCalledOnce();
     expect(prepareExecutionMock.mock.calls[0]?.[0]).toMatchObject({
       projectDir,
@@ -1110,7 +1120,13 @@ describe('HomeScreen', () => {
     });
     expect(routerStore.get()).toEqual({ screen: 'home' });
     expect(existsSync(join(projectDir, '.splitbrief', 'sessions'))).toBe(false);
-    ui.unmount();
+    await flushEffects();
+    ui.stdin.write(' revised');
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('fresh denial revised'));
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => expect(routerStore.get().screen).toBe('workflow'));
+    expect(prepareExecutionMock.mock.calls[1]?.[0].feature).toBe('fresh denial revised');
   });
 
   it('start while background refresh is pending uses independent fresh preparation', async () => {
@@ -1160,7 +1176,9 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('a failed start on Home keeps config blockers and their settings action accessible', async () => {
+  it('names Settings on a failed start and leaves letters in the Home draft', async ({
+    onTestFinished,
+  }) => {
     const checks: ReadinessCheck[] = [
       ...Array.from({ length: 5 }, (_, index) => ({
         id: `runners.warning-${index + 1}`,
@@ -1182,8 +1200,10 @@ describe('HomeScreen', () => {
     });
 
     const ui = renderHome();
+    onTestFinished(ui.unmount);
     await flushEffects();
     ui.stdin.write('actionable failure');
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('actionable failure'));
     await flushEffects();
     ui.stdin.write(ENTER);
 
@@ -1191,29 +1211,25 @@ describe('HomeScreen', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('Fresh tool preparation could not finish.');
       expect(frame).not.toContain('Warnings');
-      expect(frame).toContain('s settings');
-      expect(frame).toContain('d details');
+      expect(frame).toContain('/settings');
+      expect(frame).toContain('ctrl+d');
     });
     expect(routerStore.get()).toEqual({ screen: 'home' });
     expect(existsSync(join(projectDir, '.splitbrief', 'sessions'))).toBe(false);
 
-    // Let the failed-panel useInput handler attach before the shortcut press
-    // (under suite load a same-tick `s` can miss and leave overlay idle).
     await flushEffects();
-    await tick();
     ui.stdin.write('s');
-    await flushEffects();
-    await vi.waitFor(() => expect(overlayStore.get().active).toBe('settings'));
-    overlayStore.close();
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('actionable failures'));
+    expect(overlayStore.get().active).toBe('none');
     await flushEffects();
     ui.stdin.write(ESC);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain(DEFAULT_HOME_HINT);
-      expect(frame).not.toContain('Tool preparation');
+      expect(frame).not.toContain('Fresh tool preparation could not finish.');
+      expect(frame).toContain('actionable failures');
     });
     expect(routerStore.get()).toEqual({ screen: 'home' });
-    ui.unmount();
   });
 
   it('states the check on the reserved row without moving the screen under it', async () => {

@@ -25,7 +25,6 @@ import {
 import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../lib/terminal/typeahead-grace.js';
-import { SOFT_SEP } from '../core/separators.js';
 import { SessionPreparation } from './session-preparation.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
 
@@ -227,7 +226,8 @@ describe('SessionPreparation', () => {
     closeApprovalPrompt();
     await selection;
     expect(approvalSettled).toBe(true);
-    expect(ui.lastFrame() ?? '').toContain(`Tool preparation${SOFT_SEP}Blocked`);
+    expect(sessionSelectStore.get().preparation.kind).toBe('blocked');
+    expect(ui.lastFrame()?.trim()).toBe('');
     ui.unmount();
   });
 
@@ -298,7 +298,7 @@ describe('SessionPreparation', () => {
       },
     });
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('r retry');
+    expect(sessionSelectStore.get().preparation.kind).toBe('blocked');
 
     ui.stdin.write('r');
     await vi.waitFor(() => {

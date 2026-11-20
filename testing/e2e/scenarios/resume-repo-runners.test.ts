@@ -21,6 +21,7 @@ import {
   readState,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const VIEWPORT = { cols: 160, rows: 40 };
@@ -140,11 +141,13 @@ async function withStoppedRun(
               .getLine(terminal.buffer.active.viewportY + row)
               ?.translateToString(true) ?? '',
         ).join('\n');
+      const frames = wholeFrames((data) => terminal.write(data));
       const dataListener = child.onData((data) => {
         output += data;
-        terminal.write(data);
+        frames.feed(data);
       });
       const exitListener = child.onExit((event) => {
+        frames.flush();
         didExit = true;
         exited.resolve(event);
       });
@@ -208,6 +211,46 @@ it.for<[string, Continue]>([
     });
   },
 );
+
+it('shows a blocked Continue in the workflow footer with the transcript still visible', {
+  timeout: 240_000,
+}, async (context) => {
+  await withStoppedRun(context, async (child, screen) => {
+    await openSessionToContinue(child, screen);
+    const before = screen().split('\n');
+    const footerRule = (row: string) => row.startsWith('─') && row.endsWith('─');
+    const footer = before.findLastIndex(footerRule);
+    expect(footer).toBeGreaterThan(2);
+    // Read the last transcript entry from the left column, clear of the sidebar.
+    const transcriptText = (row: string) => row.slice(0, 100).trim();
+    const entry = before
+      .slice(2, footer)
+      .map(transcriptText)
+      .findLast((row) => /[A-Za-z]/.test(row));
+    if (!entry) throw new Error('The stopped run has no visible transcript entry.');
+    const config = loadConfig(fixture.projectDir).config;
+    writeConfig(fixture.projectDir, {
+      ...config,
+      planner: { kind: 'shell', command: join(fixture.tmpDir, 'missing-planner') },
+    });
+    child.write('\r');
+    await vi.waitFor(() => expect(screen()).toContain('PLAN could not start.'), {
+      timeout: 20_000,
+    });
+    const visible = screen();
+    const rows = visible.split('\n');
+    const cause = rows.findIndex((row) => row.includes('PLAN could not start.'));
+    const composer = rows.findIndex((row) => row.includes('Type a correction'));
+    const blockedFooter = rows.findLastIndex(footerRule);
+    expect(blockedFooter).toBeGreaterThan(2);
+    expect(rows.slice(2, blockedFooter).map(transcriptText)).toContain(entry);
+    expect(cause).toBeGreaterThan(blockedFooter);
+    expect(composer).toBeGreaterThan(cause);
+    expect(visible).toContain('correct its path');
+    expect(visible).not.toContain('runners.preparation.planner');
+    expect(readFileSync(join(fixture.tmpDir, 'implementer-invocations'), 'utf8')).toBe('1');
+  });
+});
 
 it('drops ctrl+k commands from the legend while the tools check to continue the run', {
   timeout: 240_000,

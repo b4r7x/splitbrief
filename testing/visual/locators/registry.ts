@@ -99,6 +99,18 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     description: 'Complete question panel bounds',
     resolve: resolveWorkflowQuestionPanel,
   },
+  'workflow:preparation-notice': {
+    kind: 'marker',
+    description: 'Continuation blocker above the composer',
+    rowsAbove: 1,
+    rowsBelow: 4,
+  },
+  'home:preparation-notice': {
+    kind: 'marker',
+    description: 'Start blocker above the composer',
+    rowsAbove: 1,
+    rowsBelow: 4,
+  },
   'workflow:preparation-panel': {
     kind: 'layout',
     description: 'Preparation problem panel terminal bounds',

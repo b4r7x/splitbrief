@@ -1,3 +1,4 @@
+import { preparationStore } from '../../stores/navigation/preparation.js';
 import { useState } from 'react';
 import { Box, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/panel.js';
@@ -77,11 +78,14 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     onRuntimeCommand: () => {},
     guardContext,
   });
-  // `ctrl+d` is taught only while a row of the transcript has details to show or hide.
-  const hasDetails = eventsStore.use(() => readLatestDiffKey() !== null);
-  const shortcuts = getShortcutsForScreen(currentScreen, { inputMode }).filter(
-    (shortcut) => shortcut.id !== 'toggle-diff' || hasDetails,
+  const hasPreparationDetails = preparationStore.use(
+    (state) => state.kind === 'failed' || state.kind === 'blocked',
   );
+  const hasTranscriptDetails = eventsStore.use(() => readLatestDiffKey() !== null);
+  const shortcuts = getShortcutsForScreen(currentScreen, {
+    inputMode,
+    preparationDetails: hasPreparationDetails,
+  }).filter((shortcut) => shortcut.id !== 'toggle-diff' || hasTranscriptDetails);
 
   const helpRows: HelpRow[] = [
     ...COMMAND_CATEGORIES.flatMap((category) =>

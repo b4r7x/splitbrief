@@ -43,7 +43,7 @@ const GLOBAL_ESC_OVERLAYS = new Set<OverlayType>(['help']);
 // These overlays handle Escape themselves — the runner pickers give it a meaning beyond closing
 // (a non-empty filter query clears first, only a second press exits). The global close must stand
 // down for them even on an empty stack, or one press would fire both handlers.
-const SELF_ESC_OVERLAYS = new Set<OverlayType>(SEAT_PICKER_OVERLAYS);
+const SELF_ESC_OVERLAYS = new Set<OverlayType>([...SEAT_PICKER_OVERLAYS, 'preparation-details']);
 
 /** The three effects an app-level key spends: two run controls and the skill rescan. */
 export interface AppKeyDeps {

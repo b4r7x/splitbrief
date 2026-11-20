@@ -19,6 +19,8 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { preparationStore, selectCheckingStage } from '../../stores/navigation/preparation.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { saveHomeDraft } from '../../stores/ui/session-drafts.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { useStores } from '../../stores/use-many.js';
@@ -39,7 +41,12 @@ import { sessionSelectDeps } from '../prepare-resume.js';
 import { checkingStatusText, prepareStart } from '../prepare-start.js';
 import { PreparationGate } from '../preparation-gate.js';
 import { useStartPreparation } from '../../features/start-preparation/use-controller.js';
-import { useCancelKey } from '../../features/start-preparation/use-cancel-key.js';
+import { usePreparationKeys } from '../../features/start-preparation/use-preparation-keys.js';
+import {
+  panelModel,
+  preparationNotice,
+  preparationHint,
+} from '../../components/preparation-problem.js';
 import { useClosePromptOnLeave } from '../../features/start-preparation/use-close-prompt-on-leave.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
@@ -86,8 +93,11 @@ export function HomeScreen({
   const noConfig = configStore.use((state) => state.revision === null);
   const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
   const toolCheck = detectionStore.use((s) => deriveHomeToolCheck(s.refresh));
-  const startPreparation = useStartPreparation<Extract<DraftSubmission, { ok: true }>>({
-    prepare: (submission, signal) => {
+  const startPreparation = useStartPreparation<{
+    submission: Extract<DraftSubmission, { ok: true }>;
+    draft: DraftDocument;
+  }>({
+    prepare: ({ submission }, signal) => {
       configStore.reloadIfChanged();
       return prepareStart(
         deps.prepareExecution,
@@ -102,9 +112,10 @@ export function HomeScreen({
         signal,
       );
     },
-    onPrepared: (execution) => {
+    onPrepared: (execution, { draft }) => {
       // The composer keeps a sent request for a start that is refused; a run that starts takes it.
-      saveHomeDraft(configStore.get().projectDir, createDraftDocument(''));
+      if (composerLiveStore.get().document === draft)
+        saveHomeDraft(configStore.get().projectDir, createDraftDocument(''));
       routerStore.navigate({
         to: 'workflow',
         run: readRunRecord(execution.session.ref, configStore.reviewNone()),
@@ -118,8 +129,8 @@ export function HomeScreen({
   // The word is the submitted request's, not this screen's — a check launched by the CLI before
   // the mount is the same wait, and Home is the screen it lands on.
   const checkingStage = preparationStore.use(selectCheckingStage);
-  const showPreparationPanel =
-    approvalPending || preparationState.kind === 'blocked' || preparationState.kind === 'failed';
+  const problem = panelModel(preparationState);
+  const showPreparationPanel = approvalPending;
   const {
     layout,
     hasRoomForSessions,
@@ -181,12 +192,14 @@ export function HomeScreen({
     onEnter: () => setSessionsFocused(true),
   });
   const onStartWorkflow = (submission: Extract<DraftSubmission, { ok: true }>) => {
-    observePreparationCleanup(startPreparation.submit(submission));
+    observePreparationCleanup(
+      startPreparation.submit({ submission, draft: composerLiveStore.get().document }),
+    );
   };
 
-  useCancelKey({
-    preparing: isPreparing,
-    takesPage: showPreparationPanel,
+  usePreparationKeys({
+    active: !sessionsActive && !approvalPending && (isPreparing || problem !== null),
+    problem,
     onCancel: () => startPreparation.cancel(closeApprovalPrompt),
   });
 
@@ -214,15 +227,7 @@ export function HomeScreen({
 
   return (
     <>
-      {showPreparationPanel && (
-        <PreparationGate
-          state={startPreparation.state}
-          retry={startPreparation.retry}
-          onBack={() => startPreparation.cancel(closeApprovalPrompt)}
-        />
-      )}
-      {/* The panel covers the screen rather than replacing it, so what is typed here outlives a
-          blocked or failed check and is still in the composer when the panel stands down. */}
+      {showPreparationPanel && <PreparationGate />}
       <Box display={showPreparationPanel ? 'none' : 'flex'}>
         <ScreenShell justifyContent="flex-start" alignItems="center">
           <Box flexDirection="column" width={layout.width} height="100%">
@@ -291,11 +296,17 @@ export function HomeScreen({
                 keepPlaceholderWhileFocused
                 homeHint={homeHint}
                 homeStatus={preparationStatus}
-                homeNotice={homeNotice}
+                homeNotice={
+                  problem && !sessionsActive
+                    ? preparationHint(problem, layout.width, true)
+                    : homeNotice
+                }
                 homeStandingNotice={
                   sessionsActive && selectionError
                     ? { message: selectionError, severity: 'warning' }
-                    : standingNotice
+                    : problem && !sessionsActive
+                      ? preparationNotice(problem)
+                      : standingNotice
                 }
                 readClipboardImage={readClipboardImage}
                 listProjectFiles={listProjectFiles}

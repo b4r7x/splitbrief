@@ -4,7 +4,6 @@ import type { WorkflowState } from '../../core/schemas/workflow/state.js';
 import type { OwnedResumeState } from '../../core/state/resume-hydration.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { SkillMeta } from '../../core/skills/types.js';
-import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { OverlayType } from '../../core/navigation/types.js';
 import type { RunRecord } from '../../core/sessions/run/record.js';
 import { readRunRecord } from '../../core/sessions/run/record-io.js';
@@ -17,23 +16,18 @@ import { skillsStore } from '../project/skills.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { overlayStore } from '../ui/overlay.js';
 import { resetWorkflowControls } from '../workflow/actions/reset.js';
-import { CHECKING_TOOLS_STAGE, preparationStore, type PreparationState } from './preparation.js';
+import {
+  CHECKING_TOOLS_STAGE,
+  preparationStore,
+  type PreparationViewState,
+  preparationView,
+} from './preparation.js';
 import { atRestExecution, routerStore } from './router.js';
 import { configStore } from '../project/config.js';
 
-type SessionResumePreparationState =
-  | Readonly<{ kind: 'idle' }>
-  | Readonly<{ kind: 'preparing' }>
-  | Readonly<{ kind: 'blocked'; report: ReadinessReport }>
-  | Readonly<{
-      kind: 'failed';
-      report?: ReadinessReport | undefined;
-      error: Error;
-    }>;
-
 interface SessionSelectState {
   error: string | null;
-  preparation: SessionResumePreparationState;
+  preparation: PreparationViewState;
 }
 
 const initial: SessionSelectState = { error: null, preparation: { kind: 'idle' } };
@@ -52,29 +46,15 @@ type PreparationRequest = Readonly<{
 let continuing: Readonly<{ attempt: number; promise: Promise<void> }> | undefined;
 let lastRequest: PreparationRequest | undefined;
 
-const IDLE: SessionResumePreparationState = { kind: 'idle' };
-
-/** The picker's view of the shared coordinator: only a continuation is this store's to show. */
-function resumePreparation(state: PreparationState): SessionResumePreparationState {
-  if (state.kind === 'idle' || state.origin !== 'continue') return IDLE;
-  switch (state.kind) {
-    case 'checking':
-      return { kind: 'preparing' };
-    case 'blocked':
-      return { kind: 'blocked', report: state.report };
-    case 'failed':
-      return {
-        kind: 'failed',
-        ...(state.report !== undefined && { report: state.report }),
-        error: state.error,
-      };
-  }
-}
-
 preparationStore.subscribe(() => {
-  const preparation = resumePreparation(preparationStore.get());
+  const current = preparationStore.get();
+  const preparation = preparationView(
+    current.kind !== 'idle' && current.origin === 'continue' ? current : undefined,
+  );
   store.set((state) =>
-    state.preparation.kind === 'idle' && preparation === IDLE ? state : { ...state, preparation },
+    state.preparation.kind === 'idle' && preparation.kind === 'idle'
+      ? state
+      : { ...state, preparation },
   );
 });
 

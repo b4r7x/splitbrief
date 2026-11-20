@@ -65,7 +65,7 @@ initStores(projectDir, opts)
 
 The draft remains editable during preparation; start and continue wait for current admission and ownership checks.
 
-`preparationStore.submit()` owns explicit starts and continuations. A newer attempt supersedes the earlier one; stale success or failure cannot replace the new route. Failure preserves the current draft and reports the actual preparation problem. A user-action problem may open a panel; ordinary checking stays beside the editable input.
+`preparationStore.submit()` owns explicit starts and continuations. A newer attempt supersedes the earlier one; stale success or failure cannot replace the new route. Failure preserves the current draft and reports the actual preparation problem. Home and Setup show the cause beside the input or crew list. A blocked continuation shows the cause in the workflow footer. Ctrl+D opens details. An approval question takes the page.
 
 `prepareExecution()` rechecks execution admission and session ownership for each attempt. A zero-blocker discovery report cannot authorize takeover of a live or unknown session owner. `createInFlightProbeSharing()` shares only compatible observations while they are pending, keyed by current config, executable and authentication context. It retains no completed readiness result; unspecified CLI auth context is not shared. Remembered discovery is presentation data, never authority to execute.
 

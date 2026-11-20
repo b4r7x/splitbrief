@@ -53,6 +53,8 @@ import type { readClipboardImage } from '../../core/attachments/clipboard-image.
 import type { listProjectFiles } from '../../lib/fs/listing.js';
 import { draftRefusalStore } from '../../stores/ui/session-drafts.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { sessionSelectStore } from '../../stores/navigation/session-select.js';
+import { panelModel } from '../../components/preparation-problem.js';
 import { getFeedbackRows } from '../../features/workflow/components/feedback-row.js';
 
 interface WorkflowScreenProps {
@@ -83,9 +85,12 @@ export function WorkflowScreen({
   const recoveryIssue = runViewStore.use((view) => view.halt?.issue ?? null);
   const recoveryStepReadsNone = runViewStore.use(haltReadsNoWords);
   const recoveryAsking = recoveryNoticeStore.use((state) => state.asking);
+  const preparation = sessionSelectStore.use((snapshot) => snapshot.preparation);
+  const problem = panelModel(preparation);
   const feedbackRows = getFeedbackRows(
     feedbackStore.use((state) => state),
     cols,
+    problem,
   );
 
   const model = useWorkflowScreen({
@@ -147,9 +152,8 @@ export function WorkflowScreen({
     atRest: model.atRestRecord !== undefined,
     parked,
   });
-  // The preparation page covers this screen: a check that stopped, or a gate it opened. The composer
-  // under it keeps its draft but takes no keys, so each key on the page means one thing.
-  const covered = useSessionPreparationTakesPage();
+  // While the notice offers repair keys, the composer keeps its draft and yields input.
+  const covered = useSessionPreparationTakesPage() || problem !== null;
   const keys = usePanelKeys({
     model,
     panels,
@@ -305,7 +309,7 @@ export function WorkflowScreen({
               recoveryPromptOpen || model.atRestRecord !== undefined || model.applying
             }
             onReviewBoundaryNavigate={review.navigateBoundary}
-            {...(chrome.byline !== undefined && { byline: chrome.byline })}
+            byline={chrome.byline}
             {...(review.artifact !== null
               ? {
                   onEditShortcut: () => {

@@ -12,7 +12,12 @@ import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
 import { refreshPickerDetection } from '../../features/runners/refresh-detection.js';
 import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { useStartPreparation } from '../../features/start-preparation/use-controller.js';
-import { useCancelKey } from '../../features/start-preparation/use-cancel-key.js';
+import { usePreparationKeys } from '../../features/start-preparation/use-preparation-keys.js';
+import {
+  panelModel,
+  preparationNotice,
+  preparationHint,
+} from '../../components/preparation-problem.js';
 import { useClosePromptOnLeave } from '../../features/start-preparation/use-close-prompt-on-leave.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../../stores/prompts/approval.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -174,23 +179,14 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   };
 
   const preparing = preparation.state.kind === 'preparing';
-  const preparationTakesPage =
-    preparation.state.kind === 'blocked' ||
-    preparation.state.kind === 'failed' ||
-    (preparing && approvalPending);
-
-  // Escape gives up this attempt and leaves the crew exactly as it was chosen.
-  useCancelKey({ preparing, takesPage: preparationTakesPage, onCancel: cancelPreparation });
-
-  if (preparationTakesPage) {
-    return (
-      <PreparationGate
-        state={preparation.state}
-        retry={preparation.retry}
-        onBack={cancelPreparation}
-      />
-    );
-  }
+  const problem = panelModel(preparation.state);
+  usePreparationKeys({
+    active: !approvalPending && (preparing || problem !== null),
+    problem,
+    retry: preparation.retry,
+    onCancel: cancelPreparation,
+  });
+  if (preparing && approvalPending) return <PreparationGate />;
 
   if (effectiveStep === 'discovery') {
     return (
@@ -216,8 +212,16 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     <CrewStep
       noConfig={noConfig}
       note={rememberedStepLabel}
-      status={preparationStatus}
-      inert={checkingStage !== null}
+      status={
+        problem
+          ? preparationHint(
+              problem,
+              overlayRect({ cols, rows, density: CREW_PANEL_DENSITY }).innerWidth,
+            )
+          : preparationStatus
+      }
+      notice={problem ? preparationNotice(problem) : undefined}
+      inert={checkingStage !== null || problem !== null}
       onContinue={(current) => void crewSave.finalize(current)}
       onExit={() => {
         crewSave.abort();

@@ -5,11 +5,6 @@ interface LayoutProps {
   screen: ReactNode;
   overlay: ReactNode | null;
   sessionPreparation?: ReactNode | undefined;
-  /**
-   * A preparation owns the page only when the operator has something to do on it: approve the
-   * attempt, or repair what stopped it. The routine check leaves the screen where it is and says
-   * so beside the composer, so the run and the draft on it stay put.
-   */
   sessionPreparationTakesPage?: boolean | undefined;
 }
 

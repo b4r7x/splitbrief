@@ -422,19 +422,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         kind: 'failure',
         marker: 'Could not create the session folder',
       },
-      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
-    }),
-    defineScenario({
-      id: 'home-preparation-failed-details',
-      title: 'Home · session folder error details',
-      surface: screenSurface('home'),
-      checkpoint: {
-        id: 'failure',
-        title: 'The expanded failure shows the filesystem diagnostic',
-        kind: 'failure',
-        marker: 'EACCES',
-      },
-      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+      elements: [{ id: 'preparation-notice', title: 'Preparation notice above the composer' }],
     }),
     // The composer carrying images inside its text: no separate attachment row, no extra height.
     defineScenario({
@@ -447,7 +435,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         kind: 'failure',
         marker: 'Ollama is not reachable',
       },
-      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+      elements: [{ id: 'preparation-notice', title: 'Preparation notice above the composer' }],
     }),
     // The same blocked start with a PLAN effort that OpenCode does not apply: the warning and its
     // fix line come from `buildRunnerChecks`, not from this catalog.
@@ -475,7 +463,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         kind: 'failure',
         marker: 'The project links workspace packages',
       },
-      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+      elements: [{ id: 'preparation-notice', title: 'Preparation notice above the composer' }],
     }),
     // The readiness blocker of a repository with no commits: its summary and fix line come from
     // `buildRepoChecks`, not from this catalog.
@@ -487,9 +475,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'failure',
         title: 'The fix asks for a first commit',
         kind: 'failure',
-        marker: 'Make a first commit of your files',
+        marker: 'Git repository has no commits yet.',
       },
-      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+      elements: [{ id: 'preparation-notice', title: 'Preparation notice above the composer' }],
     }),
     // The trust panel a declared `shell` or `agent` runner opens on its first start.
     defineScenario({
@@ -6141,7 +6129,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         kind: 'failure',
         marker: 'PLAN could not start',
       },
-      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+      elements: [{ id: 'preparation-notice', title: 'Preparation notice above the composer' }],
     }),
     defineScenario({
       id: 'workflow-continue-runner-trust',
@@ -7064,6 +7052,20 @@ function overlayGroup(input: OverlayGroupInput): readonly ScenarioDefinition[] {
 const PICKER_TITLE_MARKER = 'tool, model, effort';
 
 const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> = {
+  'preparation-details': [
+    defineScenario({
+      id: 'home-preparation-failed-details',
+      title: 'Home · session folder error details',
+      surface: overlaySurface('preparation-details', 'home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'The expanded failure shows the filesystem diagnostic',
+        kind: 'failure',
+        marker: 'EACCES',
+      },
+      elements: [{ id: 'overlay-panel', title: 'Preparation problem panel' }],
+    }),
+  ],
   help: overlayGroup({
     overlay: 'help',
     underlyingScreen: 'workflow',

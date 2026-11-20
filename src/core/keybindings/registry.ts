@@ -49,6 +49,12 @@ const SHORTCUTS: ShortcutInfo[] = [
     description: 'Close overlay',
     screens: ['home', 'setup'],
   },
+  {
+    id: 'preparation-details',
+    key: 'ctrl+d',
+    description: 'Read preparation details',
+    screens: ALL_SCREENS,
+  },
   { id: 'toggle-diff', key: 'ctrl+d', description: 'Show or hide details', screens: ['workflow'] },
   {
     id: 'scroll',
@@ -77,10 +83,12 @@ export function getShortcutKey(id: string): string | null {
 
 export function getShortcutsForScreen(
   screen: Screen,
-  opts: { inputMode?: InputMode | undefined } = {},
+  opts: { inputMode?: InputMode | undefined; preparationDetails?: boolean } = {},
 ): ShortcutInfo[] {
   return SHORTCUTS.filter((shortcut) => {
     if (!shortcut.screens.includes(screen)) return false;
+    if (shortcut.id === 'preparation-details') return opts.preparationDetails === true;
+    if (shortcut.id === 'toggle-diff' && opts.preparationDetails) return false;
     if (shortcut.inputModes === undefined) return true;
     return opts.inputMode !== undefined && shortcut.inputModes.includes(opts.inputMode);
   });

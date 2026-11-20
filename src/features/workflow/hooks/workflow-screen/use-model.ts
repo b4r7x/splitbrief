@@ -34,6 +34,7 @@ import { skillsStore } from '../../../../stores/project/skills.js';
 import { overlayStore, selectHasOverlay } from '../../../../stores/ui/overlay.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
 import {
+  sessionSelectStore,
   continueRunInPlace,
   type SessionSelectDeps,
 } from '../../../../stores/navigation/session-select.js';
@@ -213,7 +214,10 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     openExternalEditor: deps?.reviewInput?.openExternalEditor,
   });
 
-  useWorkflowKeys({ isActive: !promptPending });
+  const preparationProblem = sessionSelectStore.use(
+    ({ preparation }) => preparation.kind === 'failed' || preparation.kind === 'blocked',
+  );
+  useWorkflowKeys({ isActive: !promptPending && !preparationProblem });
 
   const parked = stopStore.use((s) => s.phase === 'parked');
 

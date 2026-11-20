@@ -1,3 +1,4 @@
+import { addEvent } from '../stores/workflow/actions/event.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -212,11 +213,11 @@ describe('a check running beside the composer', () => {
       await vi.waitFor(() => expect(preparationStore.get().kind).not.toBe('checking'));
       await flushEffects();
 
-      // A result that needs an answer takes the page; it never takes the draft under it.
+      // The result stays beside the draft until dismissed.
       if (ending !== 'cancel') {
-        expect(ui.lastFrame()).toContain('r retry');
+        expect(ui.lastFrame()).toContain('enter retry');
         ui.stdin.write(ESC);
-        await vi.waitFor(() => expect(ui.lastFrame()).not.toContain('r retry'));
+        await vi.waitFor(() => expect(ui.lastFrame()).not.toContain('enter retry'));
       }
 
       const settled = frameRows(ui);
@@ -384,11 +385,12 @@ describe('a resume checking its tools', () => {
     ui.unmount();
   });
 
-  it('gives the page to a blocked resume and gives the run back when it is dismissed', async () => {
+  it('keeps the run visible while a blocked resume owns its repair keys', async () => {
     routerStore.init({ screen: 'workflow', run: AT_REST_RUN, execution: { kind: 'at-rest' } });
+    addEvent({ type: 'user_message', phase: 'planning', ts: 123, text: AT_REST_RUN.feature });
     const exactRoute = routerStore.get();
     const ui = renderFeature(<WorkflowRoute deps={workflowDeps} />, { cols: 100, rows: 30 });
-    await tick(20);
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain(AT_REST_RUN.feature));
     const atRestFrame = ui.lastFrame();
 
     await continueRunInPlace({
@@ -399,12 +401,11 @@ describe('a resume checking its tools', () => {
     await tick(20);
 
     expect(ui.lastFrame()).toContain('The configured runner could not be admitted.');
-    expect(ui.lastFrame()).toContain('r retry · esc back');
+    expect(ui.lastFrame()).toContain('r retry · ctrl+d details');
     expect(ui.lastFrame()).not.toContain('s settings');
-    expect(ui.lastFrame()).not.toContain(AT_REST_RUN.feature);
+    expect(ui.lastFrame()).toContain(AT_REST_RUN.feature);
 
-    // The composer the panel covers takes nothing while it is covered: the panel's keys mean one
-    // thing each, and no stray keystroke is waiting in the draft when the run comes back.
+    // The footer owns the repair keys while the draft stays visible.
     ui.stdin.write('zqx');
     await tick(20);
     expect(ui.lastFrame()).not.toContain('zqx');

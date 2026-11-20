@@ -1,26 +1,20 @@
 import { ApprovalPrompt } from '../features/workflow/components/approval-prompt/prompt.js';
-import { observePreparationCleanup } from '../features/start-preparation/observe-cleanup.js';
 import { StartPreparationPanel } from '../features/start-preparation/panel.js';
-import type { StartPreparationState } from '../features/start-preparation/use-controller.js';
-import { approvalPromptStore } from '../stores/prompts/approval.js';
+import { preparationStore } from '../stores/navigation/preparation.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 
-type PreparationGateProps = Readonly<{
-  state: StartPreparationState;
-  retry: () => Promise<void>;
-  onBack: () => void;
-}>;
-
-/** The page a tool check takes: the question it waits on, or its problem with retry and settings. */
-export function PreparationGate({ state, retry, onBack }: PreparationGateProps) {
-  const approvalPending = approvalPromptStore.use((snapshot) => snapshot.status === 'pending');
+export function PreparationGate() {
   return (
     <StartPreparationPanel
-      state={state}
-      onRetry={() => observePreparationCleanup(retry())}
-      onBack={onBack}
-      onOpenSettings={() => overlayStore.open('settings')}
-      approvalPrompt={approvalPending ? (card) => <ApprovalPrompt card={card} /> : undefined}
+      state={{ kind: 'preparing' }}
+      onBack={overlayStore.close}
+      approvalPrompt={(card) => <ApprovalPrompt card={card} />}
     />
   );
+}
+
+export function PreparationDetails() {
+  const state = preparationStore.use((snapshot) => snapshot);
+  if (state.kind !== 'blocked' && state.kind !== 'failed') return null;
+  return <StartPreparationPanel state={state} onBack={overlayStore.close} />;
 }

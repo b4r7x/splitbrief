@@ -19,7 +19,7 @@ import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty
 
 const VIEWPORT = { cols: 100, rows: 30 };
 const EMPTY_BOX = /^› +Describe your feature/;
-const PREPARATION_BLOCKED = 'Tool preparation · Blocked';
+const PREPARATION_BLOCKED = 'Git repository has no commits yet.';
 
 interface Home {
   readonly write: (keys: string) => void;

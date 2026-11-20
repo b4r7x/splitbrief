@@ -22,6 +22,7 @@ import type { AppKeyDeps } from './keys.js';
 import type { PickerEffectDeps } from '../features/runners/picker/use-actions.js';
 import { glyph } from '../lib/glyphs.js';
 import { saveSummary } from '../core/sessions/io.js';
+import { sessionPreparationError } from '../core/sessions/errors.js';
 import { getKnownProviderBaseURL } from '../core/providers/catalog.js';
 import { CREW_SEAT_LABELS } from '../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS } from '../core/runners/seat-roles.js';
@@ -370,18 +371,57 @@ describe('App screens route to the supplied interaction ports', () => {
     },
   );
 
-  it('sends a Home submit to the supplied prepare and spends no production effect', async () => {
+  it('opens failed Home start details with ctrl+d and returns to the same draft with Escape', async () => {
     const fx = fixture();
+    const folder = '.splitbrief/sessions';
+    const diagnostic = `EACCES: permission denied, mkdir '${folder}'`;
+    fx.ports.homePrepare.mockResolvedValueOnce({
+      kind: 'failed',
+      error: sessionPreparationError.io(
+        'allocate-session',
+        { projectDir, sessionId: 'new-run' },
+        Object.assign(new Error(diagnostic), { code: 'EACCES', path: folder }),
+      ),
+    });
     const ui = mount(fx.deps);
-    await flushEffects();
+    try {
+      await flushEffects();
+      ui.stdin.write('add a parser');
+      await vi.waitFor(() => expect(frame(ui)).toContain('add a parser'));
+      await flushEffects();
+      ui.stdin.write(ENTER);
+      const cause = 'Could not create the session folder';
+      await vi.waitFor(() => expect(frame(ui)).toContain(cause));
+      const home = frame(ui);
+      expect(home).toContain(`${glyph('statusFailed')} ${cause}`);
+      expect(home).toContain('permission denied');
+      expect(home).toContain('ctrl+d');
+      expect(home).toContain('add a parser');
+      expect(home.indexOf(cause)).toBeLessThan(home.indexOf('add a parser'));
+      expect(home).not.toContain(diagnostic);
 
-    await type(ui, 'add a parser');
-    await type(ui, ENTER);
-    await vi.waitFor(() => expect(fx.ports.homePrepare).toHaveBeenCalledTimes(1));
-    ui.unmount();
-
-    expect(fx.ports.homePrepare.mock.calls[0]?.[0]).toMatchObject({ feature: 'add a parser' });
-    expectNoProductionEffect();
+      await flushEffects();
+      ui.stdin.write('\x04');
+      await vi.waitFor(() => expect(frame(ui)).toContain(diagnostic));
+      await flushEffects();
+      ui.stdin.write(ESC);
+      await vi.waitFor(() => {
+        expect(frame(ui)).not.toContain(diagnostic);
+        expect(frame(ui)).toContain(cause);
+        expect(frame(ui)).toContain('add a parser');
+      });
+      await flushEffects();
+      ui.stdin.write(ESC);
+      await vi.waitFor(() => {
+        expect(frame(ui)).not.toContain(cause);
+        expect(frame(ui)).toContain('add a parser');
+      });
+      expect(fx.ports.homePrepare).toHaveBeenCalledOnce();
+      expect(fx.ports.homePrepare.mock.calls[0]?.[0]).toMatchObject({ feature: 'add a parser' });
+      expectNoProductionEffect();
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('sends Setup continue to the supplied prepare and record reader', async () => {

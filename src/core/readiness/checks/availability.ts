@@ -77,23 +77,18 @@ function providerName(fact: RunnerAvailabilityFact): string {
   return getRunnerIdentityDisplayName('api', fact.provider);
 }
 
-function unavailableFix(fact: RunnerAvailabilityFact): string {
-  const startup = localProviderStartup(fact.provider);
-  if (startup !== undefined) {
-    return `${startup}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
-  }
-  return `Check the ${providerName(fact)} endpoint and network, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
+function availabilityFix(fact: RunnerAvailabilityFact, action: string) {
+  return {
+    primaryFix: `${action}.`,
+    fix: `${action}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+  };
 }
 
-function credentialFix(
-  fact: RunnerAvailabilityFact,
-  verdict: Extract<RunnerAvailabilityVerdict, { state: 'missing-credential' }>,
-): string {
-  const supply =
-    verdict.credentialEnv === undefined
-      ? `Set an apiKey for ${providerName(fact)}`
-      : `Export ${verdict.credentialEnv}`;
-  return `${supply}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
+function unavailableFix(fact: RunnerAvailabilityFact) {
+  return availabilityFix(
+    fact,
+    localProviderStartup(fact.provider) ?? `Check the ${providerName(fact)} endpoint and network`,
+  );
 }
 
 function atEndpoint(fact: RunnerAvailabilityFact): string {
@@ -104,6 +99,7 @@ interface AvailabilityCopy {
   summary: string;
   details?: string[] | undefined;
   fix?: string | undefined;
+  primaryFix?: string | undefined;
 }
 
 function availabilityCopy(fact: RunnerAvailabilityFact, label: string): AvailabilityCopy {
@@ -115,35 +111,40 @@ function availabilityCopy(fact: RunnerAvailabilityFact, label: string): Availabi
       return {
         summary: `${label} is not reachable${atEndpoint(fact)}.`,
         details: [`Probe: ${verdict.diagnostic}`],
-        fix: unavailableFix(fact),
+        ...unavailableFix(fact),
       };
     case 'no-models':
       return {
         summary: `${label} answered${atEndpoint(fact)} but offers no models.`,
-        fix: `Install a model for ${providerName(fact)}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+        ...availabilityFix(fact, `Install a model for ${providerName(fact)}`),
       };
     case 'missing-model':
       return {
         summary: `${label} answered${atEndpoint(fact)} but does not serve "${verdict.selectionId}".`,
         // Readiness never substitutes another model the catalog happens to carry.
-        fix: `Select a model ${providerName(fact)} serves, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+        ...availabilityFix(fact, `Select a model ${providerName(fact)} serves`),
       };
     case 'timeout':
       return {
         summary: `${label} did not answer in time${atEndpoint(fact)}.`,
         details: [`Probe: ${verdict.diagnostic}`],
-        fix: unavailableFix(fact),
+        ...unavailableFix(fact),
       };
     case 'unauthorized':
       return {
         summary: `${label} rejected the configured credential${atEndpoint(fact)}.`,
         details: [`Probe: ${verdict.diagnostic}`],
-        fix: `Check the credential for ${providerName(fact)}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+        ...availabilityFix(fact, `Check the credential for ${providerName(fact)}`),
       };
     case 'missing-credential':
       return {
         summary: `${label} has no credential configured.`,
-        fix: credentialFix(fact, verdict),
+        ...availabilityFix(
+          fact,
+          verdict.credentialEnv === undefined
+            ? `Set an apiKey for ${providerName(fact)}`
+            : `Export ${verdict.credentialEnv}`,
+        ),
       };
     case 'not-probed':
       return {
@@ -187,9 +188,7 @@ export function runnerAvailabilityCheck(
   return {
     id: runnerAvailabilityCheckId(input.fact.slot),
     severity,
-    summary: copy.summary,
-    ...(copy.details !== undefined && { details: copy.details }),
-    ...(copy.fix !== undefined && { fix: copy.fix }),
+    ...copy,
     ...(severity === 'blocker' && { nextAction: 'prepare-runner' as const }),
     metadata: {
       role: input.fact.slot.role,

@@ -4,8 +4,6 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/ink.js';
-import { App } from '../../src/app/root.js';
 import { ACTIVE_OVERLAYS } from '../../src/core/navigation/types.js';
 import { ConfigSchema } from '../../src/core/schemas/config.js';
 import { ModelsDevCatalogSchema } from '../../src/core/schemas/models-dev.js';
@@ -26,8 +24,6 @@ import {
   teardownVisualFixture,
   visualConfig,
 } from './fixtures/screen-fixtures.js';
-import { createWorkflowFixtureAppDeps } from './fixtures/workflow/setup.js';
-import { enterCaptureEnvironment } from './gallery/environment.js';
 import { mountGalleryScenario } from './gallery/mount.js';
 
 interface FixtureCase {
@@ -61,6 +57,7 @@ const OVERLAY_SCENARIO_IDS: Partial<Record<(typeof ACTIVE_OVERLAYS)[number], str
   'planner-fallback-picker': 'overlay-fallback-picker-current',
   'implementer-fallback-picker': 'overlay-fallback-picker',
   'reviewer-fallback-picker': 'overlay-fallback-picker-inherited-review',
+  'preparation-details': 'home-preparation-failed-details',
   'stop-sheet': 'workflow-stop-sheet',
 };
 
@@ -77,7 +74,6 @@ const OVERLAY_CASES: readonly FixtureCase[] = [
 
 const FIXTURE_CASES = [...SCREEN_CASES, ...OVERLAY_CASES];
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
-const WORKFLOW_DEPS = createWorkflowFixtureAppDeps();
 const MODELS_DEV_SLICE = ModelsDevCatalogSchema.parse(
   JSON.parse(readFileSync(join(import.meta.dirname, '../fixtures/models-dev-slice.json'), 'utf8')),
 );
@@ -91,21 +87,14 @@ function fixtureContext(id: string): FixtureContext {
 }
 
 async function renderFixture(fixtureCase: FixtureCase): Promise<string> {
-  const environment = enterCaptureEnvironment({ viewport: VIEWPORT });
   const context = fixtureContext(fixtureCase.scenarioId);
-  const lifecycle = fixtureCase.factory();
-  let ui: RenderFeatureResult | null = null;
+  const handle = await mountGalleryScenario(context);
   try {
-    await lifecycle.setup(context);
-    ui = renderFeature(<App workflowDeps={WORKFLOW_DEPS} />, context.viewport);
-    await tick(20);
-    const frame = ui.lastFrame() ?? '';
+    const frame = await handle.waitForCheckpoint();
     expect(stripAnsiStyles(frame), fixtureCase.scenarioId).toContain(context.checkpoint.marker);
     return frame;
   } finally {
-    ui?.unmount();
-    await lifecycle.teardown();
-    environment.restore();
+    await handle.unmount();
   }
 }
 

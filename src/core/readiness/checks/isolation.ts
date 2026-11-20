@@ -9,8 +9,8 @@ import type { ReadinessCheck } from '../types.js';
 
 const CARGO_WORKSPACE_RE = /^\[workspace\]/m;
 
-const CHECKOUT_FIX =
-  'Set `workflow.isolation: none` in .splitbrief/config.yaml to run in your checkout (recommended for this stack), or `workflow.isolation: worktree` to keep the worktree.';
+const CHECKOUT_SETTING = 'Set `workflow.isolation: none` in .splitbrief/config.yaml';
+const CHECKOUT_FIX = `${CHECKOUT_SETTING} to run in your checkout (recommended for this stack), or \`workflow.isolation: worktree\` to keep the worktree.`;
 
 /**
  * Stacks a run worktree cannot serve because they resolve into the checkout. With
@@ -103,6 +103,7 @@ export function buildIsolationChecks(
     severity: 'blocker',
     summary: `${check.summary} Run in your checkout.`,
     fix: CHECKOUT_FIX,
+    primaryFix: `${CHECKOUT_SETTING}.`,
     nextAction: 'fix-config',
   }));
 }

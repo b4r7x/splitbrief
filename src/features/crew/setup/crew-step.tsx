@@ -1,5 +1,6 @@
 import { Box } from 'ink';
 import {
+  type NoticeMessage,
   layoutPanelNotice,
   PANEL_NOTICE_ROWS,
   PanelNotice,
@@ -40,6 +41,7 @@ const NOTE_BLOCK_ROWS = 2;
 
 interface CrewStepProps {
   noConfig: boolean;
+  notice?: NoticeMessage | undefined;
   note?: string | undefined;
   /** The preparation status while one runs; without one the panel names the focused row's keys. */
   status?: string | undefined;
@@ -53,6 +55,7 @@ export function CrewStep({
   noConfig,
   note,
   status,
+  notice: standingNotice,
   inert = false,
   onContinue,
   onExit,
@@ -84,10 +87,15 @@ export function CrewStep({
     signInRows;
   // The notice takes only the rows the seats and Continue leave, past the blank row above it:
   // a message never pushes a seat off the panel.
-  const notice = layoutPanelNotice(feedback, {
-    width: innerWidth,
-    maxRows: Math.min(PANEL_NOTICE_ROWS, listRoom - (crewRows.length + 1) - 1),
-  });
+  const notice = layoutPanelNotice(
+    feedback.message === null && standingNotice ? standingNotice : feedback,
+    {
+      width: innerWidth,
+      maxRows: standingNotice
+        ? PANEL_NOTICE_ROWS
+        : Math.min(PANEL_NOTICE_ROWS, listRoom - (crewRows.length + 1) - 1),
+    },
+  );
   const budget = listRoom - panelNoticeRows(notice);
   const items: SetupItem[] = [
     ...presets.map((preset): SetupItem => ({ kind: 'preset', preset, key: `preset:${preset.id}` })),

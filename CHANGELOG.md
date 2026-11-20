@@ -14,6 +14,8 @@
 
 ### Fixed
 
+- A blocked start keeps your draft and attachments on Home. Press Enter to retry with the current draft or Ctrl+D to read the diagnostic. A blocked Continue keeps the conversation visible.
+
 - Setup keeps crew presets reachable on small terminals and lets you choose a remembered crew after a failed refresh. Continue checks the selected seats.
 - The runner picker keeps tool names and sign-in status readable at narrow widths. A refused config edit names the field to remove.
 - Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.

@@ -8,6 +8,8 @@ import {
   type RunnerAvailabilityVerdict,
 } from '../../core/readiness/checks/availability.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
+import { createStartReadinessRecord } from '../../core/readiness/format.js';
+import { serializeReadinessReportJson } from '../../core/readiness/json.js';
 import { sessionPreparationError } from '../../core/sessions/errors.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { approvalPromptStore, openApprovalPrompt } from '../../stores/prompts/approval.js';
@@ -93,23 +95,15 @@ function renderPanel(
   viewport = { cols: 120, rows: 40 },
 ) {
   terminalSizeStore.__testReset({ ...viewport, isSmall: viewport.cols < 120 });
-  return renderFeature(
-    <StartPreparationPanel
-      onRetry={vi.fn()}
-      onBack={vi.fn()}
-      onOpenSettings={vi.fn()}
-      {...props}
-    />,
-    viewport,
-  );
+  return renderFeature(<StartPreparationPanel onBack={vi.fn()} {...props} />, viewport);
 }
 
 describe('StartPreparationPanel', () => {
   beforeEach(() => resetAllStores());
   afterEach(() => resetAllStores());
 
-  it('shows the session folder failure, keeps diagnostics behind d, and offers only usable keys', async () => {
-    const onOpenSettings = vi.fn();
+  it('shows the file diagnostic in the open details panel and closes on Escape', async () => {
+    const onBack = vi.fn();
     const cause = Object.assign(
       new Error("EACCES: permission denied, mkdir '.splitbrief/sessions/new-run'"),
       {
@@ -119,7 +113,7 @@ describe('StartPreparationPanel', () => {
     );
     const ui = renderPanel(
       {
-        onOpenSettings,
+        onBack,
         state: {
           kind: 'failed',
           report: report([TRUST_BOUNDARY]),
@@ -133,24 +127,19 @@ describe('StartPreparationPanel', () => {
       { cols: 60, rows: 18 },
     );
 
-    await flushEffects();
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Could not create the session folder');
-    expect(frame).toContain('permission denied');
-    expect(frame).toContain('r retry');
-    expect(frame).toContain('esc back');
-    expect(frame).toContain('d details');
-    expect(frame).not.toContain('settings');
-    expect(frame).not.toContain('EACCES');
-    expect(frame).not.toContain('Warnings');
-    ui.stdin.write('s');
-    await flushEffects();
-    expect(onOpenSettings).not.toHaveBeenCalled();
-    ui.stdin.write('d');
-    await vi.waitFor(() => expect(ui.lastFrame()).toContain('EACCES'));
-    ui.stdin.write('d');
-    await vi.waitFor(() => expect(ui.lastFrame()).toBe(frame));
-    ui.unmount();
+    try {
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain('EACCES'));
+      const frame = ui.lastFrame();
+      expect(frame).toContain('Could not create the session folder');
+      expect(frame).toContain('permission denied');
+      expect(frame).toContain('esc');
+      expect(frame).not.toMatch(/r retry|s settings|d details/);
+      await flushEffects();
+      ui.stdin.write(ESC);
+      await vi.waitFor(() => expect(onBack).toHaveBeenCalledOnce());
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('leads a blocked check with the blocking fact and that blocker’s own fix', async () => {
@@ -170,7 +159,7 @@ describe('StartPreparationPanel', () => {
     ui.unmount();
   });
 
-  it('gives an unreachable local server its address, its start instruction and retry', async () => {
+  it('gives an unreachable local server its address, its start instruction and a close key', async () => {
     const ui = renderPanel({
       state: {
         kind: 'blocked',
@@ -185,7 +174,7 @@ describe('StartPreparationPanel', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('http://localhost:11434');
     expect(frame).toContain('Run `ollama serve`');
-    expect(frame).toContain('r retry');
+    expect(frame).toContain('esc close');
     // An offline server is not an auth problem: nothing here asks for a credential or a sign-in.
     expect(frame.toLowerCase()).not.toContain('sign in');
     expect(frame.toLowerCase()).not.toContain('credential');
@@ -231,32 +220,37 @@ describe('StartPreparationPanel', () => {
     expect(timeout).not.toContain('rejected');
   });
 
-  it('keeps check IDs and trust-boundary prose out of the summaries and under Details', async () => {
-    // Tall enough that nothing is below the fold: the claim is about placement, not scrolling.
-    const ui = renderPanel({
-      state: {
-        kind: 'blocked',
-        report: report([
-          availability({ state: 'unavailable', diagnostic: 'connection refused' }),
-          TRUST_BOUNDARY,
-        ]),
-      },
-    });
+  it('groups each diagnosis with its prose and keeps check IDs in JSON and saved records', async () => {
+    const offline = availability({ state: 'unavailable', diagnostic: 'connection refused' });
+    const readiness = report([offline, TRUST_BOUNDARY]);
+    const ui = renderPanel({ state: { kind: 'blocked', report: readiness } });
+    try {
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain('Plan approval: none.'));
+      const frame = stripAnsiStyles(ui.lastFrame());
+      for (const check of [offline, TRUST_BOUNDARY]) {
+        expect(frame).not.toContain(check.id);
+        expect(frame.split(check.summary)).toHaveLength(2);
+      }
+      expect(frame).toContain('Run `ollama serve`');
+      expect(frame).toContain('Probe: connection refused');
+      expect(frame).toContain('do not sandbox shell');
+      expect(frame.indexOf('Probe: connection refused')).toBeLessThan(
+        frame.indexOf(TRUST_BOUNDARY.summary),
+      );
+      expect(frame.indexOf(TRUST_BOUNDARY.summary)).toBeLessThan(
+        frame.indexOf('Plan approval: none.'),
+      );
 
-    await flushEffects();
-    const rows = (ui.lastFrame() ?? '').split('\n');
-    const summaryRow = rows.findIndex((row) => row.includes('is not reachable at'));
-    const detailsRow = rows.findIndex((row) => row.includes('Details'));
-    const idRow = rows.findIndex((row) => row.includes('runners.availability.planner'));
-    const proseRow = rows.findIndex((row) => row.includes('do not sandbox shell'));
-
-    expect(summaryRow).toBeGreaterThanOrEqual(0);
-    expect(rows[summaryRow]).not.toContain('runners.availability.planner');
-    expect(detailsRow).toBeGreaterThan(summaryRow);
-    expect(idRow).toBeGreaterThan(detailsRow);
-    expect(proseRow).toBeGreaterThan(detailsRow);
-    expect(rows[idRow]).toContain('blocker');
-    ui.unmount();
+      const ref = { projectDir: readiness.projectDir, sessionId: 'new-run' };
+      for (const record of [
+        serializeReadinessReportJson(readiness),
+        createStartReadinessRecord(readiness, ref),
+      ]) {
+        expect(record.checks.map((check) => check.id)).toEqual([offline.id, TRUST_BOUNDARY.id]);
+      }
+    } finally {
+      ui.unmount();
+    }
   });
 
   it.each([
@@ -293,25 +287,22 @@ describe('StartPreparationPanel', () => {
     ui.unmount();
   });
 
-  it('keeps the repair keys whole at 60x18 and scrolls the copy that does not fit', async () => {
+  it('keeps the detail keys whole at 60x18 and scrolls the copy that does not fit', async () => {
     const readiness = report([
       availability({ state: 'unavailable', diagnostic: 'connection refused' }),
       TRUST_BOUNDARY,
       check('repo.worktree.dirty', 'warning'),
     ]);
-    const onRetry = vi.fn();
     const onBack = vi.fn();
-    const onOpenSettings = vi.fn();
     const ui = renderPanel(
-      { state: { kind: 'blocked', report: readiness }, onRetry, onBack, onOpenSettings },
+      { state: { kind: 'blocked', report: readiness }, onBack },
       { cols: 60, rows: 18 },
     );
 
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
-    const hint = frame.split('\n').find((row) => row.includes('r retry')) ?? '';
-    expect(hint).toContain('r retry');
-    expect(hint).toContain('esc back');
+    const hint = frame.split('\n').find((row) => row.includes('esc close')) ?? '';
+    expect(hint).toContain('esc close');
     expect(hint).not.toContain('s settings');
     expect(hint).toContain('scroll');
     expect(
@@ -325,7 +316,7 @@ describe('StartPreparationPanel', () => {
     const scrolled = ui.lastFrame() ?? '';
     expect(scrolled).not.toBe(frame);
     // Scrolling never costs the keys: the hint row is chrome, not part of the document.
-    expect(scrolled.split('\n').find((row) => row.includes('r retry'))).toBe(hint);
+    expect(scrolled.split('\n').find((row) => row.includes('esc close'))).toBe(hint);
 
     ui.stdin.write('r');
     await flushEffects();
@@ -333,8 +324,6 @@ describe('StartPreparationPanel', () => {
     await flushEffects();
     ui.stdin.write(ESC);
     await tick();
-    expect(onRetry).toHaveBeenCalledOnce();
-    expect(onOpenSettings).not.toHaveBeenCalled();
     expect(onBack).toHaveBeenCalledOnce();
     ui.unmount();
   });
@@ -352,7 +341,7 @@ describe('StartPreparationPanel', () => {
 
     await flushEffects();
     const lines = stripAnsiStyles(ui.lastFrame()).replace(/\n$/, '').split('\n');
-    expect(lines.find((row) => row.includes('r retry'))).toContain('scroll');
+    expect(lines.find((row) => row.includes('esc close'))).toContain('scroll');
     // The card is the page while it shows, so its border sits on the first and the last row.
     expect(lines).toHaveLength(24);
     expect(lines[0]?.trim()).toMatch(/^\+-+\+$/);
@@ -380,9 +369,7 @@ describe('StartPreparationPanel', () => {
       },
     });
 
-    await tick();
-    ui.stdin.write('d');
-    await flushEffects();
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('visible-summary'));
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('visible-summary');
     expect(frame).toContain('visible-error');
@@ -396,14 +383,10 @@ describe('StartPreparationPanel', () => {
 
   it('keeps preparation actions inactive behind an overlay', async () => {
     overlayStore.open('settings');
-    const onRetry = vi.fn();
     const onBack = vi.fn();
-    const onOpenSettings = vi.fn();
     const ui = renderPanel({
       state: { kind: 'blocked', report: report([check('runner', 'blocker')]) },
-      onRetry,
       onBack,
-      onOpenSettings,
     });
 
     await flushEffects();
@@ -414,9 +397,7 @@ describe('StartPreparationPanel', () => {
     ui.stdin.write(ESC);
     await tick();
 
-    expect(onRetry).not.toHaveBeenCalled();
     expect(onBack).not.toHaveBeenCalled();
-    expect(onOpenSettings).not.toHaveBeenCalled();
     ui.unmount();
   });
 
@@ -600,15 +581,11 @@ describe('StartPreparationPanel', () => {
   });
 
   it('paints the caller-supplied tiered approval into the card instead of generic actions', async () => {
-    const onRetry = vi.fn();
     const onBack = vi.fn();
-    const onOpenSettings = vi.fn();
     const approvalPrompt = vi.fn(() => <Text>Tiered approval</Text>);
     const ui = renderPanel({
       state: { kind: 'preparing' },
-      onRetry,
       onBack,
-      onOpenSettings,
       approvalPrompt,
     });
 
@@ -625,9 +602,7 @@ describe('StartPreparationPanel', () => {
     await flushEffects();
     ui.stdin.write(ESC);
     await tick();
-    expect(onRetry).not.toHaveBeenCalled();
     expect(onBack).not.toHaveBeenCalled();
-    expect(onOpenSettings).not.toHaveBeenCalled();
     ui.unmount();
   });
 });

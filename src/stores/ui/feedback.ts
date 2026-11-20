@@ -1,3 +1,4 @@
+import { preparationStore } from '../navigation/preparation.js';
 import { createStore, storeBase } from '../create.js';
 import { subscribeFeedbackErrors, subscribeFeedbackReset } from '../channels/feedback.js';
 
@@ -50,6 +51,20 @@ const reset = () => {
   clearTimer = undefined;
   store.reset();
 };
+
+// A failed preparation supersedes the receipt that stood when it began (such as a saved crew).
+// A newer message, including the first Ctrl+C, still owns the transient notice slot.
+let feedbackAtSubmit = initial;
+preparationStore.subscribe(() => {
+  const { kind } = preparationStore.get();
+  if (kind === 'checking') feedbackAtSubmit = store.get();
+  if (
+    (kind === 'blocked' || kind === 'failed') &&
+    feedbackAtSubmit.message !== null &&
+    store.get() === feedbackAtSubmit
+  )
+    reset();
+});
 
 subscribeFeedbackErrors(setError);
 subscribeFeedbackReset(reset);

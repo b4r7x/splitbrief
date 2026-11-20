@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import type { ReadinessReport } from '../../core/readiness/types.js';
 import {
   releasePreparedExecutionOwnership,
   type PreparationOutcome,
@@ -8,21 +7,9 @@ import {
 import {
   CHECKING_TOOLS_STAGE,
   preparationStore,
-  type PreparationState,
+  type PreparationViewState,
+  preparationView,
 } from '../../stores/navigation/preparation.js';
-
-export type StartPreparationState =
-  | Readonly<{ kind: 'idle' }>
-  | Readonly<{ kind: 'preparing' }>
-  | Readonly<{
-      kind: 'blocked';
-      report: ReadinessReport;
-    }>
-  | Readonly<{
-      kind: 'failed';
-      report?: ReadinessReport | undefined;
-      error: Error;
-    }>;
 
 export type StartPreparationOptions<Input> = Readonly<{
   prepare: (input: Input, signal: AbortSignal) => Promise<PreparationOutcome>;
@@ -36,30 +23,11 @@ type OwnAttempt = Readonly<{
 }>;
 
 export type StartPreparationController<Input> = Readonly<{
-  state: StartPreparationState;
+  state: PreparationViewState;
   submit: (input: Input) => Promise<void>;
   retry: () => Promise<void>;
   cancel: (afterCancel?: (() => void) | undefined) => void;
 }>;
-
-const IDLE: StartPreparationState = { kind: 'idle' };
-
-/** This screen's view of the shared coordinator: an attempt it did not submit is not its to show. */
-function ownState(state: PreparationState, own: OwnAttempt | undefined): StartPreparationState {
-  if (state.kind === 'idle' || state.attempt !== own?.attempt) return IDLE;
-  switch (state.kind) {
-    case 'checking':
-      return { kind: 'preparing' };
-    case 'blocked':
-      return { kind: 'blocked', report: state.report };
-    case 'failed':
-      return {
-        kind: 'failed',
-        ...(state.report !== undefined && { report: state.report }),
-        error: state.error,
-      };
-  }
-}
 
 /** The screen-side adapter over the shared preparation coordinator. The composer owns its draft. */
 export function useStartPreparation<Input>(
@@ -119,5 +87,14 @@ export function useStartPreparation<Input>(
     afterCancel?.();
   };
 
-  return { state: ownState(coordinator, ownRef.current), submit, retry, cancel };
+  return {
+    state: preparationView(
+      coordinator.kind !== 'idle' && coordinator.attempt === ownRef.current?.attempt
+        ? coordinator
+        : undefined,
+    ),
+    submit,
+    retry,
+    cancel,
+  };
 }

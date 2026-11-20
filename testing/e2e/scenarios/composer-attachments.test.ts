@@ -2,12 +2,16 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import XtermHeadless from '@xterm/headless';
 import { afterEach, beforeEach, describe, expect, it, type TestContext, vi } from 'vitest';
 import { CONFIRM_PHRASE } from '../../../src/core/approval/types.js';
 import { attachmentFailureText } from '../../../src/core/attachments/failure.js';
@@ -19,7 +23,6 @@ import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { prepareCustomRunnerAdmission } from '../../../src/engine/runners/custom/admission.js';
 import { inlineRunnerSecurityPosture } from '../../../src/engine/runners/custom/posture.js';
-import { stripTerminalControls } from '../../../src/utils/display-text/sanitize.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -31,6 +34,7 @@ import {
   createStopContinueFixture,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+import { wholeFrames } from '../helpers/whole-frames.js';
 
 let fixture: StopContinueFixture;
 let promptsPath: string;
@@ -134,8 +138,9 @@ afterEach(() => {
 
 async function runComposerScenario(
   draft: string,
-  observe: (visible: () => string) => Promise<void>,
+  observe: (visible: () => string, write: (keys: string) => void) => Promise<void>,
 ): Promise<void> {
+  const viewport = { cols: 200, rows: 40 };
   const result = await runWithPtyChild(
     {
       requirement: process.env.SPLITBRIEF_REQUIRE_PTY === '1' ? 'required' : 'optional',
@@ -151,8 +156,7 @@ async function runComposerScenario(
       ],
       spawnOptions: {
         name: 'xterm-256color',
-        cols: 200,
-        rows: 40,
+        ...viewport,
         cwd: fileURLToPath(new URL('../../../', import.meta.url)),
         env: { ...environment, XDG_STATE_HOME: fixture.stateHome },
       },
@@ -160,37 +164,37 @@ async function runComposerScenario(
     async (child) => {
       const exited = Promise.withResolvers<PtyExitEvent>();
       let didExit = false;
-      let rawIo = '';
+      const terminal = new XtermHeadless.Terminal({ ...viewport, allowProposedApi: true });
+      const screen = () => {
+        const buffer = terminal.buffer.active;
+        return Array.from(
+          { length: viewport.rows },
+          (_, row) => buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? '',
+        ).join('\n');
+      };
+      const frames = wholeFrames((data) => terminal.write(data));
       const exitListener = child.onExit((event) => {
+        frames.flush();
         didExit = true;
         exited.resolve(event);
       });
-      const dataListener = child.onData((data) => {
-        rawIo += data;
-      });
+      const dataListener = child.onData(frames.feed);
       try {
-        await vi.waitFor(
-          () => expect(stripTerminalControls(rawIo)).toContain('Describe your feature'),
-          { timeout: 20_000 },
-        );
+        await vi.waitFor(() => expect(screen()).toContain('Describe your feature'), {
+          timeout: 20_000,
+        });
         child.write(draft);
         await vi.waitFor(() => {
-          const screen = stripTerminalControls(rawIo);
-          expect(screen).toContain('› smoke');
-          expect(screen).toContain('@/');
-          expect(screen).toContain(draft.slice(draft.lastIndexOf('/') + 1));
+          const visible = screen();
+          expect(visible).toContain('› smoke');
+          expect(visible).toContain('@');
+          expect(visible).toContain(draft.slice(draft.lastIndexOf('/') + 1));
         });
-        const submittedAt = rawIo.length;
         child.write(PTY_SUBMIT_INPUT);
-        await observe(() => stripTerminalControls(rawIo.slice(submittedAt)));
+        await observe(screen, (keys) => child.write(keys));
 
-        const quitAt = rawIo.length;
         child.write('\x03');
-        await vi.waitFor(() =>
-          expect(stripTerminalControls(rawIo.slice(quitAt))).toContain(
-            'Press ctrl+c again to quit',
-          ),
-        );
+        await vi.waitFor(() => expect(screen()).toContain('Press ctrl+c again to quit'));
         child.write('\x03');
         await vi.waitFor(() => expect(didExit).toBe(true), { timeout: 3_000 });
         expect(await exited.promise).toMatchObject({ exitCode: 0 });
@@ -200,6 +204,7 @@ async function runComposerScenario(
         } finally {
           dataListener.dispose();
           exitListener.dispose();
+          terminal.dispose();
         }
       }
     },
@@ -208,6 +213,47 @@ async function runComposerScenario(
 }
 
 describe('e2e: composer attachments', () => {
+  it('keeps the draft and attachment after allocation fails and starts exactly one session on Enter', async () => {
+    const sessions = sessionsRoot(fixture.projectDir);
+    // A dangling link leaves the session list empty but prevents mkdir on every supported OS.
+    symlinkSync('missing-sessions', sessions);
+    const path = join(fixture.projectDir, 'retry-notes.md');
+    writeFileSync(path, 'Keep the greeting argument optional.\n');
+    const draft = 'smoke @retry-notes.md for the planner';
+
+    await runComposerScenario(draft, async (screen, write) => {
+      const cause = 'Could not create the session folder';
+      await vi.waitFor(() => expect(screen()).toContain(cause), { timeout: 20_000 });
+      const failed = screen();
+      expect(failed).toContain('/crew to change');
+      expect(failed).toContain(`✗ ${cause}`);
+      expect(failed).toContain('ctrl+d');
+      const input = failed.slice(failed.indexOf(cause));
+      expect(input).toContain(`› ${draft}`);
+      expect(readActive(fixture.projectDir)).toBeNull();
+      expect(existsSync(sessions)).toBe(false);
+      expect(existsSync(promptsPath)).toBe(false);
+
+      unlinkSync(sessions);
+      write(PTY_SUBMIT_INPUT);
+      await vi.waitFor(() => expect(screen()).toContain('Approve plan and start the build'), {
+        timeout: 20_000,
+      });
+      const sessionId = readActive(fixture.projectDir);
+      if (sessionId === null) throw new Error('The retried run did not publish a session.');
+      expect(readdirSync(sessions)).toEqual([sessionId]);
+      const replay = await readRunEvents({ projectDir: fixture.projectDir, sessionId });
+      expect(replay.events.filter((event) => event.type === 'user_message')).toEqual([
+        expect.objectContaining({
+          text: draft,
+          attachedInputs: [{ kind: 'text', path: realpathSync(path) }],
+        }),
+      ]);
+      const prompt: string = JSON.parse(readFileSync(promptsPath, 'utf8'));
+      expect(prompt).toContain('--- @retry-notes.md ---\nKeep the greeting argument optional.');
+    });
+  });
+
   it('sends an outside text file through the home composer to the real planner prompt', async () => {
     const path = join(fixture.tmpDir, 'outside-notes.md');
     const content = `Keep this outside attachment marker: ${fixture.tmpDir}.\n`;

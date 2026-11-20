@@ -1,3 +1,5 @@
+import { panelModel, preparationNotice } from '../../../components/preparation-problem.js';
+import { sessionSelectStore } from '../../../stores/navigation/session-select.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -34,20 +36,30 @@ function summarizeDisplayLine(text: string): string {
 // halt panel above keeps every action at 60x18: one text row keeps its frame, more drop it.
 const NOTICE_MAX_ROWS = 3;
 
-// A message keeps its first line, in the notice on the composer's left edge.
-function layoutFeedback(feedback: FeedbackState, terminalCols: number): NoticeLayout | null {
-  if (feedback.message === null) return null;
-  const text = summarizeDisplayLine(feedback.message);
-  if (text === '') return null;
-  return layoutNotice(text, feedback.severity, {
+// A continuation uses bars to keep the transcript in place when the cause fits on the legend row.
+function layoutFeedback(
+  feedback: FeedbackState,
+  terminalCols: number,
+  problem: ReturnType<typeof panelModel>,
+): NoticeLayout | null {
+  const standing = feedback.message === null && problem !== null;
+  const notice = standing ? preparationNotice(problem) : feedback;
+  if (notice.message === null) return null;
+  const text = summarizeDisplayLine(notice.message);
+  if (!text) return null;
+  return layoutNotice(text, notice.severity, {
     maxWidth: getChromeContentWidth(terminalCols),
     maxRows: NOTICE_MAX_ROWS,
+    frame: !standing,
   });
 }
 
-/** The rows the feedback row takes on a terminal `terminalCols` wide: one, or the rows its notice needs. */
-export function getFeedbackRows(feedback: FeedbackState, terminalCols: number): number {
-  return layoutFeedback(feedback, terminalCols)?.height ?? 1;
+export function getFeedbackRows(
+  feedback: FeedbackState,
+  terminalCols: number,
+  problem: ReturnType<typeof panelModel> = null,
+): number {
+  return layoutFeedback(feedback, terminalCols, problem)?.height ?? 1;
 }
 
 export function FeedbackRow({
@@ -79,7 +91,8 @@ export function FeedbackRow({
     approvalPending ||
     inputMode === 'review' ||
     (inputMode === 'question' && questions?.length !== 0);
-  const notice = layoutFeedback(feedback, terminalCols);
+  const preparation = sessionSelectStore.use((snapshot) => snapshot.preparation);
+  const notice = layoutFeedback(feedback, terminalCols, panelModel(preparation));
   // One cell short of the edge: a legend that ends in the last column reads as cut off even when
   // every token it names is whole. The leading is spent before the keys are fitted.
   const legendWidth = cols - 1 - KEY_LEGEND_LEADING.length;

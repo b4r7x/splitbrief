@@ -39,14 +39,14 @@ function leadOf(severity: FeedbackSeverity): string {
 export function layoutNotice(
   message: FeedbackMessageInput,
   severity: FeedbackSeverity,
-  { maxWidth, maxRows }: { maxWidth: number; maxRows: number },
+  { maxWidth, maxRows, frame = true }: { maxWidth: number; maxRows: number; frame?: boolean },
 ): NoticeLayout {
   const leadCells = getTerminalCellWidth(leadOf(severity));
   const rows = fitFeedbackMessage(message, {
     width: maxWidth - EDGE_CELLS - leadCells,
     maxRows,
   }).split('\n');
-  const form = rows.length + FRAME_ROWS <= maxRows ? 'framed' : 'bars';
+  const form = frame && rows.length + FRAME_ROWS <= maxRows ? 'framed' : 'bars';
   return {
     severity,
     form,

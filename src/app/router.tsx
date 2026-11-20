@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { PreparationDetails } from './preparation-gate.js';
 import { Layout } from './layout.js';
 import { HomeScreen } from './screens/home.js';
 import { WorkflowScreen } from './screens/workflow.js';
@@ -115,6 +116,8 @@ function renderOverlay({
   switch (active) {
     case 'none':
       return null;
+    case 'preparation-details':
+      return <PreparationDetails />;
     case 'help':
       return <HelpOverlay currentScreen={screen} commands={commands} />;
     case 'command-palette':

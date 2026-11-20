@@ -25,6 +25,32 @@ export type PreparationState =
   | (AttemptFacts &
       Readonly<{ kind: 'failed'; report?: ReadinessReport | undefined; error: Error }>);
 
+export type PreparationViewState =
+  | Readonly<{ kind: 'idle' }>
+  | Readonly<{ kind: 'preparing' }>
+  | Readonly<{ kind: 'blocked'; report: ReadinessReport }>
+  | Readonly<{
+      kind: 'failed';
+      report?: ReadinessReport | undefined;
+      error: Error;
+    }>;
+
+export function preparationView(state: PreparationState | undefined): PreparationViewState {
+  if (!state || state.kind === 'idle') return { kind: 'idle' };
+  switch (state.kind) {
+    case 'checking':
+      return { kind: 'preparing' };
+    case 'blocked':
+      return { kind: 'blocked', report: state.report };
+    case 'failed':
+      return {
+        kind: 'failed',
+        ...(state.report !== undefined && { report: state.report }),
+        error: state.error,
+      };
+  }
+}
+
 export type PreparationRequest = Readonly<{
   origin: PreparationOrigin;
   stage: string;

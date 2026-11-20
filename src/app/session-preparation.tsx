@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { useCancelKey } from '../features/start-preparation/use-cancel-key.js';
+import { usePreparationKeys } from '../features/start-preparation/use-preparation-keys.js';
+import { panelModel } from '../components/preparation-problem.js';
 import {
   cancelSessionPreparation,
   retrySessionPreparation,
@@ -9,15 +10,11 @@ import { approvalPromptStore, closeApprovalPrompt } from '../stores/prompts/appr
 import { overlayStore, selectHasOverlay } from '../stores/ui/overlay.js';
 import { PreparationGate } from './preparation-gate.js';
 
-/**
- * The page belongs to a continuation only while there is something to do on it: an approval to
- * answer, or a problem with a repair action. A routine check keeps the run on its own screen, where
- * the status sits beside the composer.
- */
+/** Only an approval awaiting an answer covers the run. */
 export function useSessionPreparationTakesPage(): boolean {
   const kind = sessionSelectStore.use((snapshot) => snapshot.preparation.kind);
   const approvalPending = approvalPromptStore.use((snapshot) => snapshot.status === 'pending');
-  return kind === 'blocked' || kind === 'failed' || (kind === 'preparing' && approvalPending);
+  return kind === 'preparing' && approvalPending;
 }
 
 export function SessionPreparation() {
@@ -35,22 +32,13 @@ export function SessionPreparation() {
 
   // Escape spends this attempt and nothing else: the run stays on its screen and the draft beside
   // it is left exactly as it was.
-  useCancelKey({
-    preparing: state.kind === 'preparing',
-    takesPage,
+  const problem = panelModel(state);
+  usePreparationKeys({
+    active: !takesPage && (state.kind === 'preparing' || problem !== null),
+    problem,
+    retry: retrySessionPreparation,
     onCancel: () => cancelSessionPreparation(),
   });
 
-  if (!takesPage || hasOverlay) return null;
-
-  return (
-    <PreparationGate
-      state={state}
-      retry={retrySessionPreparation}
-      onBack={() => {
-        closeApprovalPrompt();
-        cancelSessionPreparation();
-      }}
-    />
-  );
+  return takesPage && !hasOverlay ? <PreparationGate /> : null;
 }
