@@ -183,7 +183,7 @@ describe('rate provenance', () => {
     expect(recosted.requestEstimate?.amount).toBeCloseTo(1100, 10);
 
     // The export reads the stored estimate rather than recosting it.
-    const exported = buildCost(makeSummary({ costBreakdown: stored }), []);
+    const exported = buildCost(makeSummary({ costBreakdown: stored }));
     expect(exported.costBreakdown?.requestEstimate?.items[0]?.rates).toEqual(
       stored.requestEstimate?.items[0]?.rates,
     );
@@ -273,10 +273,10 @@ describe('rate provenance', () => {
 
     expect(legacy.requestEstimate).toBeUndefined();
     expect(costAmountBasis(legacy)).toBe('legacy-unattributed');
-    expect(buildCost(makeSummary({ costBreakdown: legacy }), []).amountBasis).toBe(
+    expect(buildCost(makeSummary({ costBreakdown: legacy })).amountBasis).toBe(
       'legacy-unattributed',
     );
-    expect(buildCost(makeSummary(), []).amountBasis).toBe('unavailable');
+    expect(buildCost(makeSummary()).amountBasis).toBe('unavailable');
     expect(legacy.providerRunMetadata?.['claude-code']?.billingAttribution).toEqual({
       posture: 'unknown',
       basis: 'legacy-unattributed',
@@ -401,7 +401,7 @@ describe('billing provenance', () => {
     expect(summary.costBreakdown?.requestEstimate?.items).toHaveLength(2);
     expect(summary.costBreakdown?.requestEstimate?.completeness).toBe('unavailable');
     expect(costAmountBasis(summary.costBreakdown)).toBe('unavailable');
-    const exported = buildCost(summary, []);
+    const exported = buildCost(summary);
     expect(
       exported.costBreakdown?.providerRunMetadata?.['cli:claude-code']?.billingAttribution,
     ).toEqual({ posture: 'unknown', basis: 'unknown' });

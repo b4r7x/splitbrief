@@ -9,7 +9,11 @@ import type {
 } from '../../../core/schemas/cost.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { TokenUsage } from '../../../core/schemas/tokens.js';
-import type { RecoveryContextDetails, UsageCounter, UsageSeat } from './recovery-context.js';
+import type {
+  RecoveryContextDetails,
+  UsageCounter,
+  UsageSeat,
+} from '../recovery/recovery-context.js';
 
 /**
  * What the record says about one counter. `reported` carries what the providers sent, zero

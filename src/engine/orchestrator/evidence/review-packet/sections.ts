@@ -76,9 +76,9 @@ export function buildValidation(
     };
   });
 
-  const statusCounts = countByValue(state.tasks, (task) => task.status);
+  const statusCounts = countByValue(tasks, (task) => task.status);
   return {
-    summary: ledger?.validationSummary ?? {
+    summary: {
       passed: statusCounts.done ?? 0,
       failed: statusCounts.failed ?? 0,
       skipped: statusCounts.skipped ?? 0,

@@ -21,7 +21,7 @@ import {
   type RecoveryContextDetails,
   recoveryContextSeatLabel,
   recoveryContextCauseWords,
-} from './recovery-context.js';
+} from '../recovery/recovery-context.js';
 
 /** An unpriced snapshot keeps zero placeholders; its source word is the whole rate. */
 function rateFacts(row: UsageRateRow): string[] {

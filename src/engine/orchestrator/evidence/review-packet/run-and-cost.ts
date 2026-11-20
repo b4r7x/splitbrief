@@ -7,7 +7,7 @@ import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { readSeatIdentities } from '../../../../core/state/seats/record.js';
 import type { PacketEvent, BuildReviewPacketOptions } from './types.js';
 
-export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket['cost'] {
+export function buildCost(summary: Summary): ReviewPacket['cost'] {
   return {
     tokenUsage: summary.tokenUsage,
     costBreakdown: summary.costBreakdown
@@ -39,13 +39,6 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
         }
       : null,
     amountBasis: costAmountBasis(summary.costBreakdown),
-    taskRouting: summary.taskBreakdown ?? [],
-    routingWarnings: events
-      .filter((event) => event.type === 'task_started' || event.type === 'task_tokens')
-      .filter(
-        (event) =>
-          event.message !== undefined || event.outcome === 'tight' || event.outcome === 'overflow',
-      ),
   };
 }
 

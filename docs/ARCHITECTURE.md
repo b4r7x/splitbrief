@@ -408,7 +408,7 @@ export function getOrCreateLedger(
 ): EvidenceLedger
 ```
 
-### `core/evidence/same-brief.ts`
+### `core/evidence/brief-hash.ts`
 
 ```ts
 export function sameCurrentBrief(entry: EvidenceTask, task: Task): boolean

@@ -1,3 +1,5 @@
+import type { RunView } from '../../../core/run-view/reduce.js';
+import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { tokensStore, type TokensState } from '../../../stores/workflow/tokens/state.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
@@ -19,11 +21,12 @@ import { formatUsageMoney, statesAmount } from './format.js';
 /** Saved runs keep their saved rates; live runs price the calls they actually recorded. */
 export function usageDetailsForRun(input: {
   route: RouteData;
-  tokens: Pick<TokensState, 'tokenUsage' | 'passSeats'>;
+  tokens: Pick<TokensState, 'tokenUsage'>;
+  passSeats: RunView['passSeats'];
   config: Config | null;
   modelCache: ModelCacheAccessor;
 }): UsageDetailsInput {
-  const { route, tokens, config, modelCache } = input;
+  const { route, tokens, passSeats, config, modelCache } = input;
   if (route.screen !== 'workflow') return { tokenUsage: null, costBreakdown: null };
   if (route.execution.kind === 'at-rest') {
     return {
@@ -42,7 +45,7 @@ export function usageDetailsForRun(input: {
     evidence.length === 0
       ? tokens.tokenUsage
       : reconcileTokenUsage(tokens.tokenUsage ?? ZERO_TOKEN_USAGE, observed);
-  const identity = tokens.passSeats ?? (config === null ? null : runSeatIdentity(config));
+  const identity = passSeats ?? (config === null ? null : runSeatIdentity(config));
   const costBreakdown =
     identity === null
       ? null
@@ -70,6 +73,7 @@ export function readCostText(): string | null {
     usageDetailsForRun({
       route,
       tokens: tokensStore.get(),
+      passSeats: runViewStore.get().passSeats,
       config: configStore.get().config,
       modelCache: modelCacheStore,
     }),

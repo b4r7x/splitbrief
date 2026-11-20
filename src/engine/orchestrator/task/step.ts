@@ -15,6 +15,7 @@ import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { runPreTaskHooksAndPublish } from './start.js';
 import { runImplementationStep } from './implementation-result.js';
 import { runBriefGate } from './gates/brief.js';
+import { recordSettledTaskUsage } from './record-usage.js';
 
 type RunSingleTaskOptions = {
   wctx: WorkflowContext;
@@ -186,6 +187,9 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     throw err;
   }
   state = gated.state;
+  if (gated.stop === 'skipped') {
+    recordSettledTaskUsage({ wctx, state, task, tokensBefore, taskBreakdowns, method: 'skipped' });
+  }
   if (gated.stop !== undefined) return state;
   const { acceptance } = gated;
 

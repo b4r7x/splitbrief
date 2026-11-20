@@ -37,6 +37,12 @@ export type CliAuthChannel = Readonly<{
  */
 export type CliHostStateAccess = 'none' | 'bridged-files' | 'host-account';
 
+export function cliCredentialStagingPolicy(
+  channel: CliAuthChannel | undefined,
+): 'declared-env' | 'provider-env' {
+  return channel?.id === 'provider-dependent' ? 'provider-env' : 'declared-env';
+}
+
 export function cliAuthChannelHostStateAccess(
   channel: CliAuthChannel,
   platform: NodeJS.Platform = process.platform,

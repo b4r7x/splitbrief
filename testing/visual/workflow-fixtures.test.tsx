@@ -23,7 +23,6 @@ import { readConversationScrollSnapshot } from '../../src/features/workflow/layo
 import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
-import { tokensStore } from '../../src/stores/workflow/tokens/state.js';
 import { selectRunningBrief, selectTaskListView } from '../../src/core/run-view/briefs.js';
 import { SOFT_SEP } from '../../src/core/separators.js';
 import { glyph } from '../../src/lib/glyphs.js';
@@ -1483,7 +1482,7 @@ describe('workflow visual fixtures', () => {
           preserveLineBreaks: true,
         });
         expect(frame).toContain('Custom Shell');
-        expect(tokensStore.get().resolvedModels.build).toMatchObject({
+        expect(runViewStore.get().resolvedModels.build).toMatchObject({
           backendKind: 'shell',
           resolvedModel: 'claude-sonnet-5-5',
         });

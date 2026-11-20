@@ -18,7 +18,7 @@ import {
 import type { SeatIdentity } from '../../../core/providers/seat-identity.js';
 import { recordedSeatIdentityInput } from './recorded-seat-identity.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
-import type { SeatResolvedModel } from '../../../stores/workflow/tokens/state.js';
+import type { SeatResolvedModel } from '../../../core/run-view/reduce.js';
 import { resolveCliModel } from '../../../core/providers/automatic-model.js';
 import { recordedSeatTool } from '../../../engine/providers/model/display-names.js';
 import type { ActiveOperation } from '../../../stores/workflow/operations/state.js';

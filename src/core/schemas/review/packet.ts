@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { narrowRecord } from '../../../utils/type-guards.js';
 import {
   PhaseSchema,
   RecoveryActionSchema,
@@ -255,6 +256,7 @@ const ReviewPacketEventSchema = z.preprocess(
     action: RecoveryActionSchema.optional(),
     outcome: z.string().optional(),
     message: z.string().optional(),
+    routingReason: z.string().optional(),
   }),
 );
 
@@ -364,7 +366,16 @@ const ReviewPacketCostSchema = z.object({
   /** What the amounts above are: a catalog estimate, unavailable, or a sum from
    * a run that recorded no provenance. Never an invoice. */
   amountBasis: CostAmountBasisSchema.default('legacy-unattributed'),
-  taskRouting: z.array(TaskTokenUsageSchema),
+});
+
+const ReviewPacketRoutingSchema = z.object({
+  taskRouting: z.array(
+    TaskTokenUsageSchema.partial({
+      method: true,
+      implementerTokens: true,
+      escalationTokens: true,
+    }),
+  ),
   routingWarnings: z.array(ReviewPacketEventSchema),
 });
 
@@ -380,7 +391,7 @@ const ReviewPacketFinalReviewSchema = z.object({
   findingCounts: FinalReviewFindingCountsSchema.default({ critical: 0, warning: 0, note: 0 }),
 });
 
-export const ReviewPacketSchema = z.object({
+const ReviewPacketRecordSchema = z.object({
   version: z.literal(REVIEW_PACKET_VERSION),
   sessionId: z.string(),
   generatedAt: z.string(),
@@ -395,6 +406,7 @@ export const ReviewPacketSchema = z.object({
   drift: ReviewPacketDriftSchema,
   escalations: ReviewPacketEscalationsSchema,
   cost: ReviewPacketCostSchema,
+  routing: ReviewPacketRoutingSchema,
   finalReview: ReviewPacketFinalReviewSchema,
   reviewInput: z
     .object({
@@ -409,6 +421,19 @@ export const ReviewPacketSchema = z.object({
   reviewerChecklist: z.array(z.string()),
   missingArtifacts: z.array(z.string()),
 });
+
+export const ReviewPacketSchema = z.preprocess((value) => {
+  const packet = narrowRecord(value);
+  if (packet === null || packet.routing !== undefined) return value;
+  const cost = narrowRecord(packet.cost);
+  return {
+    ...packet,
+    routing: {
+      taskRouting: cost?.taskRouting,
+      routingWarnings: cost?.routingWarnings,
+    },
+  };
+}, ReviewPacketRecordSchema);
 
 export type ReviewPacket = z.infer<typeof ReviewPacketSchema>;
 export type ReviewPacketCheckpoint = z.infer<typeof ReviewPacketCheckpointSchema>;

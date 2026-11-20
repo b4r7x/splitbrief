@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { sessionsRoot } from '../../../src/core/paths.js';
+import {
+  reviewPacketJsonPath,
+  reviewPacketMarkdownPath,
+  sessionsRoot,
+} from '../../../src/core/paths.js';
+import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -148,7 +153,7 @@ async function startEndpoint(
  */
 async function prepareRun(
   contextLength: number | undefined,
-  { refuse = false, source = BIG_SOURCE } = {},
+  { refuse = false, source = BIG_SOURCE, provider = 'custom-endpoint' } = {},
 ) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
@@ -223,8 +228,8 @@ process.stdout.write(JSON.stringify(answer));
     planner: { ...config.planner, args: [plannerPath] },
     implementer: {
       kind: 'api',
-      provider: 'custom-endpoint',
-      service: 'custom-endpoint',
+      provider,
+      service: provider,
       offering: 'payg',
       apiBase: endpoint.apiBase,
       apiKey: 'fixture-key',
@@ -245,7 +250,7 @@ process.stdout.write(JSON.stringify(answer));
 
 describe('e2e: the Prompt budget of an API BUILD seat', () => {
   it('sends a brief over the assumed window whole when no Prompt budget is set, and ends it done', async () => {
-    const { target, completions, readCalls } = await prepareRun(undefined);
+    const { target, completions, readCalls } = await prepareRun(undefined, { provider: 'codex' });
 
     const run = await cli(target, ['start', 'mark the big module done']);
 
@@ -263,12 +268,24 @@ describe('e2e: the Prompt budget of an API BUILD seat', () => {
     expect(state.phase).toBe('complete');
     expect(state.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
     expect(readFileSync(join(target.projectDir, BIG_FILE), 'utf8')).toBe(BIG_SOURCE + DONE_LINE);
-    const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    const ref = { projectDir: target.projectDir, sessionId };
+    const { events } = await readRunEvents(ref);
     const started = events.find((event) => event.type === 'task_started');
-    expect(started).toMatchObject({ contextFit: 'overflow' });
+    expect(started).toMatchObject({ contextFit: 'overflow', backendKind: 'api', tool: 'codex' });
     expect(started?.routingReason).toMatch(
       /^Selected profile default \(overflow, estimated \d+\/8192 tokens using conservative context-length fallback; no Prompt budget is set\)$/,
     );
+    const markdown = readFileSync(reviewPacketMarkdownPath(ref), 'utf8');
+    const routing = markdown.split('## Routing\n')[1]?.split('\n## ')[0];
+    expect(routing).toContain('- Per-task routing entries: 1');
+    expect.soft(routing).not.toMatch(/^- T001: OpenAI Codex CLI\b/m);
+    expect.soft(routing).toMatch(/^- T001: codex · .+ · default · Selected profile default/m);
+    const packet = ReviewPacketSchema.parse(
+      JSON.parse(readFileSync(reviewPacketJsonPath(ref), 'utf8')),
+    );
+    expect(packet.routing.taskRouting).toMatchObject([
+      { taskId: 'T001', tool: 'codex', kind: 'api', model: MODEL },
+    ]);
   });
 
   it('shows a tight brief with its estimate and no guessed window', async () => {

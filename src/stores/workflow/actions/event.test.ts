@@ -22,14 +22,14 @@ describe('addEvent — cross-bucket isolation', () => {
   beforeEach(() => resetWorkflow());
 
   it('preserves unrelated sub-store fields on generic events', () => {
-    runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
-    tokensStore.__testReset({
+    runViewStore.__testReset({
+      phase: 'implementing',
       passSeats: { plannerTool: 'claude-code', implementerTool: 'codex' },
     });
     addEvent(makeRetry());
     expect(runViewStore.get().phase).toBe('implementing');
-    expect(tokensStore.get().passSeats).toEqual({
+    expect(runViewStore.get().passSeats).toEqual({
       plannerTool: 'claude-code',
       implementerTool: 'codex',
     });

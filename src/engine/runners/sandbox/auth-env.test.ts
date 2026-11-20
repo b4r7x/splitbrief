@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CliAuthChannel } from '../../../core/runners/cli-tool/auth-channels.js';
+import { defaultCliAuthChannel } from '../../../core/runners/cli-tool/catalog.js';
 import { cliAuthChannelEnvKeys } from './auth-env.js';
 
 function authChannel(over: Partial<CliAuthChannel>): CliAuthChannel {
@@ -13,6 +14,19 @@ function authChannel(over: Partial<CliAuthChannel>): CliAuthChannel {
 }
 
 describe('cliAuthChannelEnvKeys', () => {
+  it('uses the credential staging policy when billing and the channel disagree', () => {
+    const processEnv = { OLLAMA_API_KEY: 'k', PATH: '/bin' };
+    const provider = defaultCliAuthChannel('opencode');
+    const session = defaultCliAuthChannel('codex');
+
+    expect(
+      cliAuthChannelEnvKeys({ ...provider, billing: 'subscription-included' }, processEnv),
+    ).toContain('OLLAMA_API_KEY');
+    expect(
+      cliAuthChannelEnvKeys({ ...session, billing: 'provider-dependent' }, processEnv),
+    ).toEqual([...session.env]);
+  });
+
   it('passes every provider API key to a provider-dependent tool', () => {
     expect(
       cliAuthChannelEnvKeys(

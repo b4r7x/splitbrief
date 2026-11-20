@@ -45,7 +45,8 @@ describe('usageDetailsForRun', () => {
     });
     const view = usageDetailsForRun({
       route: frozenRoute(summary),
-      tokens: { tokenUsage: makeUsage({ plannerInput: 999_999 }), passSeats: null },
+      tokens: { tokenUsage: makeUsage({ plannerInput: 999_999 }) },
+      passSeats: null,
       config: null,
       modelCache: modelCacheStore,
     });
@@ -77,7 +78,8 @@ describe('usageDetailsForRun', () => {
     };
     const view = usageDetailsForRun({
       route,
-      tokens: { tokenUsage: makeUsage(), passSeats: null },
+      tokens: { tokenUsage: makeUsage() },
+      passSeats: null,
       config: makeConfig(),
       modelCache: modelCacheStore,
     });

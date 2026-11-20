@@ -1,6 +1,4 @@
-import type { CrewSeatId } from '../../../core/crew/identity.js';
-import type { SeatIdentity } from '../../../core/providers/seat-identity.js';
-import type { RunnerKind, Phase } from '../../../core/schemas/enums.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import { createStore, storeBase } from '../../create.js';
 
@@ -57,29 +55,16 @@ export interface PerTaskTokens {
   attempts?: TaskAttemptTokens[] | undefined;
 }
 
-/** The model id a seat's call reported running, beside the runner and model value of that call. */
-export type SeatResolvedModel = Readonly<{
-  runnerName: string | undefined;
-  model: string | undefined;
-  resolvedModel: string;
-  backendKind: RunnerKind;
-}>;
-
 export interface TokensState {
   tokenUsage: TokenUsage | null;
   perPhase: Partial<Record<Phase, PhaseTokens>>;
   perTask: Record<string, PerTaskTokens>;
-  /** The seats this run pass holds: the run is priced on them, and the chrome names them. */
-  passSeats: SeatIdentity | null;
-  resolvedModels: Partial<Record<CrewSeatId, SeatResolvedModel>>;
 }
 
 const initial: TokensState = {
   tokenUsage: null,
   perPhase: {},
   perTask: {},
-  passSeats: null,
-  resolvedModels: {},
 };
 
 const store = createStore<TokensState>(initial);

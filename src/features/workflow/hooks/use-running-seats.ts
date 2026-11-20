@@ -3,7 +3,6 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { parksCutCall, stopStore } from '../../../stores/workflow/stop.js';
-import { tokensStore } from '../../../stores/workflow/tokens/state.js';
 import { useStores } from '../../../stores/use-many.js';
 import { deriveRunningSeats, type RunningSeats } from '../display/running-seats.js';
 
@@ -25,16 +24,15 @@ export function readRunningSeats(): RunningSeats {
     phase: view.phase,
     halted: view.halt !== null,
     cutCallParked: parksCutCall(stopStore.get()),
-    passSeats: tokensStore.get().passSeats,
+    passSeats: view.passSeats,
   });
 }
 
 /** The seats the header and the sidebar name over the saved ones while the run is live. */
 export function useRunningSeats(): RunningSeats {
-  const [lifecycle, { phase, briefs, halt }] = useStores(lifecycleStore, runViewStore);
+  const [lifecycle, { phase, briefs, halt, passSeats }] = useStores(lifecycleStore, runViewStore);
   const config = configStore.use((s) => s.config);
   const active = operationsStore.use((s) => s.active);
-  const passSeats = tokensStore.use((s) => s.passSeats);
   const cutCallParked = stopStore.use(parksCutCall);
   return config
     ? deriveRunningSeats({

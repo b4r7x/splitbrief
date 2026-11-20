@@ -139,6 +139,59 @@ function mixedFixture(): EngineEvent[] {
 }
 
 describe('loadEvents', () => {
+  it('projects the pass seats and last resolved model in live and replayed events', () => {
+    const call = {
+      type: 'runner_call_session_id',
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'auto',
+      nativeSessionId: 'session-1',
+    };
+    const events = [
+      event({
+        type: 'workflow_config',
+        phase: 'planning',
+        plannerTool: 'opencode',
+        plannerKind: 'api',
+        implementerTool: 'opencode',
+        implementerKind: 'cli',
+        implementerModel: 'auto',
+      }),
+      event({ ...call, sequence: 1, resolvedModel: 'deepseek/deepseek-flash' }),
+      event({ ...call, sequence: 2, nativeSessionId: 'session-2' }),
+    ];
+
+    const seats = {
+      passSeats: {
+        plannerTool: 'opencode',
+        plannerKind: 'api',
+        implementerTool: 'opencode',
+        implementerKind: 'cli',
+        implementerModel: 'auto',
+      },
+      resolvedModels: {
+        build: {
+          runnerName: 'opencode',
+          model: 'auto',
+          resolvedModel: 'deepseek/deepseek-flash',
+          backendKind: 'cli',
+        },
+      },
+    };
+
+    for (const item of events) addEvent(item);
+    expect(runViewStore.get()).toMatchObject(seats);
+
+    loadEvents(events);
+    expect(runViewStore.get()).toMatchObject(seats);
+
+    loadEvents([]);
+    expect(runViewStore.get()).toMatchObject({ passSeats: null, resolvedModels: {} });
+  });
+
   beforeEach(() => resetWorkflow());
 
   it('preserves the local pause and its boundary resolver when replaying history', () => {

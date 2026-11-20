@@ -7,7 +7,7 @@ import { wrapSeatIdentity, cutSeatIdentity } from '../../../core/crew/seat-line/
 import { type CrewSeat, crewSeatWord } from '../../../core/crew/seats.js';
 import type { TaskListView, WorkflowTask } from '../../../core/run-view/briefs.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import type { SeatResolvedModel } from '../../../stores/workflow/tokens/state.js';
+import type { SeatResolvedModel } from '../../../core/run-view/reduce.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { segmentsForRowText, getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { wrapHard } from '../../../utils/display-text/wrap.js';

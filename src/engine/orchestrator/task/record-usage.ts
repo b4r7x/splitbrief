@@ -1,4 +1,5 @@
 import type { TaskId, Task } from '../../../core/schemas/task.js';
+import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import {
   type TokenUsage,
   type TaskTokenUsage,
@@ -8,6 +9,7 @@ import {
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { EventBus } from '../../events/types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
+import type { WorkflowContext } from '../types.js';
 import { publishWarning } from '../publish/notice.js';
 
 function clampNonNegative(value: number): number {
@@ -94,6 +96,7 @@ type RecordTaskUsageOptions = {
   taskBreakdowns: TaskTokenUsage[];
   retryCount?: number;
   tool?: string;
+  kind?: TaskTokenUsage['kind'];
   model?: string;
   implementerProfile?: string;
   routingDecision?: RoutingDecision;
@@ -110,6 +113,7 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     taskBreakdowns,
     retryCount,
     tool,
+    kind,
     model,
     implementerProfile,
     routingDecision,
@@ -125,7 +129,7 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     (delta.escalationReasoningTokens ?? 0) > 0 ||
     delta.escalationCacheReadTokens > 0 ||
     delta.escalationCacheCreateTokens > 0;
-  if (!hasImplementerUsage && !hasEscalationUsage) {
+  if (method !== 'skipped' && !hasImplementerUsage && !hasEscalationUsage) {
     publishWarning({
       bus,
       phase: state.phase,
@@ -160,6 +164,7 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     }),
     retryCount: retryCount ?? 0,
     ...(tool !== undefined && { tool }),
+    ...(kind !== undefined && { kind }),
     ...(model !== undefined && { model }),
     ...(implementerProfile !== undefined && { implementerProfile }),
     ...(routingDecision !== undefined && {
@@ -176,4 +181,30 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
   };
   taskBreakdowns.push(usage);
   emitTaskTokens(bus, state, task.id, usage);
+}
+
+export function recordSettledTaskUsage(
+  opts: Pick<
+    RecordTaskUsageOptions,
+    'state' | 'task' | 'method' | 'tokensBefore' | 'taskBreakdowns' | 'retryCount'
+  > & {
+    wctx: Pick<WorkflowContext, 'config' | 'bus' | 'implementerProfile' | 'routingDecision'>;
+    tool?: string | undefined;
+    model?: string | undefined;
+  },
+): void {
+  const { wctx, state, tool, model, ...settlement } = opts;
+  const runner = wctx.config.implementer;
+  const selectedModel = model ?? runner.model;
+  recordTaskUsage({
+    ...settlement,
+    state,
+    bus: wctx.bus,
+    currentUsage: state.tokenUsage,
+    tool: tool ?? getRunnerDisplayName(runner),
+    kind: runner.kind,
+    ...(selectedModel !== undefined && { model: selectedModel }),
+    ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
+    ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
+  });
 }

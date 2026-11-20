@@ -12,7 +12,7 @@ import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { readFinalReviewRecord } from '../../../core/review/store.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
+import { sameCurrentBrief } from '../../../core/evidence/brief-hash.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import {

@@ -6,6 +6,7 @@ import {
 } from './runner-call.js';
 import {
   CurrentCodeContextModeSchema,
+  RunnerKindSchema,
   TaskCompletionMethodSchema,
   TaskContextFitSchema,
 } from './enums.js';
@@ -74,6 +75,7 @@ export const TaskTokenUsageSchema = z.object({
   retryCount: z.number().nonnegative(),
   cost: z.number().nonnegative().optional(),
   tool: z.string().optional(),
+  kind: RunnerKindSchema.optional(),
   model: z.string().optional(),
   implementerProfile: z.string().optional(),
   contextFit: TaskContextFitSchema.optional(),

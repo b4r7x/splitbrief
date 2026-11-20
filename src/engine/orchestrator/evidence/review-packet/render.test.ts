@@ -2,10 +2,70 @@ import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../../core/schemas/task.js';
 import { type ReviewPacket, ReviewPacketSchema } from '../../../../core/schemas/review/packet.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
-import { renderReviewPacketMarkdown } from './render.js';
+import { renderReviewPacketMarkdown, stringifyReviewPacket } from './render.js';
 import { reusedNote } from '../../../../core/validation/reused-note.js';
 import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+
+const taskRouting = [
+  {
+    taskId: taskId('T001'),
+    taskTitle: 'Add alpha',
+    method: 'local',
+    retryCount: 0,
+    tool: 'codex',
+    model: 'gpt-5',
+    implementerProfile: 'quick',
+    routingReason: 'Selected the quick profile.',
+  },
+];
+const routingWarnings = [
+  {
+    ts: '2026-10-13T10:00:00.000Z',
+    type: 'task_started',
+    taskId: taskId('T002'),
+    outcome: 'overflow',
+    message: 'No profile can hold the brief.',
+  },
+];
+
+it('projects an older packet into the routing section and renders its refusal', () => {
+  const base = makeReviewPacket();
+  const packet = ReviewPacketSchema.parse({
+    ...base,
+    routing: undefined,
+    cost: {
+      ...base.cost,
+      taskRouting: taskRouting.map((route) => ({
+        ...route,
+        implementerTokens: 4,
+        escalationTokens: 0,
+      })),
+      routingWarnings,
+    },
+  });
+
+  expect(packet).toMatchObject({ routing: { taskRouting, routingWarnings } });
+  const routing = renderReviewPacketMarkdown(packet, NULL_CACHE)
+    .split('## Routing\n')[1]
+    ?.split('\n## ')[0];
+  expect(routing).toContain('Selected the quick profile.');
+  expect(routing).toContain('No profile can hold the brief.');
+});
+
+it('writes routing independently from the cost section', () => {
+  const base = makeReviewPacket();
+  const packet = ReviewPacketSchema.parse({
+    ...base,
+    routing: { taskRouting, routingWarnings },
+    cost: { tokenUsage: base.cost.tokenUsage, costBreakdown: null },
+  });
+  const json: unknown = JSON.parse(stringifyReviewPacket(packet));
+
+  expect(json).toMatchObject({ routing: { taskRouting, routingWarnings } });
+  expect(packet.cost).not.toHaveProperty('taskRouting');
+  expect(packet.cost).not.toHaveProperty('routingWarnings');
+});
 
 describe('renderReviewPacketMarkdown review seat', () => {
   it('uses catalog names for every recorded seat and a switched seat', () => {

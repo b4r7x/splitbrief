@@ -9,7 +9,6 @@ import { useCrewDisplayNames } from '../../../../hooks/use-crew-display-names.js
 import { borderStyleFor } from '../../../../lib/glyphs.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
-import { tokensStore } from '../../../../stores/workflow/tokens/state.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import type { RecordedCrew } from '../../closed/view-model.js';
 import { useRunningSeats } from '../../hooks/use-running-seats.js';
@@ -28,7 +27,7 @@ export function Sidebar({ width, height, recordedCrew }: SidebarProps) {
   const view = selectTaskListView(runViewStore.use((s) => s.briefs));
   const config = configStore.use((s) => s.config);
   const running = useRunningSeats();
-  const resolvedModels = tokensStore.use((s) => s.resolvedModels);
+  const resolvedModels = runViewStore.use((s) => s.resolvedModels);
   const displayNames = useCrewDisplayNames(config);
 
   // Ink's border consumes two rows even when a smaller explicit height is supplied. At the

@@ -138,7 +138,7 @@ describe('hydrateFromState', () => {
     expect(runViewStore.get().briefs.taskMap.get('T002')?.action).toBe('modify');
     expect(runViewStore.get().briefs.taskMap.get('T002')?.route).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toEqual(makeUsage());
-    expect(tokensStore.get().passSeats).toEqual({
+    expect(runViewStore.get().passSeats).toEqual({
       plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
@@ -251,7 +251,7 @@ describe('hydrateFromState', () => {
       false,
     );
 
-    expect(tokensStore.get().passSeats).toMatchObject({
+    expect(runViewStore.get().passSeats).toMatchObject({
       reviewerTool: 'custom-endpoint',
       reviewerModel: 'custom-v4-flash',
     });
@@ -291,7 +291,7 @@ describe('hydrateFromState', () => {
       false,
     );
 
-    expect(tokensStore.get().passSeats).toEqual({
+    expect(runViewStore.get().passSeats).toEqual({
       plannerTool: 'claude-code',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',

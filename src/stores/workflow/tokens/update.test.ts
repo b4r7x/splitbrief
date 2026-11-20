@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { updateTokens } from './update.js';
 import { tokensStore } from './state.js';
+import { runViewStore } from '../run-view.js';
 import { addEvent } from '../actions/event.js';
 import { markCancellationRequested } from '../actions/interrupt.js';
 import { resetWorkflow } from '../actions/reset.js';
@@ -102,7 +103,7 @@ describe('tokensStore — cost-update', () => {
   });
 });
 
-describe('tokensStore — run pass seats', () => {
+describe('runViewStore — run pass seats', () => {
   beforeEach(() => resetWorkflow());
 
   it('keeps the None of a pass that no seat reviews', () => {
@@ -115,7 +116,7 @@ describe('tokensStore — run pass seats', () => {
       reviewerSeat: 'none',
     });
 
-    expect(tokensStore.get().passSeats).toMatchObject({ reviewerSeat: 'none' });
+    expect(runViewStore.get().passSeats).toMatchObject({ reviewerSeat: 'none' });
   });
 });
 

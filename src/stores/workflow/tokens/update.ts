@@ -1,4 +1,3 @@
-import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 import {
   definedTaskUsageFields,
   TASK_USAGE_METADATA_KEYS,
@@ -45,26 +44,6 @@ function preserveTaskAttemptMetadata(event: TaskTokensEvent): Partial<TaskAttemp
 
 export function updateTokens(state: TokensState, event: EngineEvent): TokensState {
   switch (event.type) {
-    case 'workflow_config':
-      return {
-        ...state,
-        passSeats: {
-          plannerTool: event.plannerTool,
-          plannerModel: event.plannerModel,
-          plannerKind: event.plannerKind,
-          plannerAxes: event.plannerAxes,
-          implementerTool: event.implementerTool,
-          implementerModel: event.implementerModel,
-          implementerKind: event.implementerKind,
-          implementerAxes: event.implementerAxes,
-          reviewerTool: event.reviewerTool,
-          reviewerModel: event.reviewerModel,
-          reviewerKind: event.reviewerKind,
-          reviewerAxes: event.reviewerAxes,
-          reviewerSeat: event.reviewerSeat,
-        },
-      };
-
     case 'cost_update': {
       const prev = state.tokenUsage ?? ZERO_TOKEN_USAGE;
       const curr = event.tokenUsage;
@@ -135,25 +114,8 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       };
     }
 
-    case 'runner_call_session_id': {
-      const seatId = seatForRunningCall(event);
-      // Frames before Claude Code's init, and frames after a session id change, name no model:
-      // the seat keeps the last one a frame named.
-      if (seatId === null || event.resolvedModel === undefined) return state;
-      return {
-        ...state,
-        resolvedModels: {
-          ...state.resolvedModels,
-          [seatId]: {
-            runnerName: event.runnerName,
-            model: event.model,
-            resolvedModel: event.resolvedModel,
-            backendKind: event.backendKind,
-          },
-        },
-      };
-    }
-
+    case 'workflow_config':
+    case 'runner_call_session_id':
     case 'task_completed':
     case 'task_reset':
     case 'task_skipped':

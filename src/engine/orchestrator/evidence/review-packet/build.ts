@@ -22,6 +22,7 @@ import {
   buildValidation,
 } from './sections.js';
 import { buildCost, buildRun } from './run-and-cost.js';
+import { buildRouting } from './routing.js';
 import { buildFinalReview, resolveChangedFiles, sourceArtifactMissing } from './sections-io.js';
 import { readBriefQuality, readCheckpoints, readPacketEvents, readReadiness } from './artifacts.js';
 import type { BuildReviewPacketOptions } from './types.js';
@@ -100,7 +101,8 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
     evidence: buildEvidence(ledger),
     drift: buildDrift({ drift, briefQuality }),
     escalations: buildEscalations({ state: opts.state, ledger, events }),
-    cost: buildCost(opts.summary, events),
+    cost: buildCost(opts.summary),
+    routing: buildRouting(opts, events),
     finalReview,
     ...(opts.reviewInput !== undefined && {
       reviewInput: {

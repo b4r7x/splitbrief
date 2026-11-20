@@ -2,13 +2,19 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
+import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
+import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
+import type { TaskTokenUsage } from '../../../src/core/schemas/tokens.js';
+import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
@@ -117,6 +123,26 @@ it('lists a BUILD seat changed between stop and continue in the review packet wi
   const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
   expect(parked.exitCode).toBe(130);
   const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
+  const saved = loadState(ref);
+  const current = saved?.tasks[0];
+  if (saved === null || current === undefined) throw new Error('Missing parked brief');
+  const earlierRoute: TaskTokenUsage = {
+    taskId: current.id,
+    taskTitle: current.title,
+    method: 'local',
+    retryCount: 0,
+    implementerTokens: 7,
+    escalationTokens: 0,
+    tool: 'codex',
+    model: 'gpt-5-codex',
+    routingReason: 'The earlier brief fit.',
+  };
+  saveState(ref, { ...saved, taskBreakdowns: [earlierRoute] });
+  const earlier = makeTask({ id: 'T002', title: 'Add farewell', status: 'done' });
+  writeEvidenceLedger(
+    ref,
+    createEvidenceLedger({ ...ref, feature: saved.feature, tasks: [earlier, current] }),
+  );
 
   // What `/crew build` saves: the BUILD block in config.yaml, on another model.
   writeConfig(target.projectDir, {
@@ -133,10 +159,8 @@ it('lists a BUILD seat changed between stop and continue in the review packet wi
   expect(
     events.filter((event) => event.type === 'warning' && /seat changed/.test(event.message)),
   ).toEqual([]);
-  const packet = readFileSync(
-    join(sessionDir(ref.projectDir, ref.sessionId), 'review-packet.md'),
-    'utf8',
-  );
+  const artifacts = sessionDir(ref.projectDir, ref.sessionId);
+  const packet = readFileSync(join(artifacts, 'review-packet.md'), 'utf8');
   const recovery = packet.slice(
     packet.indexOf('## Recovery Decisions'),
     packet.indexOf('## Routing'),
@@ -144,4 +168,24 @@ it('lists a BUILD seat changed between stop and continue in the review packet wi
   expect(recovery).toContain(
     '- BUILD switched manually: OpenAI Codex CLI · GPT-5 Codex → OpenAI Codex CLI · GPT-5.1 Codex; crew changed',
   );
+  const recorded = ReviewPacketSchema.parse(
+    JSON.parse(readFileSync(join(artifacts, 'review-packet.json'), 'utf8')),
+  );
+  const routing = packet.split('## Routing\n')[1]?.split('\n## ')[0];
+  expect.soft(recorded.routing.taskRouting).toEqual([
+    earlierRoute,
+    expect.objectContaining({
+      taskId: current.id,
+      kind: 'cli',
+      model: 'gpt-5.1-codex',
+      implementerTokens: 15,
+    }),
+  ]);
+  expect.soft(routing).toMatch(/^- T001: codex · GPT-5 Codex · The earlier brief fit\.$/m);
+  expect.soft(routing).toMatch(/^- T001: OpenAI Codex CLI · GPT-5\.1 Codex/m);
+  expect.soft(packet).toContain('- Tasks: 1 total, 0 escalated, 0 skipped, 0 failed');
+  expect.soft(packet).toContain('- Validation: 1 passed, 0 failed, 0 skipped, 0 escalated');
+  expect(recorded.validation.tasks.map((task) => [task.taskId, task.status])).toEqual([
+    [current.id, 'done'],
+  ]);
 });

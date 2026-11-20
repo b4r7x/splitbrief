@@ -7,7 +7,7 @@ import { deriveUsageDetails } from './derive.js';
 import type { UsageDetailsInput } from './types.js';
 import { usageDetailRows } from './rows.js';
 import type { UsageDetailRow } from './format.js';
-import { readRecoveryContext } from './recovery-context.js';
+import { readRecoveryContext } from '../recovery/recovery-context.js';
 
 function usage(fields: Partial<TokenUsage>): TokenUsage {
   return { ...ZERO_TOKEN_USAGE, ...fields };

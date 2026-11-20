@@ -3,6 +3,7 @@ import {
   type CliAuthChannel,
   type CliHostStateAccess,
   cliAuthChannelHostStateAccess,
+  cliCredentialStagingPolicy,
 } from '../../../core/runners/cli-tool/auth-channels.js';
 import { defaultCliAuthChannel } from '../../../core/runners/cli-tool/catalog.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
@@ -29,7 +30,7 @@ export function cliAuthChannelEnvKeys(
   processEnv: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const declared = [...(channel?.env ?? [])];
-  if (channel?.billing !== 'provider-dependent') return declared;
+  if (cliCredentialStagingPolicy(channel) === 'declared-env') return declared;
   const passthrough = Object.keys(processEnv).filter((key) => PROVIDER_API_KEY_ENV_RE.test(key));
   return [...new Set([...declared, ...passthrough])];
 }

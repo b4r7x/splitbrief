@@ -179,6 +179,10 @@ export async function readPacketEvents(
       optionalString(data.reason) ??
       optionalString(data.routingReason);
     const outcome = optionalString(data.outcome) ?? optionalString(data.contextFit);
+    const routingReason =
+      entry.type === 'recovery_prompted' && reason === 'context-overflow'
+        ? optionalString(narrowRecord(narrowRecord(data.issue)?.facts)?.routingReason)
+        : undefined;
     const category = optionalString(data.category);
     const code = optionalString(data.code);
     const event: PacketEvent = {
@@ -201,6 +205,7 @@ export async function readPacketEvents(
       ...(action !== undefined && { action }),
       ...(outcome !== undefined && { outcome }),
       ...(message !== undefined && { message }),
+      ...(routingReason !== undefined && { routingReason }),
     };
     events.push(event);
   }

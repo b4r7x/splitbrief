@@ -20,7 +20,7 @@ import {
   type UsageCounter,
   USAGE_COUNTERS,
   readRecoveryContext,
-} from './recovery-context.js';
+} from '../recovery/recovery-context.js';
 import type {
   UsageCounterRow,
   UsageMoney,

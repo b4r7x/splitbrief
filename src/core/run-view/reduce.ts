@@ -7,12 +7,16 @@ import type { Phase } from '../schemas/enums.js';
 import type { ClarificationQuestion } from '../schemas/question.js';
 import type { StepRef } from '../schemas/run-step.js';
 import type { SeatWait } from '../schemas/workflow/seat.js';
+import type { CrewSeatId } from '../crew/identity.js';
+import type { SeatIdentity } from '../providers/seat-identity.js';
+import { seatForRunningCall } from '../runners/seat-roles.js';
 import { EMPTY_BRIEFS, reduceBriefs, type RunBriefs } from './briefs.js';
 import type {
   BriefKeptEvent,
   PlannerQuestionsAskedEvent,
   RunFailedEvent,
   RunRejectedEvent,
+  RunnerModelEvent,
   SeatWaitEndedEvent,
   SeatWaitStartedEvent,
   TurnInterruptedEvent,
@@ -39,6 +43,11 @@ export interface ViewApply {
 /** When the run first entered each phase: the rail dates a finished stage from the next one's entry. */
 export type PhaseFirstSeen = Readonly<Partial<Record<Phase, number>>>;
 
+/** The model a call reported, with the runner and model it was given. */
+export type SeatResolvedModel = Readonly<
+  Pick<RunnerModelEvent, 'runnerName' | 'model' | 'backendKind'> & { resolvedModel: string }
+>;
+
 /** What the run's log says about the run, folded once for every surface that shows it. */
 export interface RunView {
   readonly phase: Phase;
@@ -64,6 +73,8 @@ export interface RunView {
   readonly apply: ViewApply | null;
   /** The latest run pass has REVIEW None, so no seat reviews what it runs. */
   readonly reviewNone: boolean;
+  readonly passSeats: SeatIdentity | null;
+  readonly resolvedModels: Readonly<Partial<Record<CrewSeatId, SeatResolvedModel>>>;
   /**
    * The step after the last brief, as the saved state names it: only the state knows the
    * workspace, so a run the state has not settled yet reads the review.
@@ -87,6 +98,8 @@ export const EMPTY_RUN_VIEW: RunView = {
   briefKept: null,
   apply: null,
   reviewNone: false,
+  passSeats: null,
+  resolvedModels: {},
   afterLastBrief: { kind: 'review', cycle: 0 },
 };
 
@@ -130,27 +143,75 @@ function isWorkflowConfig<T extends EventTypeCarrier>(event: T): event is T & Wo
   return event.type === 'workflow_config';
 }
 
+function isRunnerModel<T extends EventTypeCarrier>(event: T): event is T & RunnerModelEvent {
+  return event.type === 'runner_call_session_id';
+}
+
 /**
  * One event folded into the view. An event that changes nothing returns the same view, so a store
  * that holds it does not notify.
  */
 export function reduceRunView(view: RunView, event: RunViewEvent): RunView {
+  const withSeats = reduceSeatIdentity(view, event);
   const next = reduceBriefKept(
-    reduceStop(reduceAsk(reduceSeatWait(reducePhase(view, event), event), event), event),
+    reduceStop(reduceAsk(reduceSeatWait(reducePhase(withSeats, event), event), event), event),
     event,
   );
   const halt = reduceHalt(next.halt, event);
   const briefs = reduceBriefs(next.briefs, event);
   const apply = reduceApply(next.apply, event);
-  const reviewNone = isWorkflowConfig(event) ? event.reviewerSeat === 'none' : next.reviewNone;
-  if (
-    halt === next.halt &&
-    briefs === next.briefs &&
-    apply === next.apply &&
-    reviewNone === next.reviewNone
-  )
-    return next;
-  return { ...next, halt, briefs, apply, reviewNone };
+  if (halt === next.halt && briefs === next.briefs && apply === next.apply) return next;
+  return { ...next, halt, briefs, apply };
+}
+
+function reduceSeatIdentity(view: RunView, event: RunViewEvent): RunView {
+  if (isWorkflowConfig(event)) {
+    const {
+      plannerTool,
+      plannerModel,
+      plannerKind,
+      plannerAxes,
+      implementerTool,
+      implementerModel,
+      implementerKind,
+      implementerAxes,
+      reviewerTool,
+      reviewerModel,
+      reviewerKind,
+      reviewerAxes,
+      reviewerSeat,
+    } = event;
+    return {
+      ...view,
+      reviewNone: reviewerSeat === 'none',
+      passSeats: {
+        plannerTool,
+        plannerModel,
+        plannerKind,
+        plannerAxes,
+        implementerTool,
+        implementerModel,
+        implementerKind,
+        implementerAxes,
+        reviewerTool,
+        reviewerModel,
+        reviewerKind,
+        reviewerAxes,
+        reviewerSeat,
+      },
+    };
+  }
+  if (!isRunnerModel(event) || event.resolvedModel === undefined) return view;
+  const seat = seatForRunningCall(event);
+  if (seat === null) return view;
+  const { runnerName, model, resolvedModel, backendKind } = event;
+  return {
+    ...view,
+    resolvedModels: {
+      ...view.resolvedModels,
+      [seat]: { runnerName, model, resolvedModel, backendKind },
+    },
+  };
 }
 
 /**

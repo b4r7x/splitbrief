@@ -22,6 +22,23 @@ export function settleRunView(view: RunView, state: WorkflowState, reviewNone: b
     planCard: reopensPlanCard(state),
     stopKept: state.interruptedStep?.kept ?? EMPTY_RUN_VIEW.stopKept,
     failure: state.lastFailure?.message ?? null,
+    passSeats: savedPassSeats(state),
+  };
+}
+
+/** The saved state keeps no axis words, so the chrome does not take these seats as known. */
+function savedPassSeats(state: WorkflowState): RunView['passSeats'] {
+  if (!state.plannerTool || !state.implementerTool) return null;
+  return {
+    plannerTool: state.plannerTool,
+    implementerTool: state.implementerTool,
+    plannerModel: state.plannerModel,
+    implementerModel: state.implementerModel,
+    ...(state.reviewerTool !== undefined && {
+      reviewerTool: state.reviewerTool,
+      ...(state.reviewerModel !== undefined && { reviewerModel: state.reviewerModel }),
+    }),
+    ...(state.reviewerSeat !== undefined && { reviewerSeat: state.reviewerSeat }),
   };
 }
 

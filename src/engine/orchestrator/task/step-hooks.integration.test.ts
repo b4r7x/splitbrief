@@ -21,6 +21,7 @@ import {
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import type { Check } from '../../../core/schemas/task.js';
+import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
@@ -53,6 +54,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       checks: BRIEF_CHECKS,
     });
     const state = implementingState([task]);
+    const taskBreakdowns: TaskTokenUsage[] = [];
 
     writeFileSync(
       join(projectDir, 'deny-validation.mjs'),
@@ -109,7 +111,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       index: 0,
       totalTasks: 1,
       state,
-      taskBreakdowns: [],
+      taskBreakdowns,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
@@ -147,6 +149,9 @@ describe('runSingleTask — pre_validation hooks', () => {
       id: 'T001',
       status: 'skipped',
     });
+    expect(taskBreakdowns).toMatchObject([
+      { taskId: 'T001', method: 'skipped', retryCount: 0, model: 'qwen2.5-coder:7b' },
+    ]);
   });
 
   it('ends the ladder on the skip when the hook denies the consult-guided attempt', async () => {
@@ -160,6 +165,7 @@ describe('runSingleTask — pre_validation hooks', () => {
     });
     const second = makeTask({ id: 'T002', suggestedFiles: ['src/other.ts'] });
     const state = implementingState([first, second]);
+    const taskBreakdowns: TaskTokenUsage[] = [];
 
     const calls = join(projectDir, 'hook-calls');
     writeFileSync(
@@ -227,7 +233,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       index: 0,
       totalTasks: 2,
       state,
-      taskBreakdowns: [],
+      taskBreakdowns,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
@@ -245,5 +251,8 @@ describe('runSingleTask — pre_validation hooks', () => {
     expect(ledger?.tasks.find((entry) => entry.id === 'T001')).toMatchObject({
       status: 'skipped',
     });
+    expect(taskBreakdowns).toMatchObject([
+      { taskId: 'T001', method: 'skipped', retryCount: 1, model: 'qwen2.5-coder:7b' },
+    ]);
   });
 });

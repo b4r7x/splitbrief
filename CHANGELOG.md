@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Review packets list BUILD routes in settlement order, including briefs a validation hook skips after BUILD runs, and explain routing refusals.
+
 ### Fixed
 
 - Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.
+- Review packets count validation results for the briefs in the current plan.
+- Review packets identify API and CLI runners by their own names, even when they share a tool name.
 
 ### Removed
 

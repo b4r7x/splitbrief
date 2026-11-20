@@ -61,12 +61,9 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
   return { ...base, status: 'paused', endedAt: null, durationMs: null };
 }
 
-function tokensStateFromState(
-  state: WorkflowState,
-): Pick<TokensState, 'tokenUsage' | 'passSeats' | 'perTask'> {
+function tokensStateFromState(state: WorkflowState): Pick<TokensState, 'tokenUsage' | 'perTask'> {
   return {
     tokenUsage: state.tokenUsage,
-    passSeats: passSeats(state),
     perTask: perTaskTokens(state),
   };
 }
@@ -89,22 +86,6 @@ function perTaskTokens(state: WorkflowState): Record<string, PerTaskTokens> {
     };
   }
   return perTask;
-}
-
-/** The saved state keeps no axis words, so the chrome does not take these seats as known. */
-function passSeats(state: WorkflowState): TokensState['passSeats'] {
-  if (!state.plannerTool || !state.implementerTool) return null;
-  return {
-    plannerTool: state.plannerTool,
-    implementerTool: state.implementerTool,
-    plannerModel: state.plannerModel,
-    implementerModel: state.implementerModel,
-    ...(state.reviewerTool !== undefined && {
-      reviewerTool: state.reviewerTool,
-      ...(state.reviewerModel !== undefined && { reviewerModel: state.reviewerModel }),
-    }),
-    ...(state.reviewerSeat !== undefined && { reviewerSeat: state.reviewerSeat }),
-  };
 }
 
 function timestampFromIso(value: string): number | null {

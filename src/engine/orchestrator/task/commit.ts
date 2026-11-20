@@ -8,7 +8,6 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import type { WorkflowContext } from '../types.js';
-import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
 import { attributedCheckoutFiles, persistTaskEvidence } from '../evidence/persistence.js';
 import { keptCheckoutPathsMessage } from '../isolation/checkout-entries.js';
@@ -19,7 +18,7 @@ import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/decla
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { readBriefWorkedMs } from './worked-time.js';
 import { lineageRemainder } from './booking.js';
-import { recordTaskUsage } from './record-usage.js';
+import { recordSettledTaskUsage } from './record-usage.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 
 type ValidateCommitOptions = {
@@ -197,20 +196,13 @@ export async function acceptLocalAttempt(opts: {
   const { state } = commitResult;
   opts.setTrackedState(state);
   opts.onTaskAcceptedFiles?.(commitResult.bookedFiles);
-  recordTaskUsage({
+  recordSettledTaskUsage({
+    wctx,
     task,
     method: 'local',
     tokensBefore: opts.tokensBefore,
-    currentUsage: state.tokenUsage,
-    bus: wctx.bus,
     state,
     taskBreakdowns: opts.taskBreakdowns,
-    tool: getRunnerDisplayName(config.implementer),
-    ...(config.implementer.model !== undefined && { model: config.implementer.model }),
-    ...(wctx.implementerProfile !== undefined && {
-      implementerProfile: wctx.implementerProfile,
-    }),
-    ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
   });
   await persistTaskEvidence({
     wctx,

@@ -3,7 +3,14 @@ import type {
   ReviewPacketCheckpoint,
 } from '../../../../core/schemas/review/packet.js';
 import { narrowRecord } from '../../../../utils/type-guards.js';
-import { CREW_SEAT_LABELS, formatSeatIdentity } from '../../../../core/crew/identity.js';
+import { oneLineDisplayText } from '../../../../utils/display-text/sanitize.js';
+import {
+  AUTO_MODEL_WORD,
+  CREW_SEAT_LABELS,
+  formatSeatIdentity,
+} from '../../../../core/crew/identity.js';
+import { formatModelName } from '../../../../core/providers/model-display.js';
+import { SOFT_SEP } from '../../../../core/separators.js';
 import { checksSummary } from '../../../../core/validation/checks-summary.js';
 import { readinessCheckLines } from '../../../../core/readiness/format.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
@@ -84,6 +91,36 @@ export function renderReviewPacketMarkdown(
   cache: ModelCacheAccessor,
 ): string {
   const restoreSafety = packet.checkpoints.safety;
+  const { taskRouting, routingWarnings } = packet.routing;
+  const routes = taskRouting.flatMap((row) => {
+    const seat =
+      row.tool === undefined
+        ? undefined
+        : row.kind === undefined
+          ? [row.tool, formatModelName(row.model ?? AUTO_MODEL_WORD)].join(SOFT_SEP)
+          : packetSeatIdentity(
+              { tool: row.tool, model: row.model ?? null, kind: row.kind },
+              'implementer',
+              cache,
+            );
+    const details = [seat, row.implementerProfile, row.routingReason].filter(
+      (value) => value !== undefined,
+    );
+    return details.length === 0
+      ? []
+      : [`- ${row.taskId}: ${details.map(oneLineDisplayText).join(SOFT_SEP)}`];
+  });
+  const warnings = routingWarnings.flatMap((event) => {
+    const reason = event.routingReason ?? event.message ?? event.outcome;
+    if (
+      reason === undefined ||
+      taskRouting.some((row) => row.taskId === event.taskId && row.routingReason === reason)
+    )
+      return [];
+    return [
+      `- ${event.taskId === undefined ? 'Routing' : event.taskId}: ${oneLineDisplayText(reason)}`,
+    ];
+  });
   const checkpointLines =
     packet.checkpoints.items.length === 0
       ? ['- No checkpoints available.']
@@ -213,7 +250,9 @@ export function renderReviewPacketMarkdown(
     ...packet.recoveryDecisions.unresolvedRisks.map((risk) => `- Risk: ${risk}`),
     '',
     '## Routing',
-    `- Per-task routing entries: ${packet.cost.taskRouting.length}`,
+    `- Per-task routing entries: ${taskRouting.length}`,
+    ...routes,
+    ...warnings,
     '',
     '## Reviews',
     ...reviewLines,

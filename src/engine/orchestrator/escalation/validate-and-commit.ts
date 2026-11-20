@@ -109,7 +109,13 @@ export async function validateAndCommitRetry(
       attempts,
       result:
         commitResult.blockedReason === 'skipped'
-          ? { completed: false, method: 'skipped', attempts }
+          ? {
+              completed: false,
+              method: 'skipped',
+              attempts,
+              ...(resultTool !== undefined && { tool: resultTool }),
+              ...(resultModel !== undefined && { model: resultModel }),
+            }
           : failedRetry(attempts),
     };
   }

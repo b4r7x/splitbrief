@@ -9,8 +9,7 @@ import { publishError } from '../publish/notice.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
 import { raisePendingRecovery } from '../state-ops/halts.js';
 import { transitionAndSave } from '../state-ops/transition.js';
-import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { recordTaskUsage } from './record-usage.js';
+import { recordSettledTaskUsage } from './record-usage.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
 import { haltOf } from '../../../core/recovery/halt.js';
@@ -135,6 +134,19 @@ async function escalateAndRecord(
   }
   let nextState = state;
   setTrackedState(nextState);
+  if (result.completed || result.method === 'skipped') {
+    recordSettledTaskUsage({
+      wctx,
+      state: nextState,
+      task,
+      method: result.method,
+      tokensBefore,
+      taskBreakdowns,
+      retryCount: result.attempts,
+      tool: result.tool ?? (result.completed ? nextState.implementerTool : undefined),
+      model: result.model ?? (result.completed ? nextState.implementerModel : undefined),
+    });
+  }
   if (!result.completed) {
     // A pre_validation deny already skipped the task, restored its files and wrote its evidence.
     if (wctx.signal?.aborted || result.method === 'skipped') {
@@ -175,21 +187,6 @@ async function escalateAndRecord(
     await recordFailedTask(opts, nextState, result.attempts);
     return { state: nextState, completed: false };
   }
-  const model = result.model ?? nextState.implementerModel ?? wctx.config.implementer.model;
-  recordTaskUsage({
-    task,
-    method: result.method,
-    tokensBefore,
-    currentUsage: nextState.tokenUsage,
-    bus: wctx.bus,
-    state: nextState,
-    taskBreakdowns,
-    retryCount: result.attempts,
-    tool: result.tool ?? nextState.implementerTool ?? getRunnerDisplayName(wctx.config.implementer),
-    ...(model !== undefined && { model }),
-    ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
-    ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
-  });
   const escalated = classifyTaskCompletionMethod(result.method) === 'escalated';
   const status: TaskStatus = escalated ? 'escalated' : 'done';
   await persistTaskEvidence({

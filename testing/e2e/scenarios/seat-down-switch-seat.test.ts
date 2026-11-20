@@ -322,6 +322,10 @@ writeSync(2, ${JSON.stringify(first)});`)}`,
     expect(haltState?.pendingRecovery?.switchSeat?.auto).toBeUndefined();
     expect(haltState?.pendingRecovery?.availableActions).toContain('switch-seat');
     expect(haltState?.pendingRecovery?.details).toContain('no fallback set');
+    const haltedStatus = await cli(target, ['status'], options);
+    expect(haltedStatus.exitCode, haltedStatus.stderr).toBe(0);
+    expect(haltedStatus.stdout).toMatch(/^Status:\s+waiting/m);
+    expect(haltedStatus.stdout).toMatch(/^BUILD:\s+OpenAI Codex CLI/m);
     expect(haltState?.seatSwitches ?? []).toEqual([]);
     expect(recordedCalls(codexCalls)).toEqual([{ model: PRIMARY_MODEL }]);
     expect(existsSync(claudeCalls)).toBe(false);

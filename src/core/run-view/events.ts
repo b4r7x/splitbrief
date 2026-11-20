@@ -1,6 +1,8 @@
 import type { CrewSeatId } from '../crew/identity.js';
+import type { SeatIdentity } from '../providers/seat-identity.js';
 import type { FileAction, RunnerKind, TaskCompletionMethod } from '../schemas/enums.js';
 import type { ClarificationQuestion } from '../schemas/question.js';
+import type { RUNNER_CALL_ROLES } from '../schemas/runner-call.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { StepRef } from '../schemas/run-step.js';
 import type { CheckResult } from '../schemas/task.js';
@@ -40,7 +42,15 @@ export type TurnInterruptedEvent = {
 };
 export type RunFailedEvent = { type: 'run_failed'; message: string };
 /** The seats a run pass holds: `reviewerSeat` is present when REVIEW is None for that pass. */
-export type WorkflowConfigEvent = { type: 'workflow_config'; reviewerSeat?: 'none' | undefined };
+export type WorkflowConfigEvent = { type: 'workflow_config' } & SeatIdentity;
+export type RunnerModelEvent = {
+  type: 'runner_call_session_id';
+  role: (typeof RUNNER_CALL_ROLES)[number];
+  runnerName?: string | undefined;
+  model?: string | undefined;
+  backendKind: RunnerKind;
+  resolvedModel?: string | undefined;
+};
 /** The row of an attempt revert, a brief restore or a denied write, with the brief files it left. */
 export type BriefKeptEvent = { type: 'info' | 'warning' | 'error'; briefKept?: number | undefined };
 export type RunRejectedEvent = { type: 'run_rejected'; restored: readonly string[] };

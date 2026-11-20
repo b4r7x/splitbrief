@@ -27,7 +27,14 @@ export function UsageOverlay() {
   operationsStore.use((state) => state.byCallId);
   modelCacheStore.use((state) => state);
   const halt = runViewStore.use((state) => state.halt);
-  const usage = usageDetailsForRun({ route, tokens, config, modelCache: modelCacheStore });
+  const passSeats = runViewStore.use((state) => state.passSeats);
+  const usage = usageDetailsForRun({
+    route,
+    tokens,
+    passSeats,
+    config,
+    modelCache: modelCacheStore,
+  });
 
   return (
     <UsageDetails

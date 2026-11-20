@@ -6,7 +6,7 @@ import { CREW_LABEL_WIDTH, PLANNER_INHERITANCE } from '../../../core/crew/identi
 import { deriveCrewSeats } from '../../../core/crew/seats.js';
 import { type WorkflowTask, selectTaskListView } from '../../../core/run-view/briefs.js';
 import { arrowSep } from '../../../core/separators.js';
-import type { SeatResolvedModel } from '../../../stores/workflow/tokens/state.js';
+import type { SeatResolvedModel } from '../../../core/run-view/reduce.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import type { RecordedCrew } from '../closed/view-model.js';
 import { getSidebarStatusColumnCells } from './rect.js';

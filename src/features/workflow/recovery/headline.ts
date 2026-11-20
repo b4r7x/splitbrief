@@ -14,7 +14,7 @@ import {
   readRecoveryContext,
   recoveryContextSeatLabel,
   recoveryContextCauseWords,
-} from '../usage/recovery-context.js';
+} from './recovery-context.js';
 
 export function formatRecoveryHeaderParts(issue: RecoveryIssue): ConversationRowSegment[] {
   return [

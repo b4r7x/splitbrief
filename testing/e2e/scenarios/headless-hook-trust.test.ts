@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
-import { sessionsRoot } from '../../../src/core/paths.js';
+import {
+  reviewPacketJsonPath,
+  reviewPacketMarkdownPath,
+  sessionsRoot,
+} from '../../../src/core/paths.js';
+import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run/status.js';
 import { loadState } from '../../../src/core/state/persistence.js';
@@ -120,6 +125,52 @@ describe('e2e: a headless start with workflow hooks this machine has not trusted
     expect(readActive(target.projectDir)).toBeNull();
     const sessions = sessionsRoot(target.projectDir);
     expect(existsSync(sessions) ? readdirSync(sessions) : []).toEqual([]);
+  });
+
+  it('lists the route when BUILD ran but a pre_validation hook skipped the brief', async () => {
+    const { target, hookMark } = hookedProject();
+    const config = loadConfig(target.projectDir).config;
+    const denied = JSON.stringify({ decision: 'deny', message: 'validation gated' });
+    writeConfig(target.projectDir, {
+      ...config,
+      hooks: {
+        ...config.hooks,
+        pre_validation: [
+          {
+            kind: 'command',
+            command: 'node',
+            args: ['-e', `console.log(${JSON.stringify(denied)})`],
+            timeout_ms: 30_000,
+            on_failure: 'block',
+          },
+        ],
+      },
+    });
+
+    const start = await builtCli(target, ['start', 'smoke', '--json', '--allow-hooks']);
+
+    expect(existsSync(hookMark)).toBe(true);
+    expect(jsonEvents(start.stdout)).toContainEqual(
+      expect.objectContaining({ type: 'task_skipped', taskId: 'T001' }),
+    );
+    const [sessionId] = readdirSync(sessionsRoot(target.projectDir));
+    if (sessionId === undefined) throw new Error('Missing session');
+    const ref = { projectDir: target.projectDir, sessionId };
+    const packet = ReviewPacketSchema.parse(
+      JSON.parse(readFileSync(reviewPacketJsonPath(ref), 'utf8')),
+    );
+    expect(packet.routing.taskRouting).toEqual([
+      expect.objectContaining({
+        taskId: 'T001',
+        method: 'skipped',
+        retryCount: 0,
+        implementerProfile: 'default',
+        routingReason: expect.stringContaining('Selected profile default'),
+      }),
+    ]);
+    const markdown = readFileSync(reviewPacketMarkdownPath(ref), 'utf8');
+    const routing = markdown.split('## Routing\n')[1]?.split('\n## ')[0];
+    expect(routing).toMatch(/- T001: .* · default · Selected profile default/);
   });
 });
 
