@@ -22,6 +22,7 @@ import {
   makeImplementer,
   makeBusRecorder,
   makeWctx,
+  disposeWctxIsolations,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
@@ -32,8 +33,9 @@ import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import type { EscalationContext } from './types.js';
 
 let dirs: string[] = [];
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  await disposeWctxIsolations();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
