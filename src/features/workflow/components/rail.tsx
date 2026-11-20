@@ -102,7 +102,7 @@ export function Rail({
   });
 
   if (resolved === 'C') {
-    return <RailFormC stages={stages} fraction={fraction} />;
+    return <RailFormC stages={stages} fraction={short ? '' : fraction} />;
   }
 
   return <RailFormB stages={stages} short={short} />;

@@ -25,13 +25,6 @@ export const HOME_COLD_DETECTING_VIEWPORTS: readonly Viewport[] = Object.freeze(
   viewport({ cols: 120, rows: 40 }),
 ]);
 
-// The focused list spends four rows on its filter box and one on the selection error, so the two
-// heights below are the ones that still leave a session row to land the cursor on.
-const HOME_RECENT_SESSIONS_VIEWPORTS: readonly Viewport[] = Object.freeze([
-  viewport({ cols: 120, rows: 40 }),
-  viewport({ cols: 80, rows: 24 }),
-]);
-
 // The build-progress block collapses onto two rows at 120 columns and wider, and the sidebar only paints
 // past that breakpoint. One wide capture is what proves the two share the row budget.
 export const WIDE_VIEWPORTS: readonly Viewport[] = Object.freeze([
@@ -148,6 +141,7 @@ const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
     title: 'Home · first tool check running',
     viewports: HOME_COLD_DETECTING_VIEWPORTS,
   },
+  { id: 'home-recent-cursor', title: 'Home · eight recent sessions and three Cursor seats' },
   { id: 'home-cold-failed', title: 'Home · first tool check failed' },
   {
     id: 'home-cold-crew',
@@ -657,6 +651,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'hero', title: 'Home hero' },
         { id: 'composer', title: 'Save message and long draft' },
+        { id: 'heading', title: 'Home heading' },
       ],
     }),
     // No config over a long draft: the notice counts against the body, so the session list still
@@ -671,13 +666,29 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         kind: 'ready',
         marker: 'label printer.',
       },
-      elements: [{ id: 'composer', title: 'Feature composer' }],
+      elements: [
+        { id: 'heading', title: 'Home heading' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
     }),
+    ...(
+      [
+        ['home-recent-check-failed', 'Tool check failed', 'Tool check failed'],
+        ['home-recent-selection-error', 'Selection refused during Apply', 'Apply is still writing'],
+      ] as const
+    ).map(([id, title, marker]) =>
+      defineScenario({
+        id,
+        title,
+        surface: screenSurface('home'),
+        checkpoint: { id: 'ready', title, kind: 'ready', marker },
+        elements: [{ id: 'composer', title: 'Feature composer' }],
+      }),
+    ),
     defineScenario({
       id: 'home-recent-sessions',
       title: 'Home · session rows show their latest stop time',
       surface: screenSurface('home'),
-      viewports: HOME_RECENT_SESSIONS_VIEWPORTS,
       checkpoint: {
         id: 'ready',
         title: 'Recent sessions focused with latest stop times',
@@ -4205,7 +4216,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'closed-undone',
         title: 'Apply undone',
         kind: 'success',
-        marker: 'visual-closed-undone',
+        marker: 'Apply undone',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

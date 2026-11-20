@@ -71,7 +71,7 @@ export function usePlanEditorSession() {
     overlayStore.close();
     // plan.md is rendered from plan.json: the engine checks the context fit and compiles it.
     editorStore.close();
-    feedbackStore.setMessage(`Saved ${fileName} — applying changes`);
+    feedbackStore.setInfo(`Saved ${fileName} — applying changes`);
     externalEditRequestStore.requestApply(state.ownerToken);
   };
 

@@ -35,8 +35,9 @@ import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { useStores } from '../../stores/use-many.js';
 import { getReviewPanelBudget } from '../../features/workflow/layout/rect.js';
-import { selectRailFormAndLine } from '../../features/workflow/layout/chrome-rows.js';
+import { railVariant, selectRailFormAndLine } from '../../features/workflow/layout/chrome-rows.js';
 import { workflowScreenLayout } from '../../features/workflow/layout/screen.js';
+import { wrappedHeaderCrew } from '../../features/workflow/display/header-seat-lines.js';
 import { useHeaderSeatLines } from '../../features/workflow/hooks/use-header-seat-lines.js';
 import { seatLineText } from '../../core/crew/seat-line/collapse.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
@@ -55,7 +56,10 @@ import { draftRefusalStore } from '../../stores/ui/session-drafts.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { panelModel } from '../../components/preparation-problem.js';
-import { getFeedbackRows } from '../../features/workflow/components/feedback-row.js';
+import {
+  getFeedbackRows,
+  workflowNoticeBudget,
+} from '../../features/workflow/components/feedback-row.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -87,11 +91,7 @@ export function WorkflowScreen({
   const recoveryAsking = recoveryNoticeStore.use((state) => state.asking);
   const preparation = sessionSelectStore.use((snapshot) => snapshot.preparation);
   const problem = panelModel(preparation);
-  const feedbackRows = getFeedbackRows(
-    feedbackStore.use((state) => state),
-    cols,
-    problem,
-  );
+  const feedback = feedbackStore.use((state) => state);
 
   const model = useWorkflowScreen({
     onRuntimeCommand,
@@ -120,9 +120,41 @@ export function WorkflowScreen({
     },
   });
   const { resultMenuOpen } = panels;
-  const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows, feedbackRows });
+  const panelBelow = stopMenuOpen || resultMenuOpen;
+  const displayedSeatLines = useHeaderSeatLines();
+  const shortStageCells = useRailCells({
+    form: 'C',
+    short: true,
+    buildBlockShown: false,
+    stages: model.railStages,
+  });
+  const crewRows = wrappedHeaderCrew(
+    cols,
+    shortStageCells,
+    displayedSeatLines,
+    model.atRestRecord?.status.kind === 'closed',
+  );
+  const bodyRows = rows - crewRows.length;
+  const stopMenuRows = stopMenuOpen ? inlineMenuLayout(readStopMenuRows(), cols).height : 0;
+  const noticeBudget = workflowNoticeBudget(
+    cols,
+    bodyRows,
+    inputRows,
+    review.artifact,
+    reviewConfirms,
+  );
+  const feedbackRows = getFeedbackRows({
+    feedback,
+    terminalCols: cols,
+    problem,
+    maxRows: noticeBudget,
+    bodyRows,
+    inputRows,
+    stopMenuRows,
+  });
+  const reviewBudgetRows = getReviewPanelBudget({ rows: bodyRows, inputRows, feedbackRows });
   const requestedPromptRows = stopMenuOpen
-    ? inlineMenuLayout(readStopMenuRows(), cols).height
+    ? stopMenuRows
     : resultMenuOpen
       ? resultMenuHeight(panels.resultMenu, cols)
       : getWorkflowPromptRows({
@@ -141,7 +173,7 @@ export function WorkflowScreen({
         });
   const layout = workflowScreenLayout({
     cols,
-    rows,
+    rows: bodyRows,
     inputRows,
     feedbackRows,
     sidebarVisible,
@@ -183,10 +215,10 @@ export function WorkflowScreen({
     C: useRailCells({
       form: 'C',
       buildBlockShown: layout.progressRows > 0,
-      ...(model.railStages !== undefined && { stages: model.railStages }),
+      stages: model.railStages,
     }),
+    CShort: shortStageCells,
   };
-  const displayedSeatLines = useHeaderSeatLines();
   const railChoice = selectRailFormAndLine({
     cols,
     railWidths,
@@ -194,8 +226,7 @@ export function WorkflowScreen({
     toolLineCells: getTerminalCellWidth(seatLineText(displayedSeatLines.tool)),
   });
   const railForm = railChoice.form;
-  const railCells =
-    railForm === 'C' ? railWidths.C : railChoice.short ? railWidths.BShort : railWidths.B;
+  const railCells = railWidths[railVariant(railForm, railChoice.short)];
   const crewChrome =
     model.crewRecord === undefined
       ? null
@@ -225,6 +256,7 @@ export function WorkflowScreen({
             key: closedKey,
             view: model.closedView,
             crewNamed: crewChrome?.crewNamed ?? false,
+            headerShowsCrew: crewChrome !== null && crewChrome.seatLine.length > 0,
             expanded: closedExpanded,
           },
     closedRun: model.closed,
@@ -250,6 +282,7 @@ export function WorkflowScreen({
         <WorkflowHeader
           scrollAboveLabel={scrollAboveLabel}
           railForm={railForm}
+          crewRows={crewRows}
           buildBlockShown={layout.progressRows > 0}
           {...(model.railStages !== undefined && { stages: model.railStages })}
           {...(crewChrome !== null && { seatLine: crewChrome.seatLine })}
@@ -261,10 +294,11 @@ export function WorkflowScreen({
         <Box flexDirection="column" width="100%" flexShrink={0}>
           <Divider width={cols} tone="textDim" label={chrome.ruleLabel} />
           <WorkflowFooter
+            noticeBudget={noticeBudget}
             {...keys.footer}
-            compactInput={stopMenuOpen || resultMenuOpen}
+            compactInput={panelBelow}
             beforeComposer={
-              stopMenuOpen || resultMenuOpen ? (
+              panelBelow ? (
                 <PanelSlot
                   stopMenuOpen={stopMenuOpen}
                   height={layout.promptBoxRows}

@@ -87,9 +87,11 @@ export function nameDraftsNotRemoved(where: 'screen' | 'at-exit'): void {
     if (entry.named) continue;
     entry.named = true;
     if (where === 'at-exit') warnStderr(entry.message, 'at-exit');
-    else if (routerStore.get().screen === 'workflow')
-      refusal.set({ message: entry.message, heldAt: undefined });
-    else feedbackStore.setError(entry.message);
+    else {
+      if (routerStore.get().screen === 'workflow')
+        refusal.set({ message: entry.message, heldAt: undefined });
+      feedbackStore.setError(entry.message);
+    }
   }
 }
 

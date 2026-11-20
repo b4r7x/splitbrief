@@ -6,6 +6,7 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows } from '../stop/options.js';
 import { inlineMenuLayout } from '../inline-menu/layout.js';
 import { getProgressRows, selectRailFormAndLine } from './chrome-rows.js';
+import { wrappedHeaderCrew } from '../display/header-seat-lines.js';
 import { readHeaderSeatLines } from '../hooks/use-header-seat-lines.js';
 import { readRailCells, readRailStages } from '../hooks/use-rail-cells.js';
 import { getRailStageZones, resolveRailFraction, type RailStageZone } from './hit-test.js';
@@ -41,7 +42,7 @@ import { resultMenuStore } from '../../../stores/workflow/result-menu.js';
 import { routeClosedAtRest } from '../at-rest.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { sessionSelectStore } from '../../../stores/navigation/session-select.js';
-import { getFeedbackRows } from '../components/feedback-row.js';
+import { getFeedbackRows, workflowNoticeBudget } from '../components/feedback-row.js';
 
 export interface ConversationScrollSnapshot {
   conversationWidth: number;
@@ -66,9 +67,31 @@ interface ConversationLayoutSnapshot {
   transcriptViewportHeight: number;
 }
 
+function readWrappedCrewHeight(): number {
+  const cols = terminalSizeStore.get().cols;
+  const singleStageCells = readRailCells({
+    form: 'C',
+    short: true,
+    buildBlockShown: false,
+    stages: readRailStages(),
+  });
+  return wrappedHeaderCrew(
+    cols,
+    singleStageCells,
+    readHeaderSeatLines(),
+    routeClosedAtRest(routerStore.get()),
+  ).length;
+}
+
+function readStopMenuHeight(cols: number): number {
+  return overlayStore.get().active === 'stop-sheet'
+    ? inlineMenuLayout(readStopMenuRows(), cols).height
+    : 0;
+}
+
 function readWorkflowPromptRows(): number {
-  if (overlayStore.get().active === 'stop-sheet')
-    return inlineMenuLayout(readStopMenuRows(), terminalSizeStore.get().cols).height;
+  const stopMenuRows = readStopMenuHeight(terminalSizeStore.get().cols);
+  if (stopMenuRows > 0) return stopMenuRows;
   const resultMenuRows = resultMenuStore.get();
   if (resultMenuRows !== null) return resultMenuRows;
   const controls = controlsStore.get();
@@ -77,20 +100,23 @@ function readWorkflowPromptRows(): number {
   const questionHint = controls.inputMode === 'question' ? questionPromptStore.get().hint : null;
   const recoveryPrompt =
     recoveryIssue !== null && recoveryNoticeStore.get().asking && questionHint !== null;
-  // A tiered gate takes the zone from the review panel, so the two are never budgeted together.
-  const documentReview = controls.inputMode === 'review' && approvalState.status !== 'pending';
+  const artifact = readReviewArtifact();
+
   return getWorkflowPromptRows({
     approvalState,
     questionHint,
-    review: {
-      artifact: documentReview ? reviewArtifactForPhase(runViewStore.get().phase) : null,
-      confirms: reviewStore.get().confirms,
-      budgetRows: getReviewPanelBudget({
-        rows: terminalSizeStore.get().rows,
-        inputRows: inputHeightStore.get().rows,
-        feedbackRows: readFeedbackRows(),
-      }),
-    },
+    review:
+      artifact === null
+        ? undefined
+        : {
+            artifact,
+            confirms: reviewStore.get().confirms,
+            budgetRows: getReviewPanelBudget({
+              rows: terminalSizeStore.get().rows - readWrappedCrewHeight(),
+              inputRows: inputHeightStore.get().rows,
+              feedbackRows: readFeedbackRows(),
+            }),
+          },
     recoveryIssue: recoveryPrompt ? recoveryIssue : null,
     questions: questionPromptStore.get().questions,
     questionIndex: questionPromptStore.get().index,
@@ -116,13 +142,34 @@ function readProgressRows(promptRows: number): number {
   });
 }
 
+function readReviewArtifact() {
+  return controlsStore.get().inputMode === 'review' &&
+    approvalPromptStore.get().status !== 'pending' &&
+    overlayStore.get().active === 'none'
+    ? reviewArtifactForPhase(runViewStore.get().phase)
+    : null;
+}
+
 // The footer's message rows, asked from the store the row paints from.
 function readFeedbackRows(): number {
-  return getFeedbackRows(
-    feedbackStore.get(),
-    terminalSizeStore.get().cols,
-    panelModel(sessionSelectStore.get().preparation),
-  );
+  const { cols, rows } = terminalSizeStore.get();
+  const bodyRows = rows - readWrappedCrewHeight();
+  const inputRows = inputHeightStore.get().rows;
+  return getFeedbackRows({
+    feedback: feedbackStore.get(),
+    terminalCols: cols,
+    problem: panelModel(sessionSelectStore.get().preparation),
+    maxRows: workflowNoticeBudget(
+      cols,
+      bodyRows,
+      inputRows,
+      readReviewArtifact(),
+      reviewStore.get().confirms,
+    ),
+    bodyRows,
+    inputRows,
+    stopMenuRows: readStopMenuHeight(cols),
+  });
 }
 
 function readRailFraction(): string {
@@ -155,6 +202,7 @@ export function readRailSnapshot(): RailSnapshot {
       B: readRailCells({ form: 'B', short: false, buildBlockShown, stages }),
       BShort: readRailCells({ form: 'B', short: true, buildBlockShown, stages }),
       C: readRailCells({ form: 'C', buildBlockShown, stages }),
+      CShort: readRailCells({ form: 'C', short: true, buildBlockShown, stages }),
     },
     modelLineCells: getTerminalCellWidth(seatLineText(lines.model)),
     toolLineCells: getTerminalCellWidth(seatLineText(lines.tool)),
@@ -180,7 +228,7 @@ export function readReviewContentHeight(): number {
     inputRows: inputHeightStore.get().rows,
     feedbackRows: readFeedbackRows(),
     promptRows,
-    progressRows: readProgressRows(promptRows),
+    progressRows: readProgressRows(promptRows) + readWrappedCrewHeight(),
   });
   return getReviewContentLayout(
     Math.max(0, viewportHeight - REVIEW_FRAME_ROWS),
@@ -199,7 +247,7 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     feedbackRows: readFeedbackRows(),
     sidebarVisible,
     promptRows,
-    progressRows: readProgressRows(promptRows),
+    progressRows: readProgressRows(promptRows) + readWrappedCrewHeight(),
   });
   const sidebarShowsTasks = getWorkflowSidebarWidth({ cols, sidebarVisible }) > 0;
   const pendingTasks = queuedBriefs({

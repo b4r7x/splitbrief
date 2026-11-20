@@ -1253,7 +1253,7 @@ const createSettingsFallbackReviewNoneFixture: FixtureFactory = () =>
 const createSettingsSavedFixture: FixtureFactory = () => ({
   ...createSettingsEndChecksOffFixture(),
   afterMount: () => {
-    feedbackStore.setMessage(
+    feedbackStore.setInfo(
       formatConfigSaveSuccess('End-of-run checks · off', { ignoreRuleAdded: false }),
     );
   },
@@ -1261,7 +1261,7 @@ const createSettingsSavedFixture: FixtureFactory = () => ({
 const createSettingsSavedDuringRunFixture: FixtureFactory = () => ({
   ...createSettingsEndChecksOffFixture(),
   afterMount: () => {
-    feedbackStore.setMessage(settingChangeWords('End-of-run checks · off'));
+    feedbackStore.setInfo(settingChangeWords('End-of-run checks · off'));
   },
 });
 const createSettingsErrorPathFixture: FixtureFactory = () => ({
@@ -1281,7 +1281,7 @@ const createSettingsSavedRouteSignInFixture: FixtureFactory = () => ({
     seed: seedConfig({ planner: { kind: 'cli', tool: 'opencode', model: 'opencode/big-pickle' } }),
   }),
   afterMount: () => {
-    feedbackStore.setMessage(
+    feedbackStore.setInfo(
       [
         formatConfigSaveSuccess('PLAN · OpenCode CLI · Big Pickle · via opencode', {
           ignoreRuleAdded: false,
@@ -1296,9 +1296,7 @@ const createSettingsSavedRouteSignInFixture: FixtureFactory = () => ({
 const createSettingsSeatSavedFinalReviewFixture: FixtureFactory = () => ({
   ...createOverlayFixture({ overlay: 'settings', focus: 'seat:build' }),
   afterMount: () => {
-    feedbackStore.setMessage(
-      seatChangeWords(`${CREW_SEAT_LABELS.build} seat`, { after: 'review' }),
-    );
+    feedbackStore.setInfo(seatChangeWords(`${CREW_SEAT_LABELS.build} seat`, { after: 'review' }));
   },
 });
 const createSettingsIsolationCheckoutFixture: FixtureFactory = () =>
@@ -1349,7 +1347,7 @@ const createSettingsSeatSavedEffortClearedFixture: FixtureFactory = () => {
       seed: seedConfig({ planner: saved.config.planner }),
       focus: 'seat:plan',
     }),
-    afterMount: () => feedbackStore.setMessage(saveLine),
+    afterMount: () => feedbackStore.setInfo(saveLine),
   };
 };
 const createPlannerPickerFixture: FixtureFactory = () =>
@@ -2140,7 +2138,7 @@ const createFallbackPickerSameSeatFixture: FixtureFactory = () => ({
       seat: BUILD_CODEX_SEAT,
       displayName: resolveSeatDisplayName(BUILD_CODEX_SEAT, 'implementer', modelCacheStore),
     });
-    feedbackStore.setMessage(`BUILD runs ${identity} now${SOFT_SEP}choose another tool or model`);
+    feedbackStore.setWarning(`BUILD runs ${identity} now${SOFT_SEP}choose another tool or model`);
   },
 });
 const STOP_SHEET_TS = 1_783_958_400_000;
@@ -2833,7 +2831,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   ],
   [
     scenarioId('workflow-quit-hint'),
-    () => createParkedFeedbackFixture(() => feedbackStore.setMessage('Press ctrl+c again to quit')),
+    () => createParkedFeedbackFixture(() => feedbackStore.setInfo('Press ctrl+c again to quit')),
   ],
   [
     scenarioId('workflow-run-lock-not-released'),

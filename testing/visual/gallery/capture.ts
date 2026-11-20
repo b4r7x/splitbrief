@@ -180,7 +180,7 @@ async function captureTarget(options: {
       await options.parseFrame({
         ansi,
         identity,
-        projectRoot: options.projectRoot,
+        projectRoot: handle.projectRoot ?? options.projectRoot,
       }),
     );
     if (grid.identity.key !== identity.key) {

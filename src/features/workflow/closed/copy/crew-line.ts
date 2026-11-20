@@ -15,7 +15,7 @@ import type { SummaryView, SeatView } from '../view-model.js';
 export function crewLineRows(
   view: Pick<SummaryView, 'seats'>,
   budget: number,
-  options: Readonly<{ line: 'model' | 'tool'; rows: number }>,
+  options: Readonly<{ line?: 'model' | 'tool'; rows: number }>,
 ): SeatLineSpan[][] {
   const review = view.seats.review;
   const word = (seat: SeatView): string =>
@@ -24,6 +24,13 @@ export function crewLineRows(
     plan: word(view.seats.plan),
     build: word(view.seats.build),
     review: review.kind === 'inherits' ? null : review.kind === 'none' ? REVIEW_NONE : word(review),
+    ...(options.line === undefined && {
+      tools: {
+        plan: seatToolWord(view.seats.plan) ?? word(view.seats.plan),
+        build: seatToolWord(view.seats.build) ?? word(view.seats.build),
+        review: seatToolWord(review) ?? word(review),
+      },
+    }),
     budget,
     rows: options.rows,
   });
@@ -40,7 +47,12 @@ export function crewLine(
 
 /** The command a named seat takes when the line is laid out by tool words. */
 function seatToolWord(seat: SeatView): string | undefined {
-  return seat.kind === 'named' ? seat.tool : undefined;
+  if (seat.kind === 'named') return seat.tool;
+  if (seat.kind === 'moved') {
+    const tools = [...new Set(seat.seats.map((part) => part.tool))];
+    return tools.join(seat.contiguous ? arrowSep() : ', ');
+  }
+  return undefined;
 }
 
 /**

@@ -139,7 +139,7 @@ export function getRailStageZones(input: {
     if (!rendered) return [];
     const { state, index } = rendered;
     const fractionWidth =
-      state.status === 'active' && input.fraction !== ''
+      !short && state.status === 'active' && input.fraction !== ''
         ? getTerminalCellWidth(railFormCFractionText(input.fraction))
         : 0;
     const cancelledWidth = state.status === 'cancelled' ? RAIL_FORM_C_CANCELLED_SUFFIX.length : 0;

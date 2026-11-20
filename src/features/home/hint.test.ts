@@ -33,7 +33,7 @@ describe('deriveHomeComposerHint', () => {
     expect(deriveHomeComposerHint({ ...AT_REST, canFocus: true }).homeHint).toBe(HOME_HINT);
   });
 
-  it('shows the list keys and no tool check while the recent sessions have focus', () => {
+  it('keeps the failed check and the list keys while the recent sessions have focus', () => {
     expect(
       deriveHomeComposerHint({
         ...AT_REST,
@@ -45,7 +45,7 @@ describe('deriveHomeComposerHint', () => {
     ).toEqual({
       homeHint: RECENT_SESSIONS_HINT,
       homeNotice: undefined,
-      standingNotice: undefined,
+      standingNotice: { message: 'Tool check failed · open /settings to retry', severity: 'error' },
     });
   });
 

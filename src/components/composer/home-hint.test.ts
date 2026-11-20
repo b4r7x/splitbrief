@@ -88,7 +88,7 @@ describe('layoutHomeNotice', () => {
       },
       60,
     );
-    const text = notice.rows.join('');
+    const text = notice.rows.map((row) => row.text).join('');
     // The seat name is what shrinks; the sentence that says what to do survives whole.
     expect(text).toContain('cannot see images — /crew plan');
     expect(text).toContain('…');
@@ -115,15 +115,15 @@ describe('layoutHomeNotice', () => {
       expect(notice.rows).toHaveLength(rows);
       expect(notice.width).toBeLessThanOrEqual(width);
       for (const row of notice.rows)
-        expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(width - 6);
-      expect(notice.rows.join(' ')).toBe(message);
-      expect(notice.rows.some((row) => row.includes('run opencode auth login anthropic'))).toBe(
-        true,
-      );
+        expect(getTerminalCellWidth(row.text)).toBeLessThanOrEqual(width - 6);
+      expect(notice.rows.map((row) => row.text).join(' ')).toBe(message);
+      expect(
+        notice.rows.some((row) => row.text.includes('run opencode auth login anthropic')),
+      ).toBe(true);
     },
   );
 
-  it('ends a notice on the file name it shortened, not on a stub of the next part', () => {
+  it('keeps a shortened file on its own row before the remaining words', () => {
     const notice = layoutHomeNotice(
       {
         message:
@@ -133,11 +133,12 @@ describe('layoutHomeNotice', () => {
       30,
     );
 
-    expect(notice.rows).toEqual([
+    expect(notice.rows.map((row) => row.text)).toEqual([
       'Could not release',
       'the run lock:',
       'permission denied ·',
-      '…/lockfile.json …',
+      '…/lockfile.json ·',
+      'other SPLITBRIEF …',
     ]);
   });
 
@@ -145,7 +146,7 @@ describe('layoutHomeNotice', () => {
     expect(layoutHomeNotice({ message: 'Attached: notes.md', severity: 'info' }, 56)).toEqual({
       severity: 'info',
       form: 'framed',
-      rows: ['Attached: notes.md'],
+      rows: [{ text: 'Attached: notes.md' }],
       width: 22,
       height: 3,
     });

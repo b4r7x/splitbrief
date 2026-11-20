@@ -858,20 +858,20 @@ describe('PickerView feedback', () => {
     feedbackStore.reset();
   });
 
-  it('shows a neutral refusal on the byline in place of the tool line', async () => {
+  it('shows a warning on the byline in place of the tool line', async () => {
     const ui = renderFeedbackPicker();
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('OpenAI Codex CLI · 1 model');
 
-    feedbackStore.setMessage(refusal);
+    feedbackStore.setWarning(refusal);
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(refusal);
     expect(frame).not.toContain('OpenAI Codex CLI · 1 model');
-    expect(feedbackStore.get()).toEqual({ message: refusal, severity: 'info' });
+    expect(feedbackStore.get()).toEqual({ message: refusal, severity: 'warning' });
 
-    feedbackStore.setMessage(null);
+    feedbackStore.setInfo(null);
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('OpenAI Codex CLI · 1 model');
     ui.unmount();
@@ -903,11 +903,11 @@ describe('PickerView feedback', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('BUILD runs');
 
-    feedbackStore.setMessage(null);
+    feedbackStore.setInfo(null);
     await flushEffects();
     expect(ui.lastFrame() ?? '').not.toContain('BUILD runs');
 
-    feedbackStore.setMessage(refusal);
+    feedbackStore.setWarning(refusal);
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('BUILD runs');
     ui.unmount();

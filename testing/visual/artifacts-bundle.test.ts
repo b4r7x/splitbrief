@@ -240,7 +240,7 @@ async function createBundleFixture(profile?: TerminalProfile) {
     parentFrameKey: null,
   });
   const grid = await parseTerminalFrame({
-    ansi: '\u001b[1;36mVisual fixture workflow complete\u001b[0m\nBounded details',
+    ansi: `\u001b[1;36mVisual fixture workflow complete\u001b[0m\n${'─'.repeat(provenance.viewport.cols)}\nBounded details`,
     identity,
     projectRoot: process.cwd(),
   });

@@ -3,7 +3,6 @@ import {
   treeLines,
   treeRow,
   treeValueWidth,
-  type TreeLine,
 } from '../conversation-rows/row-format/tree.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { GlyphName } from '../../../lib/glyphs.js';
@@ -36,8 +35,10 @@ export interface ClosedBlockInput {
    * a view shorter than those keeps as many as fit between the outcome and the fold.
    */
   viewportRows: number;
-  /** Whether the header already names the whole crew, so the block does not name it twice. */
+  /** Whether the header already shows every model name. */
   crewNamed: boolean;
+  /** The header can show the tool names when the model names need more room. */
+  headerShowsCrew?: boolean;
   /** The whole record: every brief, every file and every earlier review. */
   expanded: boolean;
 }
@@ -53,22 +54,26 @@ export function closedBlockKey(sessionId: string): string {
  * renderable unit: it is not an event the run emitted.
  */
 export function closedTranscriptBlock(input: ClosedBlockInput): ConversationRowBlock {
-  const { key, view, width, viewportRows, crewNamed, expanded } = input;
+  const { key, view, width, viewportRows, crewNamed, headerShowsCrew, expanded } = input;
   const header = headerRow(key, view, width);
   if (view === null) return treeBlock(key, [header], 0);
 
   const valueWidth = treeValueWidth(width);
   const linesOf = (rows: readonly RecordRow[]) => treeLines(rows, width);
-  const crew = linesOf(crewRows(view, valueWidth, crewNamed));
-  const whole = [...crew, ...linesOf(runRows(view, 'whole'))];
+  const room = Math.max(0, viewportRows - 2);
+  const recordCrew = linesOf(crewRows(view, valueWidth, crewNamed, CREW_MAX_ROWS));
+  const fittedCrew =
+    recordCrew.length <= room ? recordCrew : linesOf(crewRows(view, valueWidth, crewNamed, room));
+  const whole = [...fittedCrew, ...linesOf(runRows(view, 'whole'))];
   // The header and the fold stand with the summary; the outcome must stay on the screen.
-  const room = viewportRows - 2;
   const form: SummaryForm = whole.length > room ? 'labelled' : 'whole';
   const labelled = form === 'whole' ? [] : linesOf(runRows(view, 'labelled'));
-  const summary = form === 'whole' ? whole : fitLabelled(crew, labelled, room);
-  const record = [...crew, ...linesOf(recordRows(view))];
+  const sessionRow = labelled.findIndex((line) => line.label === 'Session');
+  const crew = headerShowsCrew && fittedCrew.length + sessionRow > room ? [] : fittedCrew;
+  const summary = form === 'whole' ? whole : [...crew, ...labelled].slice(0, room);
+  const record = [...recordCrew, ...linesOf(recordRows(view))];
   // A cut from the bottom took the row that closed the tree, so the fold closes it.
-  const foldLast = !expanded && labelled.length > room;
+  const foldLast = !expanded && form === 'labelled' && crew.length + labelled.length > room;
   const body = (expanded ? record : summary).map((line, index, lines) =>
     treeRow(`${key}:${index}`, line, !foldLast && index === lines.length - 1),
   );
@@ -84,20 +89,6 @@ export function closedTranscriptBlock(input: ClosedBlockInput): ConversationRowB
     foldRowKey: foldRowKey(key),
     toggledRowCount: rows.length + (expanded ? -1 : 1) * (record.length - summary.length),
   };
-}
-
-/**
- * The labelled rows that fit in `room`, one line each. A view too short for all of them drops the
- * crew first, then rows from the bottom up, so the plan stays longest.
- */
-function fitLabelled(
-  crew: readonly TreeLine[],
-  lines: readonly TreeLine[],
-  room: number,
-): TreeLine[] {
-  return crew.length + lines.length > room
-    ? lines.slice(0, Math.max(0, room))
-    : [...crew, ...lines];
 }
 
 /** The verdict is the one bold word; a stage word keeps its seat tone. */
@@ -126,9 +117,9 @@ const CREW_MAX_ROWS = 3;
  * The crew by model, unless the header chose the whole model line (`crewNamed`): every seat
  * whole, on the `Crew` row and the rows under it.
  */
-function crewRows(view: SummaryView, budget: number, crewNamed: boolean): RunRow[] {
+function crewRows(view: SummaryView, budget: number, crewNamed: boolean, rows: number): RunRow[] {
   if (crewNamed) return [];
-  return crewLineRows(view, budget, { line: 'model', rows: CREW_MAX_ROWS }).map(
+  return crewLineRows(view, budget, { rows }).map(
     (row, index): RunRow => ({
       label: index === 0 ? 'Crew' : '',
       segments: [

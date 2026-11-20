@@ -41,13 +41,13 @@ export function useAttachImage({
   const canAttachImage = (): boolean => {
     if (!supportsImages) {
       if (config === null) {
-        feedbackStore.setMessage(
+        feedbackStore.setInfo(
           'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.',
         );
         return false;
       }
       const displayName = resolveSeatDisplayName(config.planner, 'planner', modelCacheStore);
-      feedbackStore.setMessage(
+      feedbackStore.setInfo(
         noVisionFeedbackMessage(formatSeatIdentity({ seat: config.planner, displayName })),
       );
       return false;
@@ -73,7 +73,7 @@ export function useAttachImage({
     bumpEpoch();
     // The box already says where the image went; this row says which file it was, in a name that
     // survives the narrow widths an absolute path is truncated to nothing at.
-    feedbackStore.setMessage(`Attached: ${attachmentShortName(result.attachment.path)}`);
+    feedbackStore.setInfo(`Attached: ${attachmentShortName(result.attachment.path)}`);
     return inserted;
   };
 

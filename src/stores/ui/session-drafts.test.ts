@@ -243,7 +243,7 @@ describe('an emptied draft whose old file cannot be removed', () => {
     nameDraftsNotRemoved('screen');
 
     expect(draftRefusalStore.get()?.message).toBe(NOTE);
-    expect(feedbackStore.get().message).toBeNull();
+    expect(feedbackStore.get()).toEqual({ message: NOTE, severity: 'error' });
   });
 
   it('keeps throwing the save failure of another session in the same flush', () => {

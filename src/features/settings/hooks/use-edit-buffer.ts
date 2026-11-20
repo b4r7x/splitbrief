@@ -45,7 +45,7 @@ export function useEditBuffer({ onCommit }: UseEditBufferParams): EditBufferStat
         } else if (def.kind === 'number') {
           const num = validateNumber(trimmed, def);
           if (num === null) {
-            feedbackStore.setMessage(
+            feedbackStore.setInfo(
               `Invalid ${def.label}: enter a number${numberConstraintHint(def)}`,
             );
             return;
@@ -53,7 +53,7 @@ export function useEditBuffer({ onCommit }: UseEditBufferParams): EditBufferStat
           onCommit(def, num);
         } else {
           if (!trimmed) {
-            feedbackStore.setMessage(`Invalid ${def.label}: value cannot be empty`);
+            feedbackStore.setInfo(`Invalid ${def.label}: value cannot be empty`);
             return;
           }
           onCommit(def, trimmed);

@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,10 @@ import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
+import { sessionDir } from '../../../src/core/paths.js';
+import { saveSummary } from '../../../src/core/sessions/io.js';
+import { LONG_COMPOSER_DRAFT } from '../../visual/fixtures/common.js';
 import { wholeFrames } from '../helpers/whole-frames.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
@@ -30,6 +34,7 @@ async function onHome(
   viewport: Viewport,
   drive: (screen: Screen) => Promise<void>,
   skip: (reason: string) => void,
+  seedProject?: (projectDir: string) => void,
 ): Promise<void> {
   await withTempDir('home-notice', async (dir) => {
     const home = join(dir, 'home');
@@ -42,6 +47,7 @@ async function onHome(
     writeFileSync(join(projectDir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
     const runnerPath = join(dir, 'runner.mjs');
     writeFileSync(runnerPath, "throw new Error('No workflow may start in the Home notice E2E');\n");
+    if (seedProject) seedProject(projectDir);
     writeConfig(
       projectDir,
       makeConfig({
@@ -158,8 +164,13 @@ describe('e2e: a refused attachment on Home', { timeout: 120_000 }, () => {
           mkdirSync(folder);
           const draft = `smoke @${folder}`;
           write(draft);
-          await vi.waitFor(() => expect(rows().join('')).toContain('smoke'));
-          await delay(200);
+          await vi.waitFor(() => {
+            const input = rows()
+              .filter((row) => row.trim().startsWith('│'))
+              .map((row) => row.trim().slice(1, -1).trim().replace(/^›\s*/u, ''))
+              .join('');
+            expect(input.replaceAll(' ', '')).toContain(draft.replaceAll(' ', ''));
+          });
           write(PTY_SUBMIT_INPUT);
 
           await vi.waitFor(
@@ -188,6 +199,43 @@ describe('e2e: a refused attachment on Home', { timeout: 120_000 }, () => {
 });
 
 describe('e2e: the Home heading on a small terminal', { timeout: 120_000 }, () => {
+  it('keeps the wordmark above the crew over a long draft and eight sessions at 60x18', async (context) => {
+    await onHome(
+      { cols: 60, rows: 18 },
+      async ({ rows, write, dir }) => {
+        // A first launch without a config opens Setup. Home reloads a config removed after launch.
+        unlinkSync(join(dir, 'project', '.splitbrief', 'config.yaml'));
+        await vi.waitFor(() => expect(rows().join('\n')).toContain('No config.'), {
+          timeout: 15000,
+        });
+        for (let start = 0; start < LONG_COMPOSER_DRAFT.length; start += 32) {
+          const chunk = LONG_COMPOSER_DRAFT.slice(start, start + 32);
+          write(chunk);
+          const tail = chunk.replaceAll(' ', '');
+          await vi.waitFor(() => expect(rows().join('').replace(/[│ ]/gu, '')).toContain(tail));
+        }
+        await vi.waitFor(() => {
+          const lines = rows().map((row) => row.trim());
+          expect(lines[0]).toBe('splitbrief');
+          expect(lines[1]).toMatch(/^PLAN .*BUILD .*REVIEW /u);
+          expect(lines).toContain('7 more');
+          expect(lines.join(' ')).toContain('label printer.');
+        });
+      },
+      (reason) => context.skip(reason),
+      (projectDir) => {
+        for (let index = 0; index < 8; index++) {
+          const id = `recent-${index}`;
+          mkdirSync(sessionDir(projectDir, id), { recursive: true });
+          saveSummary(
+            { projectDir, sessionId: id },
+            makeSession({ id, feature: `Feature ${index}`, startedAt: 1000 + index }),
+          );
+        }
+      },
+    );
+  });
+
   it('heads a 40-column Home with the one-row wordmark and names every seat', async (context) => {
     const viewport = { cols: 40, rows: 18 };
     await onHome(

@@ -150,12 +150,12 @@ describe('Home notice above the composer', () => {
     expect(rows.slice(top, top + 5)).toEqual(
       framed(
         [
-          'Draft not saved: permission',
-          'denied · .splitbrief/…/draft.json ·',
+          'Draft not saved: permission denied ·',
+          '.splitbrief/…/draft.json ·',
           'quit again leaves without it',
         ],
         '✗ ',
-        41,
+        42,
       ),
     );
     expect(rows.join('\n')).not.toContain('add-a-gre');
@@ -213,7 +213,7 @@ describe('Home notice above the composer', () => {
   it('frames a report in the border ink with no glyph and its words in the dim ink', async () => {
     const ui = renderHome(120, 40, 108);
     await flushEffects();
-    feedbackStore.setMessage('Copied the brief to the clipboard');
+    feedbackStore.setInfo('Copied the brief to the clipboard');
     await flushEffects();
 
     const rows = plainRows(ui.lastFrame());

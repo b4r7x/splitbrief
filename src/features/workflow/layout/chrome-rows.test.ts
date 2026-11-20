@@ -17,7 +17,6 @@ import {
   getChromeContentWidth,
   getChromeHeight,
   getContentTopRow,
-  getContentTopRowIndex,
   getProgressRows,
   measureFormB,
   railConnectorWidth,
@@ -57,11 +56,6 @@ describe('getChromeHeight', () => {
 describe('getContentTopRow', () => {
   it('starts after the baseline top chrome rows', () => {
     expect(getContentTopRow()).toBe(3);
-  });
-
-  it('states the same boundary in the frame row numbering', () => {
-    expect(getContentTopRowIndex()).toBe(getContentTopRow() - 1);
-    expect(getContentTopRowIndex()).toBe(2);
   });
 });
 
@@ -264,6 +258,17 @@ describe('selectRailFormAndLine', () => {
         toolLineCells: 42,
       }),
     ).toEqual({ form: 'B', short: false, line: 'model' });
+  });
+
+  it('keeps the crew beside a single stage when only its count would force a wrap', () => {
+    expect(
+      selectRailFormAndLine({
+        cols: 60,
+        railWidths: { B: 34, C: 27, CShort: 7 },
+        modelLineCells: 90,
+        toolLineCells: 44,
+      }),
+    ).toEqual({ form: 'C', short: true, line: 'tool' });
   });
 
   it('falls to the one-stage rail when only it seats the tool line', () => {

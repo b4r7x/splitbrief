@@ -28,7 +28,7 @@ function setPostEditorFeedback(reviewOwner: number, message: string, isError = f
     feedbackStore.setError(message);
     return;
   }
-  feedbackStore.setMessage(message);
+  feedbackStore.setInfo(message);
 }
 
 function applyExternalEdit(
@@ -47,7 +47,7 @@ function applyExternalEdit(
   }
   // The plan card shows plan.md, rendered from the plan.json just edited: only the engine can
   // check and compile it, so the edit settles the gate.
-  feedbackStore.setMessage(`${lead} — applying changes`);
+  feedbackStore.setInfo(`${lead} — applying changes`);
   inputMode.resolve({ approved: false, action: 'edit' });
 }
 
@@ -74,14 +74,14 @@ export async function openReviewFileExternally(
     const editorLabel = editorDisplayLabel(command);
     const fileName = basename(filePath);
     const openingMessage = `Opening ${editorLabel} — ${fileName}…`;
-    feedbackStore.setMessage(openingMessage);
+    feedbackStore.setInfo(openingMessage);
     const before = baseline ?? (await readReviewSnapshot(filePath));
     await new Promise((resolve) => setTimeout(resolve, OPENING_SIGNAL_PAINT_MS));
     // Last check before the handover, so nothing may await after it: the paint window stays
     // interactive, and a typed review command can settle the gate — clearing the review owner.
     // Opening the editor then would freeze a live workflow and later resolve the wrong gate.
     if (reviewStore.get().ownerToken !== reviewOwner) {
-      if (feedbackStore.get().message === openingMessage) feedbackStore.setMessage(null);
+      if (feedbackStore.get().message === openingMessage) feedbackStore.setInfo(null);
       return;
     }
     let exit: EditorExit;

@@ -63,7 +63,7 @@ export function createReviewInputHandler(
       // parked yet, so typed text can neither steer nor queue — tell the user why.
       if (lifecycle.status === 'interrupted' && !lifecycle.interruptParked) {
         if (text.trim()) {
-          feedbackStore.setMessage('Interrupt pending — stopping at the next step boundary.');
+          feedbackStore.setInfo('Interrupt pending — stopping at the next step boundary.');
         }
         return;
       }
@@ -84,7 +84,7 @@ export function createReviewInputHandler(
           const result = await effects.enqueue(message, phase);
           if (!result) {
             composerDraftStore.requestPrepend(document);
-            feedbackStore.setMessage(
+            feedbackStore.setInfo(
               seat === null && isLivePhase(phase)
                 ? noWordsRefusal(afterLastBrief)
                 : 'Cannot queue message: no active workflow.',
@@ -94,9 +94,9 @@ export function createReviewInputHandler(
             // now, so a rejection loses neither what was sent nor what was typed since.
             composerDraftStore.requestPrepend(document);
             if (result.reason === 'failed') feedbackStore.setError(result.message);
-            else feedbackStore.setMessage(result.message);
+            else feedbackStore.setInfo(result.message);
           } else if (seat !== null) {
-            feedbackStore.setMessage(
+            feedbackStore.setInfo(
               queueCopy({
                 seat,
                 taskId,
@@ -114,7 +114,7 @@ export function createReviewInputHandler(
           phase === 'reviewing-plan' ||
           phase === 'reviewing-briefs'
         ) {
-          feedbackStore.setMessage(
+          feedbackStore.setInfo(
             approvalPromptStore.get().status === 'pending'
               ? CONFIRM_WAITING_MESSAGE
               : reviewOpeningPromptMessage(),
@@ -138,7 +138,7 @@ export function createReviewInputHandler(
           inputMode.resolve({ approved: false, action: 'revise', message });
           return;
         }
-        feedbackStore.setMessage(REVIEW_UNKNOWN_COMMAND_MESSAGE);
+        feedbackStore.setInfo(REVIEW_UNKNOWN_COMMAND_MESSAGE);
         return;
       }
       if (parsed.kind === 'brief-review-command') {

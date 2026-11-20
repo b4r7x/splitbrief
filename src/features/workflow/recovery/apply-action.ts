@@ -25,7 +25,7 @@ export async function applyAction(
     const offer = issue.switchSeat;
     const offered = offer?.candidates[0];
     if (offer === undefined || offered === undefined) {
-      feedbackStore.setMessage('No other tool is offered for this seat.');
+      feedbackStore.setInfo('No other tool is offered for this seat.');
       return null;
     }
     const profile = offer.seat === 'build' ? issue.selectedImplementerProfile : undefined;

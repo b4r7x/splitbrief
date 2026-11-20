@@ -829,8 +829,8 @@ describe('seats', () => {
     expect(view.seats.build).toEqual({
       kind: 'moved',
       seats: [
-        { short: 'opencode', briefs: 1 },
-        { short: 'OpenAI Codex CLI', briefs: 1 },
+        { short: 'opencode', tool: 'opencode', briefs: 1 },
+        { short: 'OpenAI Codex CLI', tool: 'codex', briefs: 1 },
       ],
       contiguous: true,
     });
@@ -858,9 +858,9 @@ describe('seats', () => {
     expect(view.seats.build).toEqual({
       kind: 'moved',
       seats: [
-        { short: 'OpenAI Codex CLI', briefs: 1 },
-        { short: 'OpenAI Codex CLI GPT-5', briefs: 1 },
-        { short: 'Cursor Agent CLI GPT-5', briefs: 1 },
+        { short: 'OpenAI Codex CLI', tool: 'codex', briefs: 1 },
+        { short: 'OpenAI Codex CLI GPT-5', tool: 'codex', briefs: 1 },
+        { short: 'Cursor Agent CLI GPT-5', tool: 'Cursor', briefs: 1 },
       ],
       contiguous: true,
     });

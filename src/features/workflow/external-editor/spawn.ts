@@ -67,7 +67,7 @@ export function runEditor({
   );
   return new Promise<EditorExit>((resolve, reject) => {
     if (terminal) process.stdout.write(`\r\n${message}\n`);
-    else feedbackStore.setMessage(message);
+    else feedbackStore.setInfo(message);
     const child = terminal
       ? spawnEditor(command, [...args, filePath])
       : spawnEditor(command, [...args, filePath], 'ignore');
@@ -75,7 +75,7 @@ export function runEditor({
     child.once('close', (code, signal) => resolve({ code, signal }));
   }).finally(() => {
     if (!terminal) {
-      if (feedbackStore.get().message === message) feedbackStore.setMessage(null);
+      if (feedbackStore.get().message === message) feedbackStore.setInfo(null);
       return;
     }
     // A viewer that restores the screen leaves the cursor below the waiting line, so this erases

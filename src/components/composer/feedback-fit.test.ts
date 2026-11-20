@@ -457,8 +457,8 @@ describe('fitFeedbackMessage', () => {
       const message = `Draft not saved: permission denied · ${path} · quit again leaves without it`;
 
       expect(fitFeedbackMessage(message, { width: 50, maxRows: 5 }).split('\n')).toEqual([
-        'Draft not saved: permission',
-        'denied · .splitbrief/…/draft.json ·',
+        'Draft not saved: permission denied ·',
+        '.splitbrief/…/draft.json ·',
         'quit again leaves without it',
       ]);
     });

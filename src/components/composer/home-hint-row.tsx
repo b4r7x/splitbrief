@@ -8,12 +8,11 @@ interface HomeHintRowProps {
   hintLine: string | null;
 }
 
-/** The reserved home rows above the box: the notice on the box's left edge, then the hint, or one blank row. */
+/** The reserved home rows above the box: the status, then the notice on the box's left edge, or one blank row. */
 export function HomeHintRow({ height, notice, hintLine }: HomeHintRowProps) {
   const theme = useTheme();
   return (
     <Box flexDirection="column" height={height}>
-      {notice !== null && <Notice layout={notice} />}
       {hintLine !== null ? (
         <Box justifyContent="center">
           <Text color={theme.textDim} wrap="truncate-end">
@@ -23,6 +22,7 @@ export function HomeHintRow({ height, notice, hintLine }: HomeHintRowProps) {
       ) : (
         notice === null && <Text> </Text>
       )}
+      {notice !== null && <Notice layout={notice} />}
     </Box>
   );
 }

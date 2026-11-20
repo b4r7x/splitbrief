@@ -120,6 +120,7 @@ export function enterCaptureEnvironment(
   const viewport = ViewportSchema.parse(options.viewport);
   const profile = resolveTerminalProfile(options.profile);
   const profileEnvironment = PROFILE_ENVIRONMENT[profile];
+  const hyperlinks = profile === 'unicode-color';
   const savedEnvironment = snapshotEnvironment();
   const savedTerminalSize = terminalSizeStore.get();
   const savedDateNow = Date.now;
@@ -146,7 +147,7 @@ export function enterCaptureEnvironment(
   };
 
   try {
-    applyEnvironment(profileEnvironment);
+    applyEnvironment(profileEnvironment, hyperlinks);
     setProperty(process.stdout, 'columns', viewport.cols);
     setProperty(process.stdout, 'rows', viewport.rows);
     setProperty(process.stdout, 'isTTY', profileEnvironment.isTTY);
@@ -167,7 +168,7 @@ export function enterCaptureEnvironment(
     locale: profileEnvironment.determinismLocale,
     term: profileEnvironment.term,
     colorLevel: profileEnvironment.colorLevel,
-    hyperlinks: false,
+    hyperlinks,
     motion: false,
     clock: FIXED_CLOCK,
     randomSeed: RANDOM_SEED,
@@ -200,7 +201,10 @@ function snapshotEnvironment(): ReadonlyMap<EnvironmentKey, string | undefined> 
   return new Map(ENVIRONMENT_KEYS.map((key) => [key, process.env[key]]));
 }
 
-function applyEnvironment(profile: (typeof PROFILE_ENVIRONMENT)[TerminalProfile]): void {
+function applyEnvironment(
+  profile: (typeof PROFILE_ENVIRONMENT)[TerminalProfile],
+  hyperlinks: boolean,
+): void {
   const values: Readonly<Record<EnvironmentKey, string | undefined>> = {
     TZ: 'UTC',
     LANG: profile.locale,
@@ -210,7 +214,7 @@ function applyEnvironment(profile: (typeof PROFILE_ENVIRONMENT)[TerminalProfile]
     COLORTERM: profile.colorterm,
     COLORFGBG: profile.colorfgbg,
     FORCE_COLOR: profile.forceColor,
-    FORCE_HYPERLINK: '0',
+    FORCE_HYPERLINK: hyperlinks ? '1' : '0',
     NO_COLOR: profile.noColor,
     SPLITBRIEF_REDUCE_MOTION: '1',
   };

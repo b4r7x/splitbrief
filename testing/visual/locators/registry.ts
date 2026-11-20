@@ -5,30 +5,16 @@ import {
 import { getReviewDocumentPromptRows } from '../../../src/features/workflow/prompt-rows/review-document.js';
 import { getRecoveryPromptRows } from '../../../src/features/workflow/prompt-rows/recovery.js';
 import {
-  getContentTopRowIndex,
-  getProgressRows,
   WORKFLOW_CHROME_ROWS,
   WORKFLOW_GUTTER_X,
 } from '../../../src/features/workflow/layout/chrome-rows.js';
-import { layoutHomeNotice } from '../../../src/components/composer/home-hint.js';
-import {
-  getHomeLayout,
-  homeConfigBlockRows,
-  homeHeadingRows,
-  RESTING_DOCK_ROWS,
-} from '../../../src/features/home/layout.js';
+import { getHomeLayout, RESTING_DOCK_ROWS } from '../../../src/features/home/layout.js';
 import {
   fixtureHalt,
   getWorkflowFixturePromptRows,
   type WorkflowFixtureProjection,
 } from '../fixtures/workflow/projections.js';
-import { projectionChromeFacts } from '../fixtures/workflow/projection-chrome.js';
-import {
-  workflowFixtureFeedback,
-  workflowFixtureProjectionFor,
-} from '../fixtures/workflow/registry.js';
-import { getFeedbackRows } from '../../../src/features/workflow/components/feedback-row.js';
-import { homeFixtureFeedback } from '../fixtures/screen-fixtures.js';
+import { workflowFixtureProjectionFor } from '../fixtures/workflow/registry.js';
 import type { CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
@@ -37,6 +23,11 @@ import { resolveMarkerRect } from './markers.js';
 const DEFAULT_INPUT_ROWS = 3;
 
 const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
+  'home:heading': {
+    kind: 'layout',
+    description: 'Painted Home heading',
+    resolve: resolveHomeHeading,
+  },
   'home:header': {
     kind: 'layout',
     description: 'Home logo and runner summary bounds',
@@ -142,20 +133,36 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
 export const LOCATOR_REGISTRY: Readonly<Record<string, LocatorDefinition>> =
   Object.freeze(BASE_LOCATOR_REGISTRY);
 
+function gridRowText(row: CellGrid['cells'][number]): string {
+  return row.map((cell) => cell.grapheme).join('');
+}
+
+function resolveHomeHeading({ grid }: LocatorContext): CellRect {
+  const height = grid.cells.findIndex(
+    (row, index) =>
+      index > 0 &&
+      (gridRowText(row).trim() === '' || gridRowText(row).trimStart().startsWith('PLAN ')),
+  );
+  if (height < 1) throw new Error('No Home heading above the crew');
+  const lines = grid.cells.slice(0, height).map(gridRowText);
+  const x = Math.min(...lines.map((line) => line.search(/\S/u)));
+  const right = Math.max(...lines.map((line) => line.trimEnd().length));
+  return CellRectSchema.parse({ x, y: 0, width: right - x, height });
+}
+
 function resolveHomeHeader(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
   const layout = getHomeLayout({ cols, rows, dockRows: RESTING_DOCK_ROWS, noConfig: false });
+  const end = context.grid.cells.findIndex((row) => gridRowText(row).includes('/crew to change'));
+  if (end < 0) throw new Error('No Home crew status below the heading');
   return CellRectSchema.parse({
     x: Math.floor((cols - layout.width) / 2),
     y: 0,
     width: layout.width,
-    height: homeHeadingRows(layout.heading) + homeConfigBlockRows(rows),
+    height: end + 1,
   });
 }
 
-// The crop is the dock the composer publishes to the home layout: its home rows over the box.
-// The box rows come from the frame; the home rows from the fixture's notice, laid out as the
-// composer lays it out.
 function resolveHomeComposer(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
   const layout = getHomeLayout({ cols, rows, dockRows: RESTING_DOCK_ROWS, noConfig: false });
@@ -168,10 +175,17 @@ function resolveHomeComposer(context: LocatorContext): CellRect {
   if (cellAt(context.grid, x, boxTop) !== topCorner) {
     throw new Error('No home composer box is painted above the bottom margin');
   }
-  const notice = homeFixtureFeedback.get(context.scenario.id);
-  const homeRows = notice === undefined ? 1 : layoutHomeNotice(notice, layout.width).height;
-  const height = homeRows + boxBottom - boxTop + 1;
-  return CellRectSchema.parse({ x, y: boxBottom + 1 - height, width: layout.width, height });
+  let top = boxTop - 1;
+  const edge = (y: number) => cellAt(context.grid, x, y);
+  if (edge(top) === '╰' || edge(top) === '+') {
+    while (top > 0 && (edge(top - 1) === '│' || edge(top - 1) === '|')) top--;
+    if (edge(top - 1) === '╭' || edge(top - 1) === '+') top--;
+  } else if (edge(top) === '▌' || edge(top) === '|') {
+    while (top > 0 && edge(top - 1) === edge(top)) top--;
+  }
+  const status = context.grid.cells[top - 1];
+  if (top < boxTop - 1 && status && gridRowText(status).trim() !== '') top--;
+  return CellRectSchema.parse({ x, y: top, width: layout.width, height: boxBottom - top + 1 });
 }
 
 function cellAt(grid: CellGrid, x: number, y: number): string | undefined {
@@ -203,45 +217,32 @@ function sidebarWidthFor(context: LocatorContext): number {
   return getWorkflowSidebarWidth({ cols, sidebarVisible: projectionFor(context).sidebarVisible });
 }
 
-// The build-progress block rides between the rail and the divider, so the body's first row moves
-// with the run's phase, width and the states that stand the block down; a constant here would crop
-// the block instead of the body. The facts come from the projection the frame's screen was mounted
-// from, the same facts the page and the snapshot hand to `getProgressRows`, and the top row comes
-// from the chrome measure those callers use, not a second count of the header rows.
-function bodyTopRow(context: LocatorContext): number {
-  const { cols } = context.grid.identity.provenance.viewport;
-  const facts = projectionChromeFacts(projectionFor(context), cols);
-  return (
-    getContentTopRowIndex() +
-    getProgressRows({
-      phase: facts.phase,
-      cols,
-      cancelled: facts.cancelled,
-      halted: facts.halted,
-      promptRows: facts.promptRows,
-      atRest: facts.atRest,
-      parked: facts.parked,
-    })
-  );
+function isWorkflowDivider(row: CellGrid['cells'][number]): boolean {
+  const first = row[0]?.grapheme;
+  return (first === '─' || first === '-') && row.at(-1)?.grapheme === first;
 }
 
-// The rows the fixture's message takes in the footer, fitted as the feedback row fits it.
-function workflowFeedbackRows(context: LocatorContext): number {
-  const { cols } = context.grid.identity.provenance.viewport;
-  return getFeedbackRows(
-    workflowFixtureFeedback.get(context.scenario.id) ?? { message: null, severity: 'info' },
-    cols,
-  );
+function bodyTopRow({ grid }: LocatorContext): number {
+  const divider = grid.cells.findIndex(isWorkflowDivider);
+  if (divider < 0) throw new Error('No workflow header divider in the frame');
+  return divider + 1;
 }
 
-// The body ends above the footer: its rule, the feedback rows, the composer and the byline.
 function workflowFooterRows(context: LocatorContext): number {
-  return (
-    WORKFLOW_CHROME_ROWS.footerDivider +
-    workflowFeedbackRows(context) +
-    DEFAULT_INPUT_ROWS +
-    WORKFLOW_CHROME_ROWS.inputFooter
-  );
+  const { grid } = context;
+  const divider = grid.cells.findLastIndex(isWorkflowDivider);
+  if (divider >= bodyTopRow(context)) return grid.rect.height - divider;
+  // A completion menu can cover the footer divider. Its top edge ends the visible panel.
+  const composer = resolveWorkflowComposer(context);
+  const x = composer.x;
+  const corner = cellAt(grid, x, composer.y - 1);
+  if (corner === '╰' || corner === '+') {
+    const top = grid.cells.findLastIndex(
+      (row, y) => y < composer.y - 1 && (row[x]?.grapheme === '╭' || row[x]?.grapheme === '+'),
+    );
+    if (top >= bodyTopRow(context)) return grid.rect.height - top;
+  }
+  return grid.rect.height - composer.y;
 }
 
 function resolveWorkflowSidebar(context: LocatorContext): CellRect {
@@ -260,17 +261,19 @@ function resolveWorkflowSidebar(context: LocatorContext): CellRect {
 
 function resolveWorkflowHeader(context: LocatorContext): CellRect {
   const { cols } = context.grid.identity.provenance.viewport;
-  return CellRectSchema.parse({ x: 0, y: 0, width: cols, height: getContentTopRowIndex() });
+  return CellRectSchema.parse({ x: 0, y: 0, width: cols, height: bodyTopRow(context) });
 }
 
 function resolveWorkflowTranscript(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  const y = bodyTopRow(context);
+  const bottom = rows - workflowFooterRows(context);
+  // With no body row, the scroll count on the header divider represents the hidden transcript.
+  const y = Math.min(bodyTopRow(context), bottom - 1);
   return CellRectSchema.parse({
     x: 0,
     y,
     width: cols,
-    height: Math.max(0, rows - y - workflowFooterRows(context)),
+    height: bottom - y,
   });
 }
 
@@ -304,7 +307,11 @@ function resolveWorkflowApprovalPanel(context: LocatorContext): CellRect {
           getReviewPanelBudget({
             rows,
             inputRows: DEFAULT_INPUT_ROWS,
-            feedbackRows: workflowFeedbackRows(context),
+            feedbackRows:
+              workflowFooterRows(context) -
+              DEFAULT_INPUT_ROWS -
+              WORKFLOW_CHROME_ROWS.inputFooter -
+              WORKFLOW_CHROME_ROWS.footerDivider,
           }),
         )
       : getWorkflowFixturePromptRows(projection, cols);

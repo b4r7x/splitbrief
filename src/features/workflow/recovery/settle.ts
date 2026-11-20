@@ -44,7 +44,7 @@ export function settle(
     // The close is on the state; the run loop finalizes the session from it —
     // one summary, one receipt release, through the same path every other
     // ending takes.
-    feedbackStore.setMessage(
+    feedbackStore.setInfo(
       `Run ${status.as === 'complete' ? 'closed' : 'ended'}.${filesStillOnDiskSuffix({ projectDir, sessionId }, result.state)}`,
     );
     return { shouldRun: false, state: result.state };

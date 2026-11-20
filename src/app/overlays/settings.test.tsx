@@ -697,7 +697,7 @@ describe('SettingsOverlay', () => {
 
   it('shows a neutral message in the neutral ink, not in the success ink', async () => {
     const message = 'Unknown command: /setings. Did you mean /settings?';
-    feedbackStore.setMessage(message);
+    feedbackStore.setInfo(message);
     const ui = renderAt(120, 40);
     await flushEffects();
 

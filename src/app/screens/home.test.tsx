@@ -2296,7 +2296,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     composerDraftStore.request(
       'Keep the receiving flow as it is, but make the scanner screen show the last three pallets with their weights and the time each one was scanned. Read docs/specs/receiving/scanner-screen/pallet-weights.md before you start, and do not change the label printer.',
     );
-    feedbackStore.setMessage(
+    feedbackStore.setInfo(
       [
         formatConfigSaveSuccess('BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic', {
           ignoreRuleAdded: false,
@@ -2385,7 +2385,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('keeps the notice row in place when the warning goes', async () => {
+  it('keeps the discovery status above the warning until it clears', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     const ui = await renderColdCheckUnder(STARTUP_WARNINGS[2] ?? '', 2);
     const noticeRow = (frame: string) =>
@@ -2397,7 +2397,8 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     feedbackStore.setError(null);
     await flushEffects();
 
-    expect(noticeRow(ui.lastFrame() ?? '')).toBe(underWarning);
+    expect(underWarning).toBeGreaterThanOrEqual(0);
+    expect(noticeRow(ui.lastFrame() ?? '')).toBeGreaterThan(underWarning);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Checking your tools… · drop an image');
     ui.unmount();
   });

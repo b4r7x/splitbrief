@@ -136,7 +136,7 @@ describe('useReviewContent', () => {
       expect(ui?.lastFrame()).toContain('content=current ddd');
     });
 
-    feedbackStore.setMessage('unrelated feedback');
+    feedbackStore.setInfo('unrelated feedback');
     readC.reject(new Error('stale failure'));
     await tick(50);
     expect(ui?.lastFrame()).toContain('content=current ddd');
@@ -188,7 +188,7 @@ describe('useReviewContent', () => {
       expect(ui?.lastFrame()).toContain('content=third owner');
     });
 
-    feedbackStore.setMessage('new owner feedback');
+    feedbackStore.setInfo('new owner feedback');
     pending[1]?.reject(new Error('late second-owner failure'));
     await tick(20);
     expect(ui.lastFrame()).toContain('content=third owner');

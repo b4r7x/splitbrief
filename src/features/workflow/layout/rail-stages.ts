@@ -180,12 +180,14 @@ export function measureRailCells(input: {
     }),
   ];
   if (input.form === 'C') {
-    const fraction = resolveRailFraction({
-      phase: input.phase,
-      tasks: input.tasks,
-      cancelled: input.cancelled,
-      buildBlockShown: input.buildBlockShown,
-    });
+    const fraction = input.short
+      ? ''
+      : resolveRailFraction({
+          phase: input.phase,
+          tasks: input.tasks,
+          cancelled: input.cancelled,
+          buildBlockShown: input.buildBlockShown,
+        });
     return getTerminalCellWidth(railFormCText({ stages, fraction }));
   }
   return measureFormB(stages, { short: input.short });

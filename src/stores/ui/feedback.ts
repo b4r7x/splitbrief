@@ -42,7 +42,7 @@ const setError = (msg: string | null) => show(msg, 'error', FEEDBACK_ERROR_AUTO_
 // A refusal asks for a step from the user, so it stays as long as a failure does.
 const setWarning = (msg: string | null) => show(msg, 'warning', FEEDBACK_ERROR_AUTO_CLEAR_MS);
 
-const setMessage = (msg: string | null) => show(msg, 'info', FEEDBACK_AUTO_CLEAR_MS);
+const setInfo = (msg: string | null) => show(msg, 'info', FEEDBACK_AUTO_CLEAR_MS);
 
 const setTransientError = (msg: string) => show(msg, 'error', FEEDBACK_AUTO_CLEAR_MS);
 
@@ -73,7 +73,7 @@ export const feedbackStore = {
   ...storeBase(store),
   setError,
   setWarning,
-  setMessage,
+  setInfo,
   setTransientError,
   reset,
 };

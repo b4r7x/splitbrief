@@ -51,7 +51,7 @@ import { VISUAL_FIXTURE_PROJECT_DIR } from '../screen-fixtures.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle/state.js';
 import { glyph, type GlyphName } from '../../../../src/lib/glyphs.js';
-import { feedbackStore, type FeedbackState } from '../../../../src/stores/ui/feedback.js';
+import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../../src/stores/ui/composer-live.js';
 import { reportDraftNotSaved, saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
@@ -508,13 +508,13 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (projection.scenarioId === 'workflow-ready-empty-diff') {
     return () => ({
       ...base(),
-      afterMount: () => feedbackStore.setMessage('No run changes to show.'),
+      afterMount: () => feedbackStore.setInfo('No run changes to show.'),
     });
   }
   if (projection.scenarioId === 'workflow-closed-undone') {
     return () => ({
       ...base(),
-      afterMount: () => feedbackStore.setMessage('Apply undone: removed 4 created files.'),
+      afterMount: () => feedbackStore.setInfo('Apply undone: removed 4 created files.'),
     });
   }
   if (atRest !== undefined && projection.events.length > 0) {
@@ -663,7 +663,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (projection.scenarioId === 'workflow-selection-copy') {
     return () => ({
       ...base(),
-      afterMount: () => feedbackStore.setMessage(formatCopyResult('native')),
+      afterMount: () => feedbackStore.setInfo(formatCopyResult('native')),
     });
   }
   if (
@@ -785,7 +785,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
           if (route.screen !== 'workflow') throw new Error('The Apply refusal needs a run');
           saveSessionDraft(route.run.ref, createDraftDocument(REFUSED_WORDS));
         },
-        afterMount: () => feedbackStore.setMessage(noWordsRefusal({ kind: 'apply' })),
+        afterMount: () => feedbackStore.setInfo(noWordsRefusal({ kind: 'apply' })),
       };
     };
   }
@@ -871,7 +871,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
           }
           const reason = requestSteer(plainUserMessage(REFUSED_WORDS));
           if (reason === undefined) throw new Error('The stop steer fixture needs its refusal');
-          feedbackStore.setMessage(reason);
+          feedbackStore.setInfo(reason);
         },
       }),
       teardown: () => {
@@ -891,17 +891,6 @@ export const workflowProjectionRegistry: ReadonlyMap<ScenarioId, WorkflowFixture
       projection,
     ]),
   );
-
-// The feedback a workflow fixture leaves in the footer when it takes more than one row at one of the
-// scenario's viewports and the scenario crops a body element (the sidebar, the transcript or a
-// panel). The locators fit it as the row fits it, so the body ends above its rows.
-export const workflowFixtureFeedback: ReadonlyMap<string, FeedbackState> = new Map([
-  ['workflow-command-image-refused', { message: COMMAND_IMAGE_REASON, severity: 'info' }],
-  [
-    'workflow-project-gone-at-rest',
-    { message: projectGoneMessage(PROJECT_GONE_DIR), severity: 'error' },
-  ],
-]);
 
 export function workflowFixtureProjectionFor(
   scenario: ScenarioId,
@@ -1753,12 +1742,8 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('plan-card-usage-refused'),
-    // Below 24 rows the framed refusal takes the rows of the plan box until it clears.
     (context) =>
-      (context.viewport.rows >= 24
-        ? planCardReady(context)
-        : includesAll('End run', 'Edit plan.json')(context)) &&
-      includesAll(END_USAGE_REFUSAL, PLAN_CARD_END_DRAFT)(context),
+      planCardReady(context) && includesAll(END_USAGE_REFUSAL, PLAN_CARD_END_DRAFT)(context),
   ],
   [
     checkpointId('plan-card-steer-row'),
@@ -2090,8 +2075,7 @@ const checkpointPredicates = [
           headerRow.includes('BUILD Gemini 3.8 Flash → Google Antigravity CLI')
         );
       }
-      // A narrower header has no room for the whole crew, so it names no seat, never a part of it.
-      return !headerRow.includes('PLAN');
+      return headerRow.includes('PLAN codex · BUILD agy · REVIEW codex');
     },
   ],
   [

@@ -73,12 +73,12 @@ describe('osc8Hyperlink', () => {
     });
 
     expect(output).toContain('\x1b]8;;');
-    expect(output).toBe('\x1b]8;;file:///repo/src/app.ts\x1b\\src/app.ts\x1b]8;;\x1b\\');
+    expect(output).toBe('\x1b]8;;file:///repo/src/app.ts\x07src/app.ts\x1b]8;;\x07');
   });
 
   it('carries non-file hrefs unchanged', () => {
     expect(osc8Hyperlink({ label: 'docs', href: 'https://example.com/docs' })).toBe(
-      '\x1b]8;;https://example.com/docs\x1b\\docs\x1b]8;;\x1b\\',
+      '\x1b]8;;https://example.com/docs\x07docs\x1b]8;;\x07',
     );
   });
 });

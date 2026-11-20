@@ -7,7 +7,6 @@ import { listVisualScenarios } from '../catalog.js';
 import { createCropCellGrid } from '../artifacts/crop.js';
 import { mountGalleryScenario } from '../gallery/mount.js';
 import { parseTerminalFrame } from '../terminal/parse.js';
-import { readConversationHoverSnapshot } from '../../../src/features/workflow/layout/snapshot.js';
 import { createFrameIdentity } from '../visual-contract-fixtures.js';
 import { resolveElementLocator, tryResolveElementLocator } from './resolve.js';
 
@@ -64,18 +63,12 @@ async function resolveScenarioLocators(scenario: ScenarioDefinition): Promise<vo
     const viewportLabel = `${scenario.id}/${frameViewport.cols}x${frameViewport.rows}`;
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: frameViewport });
     let frame: string;
-    let paintedBodyTop: number | undefined;
     try {
       try {
         frame = await handle.waitForCheckpoint();
       } catch (error) {
         const message = error instanceof Error ? error.message : 'checkpoint wait failed';
         throw new Error(`${message}\nLast frame:\n${handle.lastFrame() ?? '<empty>'}`);
-      }
-      // The body top the mounted screen's own snapshot derives from its stores (1-based rect
-      // convention); the locator counts the 0-based rows the frame artifacts use.
-      if (landsTranscript(scenario)) {
-        paintedBodyTop = readConversationHoverSnapshot().contentRect.top - 1;
       }
     } finally {
       await handle.unmount();
@@ -118,14 +111,20 @@ async function resolveScenarioLocators(scenario: ScenarioDefinition): Promise<vo
       resolvedCount += 1;
     }
 
-    if (paintedBodyTop !== undefined) {
+    if (landsTranscript(scenario)) {
       const transcript = resolveElementLocator({
         scenario,
         checkpoint,
         grid,
         elementId: 'transcript',
       });
-      expect(transcript.rect.y, viewportLabel).toBe(paintedBodyTop);
+      const rows = grid.cells.map((row) => row.map((cell) => cell.grapheme).join(''));
+      const divider = rows.findIndex((row) => /^(?:─.*─|-.*-)$/u.test(row));
+      expect(divider, viewportLabel).toBeGreaterThanOrEqual(0);
+      // With adjacent dividers the scroll count is all that remains of the transcript.
+      const hidden =
+        /lines? above/u.test(rows[divider] ?? '') && /^(?:─+|-+)$/u.test(rows[divider + 1] ?? '');
+      expect(transcript.rect.y, viewportLabel).toBe(hidden ? divider : divider + 1);
     }
   }
   expect(resolvedCount).toBe(scenario.elements.length * scenario.viewports.length);
@@ -133,7 +132,7 @@ async function resolveScenarioLocators(scenario: ScenarioDefinition): Promise<vo
 
 /**
  * Resolves every element of every scenario in `shard` at every viewport against production App
- * frames, and lands each workflow transcript on the body row the mounted screen budgeted.
+ * frames, and lands each workflow transcript on the first row below the painted divider.
  */
 export function describeScenarioLocators(shard: number): void {
   const scenarios = listVisualScenarios().filter(

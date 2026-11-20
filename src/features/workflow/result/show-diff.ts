@@ -18,7 +18,7 @@ export async function showRunDiff(
   try {
     const path = await writeRunPatch(record.ref, workspace);
     if (path === null) {
-      feedbackStore.setMessage('No run changes to show.');
+      feedbackStore.setInfo('No run changes to show.');
       return;
     }
     const viewer = resolveViewerArgv();

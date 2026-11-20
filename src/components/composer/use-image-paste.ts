@@ -86,7 +86,7 @@ export function useImagePaste({
     let inserted = result.ok ? attachImage(result.path, paste.at) : null;
     if (inserted === null && request.matchingText !== undefined) {
       inserted = insertText(request.matchingText.normalize('NFC'), paste.at);
-      if (!result.ok && result.reason !== 'too-large') feedbackStore.setMessage(null);
+      if (!result.ok && result.reason !== 'too-large') feedbackStore.setInfo(null);
     }
     if (
       !result.ok &&
@@ -158,13 +158,13 @@ export function useImagePaste({
     };
     pasteQueueRef.current.push({ request, at });
     if (pasteQueueRef.current.length === 1) setImagePaste(request);
-    feedbackStore.setMessage(matchingText === undefined ? 'Pasting image…' : 'Pasting…');
+    feedbackStore.setInfo(matchingText === undefined ? 'Pasting image…' : 'Pasting…');
   };
 
   return {
     pasteImage: () => {
       if (commandsOnly === true) {
-        feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
+        feedbackStore.setInfo(COMMANDS_ONLY_NOTICE);
         return;
       }
       if (!canAttachImage()) return;
@@ -188,9 +188,7 @@ export function useImagePaste({
     },
     refuseSubmit: () => {
       if (pasteQueueRef.current.length === 0) return false;
-      feedbackStore.setMessage(
-        imagePaste?.matchingText === undefined ? 'Pasting image…' : 'Pasting…',
-      );
+      feedbackStore.setInfo(imagePaste?.matchingText === undefined ? 'Pasting image…' : 'Pasting…');
       return true;
     },
   };

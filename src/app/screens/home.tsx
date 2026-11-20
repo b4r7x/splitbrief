@@ -7,7 +7,7 @@ import { LOCKFILE_PING_INTERVAL_MS } from '../../engine/orchestrator/run/heartbe
 import { Composer } from '../../components/composer/view.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { HomeSeatBlock } from '../../features/home/components/seat-block.js';
+import { HomeSeatBlock, minimumHomeSeatRows } from '../../features/home/components/seat-block.js';
 import { RecentSessions } from '../../features/home/recent-sessions/panel.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { useSlowProbeText } from '../../hooks/use-slow-probe-text.js';
@@ -29,10 +29,9 @@ import { readRunRecord } from '../../core/sessions/run/record-io.js';
 import {
   handleSessionSelect,
   type SessionSelectDeps,
-  sessionSelectStore,
 } from '../../stores/navigation/session-select.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
-import { deriveHomeLayoutState, NO_CONFIG_NOTICE } from '../../features/home/layout.js';
+import { deriveHomeLayoutState, homeWidth, NO_CONFIG_NOTICE } from '../../features/home/layout.js';
 import { deriveHomeComposerHint } from '../../features/home/hint.js';
 import { getLogo } from '../../features/home/logo.js';
 import { deriveHomeToolCheck } from '../../features/home/tool-check.js';
@@ -54,7 +53,7 @@ import type { readClipboardImage } from '../../core/attachments/clipboard-image.
 import type { listProjectFiles } from '../../lib/fs/listing.js';
 import { ToolCheckBox } from '../../features/home/components/tool-check-box.js';
 
-const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
+import { feedbackStore } from '../../stores/ui/feedback.js';
 
 export interface HomeScreenDeps {
   prepareExecution: typeof prepareExecution;
@@ -89,7 +88,7 @@ export function HomeScreen({
     configStore,
     inputHeightStore,
   );
-  const selectionError = sessionSelectStore.use((s) => s.error);
+  const config = configStore.useConfig();
   const noConfig = configStore.use((state) => state.revision === null);
   const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
   const toolCheck = detectionStore.use((s) => deriveHomeToolCheck(s.refresh));
@@ -144,6 +143,7 @@ export function HomeScreen({
     rows,
     sessionCount: totalCount,
     listedSessions: sessions.length,
+    minimumSeatRows: minimumHomeSeatRows(config, homeWidth(cols), rows),
     sessionsFocused,
     dockRows: dock.rows,
     noConfig,
@@ -172,18 +172,7 @@ export function HomeScreen({
     if (!canFocus) setSessionsFocused(false);
   }, [canFocus]);
 
-  useEffect(() => {
-    if (!sessionsActive || !selectionError) return undefined;
-    const timer = setTimeout(() => sessionSelectStore.clearError(), HOME_SELECTION_ERROR_CLEAR_MS);
-    return () => clearTimeout(timer);
-  }, [sessionsActive, selectionError]);
-
   useClosePromptOnLeave();
-
-  const closeRecentSessions = () => {
-    setSessionsFocused(false);
-    sessionSelectStore.clearError();
-  };
 
   useRecentSessionsFocus({
     hasSessions: canFocus,
@@ -263,9 +252,14 @@ export function HomeScreen({
                     showHiddenCount={layout.showHiddenCount}
                     focused={sessionsActive}
                     onSelect={(session: Session) =>
-                      handleSessionSelect(session, projectDir, deps.sessionSelect)
+                      handleSessionSelect(
+                        session,
+                        projectDir,
+                        deps.sessionSelect,
+                        feedbackStore.setError,
+                      )
                     }
-                    onClose={closeRecentSessions}
+                    onClose={() => setSessionsFocused(false)}
                     hasOverlay={interactionBlocked}
                     width={layout.width}
                   />
@@ -302,11 +296,7 @@ export function HomeScreen({
                     : homeNotice
                 }
                 homeStandingNotice={
-                  sessionsActive && selectionError
-                    ? { message: selectionError, severity: 'warning' }
-                    : problem && !sessionsActive
-                      ? preparationNotice(problem)
-                      : standingNotice
+                  problem && !sessionsActive ? preparationNotice(problem) : standingNotice
                 }
                 readClipboardImage={readClipboardImage}
                 listProjectFiles={listProjectFiles}

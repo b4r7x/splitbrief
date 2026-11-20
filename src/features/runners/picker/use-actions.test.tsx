@@ -362,7 +362,7 @@ describe('usePickerActions fallback slot', () => {
     await currentActions().confirmProviderSelection('opus', 'low');
 
     expect(saveConfig).not.toHaveBeenCalled();
-    expect(feedbackStore.get().severity).toBe('info');
+    expect(feedbackStore.get().severity).toBe('warning');
     expect(feedbackStore.get().message).toMatch(/^BUILD runs .*choose another tool or model$/);
     expect(overlayStore.get().active).toBe('implementer-fallback-picker');
     ui.unmount();
@@ -1442,7 +1442,7 @@ describe('usePickerActions', () => {
     'keeps the save notice when switching tools clears an effort from %s',
     async (screen) => {
       routerStore.init({ screen });
-      feedbackStore.setMessage('Saved Claude crew to .splitbrief/config.yaml');
+      feedbackStore.setInfo('Saved Claude crew to .splitbrief/config.yaml');
       seed(
         makeConfig({
           planner: { kind: 'cli', tool: 'claude-code', model: 'auto', effort: 'high' },

@@ -29,7 +29,9 @@
 - Terminal editors get the terminal when you edit a plan or show a diff. Graphical editors keep the workflow visible and show what happens when you close the file or quit the app.
 - The transcript and plain output use the same fix-check results. Closed runs show a short summary for older reviewer check failures.
 - Questions about dropped checks show each check's command or file. Settings and readiness both call the checks before final review End-of-run checks.
-- The crew line on Home, in the run screen header and in the summary of a closed run no longer leaves a seat out on a narrow terminal. It names every seat or no seat, and on Home and in the summary a narrow crew continues on the next row.
+- Home keeps room for PLAN, BUILD and REVIEW above recent sessions. Narrow run screens use short tool names and wrap the crew when needed. Closed summaries keep the recorded crew visible.
+- Plan approval keeps the plan text visible when a command is refused. Refused commands and duplicate fallback choices show a warning.
+- Home keeps tool-check failures visible while you browse recent sessions. Draft errors appear above the input, with a link to the file when its path is shortened.
 
 ### Removed
 

@@ -39,7 +39,7 @@ export type SeatView =
   | Readonly<{
       kind: 'moved';
       /** Each seat the briefs ran on, in the order the plan first used it, and how many it ran. */
-      seats: readonly Readonly<{ short: string; briefs: number }>[];
+      seats: readonly Readonly<{ short: string; tool: string; briefs: number }>[];
       /** Each seat ran one unbroken stretch of the plan, so the order is the order it moved in. */
       contiguous: boolean;
     }>

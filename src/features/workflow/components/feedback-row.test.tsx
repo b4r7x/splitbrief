@@ -90,7 +90,7 @@ describe('FeedbackRow', () => {
   });
 
   it('frames a one-row report on the composer edge, as wide as its words', () => {
-    feedbackStore.setMessage('Queued for PLAN · ctrl+⏎ sends now');
+    feedbackStore.setInfo('Queued for PLAN · ctrl+⏎ sends now');
 
     const ui = renderFeature(<FeedbackRow />);
 
@@ -116,7 +116,7 @@ describe('FeedbackRow', () => {
     'shows the %s copy receipt beside a gate',
     (outcome) => {
       controlsStore.setInputMode('review');
-      feedbackStore.setMessage(formatCopyResult(outcome));
+      feedbackStore.setInfo(formatCopyResult(outcome));
       const ui = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(formatCopyResult(outcome));
       ui.unmount();
@@ -229,7 +229,7 @@ describe('FeedbackRow', () => {
   });
 
   it('frames a report in the border ink with dim words and no glyph', () => {
-    feedbackStore.setMessage('Nothing to steer.');
+    feedbackStore.setInfo('Nothing to steer.');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = ui.lastFrame() ?? '';
@@ -242,7 +242,7 @@ describe('FeedbackRow', () => {
   });
 
   it('keeps a notice visible while a panel owns the keys', () => {
-    feedbackStore.setMessage('Nothing to steer.');
+    feedbackStore.setInfo('Nothing to steer.');
 
     controlsStore.setInputMode('review');
     const review = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
@@ -280,7 +280,7 @@ describe('FeedbackRow', () => {
   });
 
   it('lets live feedback own the row instead of gluing the hint after it', () => {
-    feedbackStore.setMessage('Queued for PLAN · ctrl+⏎ sends now');
+    feedbackStore.setInfo('Queued for PLAN · ctrl+⏎ sends now');
 
     const ui = renderFeature(<FeedbackRow inputHint="approve · ctrl+e/e edit" />);
     const frame = ui.lastFrame() ?? '';
@@ -351,7 +351,7 @@ describe('FeedbackRow', () => {
   });
 
   it('keeps the row when a message resolves above a panel that owns the footer', () => {
-    feedbackStore.setMessage('Queued for PLAN · ctrl+⏎ sends now');
+    feedbackStore.setInfo('Queued for PLAN · ctrl+⏎ sends now');
     const ui = renderFeature(<FeedbackRow panelBelow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
@@ -412,11 +412,11 @@ describe('FeedbackRow', () => {
       barred(
         [
           'Could not release the run lock: permission denied ·',
-          '.splitbrief/…/lockfile.json · other SPLITBRIEF processes',
-          'can see the run as running for a few more seconds',
+          '.splitbrief/…/lockfile.json ·',
+          'other SPLITBRIEF processes can see the run as running for a few more …',
         ],
         FAILED,
-        62,
+        76,
       ),
     );
   });
@@ -424,9 +424,13 @@ describe('FeedbackRow', () => {
   it('keeps the lock file name and its first folder whole, never a broken folder name, at 60 columns', () => {
     expect(renderRunLockRelease(60)).toEqual(
       barred(
-        ['Could not release the run lock: permission', 'denied · .splitbrief/…/lockfile.json …'],
+        [
+          'Could not release the run lock: permission denied ·',
+          '.splitbrief/…/lockfile.json ·',
+          'other SPLITBRIEF processes can see the run as …',
+        ],
         FAILED,
-        48,
+        57,
       ),
     );
   });

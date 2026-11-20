@@ -148,7 +148,7 @@ describe('buildCommandContext', () => {
       sizeBytes: 1,
     };
     attachmentsStore.replacePendingImages([pending]);
-    const onError = vi.fn(feedbackStore.setError);
+    const onError = vi.fn();
 
     await executeRuntimeCommand(
       workflowCommands(build()),
@@ -164,15 +164,11 @@ describe('buildCommandContext', () => {
       },
     );
 
-    expect(feedbackStore.get()).toEqual({
-      message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
-      severity: 'error',
-    });
     expect(onError.mock.calls).toEqual([
       [
         'Cannot send: file not found. Check the path and try again. File: context.txt.',
         '/steer use @/definitely-missing/context.txt',
-        'failed',
+        'refused',
       ],
     ]);
     expect(resume).not.toHaveBeenCalled();
@@ -727,7 +723,7 @@ describe('useRuntimeCommands', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get(), stripAnsiStyles(ui.lastFrame())).toEqual({
         message: refusal,
-        severity: 'error',
+        severity: 'warning',
       });
     });
     await vi.waitFor(() => {
@@ -781,7 +777,7 @@ describe('useRuntimeCommands', () => {
     copy.resolve('native');
     const refusal = 'Cannot send: file not found. Check the path and try again. File: x.md.';
     await vi.waitFor(() => {
-      expect(feedbackStore.get()).toEqual({ message: refusal, severity: 'error' });
+      expect(feedbackStore.get()).toEqual({ message: refusal, severity: 'warning' });
     });
     await flushEffects();
     expect(composerLiveStore.get().document).toEqual(newer);
@@ -844,7 +840,7 @@ describe('useRuntimeCommands', () => {
     });
   });
 
-  it('shows a thrown command error in the failure voice', async () => {
+  it('shows a refused steer attachment in the warning voice', async () => {
     projectDir = createTempDir('command-failure-voice');
     configStore.__testReset({ projectDir, config: makeConfig() });
     let model: ReturnType<typeof useRuntimeCommands> | undefined;
@@ -864,7 +860,7 @@ describe('useRuntimeCommands', () => {
 
     expect(feedbackStore.get()).toEqual({
       message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
-      severity: 'error',
+      severity: 'warning',
     });
   });
 

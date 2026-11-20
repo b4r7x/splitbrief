@@ -419,7 +419,7 @@ function ComposerInput({
                 if (action === 'send-now') sendNow();
                 else if (action === 'tab') onTab?.();
                 else if (action === 'paste-image') imagePaste.pasteImage();
-                else if (action === 'commands-only') feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
+                else if (action === 'commands-only') feedbackStore.setInfo(COMMANDS_ONLY_NOTICE);
                 return action === 'input';
               }}
               placeholder={placeholderForMode({

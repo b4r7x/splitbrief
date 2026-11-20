@@ -50,7 +50,7 @@ export function deriveHomeComposerHint({
         ? { message: `${TOOLS_NOT_CHECKED_TITLE}${RETRY}`, severity: 'warning' }
         : undefined;
   if (sessionsActive) {
-    return { homeHint: RECENT_SESSIONS_HINT, homeNotice: undefined, standingNotice: undefined };
+    return { homeHint: RECENT_SESSIONS_HINT, homeNotice: undefined, standingNotice };
   }
   const homeHint = canFocus ? HOME_HINT : DEFAULT_HOME_HINT;
   const running =

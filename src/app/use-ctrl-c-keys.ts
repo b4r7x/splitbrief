@@ -43,13 +43,12 @@ export function useCtrlCKeys({ route, exit, deps }: UseCtrlCKeysOptions): () => 
     copyRevision.current++;
     quitUntil.current = 0;
     clearTimeout(quitTimer.current);
-    if (feedbackStore.get().message === 'Press ctrl+c again to quit')
-      feedbackStore.setMessage(null);
+    if (feedbackStore.get().message === 'Press ctrl+c again to quit') feedbackStore.setInfo(null);
   };
   const armQuit = () => {
     clearTimeout(quitTimer.current);
     quitUntil.current = Date.now() + 2000;
-    feedbackStore.setMessage('Press ctrl+c again to quit');
+    feedbackStore.setInfo('Press ctrl+c again to quit');
     quitTimer.current = setTimeout(clearQuitHint, 2000);
   };
 
@@ -89,7 +88,7 @@ export function useCtrlCKeys({ route, exit, deps }: UseCtrlCKeysOptions): () => 
         )
           return;
         if (outcome === 'unavailable') feedbackStore.setError(formatCopyResult(outcome));
-        else feedbackStore.setMessage(formatCopyResult(outcome));
+        else feedbackStore.setInfo(formatCopyResult(outcome));
       });
     };
     stdin.on('selection-copy', onCopyKey);

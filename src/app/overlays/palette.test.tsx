@@ -67,7 +67,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     steerRun: () => undefined,
     endRun: () => true,
     refreshRun: () => {},
-    setFeedbackMessage: feedbackStore.setMessage,
+    setFeedbackMessage: feedbackStore.setInfo,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => ({
       status: 'fresh',

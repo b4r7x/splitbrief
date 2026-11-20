@@ -12,14 +12,17 @@ import {
   getChromeContentWidth,
   HEADER_RAIL_SEAT_GAP,
   selectRailFormAndLine,
+  railVariant,
   type RailForm,
 } from '../layout/chrome-rows.js';
+import { wrappedHeaderCrew } from '../display/header-seat-lines.js';
 import { Rail } from './rail.js';
 import { useRailCells } from '../hooks/use-rail-cells.js';
 import { useHeaderSeatLines } from '../hooks/use-header-seat-lines.js';
 
 interface HeaderProps {
   railForm?: RailForm | undefined;
+  crewRows?: readonly (readonly SeatLineSpan[])[] | undefined;
   buildBlockShown?: boolean | undefined;
   /** A run at rest names the stages its own record earned, and the crew that actually ran it. */
   stages?: readonly RailStageState[] | undefined;
@@ -53,6 +56,7 @@ export function Header({
   buildBlockShown = false,
   stages,
   seatLine: givenSeatLine,
+  crewRows: reservedCrewRows,
 }: HeaderProps) {
   const cols = terminalSizeStore.use((s) => s.cols);
   const lines = useHeaderSeatLines();
@@ -69,7 +73,8 @@ export function Header({
       buildBlockShown,
       ...(stages !== undefined && { stages }),
     }),
-    C: useRailCells({ form: 'C', buildBlockShown, ...(stages !== undefined && { stages }) }),
+    C: useRailCells({ form: 'C', buildBlockShown, stages }),
+    CShort: useRailCells({ form: 'C', short: true, buildBlockShown, stages }),
   };
   const choice = selectRailFormAndLine({
     cols,
@@ -78,28 +83,46 @@ export function Header({
         ? railWidths
         : railForm === 'B'
           ? { B: railWidths.B, BShort: railWidths.BShort }
-          : { C: railWidths.C },
+          : { C: railWidths.C, CShort: railWidths.CShort },
     modelLineCells: getTerminalCellWidth(seatLineText(lines.model)),
     toolLineCells: getTerminalCellWidth(seatLineText(lines.tool)),
   });
   const form = railForm ?? choice.form;
-  const railCells = form === 'C' ? railWidths.C : choice.short ? railWidths.BShort : railWidths.B;
-  // The choice already paid for a whole line; with none that fits the header names no seat.
+  const railCells = railWidths[railVariant(form, choice.short)];
   const liveSeatLine = choice.line === 'none' ? [] : lines[choice.line];
-  const seatLine = givenSeatLine ?? liveSeatLine;
+  const crewRows = reservedCrewRows ?? wrappedHeaderCrew(cols, railWidths.CShort, lines, false);
+  const seatLine = crewRows.length > 0 ? [] : (givenSeatLine ?? liveSeatLine);
   return (
-    <HeaderRow
-      cols={cols}
-      railCells={railCells}
-      seatLine={seatLine}
-      rail={
-        <Rail
-          form={form}
-          short={choice.short}
-          buildBlockShown={buildBlockShown}
-          {...(stages !== undefined && { stages })}
-        />
-      }
+    <Box flexDirection="column">
+      <HeaderRow
+        cols={cols}
+        railCells={railCells}
+        seatLine={seatLine}
+        rail={
+          <Rail
+            form={form}
+            short={choice.short}
+            buildBlockShown={buildBlockShown}
+            {...(stages !== undefined && { stages })}
+          />
+        }
+      />
+      {crewRows.map((row) => (
+        <Text key={seatLineText(row)}>
+          <SeatWords spans={row} />
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
+function SeatWords({ spans }: { spans: readonly SeatLineSpan[] }) {
+  return (
+    <TextSpans
+      parts={spans.map((span) => ({
+        text: span.text,
+        tone: span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
+      }))}
     />
   );
 }
@@ -133,12 +156,7 @@ function HeaderRow({
       {layout.showSeats && (
         <Box flexShrink={0}>
           <Text>
-            <TextSpans
-              parts={seatLine.map((span) => ({
-                text: span.text,
-                tone: span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
-              }))}
-            />
+            <SeatWords spans={seatLine} />
           </Text>
         </Box>
       )}

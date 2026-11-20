@@ -221,7 +221,7 @@ function waitForFixtureAbort(signal?: AbortSignal): Promise<never> {
  * planner behind a fixture to queue a message into.
  */
 const fixtureReviewInput: ReviewInputEffects = {
-  openExternalEditor: async () => feedbackStore.setMessage(PREVIEW_UNAVAILABLE),
+  openExternalEditor: async () => feedbackStore.setInfo(PREVIEW_UNAVAILABLE),
   enqueue: async () => null,
 };
 

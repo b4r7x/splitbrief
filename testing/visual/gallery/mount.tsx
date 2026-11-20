@@ -1,6 +1,8 @@
 import { App } from '../../../src/app/root.js';
 import type { AppProps } from '../../../src/app/root.js';
 import * as React from 'react';
+import { resolve } from 'node:path';
+import { VISUAL_FIXTURE_PROJECT_DIR } from '../fixtures/screen-fixtures.js';
 import { performance } from 'node:perf_hooks';
 import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
 import { ViewportSchema, type Viewport } from '../contracts/geometry.js';
@@ -30,6 +32,7 @@ export interface GalleryCheckpointWaitOptions {
 }
 
 export interface GalleryCaptureHandle {
+  readonly projectRoot?: string;
   readonly scenario: ScenarioDefinition;
   readonly checkpoint: CheckpointDefinition;
   readonly viewport: Viewport;
@@ -99,6 +102,7 @@ export async function mountGalleryScenario(
     scenario,
     checkpoint,
     viewport,
+    projectRoot: resolve(VISUAL_FIXTURE_PROJECT_DIR),
     stdin: rendered.stdin,
     lastFrame: rendered.lastFrame,
     frameHistory: () => [...rendered.frames],

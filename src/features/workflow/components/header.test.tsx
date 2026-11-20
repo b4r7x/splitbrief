@@ -404,7 +404,7 @@ describe('Header — seat line', () => {
     instance.unmount();
   });
 
-  it('names no seat beside the rail when no whole crew line fits, never a part of the crew', async () => {
+  it('uses catalog labels to keep all three Cursor seats beside the rail', async () => {
     const cursor = (model: string) => ({ kind: 'cli', tool: 'cursor', model }) as const;
     const frame = await seatFrame(
       60,
@@ -415,12 +415,10 @@ describe('Header — seat line', () => {
       }),
     );
 
-    expect(frame).not.toContain('PLAN');
-    expect(frame).not.toContain('BUILD');
-    expect(frame).not.toContain('REVIEW');
+    expect(frame).toContain('PLAN Cursor · BUILD Cursor · REVIEW Cursor');
   });
 
-  it('drops the seat line when the rail crowds the bar', async () => {
+  it('wraps every seat under the rail when the crew cannot fit beside it', async () => {
     runViewStore.__testReset({ phase: 'planning' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     terminalSizeStore.__testReset({ cols: 42, rows: 24, isSmall: true });
@@ -429,7 +427,7 @@ describe('Header — seat line', () => {
     const instance = render(<Header />);
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
-    expect(frame).not.toContain('BUILD');
+    expect(frame).toMatch(/PLAN claude[\s\S]+BUILD ollama[\s\S]+REVIEW = PLAN/u);
     expect(frame).toContain('Plan');
     instance.unmount();
   });

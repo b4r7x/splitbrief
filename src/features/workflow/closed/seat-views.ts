@@ -119,6 +119,7 @@ function movedBuildSeat(
       const tool = sanitizeTerminalDisplayText(runnerWord(seat.tool, seat.kind));
       return {
         short: ambiguous && seat.short !== tool ? `${tool} ${seat.short}` : seat.short,
+        tool: formatSeatToolWord({ seat: { tool: seat.tool }, kind: seat.kind }),
         briefs: seat.briefs,
       };
     }),

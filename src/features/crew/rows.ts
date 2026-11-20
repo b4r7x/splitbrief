@@ -83,7 +83,7 @@ function withPresetSeats(config: Config, preset: CrewPreset): Config {
 async function persistCrew(config: Config, label: string): Promise<void> {
   const result = await configStore.save(config);
   if (reportConfigSaveFailure(result)) return;
-  feedbackStore.setMessage(formatConfigSaveSuccess(label, result));
+  feedbackStore.setInfo(formatConfigSaveSuccess(label, result));
 }
 
 function openCrewRow(row: CrewRow, config: Config): CrewActivation {

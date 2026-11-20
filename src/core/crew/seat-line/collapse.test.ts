@@ -37,6 +37,17 @@ describe('seatLineText', () => {
 });
 
 describe('formatCollapsedSeatSpans', () => {
+  it('fits three Cursor seats by their catalog name at 42 cells', () => {
+    const seat = { kind: 'cli', tool: 'cursor', model: 'auto' } as const;
+    const line = formatCollapsedSeatSpans({
+      planner: seat,
+      build: seat,
+      reviewer: seat,
+      budget: 42,
+    });
+    expect(seatLineText(line)).toBe('PLAN Cursor · BUILD Cursor · REVIEW Cursor');
+  });
+
   it('states all three seats on one line, with the inheritance mark', () => {
     expect(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer: undefined }))).toBe(
       `PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B · REVIEW ${PLANNER_INHERITANCE.mark}`,

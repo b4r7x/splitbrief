@@ -135,7 +135,7 @@ export function useLocalConnectionActions(
               });
         const result = await deps.saveConfig(updated);
         if (reportConfigSaveFailure(result)) return;
-        feedbackStore.setMessage(
+        feedbackStore.setInfo(
           formatConfigSaveSuccess(
             `${roleLabel}${SOFT_SEP}${savedSeatIdentity(updated, seatRole, 'seat', profile)}`,
             result,

@@ -79,7 +79,7 @@ describe('openReviewFileExternally stale-owner feedback', () => {
     const spawnEditor: SpawnEditor = () => {
       queueMicrotask(() => {
         reviewStore.setReviewFile(newerReviewFile);
-        feedbackStore.setMessage('new-owner feedback');
+        feedbackStore.setInfo('new-owner feedback');
         if (outcome.kind === 'error') {
           child.emit('error', outcome.error);
         } else {

@@ -40,16 +40,16 @@ const SEPARATOR_CELLS = getTerminalCellWidth(CREW_IDENTITY_SEPARATOR);
  * Every seat, whole, on at most `rows` rows of `budget` cells: each row takes the seats that fit
  * after the ones before it. `null` when a seat alone is wider than a row or the seats need more rows.
  */
-function packSeatRows(
-  seats: readonly CollapsedSeat[],
+export function packSeatRows(
+  spans: readonly SeatLineSpan[],
   budget: number,
   rows: number,
 ): SeatLineSpan[][] | null {
   const packed: SeatLineSpan[][] = [];
   let row: SeatLineSpan[] = [];
   let cells = 0;
-  for (const seat of seats) {
-    const span = collapsedSeatText(seat);
+  for (const span of spans) {
+    if (span.seat === undefined) continue;
     const width = getTerminalCellWidth(span.text);
     if (width > budget) return null;
     if (row.length > 0 && cells + SEPARATOR_CELLS + width <= budget) {
@@ -61,7 +61,7 @@ function packSeatRows(
     row = [span];
     cells = width;
   }
-  packed.push(row);
+  if (row.length > 0) packed.push(row);
   return packed.length <= rows ? packed : null;
 }
 
@@ -82,7 +82,7 @@ function fitCollapsedSeatRows(
   rows: number,
 ): SeatLineSpan[][] {
   for (const candidate of [seats, toolSeats, withoutNotes(seats), withoutNotes(toolSeats)]) {
-    const packed = packSeatRows(candidate, budget, rows);
+    const packed = packSeatRows(candidate.map(collapsedSeatText), budget, rows);
     if (packed !== null) return packed;
   }
   return [];
@@ -121,17 +121,8 @@ export function formatCollapsedSeatSpans(input: SeatLineInput): SeatLineSpan[] {
 export function formatCollapsedSeatRows(
   input: SeatLineInput & Readonly<{ rows: number }>,
 ): SeatLineSpan[][] {
-  const plannerName = input.displayNames?.planner ?? input.displayNames?.plan;
-  const buildName = input.displayNames?.build;
-  const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
-  const planWord = formatShortSeatIdentity({ seat: input.planner, displayName: plannerName });
-  const buildWord = formatShortSeatIdentity({ seat: input.build, displayName: buildName });
   const reviewer = isReviewNone(input.reviewer) ? undefined : input.reviewer;
   const absentReview = isReviewNone(input.reviewer) ? REVIEW_NONE : null;
-  const reviewWord =
-    reviewer === undefined
-      ? absentReview
-      : formatShortSeatIdentity({ seat: reviewer, displayName: reviewerName });
   if (input.line === 'tool') {
     return formatCollapsedSeatRowsFromIdentities({
       plan: formatSeatToolWord({ seat: input.planner }),
@@ -142,6 +133,15 @@ export function formatCollapsedSeatRows(
       rows: input.rows,
     });
   }
+  const plannerName = input.displayNames?.planner ?? input.displayNames?.plan;
+  const buildName = input.displayNames?.build;
+  const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
+  const planWord = formatShortSeatIdentity({ seat: input.planner, displayName: plannerName });
+  const buildWord = formatShortSeatIdentity({ seat: input.build, displayName: buildName });
+  const reviewWord =
+    reviewer === undefined
+      ? absentReview
+      : formatShortSeatIdentity({ seat: reviewer, displayName: reviewerName });
   if (input.line === 'model') {
     return formatCollapsedSeatRowsFromIdentities({
       plan: planWord,

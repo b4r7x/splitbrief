@@ -86,14 +86,6 @@ export function getContentTopRow(): number {
   return TOP_FIXED_CHROME_ROWS + 1;
 }
 
-/**
- * The body's first row in the 0-based numbering the frame artifacts and their cell rects use;
- * `getContentTopRow` states the same boundary in the 1-based numbering the hit-test rect uses.
- */
-export function getContentTopRowIndex(): number {
-  return getContentTopRow() - 1;
-}
-
 export type RailForm = 'B' | 'C';
 
 // Marker glyph plus its trailing space: every stage segment opens with this fixed slot, so the
@@ -140,12 +132,17 @@ export function measureFormB(
 /** The gap the header keeps between the rail and the seat line pinned right of it. */
 export const HEADER_RAIL_SEAT_GAP = 2;
 
+export function railVariant(form: RailForm, short: boolean): 'B' | 'BShort' | 'C' | 'CShort' {
+  if (form === 'C') return short ? 'CShort' : 'C';
+  return short ? 'BShort' : 'B';
+}
+
 /** The whole crew line the header names, or `none` when no whole line fits beside the rail. */
 export type HeaderLineKind = 'model' | 'tool' | 'none';
 
 export interface RailFormChoice {
   form: RailForm;
-  /** Form B's short three-letter labels, chosen with the form so paint and measure agree. */
+  /** Short stage labels in Form B, or the stage without its brief count in Form C. */
   short: boolean;
   line: HeaderLineKind;
 }
@@ -159,7 +156,7 @@ export interface RailFormChoiceInput {
    * stage and fraction it shows, so the caller measures the variant it would paint instead of
    * letting the selector guess it.
    */
-  railWidths: Readonly<{ B?: number; BShort?: number; C?: number }>;
+  railWidths: Readonly<{ B?: number; BShort?: number; C?: number; CShort?: number }>;
   /** The cells the whole crew line takes when every seat is named by its model. */
   modelLineCells: number;
   /** The cells the whole crew line takes when every seat is named by its tool word. */
@@ -187,22 +184,19 @@ export function selectRailFormAndLine(input: RailFormChoiceInput): RailFormChoic
           { form: 'B', short: false, line: 'tool' },
           { form: 'B', short: true, line: 'tool' },
           { form: 'C', short: false, line: 'tool' },
+          { form: 'C', short: true, line: 'tool' },
         ]
       : [
           { form: 'B', short: false, line: 'model' },
           { form: 'B', short: true, line: 'model' },
+          { form: 'C', short: false, line: 'model' },
           { form: 'B', short: false, line: 'tool' },
           { form: 'B', short: true, line: 'tool' },
-          { form: 'C', short: false, line: 'model' },
           { form: 'C', short: false, line: 'tool' },
+          { form: 'C', short: true, line: 'tool' },
         ];
   for (const candidate of candidates) {
-    const railWidth =
-      candidate.form === 'C'
-        ? input.railWidths.C
-        : candidate.short
-          ? input.railWidths.BShort
-          : input.railWidths.B;
+    const railWidth = input.railWidths[railVariant(candidate.form, candidate.short)];
     if (railWidth === undefined) continue;
     const lineCells = candidate.line === 'model' ? input.modelLineCells : input.toolLineCells;
     if (lineCells === 0) continue;

@@ -63,7 +63,7 @@ import { writeUiPrefs } from '../core/settings/ui-prefs.js';
 import { error } from '../utils/error.js';
 import type { RouteData } from '../stores/navigation/router.js';
 import { createDraftDocument } from '../core/composer/document.js';
-import { prepareDraftSubmission, type DraftSubmission } from '../core/composer/submission.js';
+import { prepareDraftSubmission } from '../core/composer/submission.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { formatSubmissionFailure } from '../components/composer/home-hint.js';
 import { plainUserMessage } from '../core/types/user-input.js';
@@ -81,8 +81,6 @@ export interface WorkflowCommandPorts {
 const appCommandContextError = {
   noActiveSession: (command: string) =>
     error('app-command-no-active-session', `No active session for ${command}`, { command }),
-  submissionRefused: (submission: Extract<DraftSubmission, { ok: false }>) =>
-    error('app-command-submission-refused', formatSubmissionFailure(submission), submission),
 } as const;
 
 function routeSessionId(route: RouteData, projectDir: string): string | null {
@@ -160,7 +158,7 @@ export function buildCommandContext({
     navigateHome: () =>
       activeApply() === undefined ? routerStore.navigate({ to: 'home' }) : requestLeaveSession(),
     quit: () => requestQuit(exit),
-    setFeedbackMessage: feedbackStore.setMessage,
+    setFeedbackMessage: feedbackStore.setInfo,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
       return refreshDetectionForCurrentConfig({
@@ -183,9 +181,7 @@ export function buildCommandContext({
         projectDir,
         supportsImages: plannerSupportsImages(configStore.get().config, modelCacheStore),
       });
-      if (!submission.ok) {
-        throw appCommandContextError.submissionRefused(submission);
-      }
+      if (!submission.ok) return formatSubmissionFailure(submission);
       attachmentsStore.replacePendingImages(submission.message.images);
       return requestSteer(submission.message);
     },

@@ -24,12 +24,12 @@ export async function refreshPickerDetection(
   projectDir: string,
   refresh: (projectDir: string | undefined) => Promise<DiscoveryRefreshSummary> = defaultRefresh,
 ): Promise<void> {
-  feedbackStore.setMessage('Refreshing models…');
+  feedbackStore.setInfo('Refreshing models…');
   try {
     const summary = await refresh(projectDir);
     const feedback = formatDiscoveryRefreshFeedback({ subject: 'Models', summary });
     if (feedback.isError) feedbackStore.setError(feedback.message);
-    else feedbackStore.setMessage(feedback.message);
+    else feedbackStore.setInfo(feedback.message);
   } catch (err) {
     feedbackStore.setError(`Failed to refresh models: ${toErrorMessage(err)}`);
   }

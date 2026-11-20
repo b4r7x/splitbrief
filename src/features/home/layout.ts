@@ -8,6 +8,7 @@ interface HomeLayoutInput {
   cols: number;
   rows: number;
   sessionCount?: number;
+  minimumSeatRows?: number | undefined;
   sessionsFocused?: boolean | undefined;
   /** Rows the composer paints under the body: the home row, its message rows and the box. */
   dockRows: number;
@@ -32,6 +33,7 @@ interface SessionLimitInput {
   inputBottomMargin: number;
   dockRows: number;
   noticeRows: number;
+  minimumSeatRows: number;
   sessionCount: number;
   sessionsFocused: boolean;
 }
@@ -68,7 +70,7 @@ function getContentAwareSessionLimit(input: SessionLimitInput): SessionLimit {
   const slackRows = Math.max(0, BODY_SLACK_ROWS - (dockRows - RESTING_DOCK_ROWS) - noticeRows);
   const logoBlock = homeHeadingRows(heading);
   const crewRows = rows - (inputBottomMargin + dockRows + slackRows + noticeRows + logoBlock);
-  const configBlock = homeConfigBlockRows(rows);
+  const configBlock = homeConfigBlockRows(rows) + input.minimumSeatRows - 1;
   const crewFits = crewRows >= configBlock;
   const sessionsChrome = 1 + 1 + (cols >= 120 ? 1 : 0);
   const baseCapacity = Math.max(0, crewRows - configBlock - sessionsChrome);
@@ -112,6 +114,10 @@ function shownSessionRows(
   return Math.min(sessionCount, limit.recentSessionLimit) + (limit.showHiddenCount ? 1 : 0);
 }
 
+export function homeWidth(cols: number): number {
+  return Math.min(overlayWidth({ cols, density: 'wide' }), HOME_MAX_WIDTH);
+}
+
 // The crew block outranks the logo, and so do the first session row and its count row: the logo
 // gives way when keeping it would cut the crew block, or would leave the list fewer rows than it
 // shows over a resting dock, down to a row and its count. A logo wider than the body would wrap,
@@ -121,11 +127,12 @@ export function getHomeLayout({
   cols,
   rows,
   sessionCount = 0,
+  minimumSeatRows = 1,
   sessionsFocused = false,
   dockRows,
   noConfig,
 }: HomeLayoutInput): HomeLayout {
-  const width = Math.min(overlayWidth({ cols, density: 'wide' }), HOME_MAX_WIDTH);
+  const width = homeWidth(cols);
   const logoTier = getLogoTier(rows, cols);
   const inputBottomMargin = rows >= 38 ? 2 : rows >= 30 ? 1 : 0;
   // The notice wraps as its Text does inside the crew block's indent, and the body column's gap
@@ -136,7 +143,7 @@ export function getHomeLayout({
   const plan = {
     cols,
     rows,
-    logoTier,
+    minimumSeatRows,
     inputBottomMargin,
     noticeRows,
     sessionCount,
@@ -186,6 +193,7 @@ const DISCOVERY_PANEL_MIN_ROWS = 24;
 const DISCOVERY_PANEL_SLACK_ROWS = 4;
 
 interface HomeLayoutStateInput {
+  minimumSeatRows?: number | undefined;
   cols: number;
   rows: number;
   /** The run count that the session budget counts. */
@@ -215,12 +223,13 @@ export function deriveHomeLayoutState({
   rows,
   sessionCount,
   listedSessions,
+  minimumSeatRows = 1,
   sessionsFocused,
   dockRows,
   noConfig,
   toolCheck,
 }: HomeLayoutStateInput): HomeLayoutState {
-  const screen = { cols, rows, sessionCount, dockRows, noConfig };
+  const screen = { cols, rows, sessionCount, dockRows, noConfig, minimumSeatRows };
   const preliminaryLayout = getHomeLayout({ ...screen, sessionsFocused: false });
   const focusedLayout = getHomeLayout({ ...screen, sessionsFocused: true });
   const hasRoomForSessions = preliminaryLayout.recentSessionLimit > 0;
@@ -234,8 +243,10 @@ export function deriveHomeLayoutState({
     rows >= DISCOVERY_PANEL_MIN_ROWS &&
     layout.sessionCapacity - renderedSessionRows >= DISCOVERY_PANEL_SLACK_ROWS;
   const hintNotice = toolCheck === 'warm' || (toolCheck === 'cold' && !discoveryPanelFits);
-  const seatLineRows =
-    1 + Math.min(CREW_EXTRA_ROWS, Math.max(0, layout.sessionCapacity - renderedSessionRows));
+  const seatLineRows = Math.min(
+    1 + CREW_EXTRA_ROWS,
+    minimumSeatRows + Math.max(0, layout.sessionCapacity - renderedSessionRows),
+  );
   return {
     layout,
     hasRoomForSessions,

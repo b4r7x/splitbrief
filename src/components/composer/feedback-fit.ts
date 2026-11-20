@@ -270,7 +270,7 @@ function fitText(message: FeedbackMessageInput, text: string, box: FeedbackBox):
  * message takes the narrowest width that keeps its row count, so its rows come out even, and never
  * cuts a word to get there.
  */
-export function fitFeedbackMessage(
+function fitProse(
   message: FeedbackMessageInput,
   { width, maxRows }: { width: number; maxRows: number },
 ): string {
@@ -296,5 +296,51 @@ export function fitFeedbackMessage(
   return wrapFeedback(fitted, low)
     .split('\n')
     .map((row) => row.trim())
+    .join('\n');
+}
+
+export interface FeedbackLine {
+  text: string;
+  link?: { label: string; path: string };
+}
+
+type FeedbackSize = { width: number; maxRows: number };
+
+/** A file wider than a text row owns the row, including its trailing separator.
+ * Keep its original path until the terminal link is painted. */
+export function fitFeedbackRows(message: FeedbackMessageInput, size: FeedbackSize): FeedbackLine[] {
+  const { width, maxRows } = size;
+  const prose = (part: FeedbackMessageInput, rows: number) =>
+    fitProse(part, { width, maxRows: rows })
+      .split('\n')
+      .map((text) => ({ text }));
+  if (typeof message !== 'string' || maxRows < 2 || width < 4) return prose(message, maxRows);
+
+  const parts = message.split(SOFT_SEP);
+  const rows: FeedbackLine[] = [];
+  let start = 0;
+  for (const [index, path] of parts.entries()) {
+    if (/\s/u.test(path) || !isPathWord(path) || getTerminalCellWidth(path) <= width) continue;
+    if (start < index) {
+      const cause = parts.slice(start, index).join(SOFT_SEP) + SOFT_SEP.trimEnd();
+      rows.push(...prose(cause, Math.max(1, maxRows - rows.length - 1)));
+    }
+    if (rows.length >= maxRows) return rows;
+    const more = index < parts.length - 1;
+    const suffix = more ? (rows.length === maxRows - 1 ? ' …' : SOFT_SEP.trimEnd()) : '';
+    const label = elidePathMiddle(path, width - getTerminalCellWidth(suffix));
+    rows.push({ text: label + suffix, link: { label, path } });
+    if (rows.length === maxRows) return rows;
+    start = index + 1;
+  }
+  if (start === 0) return prose(message, maxRows);
+  if (start < parts.length)
+    rows.push(...prose(parts.slice(start).join(SOFT_SEP), maxRows - rows.length));
+  return rows;
+}
+
+export function fitFeedbackMessage(message: FeedbackMessageInput, size: FeedbackSize): string {
+  return fitFeedbackRows(message, size)
+    .map((row) => row.text)
     .join('\n');
 }

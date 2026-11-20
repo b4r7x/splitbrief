@@ -51,8 +51,8 @@ describe('crewLine', () => {
         build: {
           kind: 'moved',
           seats: [
-            { short: 'gemini-3.8-flash-high', briefs: 3 },
-            { short: 'deepseek-v4.1-flash', briefs: 2 },
+            { short: 'gemini-3.8-flash-high', tool: 'agy', briefs: 3 },
+            { short: 'deepseek-v4.1-flash', tool: 'opencode', briefs: 2 },
           ],
           contiguous: true,
         },
@@ -72,8 +72,8 @@ describe('crewLine', () => {
         build: {
           kind: 'moved',
           seats: [
-            { short: 'gemini-3.8-flash-high', briefs: 15 },
-            { short: 'deepseek-v4.1-flash', briefs: 4 },
+            { short: 'gemini-3.8-flash-high', tool: 'agy', briefs: 15 },
+            { short: 'deepseek-v4.1-flash', tool: 'opencode', briefs: 4 },
           ],
           contiguous: false,
         },

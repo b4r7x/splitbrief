@@ -50,7 +50,7 @@ export function useInlineMenuKeys<T>({
         return;
       }
       unread.current = false;
-      feedbackStore.setMessage(UNREAD_WORDS_MESSAGE);
+      feedbackStore.setInfo(UNREAD_WORDS_MESSAGE);
     },
   });
   // A letter takes the row it names while that row is in view.

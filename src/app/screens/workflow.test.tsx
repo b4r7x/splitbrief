@@ -3161,7 +3161,7 @@ describe('WorkflowScreen showing a run at rest', () => {
       makeCtx({
         acceptRun: async (confirm) =>
           confirm ? { status: 'applied', files: ['src/form.ts'] } : { status: 'confirm-override' },
-        setFeedbackMessage: feedbackStore.setMessage,
+        setFeedbackMessage: feedbackStore.setInfo,
         setFeedbackError: feedbackStore.setError,
       }),
     );

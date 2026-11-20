@@ -203,8 +203,8 @@ describe('deriveSidebarView — the crew rows', () => {
       build: {
         kind: 'moved',
         seats: [
-          { short: 'Qwen2.5 Coder 7B', briefs: 2 },
-          { short: 'Sonnet 4', briefs: 1 },
+          { short: 'Qwen2.5 Coder 7B', tool: 'ollama', briefs: 2 },
+          { short: 'Sonnet 4', tool: 'claude', briefs: 1 },
         ],
         contiguous: true,
       },

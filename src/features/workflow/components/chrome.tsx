@@ -35,6 +35,7 @@ export function WorkflowHeader({
   buildBlockShown,
   stages,
   seatLine,
+  crewRows,
   children,
 }: {
   scrollAboveLabel?: string;
@@ -43,6 +44,7 @@ export function WorkflowHeader({
   /** A run at rest names its own stages and the crew that actually ran it. */
   stages?: readonly RailStageState[] | undefined;
   seatLine?: readonly SeatLineSpan[] | undefined;
+  crewRows?: readonly (readonly SeatLineSpan[])[] | undefined;
   /** Chrome rows that belong above the divider, so the body starts at one boundary. */
   children?: ReactNode;
 }) {
@@ -54,6 +56,7 @@ export function WorkflowHeader({
       <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>
         <Header
           railForm={railForm}
+          crewRows={crewRows}
           buildBlockShown={buildBlockShown}
           {...(stages !== undefined && { stages })}
           {...(seatLine !== undefined && { seatLine })}
@@ -74,6 +77,7 @@ export function WorkflowFooter({
   mode,
   inputHint,
   feedbackHint,
+  noticeBudget,
   boxHintOverride,
   commandsOnly,
   byline,
@@ -104,6 +108,7 @@ export function WorkflowFooter({
   mode: InputMode;
   inputHint: string;
   feedbackHint?: string | undefined;
+  noticeBudget?: number | undefined;
   boxHintOverride?: ComposerBoxHintOverride | undefined;
   /** A stopped run that cannot be resumed has nothing to take but commands. */
   commandsOnly?: boolean | undefined;
@@ -173,6 +178,7 @@ export function WorkflowFooter({
   const footer = (
     <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>
       <FeedbackRow
+        noticeBudget={noticeBudget}
         keyHint={feedbackHint ?? undefined}
         inputHint={inputHint}
         panelBelow={beforeComposer !== undefined}

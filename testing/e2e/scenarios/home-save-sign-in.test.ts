@@ -179,6 +179,14 @@ process.exit(1);`,
                 expect(row.startsWith(open) && row.endsWith(close)).toBe(true);
               }
               expect(body[0]?.startsWith(`${open}⚠ Saved BUILD`)).toBe(true);
+              if (form === 'bars') {
+                const line = terminal.buffer.active.getLine(
+                  terminal.buffer.active.viewportY + first,
+                );
+                const cell = line?.getCell(rows[first]?.indexOf('Saved') ?? -1);
+                expect(cell).toBeDefined();
+                expect(cell?.isBgDefault()).toBeFalsy();
+              }
               const composerRow = form === 'framed' ? last + 2 : last + 1;
               if (form === 'framed') {
                 expect(rows[first - 1]?.trim()).toMatch(/^╭─+╮$/u);

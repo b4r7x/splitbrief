@@ -3,7 +3,14 @@ import { borderStyleFor, glyph } from '../lib/glyphs.js';
 import type { FeedbackSeverity, FeedbackState } from '../stores/ui/feedback.js';
 import { sanitizeTerminalDisplayText } from '../utils/display-text/sanitize.js';
 import { getTerminalCellWidth } from '../utils/display-text/width.js';
-import { fitFeedbackMessage, type FeedbackMessageInput } from './composer/feedback-fit.js';
+import { filePathUrl } from '../utils/path/links.js';
+import { osc8Hyperlink, terminalSupportsHyperlinks } from '../lib/terminal/hyperlinks.js';
+import { configStore } from '../stores/project/config.js';
+import {
+  fitFeedbackRows,
+  type FeedbackLine,
+  type FeedbackMessageInput,
+} from './composer/feedback-fit.js';
 import { ThemeText as Text, useTheme } from './theme.js';
 
 /** A message that stands in the notice slot, with how it reads. */
@@ -15,7 +22,7 @@ export interface NoticeMessage {
 export interface NoticeLayout {
   readonly severity: FeedbackSeverity;
   readonly form: 'framed' | 'bars';
-  readonly rows: readonly string[];
+  readonly rows: readonly FeedbackLine[];
   /** The cells across, frame or bars included. */
   readonly width: number;
   /** The rows down, frame included. */
@@ -42,16 +49,16 @@ export function layoutNotice(
   { maxWidth, maxRows, frame = true }: { maxWidth: number; maxRows: number; frame?: boolean },
 ): NoticeLayout {
   const leadCells = getTerminalCellWidth(leadOf(severity));
-  const rows = fitFeedbackMessage(message, {
+  const rows = fitFeedbackRows(message, {
     width: maxWidth - EDGE_CELLS - leadCells,
     maxRows,
-  }).split('\n');
+  });
   const form = frame && rows.length + FRAME_ROWS <= maxRows ? 'framed' : 'bars';
   return {
     severity,
     form,
     rows,
-    width: Math.max(...rows.map(getTerminalCellWidth)) + leadCells + EDGE_CELLS,
+    width: Math.max(...rows.map((row) => getTerminalCellWidth(row.text))) + leadCells + EDGE_CELLS,
     height: rows.length + (form === 'framed' ? FRAME_ROWS : 0),
   };
 }
@@ -95,10 +102,17 @@ export function Notice({ layout }: { layout: NoticeLayout }) {
   const lead = leadOf(layout.severity);
   const indent = ' '.repeat(getTerminalCellWidth(lead));
   const textCells = layout.width - EDGE_CELLS - getTerminalCellWidth(lead);
-  const rows = layout.rows.map((row, index) => ({
-    key: `${index}:${row}`,
+  const rootDir = configStore.use((state) => state.projectDir);
+  const links = terminalSupportsHyperlinks();
+  const rows = layout.rows.map(({ text, link }, index) => ({
+    key: `${index}:${text}`,
     lead: index === 0 ? lead : indent,
-    text: row,
+    cells: getTerminalCellWidth(text),
+    text:
+      link && links
+        ? osc8Hyperlink({ label: link.label, href: filePathUrl({ path: link.path, rootDir }) }) +
+          text.slice(link.label.length)
+        : text,
   }));
 
   if (layout.form === 'framed') {
@@ -121,13 +135,13 @@ export function Notice({ layout }: { layout: NoticeLayout }) {
     );
   }
   return (
-    <Box flexDirection="column" width={layout.width} flexShrink={0}>
+    <Box flexDirection="column" width={layout.width} flexShrink={0} backgroundColor={t.overlayBg}>
       {rows.map((row) => (
         <Text key={row.key} wrap="truncate-end">
           <Text color={tone}>{`${glyph('noticeBarStart')} ${row.lead}`}</Text>
           <Text color={ink}>
             {row.text}
-            {' '.repeat(Math.max(0, textCells - getTerminalCellWidth(row.text)))}
+            {' '.repeat(Math.max(0, textCells - row.cells))}
           </Text>
           <Text color={tone}>{` ${glyph('noticeBarEnd')}`}</Text>
         </Text>

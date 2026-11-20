@@ -181,6 +181,20 @@ describe('closedTranscriptBlock', () => {
     ).toBe('more');
   });
 
+  it('keeps a closed crew by tool when a recorded model is wider than a row', () => {
+    const seat = {
+      kind: 'named',
+      short: 'model-with-a-name-that-exceeds-the-whole-summary',
+      full: 'Cursor Agent CLI · model-with-a-name-that-exceeds-the-whole-summary',
+      tool: 'Cursor',
+    } as const;
+    const view = makeView({ seats: { plan: seat, build: seat, review: seat } });
+    const summary = blockRows(view, { width: 44, viewportRows: 5, crewNamed: false })
+      .map(rowText)
+      .join('\n');
+    expect(summary).toMatch(/Crew +PLAN Cursor[\s\S]*BUILD Cursor[\s\S]*REVIEW Cursor/u);
+  });
+
   it('paints a stage label in the tone of its seat and every other label dim', () => {
     const rows = blockRows(rich, { expanded: true, crewNamed: false });
     const labelTone = (label: string) =>
@@ -259,21 +273,11 @@ describe('closedTranscriptBlock', () => {
     expect(block(rich, { viewportRows: 6, expanded: true }).toggledRowCount).toBe(rows.length);
   });
 
-  it('drops the crew first when the view is one row short of the labelled rows', () => {
-    const rows = blockRows(rich, { viewportRows: 7, crewNamed: false });
-
-    expect(rows.map(rowText)).toEqual([
-      'Applied to your checkout  4 files · 12m 7s',
-      'Plan     2 briefs · 3 criteria · 2m 50s',
-      'Build    2/2 briefs passed · 8m 12s',
-      'Review   pass with notes · 1 note · 3/3 criteria · 1m 5s',
-      'Files    4 files · 2 test files',
-      '+2 briefs · 4 files · 1 note',
-      'Session  2026-09-14-add-email-validation-with-tests',
-    ]);
-    expect(
-      rowText(blockRows(rich, { viewportRows: 8, crewNamed: false })[1] as ConversationRow),
-    ).toMatch(/^Crew /u);
+  it('keeps the crew before the labelled rows when the view is one row short', () => {
+    const rows = blockRows(rich, { viewportRows: 7, crewNamed: false }).map(rowText);
+    expect(rows).toHaveLength(7);
+    expect(rows[1]).toMatch(/^Crew .*PLAN .*BUILD .*REVIEW /u);
+    expect(rows.at(-1)).toBe('+2 briefs · 4 files · 1 note');
   });
 
   it('names the accept as is on the Review row of a view shorter than the summary, and keeps the crew', () => {

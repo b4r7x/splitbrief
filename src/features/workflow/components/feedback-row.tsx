@@ -8,7 +8,12 @@ import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { useStores } from '../../../stores/use-many.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
-import { getChromeContentWidth } from '../layout/chrome-rows.js';
+import {
+  getReviewDocumentPromptRows,
+  type ReviewArtifact,
+} from '../prompt-rows/review-document.js';
+import { getReviewPanelBudget } from '../layout/rect.js';
+import { getChromeContentWidth, getChromeHeight } from '../layout/chrome-rows.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { fitKeyLegend, KEY_LEGEND_LEADING } from '../../../components/key-legend.js';
@@ -36,11 +41,25 @@ function summarizeDisplayLine(text: string): string {
 // halt panel above keeps every action at 60x18: one text row keeps its frame, more drop it.
 const NOTICE_MAX_ROWS = 3;
 
+export function workflowNoticeBudget(
+  cols: number,
+  rows: number,
+  inputRows: number,
+  artifact: ReviewArtifact | null,
+  confirms: readonly string[],
+): number {
+  if (artifact === null) return NOTICE_MAX_ROWS;
+  const actions = getReviewDocumentPromptRows(artifact, confirms, cols, 0);
+  const room = getReviewPanelBudget({ rows, inputRows, feedbackRows: 0 }) - actions;
+  return Math.max(1, Math.min(room, NOTICE_MAX_ROWS));
+}
+
 // A continuation uses bars to keep the transcript in place when the cause fits on the legend row.
 function layoutFeedback(
   feedback: FeedbackState,
   terminalCols: number,
   problem: ReturnType<typeof panelModel>,
+  maxRows: number,
 ): NoticeLayout | null {
   const standing = feedback.message === null && problem !== null;
   const notice = standing ? preparationNotice(problem) : feedback;
@@ -49,29 +68,40 @@ function layoutFeedback(
   if (!text) return null;
   return layoutNotice(text, notice.severity, {
     maxWidth: getChromeContentWidth(terminalCols),
-    maxRows: NOTICE_MAX_ROWS,
+    maxRows,
     frame: !standing,
   });
 }
 
-export function getFeedbackRows(
-  feedback: FeedbackState,
-  terminalCols: number,
-  problem: ReturnType<typeof panelModel> = null,
-): number {
-  return layoutFeedback(feedback, terminalCols, problem)?.height ?? 1;
+export function getFeedbackRows(input: {
+  feedback: FeedbackState;
+  terminalCols: number;
+  problem: ReturnType<typeof panelModel>;
+  maxRows: number;
+  bodyRows: number;
+  inputRows: number;
+  stopMenuRows: number;
+}): number {
+  const { feedback, terminalCols, problem, maxRows, bodyRows, inputRows, stopMenuRows } = input;
+  const stopMenuNeedsRow =
+    stopMenuRows > 0 && bodyRows === getChromeHeight(inputRows, 0) + stopMenuRows;
+  return (
+    layoutFeedback(feedback, terminalCols, problem, maxRows)?.height ?? (stopMenuNeedsRow ? 0 : 1)
+  );
 }
 
 export function FeedbackRow({
   inputHint = '',
   keyHint = '',
   panelBelow = false,
+  noticeBudget = NOTICE_MAX_ROWS,
 }: {
   inputHint?: string | undefined;
   /** A caller's key legend — the row's own mark grammar, not a message's. */
   keyHint?: string | undefined;
   /** A sheet sits under the row and owns the footer's keys; an empty row leaves no blank line. */
   panelBelow?: boolean | undefined;
+  noticeBudget?: number | undefined;
 }) {
   const [feedback] = useStores(feedbackStore);
   const inputMode = controlsStore.use((s) => s.inputMode);
@@ -92,7 +122,7 @@ export function FeedbackRow({
     inputMode === 'review' ||
     (inputMode === 'question' && questions?.length !== 0);
   const preparation = sessionSelectStore.use((snapshot) => snapshot.preparation);
-  const notice = layoutFeedback(feedback, terminalCols, panelModel(preparation));
+  const notice = layoutFeedback(feedback, terminalCols, panelModel(preparation), noticeBudget);
   // One cell short of the edge: a legend that ends in the last column reads as cut off even when
   // every token it names is whole. The leading is spent before the keys are fitted.
   const legendWidth = cols - 1 - KEY_LEGEND_LEADING.length;

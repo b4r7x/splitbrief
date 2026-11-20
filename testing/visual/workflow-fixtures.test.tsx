@@ -2083,7 +2083,7 @@ describe('workflow visual fixtures', () => {
     expect(typo.frame).not.toContain('↑↓ select');
   });
 
-  it('shows the stop steer refusal neutrally and keeps its command in the composer', async () => {
+  it('shows the stop steer refusal and keeps its command in the composer', async () => {
     const reason = 'Finish stopping before steering.';
     const steer = await captureGalleryFrame('workflow-stop-steer-refused', 80);
     expect(steer.frame.split(reason)).toHaveLength(2);
@@ -2100,7 +2100,7 @@ describe('workflow visual fixtures', () => {
     const image = await captureGalleryFrame('workflow-command-image-refused');
     expect(image.feedback).toEqual({
       message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
-      severity: 'info',
+      severity: 'warning',
     });
     expect(image.frame).toContain('/steer fix the layout [image #1]');
     expect(startsWithText(image.frame, 'A command sends no image.')).toBe(true);

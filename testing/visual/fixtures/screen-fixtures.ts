@@ -1,3 +1,7 @@
+import {
+  activeApply,
+  trackActiveApply,
+} from '../../../src/engine/orchestrator/session-lifecycle/shutdown.js';
 import { runnerAvailabilityCheck } from '../../../src/core/readiness/checks/availability.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -81,7 +85,6 @@ import { makeConfig } from '../../helpers/factories/config.js';
 import { cliDetectionFor, failedDiscoveryResult } from '../../helpers/factories/detection.js';
 import { createTestGitRepo } from '../../helpers/git.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
-import type { NoticeMessage } from '../../../src/components/notice.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import {
@@ -1389,12 +1392,6 @@ export const RUN_LOCK_NOT_RELEASED = `${sessionFileFailure(
   }),
 )}${SOFT_SEP}other SPLITBRIEF processes can see the run as running for a few more seconds`;
 
-// The line a leave names for an emptied draft whose old file stays.
-const DRAFT_NOT_REMOVED_MESSAGE = sessionError.draftNotRemoved(
-  sessionRelativePath(LONG_SESSION_ID, 'draft.json'),
-  Object.assign(new Error("EACCES: permission denied, unlink '/x/draft.json'"), { code: 'EACCES' }),
-).message;
-
 /**
  * Empties a run's draft over an old `draft.json` its session folder no longer lets SPLITBRIEF
  * remove, through the real flush; the caller names it on its screen. Returns the undo.
@@ -1429,10 +1426,6 @@ function createDraftNotRemovedFixture(): FixtureLifecycle {
   };
 }
 
-// A hand edit that names a tool with a typo, read by home's refresh.
-const CONFIG_EDIT_REFUSED_MESSAGE =
-  'SPLITBRIEF keeps the config it loaded before · Configuration errors in .splitbrief/config.yaml: planner.tool: Invalid option: expected one of "claude-code"|"codex"|"opencode"|"kilo-code"|"cursor"|"command-code"|"antigravity"';
-
 function createConfigEditRefusedFixture(): FixtureLifecycle {
   const home = createHomeFixture();
   return {
@@ -1450,9 +1443,6 @@ function createConfigEditRefusedFixture(): FixtureLifecycle {
   };
 }
 
-// The line home shows for the first quit that a draft left on a run could not be saved for.
-const DRAFT_NOT_SAVED_MESSAGE = `${UNSAVED_DRAFT_ERROR.message}${SOFT_SEP}quit again leaves without it`;
-
 function createDraftNotSavedFixture(): FixtureLifecycle {
   const home = createHomeFixture();
   return {
@@ -1467,24 +1457,6 @@ function createDraftNotSavedFixture(): FixtureLifecycle {
 function setSaveSignInMessage(): void {
   feedbackStore.setWarning(SAVE_SIGN_IN_MESSAGE);
 }
-
-// The feedback each home fixture leaves above the composer. The composer locator fits it as the
-// composer does, so the crop holds the message rows the home dock counts.
-const warning = (message: string): NoticeMessage => ({ message, severity: 'warning' });
-const error = (message: string): NoticeMessage => ({ message, severity: 'error' });
-
-export const homeFixtureFeedback: ReadonlyMap<string, NoticeMessage> = new Map([
-  ['home-attachment-not-found', warning(attachmentFailureMessage('not-found'))],
-  ['home-attachment-not-a-file', warning(attachmentFailureMessage('not-a-file'))],
-  ['home-attachment-too-large', warning(attachmentFailureMessage('too-large'))],
-  ['home-attachment-unreadable', warning(attachmentFailureMessage('unreadable'))],
-  ['home-attachment-not-text', warning(attachmentFailureMessage('not-text'))],
-  ['home-save-sign-in', warning(SAVE_SIGN_IN_MESSAGE)],
-  ['home-save-long-draft', warning(SAVE_SIGN_IN_MESSAGE)],
-  ['home-draft-not-saved', error(DRAFT_NOT_SAVED_MESSAGE)],
-  ['home-draft-not-removed', error(DRAFT_NOT_REMOVED_MESSAGE)],
-  ['home-config-edit-refused', error(CONFIG_EDIT_REFUSED_MESSAGE)],
-]);
 
 function createSaveSignInFixture(options: HomeFixtureOptions = {}): FixtureLifecycle {
   const home = createHomeFixture({ ...options, config: SAVE_SIGN_IN_CONFIG });
@@ -1617,16 +1589,31 @@ function createReferenceCompletionFixture(): FixtureLifecycle {
   };
 }
 
-function createRecentSessionsFixture(): FixtureLifecycle {
-  const home = createHomeFixture();
+function createRecentSessionsFixture(
+  options: HomeFixtureOptions = {},
+  focus: 'list' | 'selection-error' | 'composer' = 'list',
+): FixtureLifecycle {
+  const home = createHomeFixture(options);
+  const apply = focus === 'selection-error' ? Promise.withResolvers<void>() : undefined;
   return {
     setup: async (context) => {
       await home.setup(context);
       const { seedSessions } = await import('./overlay-fixtures.js');
       seedSessions();
+      if (apply) void trackActiveApply(apply.promise);
     },
-    teardown: home.teardown,
-    afterMount: (write) => write('\u0012'),
+    teardown: async () => {
+      if (apply) {
+        apply.resolve();
+        await activeApply();
+      }
+      await home.teardown();
+    },
+    afterMount: async (write) => {
+      if (focus === 'composer') return;
+      await write.press('\u0012');
+      if (apply) await write.press('\r');
+    },
   };
 }
 
@@ -1757,7 +1744,29 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-draft-paste-fold'), createDraftPasteFoldFixture],
   [scenarioId('home-draft-long'), createLongDraftFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],
-  [scenarioId('home-recent-sessions'), createRecentSessionsFixture],
+  [scenarioId('home-recent-sessions'), () => createRecentSessionsFixture()],
+  [
+    scenarioId('home-recent-check-failed'),
+    () => createRecentSessionsFixture({ cold: true, checkFailed: true }),
+  ],
+  [
+    scenarioId('home-recent-selection-error'),
+    () => createRecentSessionsFixture({}, 'selection-error'),
+  ],
+  [
+    scenarioId('home-recent-cursor'),
+    () => {
+      const cursor = {
+        kind: 'cli',
+        tool: 'cursor',
+        model: 'enterprise-planning-and-review-model',
+      } as const;
+      return createRecentSessionsFixture(
+        { config: { planner: cursor, implementer: cursor, reviewer: cursor } },
+        'composer',
+      );
+    },
+  ],
   [scenarioId('home-draft-image'), createDraftImageFixture],
   [scenarioId('home-draft-outside-image'), createOutsideDraftImageFixture],
   [

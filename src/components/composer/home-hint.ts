@@ -66,8 +66,8 @@ export function layoutHomeNotice(notice: NoticeMessage, width: number): NoticeLa
   );
 }
 
-// The hint line under the notice slot. A check the user waits on — the start check's status, then
-// the running tool check — keeps the line under a notice too, without the drop affordance; the
+// The hint line above the notice slot. A check the user waits on — the start check's status, then
+// the running tool check — keeps the line above a notice too, without the drop affordance; the
 // hint gives the line to a notice. A focused chat input paints no placeholder
 // (segments.ts), so the drop affordance rides the hint line — the one home row that renders while
 // the box is live enough to take a drop. It is the optional half of that line: it goes whole, or

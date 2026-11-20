@@ -16,5 +16,5 @@ export function terminalSupportsHyperlinks(env: NodeJS.ProcessEnv = process.env)
 }
 
 export function osc8Hyperlink(input: { label: string; href: string }): string {
-  return `\x1b]8;;${input.href}\x1b\\${input.label}\x1b]8;;\x1b\\`;
+  return `\x1b]8;;${input.href}\x07${input.label}\x1b]8;;\x07`;
 }

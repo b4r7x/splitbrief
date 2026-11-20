@@ -100,7 +100,7 @@ export function useSend({
     // A command runs in every mode: typed under a question or a recovery menu, it is never the answer.
     if (isCommandDraft(trimmed)) {
       if (trimmed.parts.some((part) => part.kind === 'image')) {
-        feedbackStore.setMessage(
+        feedbackStore.setWarning(
           onSendNow === undefined
             ? 'A command sends no image. Remove the image.'
             : 'A command sends no image. Remove the command, then press ctrl+⏎.',
@@ -114,7 +114,7 @@ export function useSend({
 
     if (mode !== 'normal') {
       if (emptyAnswerNotice !== undefined && isBlankDraft(document)) {
-        feedbackStore.setMessage(emptyAnswerNotice);
+        feedbackStore.setInfo(emptyAnswerNotice);
         return;
       }
       if (send(document) && !submitKeepsDraft) clearDraft();
@@ -127,7 +127,7 @@ export function useSend({
     }
 
     if (commandsOnly === true) {
-      feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
+      feedbackStore.setInfo(COMMANDS_ONLY_NOTICE);
       return;
     }
 

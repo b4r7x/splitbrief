@@ -42,20 +42,20 @@ export function useFinalize(start: (() => void) | undefined) {
     )
       return;
     if (unavailable.length > 0) {
-      feedbackStore.setMessage('Choose a ready tool and model for each unavailable seat.');
+      feedbackStore.setInfo('Choose a ready tool and model for each unavailable seat.');
       return;
     }
     const result = await configStore.save(finalConfig);
     if (reportConfigSaveFailure(result)) return;
 
     if (start !== undefined) {
-      feedbackStore.setMessage(formatConfigSaveSuccess('your crew', result));
+      feedbackStore.setInfo(formatConfigSaveSuccess('your crew', result));
       start();
       return;
     }
 
     routerStore.navigate({ to: 'home' });
-    feedbackStore.setMessage(formatConfigSaveSuccess('your crew', result));
+    feedbackStore.setInfo(formatConfigSaveSuccess('your crew', result));
   };
 
   return { finalize, abort: () => saveCheck.current?.abort() };

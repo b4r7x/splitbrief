@@ -15,6 +15,7 @@ import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/hel
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
+import { filePathUrl } from '../../utils/path/links.js';
 import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/discovery/detection.js';
@@ -1399,7 +1400,7 @@ describe('Composer image attach gate', () => {
     [true, 'A command sends no image. Remove the command, then press ctrl+⏎.'],
     [false, 'A command sends no image. Remove the image.'],
   ])(
-    'refuses a command line that holds an image and keeps the line and the image (onSendNow: %s), in the neutral voice',
+    'refuses a command line that holds an image and keeps the line and the image (onSendNow: %s), as a warning',
     async (withSendNow, reason) => {
       configStore.__testReset({
         projectDir,
@@ -1429,7 +1430,7 @@ describe('Composer image attach gate', () => {
       ui.stdin.write('\r');
       await flushEffects();
 
-      expect(feedbackStore.get()).toEqual({ severity: 'info', message: reason });
+      expect(feedbackStore.get()).toEqual({ severity: 'warning', message: reason });
       expect(dispatched).toEqual([]);
       expect(submissions).toEqual([]);
       expect(sends).not.toHaveBeenCalled();
@@ -1448,7 +1449,7 @@ describe('Composer image attach gate', () => {
     },
   );
 
-  it('refuses the same line at ctrl+⏎, in the neutral voice', async () => {
+  it('refuses the same line at ctrl+⏎, as a warning', async () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
     configStore.__testReset({
@@ -1479,7 +1480,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
 
     expect(feedbackStore.get()).toEqual({
-      severity: 'info',
+      severity: 'warning',
       message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
     });
     expect(sends).not.toHaveBeenCalled();
@@ -1488,7 +1489,7 @@ describe('Composer image attach gate', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/steer fix the layout [image #1]');
   });
 
-  it('refuses a command line with an image when argument completion could run it, in the neutral voice', async () => {
+  it('refuses a command line with an image when argument completion could run it, as a warning', async () => {
     const SKILLS: RuntimeCommandDef = {
       kind: 'arg',
       name: '/skills',
@@ -1538,7 +1539,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
 
     expect(feedbackStore.get()).toEqual({
-      severity: 'info',
+      severity: 'warning',
       message: 'A command sends no image. Remove the image.',
     });
     expect(dispatched).toEqual([]);
@@ -2154,10 +2155,25 @@ describe('Composer home message', () => {
     );
   }
 
+  it('links a shortened draft path to the original project file', async () => {
+    vi.stubEnv('FORCE_HYPERLINK', '1');
+    try {
+      const path = '.splitbrief/sessions/' + 'long-session-'.repeat(8) + '/draft.json';
+      const ui = renderHome();
+      feedbackStore.setError(`Draft not saved: permission denied · ${path} · quit again`);
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(
+        `\x1b]8;;${filePathUrl({ path, rootDir: configStore.get().projectDir })}\x07.splitbrief/…/draft.json\x1b]8;;`,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('frames the whole save message, sign-in command included, above the box at 80 columns', async () => {
     const ui = renderHome();
     await flushEffects();
-    feedbackStore.setMessage(SAVE_MESSAGE);
+    feedbackStore.setInfo(SAVE_MESSAGE);
     await flushEffects();
 
     const rows = stripAnsiStyles(ui.lastFrame() ?? '')
@@ -2176,9 +2192,9 @@ describe('Composer home message', () => {
   it('gives the rows back to the hint when the message clears', async () => {
     const ui = renderHome();
     await flushEffects();
-    feedbackStore.setMessage(SAVE_MESSAGE);
+    feedbackStore.setInfo(SAVE_MESSAGE);
     await flushEffects();
-    feedbackStore.setMessage(null);
+    feedbackStore.setInfo(null);
     await flushEffects();
 
     const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');

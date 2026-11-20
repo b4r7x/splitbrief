@@ -13,7 +13,7 @@ describe('feedbackStore', () => {
   });
 
   it('covers set/auto-clear/error/reset end-to-end', () => {
-    feedbackStore.setMessage('saved');
+    feedbackStore.setInfo('saved');
     expect(feedbackStore.get().message).toBe('saved');
     expect(feedbackStore.get().severity).toBe('info');
 
@@ -35,7 +35,7 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().severity).toBe('info');
 
     // reset cancels the pending auto-clear timer and clears state.
-    feedbackStore.setMessage('will be cleared');
+    feedbackStore.setInfo('will be cleared');
     feedbackStore.reset();
     expect(feedbackStore.get().message).toBeNull();
     vi.advanceTimersByTime(3000);
@@ -71,7 +71,7 @@ describe('feedbackStore', () => {
   it('keeps a long message on screen long enough to read it', () => {
     const long =
       'Saved BUILD · OpenCode CLI · Claude Haiku 4.5 · via anthropic to .splitbrief/config.yaml · OpenCode CLI has no credential for anthropic — run opencode auth login anthropic before start';
-    feedbackStore.setMessage(long);
+    feedbackStore.setInfo(long);
 
     vi.advanceTimersByTime(10_000);
     expect(feedbackStore.get().message).toBe(long);
@@ -80,8 +80,8 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
-  it('a later setError replaces a pending setMessage', () => {
-    feedbackStore.setMessage('saved');
+  it('a later setError replaces a pending setInfo', () => {
+    feedbackStore.setInfo('saved');
     feedbackStore.setError('Connection lost');
 
     expect(feedbackStore.get().message).toBe('Connection lost');

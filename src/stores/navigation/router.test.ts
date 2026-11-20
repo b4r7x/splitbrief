@@ -106,7 +106,7 @@ describe('routerStore', () => {
   });
 
   it('navigates setup → workflow and clears prior navigation feedback', () => {
-    feedbackStore.setMessage('saved');
+    feedbackStore.setInfo('saved');
     routerStore.navigate({ to: 'setup' });
     routerStore.navigate(localWorkflow('from setup'));
     expect(routerStore.get().screen).toBe('workflow');

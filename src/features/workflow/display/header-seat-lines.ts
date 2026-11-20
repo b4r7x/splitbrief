@@ -1,3 +1,5 @@
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { getChromeContentWidth, selectRailFormAndLine } from '../layout/chrome-rows.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { collapsedReviewSeat } from '../../../core/crew/seats.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
@@ -6,6 +8,8 @@ import type { RunRecord } from '../../../core/sessions/run/record.js';
 import { isReviewNone, type REVIEW_NONE, type CrewSeatId } from '../../../core/crew/identity.js';
 import {
   formatCollapsedSeatSpans,
+  packSeatRows,
+  seatLineText,
   type SeatLineSpan,
 } from '../../../core/crew/seat-line/collapse.js';
 import { idsOf, isSeatIdentity, type SeatIds } from '../../../core/crew/seat-ids.js';
@@ -126,4 +130,24 @@ export function displayedSeatLines(
   const recorded = record === undefined ? null : recordedCrew(record);
   if (recorded !== null) return recordedCrewSeatLines(recorded);
   return todaySeats === null ? { model: [], tool: [] } : headerSeatLines(todaySeats);
+}
+
+/** A closed run can name its crew in its summary. An open run reserves whole rows when even
+ * the single-stage rail cannot share a row with all three seats. */
+export function wrappedHeaderCrew(
+  cols: number,
+  singleStageCells: number,
+  lines: HeaderSeatLines,
+  closed: boolean,
+): SeatLineSpan[][] {
+  if (closed || lines.tool.length === 0) return [];
+  const choice = selectRailFormAndLine({
+    cols,
+    railWidths: { C: singleStageCells },
+    modelLineCells: getTerminalCellWidth(seatLineText(lines.model)),
+    toolLineCells: getTerminalCellWidth(seatLineText(lines.tool)),
+  });
+  return choice.line === 'none'
+    ? (packSeatRows(lines.tool, getChromeContentWidth(cols), 3) ?? [])
+    : [];
 }

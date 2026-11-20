@@ -87,7 +87,7 @@ function inFixtureRoot<Ref extends { projectDir: string }>(ref: Ref): Ref {
 }
 
 function sayUnavailable(): void {
-  feedbackStore.setMessage(PREVIEW_UNAVAILABLE);
+  feedbackStore.setInfo(PREVIEW_UNAVAILABLE);
 }
 
 function unavailableInPreview(): never {
@@ -239,7 +239,7 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     openOverlay: overlayStore.open,
     navigateHome: () => routerStore.navigate({ to: 'home' }),
     quit: sayUnavailable,
-    setFeedbackMessage: feedbackStore.setMessage,
+    setFeedbackMessage: feedbackStore.setInfo,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: unavailableInPreview,
     refreshProjectFiles: projectFilesStore.requestRefresh,

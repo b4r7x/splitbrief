@@ -44,7 +44,7 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
 
   it('mounts every catalog scenario in exactly one resolve-scenarios shard file', () => {
     // resolve-scenarios-<n>.test.ts resolves every element of its scenarios at every viewport
-    // against production App frames, and lands each workflow transcript on its budgeted row.
+    // against production App frames, and lands each workflow transcript at its painted divider.
     const shardFiles = readdirSync(import.meta.dirname)
       .filter((name) => /^resolve-scenarios-\d+\.test\.ts$/.test(name))
       .sort();
@@ -64,7 +64,11 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
 
   it('pins the header, sidebar, composer, approval and hero rects at 80x24 / 120x40 / 160x45', async () => {
     const home = requireScenario('home-empty');
-    const homeGrid = await createFrameGrid(home, VIEWPORT, requireCheckpoint(home).marker);
+    const homeGrid = await createFrameGrid(
+      home,
+      VIEWPORT,
+      `${ESC}[11;5Hskills: none · /crew to change`,
+    );
     const header = resolveElementLocator({
       scenario: home,
       checkpoint: requireCheckpoint(home),
@@ -89,7 +93,7 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
     const implementationGrid = await createFrameGrid(
       implementation,
       SIDEBAR_VIEWPORT,
-      requireCheckpoint(implementation).marker,
+      `${ESC}[4;1H${'─'.repeat(SIDEBAR_VIEWPORT.cols)}${ESC}[38;1H${'─'.repeat(SIDEBAR_VIEWPORT.cols)}`,
     );
     const sidebar = resolveElementLocator({
       scenario: implementation,
@@ -103,7 +107,7 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
     const reviewGrid = await createFrameGrid(
       review,
       VIEWPORT,
-      `${ESC}[10;5H${reviewCheckpoint.marker}`,
+      `${ESC}[2;1H${'─'.repeat(VIEWPORT.cols)}${ESC}[10;5H${reviewCheckpoint.marker}${ESC}[19;1H${'─'.repeat(VIEWPORT.cols)}`,
     );
     const approval = resolveElementLocator({
       scenario: review,

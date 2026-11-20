@@ -268,7 +268,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-recovery-apply-conflict', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-apply-partial-words', ['120x40', '80x24', '60x18', '60x30']],
   ['workflow-recovery-review-contract', ['120x40', '80x24', '60x18', '60x30']],
-  ['home-recent-sessions', ['120x40', '80x24']],
+  ['home-recent-sessions', ['120x40', '80x24', '60x18']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-review-check-running', ['120x40', '80x24', '60x18', '160x45']],
@@ -436,7 +436,7 @@ describe('visual catalog', () => {
         const frame = stripAnsiStyles(await handle.waitForCheckpoint());
         expect(feedbackStore.get()).toEqual({
           message: 'BUILD runs OpenAI Codex CLI · GPT-6-Astra now · choose another tool or model',
-          severity: 'info',
+          severity: 'warning',
         });
         // The byline notice wraps the refusal, so its words are read across the bar edges.
         const words = acrossNoticeEdges(frame);
@@ -931,7 +931,7 @@ describe('visual catalog', () => {
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(feedbackStore.get()).toEqual({
-        severity: 'info',
+        severity: 'warning',
         message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
       });
       expect(frame).toContain('A command sends no image. Remove the command, then press ctrl+⏎.');

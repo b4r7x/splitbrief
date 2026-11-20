@@ -151,7 +151,7 @@ export function usePickerActions(opts: {
         ...(notice === undefined ? [] : [notice]),
       ].join(SOFT_SEP);
       // A save that still needs a step from the user, such as a sign-in, is a warning.
-      if (notice === undefined) feedbackStore.setMessage(words);
+      if (notice === undefined) feedbackStore.setInfo(words);
       else feedbackStore.setWarning(words);
       pickerViewStore.setCommitted(true);
       overlayStore.close();
@@ -232,7 +232,7 @@ export function usePickerActions(opts: {
           { tool: selection.id, model: modelId ?? undefined },
         )
       ) {
-        feedbackStore.setMessage(
+        feedbackStore.setWarning(
           `${catalog.roleLabel} runs ${savedSeatIdentity(config, seatRole, 'seat', profile)} now${SOFT_SEP}choose another tool or model`,
         );
         return;
@@ -334,15 +334,13 @@ export function usePickerActions(opts: {
       return reportFailure(async () => {
         if (slot === 'fallback') return;
         if (seatRole === 'reviewer' && configuredReviewerRunner(config) === undefined) {
-          feedbackStore.setMessage(
-            `${item.id} belongs to the planner. Remove it from the planner.`,
-          );
+          feedbackStore.setInfo(`${item.id} belongs to the planner. Remove it from the planner.`);
           return;
         }
         const updated = removeCustomModel(config, seatRole, item.id, profile);
         const result = await deps.saveConfig(updated);
         if (reportConfigSaveFailure(result)) return;
-        feedbackStore.setMessage(`Removed custom model: ${item.id}`);
+        feedbackStore.setInfo(`Removed custom model: ${item.id}`);
       });
     },
     chooseContract(kind: CustomCommandRunnerKind) {
@@ -370,7 +368,7 @@ export function usePickerActions(opts: {
       return reportFailure(async () => {
         if (view.kind !== 'custom-model') return;
         if (isAutomaticModel(modelName)) {
-          feedbackStore.setMessage('"auto" is already offered as the Auto row — select it there.');
+          feedbackStore.setInfo('"auto" is already offered as the Auto row — select it there.');
           return;
         }
         const customModelItem = runnerItemOf(catalog.currentItem);

@@ -129,7 +129,7 @@ describe('Composer home feedback sanitization', () => {
 
   it('strips OSC/CSI control bytes from home attachment feedback while keeping the stored message raw', async () => {
     const rawMessage = `Attached: ${ESC}[2J${ESC}]0;LEAKTITLE${BEL}/tmp/screenshot.png`;
-    feedbackStore.setMessage(rawMessage);
+    feedbackStore.setInfo(rawMessage);
 
     const ui = renderFeature(
       <Composer

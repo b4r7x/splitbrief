@@ -18,6 +18,7 @@ import {
   deriveCrewSeats,
 } from '../../../core/crew/seats.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import type { Config } from '../../../core/schemas/config.js';
 import { homeConfigBlockRows } from '../layout.js';
 import { deriveHomeToolCheck } from '../tool-check.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
@@ -52,6 +53,24 @@ function selectedSkillsText(skills: {
     .filter((skill) => skills.selected.has(skill.id))
     .map((skill) => skill.name);
   return names.length === 0 ? 'skills: none' : `skills: ${names.join(', ')}`;
+}
+
+function compactCrew(config: Config) {
+  return {
+    planner: config.planner,
+    build: resolveImplementerProfiles(config).defaultProfile.config,
+    reviewer: collapsedReviewSeat(config),
+  };
+}
+
+export function minimumHomeSeatRows(config: Config, width: number, height: number): number {
+  if (homeConfigBlockRows(height) > 2) return 1;
+  const budget = width - MARK_SLOT_CELLS;
+  const seats = compactCrew(config);
+  for (const rows of [1, 2]) {
+    if (formatCollapsedSeatRows({ ...seats, budget, rows }).length > 0) return rows;
+  }
+  return 3;
 }
 
 export function HomeSeatBlock({
@@ -100,9 +119,7 @@ export function HomeSeatBlock({
     <Box flexDirection="column" width={width} flexShrink={0} paddingLeft={MARK_SLOT_CELLS}>
       {homeConfigBlockRows(rows) < seats.length + 1
         ? formatCollapsedSeatRows({
-            planner: config.planner,
-            build: resolveImplementerProfiles(config).defaultProfile.config,
-            reviewer: collapsedReviewSeat(config),
+            ...compactCrew(config),
             budget: textWidth,
             rows: seatLineRows,
             displayNames,

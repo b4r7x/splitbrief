@@ -152,7 +152,7 @@ function buildTaskItems(tasks: readonly WorkflowTask[], phase: Phase): PaletteSo
     id: t.id,
     title: t.title,
     action: () => {
-      feedbackStore.setMessage(`Task ${t.id}: ${t.title}`);
+      feedbackStore.setInfo(`Task ${t.id}: ${t.title}`);
     },
   }));
 }
