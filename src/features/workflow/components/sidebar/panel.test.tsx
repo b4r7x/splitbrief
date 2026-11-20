@@ -1279,7 +1279,7 @@ describe('Sidebar — the model a Claude Code seat resolved', () => {
     ui.unmount();
   });
 
-  it('drops the resolved rows before it cuts the seat identities when the crew runs short of rows', async () => {
+  it('drops a resolved row before it cuts the seat identities when the crew runs short of rows', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -1289,20 +1289,14 @@ describe('Sidebar — the model a Claude Code seat resolved', () => {
       }),
     });
     seedBriefs({ tasks: [task('1', 'pending')] });
-    // Five wrapped seat rows fill the footer of an 8-row panel; the two resolved rows do not fit.
+    // Five wrapped seat rows fill the footer of an 8-row panel.
     const ui = renderFeature(<Sidebar width={40} height={8} />);
     await tick();
     const before = ['PLAN', 'BUILD', 'REVIEW'].map((label) =>
       seatRows(ui.lastFrame() ?? '', label),
     );
 
-    addEvent(sessionEvent('opus', 'claude-opus-5-5'));
-    addEvent({
-      ...sessionEvent('sonnet', 'claude-sonnet-5-5'),
-      phase: 'implementing',
-      callId: 'call-build',
-      role: 'implementer',
-    });
+    addEvent(sessionEvent('opus', 'claude-fable-5-1'));
     await tick();
 
     expect(before[0]).toEqual(['PLAN    Claude Code CLI', 'Opus 5.5 · high']);

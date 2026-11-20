@@ -7,6 +7,7 @@ import {
 import { stepWord } from './step-words.js';
 import type { LiveStatus } from './live-activity.js';
 import { seatRetrySentence, seatWaitSentence } from '../../../core/sessions/seat-wait-line.js';
+import { MOVED_PROJECT_ACTION } from '../../../core/sessions/moved-project.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { runnerSilenceMs, silenceTail, silenceText } from './build-progress/derive.js';
@@ -23,7 +24,8 @@ import type { StopByline } from '../stop/copy.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../engine/events/workflow-cancel.js';
 import { formatStageLabel } from '../../../core/phases/labels.js';
-import { fitCheckingRow, stageFractionText } from '../input-footer-byline.js';
+import { fitCheckingRow } from '../input-footer-byline.js';
+import { buildRailFraction } from '../layout/hit-test.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 
 export interface BylineLeadInput {
@@ -64,7 +66,9 @@ export function deriveBylineLead(input: BylineLeadInput): BylineLead {
       ? { stage: 'apply', status: 'active' }
       : getActiveRailStage(runView.phase);
   const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
-  const fractionText = activeStage?.stage === 'build' ? stageFractionText(taskListView) : '';
+  const fractionText = activeStage
+    ? buildRailFraction(activeStage.stage, taskListView.passed, taskListView.total)
+    : '';
   const recoveryWaiting = runView.halt !== null && input.inputMode === 'question';
   // A halt the panel has not opened on yet is a run still going to it, not a stopped run.
   const recoveryStopped = input.recoveryOpen && !recoveryWaiting;
@@ -204,7 +208,7 @@ export function deriveBylineLead(input: BylineLeadInput): BylineLead {
     ? {
         lead: [
           {
-            text: `${glyph('statusPending')} Choose how to continue`,
+            text: `${glyph('statusPending')} ${runView.halt?.issue.facts?.projectMoved === true ? MOVED_PROJECT_ACTION : 'Choose how to continue'}`,
             tone: stateTone('attention'),
           },
         ],

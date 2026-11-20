@@ -90,6 +90,10 @@ export function cannotDetail(by: string, reason: string): string {
   return `${capitalize(by)} said: ${reason}`;
 }
 
+export function isPlannerCannotDetail(detail: string): boolean {
+  return detail.startsWith(cannotDetail('planner', ''));
+}
+
 /** What a halt of the planning phase says while a plan correction stands on the run. */
 export const PLAN_CORRECTION_GOES_AGAIN = 'Your plan correction goes again with this step.';
 
@@ -100,7 +104,7 @@ export const PLAN_CORRECTION_GOES_AGAIN = 'Your plan correction goes again with 
 export function isAskedDetail(detail: string): boolean {
   return (
     detail.startsWith('Question: ') ||
-    detail.startsWith('Planner said: ') ||
+    isPlannerCannotDetail(detail) ||
     detail.startsWith(PLAN_CORRECTION_GOES_AGAIN)
   );
 }

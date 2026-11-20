@@ -1227,11 +1227,11 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-      expect(frame).toContain('npm test failed · 1 failure');
+      expect(frame.replaceAll('\u00a0', ' ')).toContain('npm test · failed · 1 failure');
       for (const phrase of [
         '1 left to T905',
         '1 of 2 failures gone',
-        '2 others left for their fix tasks or the next review',
+        '2 others left for their fix briefs or the next review',
       ]) {
         expect(frame).toContain(phrase.replaceAll(' ', '\u00a0'));
       }
@@ -1252,7 +1252,7 @@ describe('visual catalog', () => {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain('Reviewer check V2 · npm test · 1\u00a0new, 0\u00a0pre-existing');
       expect(frame).toContain('fixes T904 T905');
-      expect(frame.match(/Fix check V2 · npm test(?: failed)? · /g)).toHaveLength(2);
+      expect(frame.match(/Fix check V2 · npm test · /g)).toHaveLength(2);
       expect(frame).not.toContain('test-ci');
     } finally {
       await handle.unmount();

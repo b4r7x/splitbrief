@@ -774,7 +774,7 @@ describe('the criteria guard question', () => {
     [
       'a rewrite that drops its required check',
       rewriteWith(['C1', 'C2'], []),
-      'the rewritten brief drops the checks its criteria require: K1',
+      'the rewritten brief drops the checks its criteria require: K1 (src/greet.test.ts)',
     ],
     [
       'a split that drops C2',
@@ -784,7 +784,7 @@ describe('the criteria guard question', () => {
     [
       'a split that drops its required check',
       splitInto({ criteria: ['C1'], checks: [] }, { criteria: ['C2'], checks: [] }),
-      'the new briefs together drop the checks their criteria require: K1',
+      'the new briefs together drop the checks their criteria require: K1 (src/greet.test.ts)',
     ],
   ])('names what %s changes, with no Dropped criteria line', async (_change, answer, reason) => {
     const { projectDir, sessionId } = setupRepo(dirs);

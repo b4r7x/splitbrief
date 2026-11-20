@@ -215,7 +215,7 @@ describe('e2e: a key on what REVIEW None holds names the reason and changes noth
         await screen.shows(/▌.*End-of-run checks/);
         await screen.shows(reason);
         expect(reasonRows(screen)).toBe(1);
-        expect(screen.text()).not.toContain('SPLITBRIEF runs the project gate');
+        expect(screen.text()).not.toContain('SPLITBRIEF runs the end-of-run checks');
 
         screen.write('\r');
         // The child acknowledges an Enter only once it has drained the render and effects that

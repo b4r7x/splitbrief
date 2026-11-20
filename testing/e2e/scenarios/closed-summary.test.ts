@@ -353,11 +353,19 @@ it('opens no fold for a wheel step and a click of one write on the row that the 
   expect(clicked).toContain('├ collapse · ctrl+a');
 });
 
-it('shows Briefs and the blocking finding when reopening a run ended after a failed review', async () => {
+it('shows Briefs and a short saved check finding when reopening a run ended after a failed review', async () => {
   const target = createStopContinueFixture(() => '', { isolation: 'none' });
   fixture = target;
   const ref = { projectDir: target.projectDir, sessionId: SESSION };
-  const blocker = finding({ severity: 'blocking', text: 'Empty addresses bypass validation.' });
+  const blocker = finding({
+    severity: 'blocking',
+    text: [
+      'Reviewer check V1 (npm test) failed with new failures. Last changed by T001.',
+      'check V1 did not pass (fail): 1 failure',
+      'Output tail:',
+      'Empty addresses bypass validation.',
+    ].join('\n'),
+  });
   const state = makeWorkflowState({
     feature: 'Validate addresses',
     phase: 'complete',
@@ -370,7 +378,9 @@ it('shows Briefs and the blocking finding when reopening a run ended after a fai
       cycle: 0,
       outcome: 'fail',
       verification: [],
-      verdict: makeVerdict({ findings: [blocker] }),
+      verdict: makeVerdict({
+        findings: [blocker, finding({ id: 'F2', severity: 'minor', text: 'Add an example.' })],
+      }),
     },
     closed: { as: 'ended', at: AT },
   });
@@ -386,13 +396,14 @@ it('shows Briefs and the blocking finding when reopening a run ended after a fai
       feature: state.feature,
       totalTasks: 1,
       completedByLocal: 1,
+      changedFiles: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts'],
       reviewPacket: {
         generatedAt: AT,
         jsonPath: 'review-packet.json',
         markdownPath: 'review-packet.md',
         finalReviewStatus: 'written',
         finalReviewVerdict: 'fail',
-        finalReviewFindingCounts: { critical: 1, warning: 0, note: 0 },
+        finalReviewFindingCounts: { critical: 1, warning: 1, note: 0 },
         driftPassed: true,
         evidenceValidatedTasks: 1,
         evidenceTotalTasks: 1,
@@ -412,5 +423,19 @@ it('shows Briefs and the blocking finding when reopening a run ended after a fai
     async ({ screen }) => screen(),
   );
   expect.soft(frame).toContain('Briefs 1/1');
-  expect(frame.slice(frame.indexOf('├ Review'))).toContain(blocker.text);
+  const review = frame.slice(frame.indexOf('├ Review'));
+  expect(review).toContain('npm test failed · 1 failure. Last changed by T001.');
+  expect(review).not.toContain('Output tail:');
+  const narrow = await openClosedRun(
+    {
+      argv: ['dist/cli.js', '--project', target.projectDir],
+      env: { ...safeChildEnvironment(home), XDG_STATE_HOME: target.stateHome },
+      viewport: { cols: 60, rows: 18 },
+      settledText: '1 blocking',
+    },
+    async ({ screen }) => screen(),
+  );
+  expect(narrow.split('\n').find((line) => line.includes('+1 brief'))).toMatch(
+    /\+1 brief · 1 blocking finding.*ctrl\+a/,
+  );
 });

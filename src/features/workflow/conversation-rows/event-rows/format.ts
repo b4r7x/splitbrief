@@ -108,10 +108,7 @@ export function reviewChecksSegments(
             { text: 'off', tone: stateTone('attention') },
             { text: 'no reviewer check ran', tone: 'textDim' },
           ]
-        : [
-            { text: 'none', tone: 'textDim' },
-            { text: 'the plan names no end-of-run checks', tone: 'textDim' },
-          ],
+        : [{ text: 'none in the plan', tone: 'textDim' }],
     ),
   ];
 }

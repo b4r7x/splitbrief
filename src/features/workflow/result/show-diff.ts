@@ -22,7 +22,12 @@ export async function showRunDiff(
       return;
     }
     const viewer = resolveViewerArgv();
-    const { code, signal } = await runEditor({ ...viewer, filePath: path, spawnEditor });
+    const { code, signal } = await runEditor({
+      ...viewer,
+      filePath: path,
+      purpose: 'view',
+      spawnEditor,
+    });
     if (code !== 0 || signal !== null) {
       feedbackStore.setError(
         `${editorDisplayLabel(viewer.command)} exited with ${signal ?? `code ${code}`}`,

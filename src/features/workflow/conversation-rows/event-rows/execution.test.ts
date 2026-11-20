@@ -311,7 +311,7 @@ describe('fullSuiteRowBlock', () => {
       },
       width: 65,
       expected: [
-        'Fix check V2 · npm run test-ci failed · 1 failure ',
+        'Fix check V2 · npm run test-ci · failed\u00a0· 1\u00a0failure ',
         '  1\u00a0left\u00a0to\u00a0T025 · 3m\u00a00s',
       ],
     },
@@ -334,7 +334,7 @@ describe('fullSuiteRowBlock', () => {
       width: 79,
       expected: [
         'Fix check V2 · npm run test-ci · 2\u00a0failures\u00a0gone ',
-        '  3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review · 3m\u00a00s',
+        '  3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0briefs\u00a0or\u00a0the\u00a0next\u00a0review · 3m\u00a00s',
       ],
     },
     {

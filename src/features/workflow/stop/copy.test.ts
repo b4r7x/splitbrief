@@ -33,7 +33,7 @@ function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
   };
 }
 
-const PARKED_HINT = 'esc home · ctrl+k commands · /sessions · /help';
+const PARKED_HINT = '⏎ to continue · esc home · ctrl+k commands · /sessions · /help';
 
 it('keeps a check seat word and separators distinct during a requested pause', () => {
   expect(

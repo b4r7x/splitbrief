@@ -12,6 +12,9 @@ import { planCheckName } from '../../../core/validation/plan-check-name.js';
 import { runnerActivityRoleLabel } from './runner-activity/role.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
+
+export const WAITING_FOR_CONSULT = 'Waiting for the consult answer';
+
 const REVIEW_PREFIX_PARTS: readonly ConversationRowSegment[] = [
   { text: 'Review', tone: CREW_SEAT_ROLES.review },
   { text: SOFT_SEP, tone: 'textDim' },

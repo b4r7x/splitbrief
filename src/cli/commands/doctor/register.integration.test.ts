@@ -472,7 +472,7 @@ describe('doctor command', () => {
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
   });
 
-  it('warns in human readiness that End-of-run checks off run no project gate', async () => {
+  it('warns in human readiness that End-of-run checks are off', async () => {
     initGitRepo(tmp);
     writeConfig(tmp, validConfigYaml().replace('validation:', 'validation:\n  endChecks: false'));
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -482,7 +482,7 @@ describe('doctor command', () => {
     const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(output).toContain('info     End-of-run checks: off.');
     expect(output).toContain(
-      'End-of-run checks are off: SPLITBRIEF runs no project gate before the final review.',
+      'End-of-run checks are off. SPLITBRIEF skips them before the final review.',
     );
   });
 
@@ -498,7 +498,7 @@ describe('doctor command', () => {
     expect(output).toMatch(/plan and task checks still run/iu);
   });
 
-  it('states in human readiness that the plan gate runs before the final review only', async () => {
+  it('states in human readiness that the end-of-run checks run before the final review', async () => {
     initGitRepo(tmp);
     writeConfig(tmp, validConfigYaml());
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -508,7 +508,7 @@ describe('doctor command', () => {
     const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(output).toContain('info     End-of-run checks: on.');
     expect(output).toContain(
-      'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.',
+      'SPLITBRIEF runs the end-of-run checks the plan names before the final review. A brief review skips these checks.',
     );
     expect(output).not.toContain('chooses the commands that verify the change');
   });

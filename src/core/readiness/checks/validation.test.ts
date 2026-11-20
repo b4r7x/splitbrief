@@ -61,11 +61,11 @@ describe('buildValidationChecks End-of-run checks', () => {
     },
   );
 
-  it('states that the plan gate runs before the final review only', () => {
+  it('states that the end-of-run checks run before the final review only', () => {
     const checks = buildValidationChecks(makeConfig(), packageScripts, tempDir);
 
     expect(checks.find((c) => c.id === 'validation.configured')?.details?.[0]).toBe(
-      'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.',
+      'SPLITBRIEF runs the end-of-run checks the plan names before the final review. A brief review skips these checks.',
     );
   });
 
@@ -91,7 +91,7 @@ describe('buildValidationChecks End-of-run checks', () => {
     const off = checks.find((c) => c.id === 'validation.end-checks-off');
     expect(off?.severity).toBe('warning');
     expect(off?.summary).toBe(
-      'End-of-run checks are off: SPLITBRIEF runs no project gate before the final review.',
+      'End-of-run checks are off. SPLITBRIEF skips them before the final review.',
     );
     expect(off?.fix).toContain('validation.end_checks: true');
   });

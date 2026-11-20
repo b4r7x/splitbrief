@@ -38,7 +38,7 @@ export type FixCheckJudgement = {
   left: string[];
   /** Own failures the re-run still shows that unfinished siblings carry, left to them. */
   deferred: { key: string; taskIds: readonly string[] }[];
-  /** Re-run failures the task does not own: their fix tasks or the next review answer them. */
+  /** Re-run failures the brief does not own: their fix briefs or the next review answer them. */
   others: number;
 };
 
@@ -101,6 +101,17 @@ export function checkFailureSummary(command: string, count: number): string {
 
 // Earlier ledgers kept the prompt sent to the implementer as the finding text.
 export function savedFindingText(text: string): string {
+  const [heading = '', detail = ''] = text.split(/\r?\n/, 2);
+  const reviewer =
+    /^Reviewer check (\S+) \((.+?)\) failed (?:with new failures\.|and .*?; the reviewer decides\.)(?: (Last changed by \S+?\.|No task changed it\.))?$/.exec(
+      heading,
+    );
+  const check = /^check (\S+) did not pass \(fail\):\s*(.*)$/.exec(detail);
+  if (reviewer?.[2] !== undefined && check !== null && check[1] === reviewer[1]) {
+    const count = /^(\d+) failures?\b|\b(\d+) (?:specs?|tests?) failed\b/i.exec(check[2] ?? '');
+    const summary = checkFailureSummary(reviewer[2], Number(count?.[1] ?? count?.[2] ?? 0));
+    return oneLineDisplayText(reviewer[3] === undefined ? summary : `${summary}. ${reviewer[3]}`);
+  }
   const line = oneLineDisplayText(text);
   const match =
     /^(?:(Last changed by \S+?\.|No task changed it\.) )?check (\S+) did not pass \(fail\):\s*(?:(\d+) failures?\b)?/i.exec(
@@ -112,11 +123,11 @@ export function savedFindingText(text: string): string {
     .join(' ');
 }
 
-/** The fix tasks a failure is left to, as one verdict segment names them. */
+/** The fix briefs a failure is left to, as one verdict segment names them. */
 export function leftTo(taskIds: readonly string[]): string {
   return taskIds.length <= 2
     ? taskIds.join(' and ')
-    : `${taskIds[0]} and ${taskIds.length - 1} other fix tasks`;
+    : `${taskIds[0]} and ${taskIds.length - 1} other fix briefs`;
 }
 
 /** The verdict segments of a fix check; each segment wraps whole. */
@@ -125,7 +136,7 @@ export function fixCheckVerdict(input: FixCheckCounts): string[] {
   const rest =
     others > 0
       ? [
-          `${others} ${others === 1 ? 'other' : 'others'} left for their fix tasks or the next review`,
+          `${others} ${others === 1 ? 'other' : 'others'} left for their fix briefs or the next review`,
         ]
       : [];
   const toSibling = `left to ${leftTo(deferredTo)}`;
@@ -135,9 +146,7 @@ export function fixCheckVerdict(input: FixCheckCounts): string[] {
       ? ['no failure from this brief', ...rest]
       : ownLeft > 0
         ? [
-            own === 1
-              ? '1 failure remains'
-              : `${ownLeft} of ${failures(own)} ${ownLeft === 1 ? 'remains' : 'remain'}`,
+            checkFailureSummary('', ownLeft),
             ...(deferred > 0 ? [`${deferred} ${toSibling}`] : []),
             ...rest,
           ]

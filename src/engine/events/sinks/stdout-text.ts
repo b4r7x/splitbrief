@@ -159,10 +159,10 @@ function briefChecks(view: RunView, taskId: string): string {
  *   base re-run V1: passes | fails
  *   base re-run V1: refused (<detail>) | not run (<detail>)
  *   fix check V1: passed (<command>) | failed (<command>)
- *   fix check V1: your <N> failures gone · <M> others left for their fix tasks or the next review (<command>)
- *   fix check V1: <J> of your <N> failures gone · <D> left to T025 (<command>)
- *   fix check V1: <K> of your <N> failures remain (<command>)
- *   fix check V1: no failure of yours · <M> others left for their fix tasks or the next review (<command>)
+ *   fix check V1: <N> failures gone · <M> others left for their fix briefs or the next review (<command>)
+ *   fix check V1: <J> of <N> failures gone · <D> left to T025 (<command>)
+ *   fix check V1: failed · <K> failures (<command>)
+ *   fix check V1: no failure from this brief · <M> others left for their fix briefs or the next review (<command>)
  *   fix check V1: refused (<detail>) | not run (<detail>)
  *   fix check V1: off
  *   plan check K1: passed · 14.2s (<command>) | failed · 14.2s (<command>)

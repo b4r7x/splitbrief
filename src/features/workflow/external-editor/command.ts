@@ -25,6 +25,7 @@ const guiEditorCandidates: readonly EditorArgv[] = [
   { command: 'mate', args: ['--wait'] },
   { command: 'bbedit', args: ['--wait'] },
 ];
+const macosOpen = { command: 'open', args: ['-W', '-t'] };
 
 const terminalEditors = new Set([
   'ed',
@@ -59,15 +60,17 @@ export function editorDisplayLabel(command: string): string {
 export function editorWaitingMessage(
   { command, args, kind }: ViewerArgv,
   filePath: string,
+  closeAction: 'return' | 'apply changes' | 'finish viewing',
 ): string {
-  const returnInstruction =
+  const instruction =
     kind === 'pager'
       ? 'Press q to return.'
-      : editorName(command) === 'open' && (args.includes('-W') || args.includes('--wait-apps'))
-        ? 'Quit the editor app to return.'
-        : 'Close the file to return.';
+      : editorName(command) === macosOpen.command &&
+          (args.includes('-W') || args.includes('--wait-apps'))
+        ? `Quit the editor app to ${closeAction}.`
+        : `Close the file to ${closeAction}.`;
   return oneLineDisplayText(
-    `${basename(filePath)} open in ${editorDisplayLabel(command)}. ${returnInstruction}`,
+    `${basename(filePath)} open in ${editorDisplayLabel(command)}. ${instruction}`,
   );
 }
 
@@ -84,8 +87,11 @@ function editorName(command: string): string {
   return editorDisplayLabel(command).toLowerCase();
 }
 
-export function isTerminalEditor(command: string): boolean {
-  return terminalEditors.has(editorName(command));
+export function isGuiEditor(command: string): boolean {
+  const name = editorName(command);
+  return (
+    name === macosOpen.command || guiEditorCandidates.some((editor) => editor.command === name)
+  );
 }
 
 function isSafePathSegment(segment: string): boolean {
@@ -151,8 +157,8 @@ function detectGuiEditor(
     }
   }
   if (platform === 'darwin') {
-    const openPath = resolveExecutableInPath('open', env, platform);
-    if (openPath !== undefined) return { command: openPath, args: ['-W', '-t'] };
+    const openPath = resolveExecutableInPath(macosOpen.command, env, platform);
+    if (openPath !== undefined) return { command: openPath, args: [...macosOpen.args] };
   }
   return undefined;
 }
@@ -165,7 +171,7 @@ export function resolveEditorArgv(options: ResolveEditorArgvOptions = {}): Edito
   if (visual) return visual;
 
   const editor = parseEditor(env.EDITOR);
-  if (editor && !isTerminalEditor(editor.command)) return editor;
+  if (editor && !terminalEditors.has(editorName(editor.command))) return editor;
 
   const guiEditor = detectGuiEditor(env, platform);
   if (guiEditor) return guiEditor;
@@ -180,8 +186,7 @@ export function resolveEditorArgv(options: ResolveEditorArgvOptions = {}): Edito
 const lessViewerArgs = ['-+E', '-+F', '-+M', '-+X', '-Ps?e(END) .Press q to return\\.'];
 
 /**
- * What reads a file without editing it: the editor you set, else your pager. No GUI editor is
- * guessed here: its `--wait` holds the TUI until the whole app quits.
+ * What reads a file without editing it: the editor you set, else your pager.
  */
 export function resolveViewerArgv(env: NodeJS.ProcessEnv = process.env): ViewerArgv {
   const editor = parseEditor(env.VISUAL) ?? parseEditor(env.EDITOR);

@@ -1992,21 +1992,21 @@ describe('workflow visual fixtures', () => {
   it.each([
     [80, 24],
     [60, 18],
-  ])(
-    'shows the moved-folder reason once in the transcript after Skip at %ix%i',
-    async (cols, rows) => {
-      const skip = await captureGalleryFrame('workflow-moved-project-skip', cols);
-      const lines = skip.frame.split('\n');
-      const receipts = skip.events.filter((event) => event.type === 'recovery_action_failed');
-      expect(receipts).toHaveLength(1);
-      expect(skip.frame).not.toContain('This run started in /Users/me/projects/shop. Move');
-      expect(lines).toHaveLength(rows);
-      expect(lines[0]).toContain('Build');
-      expect(skip.frame).toContain('Skip brief');
-      expect(skip.frame).toContain('End run');
-      expect(skip.frame).toContain('↑↓ select · ⏎ confirm');
-    },
-  );
+  ])('shows one moved-folder notice and End run after Skip at %ix%i', async (cols, rows) => {
+    const skip = await captureGalleryFrame('workflow-moved-project-skip', cols);
+    const lines = skip.frame.split('\n');
+    const receipts = skip.events.filter((event) => event.type === 'recovery_action_failed');
+    expect(receipts).toHaveLength(1);
+    const words = acrossNoticeEdges(skip.frame);
+    expect(words.split('This run started in /Users/me/projects/shop.')).toHaveLength(2);
+    expect(words).toContain('Move the project back or end the run');
+    expect(lines).toHaveLength(rows);
+    expect(lines[0]).toContain('Build');
+    expect(skip.frame).not.toContain('Skip brief');
+    expect(skip.frame).not.toContain('Try again');
+    expect(skip.frame).toContain('End run');
+    expect(skip.frame).toContain('↑↓ select · ⏎ confirm');
+  });
 
   it.each([
     [
@@ -2025,7 +2025,7 @@ describe('workflow visual fixtures', () => {
       'This run started in …/acme-interna…v2-monorepo.',
     ],
   ])(
-    'keeps every action and the way on of a Skip refused in a moved folder with %s at 60x18',
+    'keeps End run and the way on of a Skip refused in a moved folder with %s at 60x18',
     async (_label, path, startedIn) => {
       const scenario = findVisualScenario('workflow-moved-project-skip');
       const checkpoint = scenario?.checkpoints[0];
@@ -2055,10 +2055,23 @@ describe('workflow visual fixtures', () => {
         'Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.',
       );
       expect(lines.length, frame).toBeLessThanOrEqual(18);
-      for (const action of ['Try again', 'Skip brief', 'End run']) expect(frame).toContain(action);
+      expect(frame).toContain('End run');
+      expect(frame).not.toContain('Try again');
+      expect(frame).not.toContain('Skip brief');
       expect(frame).not.toContain('↓ more');
     },
   );
+
+  it('shows the passed and halted briefs with the run’s BUILD seat', async () => {
+    const { events, frame } = await captureGalleryFrame('workflow-at-rest-halted');
+    expect(events.filter((event) => event.type === 'task_started')).toMatchObject([
+      { taskId: 'T001', tool: 'ollama', model: 'qwen2.5-coder:7b' },
+      { taskId: 'T002', tool: 'ollama', model: 'qwen2.5-coder:7b' },
+    ]);
+    expect(frame).toMatch(/T002[^\n]+/);
+    expect(frame).toContain('Qwen2.5 Coder 7B');
+    expect(frame).not.toContain('Gemini 3.8 Flash');
+  });
 
   it('shows a mistyped command refused on Home with its line back and the command list closed', async () => {
     const reason = 'Unknown command: /setings. Did you mean /settings?';

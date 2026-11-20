@@ -87,7 +87,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     label: 'End-of-run checks',
     section: 'Validation',
     description:
-      'SPLITBRIEF runs the project gate the plan names before the final review. When off, a fix brief does not run the reviewer check it answers.',
+      'SPLITBRIEF runs the end-of-run checks the plan names before the final review. When off, a fix brief skips the reviewer check it answers.',
     kind: 'boolean',
     readValue: resolveEndChecks,
     lockedBy: lockedWhileReviewNone,

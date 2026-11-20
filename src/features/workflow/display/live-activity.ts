@@ -5,6 +5,7 @@ import type { PhaseFirstSeen } from '../../../core/run-view/reduce.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
 import {
   activeVerb,
+  WAITING_FOR_CONSULT,
   suiteStatusParts,
   reviewActivityParts,
   reviewActivitySpans,
@@ -110,18 +111,20 @@ export function deriveLiveStatus(input: {
   if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
   const activeIndex = getRailActiveIndex(input.phase);
   if (activeIndex < 0 || activeStage === null) return null;
-  const consult =
+  const answeringConsult =
     activeStage.stage === 'build' &&
-    (input.phase === 'escalating' ||
-      (input.activeOperation?.status === 'running' &&
-        (input.activeOperation.role === 'planner' || input.activeOperation.role === 'escalation')));
-  const tone = consult ? CREW_SEAT_ROLES.plan : stageTone;
+    input.activeOperation?.status === 'running' &&
+    (input.activeOperation.role === 'planner' || input.activeOperation.role === 'escalation');
   const parts =
     input.phase === 'final-review'
       ? reviewActivitySpans(
           reviewActivityParts(input.activeOperation, input.reviewerLabel, input.reviewNone),
         )
-      : [{ text: activeVerb(consult ? 'escalating' : input.phase, null, input.plannerCall), tone }];
+      : answeringConsult
+        ? [{ text: activeVerb('escalating', null, input.plannerCall), tone: CREW_SEAT_ROLES.plan }]
+        : input.phase === 'escalating'
+          ? [{ text: WAITING_FOR_CONSULT, tone: 'textDim' as const }]
+          : [{ text: activeVerb(input.phase, null, input.plannerCall), tone: stageTone }];
   if (activeStage.stage === 'build' && input.briefClock !== null) {
     return {
       parts,

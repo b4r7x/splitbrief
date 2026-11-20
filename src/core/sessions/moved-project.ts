@@ -2,6 +2,8 @@ const LEAD = 'This run started in ';
 const ACTION =
   'Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.';
 
+export const MOVED_PROJECT_ACTION = 'Move the project back or end the run';
+
 export function movedProjectMessage(dir: string): string {
   return `${LEAD}${dir}. ${ACTION}`;
 }

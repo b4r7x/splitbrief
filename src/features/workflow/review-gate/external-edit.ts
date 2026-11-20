@@ -86,7 +86,14 @@ export async function openReviewFileExternally(
     }
     let exit: EditorExit;
     try {
-      exit = await runEditor({ command, args, kind: 'editor', filePath, spawnEditor });
+      exit = await runEditor({
+        command,
+        args,
+        kind: 'editor',
+        filePath,
+        purpose: 'edit',
+        spawnEditor,
+      });
     } catch (err) {
       const failure = `Failed to open editor (${editorLabel}): ${toErrorMessage(err)}`;
       // The overlay saved its edit before the handover: that edit still settles the card.

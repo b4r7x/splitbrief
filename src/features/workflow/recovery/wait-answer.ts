@@ -83,7 +83,9 @@ async function waitForAnswer(
   const moved = Promise.withResolvers<undefined>();
   const follow = (): void => {
     driver.nextPass = readNextPass(driver.entry, issue);
-    updateWaitingHalt(state, driver.nextPass.reviewNone);
+    const displayed =
+      state.pendingRecovery === issue ? state : { ...state, pendingRecovery: issue };
+    updateWaitingHalt(displayed, driver.nextPass.reviewNone);
     if (!stillAsked()) moved.resolve(undefined);
   };
   follow();
@@ -116,9 +118,10 @@ async function waitForAnswer(
 
 /** Asks the panel until an answer applies an action or the run stops. */
 export async function askForAction(driver: RecoveryDriverState): Promise<PendingRecoveryResult> {
-  const { issue, state, controller, abortedRef, prepared, reentryCorrection } = driver;
+  const { state, controller, abortedRef, prepared, reentryCorrection } = driver;
   const { projectDir } = prepared.session.ref;
   while (true) {
+    const { issue } = driver;
     recoveryNoticeStore.ask(true);
     const waited = await waitForAnswer(driver, formatRecoveryPrompt(issue), () => true);
     recoveryNoticeStore.ask(false);

@@ -380,7 +380,7 @@ phase: reviewing-plan
 phase: implementing
 ```
 
-**Variations:** `Ctrl+O` inside the editor opens `plan.json` in the external editor (`VISUAL`, then non-terminal `EDITOR`, then detected GUI editors, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`); saving there settles the card the same way. There is no per-brief field editor.
+**Variations:** `Ctrl+O` inside the editor opens `plan.json` in the external editor (`VISUAL`, then non-terminal `EDITOR`, then detected GUI editors, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`). Save the file, then close it to submit the edit. If SPLITBRIEF opens the macOS text editor with `open -W -t`, quit the editor app.
 
 **See also:** [docs/FEATURES.md](./FEATURES.md#editing-planjson), recipe 12.
 

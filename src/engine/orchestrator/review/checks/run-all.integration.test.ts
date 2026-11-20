@@ -1115,8 +1115,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           ['V1.1', 'src/a.ts'],
           ['V1.2', 'src/b.ts'],
         ]);
-        expect(inputs[0]?.text).toContain('Last changed by T001.');
-        expect(inputs[1]?.text).toContain('Last changed by T002.');
+        expect(inputs[0]?.text).toBe('npm test failed · 1 failure. Last changed by T001.');
+        expect(inputs[1]?.text).toBe('npm test failed · 1 failure. Last changed by T002.');
         expect(inputs[0]?.checkDetail).toContain(`- ${NEW_RED}`);
         expect(inputs[0]?.checkDetail).not.toContain('src/b.ts');
         expect(inputs[1]?.checkDetail).toContain(

@@ -8,6 +8,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, type renderFeature } from '#testing/helpers/ink.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -56,7 +57,7 @@ afterEach(async () => {
 
 describe('e2e: the run screen of a run whose project folder moved', { timeout: 240_000 }, () => {
   it.each(['shop', 'acme-internal-billing-and-invoicing-service-v2-monorepo-workspace'])(
-    'keeps the actions and records one refusal when Skip finds that %s moved',
+    'offers only End run and shows one refusal when Skip finds that %s moved',
     async (folder) => {
       ({ fixture, restorePath } = consultFailureHaltFixture(plan));
       const started = { ...fixture, projectDir: join(fixture.tmpDir, folder) };
@@ -83,15 +84,24 @@ describe('e2e: the run screen of a run whose project folder moved', { timeout: 2
         },
         { timeout: 30_000 },
       );
-      const narrow = stripAnsiStyles(screen.lastFrame());
-      expect(narrow.split('\n').length, narrow).toBeLessThanOrEqual(24);
-      for (const action of ['Try again', 'Skip brief', 'End run']) expect(narrow).toContain(action);
-
-      terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
-      await flushEffects();
-      const wide = stripAnsiStyles(screen.lastFrame()).replace(/\s+/g, ' ');
-      expect(wide.split(STARTED_IN)).toHaveLength(2);
-      expect(wide).toContain(WHAT_TO_DO);
+      for (const [cols, rows] of [
+        [80, 24],
+        [60, 18],
+        [120, 40],
+      ] as const) {
+        terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 120 });
+        await flushEffects();
+        const frame = stripAnsiStyles(screen.lastFrame());
+        const words = acrossNoticeEdges(frame);
+        expect.soft(frame.split('\n').length, frame).toBeLessThanOrEqual(rows);
+        expect.soft(words.split(STARTED_IN), frame).toHaveLength(2);
+        expect.soft(words, frame).toContain(WHAT_TO_DO);
+        expect.soft(words, frame).toContain(MOVED_BYLINE);
+        expect.soft(frame).toContain('End run');
+        for (const action of ['Try again', 'Skip brief', 'type a correction']) {
+          expect.soft(frame).not.toContain(action);
+        }
+      }
     },
   );
 

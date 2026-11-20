@@ -81,6 +81,7 @@ export function recoveryComposerHint(
 export const RECOVERY_EMPTY_ENTER_NOTICE = 'Nothing to send. Tab to choose an action.';
 
 export function recommendedRecoveryAction(issue: RecoveryIssue): RecoveryAction | undefined {
+  if (issue.facts?.projectMoved === true) return undefined;
   return resolveRecommendedAction(issue, getRecoveryPromptActions(issue));
 }
 

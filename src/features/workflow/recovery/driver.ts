@@ -28,10 +28,8 @@ import { askForAction, noteQuestion, readNextPass } from './wait-answer.js';
  * loop's own re-entry, so the choice travels back as `switchSeat` and the halt
  * stays pending until the loop resolves it (`applyOfferedSeatSwap`).
  *
- * The halt is read once from the passed state and reused for the prompt text, the
- * answer parse and the apply: a session has one running process, and that process
- * is parked on this prompt, so nothing else can resolve or replace the halt while
- * the operator is answering.
+ * The saved halt is the action's input. The prompt and its answer parser share
+ * the offers this driver can still apply.
  */
 export function createRecoveryDriver(
   opts: RecoveryDriverOptions,
@@ -124,7 +122,11 @@ async function promptRecovery(
   // Words typed to continue the run answer the halt when only its revise can carry them; a
   // retry halt keeps them as the steer of whichever retry the operator picks on the panel. Only
   // a halt End run alone answers has no step to take them.
-  if (reentryCorrection !== undefined && reentryCorrection.text.trim() !== '') {
+  if (
+    driver.issue === issue &&
+    reentryCorrection !== undefined &&
+    reentryCorrection.text.trim() !== ''
+  ) {
     if (driver.nextPass.correctionAction === 'revise') {
       const applied = await applyAction(
         driver,

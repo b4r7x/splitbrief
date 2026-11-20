@@ -75,7 +75,7 @@ describe('settingsHelpLines', () => {
   it('reads a boolean row straight off its definition', () => {
     expect(linesFor('validation.endChecks')).toEqual([
       {
-        text: 'SPLITBRIEF runs the project gate the plan names before the final review. When off, a fix brief does not run the reviewer check it answers.',
+        text: 'SPLITBRIEF runs the end-of-run checks the plan names before the final review. When off, a fix brief skips the reviewer check it answers.',
       },
     ]);
   });

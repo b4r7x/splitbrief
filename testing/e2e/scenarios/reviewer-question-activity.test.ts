@@ -127,6 +127,7 @@ if (!prompt.includes(${JSON.stringify(input.answer)})) {
         });
         try {
           await expect.poll(screen, { timeout: 45_000 }).toContain(question);
+          expect(screen()).toContain('End-of-run checks · none in the plan');
           await delay(PROMPT_TYPEAHEAD_GRACE_MS * 2);
           await input.type(child, screen);
           child.write('\r');

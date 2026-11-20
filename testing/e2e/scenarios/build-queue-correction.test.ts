@@ -8,6 +8,7 @@ import { SessionLogEntrySchema } from '../../../src/core/schemas/session-log.js'
 import { loadState } from '../../../src/core/state/persistence.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
@@ -25,6 +26,7 @@ import {
   MARKER_FILE,
   MARKER_SOURCE,
 } from '../helpers/stop-continue-fixture.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const CORRECTION = 'QUEUE_CORRECTION_FOR_T001';
@@ -220,6 +222,10 @@ if (!corrected) throw new Error('Checks ran before the BUILD correction pass');
           const queuedId = state?.messageQueue[0]?.id;
           expect(queued).toMatchObject({ data: { id: queuedId } });
           expect(drained).toMatchObject({ data: { ids: [queuedId] } });
+          const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+          const transcript = transcriptText(events, 80);
+          expect(transcript).toMatch(/Your message[^\n]*\n[^\n]*QUEUE_CORRECTION_FOR_T001/);
+          expect(transcript).toContain('Delivered to BUILD on T001');
           const calls = readFileSync(received, 'utf8')
             .trim()
             .split('\n')

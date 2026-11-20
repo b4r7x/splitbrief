@@ -180,15 +180,11 @@ describe('reviewChecksRow', () => {
 
   it('says, in the dim tone, that the plan names no end-of-run checks', () => {
     const event = { type: 'review_checks', ts: 0, phase: 'final-review', status: 'none' } as const;
-    expect(reviewChecksRow(event)).toBe(
-      'End-of-run checks · none · the plan names no end-of-run checks',
-    );
+    expect(reviewChecksRow(event)).toBe('End-of-run checks · none in the plan');
     expect(reviewChecksSegments(event)).toEqual([
       { text: 'End-of-run checks', tone: 'textDim' },
       { text: ' · ', tone: 'textDim' },
-      { text: 'none', tone: 'textDim' },
-      { text: ' · ', tone: 'textDim' },
-      { text: 'the plan names no end-of-run checks', tone: 'textDim' },
+      { text: 'none in the plan', tone: 'textDim' },
     ]);
   });
 });

@@ -1,5 +1,6 @@
 import { TaskSummary } from '../../components/task-summary/view.js';
 import { taskTargetParts } from '../../../../core/run-view/brief-labels.js';
+import { isPlannerCannotDetail } from '../../../../core/recovery/causes.js';
 import { stageSummaryRow } from '../../components/conversation-flow/stage-summary.js';
 import { settledTaskStartedEvent } from '../transcript-walk/walk.js';
 import type { SettledTranscriptSection } from '../transcript-walk/types.js';
@@ -30,12 +31,13 @@ export function settledRowBlock({ section, width }: SettledRowBlockOptions): Con
         extraFiles={target?.extraFiles}
         reason={
           section.summary.method === 'skipped' &&
+          section.summary.reason !== undefined &&
+          isPlannerCannotDetail(section.summary.reason) &&
           section.items.some(
             (event) =>
               event.type === 'consult_answered' &&
               event.taskId === section.summary.id &&
-              event.action === 'cannot' &&
-              section.summary.reason?.startsWith('Planner said:'),
+              event.action === 'cannot',
           )
             ? undefined
             : section.summary.reason

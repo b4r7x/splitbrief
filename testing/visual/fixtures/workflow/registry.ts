@@ -2001,9 +2001,9 @@ const checkpointPredicates = [
   [
     checkpointId('moved-project-skip'),
     (context) =>
-      includesTranscript('Recovery  Skip brief blocked')(context) &&
-      workflowTranscriptText().replace(/\s+/g, ' ').includes(MOVED_PROJECT_MESSAGE) &&
-      context.output.includes('Needs you'),
+      feedbackStore.get().message === MOVED_PROJECT_MESSAGE &&
+      includesAll('This run started in', 'End run')(context) &&
+      !context.output.includes('Skip brief'),
   ],
   [
     checkpointId('project-gone-draft'),

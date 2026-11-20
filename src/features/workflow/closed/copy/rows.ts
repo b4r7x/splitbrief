@@ -82,6 +82,7 @@ export function recordFold(view: SummaryView, form: SummaryForm): string[] {
   const notes = view.review.kind === 'written' ? view.digest.notes : [];
   const kinds: readonly (readonly [number, string])[] = [
     [view.briefs.rows.length + view.briefs.earlierRows.length, 'brief'],
+    [form === 'whole' ? 0 : notes.filter((note) => note.blocking).length, 'blocking finding'],
     [
       (view.files.changed?.length ?? 0) - (form === 'whole' ? view.digest.leadFiles.length : 0),
       'file',
@@ -91,7 +92,6 @@ export function recordFold(view: SummaryView, form: SummaryForm): string[] {
         .length,
       'note',
     ],
-    [form === 'whole' ? 0 : notes.filter((note) => note.blocking).length, 'blocking finding'],
     [view.failedReviews.length, 'review'],
   ];
   const [first, ...rest] = kinds

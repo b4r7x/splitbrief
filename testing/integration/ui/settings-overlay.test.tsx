@@ -51,6 +51,7 @@ describe('settings overlay integration', () => {
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
     expect(ui.lastFrame()).toContain('End-of-run checks');
+    expect(ui.lastFrame()).toContain('runs the end-of-run checks');
 
     ui.stdin.write(' ');
     await vi.waitFor(() => {

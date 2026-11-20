@@ -23,6 +23,7 @@ import {
   reviewActivitySpans,
   suiteStatusParts,
   suiteStageParts,
+  WAITING_FOR_CONSULT,
 } from '../phase-verb.js';
 import { formatRecordedSeatIdentity } from '../recorded-seat-identity.js';
 import { runnerActivityLedgerItem } from '../runner-activity/ledger-item.js';
@@ -68,8 +69,7 @@ function activityLine(
   if (operation === null) {
     return activityResult([
       {
-        text:
-          input.runView.phase === 'escalating' ? 'Waiting for the consult answer' : 'Between calls',
+        text: input.runView.phase === 'escalating' ? WAITING_FOR_CONSULT : 'Between calls',
         tone: 'textDim',
       },
     ]);

@@ -11,9 +11,8 @@ import { suiteStatusParts } from '../display/phase-verb.js';
 import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
-import { stepWord, stopPoint } from '../display/step-words.js';
+import { CONTINUE_KEY_HINT, stepWord, stopPoint } from '../display/step-words.js';
 import { formatKeyHints } from '../../../components/key-legend.js';
-
 import { legendText } from '../closed/byline.js';
 
 export interface StopBylineInput {
@@ -179,7 +178,10 @@ export function stopByline(input: StopBylineInput): StopByline | null {
     );
 
   if (input.phase === 'parked') {
-    const hint = input.record == null ? legendText({ width: Infinity, overflow: false }) : '';
+    const hint =
+      input.record == null
+        ? `${CONTINUE_KEY_HINT}${SOFT_SEP}${legendText({ width: Infinity, overflow: false })}`
+        : '';
     if (input.parked?.kind === 'boundary') {
       const next: StepRef | null =
         input.nextTaskId === null

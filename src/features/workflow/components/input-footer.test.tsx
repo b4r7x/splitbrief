@@ -905,7 +905,7 @@ describe('InputFooter', () => {
 
     expect(frame).toContain('Stopped at T002 · Partial changes kept');
     // The keys live on the legend row above, so the byline carries the state alone.
-    expect(frame).not.toContain('⏎ resume');
+    expect(frame).not.toContain('⏎ to continue');
     expect(BRAILLE_SPINNER_FRAMES.some((spinnerFrame) => frame.includes(spinnerFrame))).toBe(false);
 
     ui.unmount();

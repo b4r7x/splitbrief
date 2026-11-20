@@ -1,6 +1,7 @@
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import type { Section } from '../../../../core/sections/types.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
+import { movedProjectPath } from '../../../../core/sessions/moved-project.js';
 import type { EngineEventOf, EngineEvent } from '../../../../engine/events/types.js';
 import { isTranscriptRowlessEvent } from '../event-rows/visibility.js';
 import type { RecoveryFold } from './types.js';
@@ -142,6 +143,15 @@ export function automaticRecoveryFolds(sections: readonly Section<EngineEvent>[]
         if (selected === chain) selected = undefined;
       } else if (event.type === 'recovery_action_failed') {
         if (selected?.recovery.issueId === event.issueId) selected = undefined;
+        if (movedProjectPath(event.message) !== undefined) {
+          hidden.add(event);
+          if (
+            previous?.type === 'recovery_action_selected' &&
+            previous.issueId === event.issueId &&
+            previous.action === event.action
+          )
+            hidden.add(previous);
+        }
       } else if (event.type === 'task_started') {
         failure = undefined;
       }

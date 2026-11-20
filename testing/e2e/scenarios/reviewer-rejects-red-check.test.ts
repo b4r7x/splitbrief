@@ -215,6 +215,9 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
 
     expect(calls.map((call) => call.kind)).toEqual(['plan', 'implement', 'final-review']);
     expect(calls[2]?.inputs).toEqual(['V1.1']);
+    expect(calls[2]?.prompt).toContain(
+      `${RED_COMMAND} failed · 1 failure. Could not verify the failure at the run base`,
+    );
 
     const reviewDone = events.find(
       (event) =>
@@ -293,8 +296,8 @@ describe('e2e: the reviewer decides a red reviewer check', { timeout: 300_000 },
     });
     const reviewText = readFileSync(join(dir, REVIEW_FILE), 'utf8');
     expect(reviewText).toContain('### Verdict\n\nfail\n');
-    expect(reviewText).toMatch(
-      /^- V1\.1: Reviewer check V1 \(node tools\/run-specs\.mjs\) failed and/m,
+    expect(reviewText).toContain(
+      `- V1.1: ${RED_COMMAND} failed · 1 failure. Could not verify the failure at the run base`,
     );
     expect(state.pendingRecovery).toMatchObject({
       reason: 'review-failed',

@@ -734,7 +734,7 @@ describe('checkFailureText', () => {
     });
 
     expect(text.split('\n')[0]).toBe(
-      'check V1 did not pass (fail): 1\u00a0of\u00a02\u00a0failures\u00a0remains, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
+      'check V1 did not pass (fail): failed\u00a0·\u00a01\u00a0failure, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0briefs\u00a0or\u00a0the\u00a0next\u00a0review',
     );
     expect(text).toContain(
       [
@@ -764,7 +764,7 @@ describe('checkFailureText', () => {
 
     expect(text).toContain(
       [
-        'check V1 did not pass (fail): 1\u00a0of\u00a02\u00a0failures\u00a0gone, 1\u00a0left\u00a0to\u00a0T025, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review',
+        'check V1 did not pass (fail): 1\u00a0of\u00a02\u00a0failures\u00a0gone, 1\u00a0left\u00a0to\u00a0T025, 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0briefs\u00a0or\u00a0the\u00a0next\u00a0review',
         'Left to T025:',
         `- ${shared}`,
         "Other failures, not this brief's job:",
@@ -781,7 +781,9 @@ describe('checkFailureText', () => {
       carried: { failureKeys: [carried], sharedWith: new Map(), exempt: false },
     });
 
-    expect(text).toContain(`1\u00a0failure\u00a0remains\nYour failures that remain:\n- ${moved}`);
+    expect(text).toContain(
+      `failed\u00a0·\u00a01\u00a0failure\nYour failures that remain:\n- ${moved}`,
+    );
   });
 
   it('shares ten places between Go tests and diagnostics, keeping each listed test message', () => {

@@ -167,7 +167,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
         source: 'check',
         file,
         text: [
-          checkFailureSummary(chosen.command, failureKeys.length || fresh.length),
+          `${checkFailureSummary(chosen.command, failureKeys.length || fresh.length)}.`,
           ...(notVerified === undefined
             ? []
             : [`Could not verify the failure at the run base (${notVerified}).`]),

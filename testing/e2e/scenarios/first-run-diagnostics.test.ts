@@ -216,7 +216,7 @@ describe('e2e: first-run diagnostics', () => {
     expect(readFileSync(configPath(target.projectDir), 'utf8')).toBe(saved);
   });
 
-  it('warns in doctor that End-of-run checks off run no project gate before the final review', async () => {
+  it('warns in doctor that End-of-run checks are off before the final review', async () => {
     const target = freshProject();
     const initialized = await cli(target, ['init', '--yes']);
     expect(initialized.exitCode, initialized.stderr).toBe(0);
@@ -228,7 +228,7 @@ describe('e2e: first-run diagnostics', () => {
     const report = await cli(target, ['doctor']);
     expect(report.stdout).toContain('End-of-run checks: off.');
     expect(report.stdout).toContain(
-      'End-of-run checks are off: SPLITBRIEF runs no project gate before the final review.',
+      'End-of-run checks are off. SPLITBRIEF skips them before the final review.',
     );
   });
 
@@ -249,14 +249,14 @@ describe('e2e: first-run diagnostics', () => {
     expect(report.stdout).toMatch(/plan and task checks still run/iu);
   });
 
-  it('states in doctor text and JSON that the plan gate runs before the final review only', async () => {
+  it('states in doctor text and JSON that the end-of-run checks run before the final review only', async () => {
     const target = freshProject();
     const initialized = await cli(target, ['init', '--yes']);
     expect(initialized.exitCode, initialized.stderr).toBe(0);
     const text = await cli(target, ['doctor']);
     const json = await cli(target, ['doctor'], { json: true, timeoutMs: 60_000 });
     const gateRule =
-      'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.';
+      'SPLITBRIEF runs the end-of-run checks the plan names before the final review. A brief review skips these checks.';
 
     expect(text.stdout).toContain('End-of-run checks: on.');
     expect.soft(text.stdout).toContain(gateRule);
@@ -276,7 +276,7 @@ describe('e2e: first-run diagnostics', () => {
       implementer: { kind: 'cli', tool: 'claude-code', contextLength: 16_000 },
     });
     const before = await cli(target, ['doctor']);
-    expect(before.stdout).toContain('context length 16000 may be tight.');
+    expect(before.stdout).toContain('context window may be too small.');
     expect(before.stdout).toContain('Settings > Tuning > Prompt budget');
     expect(before.stdout).not.toContain('implementer.contextLength');
 

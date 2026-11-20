@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { fixCheckVerdict, judgeFixCheck, type FixCheckCounts } from './checks.js';
+import {
+  fixCheckVerdict,
+  judgeFixCheck,
+  leftTo,
+  savedFindingText,
+  type FixCheckCounts,
+} from './checks.js';
 
 describe('judgeFixCheck', () => {
   const own = 'src/a.ts(10,5): error TS2322: Type mismatch.';
@@ -126,6 +132,35 @@ describe('judgeFixCheck', () => {
   });
 });
 
+describe('savedFindingText', () => {
+  it('summarizes a saved reviewer check whose output names failing specs', () => {
+    const text = [
+      'Reviewer check V1 (npm test) failed with new failures.',
+      'check V1 did not pass (fail): exited with code 1: Error: 2 specs failed',
+      'Output tail:',
+      '> app@1.4.0 test',
+      '> node tools/run-specs.mjs',
+    ].join('\n');
+    expect(savedFindingText(text)).toBe('npm test failed · 2 failures');
+  });
+
+  it('keeps the owner and failure count before the stored detail', () => {
+    const text = [
+      'Reviewer check V2 (npm run test -- (api)) failed with new failures. Last changed by T001.',
+      'check V2 did not pass (fail): 1 failure',
+      'New failures:',
+      '- src/api.ts:12',
+    ].join('\n');
+    expect(savedFindingText(text)).toBe(
+      'npm run test -- (api) failed · 1 failure. Last changed by T001.',
+    );
+  });
+});
+
+it('names any additional briefs that can fix a shared failure', () => {
+  expect(leftTo(['T025', 'T026', 'T027'])).toBe('T025 and 2 other fix briefs');
+});
+
 describe('fixCheckVerdict', () => {
   const counts = { own: 2, ownLeft: 0, deferred: 0, deferredTo: [], others: 0 };
   const words = (input: FixCheckCounts) =>
@@ -142,10 +177,10 @@ describe('fixCheckVerdict', () => {
     expect(segments.filter((segment) => segment.includes(' '))).toEqual([]);
   });
 
-  it('says the own failures are gone and the others are left for their fix tasks or the next review', () => {
+  it('says the own failures are gone and the others are left for their fix briefs or the next review', () => {
     expect(words({ ...counts, others: 3 })).toEqual([
       '2 failures gone',
-      '3 others left for their fix tasks or the next review',
+      '3 others left for their fix briefs or the next review',
     ]);
   });
 
@@ -153,7 +188,7 @@ describe('fixCheckVerdict', () => {
     expect(words({ ...counts, deferred: 1, deferredTo: ['T025'], others: 1 })).toEqual([
       '1 of 2 failures gone',
       '1 left to T025',
-      '1 other left for their fix tasks or the next review',
+      '1 other left for their fix briefs or the next review',
     ]);
     expect(words({ ...counts, deferred: 2, deferredTo: ['T025', 'T026'] })).toEqual([
       '2 failures left to T025 and T026',
@@ -162,16 +197,16 @@ describe('fixCheckVerdict', () => {
 
   it('counts what remains, what is left to a sibling and the others on a red', () => {
     expect(words({ own: 3, ownLeft: 1, deferred: 1, deferredTo: ['T025'], others: 2 })).toEqual([
-      '1 of 3 failures remains',
+      'failed · 1 failure',
       '1 left to T025',
-      '2 others left for their fix tasks or the next review',
+      '2 others left for their fix briefs or the next review',
     ]);
   });
 
   it('says a check with no failure of the task leaves its failures to others', () => {
     expect(words({ ...counts, own: 0, others: 1 })).toEqual([
       'no failure from this brief',
-      '1 other left for their fix tasks or the next review',
+      '1 other left for their fix briefs or the next review',
     ]);
   });
 });

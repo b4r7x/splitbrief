@@ -7,9 +7,11 @@ import { preparationStore } from '../../../../stores/navigation/preparation.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { departureStore } from '../../../../stores/workflow/departure.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
+import { stopStore } from '../../../../stores/workflow/stop.js';
 import { applyRunning } from '../../at-rest.js';
 import { bylineParts, legendText, runClosedLabel } from '../../closed/byline.js';
 import { applyByline, openRunBylineParts } from '../../closed/open-byline.js';
+import { CONTINUE_KEY_HINT } from '../../display/step-words.js';
 import { getChromeContentWidth } from '../../layout/chrome-rows.js';
 import type { useWorkflowScreen } from './use-model.js';
 
@@ -33,15 +35,14 @@ export function useAtRestByline(input: {
   // The at-rest and Apply bylines carry no pip, so they open on the text column and their budget is
   // what is left of the chrome row past the mark slot.
   const bylineWidth = Math.max(1, getChromeContentWidth(cols) - MARK_SLOT_CELLS);
-  const config = configStore.use((state) => state.config);
+  const config = configStore.useConfig();
   const atRestStatus = model.atRestRecord?.status;
   const owner = model.atRestRecord?.owner;
   const viewWait = runViewStore.use((view) => view.seatWait);
   // An open run continues with this window's crew, so its saved wait on a tool the seat no longer
   // runs waits no more. A run another process drives waits on the crew that process loaded.
   const wait =
-    viewWait === null ||
-    (atRestStatus?.kind === 'open' && config !== null && seatWaitMoved(viewWait.wait, config))
+    viewWait === null || (atRestStatus?.kind === 'open' && seatWaitMoved(viewWait.wait, config))
       ? null
       : viewWait;
   // The run's log names when an Apply started, here or in another process. A log written before it
@@ -103,6 +104,12 @@ export function useAtRestByline(input: {
   // composer does not offer it for going home at the same time. Neither does a quit queued behind
   // Apply, which Escape no longer changes.
   const checking = preparationStore.use((state) => state.kind === 'checking');
+  const parked = stopStore.use((state) => state.phase === 'parked');
+  const continueInLegend =
+    parked &&
+    model.continuable &&
+    atRestStatus?.kind === 'open' &&
+    atRestStatus.stop.on.kind === 'paused';
   const legend =
     model.atRestRecord === undefined && !model.applying
       ? model.inputHint
@@ -112,5 +119,9 @@ export function useAtRestByline(input: {
           canGoHome: !checking && queuedDeparture !== 'quit',
           canOpenCommands: !checking,
         });
-  return { ruleLabel, byline, legend };
+  return {
+    ruleLabel,
+    byline,
+    legend: continueInLegend ? `${CONTINUE_KEY_HINT}${SOFT_SEP}${legend}` : legend,
+  };
 }

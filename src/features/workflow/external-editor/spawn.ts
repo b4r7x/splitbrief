@@ -10,7 +10,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import {
   type ViewerArgv,
   editorWaitingMessage,
-  isTerminalEditor,
+  isGuiEditor,
   viewerRestoresScreen,
 } from './command.js';
 
@@ -42,6 +42,7 @@ export const spawnEditorProcess: SpawnEditor = (command, args, stdio = 'inherit'
 
 interface RunEditorOptions extends ViewerArgv {
   filePath: string;
+  purpose: 'edit' | 'view';
   spawnEditor: SpawnEditor;
 }
 
@@ -50,11 +51,16 @@ export function runEditor({
   args,
   kind,
   filePath,
+  purpose,
   spawnEditor,
 }: RunEditorOptions): Promise<EditorExit> {
-  const terminal = kind === 'pager' || isTerminalEditor(command);
+  const terminal = kind === 'pager' || !isGuiEditor(command);
   if (terminal) suspendTerminalForEditor();
-  const message = editorWaitingMessage({ command, args, kind }, filePath);
+  const message = editorWaitingMessage(
+    { command, args, kind },
+    filePath,
+    terminal ? 'return' : purpose === 'edit' ? 'apply changes' : 'finish viewing',
+  );
   const messageRows = Math.max(
     1,
     Math.ceil(getTerminalCellWidth(message) / process.stdout.columns),

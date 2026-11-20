@@ -1,6 +1,8 @@
 import type { StepRef, StepCut } from '../../../core/schemas/run-step.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
+export const CONTINUE_KEY_HINT = '⏎ to continue';
+
 /**
  * A step in the words the rest of the screen uses for it: a brief by id, every planner call or
  * gate as the plan, the one stage the rail shows for them, and Apply by the stage it names.

@@ -64,7 +64,7 @@ export function missingContextWords(sections: readonly string[]): string {
         case DRIFT_REPORT_FILE:
           return 'the scope report';
         case TASKS_FILE:
-          return 'the task briefs';
+          return 'the briefs';
         case SPEC_FILE:
           return 'the feature specification';
         default:

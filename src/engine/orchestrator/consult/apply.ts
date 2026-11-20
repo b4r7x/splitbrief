@@ -22,16 +22,17 @@ function droppedCriteria(task: Task, specs: readonly TaskSpec[]): string[] {
   return (task.criteria ?? []).filter((criterion) => !kept.has(criterion));
 }
 
-function droppedCriteriaChecks(
+function droppedCheckLabels(
   task: Task,
   plan: Plan | undefined,
   specs: readonly TaskSpec[],
 ): string[] {
-  const carried = new Set((task.checks ?? []).map((check) => check.id));
+  const carried = new Map((task.checks ?? []).map((check) => [check.id, check.value]));
   const kept = new Set(specs.flatMap((spec) => spec.checks.map((check) => check.id)));
-  return criteriaCheckIds(task.criteria ?? [], plan).filter(
-    (checkId) => carried.has(checkId) && !kept.has(checkId),
-  );
+  return criteriaCheckIds(task.criteria ?? [], plan).flatMap((id) => {
+    const value = carried.get(id);
+    return value === undefined || kept.has(id) ? [] : [`${id} (${value})`];
+  });
 }
 
 /** The planner's brief-breaking answer, or null when the replacement keeps the task's contract. */
@@ -60,7 +61,7 @@ function guardViolation(
     if (added.length > 0) {
       return `the rewritten brief changes its criteria: adds ${criteriaText(added)}`;
     }
-    const droppedChecks = droppedCriteriaChecks(task, plan, [action.task]);
+    const droppedChecks = droppedCheckLabels(task, plan, [action.task]);
     if (droppedChecks.length > 0) {
       return `the rewritten brief drops the checks its criteria require: ${droppedChecks.join(', ')}`;
     }
@@ -70,7 +71,7 @@ function guardViolation(
   if (dropped.length > 0) {
     return `the new briefs together drop ${criteriaText(dropped)}`;
   }
-  const droppedChecks = droppedCriteriaChecks(task, plan, action.tasks);
+  const droppedChecks = droppedCheckLabels(task, plan, action.tasks);
   if (droppedChecks.length > 0) {
     return `the new briefs together drop the checks their criteria require: ${droppedChecks.join(', ')}`;
   }

@@ -246,7 +246,7 @@ describe('deriveLiveStatus', () => {
     ['planning', 'planner'],
     ['analyzing', 'planner'],
     ['validating-task', 'implementer'],
-    ['escalating', 'planner'],
+    ['escalating', 'textDim'],
     ['final-review', 'reviewer'],
   ] as const)('derives %s with the live %s byline tone', (phase, tone) => {
     expect(deriveLiveStatus({ ...base, phase })).toEqual({
@@ -272,7 +272,7 @@ describe('deriveLiveStatus', () => {
                             ? 'Analyzing…'
                             : phase === 'validating-task'
                               ? 'Validating…'
-                              : 'Answering the consult…',
+                              : 'Waiting for the consult answer',
                 tone,
               },
             ],
@@ -750,7 +750,7 @@ it('keeps separators inside a working reviewer identity in the seat tone', () =>
   resetWorkflow();
 });
 
-it('names the planner consult while Build waits for its answer', () => {
+it('names the planner consult while the planner runs in Build', () => {
   resetWorkflow();
   addEvent(makeRunnerCallStarted({ phase: 'implementing', role: 'planner', ts: 60_000 }));
   expect(

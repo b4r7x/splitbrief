@@ -11,12 +11,6 @@ import { separatedSpans } from './conversation-rows/row-format/text.js';
 import { fitFeedbackMessage } from '../../components/composer/feedback-fit.js';
 import type { SlowProbeText } from '../../hooks/use-slow-probe-text.js';
 
-// The rail's fraction counts briefs that passed their checks, never the index of the one running:
-// a run on its last brief must not read as finished.
-export function stageFractionText(view: { passed: number; total: number }): string {
-  return view.total > 0 ? `${view.passed}/${view.total}` : '';
-}
-
 export interface InputFooterBylineInput {
   cols: number;
   lead: readonly ConversationRowSegment[];

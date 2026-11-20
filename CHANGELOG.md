@@ -23,7 +23,12 @@
 - Review packets keep the BUILD route when you skip a brief that already ran.
 - The model catalog cache omits prices for individual model modes.
 - The closed run summary shows the findings that blocked review. Queued messages show whether they reached a seat, and the brief count appears during Build.
-- Opening a file in a graphical editor keeps the workflow visible.
+- If Skip brief finds a moved project, the run screen shows where the run started and offers End run.
+- Paused runs show the Enter key to continue. The consult status tells you when the planner starts answering.
+- Delivered messages keep a label, and narrow summary folds put blocking findings ahead of files and notes.
+- Terminal editors get the terminal when you edit a plan or show a diff. Graphical editors keep the workflow visible and show what happens when you close the file or quit the app.
+- The transcript and plain output use the same fix-check results. Closed runs show a short summary for older reviewer check failures.
+- Questions about dropped checks show each check's command or file. Settings and readiness both call the checks before final review End-of-run checks.
 - The crew line on Home, in the run screen header and in the summary of a closed run no longer leaves a seat out on a narrow terminal. It names every seat or no seat, and on Home and in the summary a narrow crew continues on the next row.
 
 ### Removed

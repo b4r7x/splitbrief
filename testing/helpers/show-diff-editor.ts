@@ -22,7 +22,7 @@ interface ShowDiffEditorOptions {
    * `less` stands for the pager Show diff falls back to: the run sets no editor. `more` is a
    * `PAGER` that prints the patch on the shell screen.
    */
-  readonly editor: 'cursor' | 'open' | 'less' | 'more';
+  readonly editor: 'cursor' | 'open' | 'mg' | 'less' | 'more';
   readonly exitCode: number;
   readonly fullscreen: boolean;
   readonly viewport: { readonly cols: number; readonly rows: number };
@@ -206,7 +206,7 @@ async function createFixture(dir: string, options: ShowDiffEditorOptions) {
       ? ['-W', '-t']
       : options.editor === 'less'
         ? ['-+E', '-+F', '-+M', '-+X', '-Ps?e(END) .Press q to return\\.']
-        : options.editor === 'more'
+        : options.editor === 'more' || options.editor === 'mg'
           ? []
           : ['--wait'];
   const editorScript = join(binDir, 'editor.cjs');

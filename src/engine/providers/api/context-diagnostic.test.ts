@@ -6,9 +6,11 @@ it('names the missing check results and scope report in the review error', () =>
     code: 'insufficient-context',
     seat: 'review',
     cause: 'missing-required',
-    missingSections: ['evidence.json', 'drift-report.json'],
+    missingSections: ['evidence.json', 'drift-report.json', 'tasks.md'],
   });
   expect(diagnostic.message).toMatch(/check results/i);
-  expect(diagnostic.message).toMatch(/scope/i);
+  expect(diagnostic.message).toContain(
+    "Missing: the brief's check results, the scope report, the briefs.",
+  );
   expect(diagnostic.message).not.toMatch(/\.json/);
 });

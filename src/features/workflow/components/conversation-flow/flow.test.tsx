@@ -839,7 +839,8 @@ describe('ConversationFlow', () => {
     );
     const rows = normalizedRows(ui.lastFrame() ?? '');
     expect(rows).not.toContain('Queued for BUILD on T003 · read when its call ends');
-    expect(rows.join(' ')).toContain('Keep the API');
+    expect(rows).toContain('Your message');
+    expect(rows[rows.indexOf('Your message') + 1]).toBe('Keep the API');
     expect(rows).toContain('Delivered to BUILD on T003');
     expect(rows).toContain('Pending 1');
     ui.unmount();

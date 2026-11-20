@@ -265,7 +265,7 @@ describe('e2e: a stop that settles under text typed in the composer', {
         run.release();
         await expect.poll(screen, PAINT).toContain(STOPPED);
         expect(screen()).not.toContain('Session options');
-        expect(screen()).toContain('⏎ resume');
+        expect(screen()).toContain('⏎ to continue');
         expect(screen()).toContain(`› ${WORDS}`);
 
         write(ENTER);

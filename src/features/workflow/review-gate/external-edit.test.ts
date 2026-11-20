@@ -179,6 +179,7 @@ describe('openReviewFileExternally stale-owner feedback', () => {
           args: [],
           kind,
           filePath: join(tempDir, 'run.patch'),
+          purpose: 'view',
           spawnEditor,
         });
       } finally {

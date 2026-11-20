@@ -939,9 +939,9 @@ describe('createStdoutTextSink', () => {
       'fix check V1: failed (npm test)',
       "base re-run V1: pre-existing · the failure also fails before this run's changes",
       'fix check V1: refused (names no program)',
-      'fix check V1: 2\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
-      'fix check V1: 1\u00a0of\u00a02\u00a0failures\u00a0remains · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
-      'fix check V1: 1\u00a0of\u00a02\u00a0failures\u00a0gone · 1\u00a0left\u00a0to\u00a0T025 · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0tasks\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: 2\u00a0failures\u00a0gone · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0briefs\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: failed\u00a0·\u00a01\u00a0failure · 3\u00a0others\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0briefs\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
+      'fix check V1: 1\u00a0of\u00a02\u00a0failures\u00a0gone · 1\u00a0left\u00a0to\u00a0T025 · 1\u00a0other\u00a0left\u00a0for\u00a0their\u00a0fix\u00a0briefs\u00a0or\u00a0the\u00a0next\u00a0review (npm test)',
       'fix check V1: 2\u00a0failures\u00a0gone (npm test)',
       'base re-run V3: 1\u00a0new, 1\u00a0pre-existing, 1\u00a0not verified at the run base · the run base re-run timed out',
     ]);

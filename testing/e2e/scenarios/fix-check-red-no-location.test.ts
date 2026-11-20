@@ -1,15 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import type { ConsultAnswer } from '../../../src/core/schemas/consult.js';
 import type { ReviewAnswer } from '../../../src/core/schemas/review/verdict.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { InputFooter } from '../../../src/features/workflow/components/input-footer.js';
+import { configStore } from '../../../src/stores/project/config.js';
+import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import {
@@ -232,6 +237,30 @@ describe('e2e: a fix brief check that fails with output naming no file:line', {
     expect(readState(target, sessionId).phase).toBe('complete');
 
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
+    const callIndex = events.findIndex(
+      (event) =>
+        event.type === 'runner_call_started' &&
+        event.phase === 'escalating' &&
+        (event.role === 'planner' || event.role === 'escalation'),
+    );
+    const call = events[callIndex];
+    if (call === undefined || call.type !== 'runner_call_started') {
+      throw new Error('The CLI recorded no consult call');
+    }
+    resetWorkflow();
+    configStore.load(target.projectDir);
+    for (const event of events.slice(0, callIndex)) addEvent(event);
+    const footer = renderFeature(createElement(InputFooter, { width: 80, buildBlockShown: true }));
+    try {
+      expect.soft(footer.lastFrame()).toContain('Waiting for the consult answer');
+      expect.soft(footer.lastFrame()).not.toContain('Answering the consult');
+      addEvent(call);
+      await flushEffects();
+      expect(footer.lastFrame()).toContain('Answering the consult');
+    } finally {
+      footer.unmount();
+      configStore.reset();
+    }
     expect(
       events.filter(
         (event) =>
@@ -245,7 +274,15 @@ describe('e2e: a fix brief check that fails with output naming no file:line', {
     ).toBeGreaterThan(0);
     const lines = transcriptText(events).split('\n');
     const red = lines.findIndex((line) => line.includes(`Render ${SCENARIO} · failed`));
-    const consulted = lines.findIndex((line) => line.includes('verify T001-K1, T001-R1'));
+    const consulted = lines.findIndex((line) => line.includes('T002: verify'));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'consult_answered',
+        taskId: 'T002',
+        action: 'verify',
+        checkIds: ['T001-K1', 'T001-R1'],
+      }),
+    );
     expect(red, lines.join('\n')).toBeGreaterThanOrEqual(0);
     expect(consulted, lines.join('\n')).toBeGreaterThan(red);
   });

@@ -2612,7 +2612,7 @@ describe('buildConversationRowsProjection check lists', () => {
     ]);
 
     expect(materialize(projection).map(rowText)).toEqual([
-      'End-of-run checks · none · the plan names no end-of-run checks',
+      'End-of-run checks · none in the plan',
       'Reviewer check V1 · node --test a.js · passed',
       'Reviewer check V2 · node --test a.js · passed',
     ]);
@@ -2697,7 +2697,7 @@ describe('buildConversationRowsProjection check lists', () => {
     const rows = materialize(projectionFor([header, firstCheck, event, secondCheck]));
 
     expect(rows.map(rowText)).toEqual([
-      'End-of-run checks · none · the plan names no end-of-run checks',
+      'End-of-run checks · none in the plan',
       'Reviewer check V1 · node --test a.js · passed',
       '',
       ...boundaryRows.map(rowText),
@@ -2711,10 +2711,10 @@ describe('buildConversationRowsProjection check lists', () => {
     const rows = materialize(projectionFor([header, firstCheck, header, secondCheck]));
 
     expect(rows.map(rowText)).toEqual([
-      'End-of-run checks · none · the plan names no end-of-run checks',
+      'End-of-run checks · none in the plan',
       'Reviewer check V1 · node --test a.js · passed',
       '',
-      'End-of-run checks · none · the plan names no end-of-run checks',
+      'End-of-run checks · none in the plan',
       'Reviewer check V2 · node --test a.js · passed',
     ]);
     expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(1);
@@ -2889,7 +2889,7 @@ describe('buildConversationRowsProjection check groups', () => {
 
     expect(rows.map(rowText).slice(0, 3)).toEqual([
       'Final review',
-      'End-of-run checks · none · the plan names no end-of-run checks',
+      'End-of-run checks · none in the plan',
       'Checks  4 passed',
     ]);
     expect(rows.filter((candidate) => candidate.kind === 'spacer')).toEqual([]);

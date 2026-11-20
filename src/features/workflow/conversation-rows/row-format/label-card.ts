@@ -29,13 +29,14 @@ export function cardRowsLayout(input: {
   value: string | undefined;
   width: number;
   labelGap?: string | undefined;
+  hangValue?: boolean | undefined;
 }): CardRowsLayout {
   const cleanLabel = sanitizeRowDisplayText(input.label);
   const cleanValue = input.value === undefined ? undefined : sanitizeRowDisplayText(input.value);
   const labelText = cleanValue ? `${cleanLabel}${input.labelGap ?? '  '}` : cleanLabel;
   const indent = getTerminalCellWidth(labelText);
   const hung =
-    cleanValue && /^(?:Blocking|Set aside)\b/.test(cleanLabel) && indent < input.width / 2
+    cleanValue && input.hangValue && indent < input.width / 2
       ? wrappedProseTexts(cleanValue, input.width - indent).map(
           (line, i) => (i === 0 ? labelText : ' '.repeat(indent)) + line,
         )

@@ -360,9 +360,9 @@ describe('createRecoveryDriver', () => {
     expect(recoveryNoticeStore.get().open).toBe(false);
   });
 
-  it('shows one error after a moved project blocks Skip brief', async () => {
+  it('shows the moved project in feedback and offers only End run after Skip brief', async () => {
     const { prepared, state } = setupSession({
-      availableActions: ['skip-current-task', 'end-run'],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       recommendedAction: 'skip-current-task',
     });
     const moved: WorkflowState = {
@@ -375,14 +375,22 @@ describe('createRecoveryDriver', () => {
     };
     saveState(prepared.session.ref, moved);
     const { inputMode, feedbackAtPrompt } = makeInputMode([rowPick('s'), rowPick('a')]);
-    await runDriver(prepared, moved, inputMode);
+    const actions: (RecoveryIssue['availableActions'] | undefined)[] = [];
+    const setQuestionMode = inputMode.setQuestionMode;
+    inputMode.setQuestionMode = (question) => {
+      actions.push(runViewStore.get().halt?.issue.availableActions);
+      return setQuestionMode(question);
+    };
+    const result = await runDriver(prepared, moved, inputMode);
     const errors = eventsStore
       .get()
       .events.flatMap((event) =>
         event.type === 'recovery_action_failed' || event.type === 'error' ? [event.message] : [],
       );
-    const notices = [...errors, feedbackAtPrompt[1]?.message ?? ''];
-    expect(notices.filter((message) => message.includes('This run started in'))).toHaveLength(1);
+    expect(errors.filter((message) => message.includes('This run started in'))).toHaveLength(1);
+    expect(feedbackAtPrompt[1]?.message).toContain('This run started in');
+    expect(actions[1]).toEqual(['end-run']);
+    expect(result.state?.closed?.as).toBe('ended');
   });
 
   it('keeps the halt menu open when an action cannot be applied', async () => {

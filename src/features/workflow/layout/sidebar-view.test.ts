@@ -255,10 +255,19 @@ describe('deriveSidebarView — the crew rows', () => {
     });
 
     it('drops the resolved rows before it cuts the identities when the crew runs short of rows', () => {
-      const bare = derive({ tasks: plan(1), height: 8, config: aliasCrew });
-      const resolved = derive({ tasks: plan(1), height: 8, config: aliasCrew, resolvedModels });
+      const config = {
+        ...aliasCrew,
+        planner: { ...aliasCrew.planner, model: 'auto' },
+      };
+      const automatic = {
+        plan: { ...resolvedModels.plan, model: 'auto', resolvedModel: 'claude-fable-5-1' },
+      };
+      const input = { tasks: plan(1), config };
+      const wide = derive({ ...input, height: undefined, resolvedModels: automatic });
+      const bare = derive({ ...input, height: 8 });
+      const resolved = derive({ ...input, height: 8, resolvedModels: automatic });
 
-      expect(seatRowsOf(bare).map((seat) => seat.length)).toEqual([2, 1, 2]);
+      expect(seatRowsOf(wide)[0]).toContain('claude-fable-5-1');
       expect(seatRowsOf(resolved)).toEqual(seatRowsOf(bare));
     });
   });

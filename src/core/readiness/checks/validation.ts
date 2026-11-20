@@ -46,7 +46,7 @@ export function buildValidationChecks(
         reviewNone
           ? 'Each brief runs its own checks, except a render check. No other check runs.'
           : endChecks
-            ? 'Before the final review, SPLITBRIEF runs the project gate that the plan names. A task review runs no gate.'
+            ? 'SPLITBRIEF runs the end-of-run checks the plan names before the final review. A brief review skips these checks.'
             : 'No reviewer check runs. Plan and task checks still run.',
         ...(testCommand === null
           ? [
@@ -63,8 +63,7 @@ export function buildValidationChecks(
     checks.push({
       id: 'validation.end-checks-off',
       severity: 'warning',
-      summary:
-        'End-of-run checks are off: SPLITBRIEF runs no project gate before the final review.',
+      summary: 'End-of-run checks are off. SPLITBRIEF skips them before the final review.',
       fix: 'Set validation.end_checks: true in .splitbrief/config.yaml, or turn End-of-run checks on in Settings.',
     });
   }

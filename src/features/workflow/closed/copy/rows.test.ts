@@ -3,7 +3,7 @@ import { endedInPlanning, makeView } from '#testing/helpers/factories/summary-vi
 import type { SummaryView } from '../view-model.js';
 import type { RunRow } from './types.js';
 import type { CopySegment } from './types.js';
-import { recordRows } from './rows.js';
+import { recordFold, recordRows } from './rows.js';
 import { runRows } from './rows.js';
 import { factSpans } from './rows.js';
 
@@ -27,6 +27,20 @@ describe('runRows and recordRows', () => {
 
   it('omits the duplicate Apply receipt when undo kept no conflicts', () => {
     expect(segmentsFor(makeView({ applyUndo: { conflicts: [] } }), 'Apply')).toBeUndefined();
+  });
+
+  it('counts blocking findings before files and notes in the labelled fold', () => {
+    const base = makeView();
+    const view = makeView({
+      digest: {
+        ...base.digest,
+        notes: [
+          { id: 'F1', text: 'Invalid input passes', file: null, blocking: true },
+          { id: 'F2', text: 'Add an example', file: null },
+        ],
+      },
+    });
+    expect(recordFold(view, 'labelled')).toEqual(['+1 blocking finding', '4 files', '1 note']);
   });
 
   it.each([{ conflicts: ['src/later-edit.ts'] }])(

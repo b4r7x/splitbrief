@@ -6,17 +6,20 @@ import { mountGalleryScenario } from './gallery/mount.js';
 it.each([
   {
     id: 'workflow-external-editor',
-    message: 'run.patch open in cursor. Close the file to return.',
+    message: 'run.patch open in cursor. Close the file to finish viewing.',
+    keepsMenu: true,
   },
   {
     id: 'workflow-external-editor-macos',
-    message: 'run.patch open in open. Quit the editor app to return.',
+    message: 'run.patch open in open. Quit the editor app to finish viewing.',
+    keepsMenu: true,
   },
   {
     id: 'workflow-external-pager',
     message: 'run.patch open in less. Press q to return.',
+    keepsMenu: false,
   },
-])('captures the production Show diff handover for $id', async ({ id, message }) => {
+])('captures the production Show diff handover for $id', async ({ id, message, keepsMenu }) => {
   const scenario = findVisualScenario(id);
   if (scenario === undefined) throw new Error(`Missing visual scenario ${id}`);
   const checkpoint = scenario.checkpoints[0];
@@ -28,9 +31,10 @@ it.each([
   });
   try {
     expect(handle.frameHistory().some((frame) => frame.includes('Ready to apply'))).toBe(true);
-    expect(await handle.waitForCheckpoint()).toContain(message);
-    expect(handle.lastFrame()).not.toContain('Ready to apply');
-    expect(handle.lastFrame()).not.toContain('Offline Show diff test');
+    const frame = await handle.waitForCheckpoint();
+    expect(frame).toContain(message);
+    expect(frame.includes('Ready to apply')).toBe(keepsMenu);
+    expect(frame).not.toContain('Offline Show diff test');
   } finally {
     await handle.unmount();
   }

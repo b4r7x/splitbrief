@@ -41,6 +41,8 @@ export function queueRowBlock(
   switch (event.type) {
     case 'message_queued':
     case 'message_injected_native': {
+      const settled = event.type === 'message_queued' && state?.settledMessages?.has(event.id);
+      if (settled && !event.preview) return null;
       const seat =
         event.type === 'message_injected_native' ? 'plan' : (event.seat ?? phaseStage(event.phase));
       const copy = queueCopy({
@@ -59,22 +61,22 @@ export function queueRowBlock(
                 value: 'recorded — applied at the next planner call',
                 tone: 'success' as const,
               }
-            : state?.closed
-              ? { label: 'Not delivered', value: undefined, tone: 'textDim' as const }
-              : { ...copy.queued, tone: 'info' as const };
+            : settled
+              ? { label: 'Your message', value: undefined, tone: 'textDim' as const }
+              : state?.closed
+                ? { label: 'Not delivered', value: undefined, tone: 'textDim' as const }
+                : { ...copy.queued, tone: 'info' as const };
       return compositeBlock(keyPrefix, [
-        event.type === 'message_queued' && state?.settledMessages?.has(event.id)
-          ? null
-          : cardRowsBlock({
-              keyPrefix: `${keyPrefix}-header-0`,
-              label: header.label,
-              labelGap: header.label === 'Answered' ? undefined : INLINE_LABEL_GAP,
-              value: header.value,
-              width,
-              labelTone: header.tone,
-              valueTone: 'textDim',
-              markerTone: header.tone,
-            }),
+        cardRowsBlock({
+          keyPrefix: `${keyPrefix}-header-0`,
+          label: header.label,
+          labelGap: header.label === 'Answered' ? undefined : INLINE_LABEL_GAP,
+          value: header.value,
+          width,
+          labelTone: header.tone,
+          valueTone: 'textDim',
+          markerTone: header.tone,
+        }),
         event.preview
           ? wrappedTextBlock({
               keyPrefix: `${keyPrefix}-preview-1`,

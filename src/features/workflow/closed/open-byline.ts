@@ -1,4 +1,4 @@
-import { movedProjectPath } from '../../../core/sessions/moved-project.js';
+import { MOVED_PROJECT_ACTION, movedProjectPath } from '../../../core/sessions/moved-project.js';
 import { recoveryHaltLabel, haltOf } from '../../../core/recovery/halt.js';
 import { statusLeavesWordsUnread } from '../../../core/recovery/typed-words.js';
 import type { ViewSeatWait } from '../../../core/run-view/reduce.js';
@@ -15,7 +15,7 @@ import { getTerminalCellWidth, segmentsForRowText } from '../../../utils/display
 import { formatElapsedClock } from '../../../utils/format/time.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
-import { stopPoint, stepWord } from '../display/step-words.js';
+import { CONTINUE_KEY_HINT, stopPoint, stepWord } from '../display/step-words.js';
 import { recoveryHeadlineParts } from '../recovery/headline.js';
 import { recoveryMenuActionLabel } from '../recovery/menu-label.js';
 import { type Byline, fitByline, fitStatusByline, lowercaseLead } from './byline.js';
@@ -171,7 +171,7 @@ export function openRunBylineParts(
   }
   if (!input.continuable) {
     if (movedProjectPath(input.failure) !== undefined)
-      return fitByline({ reason: null, action: 'Move the project back or end the run' }, width);
+      return fitByline({ reason: null, action: MOVED_PROJECT_ACTION }, width);
     return fitByline(UNREADABLE_BYLINE, width);
   }
   // A halt, a question and a gate wait for you and keep their own line.
@@ -207,19 +207,19 @@ function openByline(
         reason: [
           { text: `Stopped ${stopPoint(resumeAt, stop.on.at)}`, tone: stateTone('attention') },
         ],
-        action: wordsUnread ? '⏎ to continue' : 'Type a correction or ⏎ to continue',
+        action: wordsUnread ? CONTINUE_KEY_HINT : `Type a correction or ${CONTINUE_KEY_HINT}`,
       };
     // Only a typed plan's card reopens. An old run parked at a gate of the old chain continues as one
     // planning session, which takes a typed correction as its lead.
     case 'gate':
       return {
         reason: [{ text: `Waiting at ${stepWord(resumeAt)}`, tone: stateTone('attention') }],
-        action: planCard ? '⏎ to reopen it' : '⏎ to continue',
+        action: planCard ? '⏎ to reopen it' : CONTINUE_KEY_HINT,
       };
     case 'question':
       return {
         reason: [{ text: 'Waiting for your answer', tone: stateTone('attention') }],
-        action: wordsUnread ? '⏎ to continue' : 'Type a reply or ⏎ to continue',
+        action: wordsUnread ? CONTINUE_KEY_HINT : `Type a reply or ${CONTINUE_KEY_HINT}`,
       };
     case 'halt':
       return {
@@ -248,7 +248,7 @@ function openByline(
         reason: [
           { text: `Stopped ${stopPoint(resumeAt, undefined)}`, tone: stateTone('attention') },
         ],
-        action: '⏎ to continue',
+        action: CONTINUE_KEY_HINT,
       };
   }
 }

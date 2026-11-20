@@ -407,7 +407,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     try {
       await started.promise;
       expect(feedbackStore.get()).toEqual({
-        message: 'plan.json open in open. Quit the editor app to return.',
+        message: 'plan.json open in open. Quit the editor app to apply changes.',
         severity: 'info',
       });
       expect(written).not.toContain(terminalSequences.exitAltBuffer);

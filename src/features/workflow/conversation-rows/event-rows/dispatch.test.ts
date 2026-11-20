@@ -2617,7 +2617,7 @@ describe('event row dispatch', () => {
       expect(text.replaceAll('\u00a0', ' ')).toContain('2 failures');
       expect(rows.some((row) => row.includes('3m\u00a00s'))).toBe(true);
       if (ownLeft === 0) expect(rows.some((row) => row.includes('3\u00a0others'))).toBe(true);
-      else expect(text).toContain('failed · 2 failures');
+      else expect(text.replaceAll('\u00a0', ' ')).toContain('failed · 2 failures');
     }
     const event: EngineEventOf<'full_suite'> = {
       type: 'full_suite',
@@ -3531,7 +3531,7 @@ describe('review_completed rows', () => {
 describe('review_checks rows', () => {
   it.each([
     ['off', 'End-of-run checks · off · no reviewer check ran'],
-    ['none', 'End-of-run checks · none · the plan names no end-of-run checks'],
+    ['none', 'End-of-run checks · none in the plan'],
   ] as const)('paints one %s row', (status, text) => {
     const rows = eventRows({
       event: { type: 'review_checks', ts: 0, phase: 'final-review', status },

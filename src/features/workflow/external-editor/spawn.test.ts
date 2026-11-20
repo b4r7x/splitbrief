@@ -29,6 +29,7 @@ it.each([
       args: [...args],
       kind: 'editor',
       filePath: '/tmp/plan.md',
+      purpose: 'edit',
       spawnEditor: spawnEditorProcess,
     });
     proc.emit('close', 0, null);
@@ -41,3 +42,25 @@ it.each([
     );
   },
 );
+
+it('gives an unlisted terminal editor control of the terminal until it exits', async () => {
+  const sourceStdin = { pause: vi.fn(), resume: vi.fn() };
+  setActiveTerminalHandover({ fullscreen: true, mouse: false, sourceStdin });
+  vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+  const proc = new ChildProcess();
+  vi.mocked(spawn).mockReturnValueOnce(proc);
+  const exited = runEditor({
+    command: 'mg',
+    args: [],
+    kind: 'editor',
+    filePath: '/tmp/plan.json',
+    purpose: 'edit',
+    spawnEditor: spawnEditorProcess,
+  });
+  proc.emit('close', 0, null);
+  await exited;
+
+  expect(vi.mocked(spawn).mock.lastCall?.[2]?.stdio).toBe('inherit');
+  expect(sourceStdin.pause).toHaveBeenCalledOnce();
+  expect(sourceStdin.resume).toHaveBeenCalledOnce();
+});

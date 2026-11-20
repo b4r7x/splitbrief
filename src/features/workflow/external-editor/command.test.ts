@@ -77,9 +77,9 @@ describe('resolveEditorArgv', () => {
         platform: 'darwin',
       });
       expect(editor).toEqual({ command: join(dir, 'open'), args: ['-W', '-t'] });
-      expect(editorWaitingMessage({ ...editor, kind: 'editor' }, '/tmp/run.patch')).toBe(
-        'run.patch open in open. Quit the editor app to return.',
-      );
+      expect(
+        editorWaitingMessage({ ...editor, kind: 'editor' }, '/tmp/run.patch', 'finish viewing'),
+      ).toBe('run.patch open in open. Quit the editor app to finish viewing.');
     });
   });
 
@@ -210,7 +210,7 @@ describe('resolveViewerArgv', () => {
         args: ['-+E', '-+F', '-+M', '-+X', '-Ps?e(END) .Press q to return\\.'],
         kind: 'pager',
       });
-      expect(editorWaitingMessage(viewer, '/tmp/run.patch')).toBe(
+      expect(editorWaitingMessage(viewer, '/tmp/run.patch', 'return')).toBe(
         'run.patch open in less. Press q to return.',
       );
     });
@@ -245,7 +245,7 @@ describe('resolveViewerArgv', () => {
       });
       const editor = resolveViewerArgv({ EDITOR: 'vim', PAGER: 'more', PATH: dir });
       expect(editor).toEqual({ command: 'vim', args: [], kind: 'editor' });
-      expect(editorWaitingMessage(editor, '/tmp/run.patch')).toBe(
+      expect(editorWaitingMessage(editor, '/tmp/run.patch', 'return')).toBe(
         'run.patch open in vim. Close the file to return.',
       );
     });

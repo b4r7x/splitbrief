@@ -27,6 +27,7 @@ import {
   fixCycleRunLog,
 } from '../../../helpers/factories/fix-cycle-run.js';
 import { makeTask } from '../../../helpers/factories/task.js';
+import { makeTaskComplete, makeTaskStart } from '../../../helpers/events/task.js';
 import { makeMessage } from '../../../helpers/queue.js';
 import type { ReviewPacketSummary, Summary } from '../../../../src/core/schemas/summary.js';
 
@@ -53,7 +54,7 @@ import {
 } from '../../../../src/engine/orchestrator/isolation/kept-notice.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
-import { VISUAL_FIXTURE_PROJECT_DIR, visualConfig } from '../screen-fixtures.js';
+import { BASE_IMPLEMENTER, VISUAL_FIXTURE_PROJECT_DIR, visualConfig } from '../screen-fixtures.js';
 import { retentionError } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import type { FixtureAtRestRoute, WorkflowFixtureProjection } from './projections.js';
 
@@ -695,6 +696,41 @@ const AT_REST_HALTED = record({
     pendingRecovery: SEAT_DOWN_HALT,
   }),
 });
+
+const HALTED_BUILD_SEAT = { tool: BASE_IMPLEMENTER.provider, model: BASE_IMPLEMENTER.model };
+const HALTED_BUILD_LOG: readonly EngineEvent[] = [
+  makeTaskStart({
+    taskId: BRIEFS.validator.id,
+    title: BRIEFS.validator.title,
+    file: BRIEFS.validator.file,
+    ts: VISUAL_FIXTURE_EPOCH - 170_000,
+    backendKind: BASE_IMPLEMENTER.kind,
+    ...HALTED_BUILD_SEAT,
+  }),
+  makeTaskComplete({
+    taskId: BRIEFS.validator.id,
+    title: BRIEFS.validator.title,
+    ts: VISUAL_FIXTURE_EPOCH - 110_000,
+    duration: 60_000,
+    ...HALTED_BUILD_SEAT,
+  }),
+  makeTaskStart({
+    taskId: BRIEFS.wire.id,
+    title: BRIEFS.wire.title,
+    file: BRIEFS.wire.file,
+    index: 1,
+    lineageAttempt: 2,
+    ts: VISUAL_FIXTURE_EPOCH - 50_000,
+    backendKind: BASE_IMPLEMENTER.kind,
+    ...HALTED_BUILD_SEAT,
+  }),
+  {
+    type: 'error',
+    phase: 'implementing',
+    ts: VISUAL_FIXTURE_EPOCH,
+    message: SEAT_DOWN_HALT.message,
+  },
+];
 
 /** A BUILD seat on the one tool with an input limit, declaring a fallback that has none. */
 const LIMITED_IMPLEMENTER = {
@@ -3552,15 +3588,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-at-rest-halted',
     route: {
       record: AT_REST_HALTED,
-      log: [
-        ...cadenceBrief({ brief: BRIEFS.validator, index: 0, started: 1_000, completed: 61_000 }),
-        {
-          type: 'error',
-          phase: 'implementing',
-          ts: VISUAL_FIXTURE_EPOCH,
-          message: SEAT_DOWN_HALT.message,
-        },
-      ],
+      log: HALTED_BUILD_LOG,
     },
   }),
   atRestProjection({

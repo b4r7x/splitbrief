@@ -11,6 +11,7 @@ import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { transcriptText } from '../helpers/transcript-text.js';
 import {
   cli,
   createStopContinueFixture,
@@ -348,6 +349,11 @@ describe('e2e: a failed final review creates fix tasks', { timeout: 300_000 }, (
     const replay = await readRunEvents({ projectDir: target.projectDir, sessionId });
     expect(replay.diagnostics.skipped).toBe(0);
     const events = replay.events;
+    const others = '1 other left for their fix briefs or the next review';
+    expect(run.stdout.replaceAll('\u00a0', ' ')).toContain(
+      `fix check V1: 1 failure gone · ${others}`,
+    );
+    expect(transcriptText(events, 80).replaceAll('\u00a0', ' ')).toContain(others);
     expect(
       events.filter((event) => event.type === 'task_started').map((event) => event.taskId),
     ).toEqual(['T001', 'T002', 'T003']);

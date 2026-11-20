@@ -534,9 +534,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     expect(verdictPrompt).toContain(
       `- V1 \`${command}\`: failed, 1 new failure(s); 1 pre-existing (also red at the run base)`,
     );
-    expect(verdictPrompt).toContain(
-      `- **V1.1** (check · defect) — Reviewer check V1 (${command}) failed with new failures.`,
-    );
+    expect(verdictPrompt).toContain(`- **V1.1** (check · defect) — ${command} failed · 1 failure.`);
     expect(verdictPrompt).toContain(`- ${LEDGER_SUITE_FILE}\n  Error: ledger moved`);
     expect(verdictPrompt).toContain(
       `Pre-existing failures (also red at the run base):\n- ${red.key}`,
@@ -663,9 +661,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
         'utf8',
       );
       const [critical, note] = review.split('**Critical**')[1]?.split('**Note**') ?? [];
-      expect(critical).toContain(
-        `- V1.1: Reviewer check V1 (${command}) failed with new failures.`,
-      );
+      expect(critical).toContain(`- V1.1: ${command} failed · 1 failure.`);
       expect(severity === 'minor' ? note : critical).toContain(`- ${finding.text}`);
       expect(severity === 'minor' ? critical : note).not.toContain(finding.text);
     },

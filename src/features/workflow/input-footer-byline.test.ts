@@ -11,7 +11,6 @@ import {
   buildInputFooterByline,
   fitCheckingRow,
   fitInputFooterByline,
-  stageFractionText,
 } from './input-footer-byline.js';
 import { stopByline } from './stop/copy.js';
 import { suiteStatusParts } from './display/phase-verb.js';
@@ -335,16 +334,6 @@ describe('buildInputFooterByline', () => {
 
     expect(byline).toEqual([{ text: '2 queued', tone: 'info' }]);
     expect(fullByline(byline)).toBe('2 queued');
-  });
-});
-
-describe('stageFractionText', () => {
-  it('fraction equals passed, not the index of the running brief', () => {
-    expect(stageFractionText({ passed: 2, total: 5 })).toBe('2/5');
-  });
-
-  it('is empty before the plan announces a total', () => {
-    expect(stageFractionText({ passed: 0, total: 0 })).toBe('');
   });
 });
 

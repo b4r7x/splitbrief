@@ -84,7 +84,7 @@ describe('e2e: a consult answer that the criteria guard holds', () => {
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
     expect(run.stderr).toContain('Error: Needs you (retry-exhausted): T001 needs your answer');
     expect(run.stderr.split('\n')).toContain(
-      'Question: SPLITBRIEF asked the planner to fix T001, but the rewritten task changes its criteria: adds C4. How should T001 proceed?',
+      'Question: SPLITBRIEF asked the planner to fix T001, but the rewritten brief changes its criteria: adds C4. How should T001 proceed?',
     );
     expect(run.stderr).not.toContain('Dropped criteria');
 
@@ -104,7 +104,7 @@ describe('e2e: a consult answer that the criteria guard holds', () => {
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(1);
     expect(run.stderr).toContain('Error: Needs you (retry-exhausted): T001 needs your answer');
     expect(run.stderr.split('\n')).toContain(
-      'Question: SPLITBRIEF asked the planner to fix T001, but the subtasks together drop the checks their criteria require: T001-K1, T001-K2. How should T001 proceed?',
+      'Question: SPLITBRIEF asked the planner to fix T001, but the new briefs together drop the checks their criteria require: T001-K1 (src/greet.ts), T001-K2 (src/greet.ts). How should T001 proceed?',
     );
     expect(run.stderr).not.toContain('Dropped criteria');
 
@@ -112,6 +112,7 @@ describe('e2e: a consult answer that the criteria guard holds', () => {
     ui = opened.screen;
     const frame = stripAnsiStyles(opened.screen.lastFrame());
 
+    expect(frame).toContain('T001-K2 (src/greet.ts)');
     expect(frame).not.toContain('split into T002, T003');
     expect(frame).not.toContain('Dropped');
   });
