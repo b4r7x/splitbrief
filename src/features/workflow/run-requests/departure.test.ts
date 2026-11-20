@@ -96,7 +96,10 @@ describe('departure with an unsent draft that cannot be saved', () => {
 
   const ref = () => ({ projectDir, sessionId: 'one' });
   const CAUSE = 'Draft not saved: permission denied · .splitbrief/sessions/one/draft.json';
-  const HINT = { message: 'Draft not saved · esc or quit again leaves without it', isError: true };
+  const HINT = {
+    message: 'Draft not saved · esc or quit again leaves without it',
+    severity: 'error',
+  };
 
   it('names the cause and the file once, then leaves without it on the next quit', () => {
     const exit = vi.fn();
@@ -172,7 +175,7 @@ describe('departure with an unsent draft that cannot be saved', () => {
     expect(exit).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toEqual({
       message: `${CAUSE} · quit again leaves without it`,
-      isError: true,
+      severity: 'error',
     });
 
     requestQuit(exit);
@@ -244,7 +247,7 @@ describe('leaving with an empty composer over an old draft that cannot be remove
   it('names the file on home after esc', () => {
     requestLeaveSession();
     expect(routerStore.get().screen).toBe('home');
-    expect(feedbackStore.get()).toEqual({ message: NOTE, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: NOTE, severity: 'error' });
   });
 
   it('names the file on stderr once the terminal is restored after a quit', () => {

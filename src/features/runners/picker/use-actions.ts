@@ -144,14 +144,15 @@ export function usePickerActions(opts: {
       const result = await deps.saveConfig(updated);
       if (reportConfigSaveFailure(result)) return;
       const changePoint = runningSeatChangePoint(config, updated);
-      feedbackStore.setMessage(
-        [
-          changePoint === undefined
-            ? formatConfigSaveSuccess(subject, result)
-            : seatChangeWords(`${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat`, changePoint),
-          ...(notice === undefined ? [] : [notice]),
-        ].join(SOFT_SEP),
-      );
+      const words = [
+        changePoint === undefined
+          ? formatConfigSaveSuccess(subject, result)
+          : seatChangeWords(`${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat`, changePoint),
+        ...(notice === undefined ? [] : [notice]),
+      ].join(SOFT_SEP);
+      // A save that still needs a step from the user, such as a sign-in, is a warning.
+      if (notice === undefined) feedbackStore.setMessage(words);
+      else feedbackStore.setWarning(words);
       pickerViewStore.setCommitted(true);
       overlayStore.close();
     } finally {

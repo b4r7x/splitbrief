@@ -869,7 +869,7 @@ describe('PickerView feedback', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(refusal);
     expect(frame).not.toContain('OpenAI Codex CLI · 1 model');
-    expect(feedbackStore.get()).toEqual({ message: refusal, isError: false });
+    expect(feedbackStore.get()).toEqual({ message: refusal, severity: 'info' });
 
     feedbackStore.setMessage(null);
     await flushEffects();
@@ -888,7 +888,7 @@ describe('PickerView feedback', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(saveFailure);
     expect(frame).not.toContain('OpenAI Codex CLI · 1 model');
-    expect(feedbackStore.get()).toEqual({ message: saveFailure, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: saveFailure, severity: 'error' });
     ui.unmount();
   });
 

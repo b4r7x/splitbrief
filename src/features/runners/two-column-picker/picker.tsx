@@ -9,6 +9,8 @@ import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
 import type { LeftColumnProps, RightColumnProps } from './types.js';
 import { useTwoColumnState } from './use-nav-state.js';
 import { isRealRightItem } from './virtual-items.js';
+import { layoutNotice, Notice } from '../../../components/notice.js';
+import type { FeedbackSeverity } from '../../../stores/ui/feedback.js';
 import { bylineLines, BYLINE_ROWS, getHint, type PickerHintKind } from './hint.js';
 import { PaneDetails } from './terminal-pane-card.js';
 import { wrapPaneLines, fitPaneLines } from './pane-lines.js';
@@ -41,7 +43,7 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
    * overlay hides the composer that would carry it, so it takes the byline at every width until
    * it clears.
    */
-  notice?: Readonly<{ message: string | null; isError: boolean }> | undefined;
+  notice?: Readonly<{ message: string | null; severity: FeedbackSeverity }> | undefined;
 }
 
 const PREVIEW_MIN_COLS = 50;
@@ -159,13 +161,15 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
       ? undefined
       : sanitizeTerminalDisplayText(rawPreview, { preserveLineBreaks: true });
   const showPreview = previewText !== undefined && previewText !== '' && cols > PREVIEW_MIN_COLS;
-  const byline =
+  // The byline has no room for a frame, so a notice takes it in its bar form.
+  const noticeLayout =
     notice === undefined || notice.message === null
-      ? { lines: showPreview ? bylineLines(previewText, totalBoxWidth) : [' '], color: t.textDim }
-      : {
-          lines: bylineLines(sanitizeTerminalDisplayText(notice.message), totalBoxWidth),
-          color: notice.isError ? t.error : t.textDim,
-        };
+      ? null
+      : layoutNotice(sanitizeTerminalDisplayText(notice.message), notice.severity, {
+          maxWidth: totalBoxWidth,
+          maxRows: BYLINE_ROWS,
+        });
+  const previewLines = showPreview ? bylineLines(previewText, totalBoxWidth) : [' '];
   const leftEmptyText = `No ${(leftProps.label ?? 'items').toLowerCase()} match`;
   const wheelStep = (direction: 'up' | 'down'): 1 | -1 => (direction === 'up' ? -1 : 1);
 
@@ -249,11 +253,15 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
           marginTop={1}
           flexDirection="column"
         >
-          {byline.lines.map((line, rowIndex) => (
-            <Text key={rowIndex} color={byline.color} wrap="truncate-end">
-              {line}
-            </Text>
-          ))}
+          {noticeLayout !== null ? (
+            <Notice layout={noticeLayout} />
+          ) : (
+            previewLines.map((line, rowIndex) => (
+              <Text key={rowIndex} color={t.textDim} wrap="truncate-end">
+                {line}
+              </Text>
+            ))
+          )}
         </Box>
       )}
       <Box width={totalBoxWidth}>

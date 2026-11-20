@@ -190,7 +190,7 @@ it('restores the whole refused recovery draft when the question prompt is re-arm
 
   expect(feedbackStore.get()).toEqual({
     message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
-    isError: true,
+    severity: 'warning',
   });
   expect(composerLiveStore.get().document).toEqual(document);
   expect(inputHistoryStore.get()).toBe(history);
@@ -279,7 +279,7 @@ it('runs a slash command typed under a recovery menu and never takes one as the 
 
   expect(feedbackStore.get()).toEqual({
     message: 'A slash command is not a message. Run it from the composer.',
-    isError: true,
+    severity: 'warning',
   });
   expect(composerLiveStore.get().document).toEqual({
     version: 1,

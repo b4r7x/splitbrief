@@ -156,7 +156,7 @@ describe('pending session drafts', () => {
       expect(draftRefusalStore.get()?.message).toBe(
         'Draft not saved: permission denied · .splitbrief/sessions/one/draft.json',
       );
-      expect(feedbackStore.get()).toEqual({ message: 'Draft not saved', isError: true });
+      expect(feedbackStore.get()).toEqual({ message: 'Draft not saved', severity: 'error' });
     } finally {
       chmodSync(dir, 0o755);
       routerStore.reset();
@@ -223,7 +223,7 @@ describe('an emptied draft whose old file cannot be removed', () => {
     flushSessionDrafts();
     routerStore.navigate({ to: 'home' });
     nameDraftsNotRemoved('screen');
-    expect(feedbackStore.get()).toEqual({ message: NOTE, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: NOTE, severity: 'error' });
 
     feedbackStore.reset();
     saveSessionDraft(ref(), createDraftDocument(''));

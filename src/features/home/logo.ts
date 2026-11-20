@@ -1,4 +1,5 @@
-export type LogoTier = 'full' | 'compact';
+/** The Home heading: a figlet logo, or the one-row wordmark a body too small for one takes. */
+export type LogoTier = 'full' | 'compact' | 'wordmark';
 
 // Rendered once from figlet's Standard and Small fonts for the product wordmark.
 const FULL_LOGO = [
@@ -18,7 +19,11 @@ const COMPACT_LOGO = [
   '    |_|',
 ].join('\n');
 
-const LOGOS: Record<LogoTier, string> = { full: FULL_LOGO, compact: COMPACT_LOGO };
+const LOGOS: Record<LogoTier, string> = {
+  full: FULL_LOGO,
+  compact: COMPACT_LOGO,
+  wordmark: 'splitbrief',
+};
 
 export function getLogo(tier: LogoTier): string {
   return LOGOS[tier];
@@ -27,7 +32,8 @@ export function getLogo(tier: LogoTier): string {
 const FULL_LOGO_MIN_COLS = 51;
 const FULL_LOGO_MIN_ROWS = 24;
 
-export function getLogoTier(rows: number, cols: number): LogoTier {
+/** The figlet logo the terminal size gives; the wordmark is the layout's own step. */
+export function getLogoTier(rows: number, cols: number): 'full' | 'compact' {
   return rows >= FULL_LOGO_MIN_ROWS && cols >= FULL_LOGO_MIN_COLS ? 'full' : 'compact';
 }
 

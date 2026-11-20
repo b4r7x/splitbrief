@@ -8,7 +8,7 @@ describe('getHomeLayout', () => {
     const layout = getHomeLayout({ cols: 160, rows: 42, ...AT_REST });
     expect(layout).toMatchObject({
       width: 108,
-      logoTier: 'full',
+      heading: 'full',
       inputBottomMargin: 2,
     });
   });
@@ -28,7 +28,7 @@ describe('getHomeLayout', () => {
   it('keeps medium terminals on the full logo', () => {
     expect(getHomeLayout({ cols: 100, rows: 32, ...AT_REST })).toMatchObject({
       width: 90,
-      logoTier: 'full',
+      heading: 'full',
       inputBottomMargin: 1,
     });
   });
@@ -36,19 +36,77 @@ describe('getHomeLayout', () => {
   it('uses the compact logo on shorter terminals', () => {
     expect(getHomeLayout({ cols: 80, rows: 20, ...AT_REST })).toMatchObject({
       width: 76,
-      logoTier: 'compact',
+      heading: 'compact',
       inputBottomMargin: 0,
     });
   });
 
   it('falls back to the compact logo when the full wordmark cannot fit', () => {
     const layout = getHomeLayout({ cols: 50, rows: 30, ...AT_REST });
-    expect(layout.logoTier).toBe('compact');
+    expect(layout.heading).toBe('compact');
   });
 
-  it('hides the logo when its wordmark is wider than the body', () => {
-    expect(getHomeLayout({ cols: 41, rows: 18, ...AT_REST }).showLogo).toBe(true);
-    expect(getHomeLayout({ cols: 40, rows: 18, ...AT_REST }).showLogo).toBe(false);
+  it('puts the one-row wordmark in the logo slot when the logo is wider than the body', () => {
+    expect(getHomeLayout({ cols: 41, rows: 18, ...AT_REST }).heading).toBe('compact');
+    expect(getHomeLayout({ cols: 40, rows: 18, ...AT_REST }).heading).toBe('wordmark');
+  });
+
+  it('keeps the full logo over a resting dock at 120x40', () => {
+    expect(getHomeLayout({ cols: 120, rows: 40, sessionCount: 8, ...AT_REST }).heading).toBe(
+      'full',
+    );
+  });
+
+  it('gives the heading slot to the wordmark under a long draft at 60x18, with one session and its count', () => {
+    expect(
+      getHomeLayout({ cols: 60, rows: 18, sessionCount: 8, dockRows: 9, noConfig: true }),
+    ).toMatchObject({
+      heading: 'wordmark',
+      recentSessionLimit: 1,
+      showHiddenCount: true,
+      sessionCapacity: 2,
+    });
+  });
+
+  it('gives the heading slot to the wordmark under a long draft at 80x24', () => {
+    expect(
+      getHomeLayout({ cols: 80, rows: 24, sessionCount: 12, dockRows: 8, noConfig: true }),
+    ).toMatchObject({
+      heading: 'wordmark',
+      recentSessionLimit: 6,
+      showHiddenCount: true,
+      sessionCapacity: 7,
+    });
+  });
+
+  it('keeps the wordmark and one session row under a long draft and a message at 60x18', () => {
+    expect(
+      getHomeLayout({ cols: 60, rows: 18, sessionCount: 8, dockRows: 12, noConfig: false }),
+    ).toMatchObject({
+      heading: 'wordmark',
+      recentSessionLimit: 1,
+      showHiddenCount: false,
+    });
+  });
+
+  it('leaves the heading slot empty only when even the wordmark would cut the crew block', () => {
+    expect(getHomeLayout({ cols: 60, rows: 12, dockRows: 9, noConfig: false }).heading).toBe(
+      'wordmark',
+    );
+    expect(getHomeLayout({ cols: 60, rows: 12, dockRows: 10, noConfig: false }).heading).toBeNull();
+  });
+
+  it('gives a focused list the wordmark when it then shows more sessions', () => {
+    expect(
+      getHomeLayout({ cols: 80, rows: 24, sessionCount: 8, sessionsFocused: true, ...AT_REST }),
+    ).toMatchObject({ heading: 'wordmark', recentSessionLimit: 7 });
+  });
+
+  it('keeps the logo over a focused list that shows every session under it', () => {
+    expect(
+      getHomeLayout({ cols: 120, rows: 40, sessionCount: 3, sessionsFocused: true, ...AT_REST })
+        .heading,
+    ).toBe('full');
   });
 
   it('budgets two body gap rows at narrow and wide layouts', () => {
@@ -69,26 +127,27 @@ describe('getHomeLayout', () => {
     expect(layout.showHiddenCount).toBe(false);
   });
 
-  it('accounts focused prompt and selection-error rows before session capacity', () => {
+  it('accounts the focused filter rows before session capacity', () => {
+    // At 40 columns the wordmark heads both layouts, so only the filter block differs.
     const baseRows = 18;
-    const focusedChromeRows = 5;
+    const focusedChromeRows = 4;
     const sessionCount = 2;
 
     const unfocused = getHomeLayout({
-      cols: 80,
+      cols: 40,
       rows: baseRows,
       sessionCount,
       ...AT_REST,
     });
     const focusedAtSameHeight = getHomeLayout({
-      cols: 80,
+      cols: 40,
       rows: baseRows,
       sessionCount,
       sessionsFocused: true,
       ...AT_REST,
     });
     const focusedWithChromeRows = getHomeLayout({
-      cols: 80,
+      cols: 40,
       rows: baseRows + focusedChromeRows,
       sessionCount,
       sessionsFocused: true,
@@ -96,7 +155,6 @@ describe('getHomeLayout', () => {
     });
 
     expect(focusedAtSameHeight.recentSessionLimit).toBeLessThan(unfocused.recentSessionLimit);
-    expect(focusedAtSameHeight.recentSessionLimit).toBe(0);
     expect(focusedWithChromeRows.recentSessionLimit).toBe(unfocused.recentSessionLimit);
     expect(focusedWithChromeRows.showHiddenCount).toBe(false);
   });
@@ -155,27 +213,13 @@ describe('getHomeLayout', () => {
       noConfig: false,
     });
     expect(layout).toMatchObject({
-      showLogo: true,
+      heading: 'full',
       recentSessionLimit: 3,
       showHiddenCount: true,
     });
   });
 
-  it('hides the logo before the crew block or the more row at 60x18 under a long draft and message', () => {
-    // A four-row message over a six-row draft in its box: 4 + 6 + 2 rows.
-    const layout = getHomeLayout({
-      cols: 60,
-      rows: 18,
-      sessionCount: 8,
-      dockRows: 12,
-      noConfig: false,
-    });
-    expect(layout.showLogo).toBe(false);
-    expect(layout.recentSessionLimit).toBe(1);
-    expect(layout.showHiddenCount).toBe(true);
-  });
-
-  it('gives the logo rows to the session list when a four-row message hides the logo', () => {
+  it('gives the logo rows to the session list under the wordmark when a four-row message moves the logo out', () => {
     const layout = getHomeLayout({
       cols: 60,
       rows: 18,
@@ -184,15 +228,17 @@ describe('getHomeLayout', () => {
       noConfig: false,
     });
     expect(layout).toMatchObject({
-      showLogo: false,
-      recentSessionLimit: 6,
+      heading: 'wordmark',
+      recentSessionLimit: 5,
       showHiddenCount: true,
-      sessionCapacity: 7,
+      sessionCapacity: 6,
     });
   });
 
   it('keeps the logo when a four-row message leaves room for the crew and no sessions exist', () => {
-    expect(getHomeLayout({ cols: 60, rows: 18, dockRows: 7, noConfig: false }).showLogo).toBe(true);
+    expect(getHomeLayout({ cols: 60, rows: 18, dockRows: 7, noConfig: false }).heading).toBe(
+      'compact',
+    );
   });
 
   it('lets the No config notice take the blank tail rows of a resting home', () => {
@@ -219,38 +265,6 @@ describe('getHomeLayout', () => {
     }
   });
 
-  it('counts the No config notice so a long draft keeps the more row at 80x24', () => {
-    const layout = getHomeLayout({
-      cols: 80,
-      rows: 24,
-      sessionCount: 12,
-      dockRows: 8,
-      noConfig: true,
-    });
-    expect(layout).toMatchObject({
-      showLogo: false,
-      recentSessionLimit: 7,
-      showHiddenCount: true,
-      sessionCapacity: 8,
-    });
-  });
-
-  it('counts the No config notice so a long draft keeps the more row at 60x18', () => {
-    const layout = getHomeLayout({
-      cols: 60,
-      rows: 18,
-      sessionCount: 8,
-      dockRows: 9,
-      noConfig: true,
-    });
-    expect(layout).toMatchObject({
-      showLogo: false,
-      recentSessionLimit: 2,
-      showHiddenCount: true,
-      sessionCapacity: 3,
-    });
-  });
-
   it('pins inputBottomMargin tier boundaries at 29/30 and 37/38', () => {
     expect(getHomeLayout({ cols: 120, rows: 29, ...AT_REST }).inputBottomMargin).toBe(0);
     expect(getHomeLayout({ cols: 120, rows: 30, ...AT_REST }).inputBottomMargin).toBe(1);
@@ -270,7 +284,14 @@ describe('deriveHomeLayoutState', () => {
   const sessions = (count: number) => ({ sessionCount: count, listedSessions: count });
 
   it('lets the recent sessions take focus only where the focused list keeps a row and a run is listed', () => {
-    const noFocusedRow = deriveHomeLayoutState({ ...SCREEN, cols: 60, rows: 18, ...sessions(3) });
+    // A long draft and a message leave the list one row, and the filter block needs four.
+    const noFocusedRow = deriveHomeLayoutState({
+      ...SCREEN,
+      cols: 60,
+      rows: 18,
+      dockRows: 12,
+      ...sessions(3),
+    });
     expect(noFocusedRow).toMatchObject({ hasRoomForSessions: true, canFocus: false });
     const noRun = deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 24 });
     expect(noRun).toMatchObject({ hasRoomForSessions: true, canFocus: false });
@@ -294,12 +315,13 @@ describe('deriveHomeLayoutState', () => {
       ...SCREEN,
       cols: 60,
       rows: 18,
+      dockRows: 12,
       ...sessions(3),
       sessionsFocused: true,
     });
     expect(noFocusedRow.sessionsActive).toBe(false);
     expect(noFocusedRow.layout).toEqual(
-      getHomeLayout({ cols: 60, rows: 18, sessionCount: 3, ...AT_REST }),
+      getHomeLayout({ cols: 60, rows: 18, sessionCount: 3, dockRows: 12, noConfig: false }),
     );
   });
 
@@ -308,9 +330,12 @@ describe('deriveHomeLayoutState', () => {
     expect(deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 24 }).discoveryPanelFits).toBe(true);
   });
 
-  it('gives the box up when the shown session rows leave it fewer than five rows', () => {
+  it('gives the box up when the shown session rows leave it fewer than four rows', () => {
+    // The box is its three rows and one breathing row.
     const oneRun = deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 24, ...sessions(1) });
-    expect(oneRun.discoveryPanelFits).toBe(false);
+    expect(oneRun.discoveryPanelFits).toBe(true);
+    const twoRuns = deriveHomeLayoutState({ ...SCREEN, cols: 80, rows: 24, ...sessions(2) });
+    expect(twoRuns.discoveryPanelFits).toBe(false);
     const resting = deriveHomeLayoutState({ ...SCREEN, cols: 120, rows: 40, ...sessions(13) });
     expect(resting.discoveryPanelFits).toBe(true);
     const focused = deriveHomeLayoutState({
@@ -323,7 +348,7 @@ describe('deriveHomeLayoutState', () => {
     expect(focused.discoveryPanelFits).toBe(false);
   });
 
-  it('puts a warm check, or a check whose box does not fit, on the hint line', () => {
+  it('puts a warm check, or a running check whose box does not fit, on the hint line', () => {
     const fits = { ...SCREEN, cols: 80, rows: 24 };
     expect(deriveHomeLayoutState({ ...fits, toolCheck: 'warm' }).hintNotice).toBe(true);
     expect(deriveHomeLayoutState({ ...fits, toolCheck: 'cold' }).hintNotice).toBe(false);
@@ -331,8 +356,16 @@ describe('deriveHomeLayoutState', () => {
     expect(deriveHomeLayoutState(fits).hintNotice).toBe(false);
     const noFit = { ...SCREEN, cols: 80, rows: 23 };
     expect(deriveHomeLayoutState({ ...noFit, toolCheck: 'cold' }).hintNotice).toBe(true);
-    expect(deriveHomeLayoutState({ ...noFit, toolCheck: 'failed' }).hintNotice).toBe(true);
-    expect(deriveHomeLayoutState({ ...noFit, toolCheck: 'not-run' }).hintNotice).toBe(true);
+    // A settled check is a notice above the composer at every size, never the hint line.
+    expect(deriveHomeLayoutState({ ...noFit, toolCheck: 'failed' }).hintNotice).toBe(false);
+    expect(deriveHomeLayoutState({ ...noFit, toolCheck: 'not-run' }).hintNotice).toBe(false);
     expect(deriveHomeLayoutState(noFit).hintNotice).toBe(false);
+  });
+
+  it('gives the collapsed seat line the session rows nothing fills, up to one row per seat', () => {
+    expect(deriveHomeLayoutState({ ...SCREEN, cols: 60, rows: 18 }).seatLineRows).toBe(3);
+    expect(
+      deriveHomeLayoutState({ ...SCREEN, cols: 60, rows: 18, ...sessions(8) }).seatLineRows,
+    ).toBe(1);
   });
 });

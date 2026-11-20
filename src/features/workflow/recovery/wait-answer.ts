@@ -135,7 +135,7 @@ export async function askForAction(driver: RecoveryDriverState): Promise<Pending
     let correction: UserMessageInput | undefined;
     if (action === null && answer.text.trim() !== '') {
       if (correctionAction === undefined) {
-        feedbackStore.setMessage(NO_CORRECTION_MESSAGE);
+        feedbackStore.setWarning(NO_CORRECTION_MESSAGE);
         composerDraftStore.requestPrepend(document);
         continue;
       }
@@ -149,7 +149,7 @@ export async function askForAction(driver: RecoveryDriverState): Promise<Pending
     // Words typed beside the panel are the note of the action that takes one.
     const draft = composerLiveStore.get();
     if (!draft.empty && leavesWordsUnread(issue.reason, action, stepReadsNone)) {
-      feedbackStore.setMessage(
+      feedbackStore.setWarning(
         noMessageFor(recoveryActionLabel(action, { reason: issue.reason, reviewNone })),
       );
       continue;
@@ -160,7 +160,7 @@ export async function askForAction(driver: RecoveryDriverState): Promise<Pending
         supportsImages: plannerSupportsImages(prepared.config, modelCacheStore),
       });
       if (!submission.ok) {
-        feedbackStore.setError(formatSubmissionFailure(submission));
+        feedbackStore.setWarning(formatSubmissionFailure(submission));
         composerDraftStore.requestDocument(draft.document);
         continue;
       }

@@ -74,7 +74,7 @@ describe('openReviewEditor', () => {
 
     expect(editorStore.get().status).toBe('closed');
     expect(overlayStore.get().active).toBe('none');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
   });
 
   it('opens the raw editor at the plan card for the active review file', async () => {

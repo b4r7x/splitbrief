@@ -186,7 +186,7 @@ describe('a run at rest whose project folder moves away', () => {
     expect(after.split('\n')).toContain(byline);
     expect(feedbackStore.get()).toEqual({
       message: projectGoneMessage(projectDir),
-      isError: true,
+      severity: 'error',
     });
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.run.hydration.kind).toBe('loaded');
@@ -206,7 +206,10 @@ describe('a run at rest whose project folder moves away', () => {
 
     expect(eventsStore.get().events).toBe(events);
     expect(routerStore.get()).toBe(route);
-    expect(feedbackStore.get()).toEqual({ message: projectGoneMessage(projectDir), isError: true });
+    expect(feedbackStore.get()).toEqual({
+      message: projectGoneMessage(projectDir),
+      severity: 'error',
+    });
   });
 
   it('keeps the transcript and names the moved folder when a tool-cache save races the rename', async () => {
@@ -250,7 +253,10 @@ describe('a run at rest whose project folder moves away', () => {
     expect.soft(routerStore.get() === route).toBe(true);
     expect.soft(eventsStore.get().events.some((event) => event.type === 'planner_text')).toBe(true);
     expect.soft(eventsStore.get().events === events).toBe(true);
-    expect(feedbackStore.get()).toEqual({ message: projectGoneMessage(projectDir), isError: true });
+    expect(feedbackStore.get()).toEqual({
+      message: projectGoneMessage(projectDir),
+      severity: 'error',
+    });
   });
 
   it('answers Enter with the same sentence and stays on the run screen', async () => {
@@ -269,7 +275,7 @@ describe('a run at rest whose project folder moves away', () => {
     expect(routerStore.get().screen).toBe('workflow');
     expect(feedbackStore.get()).toEqual({
       message: projectGoneMessage(projectDir),
-      isError: false,
+      severity: 'warning',
     });
     expect(frame()).not.toContain('No saved state to continue.');
     expect(prepareResume).not.toHaveBeenCalled();

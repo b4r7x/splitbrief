@@ -335,9 +335,11 @@ describe('SetupScreen', () => {
         await focusRow(ui, DOWN, label);
       }
       const rows = contentRows(ui);
-      const noticeIndex = rows.findIndex((row) => row.startsWith('Saved '));
-      expect(noticeIndex).toBeGreaterThan(0);
-      expect(rows[noticeIndex - 1]?.replace(/[|│]/gu, '').trim()).toBe('');
+      // The notice opens on its bar, or on its frame one row above the words.
+      const noticeIndex = rows.findIndex((row) => /^[|│▌] Saved /u.test(row));
+      const noticeTop = /^[+╭]/u.test(rows[noticeIndex - 1] ?? '') ? noticeIndex - 1 : noticeIndex;
+      expect(noticeTop).toBeGreaterThan(0);
+      expect(rows[noticeTop - 1]?.replace(/[|│]/gu, '').trim()).toBe('');
       expect(feedbackStore.get().message).toBe(
         'Saved Claude crew, Codex review to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
       );
@@ -773,7 +775,7 @@ describe('SetupScreen', () => {
       expect(routerStore.get().screen).toBe('setup');
       expect(feedbackStore.get()).toEqual({
         message: 'Choose a ready tool and model for each unavailable seat.',
-        isError: false,
+        severity: 'info',
       });
       expect(ui.lastFrame() ?? '').toContain('Choose a ready tool and model');
       ui.unmount();
@@ -1336,7 +1338,7 @@ describe('SetupScreen', () => {
 
       await vi.waitFor(() =>
         expect(feedbackStore.get()).toMatchObject({
-          isError: true,
+          severity: 'error',
           message: expect.stringContaining('Failed to save config'),
         }),
       );
@@ -1585,7 +1587,7 @@ describe('SetupScreen', () => {
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
       expect(feedbackStore.get()).toMatchObject({
         message: 'Saved your crew to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
-        isError: false,
+        severity: 'info',
       });
       expect(existsSync(configPath(projectDir))).toBe(true);
       expect(readFileSync(join(projectDir, '.gitignore'), 'utf8')).toBe('.splitbrief/\n');
@@ -1616,7 +1618,7 @@ describe('SetupScreen', () => {
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
       expect(feedbackStore.get()).toMatchObject({
         message: 'Saved your crew to .splitbrief/config.yaml',
-        isError: false,
+        severity: 'info',
       });
       expect(existsSync(join(projectDir, '.gitignore'))).toBe(false);
       ui.unmount();
@@ -1656,7 +1658,7 @@ describe('SetupScreen', () => {
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
       expect(feedbackStore.get()).toMatchObject({
         message: 'Saved your crew to .splitbrief/config.yaml',
-        isError: false,
+        severity: 'info',
       });
       expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n');
       ui.unmount();
@@ -1704,7 +1706,7 @@ describe('SetupScreen', () => {
       await flushEffects();
       await continueSetup(ui);
 
-      await vi.waitFor(() => expect(feedbackStore.get()).toMatchObject({ isError: true }));
+      await vi.waitFor(() => expect(feedbackStore.get()).toMatchObject({ severity: 'error' }));
       expect(routerStore.get().screen).toBe('setup');
       expect(readFileSync(sentinel, 'utf8')).toBe('external sentinel\n');
       unlinkSync(ignorePath);
@@ -1810,7 +1812,7 @@ describe('SetupScreen', () => {
 
         await vi.waitFor(() => {
           expect(feedbackStore.get()).toMatchObject({
-            isError: true,
+            severity: 'error',
             message: expect.stringContaining('Could not clean up tool preparation'),
           });
         });

@@ -16,8 +16,8 @@ interface HomeLayoutInput {
 
 interface HomeLayout {
   width: number;
-  logoTier: LogoTier;
-  showLogo: boolean;
+  /** The heading over the crew block, or none when even the wordmark would cut the crew block. */
+  heading: LogoTier | null;
   inputBottomMargin: number;
   recentSessionLimit: number;
   showHiddenCount: boolean;
@@ -28,8 +28,7 @@ interface HomeLayout {
 interface SessionLimitInput {
   cols: number;
   rows: number;
-  logoTier: LogoTier;
-  showLogo: boolean;
+  heading: LogoTier | null;
   inputBottomMargin: number;
   dockRows: number;
   noticeRows: number;
@@ -45,7 +44,6 @@ interface SessionLimit {
 }
 
 const FOCUSED_FILTER_BLOCK_ROWS = 4;
-const FOCUSED_SELECTION_ERROR_ROWS = 1;
 const COMPACT_CONFIG_BLOCK_ROWS = 2;
 const HOME_MAX_WIDTH = 108;
 // The home row over a one-row input box.
@@ -55,27 +53,27 @@ export const RESTING_DOCK_ROWS = 4;
 const BODY_SLACK_ROWS = 2;
 export const NO_CONFIG_NOTICE = 'No config. Setup saves .splitbrief/config.yaml.';
 
+// A logo has the body gap under it; the wordmark sits on the crew block's first row.
+export function homeHeadingRows(heading: LogoTier | null): number {
+  return heading === null ? 0 : heading === 'wordmark' ? 1 : getLogoHeight(heading) + 1;
+}
+
 export function homeConfigBlockRows(rows: number): number {
   return rows >= 24 ? 4 : COMPACT_CONFIG_BLOCK_ROWS;
 }
 
 function getContentAwareSessionLimit(input: SessionLimitInput): SessionLimit {
-  const { cols, rows, logoTier, showLogo, inputBottomMargin, dockRows } = input;
+  const { cols, rows, heading, inputBottomMargin, dockRows } = input;
   const { noticeRows, sessionCount, sessionsFocused } = input;
   const slackRows = Math.max(0, BODY_SLACK_ROWS - (dockRows - RESTING_DOCK_ROWS) - noticeRows);
-  const logoBlock = showLogo ? getLogoHeight(logoTier) + 1 : 0;
+  const logoBlock = homeHeadingRows(heading);
   const crewRows = rows - (inputBottomMargin + dockRows + slackRows + noticeRows + logoBlock);
   const configBlock = homeConfigBlockRows(rows);
   const crewFits = crewRows >= configBlock;
   const sessionsChrome = 1 + 1 + (cols >= 120 ? 1 : 0);
   const baseCapacity = Math.max(0, crewRows - configBlock - sessionsChrome);
   if (sessionsFocused) {
-    const listRows = Math.max(0, baseCapacity - FOCUSED_FILTER_BLOCK_ROWS);
-    // The filter block outranks the row count, and the row count outranks the
-    // error line: where reserving the error row would leave nothing to select,
-    // the last session row keeps it and the error borrows the body's slack.
-    const capacity =
-      listRows > FOCUSED_SELECTION_ERROR_ROWS ? listRows - FOCUSED_SELECTION_ERROR_ROWS : listRows;
+    const capacity = Math.max(0, baseCapacity - FOCUSED_FILTER_BLOCK_ROWS);
     return {
       recentSessionLimit: capacity,
       showHiddenCount: false,
@@ -116,8 +114,9 @@ function shownSessionRows(
 
 // The crew block outranks the logo, and so do the first session row and its count row: the logo
 // gives way when keeping it would cut the crew block, or would leave the list fewer rows than it
-// shows over a resting dock, down to a row and its count. A wordmark wider than the body would
-// wrap, so it gives way too.
+// shows over a resting dock, down to a row and its count. A logo wider than the body would wrap,
+// so it gives way too. A focused list takes the wordmark when that shows it more sessions. The
+// wordmark costs one row, so it gives way only when it would cut the crew block itself.
 export function getHomeLayout({
   cols,
   rows,
@@ -143,25 +142,34 @@ export function getHomeLayout({
     sessionCount,
     sessionsFocused,
   };
-  const withLogo = getContentAwareSessionLimit({ ...plan, showLogo: true, dockRows });
+  const withLogo = getContentAwareSessionLimit({ ...plan, heading: logoTier, dockRows });
   const resting = getContentAwareSessionLimit({
     ...plan,
-    showLogo: true,
+    heading: logoTier,
     dockRows: RESTING_DOCK_ROWS,
   });
-  const showLogo =
+  const withWordmark = getContentAwareSessionLimit({ ...plan, heading: 'wordmark', dockRows });
+  const logoShown = shownSessionRows(withLogo, sessionCount);
+  const keepsLogo =
     getLogoWidth(logoTier) <= width &&
     withLogo.crewFits &&
-    shownSessionRows(withLogo, sessionCount) >=
-      Math.min(shownSessionRows(resting, sessionCount), 2);
-  const { recentSessionLimit, showHiddenCount, sessionCapacity } = showLogo
-    ? withLogo
-    : getContentAwareSessionLimit({ ...plan, showLogo: false, dockRows });
+    logoShown >= Math.min(shownSessionRows(resting, sessionCount), 2) &&
+    !(sessionsFocused && shownSessionRows(withWordmark, sessionCount) > logoShown);
+  const heading = keepsLogo
+    ? logoTier
+    : getLogoWidth('wordmark') <= width && withWordmark.crewFits
+      ? 'wordmark'
+      : null;
+  const { recentSessionLimit, showHiddenCount, sessionCapacity } =
+    heading === logoTier
+      ? withLogo
+      : heading === 'wordmark'
+        ? withWordmark
+        : getContentAwareSessionLimit({ ...plan, heading: null, dockRows });
 
   return {
     width,
-    logoTier,
-    showLogo,
+    heading,
     inputBottomMargin,
     recentSessionLimit,
     showHiddenCount,
@@ -169,10 +177,13 @@ export function getHomeLayout({
   };
 }
 
+// A crew of three seats wraps onto at most one row per seat.
+const CREW_EXTRA_ROWS = 2;
+
 /** Below this height the box would crowd out sessions; the hint line takes over. */
 const DISCOVERY_PANEL_MIN_ROWS = 24;
-/** Panel height plus one breathing row — the slack the box needs to render whole. */
-const DISCOVERY_PANEL_SLACK_ROWS = 5;
+/** The box's three rows plus one breathing row — the slack the box needs to render whole. */
+const DISCOVERY_PANEL_SLACK_ROWS = 4;
 
 interface HomeLayoutStateInput {
   cols: number;
@@ -193,8 +204,10 @@ interface HomeLayoutState {
   canFocus: boolean;
   sessionsActive: boolean;
   discoveryPanelFits: boolean;
-  /** The tool check shows on the hint line, not in its box. */
+  /** The running tool check shows on the hint line, not in its box. */
   hintNotice: boolean;
+  /** The rows the collapsed crew may wrap onto: its own row and the session rows nothing fills. */
+  seatLineRows: number;
 }
 
 export function deriveHomeLayoutState({
@@ -220,6 +233,16 @@ export function deriveHomeLayoutState({
   const discoveryPanelFits =
     rows >= DISCOVERY_PANEL_MIN_ROWS &&
     layout.sessionCapacity - renderedSessionRows >= DISCOVERY_PANEL_SLACK_ROWS;
-  const hintNotice = toolCheck === 'warm' || (toolCheck !== null && !discoveryPanelFits);
-  return { layout, hasRoomForSessions, canFocus, sessionsActive, discoveryPanelFits, hintNotice };
+  const hintNotice = toolCheck === 'warm' || (toolCheck === 'cold' && !discoveryPanelFits);
+  const seatLineRows =
+    1 + Math.min(CREW_EXTRA_ROWS, Math.max(0, layout.sessionCapacity - renderedSessionRows));
+  return {
+    layout,
+    hasRoomForSessions,
+    canFocus,
+    sessionsActive,
+    discoveryPanelFits,
+    hintNotice,
+    seatLineRows,
+  };
 }

@@ -11,6 +11,7 @@ import {
   restoreClipboardExecFixture,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -312,6 +313,35 @@ function expectLineContains(frame: string, anchor: string, text: string): void {
   expect(line).toContain(text);
 }
 
+/** A notice box: the tone frame, one padding cell each side, the glyph on the first row only. */
+function framedNotice(rows: readonly string[], lead: string, width: number): string[] {
+  const inner = width - 4;
+  return [
+    `╭${'─'.repeat(width - 2)}╮`,
+    ...rows.map((row, index) => {
+      const text = `${index === 0 ? lead : ' '.repeat(lead.length)}${row}`;
+      return `│ ${text.padEnd(inner)} │`;
+    }),
+    `╰${'─'.repeat(width - 2)}╯`,
+  ];
+}
+
+/** The trimmed rows of the notice that sits directly on the composer box, and the box's top row. */
+function noticeOnComposer(frame: string): { notice: string[]; composerTop: string } {
+  const rows = stripAnsiStyles(frame)
+    .split('\n')
+    .map((row) => row.trim());
+  const prompt = rows.findLastIndex((row) => row.includes('›'));
+  const composerTop = prompt - 1;
+  const noticeBottom = composerTop - 1;
+  let noticeTop = noticeBottom;
+  while (noticeTop > 0 && !(rows[noticeTop] ?? '').startsWith('╭')) noticeTop -= 1;
+  return {
+    notice: rows.slice(noticeTop, noticeBottom + 1),
+    composerTop: rows[composerTop] ?? '',
+  };
+}
+
 function columnIndexOf(frame: string, text: string): number {
   return lineContaining(frame, text).indexOf(text);
 }
@@ -481,12 +511,6 @@ describe('HomeScreen', () => {
 
     const ui = renderHome();
     await flushEffects();
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const titleRow = lines.findIndex((line) => line.includes('Checking your tools…'));
-
-    expect(lines[titleRow + 1]).toContain(
-      'PLAN GPT-6-Astra · BUILD Gemini 3.8 Flash · REVIEW GPT-6.1-Sol',
-    );
     expect(lineContaining(ui.lastFrame() ?? '', 'PLAN      ')).toContain(
       'OpenAI Codex CLI · GPT-6-Astra · xhigh',
     );
@@ -510,37 +534,29 @@ describe('HomeScreen', () => {
 
     const ui = renderHome();
     await flushEffects();
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const titleRow = lines.findIndex((line) => line.includes('Checking your tools…'));
-
-    expect(lines[titleRow + 1]).toContain(
-      'PLAN Claude Code CLI · BUILD Custom Shell · REVIEW OpenAI Codex CLI',
-    );
     expect(lineContaining(ui.lastFrame() ?? '', 'BUILD     ')).toContain('Custom Shell · auto');
     ui.unmount();
   });
 
-  it('marks an inherited review seat on the wake card', async () => {
-    const originalColorLevel = chalk.level;
-    chalk.level = 3;
+  it('shows the running check as one box fitted to its sign, with no crew line and no cache note', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
 
     const ui = renderHome();
     await flushEffects();
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const titleRow = lines.findIndex((line) => line.includes('Checking your tools…'));
+    const rows = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .map((row) => row.trim());
+    const title = rows.findIndex((row) => row.includes('Checking your tools…'));
+    const sign = (rows[title] ?? '').replace(/^│ /u, '').replace(/ │$/u, '');
+    const width = getTerminalCellWidth(sign) + 4;
 
-    expect(lines[titleRow + 1]).toContain('REVIEW = PLAN');
-    const rawLine = (ui.lastFrame() ?? '').split('\n')[titleRow + 1] ?? '';
-    expect(rawLine).toContain(paint(defaultTheme.planner, 'PLAN ').replace('\u001b[39m', ''));
-    expect(rawLine).toContain(paint(defaultTheme.implementer, 'BUILD ').replace('\u001b[39m', ''));
-    expect(rawLine).toContain(
-      paint(defaultTheme.reviewer, 'REVIEW = PLAN').replace('\u001b[39m', ''),
-    );
-    expect(rawLine).toContain(paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''));
+    expect(rows[title]).toBe(`│ ${sign} │`);
+    expect(sign).toMatch(/^\S Checking your tools…$/u);
+    expect(rows[title - 1]).toBe(`╭${'─'.repeat(width - 2)}╮`);
+    expect(rows[title + 1]).toBe(`╰${'─'.repeat(width - 2)}╯`);
+    expect(rows.join('\n')).not.toContain('Tool detection is saved for next time');
     ui.unmount();
-    chalk.level = originalColorLevel;
   });
 
   it('shows the cold initialization notice while first discovery runs, then hides it', async () => {
@@ -600,28 +616,34 @@ describe('HomeScreen', () => {
   });
 
   it.each([
-    ['failed', 'Tool check failed'],
-    ['not-run', 'Tools not checked'],
-  ] as const)('shows an actionable card when cold discovery settles %s', async (outcome, title) => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
-    settleColdDiscovery(outcome);
+    ['failed', 'Tool check failed', '✗ '],
+    ['not-run', 'Tools not checked', '⚠ '],
+  ] as const)(
+    'shows a %s first check as a notice directly above the composer at 120x40',
+    async (outcome, title, lead) => {
+      terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+      settleColdDiscovery(outcome);
 
-    const ui = renderHome();
-    await flushEffects();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain(title);
-    expect(frame).toContain('Open /settings to retry.');
-    expect(frame).not.toContain('Checking your tools…');
-    expect(frame).not.toContain('detecting tools…');
-    ui.unmount();
-  });
+      const ui = renderHome();
+      await flushEffects();
+      const text = `${title} · open /settings to retry`;
+      const { notice, composerTop } = noticeOnComposer(ui.lastFrame() ?? '');
+      expect(notice).toEqual(framedNotice([text], lead, getTerminalCellWidth(text) + 6));
+      expect(composerTop).toBe(`╭${'─'.repeat(106)}╮`);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame.split(title)).toHaveLength(2);
+      expect(frame).not.toContain('Open /settings to retry.');
+      expect(frame).not.toContain('detecting tools…');
+      ui.unmount();
+    },
+  );
 
   it.each([
-    ['failed', 'Tool check failed', 'error'],
-    ['not-run', 'Tools not checked', 'warning'],
+    ['failed', 'Tool check failed', '✗ ', 'error'],
+    ['not-run', 'Tools not checked', '⚠ ', 'warning'],
   ] as const)(
-    'says a %s cold check on the hint row when its card does not fit',
-    async (outcome, title, tone) => {
+    'shows a %s first check as the same notice, framed in its tone, at 60x18',
+    async (outcome, title, lead, tone) => {
       const originalColorLevel = chalk.level;
       chalk.level = 3;
       terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
@@ -630,18 +652,41 @@ describe('HomeScreen', () => {
       const ui = renderHome();
       try {
         await flushEffects();
-        const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-        const notice = `${title} · open /settings to retry`;
-        expect(frame).not.toContain('Open /settings to retry.');
-        expect(frame.split(notice)).toHaveLength(2);
-        expect(frame).not.toContain('detecting tools…');
-        expect(ui.lastFrame()).toContain(paint(defaultTheme[tone], notice));
+        const text = `${title} · open /settings to retry`;
+        const { notice } = noticeOnComposer(ui.lastFrame() ?? '');
+        expect(notice).toEqual(framedNotice([text], lead, getTerminalCellWidth(text) + 6));
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('detecting tools…');
+        // Ink paints a whole border row in one run, so the tone opens at the corner.
+        const toneOpen = paint(defaultTheme[tone], '╭').split('╭')[0] ?? '';
+        expect(ui.lastFrame()).toContain(`${toneOpen}╭`);
       } finally {
         ui.unmount();
         chalk.level = originalColorLevel;
       }
     },
   );
+
+  it('shows a feedback notice over the failed check while it lasts, then the check comes back', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    settleColdDiscovery('failed');
+
+    const ui = renderHome();
+    await flushEffects();
+    feedbackStore.setError('Draft not saved');
+    await flushEffects();
+    expect(noticeOnComposer(ui.lastFrame() ?? '').notice).toEqual(
+      framedNotice(['Draft not saved'], '✗ ', 21),
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('Tool check failed');
+
+    feedbackStore.setError(null);
+    await flushEffects();
+    const text = 'Tool check failed · open /settings to retry';
+    expect(noticeOnComposer(ui.lastFrame() ?? '').notice).toEqual(
+      framedNotice([text], '✗ ', getTerminalCellWidth(text) + 6),
+    );
+    ui.unmount();
+  });
 
   it('offers no image drop on the row of a failed cold check', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 18, isSmall: false });
@@ -719,14 +764,15 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('names every seat of the default crew by its tool at 60x18', async () => {
+  it('names every seat of the default crew whole on the rows an empty list leaves at 60x18', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
 
     const ui = renderHome();
     await flushEffects();
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('PLAN claude · BUILD ollama · REVIEW = PLAN');
+    expect(frame).toContain('PLAN Claude Code CLI · BUILD Qwen2.5 Coder 7B');
+    expect(lineContaining(frame, 'REVIEW').trim()).toBe('REVIEW = PLAN');
     ui.unmount();
   });
 
@@ -750,7 +796,8 @@ describe('HomeScreen', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('feature 24');
     expect(frame).toMatch(/\b\d+ more\b/);
-    expect(frame).not.toContain('ctrl+r');
+    // Under the wordmark the focused list keeps rows to select, so the list can take focus.
+    expect(frame).toContain('ctrl+r recent');
     ui.unmount();
   });
 
@@ -1230,7 +1277,7 @@ describe('HomeScreen', () => {
     await flushEffects();
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame.replace(/\s+/g, ' ')).toContain(warning);
+    expect(acrossNoticeEdges(frame)).toContain(warning);
     expect(frame.split(CHECKING_STATUS)).toHaveLength(2);
     expect(frame).not.toContain('Checking your tools…');
     ui.stdin.write(ESC);
@@ -2224,7 +2271,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('keeps the crew block and the more row at 60x18 while a long draft and a four-row message show', async () => {
+  it('keeps the wordmark, the crew block and one session row at 60x18 while a long draft and a four-row message show', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     await configStore.save(makeConfig());
     seedSessions(8);
@@ -2246,8 +2293,10 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('opencode auth login');
     expect(frame).toContain('label printer.');
+    expect(frame.split('\n')[0]?.trim()).toBe('splitbrief');
     expect(frame).toContain('/crew to change');
-    expect(frame).toMatch(/\d+ more/);
+    expect(frame).toContain('focus feature 7');
+    expect(frame).not.toMatch(/\d+ more/);
     ui.unmount();
   });
 
@@ -2295,7 +2344,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       const ui = await renderColdCheckUnder(message, sessions);
 
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame.replace(/\s+/g, ' ')).toContain(message);
+      expect(acrossNoticeEdges(frame)).toContain(message);
       expect(frame.split('Checking your tools…')).toHaveLength(2);
       expectWholeFrame(frame, 80, 24);
       ui.unmount();
@@ -2313,7 +2362,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     const ui = await renderColdCheckUnder(message, 3);
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame.replace(/\s+/g, ' ')).toContain(message);
+    expect(acrossNoticeEdges(frame)).toContain(message);
     expect(frame).toContain('Checking your tools…');
     expect(frame).toContain('/crew to change');
     expectWholeFrame(frame, 60, 18);

@@ -362,7 +362,7 @@ describe('usePickerActions fallback slot', () => {
     await currentActions().confirmProviderSelection('opus', 'low');
 
     expect(saveConfig).not.toHaveBeenCalled();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(feedbackStore.get().message).toMatch(/^BUILD runs .*choose another tool or model$/);
     expect(overlayStore.get().active).toBe('implementer-fallback-picker');
     ui.unmount();
@@ -384,7 +384,7 @@ describe('usePickerActions fallback slot', () => {
         '"auto" is already offered as the Auto row — select it there.',
       );
     });
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(loadConfig(projectDir).revision).toBeNull();
     expect(JSON.stringify(configStore.get().config)).toBe(configBefore);
     expect(JSON.stringify(pickerViewStore.get())).toBe(pickerBefore);
@@ -584,7 +584,7 @@ describe('usePickerActions', () => {
     await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
     expect(feedbackStore.get()).toMatchObject({
       message: `Saved ${label} · OpenAI Codex CLI · GPT-5 Codex to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore`,
-      isError: false,
+      severity: 'info',
     });
     ui.unmount();
   });
@@ -613,7 +613,7 @@ describe('usePickerActions', () => {
       expect(feedbackStore.get()).toMatchObject({
         message:
           'Saved PLAN · Ollama · ModelA to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
-        isError: false,
+        severity: 'info',
       });
       ui.unmount();
     },
@@ -890,7 +890,7 @@ describe('usePickerActions', () => {
         'inherited-custom belongs to the planner. Remove it from the planner.',
       );
     });
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(configStore.get().config?.planner).toMatchObject({
       customModels: ['inherited-custom'],
     });
@@ -914,7 +914,7 @@ describe('usePickerActions', () => {
     });
     expect(feedbackStore.get()).toEqual({
       message: 'my-model belongs to the planner. Remove it from the planner.',
-      isError: false,
+      severity: 'info',
     });
     expect(configStore.get().config?.reviewer).toBe('none');
     expect(configStore.get().config?.planner).toMatchObject({ customModels: ['my-model'] });
@@ -1177,6 +1177,8 @@ describe('usePickerActions', () => {
         / · OpenCode CLI has no credential for opencode — run opencode auth login opencode before start$/,
       );
       expect(message.match(/Saved/g)).toHaveLength(1);
+      // A save that still needs a sign-in step is a warning, not a plain report.
+      expect(feedbackStore.get().severity).toBe('warning');
     });
 
     it('names the sign-in for a route of a tool signed in to no provider, as the row reads it', async () => {
@@ -1220,6 +1222,7 @@ describe('usePickerActions', () => {
       listsModels(['ollama/llama3']);
 
       expect(await confirmed('ollama/llama3')).not.toContain('auth login');
+      expect(feedbackStore.get().severity).toBe('info');
     });
 
     // A route only the last listing named can be a provider signed out since then.
@@ -1713,7 +1716,7 @@ describe('usePickerActions', () => {
     expect(feedbackStore.get()).toMatchObject({
       message:
         'Saved PLAN · Custom Shell · auto to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
-      isError: false,
+      severity: 'info',
     });
     ui.unmount();
   });

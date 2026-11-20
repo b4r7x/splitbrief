@@ -126,8 +126,8 @@ interface ScreenScenarioInput {
 }
 
 const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
-  // The compact wordmark is 37 cells wide: at 41 columns the body holds it, at 40 the logo gives
-  // way instead of wrapping.
+  // The compact logo is 37 cells wide: at 41 columns the body holds it, at 40 the one-row wordmark
+  // takes its slot instead of a wrapped logo.
   {
     id: 'home-empty',
     title: 'Home · empty project',
@@ -153,6 +153,12 @@ const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
     id: 'home-cold-crew',
     title: 'Home · first discovery with a wide crew',
     viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
+  },
+  // The seat line wraps whole seats onto the rows the session list leaves; it never drops one.
+  {
+    id: 'home-wide-crew',
+    title: 'Home · a wide crew at rest',
+    viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 40, rows: 18 })],
   },
 ];
 
@@ -7245,7 +7251,8 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-review-none-locked-enter',
         title: 'Overlay · settings · Enter on a read-only row while REVIEW is None',
-        marker: 'Read-only while REVIEW is None',
+        // The notice may wrap the reason, so the marker is the opening words of its first row.
+        marker: 'Read-only while REVIEW',
       },
       {
         id: 'overlay-settings-end-checks-off',
@@ -7738,7 +7745,8 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-fallback-picker-same-seat',
         title: 'Overlay · BUILD fallback · current seat identity refused',
-        marker: 'BUILD runs OpenAI Codex CLI · GPT-6-Astra now',
+        // The byline notice wraps the refusal, so the marker is the opening words of its first row.
+        marker: 'BUILD runs OpenAI Codex CLI',
       },
     ],
   }),

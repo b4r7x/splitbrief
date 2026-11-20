@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { build, planner } from '#testing/helpers/crew-identity.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../config/accessors/reviewer-runner.js';
@@ -103,10 +102,9 @@ describe('formatCollapsedSeatSpans', () => {
     expect(line).toContain('PLAN Sonnet 4');
   });
 
-  it('spends another seat name before the noted seat when the note crowds the line', () => {
+  it('drops the note before it drops any seat when the noted lines do not fit', () => {
     const notes = { build: 'resets 17:00' };
-    // One cell under the complete tool line with the note, the note still has to crowd the
-    // named line.
+    // One cell under the complete tool line with the note: the plain model line still fits.
     const budget =
       getTerminalCellWidth(
         seatLineText(
@@ -117,12 +115,13 @@ describe('formatCollapsedSeatSpans', () => {
       formatCollapsedSeatSpans({ planner, build, reviewer: undefined, notes, budget }),
     );
 
-    expect(line).toBe('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B (resets 17:00)');
+    expect(line).toBe(
+      `PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B · REVIEW ${PLANNER_INHERITANCE.mark}`,
+    );
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(budget);
-    expect(line).not.toContain(ELLIPSIS);
   });
 
-  it('keeps the noted seat named and drops the seats the note crowds out', () => {
+  it('names every seat by its tool before it lets a note crowd a seat out', () => {
     const line = seatLineText(
       formatCollapsedSeatSpans({
         planner,
@@ -133,44 +132,31 @@ describe('formatCollapsedSeatSpans', () => {
       }),
     );
 
-    expect(line).toBe('BUILD Qwen2.5 Coder 7B (resets 17:00)');
-    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(45);
+    expect(line).toBe(`PLAN claude · BUILD ollama · REVIEW ${PLANNER_INHERITANCE.mark}`);
   });
 
-  it('gives up one whole seat rather than cutting a model name in half', () => {
+  it('names no seat rather than a part of the crew when no whole line fits', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
-    // The complete tool line answers every wider budget; one cell under it the named line
-    // keeps two seats whole.
     const budget =
       getTerminalCellWidth(
         seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, line: 'tool' })),
       ) - 1;
-    const line = seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget }));
 
-    expect(line).toBe('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B');
-    expect(line).not.toContain(ELLIPSIS);
-    expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(budget);
+    expect(formatCollapsedSeatSpans({ planner, build, reviewer, budget })).toEqual([]);
   });
 
-  it('names the same seats at every width one identity can pay for', () => {
+  it('names all three seats or none at every width', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
-    const paid = 'PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B';
-    const toolPaid = 'PLAN claude · BUILD ollama · REVIEW codex';
-    const lines: string[] = [];
+    const whole = getTerminalCellWidth(
+      seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer })),
+    );
 
-    for (
-      let budget =
-        getTerminalCellWidth(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer }))) -
-        1;
-      budget >= getTerminalCellWidth(paid);
-      budget -= 1
-    ) {
-      lines.push(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget })));
+    for (let budget = whole; budget >= 4; budget -= 1) {
+      const spans = formatCollapsedSeatSpans({ planner, build, reviewer, budget });
+      const seats = spans.flatMap((span) => (span.seat === undefined ? [] : [span.seat]));
+      expect(seats.length === 0 || seats.join(',') === 'plan,build,review').toBe(true);
+      expect(getTerminalCellWidth(seatLineText(spans))).toBeLessThanOrEqual(budget);
     }
-
-    // Every width names all three seats: by tool while that line fits, then by the two model
-    // names it can pay for. No width states half a name.
-    expect([...new Set(lines)]).toEqual([toolPaid, paid]);
   });
 
   it('names every seat by its tool when one model name is long', () => {
@@ -195,18 +181,14 @@ describe('formatCollapsedSeatSpans', () => {
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(54);
   });
 
-  it('keeps the seats it can name and states nothing about the rest', () => {
+  it('states nothing at all where a whole crew line does not fit', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
 
-    expect(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget: 34 }))).toBe(
-      'PLAN Sonnet 4 · REVIEW GPT-5 Codex',
+    expect(formatCollapsedSeatSpans({ planner, build, reviewer, budget: 34 })).toEqual([]);
+    expect(formatCollapsedSeatSpans({ planner, build, reviewer, budget: 27 })).toEqual([]);
+    expect(formatCollapsedSeatSpans({ planner, build, reviewer: undefined, budget: 28 })).toEqual(
+      [],
     );
-    expect(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget: 27 }))).toBe(
-      'PLAN Sonnet 4',
-    );
-    expect(
-      seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer: undefined, budget: 28 })),
-    ).toBe('PLAN Sonnet 4');
   });
 
   it('states no line wider than the budget it was given', () => {
@@ -267,12 +249,13 @@ describe('formatCollapsedSeatSpansFromIdentities', () => {
       ],
     },
     {
-      name: 'an elided reviewer without a dangling separator',
+      name: 'a budget one cell under the whole line, which names nobody',
       input: {
         ...identities,
-        budget: getTerminalCellWidth('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B'),
+        budget:
+          getTerminalCellWidth('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B · REVIEW GPT-5 Codex') - 1,
       },
-      expected: [planSpan, separator, buildSpan],
+      expected: [],
     },
     {
       name: 'a budget that names nobody',
@@ -304,7 +287,7 @@ describe('formatCollapsedSeatSpansFromIdentities', () => {
 });
 
 describe('formatCollapsedSeatSpans', () => {
-  it('shares identity resolution and halted-seat fitting with the string entry point', () => {
+  it('shares identity resolution and fitting with the string entry point', () => {
     const input = {
       planner,
       build,
@@ -313,8 +296,9 @@ describe('formatCollapsedSeatSpans', () => {
       notes: { build: 'resets 17:00' },
     };
 
-    for (const budget of [80, 45, 34, 19, 4]) {
-      const fittedInput = { ...input, budget, haltedSeat: 'build' as const };
+    // Budgets where no tool line answers: the identities entry has no tool words to fall back to.
+    for (const budget of [80, 64, 49, 19, 4]) {
+      const fittedInput = { ...input, budget };
       const spans = formatCollapsedSeatSpans(fittedInput);
 
       expect(spans).toEqual(
@@ -323,7 +307,6 @@ describe('formatCollapsedSeatSpans', () => {
           build: 'Qwen 2.5 7B',
           review: null,
           budget,
-          haltedSeat: 'build',
           notes: input.notes,
         }),
       );
@@ -331,57 +314,5 @@ describe('formatCollapsedSeatSpans', () => {
         seatLineText(formatCollapsedSeatSpans(fittedInput)),
       );
     }
-  });
-});
-
-describe('formatCollapsedSeatSpans with a halted seat', () => {
-  const input = { planner, build, reviewer: undefined, budget: 34 };
-
-  it('spends another seat before the halted one', () => {
-    expect(seatLineText(formatCollapsedSeatSpans(input))).toBe('PLAN Sonnet 4 · REVIEW = PLAN');
-    const halted = seatLineText(formatCollapsedSeatSpans({ ...input, haltedSeat: 'build' }));
-
-    expect(halted).toBe('BUILD Qwen2.5 Coder 7B');
-    expect(getTerminalCellWidth(halted)).toBeLessThanOrEqual(34);
-    expect(halted).not.toContain(ELLIPSIS);
-  });
-
-  it('keeps the halted seat when its reset note no longer fits', () => {
-    expect(
-      seatLineText(
-        formatCollapsedSeatSpans({
-          ...input,
-          haltedSeat: 'build',
-          notes: { build: 'resets 17:00' },
-        }),
-      ),
-    ).toBe('BUILD Qwen2.5 Coder 7B');
-  });
-
-  it('falls back to the plain rule when the halted name itself cannot fit', () => {
-    expect(
-      seatLineText(formatCollapsedSeatSpans({ ...input, budget: 19, haltedSeat: 'build' })),
-    ).toBe('PLAN Sonnet 4');
-  });
-
-  it('falls back to the plain rule when the protected line would name nobody', () => {
-    // An inherited review seat is a mark that points at the planner; keeping it alone names no one.
-    expect(
-      seatLineText(formatCollapsedSeatSpans({ ...input, budget: 20, haltedSeat: 'review' })),
-    ).toBe('PLAN Sonnet 4');
-  });
-
-  it('protects the halted seat through the identities entry point', () => {
-    expect(
-      seatLineText(
-        formatCollapsedSeatSpansFromIdentities({
-          plan: 'Sonnet 4',
-          build: 'Qwen2.5 Coder 7B',
-          review: null,
-          budget: 34,
-          haltedSeat: 'build',
-        }),
-      ),
-    ).toBe('BUILD Qwen2.5 Coder 7B');
   });
 });

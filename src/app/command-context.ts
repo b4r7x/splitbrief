@@ -269,7 +269,7 @@ export function useRuntimeCommands({
         applying: applyBefore !== undefined,
         onError: (message, line, outcome) => {
           if (outcome === 'failed') feedbackStore.setError(message);
-          else feedbackStore.setMessage(message);
+          else feedbackStore.setWarning(message);
           if (sentBy === 'answer') {
             const { drafts, index } = questionPromptStore.get();
             if (drafts[index]?.text === '') questionPromptStore.setFocus('answer', line);

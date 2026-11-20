@@ -489,6 +489,17 @@ describe('closedTranscriptBlock', () => {
     }
   });
 
+  it('wraps the crew onto a second row at 60 columns instead of dropping a seat', () => {
+    const rows = blockRows(rich, { crewNamed: false, width: 56 });
+
+    expect(rows[1]?.kind).toBe('activity-child');
+    expect(rowText(rows[1] as ConversationRow).trimEnd()).toBe('Crew     PLAN claude-sonnet-4');
+    expect(rows[2]?.kind).toBe('callout-body');
+    expect(rowText(rows[2] as ConversationRow).trim()).toBe(
+      'BUILD qwen2.5-coder:7b · REVIEW = PLAN',
+    );
+  });
+
   it('marks a file the run half wrote and links each path into the project', () => {
     configStore.__testReset({ projectDir: '/repo' });
     const rows = blockRows(endedInBuild(), { expanded: true });

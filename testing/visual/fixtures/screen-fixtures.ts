@@ -80,6 +80,7 @@ import { makeConfig } from '../../helpers/factories/config.js';
 import { cliDetectionFor, failedDiscoveryResult } from '../../helpers/factories/detection.js';
 import { createTestGitRepo } from '../../helpers/git.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
+import type { NoticeMessage } from '../../../src/components/notice.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import {
@@ -1350,7 +1351,7 @@ function createOutsideAttachmentFailureFixture(reason: InputFileFailureReason): 
       await home.setup(context);
       const { path, prompt } = ATTACHMENT_FAILURE_DRAFTS[reason];
       composerDraftStore.request(`@${path} ${prompt}`);
-      feedbackStore.setError(attachmentFailureMessage(reason));
+      feedbackStore.setWarning(attachmentFailureMessage(reason));
     },
     teardown: home.teardown,
   };
@@ -1461,22 +1462,25 @@ function createDraftNotSavedFixture(): FixtureLifecycle {
 }
 
 function setSaveSignInMessage(): void {
-  feedbackStore.setMessage(SAVE_SIGN_IN_MESSAGE);
+  feedbackStore.setWarning(SAVE_SIGN_IN_MESSAGE);
 }
 
 // The feedback each home fixture leaves above the composer. The composer locator fits it as the
 // composer does, so the crop holds the message rows the home dock counts.
-export const homeFixtureFeedback: ReadonlyMap<string, string> = new Map([
-  ['home-attachment-not-found', attachmentFailureMessage('not-found')],
-  ['home-attachment-not-a-file', attachmentFailureMessage('not-a-file')],
-  ['home-attachment-too-large', attachmentFailureMessage('too-large')],
-  ['home-attachment-unreadable', attachmentFailureMessage('unreadable')],
-  ['home-attachment-not-text', attachmentFailureMessage('not-text')],
-  ['home-save-sign-in', SAVE_SIGN_IN_MESSAGE],
-  ['home-save-long-draft', SAVE_SIGN_IN_MESSAGE],
-  ['home-draft-not-saved', DRAFT_NOT_SAVED_MESSAGE],
-  ['home-draft-not-removed', DRAFT_NOT_REMOVED_MESSAGE],
-  ['home-config-edit-refused', CONFIG_EDIT_REFUSED_MESSAGE],
+const warning = (message: string): NoticeMessage => ({ message, severity: 'warning' });
+const error = (message: string): NoticeMessage => ({ message, severity: 'error' });
+
+export const homeFixtureFeedback: ReadonlyMap<string, NoticeMessage> = new Map([
+  ['home-attachment-not-found', warning(attachmentFailureMessage('not-found'))],
+  ['home-attachment-not-a-file', warning(attachmentFailureMessage('not-a-file'))],
+  ['home-attachment-too-large', warning(attachmentFailureMessage('too-large'))],
+  ['home-attachment-unreadable', warning(attachmentFailureMessage('unreadable'))],
+  ['home-attachment-not-text', warning(attachmentFailureMessage('not-text'))],
+  ['home-save-sign-in', warning(SAVE_SIGN_IN_MESSAGE)],
+  ['home-save-long-draft', warning(SAVE_SIGN_IN_MESSAGE)],
+  ['home-draft-not-saved', error(DRAFT_NOT_SAVED_MESSAGE)],
+  ['home-draft-not-removed', error(DRAFT_NOT_REMOVED_MESSAGE)],
+  ['home-config-edit-refused', error(CONFIG_EDIT_REFUSED_MESSAGE)],
 ]);
 
 function createSaveSignInFixture(options: HomeFixtureOptions = {}): FixtureLifecycle {
@@ -1676,6 +1680,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('home-cold-crew'),
     () => createHomeFixture({ cold: true, detecting: true, config: VISUAL_WIDE_CREW }),
   ],
+  [scenarioId('home-wide-crew'), () => createHomeFixture({ config: VISUAL_WIDE_CREW })],
   [scenarioId('home-preparing'), createHomePreparingFixture],
   [
     scenarioId('home-preparing-slow'),

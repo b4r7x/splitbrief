@@ -29,8 +29,28 @@ function glueSeparators(text: string): string {
   return text.replaceAll(' ·', GLUED_SEPARATOR);
 }
 
+const isPathWord = (word: string) => word.includes('/') && !word.includes('://');
+
+// A path never breaks inside a folder name: one wider than the row keeps its first folder and its
+// file name, and whole folders between them give way. A separator glued to it stays on its row.
+function shortenWidePaths(text: string, width: number): string {
+  return glueSeparators(text)
+    .split(' ')
+    .map((word) => {
+      if (getTerminalCellWidth(word) <= width || !isPathWord(word)) return word;
+      const glued = word.endsWith(GLUED_SEPARATOR) ? GLUED_SEPARATOR : '';
+      const path = word.slice(0, word.length - glued.length);
+      return `${elidePathMiddle(path, width - getTerminalCellWidth(glued))}${glued}`;
+    })
+    .join(' ')
+    .replaceAll(GLUED_SEPARATOR, ' ·');
+}
+
 function wrapFeedback(text: string, width: number): string {
-  return wrapPathAware(glueSeparators(text), width).replaceAll(GLUED_SEPARATOR, ' ·');
+  return wrapPathAware(glueSeparators(shortenWidePaths(text, width)), width).replaceAll(
+    GLUED_SEPARATOR,
+    ' ·',
+  );
 }
 
 function fitsBox(text: string, box: FeedbackBox): boolean {
@@ -160,14 +180,13 @@ function shortenSentencePaths(text: string, box: FeedbackBox): string {
   const leadWidth = getTerminalCellWidth(lead);
   const parts = text.split(SOFT_SEP);
   const isSentence = (part: string) => part.includes(' ') && !/^\S*\//u.test(part);
-  const isPath = (word: string) => word.includes('/') && !word.includes('://');
   const nameFloorOf = (path: string) =>
     leadWidth + getTerminalCellWidth(path.slice(path.lastIndexOf('/') + 1));
   for (const [partIndex, part] of parts.entries()) {
     if (!isSentence(part)) continue;
     const words = part.split(' ');
     for (const [index, path] of words.entries()) {
-      if (!isPath(path)) continue;
+      if (!isPathWord(path)) continue;
       const name = path.slice(path.lastIndexOf('/') + 1);
       const nameFloor = nameFloorOf(path);
       const laterFoldersFit = (): boolean => {
@@ -178,7 +197,7 @@ function shortenSentencePaths(text: string, box: FeedbackBox): string {
           const laterWords = sentence.split(' ');
           for (let w = p === partIndex ? index + 1 : 0; w < laterWords.length; w++) {
             const later = laterWords[w] ?? '';
-            if (!isPath(later)) continue;
+            if (!isPathWord(later)) continue;
             const floor = nameFloorOf(later);
             if (floor >= getTerminalCellWidth(later)) continue;
             const shortened = laterWords.with(w, elidePathMiddle(later, floor)).join(' ');
@@ -260,7 +279,7 @@ export function fitFeedbackMessage(
   if (!Number.isFinite(width)) return text;
 
   const max = Math.max(0, Math.floor(width));
-  const fitted = fitText(message, text, { maxWidth: max, maxRows });
+  const fitted = shortenWidePaths(fitText(message, text, { maxWidth: max, maxRows }), max);
   const rowCount = wrapFeedback(fitted, max).split('\n').length;
   if (rowCount === 1) return fitted;
 

@@ -21,9 +21,10 @@ import { createDraftDocument, draftLength } from '../../core/composer/document.j
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DraftSubmission } from '../../core/composer/submission.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
-import { deriveHomeHintLines } from './home-hint.js';
+import { deriveHomeHintLine, layoutHomeNotice } from './home-hint.js';
 import { placeholderForMode, promptColorForMode } from './prompt-mode.js';
 import { HomeHintRow } from './home-hint-row.js';
+import type { NoticeMessage } from '../notice.js';
 import { useProjectFiles } from './use-project-files.js';
 import { usePasteDrafts } from './use-paste-drafts.js';
 import {
@@ -51,11 +52,6 @@ export interface ComposerBoxHints {
   keys: string;
 }
 
-export interface HomeNotice {
-  text: string;
-  tone: 'textDim' | 'warning' | 'error';
-}
-
 interface ComposerProps {
   onSubmit?: ((submission: Extract<DraftSubmission, { ok: true }>) => void) | undefined;
   onSendNow?: ((submission: Extract<DraftSubmission, { ok: true }>) => boolean) | undefined;
@@ -76,8 +72,10 @@ interface ComposerProps {
   homeHint?: string | undefined;
   /** What the screen is waiting on. It takes the reserved row for as long as it lasts. */
   homeStatus?: string | undefined;
-  /** A notice that keeps the reserved row under feedback, where the hint gives it up. */
-  homeNotice?: HomeNotice | undefined;
+  /** Dim words that take the hint line while no notice stands. */
+  homeNotice?: string | undefined;
+  /** A notice that stands until its state changes; feedback shows over it while it lasts. */
+  homeStandingNotice?: NoticeMessage | undefined;
   boxHints?: ComposerBoxHints | undefined;
   onEmptySubmit?: (() => void) | undefined;
   /** A question mode whose empty answer means nothing refuses it here and keeps the focus. */
@@ -135,6 +133,7 @@ function ComposerInput({
   homeHint,
   homeStatus,
   homeNotice,
+  homeStandingNotice,
   boxHints,
   onEmptySubmit,
   emptyAnswerNotice,
@@ -150,7 +149,7 @@ function ComposerInput({
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const [{ projectDir, config }] = useStores(configStore);
-  const [{ message: feedbackMessage, isError: feedbackIsError }] = useStores(feedbackStore);
+  const [{ message: feedbackMessage, severity: feedbackSeverity }] = useStores(feedbackStore);
   const [caretSeed, setCaretSeed] = useState<{ epoch: number; index: number } | null>(null);
   const caretRef = useRef(0);
   const [visibleRows, setVisibleRows] = useState(1);
@@ -329,25 +328,31 @@ function ComposerInput({
   const parked = stopStore.use((state) => state.phase === 'parked');
   const stopping = stopStore.use((state) => state.intent !== 'none');
   const reserveHomeHint = currentScreen === 'home';
-  // A check the screen is waiting on owns the row while it runs, under feedback too. An
-  // affordance never rides a status or a warning, so the drop invitation stands down until the row
-  // is a hint or a plain notice again.
-  const noticeTone = homeStatus === undefined ? (homeNotice?.tone ?? 'textDim') : 'textDim';
-  const { feedbackLine, homeHintLine } = deriveHomeHintLines({
-    active: reserveHomeHint && !showCommandSuggestions && !showReferenceSuggestions,
+  const homeActive =
+    reserveHomeHint &&
+    homeHint !== undefined &&
+    !showCommandSuggestions &&
+    !showReferenceSuggestions;
+  // Feedback shows over a standing notice while it lasts; then the standing notice comes back.
+  const noticeMessage =
+    feedbackMessage === null
+      ? homeStandingNotice
+      : { message: feedbackMessage, severity: feedbackSeverity };
+  const notice =
+    homeActive && noticeMessage !== undefined
+      ? layoutHomeNotice(noticeMessage, width ?? cols)
+      : null;
+  // An affordance never rides a status, so the drop invitation stands down while one shows.
+  const homeHintLine = deriveHomeHintLine({
+    active: homeActive,
     homeHint,
-    notice: homeStatus ?? homeNotice?.text,
-    feedbackMessage,
+    status: homeStatus,
+    notice: homeNotice,
+    noticeShown: notice !== null,
     width: width ?? cols,
-    dropEnabled:
-      homeStatus === undefined &&
-      noticeTone === 'textDim' &&
-      !disabled &&
-      supportsImages &&
-      commandsOnly !== true,
+    dropEnabled: homeStatus === undefined && !disabled && supportsImages && commandsOnly !== true,
   });
-  const feedbackRows = feedbackLine?.split('\n') ?? [];
-  const hintRows = Math.max(1, feedbackRows.length + (homeHintLine === null ? 0 : 1));
+  const hintRows = Math.max(1, (notice?.height ?? 0) + (homeHintLine === null ? 0 : 1));
   // Home plans its body around this height, so it counts the home row and its message rows.
   const dockRows = (reserveHomeHint ? hintRows : 0) + visibleRows + 2;
 
@@ -369,15 +374,7 @@ function ComposerInput({
 
   return (
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
-      {reserveHomeHint && (
-        <HomeHintRow
-          height={hintRows}
-          feedbackRows={feedbackRows}
-          feedbackIsError={feedbackIsError}
-          hintLine={homeHintLine}
-          hintTone={noticeTone}
-        />
-      )}
+      {reserveHomeHint && <HomeHintRow height={hintRows} notice={notice} hintLine={homeHintLine} />}
       <Box flexDirection="column" width="100%" overflow="visible">
         <Box
           borderStyle={borderStyleFor('round')}

@@ -116,7 +116,7 @@ function readProgressRows(promptRows: number): number {
 
 // The footer's message rows, asked from the store the row paints from.
 function readFeedbackRows(): number {
-  return getFeedbackRows(feedbackStore.get().message, terminalSizeStore.get().cols);
+  return getFeedbackRows(feedbackStore.get(), terminalSizeStore.get().cols);
 }
 
 function readRailFraction(): string {

@@ -15,24 +15,24 @@ describe('feedbackStore', () => {
   it('covers set/auto-clear/error/reset end-to-end', () => {
     feedbackStore.setMessage('saved');
     expect(feedbackStore.get().message).toBe('saved');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
 
     // Informational messages auto-clear after 3s.
     vi.advanceTimersByTime(3000);
     expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
 
     feedbackStore.setError('persistent');
     feedbackStore.setError(null);
     expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
 
     feedbackStore.setTransientError('temporary failure');
     expect(feedbackStore.get().message).toBe('temporary failure');
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().severity).toBe('error');
     vi.advanceTimersByTime(3000);
     expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
 
     // reset cancels the pending auto-clear timer and clears state.
     feedbackStore.setMessage('will be cleared');
@@ -40,20 +40,20 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().message).toBeNull();
     vi.advanceTimersByTime(3000);
     expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
   });
 
   it('setError auto-clears after the 5s error TTL', () => {
     feedbackStore.setError('persistent');
     expect(feedbackStore.get().message).toBe('persistent');
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().severity).toBe('error');
 
     vi.advanceTimersByTime(4999);
     expect(feedbackStore.get().message).toBe('persistent');
 
     vi.advanceTimersByTime(1);
     expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
   });
 
   it('transient errors keep the 3s TTL', () => {
@@ -65,7 +65,7 @@ describe('feedbackStore', () => {
 
     vi.advanceTimersByTime(1);
     expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
   });
 
   it('keeps a long message on screen long enough to read it', () => {
@@ -85,7 +85,7 @@ describe('feedbackStore', () => {
     feedbackStore.setError('Connection lost');
 
     expect(feedbackStore.get().message).toBe('Connection lost');
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().severity).toBe('error');
 
     vi.advanceTimersByTime(3000);
     expect(feedbackStore.get().message).toBe('Connection lost');
@@ -94,13 +94,24 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
+  it('names the severity of each message: a failure is an error, a report is info', () => {
+    feedbackStore.setError('Draft not saved');
+    expect(feedbackStore.get()).toEqual({ message: 'Draft not saved', severity: 'error' });
+
+    feedbackStore.setTransientError('Copy failed');
+    expect(feedbackStore.get()).toEqual({ message: 'Copy failed', severity: 'error' });
+
+    feedbackStore.reset();
+    expect(feedbackStore.get()).toEqual({ message: null, severity: 'info' });
+  });
+
   it('publishFeedbackReset clears feedback immediately', () => {
     feedbackStore.setError('persistent');
     expect(feedbackStore.get().message).toBe('persistent');
 
     publishFeedbackReset();
     expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
 
     vi.advanceTimersByTime(5000);
     expect(feedbackStore.get().message).toBeNull();

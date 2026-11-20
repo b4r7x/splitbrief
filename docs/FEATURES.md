@@ -87,9 +87,10 @@ SPLITBRIEF reads and attaches text files when you put `@` before the path. An `a
 
 Remembered detection cannot authorize a workflow, resume, or `spec` run, and it is not an offline execution mode. It can populate a picker, and a command that reads no live listing takes a model's image input from it. Every local run still performs fresh execution preparation against its exact effective configuration.
 
-The home wake card names PLAN, BUILD and REVIEW with the same collapsed line as the workflow header.
+While the first tool check runs, home shows `Checking your tools…` in a small box above the composer, or on the hint line when the screen has no room for the box. A first check that fails or does not run shows `Tool check failed` or `Tools not checked` with `open /settings to retry` as the notice above the composer, until the next check.
+Home, the workflow header and the summary of a closed run name every seat whole, or no seat: a crew line never leaves a seat out. On home and in the run summary a narrow crew moves whole seats onto the next rows.
 An inherited review seat reads `REVIEW = PLAN` on home, in Setup and Settings, in the picker, and in the workflow. With REVIEW None it reads `REVIEW None` on the same surfaces.
-The card drops the first-run note before it shortens a seat. OpenCode and Kilo Code seats show the model name and the provider the route runs through, such as `OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go` or `Kilo Code CLI · GPT-5.5 · via github-copilot`, and the collapsed line keeps the provider: `PLAN DeepSeek V4.1 Flash via opencode-go`. A Kilo gateway model reads `via kilo`.
+OpenCode and Kilo Code seats show the model name and the provider the route runs through, such as `OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go` or `Kilo Code CLI · GPT-5.5 · via github-copilot`, and the collapsed line keeps the provider: `PLAN DeepSeek V4.1 Flash via opencode-go`. A Kilo gateway model reads `via kilo`.
 Bundled tool labels keep the seat names the same before and after a model catalog arrives.
 
 ```yaml

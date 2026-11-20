@@ -69,7 +69,7 @@ export function useSend({
     });
     if (!submission.ok) {
       // The draft outlives the refusal: the operator still has every word and every image.
-      feedbackStore.setError(formatSubmissionFailure(submission));
+      feedbackStore.setWarning(formatSubmissionFailure(submission));
       return false;
     }
     if (deliverNow?.(submission) === false) return false;

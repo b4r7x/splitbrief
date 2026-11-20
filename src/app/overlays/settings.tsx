@@ -29,7 +29,12 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { useStores } from '../../stores/use-many.js';
 import { FilterInput } from '../../components/filter-input.js';
-import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
+import {
+  layoutPanelNotice,
+  PANEL_NOTICE_ROWS,
+  PanelNotice,
+  panelNoticeRows,
+} from '../../components/notice.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import {
   CANCEL_HINT,
@@ -64,10 +69,15 @@ export function SettingsOverlay() {
   const { initialKey, initialFilter } = parseSettingsFocus(focus);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
   const rect = overlayRect({ cols, rows, density: FORM_DENSITY });
-  const notice = layoutFeedbackNotice(feedback, rect.innerWidth);
+  // The list scrolls, so the notice takes its whole budget.
+  const notice = layoutPanelNotice(feedback, {
+    width: rect.innerWidth,
+    maxRows: PANEL_NOTICE_ROWS,
+  });
   const listBudget = availableRows({
     rows: rect.maxOuterRows,
-    chromeRows: BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0) + (notice?.rows ?? 0),
+    chromeRows:
+      BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0) + panelNoticeRows(notice),
   });
 
   const items = buildSettingsItems({
@@ -200,7 +210,7 @@ export function SettingsOverlay() {
 
       {help && <HelpBlock label={help.label} lines={help.lines} width={rect.innerWidth} />}
 
-      {notice !== null && <FeedbackNotice notice={notice} width={rect.innerWidth} />}
+      {notice !== null && <PanelNotice notice={notice} />}
     </OverlayPanel>
   );
 }

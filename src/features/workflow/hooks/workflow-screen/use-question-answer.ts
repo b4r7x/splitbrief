@@ -35,7 +35,7 @@ export function useQuestionAnswer(
       return;
     }
     if (!submission.ok) {
-      feedbackStore.setError(formatSubmissionFailure(submission));
+      feedbackStore.setWarning(formatSubmissionFailure(submission));
       return;
     }
     const answered = questionPromptStore.answer(submission.message);

@@ -8,6 +8,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import {
   activateSafeCliShimPath,
   installCompatibleCliShim,
@@ -182,11 +183,14 @@ describe('e2e: a key on what REVIEW None holds names the reason and changes noth
         await screen.shows('Settings');
         screen.write('end-of-run');
         await screen.shows(/▌.*End-of-run checks/);
-        expect(screen.text()).not.toContain(reason);
+        // The panel notice wraps the reason over its bar rows at 60 columns; its words read across them.
+        expect(acrossNoticeEdges(screen.text())).not.toContain(reason);
 
         screen.write('\r');
 
-        await screen.shows(reason);
+        await vi.waitFor(() => expect(acrossNoticeEdges(screen.text())).toContain(reason), {
+          timeout: 10_000,
+        });
         expect(loadConfig(projectDir).config.validation.endChecks).toBe(true);
       },
     });
@@ -243,7 +247,8 @@ describe('e2e: a key on what REVIEW None holds names the reason and changes noth
         await moveCursorTo(screen.text, screen.write, '\x1b[B', /▌ Claude Code CLI/);
         await screen.shows(/My Model +Custom/);
         screen.write('\x1b[C');
-        await screen.shows(/▌ auto +tool decides/);
+        await screen.shows(/▌ auto\b/u);
+        await screen.shows('Claude Code CLI chooses the model');
         screen.write('my model');
         await screen.shows(/▌ My Model +Custom/);
 

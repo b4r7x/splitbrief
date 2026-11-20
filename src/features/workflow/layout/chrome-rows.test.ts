@@ -189,12 +189,12 @@ describe('selectRailFormAndLine', () => {
     expect(selectRailFormAndLine({ cols: min + 2, railWidths, ...noLine })).toEqual({
       form: 'B',
       short: true,
-      line: 'elided',
+      line: 'none',
     });
     expect(selectRailFormAndLine({ cols: min + 1, railWidths, ...noLine })).toEqual({
       form: 'C',
       short: false,
-      line: 'elided',
+      line: 'none',
     });
   });
 
@@ -280,7 +280,7 @@ describe('selectRailFormAndLine', () => {
     expect(selectRailFormAndLine({ cols: 22, ...input })).toEqual({
       form: 'C',
       short: false,
-      line: 'elided',
+      line: 'none',
     });
   });
 
@@ -292,7 +292,7 @@ describe('selectRailFormAndLine', () => {
         modelLineCells: 120,
         toolLineCells: 115,
       }),
-    ).toEqual({ form: 'B', short: false, line: 'elided' });
+    ).toEqual({ form: 'B', short: false, line: 'none' });
   });
 
   it('offers only the form the caller can paint', () => {

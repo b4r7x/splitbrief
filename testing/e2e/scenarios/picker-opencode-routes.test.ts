@@ -8,6 +8,7 @@ import { writeConfig } from '../../../src/core/config/load/io.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -145,12 +146,12 @@ process.exit(1);`,
           exited.resolve(event);
         });
         const prose = () =>
-          text()
-            .split('\n')
-            .map((line) => line.replace(/[│╭╮╰╯─]/g, ' ').trim())
-            .filter((line) => line !== '')
-            .join(' ')
-            .replace(/ +/g, ' ');
+          acrossNoticeEdges(
+            text()
+              .split('\n')
+              .map((line) => line.replace(/[╭╮╰╯─]/g, ' '))
+              .join(' '),
+          ).trim();
         const screen: Screen = {
           text,
           prose,

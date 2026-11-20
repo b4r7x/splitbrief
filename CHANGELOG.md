@@ -7,12 +7,15 @@
 - Review packets list BUILD routes in settlement order, including briefs a validation hook skips after BUILD runs, and explain routing refusals.
 - The transcript shows each plan’s goal, brief count, criteria count and file links together. Older runs show one link for each planning document.
 - Menu shortcuts stay visible while you type. Command lists align names and descriptions. Filtered palettes, completions and confirmations fit their contents. Page Up and Page Down reveal the rest of a long confirmation.
+- Messages above the input now look the same on Home, on the run screen, in Settings, in Setup and in the tool picker: a small box in the colour of the message, with ✗ for a failure and ⚠ for a refusal or a step you need to take. A long message drops the box for coloured edges before it is cut.
+- A long path in a message keeps its first folder and its file name instead of breaking in the middle of a folder name.
+- "Tool check failed" and "Tools not checked" now show as that message above the input on Home, at every terminal size. While the first check runs, Home shows only "Checking your tools…" in a small box.
+- On a small terminal Home shows a one-row `splitbrief` heading where the logo does not fit, and the Recent sessions list uses it when that shows more sessions.
 
 ### Fixed
 
 - Setup keeps crew presets reachable on small terminals and lets you choose a remembered crew after a failed refresh. Continue checks the selected seats.
 - The runner picker keeps tool names and sign-in status readable at narrow widths. A refused config edit names the field to remove.
-
 - Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.
 - Review packets count validation results for the briefs in the current plan.
 - Review packets identify API and CLI runners by their own names, even when they share a tool name.
@@ -21,6 +24,7 @@
 - The model catalog cache omits prices for individual model modes.
 - The closed run summary shows the findings that blocked review. Queued messages show whether they reached a seat, and the brief count appears during Build.
 - Opening a file in a graphical editor keeps the workflow visible.
+- The crew line on Home, in the run screen header and in the summary of a closed run no longer leaves a seat out on a narrow terminal. It names every seat or no seat, and on Home and in the summary a narrow crew continues on the next row.
 
 ### Removed
 

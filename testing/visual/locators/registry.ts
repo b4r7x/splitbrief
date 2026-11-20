@@ -10,13 +10,13 @@ import {
   WORKFLOW_CHROME_ROWS,
   WORKFLOW_GUTTER_X,
 } from '../../../src/features/workflow/layout/chrome-rows.js';
-import { deriveHomeHintLines } from '../../../src/components/composer/home-hint.js';
+import { layoutHomeNotice } from '../../../src/components/composer/home-hint.js';
 import {
   getHomeLayout,
   homeConfigBlockRows,
+  homeHeadingRows,
   RESTING_DOCK_ROWS,
 } from '../../../src/features/home/layout.js';
-import { getLogoHeight } from '../../../src/features/home/logo.js';
 import {
   fixtureHalt,
   getWorkflowFixturePromptRows,
@@ -137,13 +137,13 @@ function resolveHomeHeader(context: LocatorContext): CellRect {
     x: Math.floor((cols - layout.width) / 2),
     y: 0,
     width: layout.width,
-    height: (layout.showLogo ? getLogoHeight(layout.logoTier) + 1 : 0) + homeConfigBlockRows(rows),
+    height: homeHeadingRows(layout.heading) + homeConfigBlockRows(rows),
   });
 }
 
 // The crop is the dock the composer publishes to the home layout: its home rows over the box.
-// The box rows come from the frame; the home rows from the fixture's feedback, fitted as the
-// composer fits it.
+// The box rows come from the frame; the home rows from the fixture's notice, laid out as the
+// composer lays it out.
 function resolveHomeComposer(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
   const layout = getHomeLayout({ cols, rows, dockRows: RESTING_DOCK_ROWS, noConfig: false });
@@ -156,14 +156,9 @@ function resolveHomeComposer(context: LocatorContext): CellRect {
   if (cellAt(context.grid, x, boxTop) !== topCorner) {
     throw new Error('No home composer box is painted above the bottom margin');
   }
-  const { feedbackLine } = deriveHomeHintLines({
-    active: true,
-    homeHint: '',
-    feedbackMessage: homeFixtureFeedback.get(context.scenario.id) ?? null,
-    width: layout.width,
-    dropEnabled: false,
-  });
-  const height = (feedbackLine?.split('\n').length ?? 1) + boxBottom - boxTop + 1;
+  const notice = homeFixtureFeedback.get(context.scenario.id);
+  const homeRows = notice === undefined ? 1 : layoutHomeNotice(notice, layout.width).height;
+  const height = homeRows + boxBottom - boxTop + 1;
   return CellRectSchema.parse({ x, y: boxBottom + 1 - height, width: layout.width, height });
 }
 
@@ -221,7 +216,10 @@ function bodyTopRow(context: LocatorContext): number {
 // The rows the fixture's message takes in the footer, fitted as the feedback row fits it.
 function workflowFeedbackRows(context: LocatorContext): number {
   const { cols } = context.grid.identity.provenance.viewport;
-  return getFeedbackRows(workflowFixtureFeedback.get(context.scenario.id) ?? null, cols);
+  return getFeedbackRows(
+    workflowFixtureFeedback.get(context.scenario.id) ?? { message: null, severity: 'info' },
+    cols,
+  );
 }
 
 // The body ends above the footer: its rule, the feedback rows, the composer and the byline.

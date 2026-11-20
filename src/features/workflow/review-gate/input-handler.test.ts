@@ -252,7 +252,7 @@ describe('review input effects', () => {
     {
       label: 'accepted',
       outcome: { status: 'accepted' as const, messageId: 'm-1' },
-      feedback: { message: 'Queued for PLAN · ctrl+⏎ sends now', isError: false },
+      feedback: { message: 'Queued for PLAN · ctrl+⏎ sends now', severity: 'info' },
     },
     {
       label: 'rejected',
@@ -263,13 +263,13 @@ describe('review input effects', () => {
       },
       feedback: {
         message: 'Queue full (50 messages). Wait for the current phase to complete.',
-        isError: false,
+        severity: 'info',
       },
     },
     {
       label: 'no workflow',
       outcome: null,
-      feedback: { message: 'Cannot queue message: no active workflow.', isError: false },
+      feedback: { message: 'Cannot queue message: no active workflow.', severity: 'info' },
     },
   ])(
     'queues live planner input through the supplied enqueue — $label',
@@ -306,7 +306,7 @@ describe('review input effects', () => {
 
       expect(feedbackStore.get()).toEqual({
         message: `${step} takes no message. Clear the input first.`,
-        isError: false,
+        severity: 'info',
       });
       expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', document });
     },
@@ -336,7 +336,7 @@ describe('review input effects', () => {
       );
       expect(feedbackStore.get()).toEqual({
         message: `Sent to ${target} · read after this tool · ctrl+⏎ interrupts`,
-        isError: false,
+        severity: 'info',
       });
     },
   );
@@ -372,7 +372,7 @@ describe('review input effects', () => {
     );
     expect(feedbackStore.get()).toEqual({
       message: 'Queued for BUILD on T003 · ctrl+⏎ sends now',
-      isError: false,
+      severity: 'info',
     });
   });
 
@@ -391,7 +391,7 @@ describe('review input effects', () => {
       plainUserMessage('also fix the typo'),
     );
 
-    expect(feedbackStore.get()).toEqual({ message: 'Queued for BUILD on T001', isError: false });
+    expect(feedbackStore.get()).toEqual({ message: 'Queued for BUILD on T001', severity: 'info' });
   });
 
   it.each([
@@ -410,7 +410,7 @@ describe('review input effects', () => {
         plainUserMessage('smaller diffs'),
       );
 
-      expect(feedbackStore.get()).toEqual({ message, isError: false });
+      expect(feedbackStore.get()).toEqual({ message, severity: 'info' });
     },
   );
 
@@ -429,7 +429,7 @@ describe('review input effects', () => {
     );
     expect(feedbackStore.get()).toEqual({
       message: 'Queued for REVIEW · ctrl+⏎ sends now',
-      isError: false,
+      severity: 'info',
     });
   });
 
@@ -449,7 +449,7 @@ describe('review input effects', () => {
 
     expect(feedbackStore.get()).toEqual({
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
-      isError: false,
+      severity: 'info',
     });
     expect(composerDraftStore.get().request?.value).toBe('keep me');
   });
@@ -470,14 +470,14 @@ describe('review input effects', () => {
 
     expect(feedbackStore.get()).toEqual({
       message: 'Cannot queue message: workflow queue failed.',
-      isError: true,
+      severity: 'error',
     });
     expect(composerDraftStore.get().request?.value).toBe('keep me');
   });
 
   it.each([
-    ['complete', { message: null, isError: false }],
-    ['reviewing-plan', { message: reviewOpeningPromptMessage(), isError: false }],
+    ['complete', { message: null, severity: 'info' }],
+    ['reviewing-plan', { message: reviewOpeningPromptMessage(), severity: 'info' }],
   ] as const)(
     'gives plain words back to the composer in %s, where no seat takes them',
     async (phase, feedback) => {
@@ -522,7 +522,7 @@ describe('review input effects', () => {
         kind: 'prepend',
         value: 'keep the parser',
       });
-      expect(feedbackStore.get()).toEqual({ message: CONFIRM_WAITING_NOTE, isError: false });
+      expect(feedbackStore.get()).toEqual({ message: CONFIRM_WAITING_NOTE, severity: 'info' });
     },
   );
 
@@ -538,7 +538,7 @@ describe('review input effects', () => {
     expect(inputMode.resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toEqual({
       message: REVIEW_UNKNOWN_COMMAND_MESSAGE,
-      isError: false,
+      severity: 'info',
     });
   });
 
@@ -555,7 +555,7 @@ describe('review input effects', () => {
     expect(registered).toHaveBeenCalledWith(plainUserMessage('make it simpler'), 'specifying');
     expect(feedbackStore.get()).toEqual({
       message: 'Queued for PLAN · ctrl+⏎ sends now',
-      isError: false,
+      severity: 'info',
     });
   });
 
@@ -571,7 +571,7 @@ describe('review input effects', () => {
     // await — so this message is the production function running, not a stand-in.
     expect(feedbackStore.get()).toEqual({
       message: 'Opening mock-editor — plan.json…',
-      isError: false,
+      severity: 'info',
     });
 
     // Superseding the review during the paint window is the guard that turns it back before
@@ -580,7 +580,7 @@ describe('review input effects', () => {
     await pending;
 
     expect(stdinPause).not.toHaveBeenCalled();
-    expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+    expect(feedbackStore.get()).toEqual({ message: null, severity: 'info' });
   });
 });
 

@@ -142,7 +142,7 @@ describe('useReviewContent', () => {
     expect(ui?.lastFrame()).toContain('content=current ddd');
     expect(feedbackStore.get()).toMatchObject({
       message: 'unrelated feedback',
-      isError: false,
+      severity: 'info',
     });
   });
 
@@ -194,7 +194,7 @@ describe('useReviewContent', () => {
     expect(ui.lastFrame()).toContain('content=third owner');
     expect(feedbackStore.get()).toMatchObject({
       message: 'new owner feedback',
-      isError: false,
+      severity: 'info',
     });
   });
 
@@ -240,7 +240,7 @@ describe('useReviewContent', () => {
 
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).toBe(`Failed to read ${file}: boom`);
-      expect(feedbackStore.get().isError).toBe(true);
+      expect(feedbackStore.get().severity).toBe('error');
       expect(ui?.lastFrame()).toContain('empty');
     });
   });

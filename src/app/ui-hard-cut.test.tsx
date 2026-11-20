@@ -92,7 +92,8 @@ const cases: ReadonlyArray<{
         dockRows: RESTING_DOCK_ROWS,
         noConfig: false,
       });
-      for (const line of getLogo(layout.logoTier).split('\n')) {
+      expect(layout.heading).toBe('full');
+      for (const line of getLogo('full').split('\n')) {
         expect(frame).toContain(line.trim());
       }
       ui.unmount();

@@ -1,5 +1,5 @@
 import { Box, useInput } from 'ink';
-import { layoutFeedbackNotice, FeedbackNotice } from '../../components/feedback-notice.js';
+import { layoutPanelNotice, PanelNotice } from '../../components/notice.js';
 import { OverlayPanel } from '../../components/overlays/panel.js';
 import { useTheme, ThemeText as Text } from '../../components/theme.js';
 import { BOOT_MANIFEST_TITLE, TOOL_CHECK_FAILED_TITLE } from '../../core/discovery/copy.js';
@@ -31,9 +31,9 @@ export function ColdDiscoveryPanel({
   const feedback = feedbackStore.use((snapshot) => snapshot);
   const { cols, rows } = terminalSizeStore.use((size) => size);
   const { innerWidth } = overlayRect({ cols, rows, density: 'compact' });
-  const notice = layoutFeedbackNotice(feedback, innerWidth);
-  const feedbackNotice =
-    notice === null ? undefined : <FeedbackNotice notice={notice} width={innerWidth} />;
+  // The notice takes the one row of the note it stands in for, so the panel keeps its height.
+  const notice = layoutPanelNotice(feedback, { width: innerWidth, maxRows: 1 });
+  const feedbackNotice = notice === null ? undefined : <PanelNotice notice={notice} />;
 
   useInput(
     (input, key) => {

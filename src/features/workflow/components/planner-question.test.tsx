@@ -513,7 +513,7 @@ it('prepares panel answers once and preserves the batch, draft and images after 
     expect(delivered).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toEqual({
       message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
-      isError: true,
+      severity: 'warning',
     });
     expect(stripAnsiStyles(ui.lastFrame())).toContain('Cannot send');
     const imagePath = join(outside, 'image.png');

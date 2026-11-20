@@ -590,7 +590,7 @@ describe('seats', () => {
       full: 'Claude Code CLI · Sonnet 5.5',
       tool: 'claude',
     });
-    const spans = crewLine(view, 200);
+    const spans = crewLine(view, 200, 'model');
     expect(spans.map((span) => span.text).join('')).toBe(
       'PLAN Opus 5.5 · BUILD Sonnet 5.5 · REVIEW = PLAN',
     );
@@ -636,7 +636,7 @@ describe('seats', () => {
       }),
     );
     expect(
-      crewLine(view, 200)
+      crewLine(view, 200, 'model')
         .map((span) => span.text)
         .join(''),
     ).toBe('PLAN OpenAI Codex CLI · BUILD GPT-5.3 Codex · REVIEW = PLAN');
@@ -662,7 +662,7 @@ describe('seats', () => {
       }),
     );
     expect(
-      crewLine(view, 200)
+      crewLine(view, 200, 'model')
         .map((span) => span.text)
         .join(''),
     ).toBe(
@@ -691,7 +691,7 @@ describe('seats', () => {
       }),
     );
     expect(
-      crewLine(view, 200)
+      crewLine(view, 200, 'model')
         .map((span) => span.text)
         .join(''),
     ).toContain('BUILD 3 briefs on Gemini 3.8 Flash, 1 on DeepSeek V4.1 Flash via opencode-go');
@@ -901,7 +901,7 @@ describe('seats', () => {
       if (summary === null) throw new Error('expected the finalized run to have a summary');
 
       expect(
-        crewLine(derive(summary, { status: ENDED }), 200)
+        crewLine(derive(summary, { status: ENDED }), 200, 'model')
           .map((span) => span.text)
           .join(''),
       ).toContain(`BUILD Haiku 5.5${arrowSep()}Google Antigravity CLI`);

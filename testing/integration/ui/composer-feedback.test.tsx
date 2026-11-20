@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
@@ -107,10 +108,8 @@ describe('composer feedback', () => {
     });
     await flushEffects();
 
-    const shown = (ui.lastFrame() ?? '')
-      .split('\n')
-      .map((row) => row.trim())
-      .join(' ');
+    // The notice takes its tone bars on both edges past the frame budget; the words read across them.
+    const shown = acrossNoticeEdges(ui.lastFrame() ?? '');
     expect(shown).toContain('Cannot resume "');
     expect(shown).toContain('…": interrupted before it made progress — start it again.');
 

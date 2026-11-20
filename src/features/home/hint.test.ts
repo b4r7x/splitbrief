@@ -25,7 +25,7 @@ describe('deriveHomeComposerHint', () => {
         hintNotice: true,
         toolCheck: 'failed',
       }),
-    ).toEqual({ homeHint: undefined, homeNotice: undefined });
+    ).toEqual({ homeHint: undefined, homeNotice: undefined, standingNotice: undefined });
   });
 
   it('offers ctrl+r only when the recent sessions can take focus', () => {
@@ -42,30 +42,37 @@ describe('deriveHomeComposerHint', () => {
         hintNotice: true,
         toolCheck: 'failed',
       }),
-    ).toEqual({ homeHint: RECENT_SESSIONS_HINT, homeNotice: undefined });
+    ).toEqual({
+      homeHint: RECENT_SESSIONS_HINT,
+      homeNotice: undefined,
+      standingNotice: undefined,
+    });
   });
 
   it('keeps a tool check that shows in its box off the hint line', () => {
     expect(deriveHomeComposerHint({ ...AT_REST, toolCheck: 'cold' })).toEqual({
       homeHint: DEFAULT_HOME_HINT,
       homeNotice: undefined,
+      standingNotice: undefined,
     });
   });
 
-  it('names a failed first check in the error tone and a check that did not run as a warning', () => {
-    expect(deriveHomeComposerHint({ ...AT_REST, hintNotice: true, toolCheck: 'failed' })).toEqual({
+  it('stands a failed first check in the notice slot as an error and one that did not run as a warning', () => {
+    expect(deriveHomeComposerHint({ ...AT_REST, toolCheck: 'failed' })).toEqual({
       homeHint: DEFAULT_HOME_HINT,
-      homeNotice: { text: 'Tool check failed · open /settings to retry', tone: 'error' },
+      homeNotice: undefined,
+      standingNotice: { message: 'Tool check failed · open /settings to retry', severity: 'error' },
     });
-    expect(
-      deriveHomeComposerHint({ ...AT_REST, hintNotice: true, toolCheck: 'not-run' }).homeNotice,
-    ).toEqual({ text: 'Tools not checked · open /settings to retry', tone: 'warning' });
+    expect(deriveHomeComposerHint({ ...AT_REST, toolCheck: 'not-run' }).standingNotice).toEqual({
+      message: 'Tools not checked · open /settings to retry',
+      severity: 'warning',
+    });
   });
 
   it('spins the frame before the title of a cold or a warm check', () => {
     expect(
       deriveHomeComposerHint({ ...AT_REST, hintNotice: true, toolCheck: 'cold' }).homeNotice,
-    ).toEqual({ text: '⠋ Checking your tools…', tone: 'textDim' });
+    ).toBe('⠋ Checking your tools…');
     expect(
       deriveHomeComposerHint({
         ...AT_REST,
@@ -76,7 +83,8 @@ describe('deriveHomeComposerHint', () => {
       }),
     ).toEqual({
       homeHint: HOME_HINT,
-      homeNotice: { text: '⠙ Refreshing your tools…', tone: 'textDim' },
+      homeNotice: '⠙ Refreshing your tools…',
+      standingNotice: undefined,
     });
   });
 });

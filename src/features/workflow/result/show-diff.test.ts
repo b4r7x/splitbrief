@@ -101,7 +101,7 @@ describe('showRunDiff', () => {
     await showRunDiff(readyRecord(), spawnEditor);
 
     expect(spawnEditor).toHaveBeenCalledWith('vim', [patch.path]);
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(terminal).toMatchObject({ isRaw: true, paused: false });
   });
 
@@ -119,7 +119,7 @@ describe('showRunDiff', () => {
 
       await showRunDiff(readyRecord(), spawnEditor);
 
-      expect(feedbackStore.get()).toEqual({ message, isError: true });
+      expect(feedbackStore.get()).toEqual({ message, severity: 'error' });
       expect(terminal).toMatchObject({ isRaw: true, paused: false });
     },
   );
@@ -154,7 +154,7 @@ describe('showRunDiff', () => {
     expect(output.join('').includes('\r\u001b[J')).toBe(command === 'less');
     expect(feedbackStore.get()).toEqual({
       message: `${command} exited with code 1`,
-      isError: true,
+      severity: 'error',
     });
     expect(terminal).toMatchObject({ isRaw: true, paused: false });
   });
@@ -167,7 +167,10 @@ describe('showRunDiff', () => {
 
     await showRunDiff(record, spawnEditor);
 
-    expect(feedbackStore.get()).toEqual({ message: 'No run workspace to diff.', isError: true });
+    expect(feedbackStore.get()).toEqual({
+      message: 'No run workspace to diff.',
+      severity: 'error',
+    });
     expect(spawnEditor).not.toHaveBeenCalled();
   });
 });

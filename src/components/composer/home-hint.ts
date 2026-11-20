@@ -8,11 +8,8 @@ import { formatSeatIdentity } from '../../core/crew/identity.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { configStore } from '../../stores/project/config.js';
-import {
-  fitFeedbackMessage,
-  matchKnownFeedbackMessage,
-  type FeedbackMessageInput,
-} from './feedback-fit.js';
+import { matchKnownFeedbackMessage, type FeedbackMessageInput } from './feedback-fit.js';
+import { layoutNotice, type NoticeLayout, type NoticeMessage } from '../notice.js';
 
 const RESUME_INTERRUPTED_PREFIX = 'Cannot resume "';
 const RESUME_INTERRUPTED_SUFFIX = '": interrupted before it made progress — start it again.';
@@ -21,7 +18,8 @@ const SESSION_FAILED_SUFFIX = '" failed without a summary to display';
 const NO_VISION_PREFIX = `Cannot attach: ${CREW_SEAT_LABELS.plan} seat `;
 const NO_VISION_SUFFIX = ' cannot see images — /crew plan';
 const DROP_AFFORDANCE = `${SOFT_SEP}drop an image`;
-const FEEDBACK_MAX_ROWS = 4;
+// The rows the Home notice may take, frame included: 3 text rows in a frame, or 5 on bars.
+const HOME_NOTICE_ROWS = 5;
 
 export function noVisionFeedbackMessage(seatIdentity: string): string {
   return `${NO_VISION_PREFIX}${seatIdentity}${NO_VISION_SUFFIX}`;
@@ -59,44 +57,35 @@ function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {
   );
 }
 
-export interface HomeHintLines {
-  feedbackLine: string | null;
-  homeHintLine: string | null;
+/** The notice Home shows above the box, fitted to the Home width. */
+export function layoutHomeNotice(notice: NoticeMessage, width: number): NoticeLayout {
+  return layoutNotice(
+    structureKnownFeedbackMessage(sanitizeTerminalDisplayText(notice.message)),
+    notice.severity,
+    { maxWidth: Math.max(1, width), maxRows: HOME_NOTICE_ROWS },
+  );
 }
 
-// Feedback takes the home row from the hint when there is any. A notice keeps the row: the
-// feedback stacks above it, so the notice row stays put while feedback comes and goes. Feedback
-// wraps at word boundaries onto up to FEEDBACK_MAX_ROWS rows, so a long save message keeps its
-// sign-in command; the hint is one row. A focused chat input paints no placeholder (segments.ts),
-// so the drop affordance rides the hint line — the one home row that renders while the box is
-// live enough to take a drop. It is the optional half of that line: it goes whole, or not at all,
-// never clipped, and never under feedback.
-export function deriveHomeHintLines(opts: {
+// The hint line under the notice slot. A check the user waits on — the start check's status, then
+// the running tool check — keeps the line under a notice too, without the drop affordance; the
+// hint gives the line to a notice. A focused chat input paints no placeholder
+// (segments.ts), so the drop affordance rides the hint line — the one home row that renders while
+// the box is live enough to take a drop. It is the optional half of that line: it goes whole, or
+// not at all, never clipped.
+export function deriveHomeHintLine(opts: {
   active: boolean;
   homeHint: string | undefined;
-  notice?: string | undefined;
-  feedbackMessage: string | null;
+  status: string | undefined;
+  notice: string | undefined;
+  noticeShown: boolean;
   width: number;
   dropEnabled: boolean;
-}): HomeHintLines {
-  const { active, homeHint, notice, feedbackMessage, dropEnabled } = opts;
-  const width = Math.max(1, opts.width);
-  if (!active || homeHint === undefined) return { feedbackLine: null, homeHintLine: null };
-
-  if (feedbackMessage !== null) {
-    return {
-      feedbackLine: fitFeedbackMessage(
-        structureKnownFeedbackMessage(sanitizeTerminalDisplayText(feedbackMessage)),
-        { width, maxRows: FEEDBACK_MAX_ROWS },
-      ),
-      homeHintLine: notice ?? null,
-    };
-  }
-
+}): string | null {
+  const { active, homeHint, status, notice, noticeShown, dropEnabled } = opts;
+  if (!active || homeHint === undefined) return null;
+  if (status !== undefined) return status;
+  if (noticeShown) return notice ?? null;
   const line = notice ?? homeHint;
-  const dropFits = getTerminalCellWidth(`${line}${DROP_AFFORDANCE}`) <= width;
-  return {
-    feedbackLine: null,
-    homeHintLine: `${line}${dropEnabled && dropFits ? DROP_AFFORDANCE : ''}`,
-  };
+  const dropFits = getTerminalCellWidth(`${line}${DROP_AFFORDANCE}`) <= Math.max(1, opts.width);
+  return `${line}${dropEnabled && dropFits ? DROP_AFFORDANCE : ''}`;
 }

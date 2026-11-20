@@ -5,7 +5,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { defaultTheme } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
-import { glyph } from '../../../lib/glyphs.js';
+import { glyph, resolveGlyphTier } from '../../../lib/glyphs.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
@@ -15,7 +15,6 @@ import { openApprovalPrompt } from '../../../stores/prompts/approval.js';
 import { questionPromptStore } from '../../../stores/prompts/question.js';
 import { REVIEW_HINT } from '../review-gate/commands.js';
 import { KEY_LEGEND_LEADING } from '../../../components/key-legend.js';
-import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { formatCopyResult } from '../../../core/runtime/commands/types.js';
 import { clearAllHandlers } from '../run-requests/registry.js';
 import { requestSeatChangeAtBoundary } from '../run-requests/boundary.js';
@@ -45,6 +44,41 @@ function inkOf(color: string | undefined): string | undefined {
   return colorOf(paint(color, 'x'), 'x');
 }
 
+// The test terminal is no TTY, so the frame and the bars take the tier this run resolves.
+const UNICODE = resolveGlyphTier() === 'unicode';
+const FRAME = UNICODE
+  ? { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' }
+  : { tl: '+', tr: '+', bl: '+', br: '+', h: '-', v: '|' };
+const BARS = UNICODE ? { left: '▌', right: '▐' } : { left: '|', right: '|' };
+
+/** A notice box: the tone frame, one padding cell each side, the glyph on the first row only. */
+function framed(rows: readonly string[], lead: string, width: number): string[] {
+  const inner = width - 4;
+  return [
+    `${FRAME.tl}${FRAME.h.repeat(width - 2)}${FRAME.tr}`,
+    ...rows.map((row, index) => {
+      const text = `${index === 0 ? lead : ' '.repeat(lead.length)}${row}`;
+      return `${FRAME.v} ${text.padEnd(inner)} ${FRAME.v}`;
+    }),
+    `${FRAME.bl}${FRAME.h.repeat(width - 2)}${FRAME.br}`,
+  ];
+}
+
+/** The frame-drop form: tone bars at both edges, no top or bottom frame. */
+function barred(rows: readonly string[], lead: string, width: number): string[] {
+  const inner = width - 4;
+  return rows.map((row, index) => {
+    const text = `${index === 0 ? lead : ' '.repeat(lead.length)}${row}`;
+    return `${BARS.left} ${text.padEnd(inner)} ${BARS.right}`;
+  });
+}
+
+function plainRows(frame: string | undefined): string[] {
+  return stripAnsiStyles(frame ?? '')
+    .split('\n')
+    .map((row) => row.trimEnd());
+}
+
 describe('FeedbackRow', () => {
   beforeEach(() => {
     resetAllStores();
@@ -55,15 +89,15 @@ describe('FeedbackRow', () => {
     resetAllStores();
   });
 
-  it('opens a message on the text column, leaving the mark slot empty', () => {
+  it('frames a one-row report on the composer edge, as wide as its words', () => {
     feedbackStore.setMessage('Queued for PLAN · ctrl+⏎ sends now');
 
     const ui = renderFeature(<FeedbackRow />);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    // The footer's gutter puts the row on column 1; the row insets itself by the mark slot so its
-    // words land on the text column without putting a letter where a mark would stand.
-    expect(frame.indexOf('Queued for PLAN')).toBe(MARK_SLOT_CELLS);
+    // The footer's gutter puts the row on the composer's left border; the box starts there.
+    expect(plainRows(ui.lastFrame())).toEqual(
+      framed(['Queued for PLAN · ctrl+⏎ sends now'], '', 38),
+    );
 
     ui.unmount();
   });
@@ -180,41 +214,39 @@ describe('FeedbackRow', () => {
     ui.unmount();
   });
 
-  it('renders a failure with the failed mark and the sentence in the text colour', () => {
+  it('frames a failure with the failed mark and the frame in the error ink, the sentence in the text ink', () => {
     feedbackStore.setError('Draft not saved');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(stripAnsiStyles(frame)).toBe(`${glyph('statusFailed')} Draft not saved`);
+    expect(plainRows(frame)).toEqual(framed(['Draft not saved'], `${glyph('statusFailed')} `, 21));
+    expect(colorOf(frame, FRAME.tl)).toBe(inkOf(defaultTheme.error));
     expect(colorOf(frame, glyph('statusFailed'))).toBe(inkOf(defaultTheme.error));
     expect(colorOf(frame, 'Draft not saved')).toBe(inkOf(defaultTheme.text));
-    expect(colorOf(frame, 'saved')).toBe(inkOf(defaultTheme.text));
-    expect(colorOf(frame, 'Draft not saved')).not.toBe(inkOf(defaultTheme.error));
 
     ui.unmount();
   });
 
-  it('renders a refusal with an empty mark slot and dim text', () => {
+  it('frames a report in the border ink with dim words and no glyph', () => {
     feedbackStore.setMessage('Nothing to steer.');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(stripAnsiStyles(frame)).toBe(`${' '.repeat(MARK_SLOT_CELLS)}Nothing to steer.`);
+    expect(plainRows(frame)).toEqual(framed(['Nothing to steer.'], '', 21));
+    expect(colorOf(frame, FRAME.tl)).toBe(inkOf(defaultTheme.border));
     expect(colorOf(frame, 'Nothing to steer.')).toBe(inkOf(defaultTheme.textDim));
 
     ui.unmount();
   });
 
-  it('keeps a neutral refusal visible while a panel owns the keys', () => {
+  it('keeps a notice visible while a panel owns the keys', () => {
     feedbackStore.setMessage('Nothing to steer.');
 
     controlsStore.setInputMode('review');
     const review = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
-    const reviewFrame = stripAnsiStyles(review.lastFrame() ?? '');
-    expect(reviewFrame).toBe(`${' '.repeat(MARK_SLOT_CELLS)}Nothing to steer.`);
-    expect(reviewFrame).not.toContain('approve');
+    expect(plainRows(review.lastFrame())).toEqual(framed(['Nothing to steer.'], '', 21));
     review.unmount();
 
     controlsStore.setInputMode('question');
@@ -222,9 +254,7 @@ describe('FeedbackRow', () => {
       { id: 'module', type: 'choice', text: 'Which module?', options: ['a', 'b'] },
     ]);
     const question = renderFeature(<FeedbackRow inputHint="Type your answer…" />);
-    const questionFrame = stripAnsiStyles(question.lastFrame() ?? '');
-    expect(questionFrame).toBe(`${' '.repeat(MARK_SLOT_CELLS)}Nothing to steer.`);
-    expect(questionFrame).not.toContain('Type your answer');
+    expect(plainRows(question.lastFrame())).toEqual(framed(['Nothing to steer.'], '', 21));
     question.unmount();
   });
 
@@ -350,53 +380,78 @@ describe('FeedbackRow', () => {
 
   const RUN_LOCK_RELEASE = `Could not release the run lock: permission denied · .splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds`;
 
-  function renderRunLockRelease(cols: number): string {
+  function renderRunLockRelease(cols: number): string[] {
     terminalSizeStore.__testReset({ cols, rows: 24, isSmall: false });
     feedbackStore.setError(RUN_LOCK_RELEASE);
 
     const ui = renderFeature(<FeedbackRow />, { cols: getChromeContentWidth(cols), rows: 24 });
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const rows = plainRows(ui.lastFrame());
     ui.unmount();
-    return frame;
+    return rows;
   }
 
-  it('shows a long run lock message whole on three rows at 120 columns', () => {
-    expect(renderRunLockRelease(120)).toBe(
-      [
-        `${glyph('statusFailed')} Could not release the run lock: permission denied ·`,
-        '  .splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/lockfile.json ·',
-        '  other SPLITBRIEF processes can see the run as running for a few more seconds',
-      ].join('\n'),
+  const FAILED = `${glyph('statusFailed')} `;
+
+  // Three rows are the whole workflow budget: a frame would take two more, so the frame drops.
+  it('shows a long run lock message whole on three bar rows at 120 columns', () => {
+    expect(renderRunLockRelease(120)).toEqual(
+      barred(
+        [
+          'Could not release the run lock: permission denied ·',
+          '.splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/lockfile.json ·',
+          'other SPLITBRIEF processes can see the run as running for a few more seconds',
+        ],
+        FAILED,
+        104,
+      ),
     );
   });
 
-  it.each([80, 60])(
-    'keeps the whole lock file path on the three rows a long run lock message takes at most at %i columns',
-    (cols) => {
-      const rows = renderRunLockRelease(cols).split('\n');
-      expect(rows).toHaveLength(3);
-      expect(rows.map((row) => row.slice(MARK_SLOT_CELLS).trim()).join('')).toContain(
-        '.splitbrief/sessions/2026-10-23-create-src-kebab-js-commonjs-exporting-kebab-text-/lockfile.json',
-      );
-    },
-  );
+  it('keeps the lock file name and its first folder whole, never a broken folder name, at 80 columns', () => {
+    expect(renderRunLockRelease(80)).toEqual(
+      barred(
+        [
+          'Could not release the run lock: permission denied ·',
+          '.splitbrief/…/lockfile.json · other SPLITBRIEF processes',
+          'can see the run as running for a few more seconds',
+        ],
+        FAILED,
+        62,
+      ),
+    );
+  });
 
-  it('shows a refusal too long for one row whole on the rows it needs at 80 columns', () => {
+  it('keeps the lock file name and its first folder whole, never a broken folder name, at 60 columns', () => {
+    expect(renderRunLockRelease(60)).toEqual(
+      barred(
+        ['Could not release the run lock: permission', 'denied · .splitbrief/…/lockfile.json …'],
+        FAILED,
+        48,
+      ),
+    );
+  });
+
+  it('shows a failure too long for one row whole on the bar rows it needs at 80 columns', () => {
     const reason =
       'This run started in /Users/me/projects/shop. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.';
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
     feedbackStore.setError(reason);
 
     const ui = renderFeature(<FeedbackRow />, { cols: getChromeContentWidth(80), rows: 24 });
-    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const rows = plainRows(ui.lastFrame());
     ui.unmount();
 
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.startsWith(`${glyph('statusFailed')} This run started in`)).toBe(true);
-    // A row past the first keeps the mark slot empty, so its words stand on the text column too.
-    expect(rows[1]?.startsWith(' '.repeat(MARK_SLOT_CELLS))).toBe(true);
-    expect(rows[1]?.charAt(MARK_SLOT_CELLS)).not.toBe(' ');
-    expect(rows.map((row) => row.slice(MARK_SLOT_CELLS).trim()).join(' ')).toBe(reason);
+    expect(rows).toEqual(
+      barred(
+        [
+          'This run started in /Users/me/projects/shop. Move',
+          'the project back to that folder and start SPLITBRIEF',
+          'there to continue the run, or end the run.',
+        ],
+        FAILED,
+        58,
+      ),
+    );
   });
 
   it('shows the running legend after Esc closes a planner question', () => {

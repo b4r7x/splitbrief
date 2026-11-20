@@ -111,7 +111,7 @@ describe('routerStore', () => {
     routerStore.navigate(localWorkflow('from setup'));
     expect(routerStore.get().screen).toBe('workflow');
     expect(feedbackStore.get().message).toBeNull();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
   });
 
   it('reports error and stays put on invalid transition workflow → setup', () => {
@@ -119,7 +119,7 @@ describe('routerStore', () => {
     feedbackStore.setTransientError('prior error');
     routerStore.navigate({ to: 'setup' });
     expect(routerStore.get().screen).toBe('workflow');
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().severity).toBe('error');
     expect(feedbackStore.get().message).toMatch(/Cannot navigate from "workflow" to "setup"/);
   });
 

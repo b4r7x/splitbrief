@@ -161,7 +161,7 @@ describe('crew preset application', () => {
       expect(applied).toMatchObject({ kind: 'applied' });
       await vi.waitFor(() => {
         expect(feedbackStore.get()).toMatchObject({
-          isError: false,
+          severity: 'info',
           message: `Saved ${PRESET.label} to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore`,
         });
       });
@@ -251,7 +251,7 @@ describe('crew preset application', () => {
       crewActivate({ target: { kind: 'preset', preset: PRESET }, config: before });
 
       await vi.waitFor(() => {
-        expect(feedbackStore.get()).toMatchObject({ isError: true });
+        expect(feedbackStore.get()).toMatchObject({ severity: 'error' });
       });
       expect(currentConfig()).toEqual(before);
     });

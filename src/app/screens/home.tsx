@@ -120,17 +120,24 @@ export function HomeScreen({
   const checkingStage = preparationStore.use(selectCheckingStage);
   const showPreparationPanel =
     approvalPending || preparationState.kind === 'blocked' || preparationState.kind === 'failed';
-  const { layout, hasRoomForSessions, canFocus, sessionsActive, discoveryPanelFits, hintNotice } =
-    deriveHomeLayoutState({
-      cols,
-      rows,
-      sessionCount: totalCount,
-      listedSessions: sessions.length,
-      sessionsFocused,
-      dockRows: dock.rows,
-      noConfig,
-      toolCheck,
-    });
+  const {
+    layout,
+    hasRoomForSessions,
+    canFocus,
+    sessionsActive,
+    discoveryPanelFits,
+    hintNotice,
+    seatLineRows,
+  } = deriveHomeLayoutState({
+    cols,
+    rows,
+    sessionCount: totalCount,
+    listedSessions: sessions.length,
+    sessionsFocused,
+    dockRows: dock.rows,
+    noConfig,
+    toolCheck,
+  });
   const interactionBlocked = hasOverlay || showPreparationPanel;
   const { frame: refreshFrame } = useSpinnerFrame(
     hintNotice && (toolCheck === 'cold' || toolCheck === 'warm'),
@@ -183,7 +190,7 @@ export function HomeScreen({
     onCancel: () => startPreparation.cancel(closeApprovalPrompt),
   });
 
-  const { homeHint, homeNotice } = deriveHomeComposerHint({
+  const { homeHint, homeNotice, standingNotice } = deriveHomeComposerHint({
     interactionBlocked,
     canFocus,
     sessionsActive,
@@ -221,13 +228,23 @@ export function HomeScreen({
           <Box flexDirection="column" width={layout.width} height="100%">
             <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
               <Box flexDirection="column" width={layout.width} gap={1} flexShrink={0}>
-                {layout.showLogo && (
+                {layout.heading !== null && layout.heading !== 'wordmark' && (
                   <Box flexDirection="column" alignItems="center" flexShrink={0}>
-                    <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
+                    <Text color={theme.accent}>{getLogo(layout.heading)}</Text>
                   </Box>
                 )}
 
-                <HomeSeatBlock rows={rows} width={layout.width} />
+                {/* The wordmark sits on the crew block's first row, with no gap under it. */}
+                <Box flexDirection="column" flexShrink={0}>
+                  {layout.heading === 'wordmark' && (
+                    <Box justifyContent="center">
+                      <Text color={theme.accent} bold>
+                        {getLogo('wordmark')}
+                      </Text>
+                    </Box>
+                  )}
+                  <HomeSeatBlock rows={rows} width={layout.width} seatLineRows={seatLineRows} />
+                </Box>
 
                 {noConfig && (
                   <Box paddingLeft={MARK_SLOT_CELLS}>
@@ -248,15 +265,6 @@ export function HomeScreen({
                     width={layout.width}
                   />
                 )}
-                {sessionsActive && (
-                  <Box height={1} overflow="hidden">
-                    {selectionError && (
-                      <Text color={theme.error} wrap="truncate-end">
-                        {selectionError}
-                      </Text>
-                    )}
-                  </Box>
-                )}
               </Box>
               <Box
                 flexGrow={1}
@@ -265,7 +273,7 @@ export function HomeScreen({
                 alignItems="center"
                 overflow="hidden"
               >
-                {discoveryPanelFits && <ToolCheckBox width={layout.width} />}
+                {discoveryPanelFits && <ToolCheckBox />}
               </Box>
             </Box>
 
@@ -284,6 +292,11 @@ export function HomeScreen({
                 homeHint={homeHint}
                 homeStatus={preparationStatus}
                 homeNotice={homeNotice}
+                homeStandingNotice={
+                  sessionsActive && selectionError
+                    ? { message: selectionError, severity: 'warning' }
+                    : standingNotice
+                }
                 readClipboardImage={readClipboardImage}
                 listProjectFiles={listProjectFiles}
               />

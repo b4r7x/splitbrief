@@ -1,4 +1,4 @@
-import type { HomeNotice } from '../../components/composer/view.js';
+import type { NoticeMessage } from '../../components/notice.js';
 import {
   BOOT_MANIFEST_TITLE,
   REFRESHING_TOOLS_TITLE,
@@ -24,8 +24,13 @@ interface HomeComposerHintInput {
 
 interface HomeComposerHint {
   homeHint: string | undefined;
-  homeNotice: HomeNotice | undefined;
+  /** The running check, in the hint line's dim words. */
+  homeNotice: string | undefined;
+  /** A first check that settled without a result stands in the notice slot until it changes. */
+  standingNotice: NoticeMessage | undefined;
 }
+
+const RETRY = `${SOFT_SEP}open /settings to retry`;
 
 export function deriveHomeComposerHint({
   interactionBlocked,
@@ -35,35 +40,26 @@ export function deriveHomeComposerHint({
   toolCheck,
   refreshFrame,
 }: HomeComposerHintInput): HomeComposerHint {
-  if (interactionBlocked) return { homeHint: undefined, homeNotice: undefined };
-  if (sessionsActive) return { homeHint: RECENT_SESSIONS_HINT, homeNotice: undefined };
+  if (interactionBlocked) {
+    return { homeHint: undefined, homeNotice: undefined, standingNotice: undefined };
+  }
+  const standingNotice: NoticeMessage | undefined =
+    toolCheck === 'failed'
+      ? { message: `${TOOL_CHECK_FAILED_TITLE}${RETRY}`, severity: 'error' }
+      : toolCheck === 'not-run'
+        ? { message: `${TOOLS_NOT_CHECKED_TITLE}${RETRY}`, severity: 'warning' }
+        : undefined;
+  if (sessionsActive) {
+    return { homeHint: RECENT_SESSIONS_HINT, homeNotice: undefined, standingNotice: undefined };
+  }
   const homeHint = canFocus ? HOME_HINT : DEFAULT_HOME_HINT;
-  // The notice borrows the reserved hint line instead of adding a row; under feedback it keeps
-  // that line and the feedback stacks above it.
-  if (!hintNotice) return { homeHint, homeNotice: undefined };
-  if (toolCheck === 'failed') {
-    return {
-      homeHint,
-      homeNotice: {
-        text: `${TOOL_CHECK_FAILED_TITLE}${SOFT_SEP}open /settings to retry`,
-        tone: 'error',
-      },
-    };
-  }
-  if (toolCheck === 'not-run') {
-    return {
-      homeHint,
-      homeNotice: {
-        text: `${TOOLS_NOT_CHECKED_TITLE}${SOFT_SEP}open /settings to retry`,
-        tone: 'warning',
-      },
-    };
-  }
-  return {
-    homeHint,
-    homeNotice: {
-      text: `${refreshFrame} ${toolCheck === 'cold' ? BOOT_MANIFEST_TITLE : REFRESHING_TOOLS_TITLE}`,
-      tone: 'textDim',
-    },
-  };
+  const running =
+    toolCheck === 'cold'
+      ? BOOT_MANIFEST_TITLE
+      : toolCheck === 'warm'
+        ? REFRESHING_TOOLS_TITLE
+        : undefined;
+  // A running check borrows the reserved hint line instead of adding a row.
+  const homeNotice = hintNotice && running !== undefined ? `${refreshFrame} ${running}` : undefined;
+  return { homeHint, homeNotice, standingNotice };
 }

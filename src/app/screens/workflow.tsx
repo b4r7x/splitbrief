@@ -84,7 +84,7 @@ export function WorkflowScreen({
   const recoveryStepReadsNone = runViewStore.use(haltReadsNoWords);
   const recoveryAsking = recoveryNoticeStore.use((state) => state.asking);
   const feedbackRows = getFeedbackRows(
-    feedbackStore.use((state) => state.message),
+    feedbackStore.use((state) => state),
     cols,
   );
 

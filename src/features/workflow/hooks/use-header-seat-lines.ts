@@ -11,12 +11,12 @@ import { displayedCrewRecord } from '../at-rest.js';
 import {
   displayedSeatLines,
   headerSeats,
-  type DisplayedSeatLines,
+  type HeaderSeatLines,
   type HeaderSeats,
 } from '../display/header-seat-lines.js';
 
 /** The crew lines on display, for the screen and the header to choose their rail beside. */
-export function useHeaderSeatLines(): DisplayedSeatLines {
+export function useHeaderSeatLines(): HeaderSeatLines {
   const config = configStore.use((s) => s.config);
   const running = useRunningSeats();
   const displayNames = useCrewDisplayNames(config);
@@ -43,7 +43,7 @@ function readHeaderSeats(): HeaderSeats | null {
 }
 
 /** The same crew lines over the stores, for the click-zone snapshot that reads outside React. */
-export function readHeaderSeatLines(): DisplayedSeatLines {
+export function readHeaderSeatLines(): HeaderSeatLines {
   return displayedSeatLines(
     displayedCrewRecord(routerStore.get(), runViewStore.get().phase),
     readHeaderSeats(),

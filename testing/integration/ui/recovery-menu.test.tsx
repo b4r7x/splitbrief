@@ -338,7 +338,7 @@ describe('the note question of a failed review', () => {
     screen.stdin.write('\r');
 
     await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalledOnce());
-    expect(feedbackStore.get()).toMatchObject({ isError: false });
+    expect(feedbackStore.get()).toMatchObject({ severity: 'info' });
     const resumed = loadState(ref);
     expect(resumed?.phase).toBe('final-review');
     expect(resumed?.pendingRecovery).toBeUndefined();

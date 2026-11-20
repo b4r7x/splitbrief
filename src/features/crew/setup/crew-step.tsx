@@ -1,5 +1,10 @@
 import { Box } from 'ink';
-import { FeedbackNotice, layoutFeedbackNotice } from '../../../components/feedback-notice.js';
+import {
+  layoutPanelNotice,
+  PANEL_NOTICE_ROWS,
+  PanelNotice,
+  panelNoticeRows,
+} from '../../../components/notice.js';
 import { OverlayPanel } from '../../../components/overlays/panel.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
@@ -65,20 +70,25 @@ export function CrewStep({
     rows: terminalRows,
     density: CREW_PANEL_DENSITY,
   });
-  const notice = layoutFeedbackNotice(feedback, innerWidth);
   // One sentence names the signed-out tools and their step, so the ready-made crews keep their rows.
   const signIn =
     signedOut.length === 0
       ? undefined
       : wrapPathAware(cliSignInStep(signedOut.join(', '), 'setup'), innerWidth);
   const signInRows = signIn === undefined ? 0 : signIn.split('\n').length;
-  const budget =
+  const listRoom =
     innerRows -
     PANEL_CHROME_ROWS -
     (noConfig ? NOTE_BLOCK_ROWS : 0) -
     (note === undefined ? 0 : NOTE_BLOCK_ROWS) -
-    signInRows -
-    (notice?.rows ?? 0);
+    signInRows;
+  // The notice takes only the rows the seats and Continue leave, past the blank row above it:
+  // a message never pushes a seat off the panel.
+  const notice = layoutPanelNotice(feedback, {
+    width: innerWidth,
+    maxRows: Math.min(PANEL_NOTICE_ROWS, listRoom - (crewRows.length + 1) - 1),
+  });
+  const budget = listRoom - panelNoticeRows(notice);
   const items: SetupItem[] = [
     ...presets.map((preset): SetupItem => ({ kind: 'preset', preset, key: `preset:${preset.id}` })),
     ...crewRows.map((row): SetupItem => ({ kind: 'crew', row, key: crewRowKey(row) })),
@@ -176,7 +186,7 @@ export function CrewStep({
           />
         )}
       />
-      {notice !== null && <FeedbackNotice notice={notice} width={innerWidth} />}
+      {notice !== null && <PanelNotice notice={notice} />}
     </OverlayPanel>
   );
 }

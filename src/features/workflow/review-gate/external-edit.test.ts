@@ -93,7 +93,7 @@ describe('openReviewFileExternally stale-owner feedback', () => {
 
     expect(feedbackStore.get()).toEqual({
       message: 'new-owner feedback',
-      isError: false,
+      severity: 'info',
     });
   });
 

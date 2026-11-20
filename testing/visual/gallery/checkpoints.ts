@@ -8,6 +8,7 @@ import {
   workflowFixtureRegistry,
 } from '../fixtures/workflow/registry.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 
 export interface WaitForCheckpointOptions {
   readonly scenario: ScenarioDefinition;
@@ -45,7 +46,7 @@ export function checkpointPredicate(
 ): CheckpointPredicate {
   const predicate: CheckpointPredicate | undefined = workflowFixtureRegistry.has(scenario.id)
     ? workflowCheckpointPredicates.get(checkpoint.id)
-    : ({ output }) => output.includes(checkpoint.marker);
+    : ({ output }) => acrossNoticeEdges(output).includes(acrossNoticeEdges(checkpoint.marker));
   if (predicate === undefined) {
     throw new Error(
       `No workflow checkpoint predicate for scenario ${scenario.id} and checkpoint ${checkpoint.id}`,

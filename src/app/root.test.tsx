@@ -138,7 +138,7 @@ describe('App: the claim that Apply is still writing', () => {
 
     await endApply();
 
-    expect(feedbackStore.get()).toEqual({ message: 'Connection lost', isError: true });
+    expect(feedbackStore.get()).toEqual({ message: 'Connection lost', severity: 'error' });
     ui.unmount();
   });
 });

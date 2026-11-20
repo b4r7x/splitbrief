@@ -263,7 +263,7 @@ describe('run-loop stop completion', () => {
     expect(requestEndRun()).toBe(true);
 
     expect(feedbackStore.get()).toMatchObject({
-      isError: true,
+      severity: 'error',
       message: expect.stringContaining('Restore or retry Apply first'),
     });
     expect(controlsStore.get().inputMode).toBe('question');

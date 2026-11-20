@@ -47,8 +47,12 @@ async function renderBlock(
   rows: number,
   width = WIDTH,
   cols = 120,
+  seatLineRows = 1,
 ): Promise<{ lines: string[]; unmount: () => void }> {
-  const ui = renderFeature(<HomeSeatBlock rows={rows} width={width} />, { cols, rows });
+  const ui = renderFeature(
+    <HomeSeatBlock rows={rows} width={width} seatLineRows={seatLineRows} />,
+    { cols, rows },
+  );
   await tick(20);
   const lines = stripAnsiStyles(ui.lastFrame() ?? '')
     .split('\n')
@@ -80,7 +84,7 @@ describe('HomeSeatBlock', () => {
         if (!cold) warmDiscovery();
         const ui = renderFeature(
           <ThemeProvider theme={theme}>
-            <HomeSeatBlock rows={18} width={WIDTH} />
+            <HomeSeatBlock rows={18} width={WIDTH} seatLineRows={1} />
           </ThemeProvider>,
           { cols: 120, rows: 18 },
         );
@@ -138,7 +142,7 @@ describe('HomeSeatBlock', () => {
         if (!cold) warmDiscovery();
         const ui = renderFeature(
           <ThemeProvider theme={theme}>
-            <HomeSeatBlock rows={40} width={WIDTH} />
+            <HomeSeatBlock rows={40} width={WIDTH} seatLineRows={1} />
           </ThemeProvider>,
           { cols: 120, rows: 40 },
         );
@@ -169,7 +173,10 @@ describe('HomeSeatBlock', () => {
       resetAllStores();
       const config = makeConfig();
       seed(config);
-      const ui = renderFeature(<HomeSeatBlock rows={rows} width={WIDTH} />, { cols: 120, rows });
+      const ui = renderFeature(<HomeSeatBlock rows={rows} width={WIDTH} seatLineRows={1} />, {
+        cols: 120,
+        rows,
+      });
       await tick(20);
       expect(ui.lastFrame()).toContain(
         paint(defaultTheme.textDim, 'PLAN').replace('\u001b[39m', ''),
@@ -260,22 +267,57 @@ describe('HomeSeatBlock', () => {
     );
     wide.unmount();
 
-    const narrow = await renderBlock(18, 40);
-    expect(narrow.lines[0]?.trim()).toBe('PLAN Claude Code CLI · BUILD Agent');
+    const narrow = await renderBlock(18, 40, 120, 2);
+    expect(narrow.lines.map((line) => line.trim())).toEqual([
+      'PLAN Claude Code CLI · BUILD Agent',
+      'REVIEW OpenAI Codex CLI',
+      'skills: none · /crew to change',
+    ]);
     narrow.unmount();
   });
 
-  it('drops a whole identity from the collapsed line instead of cutting one', async () => {
+  it('wraps the seats onto the rows it is given, each seat whole, instead of dropping one', async () => {
     const width = 40;
 
-    const { lines, unmount } = await renderBlock(18, width);
+    const { lines, unmount } = await renderBlock(18, width, 120, 3);
 
-    expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(width);
-    expect(lines[0]?.trim()).toBe('PLAN Claude Code CLI · REVIEW = PLAN');
-    // A seat that does not fit leaves the line rather than standing there unnamed, so no ellipsis
-    // reaches the row at all.
-    expect(lines[0]).not.toContain('…');
+    expect(lines.map((line) => line.trim())).toEqual([
+      'PLAN Claude Code CLI',
+      'BUILD Qwen2.5 Coder 7B · REVIEW = PLAN',
+      'skills: none · /crew to change',
+    ]);
+    for (const line of lines) expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(width);
+    expect(lines.join('\n')).not.toContain('…');
     unmount();
+  });
+
+  it('names no seat on its one row rather than a part of the crew', async () => {
+    const { lines, unmount } = await renderBlock(18, 40);
+
+    expect(lines.map((line) => line.trim())).toEqual(['skills: none · /crew to change']);
+    unmount();
+  });
+
+  it('wraps the models of each seat onto the rows it is given instead of naming bare tools', async () => {
+    seed(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra', effort: 'xhigh' },
+        implementer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+      }),
+    );
+
+    const oneRow = await renderBlock(18, 56, 60, 1);
+    expect(oneRow.lines[0]?.trim()).toBe('PLAN codex · BUILD agy · REVIEW codex');
+    oneRow.unmount();
+
+    const threeRows = await renderBlock(18, 56, 60, 3);
+    expect(threeRows.lines.map((line) => line.trim())).toEqual([
+      'PLAN GPT-6-Astra · BUILD Gemini 3.8 Flash',
+      'REVIEW GPT-6.1-Sol',
+      'skills: none · /crew to change',
+    ]);
+    threeRows.unmount();
   });
 
   it('shows a configured reviewer its own identity instead of the inheritance sentence', async () => {

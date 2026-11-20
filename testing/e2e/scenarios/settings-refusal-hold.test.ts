@@ -25,7 +25,7 @@ const REASON_HEAD = 'Unknown command:';
 const SETTINGS_KEY = '\u001B[44;5u';
 
 describe('e2e: a refused command that is still on hold in Settings', { timeout: 120_000 }, () => {
-  it('shows the reason in the same neutral ink as on home', async (context) => {
+  it('shows the reason in the same text ink as on home', async (context) => {
     const skipped = await withTempDir('settings-refusal-hold', async (dir) => {
       const home = join(dir, 'home');
       const stateHome = join(dir, 'state');
@@ -110,7 +110,7 @@ describe('e2e: a refused command that is still on hold in Settings', { timeout: 
             child.write('\r');
             await shows(REASON_HEAD);
             const onHome = readForegroundAtText(terminal.buffer.active, REASON_HEAD);
-            expect(onHome).toEqual({ mode: 'rgb', color: SCREEN_THEME.textDim });
+            expect(onHome).toEqual({ mode: 'rgb', color: SCREEN_THEME.text });
 
             child.write(SETTINGS_KEY);
             await shows('esc close');

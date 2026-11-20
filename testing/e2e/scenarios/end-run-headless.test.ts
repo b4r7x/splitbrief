@@ -82,7 +82,7 @@ function expectRecordedBuildSeat(ref: SessionRef): void {
   expect(readSession(ref)?.summary?.implementerModel).toBe('fixture');
   const view = deriveSummaryView({ record: readRunRecord(ref, false) });
   if (view === null) throw new Error('the closed run has no closed view');
-  const crew = crewLine(view, 200)
+  const crew = crewLine(view, 200, 'model')
     .map((span) => span.text)
     .join('');
   expect(crew).toContain('BUILD Fixture');
@@ -99,7 +99,7 @@ function saveReviewerAsPlanner(target: StopContinueFixture): void {
 function closedReviewSpan(ref: SessionRef): string | undefined {
   const view = deriveSummaryView({ record: readRunRecord(ref, false) });
   if (view === null) throw new Error('the closed run has no closed view');
-  return crewLine(view, 200).find((span) => span.seat === 'review')?.text;
+  return crewLine(view, 200, 'model').find((span) => span.seat === 'review')?.text;
 }
 
 afterEach(async () => {
@@ -233,7 +233,10 @@ describe('headless End run', { timeout: 240_000 }, () => {
         unlinkSync(join(workspace.path, MARKER_FILE));
         const spawnEditor = vi.fn<SpawnEditor>();
         await showRunDiff(record, spawnEditor);
-        expect(feedbackStore.get()).toEqual({ message: 'No run changes to show.', isError: false });
+        expect(feedbackStore.get()).toEqual({
+          message: 'No run changes to show.',
+          severity: 'info',
+        });
         expect(spawnEditor).not.toHaveBeenCalled();
         writeFileSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'), 'old patch');
       }

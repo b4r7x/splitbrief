@@ -10,7 +10,7 @@ import type { GlyphName } from '../../../lib/glyphs.js';
 import { foldRow, foldRowKey } from '../conversation-rows/fold-row.js';
 import { segmentedRow } from '../conversation-rows/row-format/rows.js';
 import type { ConversationRow, ConversationRowBlock } from '../conversation-rows/types.js';
-import { crewLine } from './copy/crew-line.js';
+import { crewLineRows } from './copy/crew-line.js';
 import { recordRows } from './copy/rows.js';
 import { recordFold, runRows } from './copy/rows.js';
 import type { SummaryForm } from './copy/types.js';
@@ -119,14 +119,28 @@ function headerRow(key: string, view: SummaryView | null, width: number): Conver
   };
 }
 
-/** The crew by model, unless the header chose the whole model line (`crewNamed`). */
+// A narrow Run block wraps the crew onto this many rows rather than leave a seat out.
+const CREW_MAX_ROWS = 3;
+
+/**
+ * The crew by model, unless the header chose the whole model line (`crewNamed`): every seat
+ * whole, on the `Crew` row and the rows under it.
+ */
 function crewRows(view: SummaryView, budget: number, crewNamed: boolean): RunRow[] {
   if (crewNamed) return [];
-  const spans = crewLine(view, budget, { line: 'model' }).map(
-    (span): CopySegment => ({
-      text: span.text,
-      tone: span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
+  return crewLineRows(view, budget, { line: 'model', rows: CREW_MAX_ROWS }).map(
+    (row, index): RunRow => ({
+      label: index === 0 ? 'Crew' : '',
+      segments: [
+        {
+          spans: row.map(
+            (span): CopySegment => ({
+              text: span.text,
+              tone: span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
+            }),
+          ),
+        },
+      ],
     }),
   );
-  return spans.length === 0 ? [] : [{ label: 'Crew', segments: [{ spans }] }];
 }

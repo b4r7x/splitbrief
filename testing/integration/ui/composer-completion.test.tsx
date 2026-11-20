@@ -241,7 +241,7 @@ describe('composer integration: completions', () => {
 
       expect(submits).toEqual([]);
       expect(feedbackStore.get()).toMatchObject({
-        isError: true,
+        severity: 'warning',
         message: 'Cannot send: not a regular file. Name a file, not a directory. File: src.',
       });
       expect(ui.lastFrame()).toContain('@src');

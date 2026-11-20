@@ -116,7 +116,7 @@ export function requestSteer(message: UserMessageInput): string | undefined {
     if (resumeParkedRun(message)) return;
     // The caller got its answer when the stop began, so a refusal after the park shows here.
     const refusal = steerAtRest(message);
-    if (refusal !== undefined) feedbackStore.setMessage(refusal);
+    if (refusal !== undefined) feedbackStore.setWarning(refusal);
   };
   writeRunRequests({ steerUnsubscribe: stopStore.subscribe(resumeSteer) });
   resumeSteer();

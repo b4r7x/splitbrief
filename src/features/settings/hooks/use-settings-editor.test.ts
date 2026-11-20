@@ -224,12 +224,12 @@ describe('useSettingsEditor', () => {
     await flushEffects();
     ui.stdin.write(' ');
     await vi.waitFor(() => {
-      expect(feedbackStore.get()).toEqual({ message: reason, isError: true });
+      expect(feedbackStore.get()).toEqual({ message: reason, severity: 'error' });
     });
     ui.stdin.write('\r');
     await tick(30);
 
-    expect(feedbackStore.get()).toEqual({ message: reason, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: reason, severity: 'error' });
     expect(JSON.stringify(configStore.get().config)).toBe(before);
     ui.unmount();
   });
@@ -360,7 +360,7 @@ describe('useSettingsEditor', () => {
       expect(feedbackStore.get()).toEqual({
         message:
           'Saved Isolation · staged copy to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
-        isError: false,
+        severity: 'info',
       });
     });
     ui.stdin.write(' ');
@@ -437,7 +437,7 @@ describe('useSettingsEditor', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).not.toBeNull();
     });
-    expect(feedbackStore.get()).toEqual({ message, isError: false });
+    expect(feedbackStore.get()).toEqual({ message, severity: 'info' });
     ui.unmount();
   }
 

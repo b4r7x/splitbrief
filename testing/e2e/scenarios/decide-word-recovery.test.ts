@@ -102,7 +102,7 @@ describe('e2e: a word typed beside a halt', () => {
 
     await vi.waitFor(() =>
       expect(feedbackStore.get()).toEqual({
-        isError: false,
+        severity: 'info',
         message: 'Nothing to send. Tab to choose an action.',
       }),
     );

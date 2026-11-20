@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -258,13 +258,14 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it('renders the focused small-height home budget with prompt and error rows accounted for', async () => {
+  it('renders the focused small-height home budget with the filter rows accounted for', async () => {
     seed([
       { id: 'focus-small-0', feature: 'oldest-focused-small-home', startedAt: 1_700_000_000 },
       { id: 'focus-small-1', feature: 'middle-focused-small-home', startedAt: 1_700_000_001 },
       { id: 'focus-small-2', feature: 'newest-focused-small-home', startedAt: 1_700_000_002 },
     ]);
-    const terminalRows = 23;
+    // A selection error is the composer's notice, so the list budget holds the filter rows only.
+    const terminalRows = 17;
     terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
     const layout = getHomeLayout({
       cols: 80,
@@ -276,27 +277,21 @@ describe('RecentSessions', () => {
     });
 
     const ui = renderFeature(
-      <Box flexDirection="column">
-        <RecentSessions
-          focused
-          limit={layout.recentSessionLimit}
-          showHiddenCount={layout.showHiddenCount}
-          onSelect={() => {}}
-          onClose={() => {}}
-          hasOverlay={false}
-          width={layout.width}
-        />
-        <Box height={1} overflow="hidden">
-          <Text>selection failed</Text>
-        </Box>
-      </Box>,
+      <RecentSessions
+        focused
+        limit={layout.recentSessionLimit}
+        showHiddenCount={layout.showHiddenCount}
+        onSelect={() => {}}
+        onClose={() => {}}
+        hasOverlay={false}
+        width={layout.width}
+      />,
     );
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
     expect(frame).toContain('Type to filter…');
-    expect(frame).toContain('selection failed');
     expect(frame).toContain('newest-focused-small-home');
     expect(frame).toContain('↓ 2 more');
     expect(frame).not.toContain('middle-focused-small-home');

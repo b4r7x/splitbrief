@@ -140,8 +140,8 @@ export function measureFormB(
 /** The gap the header keeps between the rail and the seat line pinned right of it. */
 export const HEADER_RAIL_SEAT_GAP = 2;
 
-/** Which crew line the header paints beside the rail: the model names, the tool words, or neither. */
-export type HeaderLineKind = 'model' | 'tool' | 'elided';
+/** The whole crew line the header names, or `none` when no whole line fits beside the rail. */
+export type HeaderLineKind = 'model' | 'tool' | 'none';
 
 export interface RailFormChoice {
   form: RailForm;
@@ -171,9 +171,9 @@ export interface RailFormChoiceInput {
  * tools first, because the tool words are the shorter line; a wide one keeps the model names while
  * they fit. A candidate counts only when its whole line fits the room its rail leaves, and a
  * three-stage line is tried with its full labels before its short ones, so the rail never gives up
- * a stage label it has room for. Only when no variant can seat a whole line does the header elide
- * seats beside the form the width allows, and then the long labels give way to the short ones once
- * they exceed the content width.
+ * a stage label it has room for. When no variant can seat a whole line the header names no seat
+ * beside the form the width allows — never a part of the crew — and the long labels give way to
+ * the short ones once they exceed the content width.
  */
 export function selectRailFormAndLine(input: RailFormChoiceInput): RailFormChoice {
   const contentWidth = getChromeContentWidth(input.cols);
@@ -217,5 +217,5 @@ export function selectRailFormAndLine(input: RailFormChoiceInput): RailFormChoic
     form === 'B' &&
     (input.railWidths.B === undefined ||
       (input.railWidths.BShort !== undefined && contentWidth < input.railWidths.B));
-  return { form, short, line: 'elided' };
+  return { form, short, line: 'none' };
 }

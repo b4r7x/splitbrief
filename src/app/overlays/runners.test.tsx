@@ -1073,7 +1073,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
       });
       expect(feedbackStore.get()).toMatchObject({
         message: 'Saved PLAN · Claude Code CLI · Sonnet 5.5 to .splitbrief/config.yaml',
-        isError: false,
+        severity: 'info',
       });
     });
     ui.unmount();
@@ -1138,7 +1138,10 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     await chooseClaudeSonnet(ui);
 
     await vi.waitFor(() => {
-      expect(feedbackStore.get()).toMatchObject({ message: 'disk is read-only', isError: true });
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'disk is read-only',
+        severity: 'error',
+      });
     });
     expect(saveConfig).toHaveBeenCalledTimes(1);
     expect(loadConfig(projectDir).config.planner).toMatchObject(shellPlanner);
@@ -1189,7 +1192,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
       });
       expect(feedbackStore.get()).toMatchObject({
         message: 'Saved PLAN · Claude Code CLI · Sonnet 5.5 to .splitbrief/config.yaml',
-        isError: false,
+        severity: 'info',
       });
     } finally {
       // An assertion above must not leave the port pending or the tree mounted.
@@ -1215,7 +1218,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
       expect(frameText(ui)).toContain('Config changed on disk');
       expect(feedbackStore.get()).toMatchObject({
         message: 'Config changed on disk. SPLITBRIEF loaded it; make your change again.',
-        isError: true,
+        severity: 'error',
       });
     });
     expect(overlayStore.get().active).toBe('planner-picker');
@@ -1251,7 +1254,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toMatchObject({
         message: 'Failed to save config: the config directory is read-only',
-        isError: true,
+        severity: 'error',
       });
     });
     // The refusal stands while the same effort row keeps the focus.
@@ -1275,7 +1278,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     expect(saveConfig).toHaveBeenCalledTimes(2);
     expect(feedbackStore.get()).toMatchObject({
       message: 'Saved PLAN · Claude Code CLI · Sonnet 5.5 to .splitbrief/config.yaml',
-      isError: false,
+      severity: 'info',
     });
     ui.unmount();
   });
@@ -1359,7 +1362,7 @@ describe('ToolModelPicker leaving a hand-written shell seat', () => {
     const written = readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8');
     expect(written).not.toMatch(/output_?[fF]ormat/);
     expect(written).not.toContain('command:');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     ui.unmount();
   });
 });

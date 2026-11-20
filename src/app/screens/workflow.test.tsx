@@ -1364,7 +1364,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message: 'No saved state to continue.',
-        isError: false,
+        severity: 'warning',
       });
     });
     await vi.waitFor(() => {
@@ -1401,7 +1401,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get()).toEqual({
         message: 'No saved state to continue.',
-        isError: false,
+        severity: 'warning',
       });
     });
     await flushEffects();
@@ -1779,7 +1779,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     );
     expect(log).toContain('"type":"user_message"');
     expect(log).toContain('log the error, then rethrow it');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     ui.unmount();
   });
 
@@ -1829,7 +1829,7 @@ describe('WorkflowScreen showing a run at rest', () => {
       text: 'log the error, then rethrow it',
       file: null,
     });
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     ui.unmount();
   });
 
@@ -2089,7 +2089,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(composerLiveStore.get().text).toBe('/steer use the old name');
-      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
+      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, severity: 'warning' });
     });
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -2159,7 +2159,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.stdin.write(CTRL_ENTER);
     await vi.waitFor(() => {
       expect(composerLiveStore.get().text).toBe('use the old name');
-      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
+      expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, severity: 'warning' });
     });
     await flushEffects();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -3183,7 +3183,7 @@ describe('WorkflowScreen showing a run at rest', () => {
       expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept confirm', 'row');
       expect(feedbackStore.get()).toEqual({
         message: 'Applied 1 file to your checkout.',
-        isError: false,
+        severity: 'info',
       });
     });
     ui.unmount();
@@ -5055,7 +5055,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     await flushEffects();
     expect(onRuntimeCommand.mock.calls).toEqual([['/help', 'answer']]);
     expect(replies).toEqual([]);
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Question 1 of 1');
     expect(frame).not.toContain('› /help');

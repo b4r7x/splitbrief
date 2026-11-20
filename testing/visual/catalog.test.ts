@@ -37,6 +37,7 @@ import {
 import { mountGalleryScenario } from './gallery/mount.js';
 import { editorHandoverScenarios } from './gallery/editor-handover.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 
 function sorted(values: Iterable<string>): string[] {
   return [...values].sort();
@@ -198,6 +199,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-continuing-slow-long', ['60x18', '68x20', '80x24', '120x40']],
   ['home-preparation-runner-trust', ['120x40', '80x24', '60x18', '42x30', '39x40']],
   ['home-cold-crew', ['120x40', '80x24', '60x18', '200x50']],
+  ['home-wide-crew', ['120x40', '80x24', '60x18', '40x18']],
   ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-crew-wide-review-none', ['120x40', '80x24', '60x18', '160x45']],
   ['overlay-reviewer-picker-none', ['120x40', '80x24', '60x18', '160x45']],
@@ -434,10 +436,12 @@ describe('visual catalog', () => {
         const frame = stripAnsiStyles(await handle.waitForCheckpoint());
         expect(feedbackStore.get()).toEqual({
           message: 'BUILD runs OpenAI Codex CLI · GPT-6-Astra now · choose another tool or model',
-          isError: false,
+          severity: 'info',
         });
-        expect(frame).toContain('BUILD runs OpenAI Codex CLI · GPT-6-Astra now');
-        expect(frame).toContain('another tool or model');
+        // The byline notice wraps the refusal, so its words are read across the bar edges.
+        const words = acrossNoticeEdges(frame);
+        expect(words).toContain('BUILD runs OpenAI Codex CLI · GPT-6-Astra now');
+        expect(words).toContain('another tool or model');
         expect(frame).not.toContain('no --model flag');
       } finally {
         await handle.unmount();
@@ -927,7 +931,7 @@ describe('visual catalog', () => {
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(feedbackStore.get()).toEqual({
-        isError: false,
+        severity: 'info',
         message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
       });
       expect(frame).toContain('A command sends no image. Remove the command, then press ctrl+⏎.');
@@ -946,7 +950,7 @@ describe('visual catalog', () => {
     try {
       const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(feedbackStore.get()).toEqual({
-        isError: false,
+        severity: 'warning',
         message: '/end takes no argument. Usage: /end',
       });
       expect(frame).toContain('/end takes no argument. Usage: /end');
@@ -1403,7 +1407,7 @@ describe('visual catalog', () => {
         try {
           const frame = await handle.waitForCheckpoint();
           expect(composerLiveStore.get().text).toBe(`@${path} ${prompt}`);
-          expect(feedbackStore.get()).toEqual({ message: feedback, isError: true });
+          expect(feedbackStore.get()).toEqual({ message: feedback, severity: 'warning' });
           const plain = stripTerminalControls(frame).replace(/\s+/g, ' ');
           expect(plain).toContain(feedback.slice(0, feedback.indexOf('. ')));
           if (viewport.cols === 120) expect(plain).toContain(feedback);

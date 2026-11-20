@@ -476,7 +476,7 @@ describe('Composer file submission', () => {
       await flushEffects();
 
       const feedback = `Cannot send: ${copy} File: notes.md.`;
-      expect(feedbackStore.get().message).toBe(feedback);
+      expect(feedbackStore.get()).toEqual({ message: feedback, severity: 'warning' });
       await vi.waitFor(() => {
         expect(stripAnsiStyles(ui.lastFrame() ?? '').split(feedback)).toHaveLength(2);
       });
@@ -517,7 +517,7 @@ describe('Composer file submission', () => {
           message: { text, displayText: text, images: [], attachedInputs: [] },
         }),
       );
-      expect(feedbackStore.get().isError).toBe(false);
+      expect(feedbackStore.get().severity).toBe('info');
       expect(composerLiveStore.get().empty).toBe(true);
       expect(inputHistoryStore.get().entries).toEqual([createDraftDocument(text)]);
     },
@@ -545,7 +545,7 @@ describe('Composer file submission', () => {
     await flushEffects();
 
     expect(feedbackStore.get()).toEqual({
-      isError: true,
+      severity: 'warning',
       message: 'Cannot send: file not found. Check the path and try again. File: loop.',
     });
     expect(onSubmit).not.toHaveBeenCalled();
@@ -665,7 +665,7 @@ describe('Composer file submission', () => {
     ui.stdin.write(text);
     await flushEffects();
     expect(composerLiveStore.get().document).toEqual(createDraftDocument(text));
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     ui.stdin.write('\r');
     await flushEffects();
 
@@ -698,7 +698,9 @@ describe('Composer file submission', () => {
     await flushEffects();
     ui.stdin.write(quoted ? `"${path}"` : path.replaceAll(' ', '\\ '));
     await flushEffects();
-    expect(feedbackStore.get().isError, feedbackStore.get().message ?? ui.lastFrame()).toBe(false);
+    expect(feedbackStore.get().severity, feedbackStore.get().message ?? ui.lastFrame()).toBe(
+      'info',
+    );
     await vi.waitFor(() => {
       expect(composerLiveStore.get().document.parts).toEqual([
         { kind: 'image', attachment: expect.objectContaining({ path: realpathSync(path) }) },
@@ -1306,7 +1308,7 @@ describe('Composer image attach gate', () => {
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('/crew plan');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(attachmentsStore.peek()).toEqual([]);
   });
 
@@ -1427,7 +1429,7 @@ describe('Composer image attach gate', () => {
       ui.stdin.write('\r');
       await flushEffects();
 
-      expect(feedbackStore.get()).toEqual({ isError: false, message: reason });
+      expect(feedbackStore.get()).toEqual({ severity: 'info', message: reason });
       expect(dispatched).toEqual([]);
       expect(submissions).toEqual([]);
       expect(sends).not.toHaveBeenCalled();
@@ -1477,7 +1479,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
 
     expect(feedbackStore.get()).toEqual({
-      isError: false,
+      severity: 'info',
       message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
     });
     expect(sends).not.toHaveBeenCalled();
@@ -1536,7 +1538,7 @@ describe('Composer image attach gate', () => {
     await flushEffects();
 
     expect(feedbackStore.get()).toEqual({
-      isError: false,
+      severity: 'info',
       message: 'A command sends no image. Remove the image.',
     });
     expect(dispatched).toEqual([]);
@@ -2133,38 +2135,42 @@ describe('Composer home message', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
   });
 
-  // Home is 76 cells wide at 80 columns.
+  // Home is 76 cells wide at 80 columns, and its body column is the composer's own width.
   function renderHome() {
     return mountFeature(
-      <Composer
-        commands={[]}
-        currentScreen="home"
-        mode="normal"
-        hint="Describe your feature…"
-        homeHint="/help · /crew"
-        width={76}
-        onSubmit={() => {}}
-        onRuntimeCommand={() => {}}
-      />,
+      <Box flexDirection="column" width={76}>
+        <Composer
+          commands={[]}
+          currentScreen="home"
+          mode="normal"
+          hint="Describe your feature…"
+          homeHint="/help · /crew"
+          width={76}
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />
+      </Box>,
       { cols: 80, rows: 24 },
     );
   }
 
-  it('shows the whole save message, sign-in command included, above the box at 80 columns', async () => {
+  it('frames the whole save message, sign-in command included, above the box at 80 columns', async () => {
     const ui = renderHome();
     await flushEffects();
     feedbackStore.setMessage(SAVE_MESSAGE);
     await flushEffects();
 
-    const rows = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const boxTop = rows.findIndex((row) => row.includes('╭'));
-    expect(
-      rows
-        .slice(0, boxTop)
-        .map((row) => row.trim())
-        .join(' '),
-    ).toBe(SAVE_MESSAGE);
-    expect(rows[boxTop + 1]).toContain('›');
+    const rows = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .map((row) => row.trim());
+    const noticeTop = rows.findIndex((row) => row.startsWith('╭'));
+    const noticeBottom = rows.findIndex((row) => row.startsWith('╰'));
+    const body = rows.slice(noticeTop + 1, noticeBottom);
+    for (const row of body) expect(row.startsWith('│ ') && row.endsWith(' │')).toBe(true);
+    expect(body.map((row) => row.slice(2, -2).trim()).join(' ')).toBe(SAVE_MESSAGE);
+    // The composer box stands directly under the notice.
+    expect(rows[noticeBottom + 1]).toBe(`╭${'─'.repeat(74)}╮`);
+    expect(rows[noticeBottom + 2]).toContain('›');
   });
 
   it('gives the rows back to the hint when the message clears', async () => {
@@ -2569,7 +2575,7 @@ describe('Composer commands-only input', () => {
     await flushEffects();
 
     expect(feedbackStore.get().message).toBe('Only /commands here');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('z');
   });
 

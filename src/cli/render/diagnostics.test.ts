@@ -141,7 +141,7 @@ describe('renderApp diagnostics ownership', () => {
         emitDiagnosticWhileMounted();
         warnStderr(notice);
         expect(feedbackStore.get().message).toBe(`${DIAGNOSTIC}: recoverable`);
-        expect(feedbackStore.get().isError).toBe(true);
+        expect(feedbackStore.get().severity).toBe('error');
       },
     };
 

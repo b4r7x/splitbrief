@@ -108,7 +108,7 @@ describe('createReviewInputHandler – queueing during a brief', () => {
       await handleInput(plainUserMessage('make the diff smaller'));
 
       expect(enqueue).toHaveBeenCalledWith(plainUserMessage('make the diff smaller'), phase);
-      expect(feedbackStore.get()).toMatchObject({ isError: false });
+      expect(feedbackStore.get()).toMatchObject({ severity: 'info' });
     },
   );
 
@@ -126,7 +126,7 @@ describe('createReviewInputHandler – queueing during a brief', () => {
     await handleInput(plainUserMessage('keep every word'));
 
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
     });
     expect(composerDraftStore.get().request?.value).toBe('keep every word');
@@ -143,9 +143,9 @@ describe('createReviewInputHandler – pending un-parked boundary interrupt', ()
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
     await handleInput(plainUserMessage('steer toward smaller diffs'));
 
-    const { message, isError } = feedbackStore.get();
+    const { message, severity } = feedbackStore.get();
     expect(message).not.toContain('Input disabled during task implementation');
-    expect(isError).toBe(false);
+    expect(severity).toBe('info');
     expect(message).toBe('Interrupt pending — stopping at the next step boundary.');
     expect(enqueue).not.toHaveBeenCalled();
   });
@@ -161,7 +161,7 @@ describe('createReviewInputHandler – pending un-parked boundary interrupt', ()
 
     expect(enqueue).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Interrupt pending — stopping at the next step boundary.',
     });
   });
@@ -181,7 +181,7 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
 
     expect(enqueue).toHaveBeenCalledWith(plainUserMessage(input), phase);
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Queued for PLAN · ctrl+⏎ sends now',
     });
   });
@@ -199,7 +199,7 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     await handleInput(plainUserMessage('add error handling'));
 
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
     });
   });
@@ -210,7 +210,7 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
     await handleInput(plainUserMessage('no handler'));
 
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(feedbackStore.get().message).toContain('no active workflow');
   });
 });
@@ -224,7 +224,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
     await handleInput(plainUserMessage('ignored'));
 
     expect(enqueue).not.toHaveBeenCalled();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
   });
 
   it('shows review feedback instead of silently ignoring normal input during plan review', async () => {
@@ -238,7 +238,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
 
     expect(enqueue).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: expect.stringContaining('Review prompt is opening'),
     });
   });
@@ -251,7 +251,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
     await handleInput(plainUserMessage('why is nothing happening'));
 
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: `Review prompt is opening. Once active, use: ${REVIEW_HINT}`,
     });
   });
@@ -317,7 +317,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     // The file never existed, so neither snapshot is readable: the gate still settles on
     // whatever the engine reads back, but the message must not claim an edit.
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Could not read plan.json after editing — applying changes',
     });
   });
@@ -330,7 +330,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
 
     await openReviewFileExternally(makeInputMode('review'));
 
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().severity).toBe('error');
     expect(feedbackStore.get().message).toContain('Failed to open editor');
   });
 
@@ -344,7 +344,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     await openReviewFileExternally(makeInputMode('review', resolve));
 
     expect(resolve).not.toHaveBeenCalled();
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().severity).toBe('error');
     expect(feedbackStore.get().message).toContain('Editor exited with status 42');
   });
 
@@ -352,7 +352,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     runViewStore.__testReset({ phase: 'reviewing-plan' });
     lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
-    stubReviewEditor('true');
+    vi.stubEnv('VISUAL', 'vim');
 
     const stdinCalls: string[] = [];
     const sourceStdin = Object.assign(new PassThrough(), {
@@ -371,12 +371,16 @@ describe('createReviewInputHandler – brief review edit mode', () => {
       sourceStdin: sourceStdin as unknown as NodeJS.ReadStream,
     });
 
-    await openReviewFileExternally(makeInputMode('review'));
+    await openReviewFileExternally(makeInputMode('review'), () => {
+      const child = new EventEmitter();
+      queueMicrotask(() => child.emit('close', 0, null));
+      return child;
+    });
 
     const exitIndex = written.indexOf(terminalSequences.exitAltBuffer);
     const enterIndex = written.indexOf(terminalSequences.enterAltBuffer);
     const hintIndex = written.findIndex((chunk) =>
-      chunk.includes('plan.json open in true. Close the file to return.'),
+      chunk.includes('plan.json open in vim. Close the file to return.'),
     );
     expect(exitIndex).toBeGreaterThanOrEqual(0);
     expect(hintIndex).toBeGreaterThan(exitIndex);
@@ -402,7 +406,11 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     });
     try {
       await started.promise;
-      expect(written.join('')).toContain('plan.json open in open. Quit the editor app to return.');
+      expect(feedbackStore.get()).toEqual({
+        message: 'plan.json open in open. Quit the editor app to return.',
+        severity: 'info',
+      });
+      expect(written).not.toContain(terminalSequences.exitAltBuffer);
       expect(resolve).not.toHaveBeenCalled();
     } finally {
       child.emit('close', 0, null);
@@ -414,7 +422,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     runViewStore.__testReset({ phase: 'reviewing-plan' });
     lifecycleStore.__testReset({ status: 'running' });
     reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
-    stubReviewEditor('/definitely/missing-splitbrief-editor');
+    vi.stubEnv('VISUAL', join(tmpDir, 'missing', 'vim'));
 
     const stdinCalls: string[] = [];
     const sourceStdin = Object.assign(new PassThrough(), {
@@ -435,7 +443,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
 
     await openReviewFileExternally(makeInputMode('review'));
 
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().severity).toBe('error');
     expect(feedbackStore.get().message).toContain('Failed to open editor');
     const exitIndex = written.indexOf(terminalSequences.exitAltBuffer);
     const enterIndex = written.indexOf(terminalSequences.enterAltBuffer);
@@ -473,7 +481,7 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
 
     expect(messages[0]).toBe('Opening true — plan.json…');
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Editor closed — no changes to plan.json',
     });
   });
@@ -494,7 +502,7 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
 
     expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Edited plan.json — applying changes',
     });
   });
@@ -510,7 +518,7 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
 
     expect(resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Editor closed — no changes to plan.json',
     });
   });
@@ -528,7 +536,7 @@ describe('openReviewFileExternally – edit lifecycle feedback', () => {
 
     expect(resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Edit cancelled — editor-sigint.js closed by ctrl+c',
     });
   });
@@ -550,7 +558,7 @@ process.kill(process.pid, 'SIGINT');`,
 
     expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message: 'Edited plan.json — applying changes',
     });
   });
@@ -572,7 +580,7 @@ process.exit(2);`,
 
     expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message:
         'Editor exited with status 2 (editor-save-fail-brief.js) but saved plan.json — applying changes',
     });
@@ -589,7 +597,7 @@ process.exit(2);`,
 
     expect(resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
-      isError: true,
+      severity: 'error',
       message: 'Editor exited with status 3 (editor-fail.js) — edit not applied',
     });
   });
@@ -611,7 +619,7 @@ process.kill(process.pid, 'SIGTERM');`,
 
     expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
     expect(feedbackStore.get()).toMatchObject({
-      isError: false,
+      severity: 'info',
       message:
         'editor-save-sigterm.js terminated by SIGTERM but saved plan.json — applying changes',
     });
@@ -628,7 +636,7 @@ process.kill(process.pid, 'SIGTERM');`,
     await openReviewFileExternally(makeInputMode('review'));
 
     expect(feedbackStore.get()).toMatchObject({
-      isError: true,
+      severity: 'error',
       message: 'Editor failed: editor-sigterm.js terminated by SIGTERM',
     });
   });
@@ -713,7 +721,7 @@ const waiting = setInterval(() => {
 
     expect(resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
-      isError: true,
+      severity: 'error',
       message: 'Review closed while editing — plan.json saved but not applied',
     });
   });

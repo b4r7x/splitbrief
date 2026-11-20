@@ -25,7 +25,7 @@ import {
 } from '../../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../../core/composer/document.js';
-import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { feedbackStore, type FeedbackState } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../../stores/ui/picker-view.js';
 import { questionPromptStore } from '../../../stores/prompts/question.js';
@@ -116,11 +116,11 @@ function setupSession(
 
 function makeInputMode(answers: Array<string | QuestionAnswer | Promise<QuestionAnswer>>): {
   inputMode: UseInputModeResult;
-  feedbackAtPrompt: Array<{ message: string | null; isError: boolean }>;
+  feedbackAtPrompt: FeedbackState[];
   noticeAtPrompt: RecoveryNoticeState[];
 } {
   const queue = [...answers];
-  const feedbackAtPrompt: Array<{ message: string | null; isError: boolean }> = [];
+  const feedbackAtPrompt: FeedbackState[] = [];
   const noticeAtPrompt: RecoveryNoticeState[] = [];
   const inputMode: UseInputModeResult = {
     mode: 'question',
@@ -278,7 +278,7 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['', rowPick('a')]);
     const result = await runDriver(prepared, state, inputMode);
-    expect(feedbackAtPrompt[1]).toEqual({ message: 'Unknown recovery action.', isError: true });
+    expect(feedbackAtPrompt[1]).toEqual({ message: 'Unknown recovery action.', severity: 'error' });
     expect(result.shouldRun).toBe(false);
     expect(result.state?.closed?.as).toBe('ended');
   });
@@ -356,7 +356,7 @@ describe('createRecoveryDriver', () => {
 
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(true);
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(recoveryNoticeStore.get().open).toBe(false);
   });
 
@@ -400,7 +400,7 @@ describe('createRecoveryDriver', () => {
     const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(2);
-    expect(feedbackAtPrompt[1]?.isError).toBe(true);
+    expect(feedbackAtPrompt[1]?.severity).toBe('error');
     expect(result.shouldRun).toBe(false);
     expect(result.state?.closed?.as).toBe('ended');
   });
@@ -543,7 +543,7 @@ describe('createRecoveryDriver', () => {
       const result = await runDriver(prepared, state, inputMode, words);
 
       expect(feedbackAtPrompt).toHaveLength(1);
-      expect(feedbackAtPrompt[0]?.isError).toBe(true);
+      expect(feedbackAtPrompt[0]?.severity).toBe('error');
       if (!result.shouldRun) throw new Error('expected the retry to run');
       expect(result.state.messageQueue).toEqual([]);
       expect(result.steer).toEqual(words);
@@ -1031,7 +1031,7 @@ describe('createRecoveryDriver', () => {
 
     // The halt asks again rather than resuming on a seat nobody changed.
     expect(feedbackAtPrompt).toHaveLength(2);
-    expect(feedbackAtPrompt[1]?.isError).toBe(false);
+    expect(feedbackAtPrompt[1]?.severity).toBe('info');
     expect(result.shouldRun).toBe(false);
     expect(result.state?.closed?.as).toBe('ended');
   });
@@ -1274,7 +1274,7 @@ describe('createRecoveryDriver', () => {
     const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(1);
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
       expect(result.steer).toEqual(plainUserMessage('the prop is optional — add a default'));
@@ -1358,7 +1358,7 @@ describe('createRecoveryDriver', () => {
 
     const result = await outcome;
     expect(result.state?.acceptedAsIs?.note).toBe('the change is a generated lockfile');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
   });
 
   it('takes the composer draft as the steer when Try again is chosen on the panel', async () => {
@@ -1438,7 +1438,7 @@ describe('createRecoveryDriver', () => {
 
         expect(feedbackAtPrompt[1]).toEqual({
           message: `${label} takes no message. Clear the input first.`,
-          isError: false,
+          severity: 'warning',
         });
         expect(composerDraftStore.get().request).toBeNull();
         if (!result.shouldRun) throw new Error('expected the Apply action to run');
@@ -1467,7 +1467,7 @@ describe('createRecoveryDriver', () => {
 
       expect(feedbackAtPrompt[1]).toEqual({
         message: 'Re-run Apply takes no message. Clear the input first.',
-        isError: false,
+        severity: 'warning',
       });
       if (!result.shouldRun) throw new Error('expected Re-run Apply to run');
       expect(result.state.messageQueue).toEqual([]);
@@ -1494,7 +1494,7 @@ describe('createRecoveryDriver', () => {
 
       expect(feedbackAtPrompt[1]).toEqual({
         message: 'Accept as is takes no message. Clear the input first.',
-        isError: false,
+        severity: 'warning',
       });
       expect(result.state?.acceptedAsIs).toBeUndefined();
       expect(composerDraftStore.get().request).toBeNull();
@@ -1508,7 +1508,7 @@ describe('createRecoveryDriver', () => {
 
       expect(feedbackAtPrompt[1]).toEqual({
         message: 'This halt takes no typed correction. Choose an action.',
-        isError: false,
+        severity: 'warning',
       });
       if (!result.shouldRun) throw new Error('expected Restore backup to run');
       expect(result.state.pendingRecovery?.selectedAction).toBe('restore-backup');
@@ -1607,7 +1607,7 @@ describe('createRecoveryDriver', () => {
 
     expect(feedbackAtPrompt[1]).toEqual({
       message: 'This halt takes no typed correction. Choose an action.',
-      isError: false,
+      severity: 'warning',
     });
     expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', value: 'end' });
     expect(result.shouldRun).toBe(false);
@@ -1648,7 +1648,7 @@ describe('createRecoveryDriver', () => {
     expect(feedbackAtPrompt).toHaveLength(2);
     expect(feedbackAtPrompt[1]).toEqual({
       message: 'This halt takes no typed correction. Choose an action.',
-      isError: false,
+      severity: 'warning',
     });
     expect(result.shouldRun).toBe(false);
     expect(result.state?.closed?.as).toBe('ended');
@@ -1669,7 +1669,7 @@ describe('createRecoveryDriver', () => {
       plainUserMessage('mind the lockfile'),
     );
 
-    expect(feedbackAtPrompt).toEqual([{ message: null, isError: false }]);
+    expect(feedbackAtPrompt).toEqual([{ message: null, severity: 'info' }]);
     if (!result.shouldRun) throw new Error('expected the skip to run');
     expect(result.state.tasks[0]?.status).toBe('skipped');
     expect(result.steer).toBeUndefined();
@@ -1687,7 +1687,7 @@ describe('createRecoveryDriver', () => {
 
     expect(feedbackAtPrompt[0]).toEqual({
       message: 'This halt takes no typed correction. Choose an action.',
-      isError: false,
+      severity: 'warning',
     });
   });
 
@@ -1745,7 +1745,7 @@ describe('createRecoveryDriver', () => {
     const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(1);
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(result.shouldRun).toBe(true);
     if (!result.shouldRun) return;
     expect(result.steer).toBeUndefined();
@@ -1908,7 +1908,7 @@ describe('prepared recovery corrections', () => {
     await runDriver(prepared, state, inputMode);
     expect(feedbackAtPrompt[1]).toEqual({
       message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
-      isError: true,
+      severity: 'warning',
     });
     expect(composerLiveStore.get().document).toBe(document);
     expect(composerDraftStore.get().request).toMatchObject({ kind: 'document', document });
@@ -1947,7 +1947,7 @@ describe('prepared recovery corrections', () => {
 
       await runDriver(prepared, state, inputMode);
 
-      expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: false });
+      expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, severity: 'warning' });
     });
 
     it('refuses Continue with words in the composer when no brief is left', async () => {
@@ -1959,7 +1959,7 @@ describe('prepared recovery corrections', () => {
 
       expect(feedbackAtPrompt[1]).toMatchObject({
         message: 'Continue takes no message. Clear the input first.',
-        isError: false,
+        severity: 'warning',
       });
     });
 
@@ -2010,7 +2010,7 @@ describe('prepared recovery corrections', () => {
 
         await runDriver(prepared, state, inputMode);
 
-        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: false });
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, severity: 'warning' });
         expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend' });
       });
 
@@ -2050,7 +2050,7 @@ describe('prepared recovery corrections', () => {
 
         await runDriver(prepared, state, inputMode);
 
-        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, isError: false });
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: NO_CORRECTION, severity: 'warning' });
       });
 
       it('changes the halt on the view in the same tick, and leaves the run as it is', async () => {
@@ -2255,7 +2255,7 @@ describe('prepared recovery corrections', () => {
         });
 
         expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL]);
-        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, isError: true });
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, severity: 'error' });
         expect(composerDraftStore.get().request).toMatchObject({ kind: 'prepend', value: WORDS });
         expect(halt).toMatchObject({ reason: 'review-failed', status: 'awaiting-user' });
       });
@@ -2276,7 +2276,7 @@ describe('prepared recovery corrections', () => {
         });
 
         expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL]);
-        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, isError: true });
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, severity: 'error' });
         expect(composerDraftStore.get().request).toBeNull();
         expect(halt).toMatchObject({ reason: 'review-failed', status: 'awaiting-user' });
         expect(halt?.selectedAction).toBeUndefined();
@@ -2298,9 +2298,9 @@ describe('prepared recovery corrections', () => {
         });
 
         expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL, NOTE]);
-        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, isError: true });
+        expect(feedbackAtPrompt[1]).toMatchObject({ message: MALFORMED, severity: 'error' });
         expect(loadState(prepared.session.ref)?.pendingRecovery).toBeUndefined();
-        expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+        expect(feedbackStore.get()).toEqual({ message: null, severity: 'info' });
       });
 
       it('refuses the note when the file breaks while the note question waits, keeps it, and asks the panel again', async () => {
@@ -2321,7 +2321,7 @@ describe('prepared recovery corrections', () => {
         const result = await runDriver(prepared, state, inputMode);
 
         expect(asked.map(({ question }) => question)).toEqual([PANEL, NOTE, PANEL]);
-        expect(feedbackAtPrompt[2]).toEqual({ message: MALFORMED, isError: true });
+        expect(feedbackAtPrompt[2]).toEqual({ message: MALFORMED, severity: 'error' });
         expect(drafts[0]).toMatchObject({ kind: 'prepend', value: WORDS });
         expect(halts[0]).toMatchObject({ reason: 'review-failed', status: 'awaiting-user' });
         expect(halts[0]?.selectedAction).toBeUndefined();
@@ -2346,9 +2346,9 @@ describe('prepared recovery corrections', () => {
 
         expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL, PANEL, PANEL]);
         expect(feedbackAtPrompt.slice(1)).toEqual([
-          { message: MALFORMED, isError: true },
-          { message: MALFORMED, isError: true },
-          { message: MALFORMED, isError: true },
+          { message: MALFORMED, severity: 'error' },
+          { message: MALFORMED, severity: 'error' },
+          { message: MALFORMED, severity: 'error' },
         ]);
         expect(drafts.map((draft) => draft?.kind ?? null)).toEqual([
           null,
@@ -2429,8 +2429,8 @@ describe('prepared recovery corrections', () => {
 
         expect(asked.map(({ question }) => question)).toEqual([PANEL, PANEL, PANEL]);
         expect(asked.map(({ reviewNone }) => reviewNone)).toEqual([false, false, true]);
-        expect(feedbackAtPrompt[1]).toEqual({ message: MALFORMED, isError: true });
-        expect(feedbackAtPrompt[2]).toEqual({ message: NO_CORRECTION, isError: false });
+        expect(feedbackAtPrompt[1]).toEqual({ message: MALFORMED, severity: 'error' });
+        expect(feedbackAtPrompt[2]).toEqual({ message: NO_CORRECTION, severity: 'warning' });
         expect(drafts).toHaveLength(2);
         expect(drafts[0]).toMatchObject({ kind: 'prepend', value: WORDS });
         expect(drafts[1]).toMatchObject({ kind: 'prepend', value: WORDS });

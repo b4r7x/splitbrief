@@ -62,7 +62,7 @@ it('runs /scroll top typed under a recovery menu and never takes it as the corre
   await vi.waitFor(() =>
     expect(feedbackStore.get()).toEqual({
       message: 'Scrolled conversation to top',
-      isError: false,
+      severity: 'info',
     }),
   );
   await flushEffects();
@@ -114,7 +114,7 @@ it('gives back the whole /steer line with its reason on a halt that takes no typ
   screen.stdin.write('\r');
   await vi.waitFor(() => {
     expect(composerLiveStore.get().text).toBe('/steer use the old name');
-    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
+    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, severity: 'warning' });
   });
   await flushEffects();
   const frame = stripAnsiStyles(screen.lastFrame());
@@ -148,7 +148,7 @@ it.each([
   // The run sets the feedback and the put-back request in one step. A consumed request then means
   // that the words are back.
   await vi.waitFor(() => {
-    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, isError: false });
+    expect(feedbackStore.get()).toEqual({ message: NO_CORRECTION, severity: 'warning' });
     expect(composerDraftStore.get().request).toBeNull();
     expect(composerLiveStore.get().text).toBe(REFUSED_WORDS);
   });

@@ -495,7 +495,18 @@ describe('readConversationScrollSnapshot', () => {
       'This run started in /Users/me/projects/shop. Move the project back to that folder and start SPLITBRIEF there to continue the run, or end the run.',
     );
 
-    expect(readConversationScrollSnapshot().viewportHeight).toBe(quiet - 1);
+    // Three bar rows in place of the one quiet row.
+    expect(readConversationScrollSnapshot().viewportHeight).toBe(quiet - 2);
+  });
+
+  it('measures the body with the two frame rows a one-row notice adds to the footer', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    const quiet = readConversationScrollSnapshot().viewportHeight;
+
+    feedbackStore.setError('Draft not saved');
+
+    expect(readConversationScrollSnapshot().viewportHeight).toBe(quiet - 2);
   });
 
   it('cancelled runs paint no block, so the body reclaims its rows', () => {

@@ -25,12 +25,12 @@ const LONG_DRAFT =
 
 describe('e2e: a save from the home BUILD picker', { timeout: 120_000 }, () => {
   it.for([
-    { cols: 120, rows: 40, draft: null },
-    { cols: 80, rows: 24, draft: null },
-    { cols: 60, rows: 18, draft: LONG_DRAFT },
-  ])(
-    'shows the sign-in command of a custom model on home at $cols columns',
-    async ({ draft, ...viewport }, context) => {
+    { cols: 120, rows: 40, draft: null, form: 'framed' },
+    { cols: 80, rows: 24, draft: null, form: 'framed' },
+    { cols: 60, rows: 18, draft: LONG_DRAFT, form: 'bars' },
+  ] as const)(
+    'shows the sign-in command of a custom model as a warning notice on home at $cols columns',
+    async ({ draft, form, ...viewport }, context) => {
       await withTempDir('home-save-sign-in', async (dir) => {
         const home = join(dir, 'home');
         const projectDir = join(dir, 'project');
@@ -171,17 +171,29 @@ process.exit(1);`,
 
               await shows(SIGN_IN_COMMAND);
               const rows = lines();
-              const messageEnd = rows.findIndex((row) => row.includes('before start'));
-              const message = rows
-                .slice(
-                  rows.findIndex((row) => row.includes('Saved BUILD')),
-                  messageEnd + 1,
-                )
-                .map((row) => row.trim())
-                .join(' ');
+              const first = rows.findIndex((row) => row.includes('Saved BUILD'));
+              const last = rows.findIndex((row) => row.includes('before start'));
+              const body = rows.slice(first, last + 1).map((row) => row.trim());
+              const [open, close] = form === 'framed' ? ['│ ', ' │'] : ['▌ ', ' ▐'];
+              for (const row of body) {
+                expect(row.startsWith(open) && row.endsWith(close)).toBe(true);
+              }
+              expect(body[0]?.startsWith(`${open}⚠ Saved BUILD`)).toBe(true);
+              const composerRow = form === 'framed' ? last + 2 : last + 1;
+              if (form === 'framed') {
+                expect(rows[first - 1]?.trim()).toMatch(/^╭─+╮$/u);
+                expect(rows[last + 1]?.trim()).toMatch(/^╰─+╯$/u);
+                expect(rows[first - 1]?.trim().length).toBe(body[0]?.length);
+              }
+              // The notice stands on the composer's own left edge, directly above its box.
+              expect(rows[composerRow]?.trim()).toMatch(/^╭─+╮$/u);
+              expect(rows[first]?.indexOf(open.trim())).toBe(rows[composerRow]?.indexOf('╭'));
+              const message = body
+                .map((row) => row.slice(open.length, -close.length).trim())
+                .join(' ')
+                .replace(/^⚠ /u, '');
               expect(message).toContain(`Saved BUILD · OpenCode CLI`);
               expect(message).toContain(CUSTOM_SIGN_IN);
-              expect(rows[messageEnd + 1]).toContain('╭');
               expect(text()).not.toContain('BUILD · tool, model, effort');
               expect(
                 readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8'),

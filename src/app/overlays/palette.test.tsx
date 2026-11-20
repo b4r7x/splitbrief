@@ -928,7 +928,7 @@ describe('CommandPaletteOverlay', () => {
 
     expect(composerDraftStore.get().request?.value).toBe('/copy ');
     expect(overlayStore.get().active).toBe('none');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     instance.unmount();
   });
 
@@ -970,7 +970,7 @@ describe('CommandPaletteOverlay', () => {
       await tick(1);
       await tick(1);
 
-      expect(feedbackStore.get().isError, label).toBe(false);
+      expect(feedbackStore.get().severity, label).toBe('info');
       instance.unmount();
     }
   });

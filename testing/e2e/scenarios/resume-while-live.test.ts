@@ -254,7 +254,7 @@ it('refuses /resume with words by its usage, and the run goes on', {
       await expect.poll(screen, PAINT).toContain(WITH_WORDS_REFUSAL);
       const firstLetter = foregroundAt(WITH_WORDS_REFUSAL, 0);
       expect(firstLetter).toEqual(foregroundAt(WITH_WORDS_REFUSAL, '/resume '.length));
-      expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.textDim });
+      expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.text });
       await expect.poll(screen, PAINT).toContain('› /resume use zod');
       expect(callsMade(run)).not.toContain('implement-sigterm');
 

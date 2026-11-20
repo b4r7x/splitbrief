@@ -9,7 +9,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { DETECTING_TOOLS_STATUS } from '../../../core/discovery/copy.js';
 import { CREW_LABEL_WIDTH } from '../../../core/crew/identity.js';
-import { formatCollapsedSeatSpans } from '../../../core/crew/seat-line/collapse.js';
+import { formatCollapsedSeatRows, seatLineText } from '../../../core/crew/seat-line/collapse.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import {
   CREW_SEAT_ROLES,
@@ -25,7 +25,7 @@ import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 const CREW_HINT = '/crew to change';
 const LABEL_GAP = '  ';
 
-export function shedToFit(input: {
+function shedToFit(input: {
   lead: readonly string[];
   optional: readonly string[];
   tail?: readonly string[];
@@ -54,7 +54,16 @@ function selectedSkillsText(skills: {
   return names.length === 0 ? 'skills: none' : `skills: ${names.join(', ')}`;
 }
 
-export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) {
+export function HomeSeatBlock({
+  rows,
+  width,
+  seatLineRows,
+}: {
+  rows: number;
+  width: number;
+  /** The rows the collapsed crew may wrap onto, every seat whole. */
+  seatLineRows: number;
+}) {
   const theme = useTheme();
   const config = configStore.useConfig();
   const skills = skillsStore.use((s) => s);
@@ -89,35 +98,38 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
 
   return (
     <Box flexDirection="column" width={width} flexShrink={0} paddingLeft={MARK_SLOT_CELLS}>
-      {homeConfigBlockRows(rows) < seats.length + 1 ? (
-        <Text wrap="truncate-end">
-          <TextSpans
-            parts={formatCollapsedSeatSpans({
-              planner: config.planner,
-              build: resolveImplementerProfiles(config).defaultProfile.config,
-              reviewer: collapsedReviewSeat(config),
-              budget: textWidth,
-              displayNames,
-            }).map((span) => ({
-              text: span.text,
-              tone:
-                coldDiscovery || span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
-            }))}
-          />
-        </Text>
-      ) : (
-        seats.map((seat) => (
-          <Text key={seat.id} wrap="truncate-end">
-            <Text color={coldDiscovery ? theme.textDim : theme[CREW_SEAT_ROLES[seat.id]]} bold>
-              {seat.label.padEnd(CREW_LABEL_WIDTH)}
+      {homeConfigBlockRows(rows) < seats.length + 1
+        ? formatCollapsedSeatRows({
+            planner: config.planner,
+            build: resolveImplementerProfiles(config).defaultProfile.config,
+            reviewer: collapsedReviewSeat(config),
+            budget: textWidth,
+            rows: seatLineRows,
+            displayNames,
+          }).map((row) => (
+            <Text key={seatLineText(row)} wrap="truncate-end">
+              <TextSpans
+                parts={row.map((span) => ({
+                  text: span.text,
+                  tone:
+                    coldDiscovery || span.seat === undefined
+                      ? 'textDim'
+                      : CREW_SEAT_ROLES[span.seat],
+                }))}
+              />
             </Text>
-            <Text color={theme.textDim}>{LABEL_GAP}</Text>
-            <Text color={coldDiscovery ? theme.textDim : theme[CREW_SEAT_ROLES[seat.id]]}>
-              {crewSeatWord(seat)}
+          ))
+        : seats.map((seat) => (
+            <Text key={seat.id} wrap="truncate-end">
+              <Text color={coldDiscovery ? theme.textDim : theme[CREW_SEAT_ROLES[seat.id]]} bold>
+                {seat.label.padEnd(CREW_LABEL_WIDTH)}
+              </Text>
+              <Text color={theme.textDim}>{LABEL_GAP}</Text>
+              <Text color={coldDiscovery ? theme.textDim : theme[CREW_SEAT_ROLES[seat.id]]}>
+                {crewSeatWord(seat)}
+              </Text>
             </Text>
-          </Text>
-        ))
-      )}
+          ))}
       <Text color={theme.textDim} wrap="truncate-end">
         {status}
       </Text>

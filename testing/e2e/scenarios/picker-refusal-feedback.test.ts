@@ -9,6 +9,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -229,7 +230,10 @@ describe('e2e: the BUILD fallback picker refuses its own seat', { timeout: 120_0
       screen.write('\r');
 
       await screen.shows('choose another tool or model');
-      expect(screen.text()).toContain('BUILD runs OpenAI Codex CLI · GPT-6-Sol now');
+      // The byline notice wraps the refusal over its bar rows, so its words are read across them.
+      expect(acrossNoticeEdges(screen.text())).toContain(
+        'BUILD runs OpenAI Codex CLI · GPT-6-Sol now',
+      );
       expect(screen.foregroundAt('choose another tool or model')).toEqual({
         mode: 'rgb',
         color: SCREEN_THEME.textDim,

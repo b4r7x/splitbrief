@@ -1,8 +1,7 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
-import { glyph } from '../../../lib/glyphs.js';
 import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { feedbackStore, type FeedbackState } from '../../../stores/ui/feedback.js';
 import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { useStores } from '../../../stores/use-many.js';
@@ -12,7 +11,7 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { fitKeyLegend, KEY_LEGEND_LEADING } from '../../../components/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
-import { fitFeedbackMessage } from '../../../components/composer/feedback-fit.js';
+import { layoutNotice, Notice, type NoticeLayout } from '../../../components/notice.js';
 import { hintStateSeverity, resolveInputHint } from '../input-hints.js';
 import { questionPromptStore } from '../../../stores/prompts/question.js';
 import { useStopByline } from '../stop/use-byline.js';
@@ -31,21 +30,24 @@ function summarizeDisplayLine(text: string): string {
   );
 }
 
-// A message takes the rows it needs up to this many, one less than on home, so a halt panel above
-// keeps every action at 60x18.
-const FEEDBACK_MAX_ROWS = 3;
+// A notice takes the rows it needs up to this many, frame included, two less than on home, so a
+// halt panel above keeps every action at 60x18: one text row keeps its frame, more drop it.
+const NOTICE_MAX_ROWS = 3;
 
-// A message keeps its first line, wrapped onto the rows it needs beside the mark slot.
-function fitMessage(message: string, terminalCols: number): string {
-  return fitFeedbackMessage(summarizeDisplayLine(message), {
-    width: getChromeContentWidth(terminalCols) - MARK_SLOT_CELLS,
-    maxRows: FEEDBACK_MAX_ROWS,
+// A message keeps its first line, in the notice on the composer's left edge.
+function layoutFeedback(feedback: FeedbackState, terminalCols: number): NoticeLayout | null {
+  if (feedback.message === null) return null;
+  const text = summarizeDisplayLine(feedback.message);
+  if (text === '') return null;
+  return layoutNotice(text, feedback.severity, {
+    maxWidth: getChromeContentWidth(terminalCols),
+    maxRows: NOTICE_MAX_ROWS,
   });
 }
 
-/** The rows the feedback row takes on a terminal `terminalCols` wide: one, or the rows its message needs. */
-export function getFeedbackRows(message: string | null, terminalCols: number): number {
-  return message === null ? 1 : fitMessage(message, terminalCols).split('\n').length;
+/** The rows the feedback row takes on a terminal `terminalCols` wide: one, or the rows its notice needs. */
+export function getFeedbackRows(feedback: FeedbackState, terminalCols: number): number {
+  return layoutFeedback(feedback, terminalCols)?.height ?? 1;
 }
 
 export function FeedbackRow({
@@ -59,7 +61,7 @@ export function FeedbackRow({
   /** A sheet sits under the row and owns the footer's keys; an empty row leaves no blank line. */
   panelBelow?: boolean | undefined;
 }) {
-  const [{ message, isError }] = useStores(feedbackStore);
+  const [feedback] = useStores(feedbackStore);
   const inputMode = controlsStore.use((s) => s.inputMode);
   const questions = questionPromptStore.use((s) => s.questions);
   const approvalPending = approvalPromptStore.use((s) => s.status === 'pending');
@@ -77,7 +79,7 @@ export function FeedbackRow({
     approvalPending ||
     inputMode === 'review' ||
     (inputMode === 'question' && questions?.length !== 0);
-  const messageWord = message === null ? '' : fitMessage(message, terminalCols);
+  const notice = layoutFeedback(feedback, terminalCols);
   // One cell short of the edge: a legend that ends in the last column reads as cut off even when
   // every token it names is whole. The leading is spent before the keys are fitted.
   const legendWidth = cols - 1 - KEY_LEGEND_LEADING.length;
@@ -93,76 +95,58 @@ export function FeedbackRow({
           legendWidth,
         );
 
-  // The footer keeps the transcript's grammar: a mark in the mark slot — the legend's pointer, the
-  // byline's pip, the composer's border — and every word on the text column its chevron opens on.
-  // Every key legend carries the mark, whichever seat it arrived from; a message or a caller's
-  // prose hint leaves the slot empty and still opens on the text column, and a failure fills it.
+  // A message keeps the row whether or not a panel owns the keys, as the one notice on the
+  // composer's left edge. Every other word keeps the transcript's grammar: a mark in the mark slot —
+  // the legend's pointer, the byline's pip, the composer's border — and every word on the text
+  // column its chevron opens on. A caller's prose hint leaves the slot empty.
+  if (notice !== null) {
+    return (
+      <Box flexDirection="column" height={notice.height} flexShrink={0}>
+        <Notice layout={notice} />
+      </Box>
+    );
+  }
   const keyHintFitted = keyHint === '' ? '' : fitKeyLegend(keyHint, legendWidth);
   let word = '';
   let isLegend = false;
-  // A sheet under the row names its own keys, so above it the row carries a message or nothing. A
-  // message keeps the row whether or not a panel owns the keys; only a fallback yields to the panel.
-  if (messageWord !== '' || !owned) {
-    if (messageWord !== '') word = messageWord;
-    else if (!panelBelow) {
-      if (stopHint !== '') {
-        word = stopHint;
+  // A sheet under the row names its own keys, so above it the row carries a message or nothing;
+  // a fallback yields to a panel that owns the keys.
+  if (!owned && !panelBelow) {
+    if (stopHint !== '') {
+      word = stopHint;
+      isLegend = true;
+    } else if (keyHintFitted !== '') {
+      word = keyHintFitted;
+      isLegend = true;
+    } else {
+      const inputWord = summarizeDisplayLine(resolveInputHint({ inputHint, inputMode }));
+      if (inputWord !== '') word = inputWord;
+      else if (runningHint !== '') {
+        word = runningHint;
         isLegend = true;
-      } else if (keyHintFitted !== '') {
-        word = keyHintFitted;
-        isLegend = true;
-      } else {
-        const inputWord = summarizeDisplayLine(resolveInputHint({ inputHint, inputMode }));
-        if (inputWord !== '') word = inputWord;
-        else if (runningHint !== '') {
-          word = runningHint;
-          isLegend = true;
-        }
       }
     }
   }
-  // A failure is its own grammar: the failed mark takes the error ink and the sentence takes the
-  // text ink. A hint that opens with `Failed` keeps the state-word voice.
-  const failed = isError && !isLegend && word !== '';
-  const severity = failed ? null : word !== '' ? hintStateSeverity(word) : null;
+  // A hint that opens with `Failed` keeps the state-word voice.
+  const severity = word !== '' ? hintStateSeverity(word) : null;
   const wordColor = severity === 'error' ? t.error : severity === 'warning' ? t.warning : null;
-  const lead =
-    word === ''
-      ? ''
-      : failed
-        ? `${glyph('statusFailed')} `
-        : isLegend
-          ? KEY_LEGEND_LEADING
-          : ' '.repeat(MARK_SLOT_CELLS);
+  const lead = word === '' ? '' : isLegend ? KEY_LEGEND_LEADING : ' '.repeat(MARK_SLOT_CELLS);
 
   // A sheet under the row is the panel that owns the footer while it is up. A row with no word
   // then has nothing to stand on, so it leaves no blank line between the sheet and the divider.
   if (word === '' && panelBelow) return null;
 
-  // A message past one row goes on under the first, its mark slot empty, in the ink of its words.
-  const [first = '', ...more] = word.split('\n');
   return (
-    <Box flexDirection="column" height={1 + more.length} flexShrink={0}>
-      {first &&
-        (failed ? (
-          <Text wrap="truncate-end">
-            <Text color={t.error}>{lead}</Text>
-            <Text color={t.text}>{first}</Text>
-          </Text>
-        ) : wordColor !== null ? (
-          <StateWordVoice lead={lead} text={first} color={wordColor} />
+    <Box flexDirection="column" height={1} flexShrink={0}>
+      {word &&
+        (wordColor !== null ? (
+          <StateWordVoice lead={lead} text={word} color={wordColor} />
         ) : (
           <Text color={t.textDim} wrap="truncate-end">
             {lead}
-            {first}
+            {word}
           </Text>
         ))}
-      {more.map((row, index) => (
-        <Text key={`${index}:${row}`} color={failed ? t.text : t.textDim} wrap="truncate-end">
-          {' '.repeat(MARK_SLOT_CELLS)}
-          {row}
-        </Text>
-      ))}
     </Box>
   );
 }

@@ -51,7 +51,7 @@ import { VISUAL_FIXTURE_PROJECT_DIR } from '../screen-fixtures.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle/state.js';
 import { glyph, type GlyphName } from '../../../../src/lib/glyphs.js';
-import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
+import { feedbackStore, type FeedbackState } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../../../src/stores/ui/composer-live.js';
 import { reportDraftNotSaved, saveSessionDraft } from '../../../../src/stores/ui/session-drafts.js';
@@ -738,7 +738,7 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         await write.press('\r');
         await refused.promise;
         off();
-        feedbackStore.setMessage(NO_CORRECTION_MESSAGE);
+        feedbackStore.setWarning(NO_CORRECTION_MESSAGE);
       },
     });
   }
@@ -895,10 +895,12 @@ export const workflowProjectionRegistry: ReadonlyMap<ScenarioId, WorkflowFixture
 // The feedback a workflow fixture leaves in the footer when it takes more than one row at one of the
 // scenario's viewports and the scenario crops a body element (the sidebar, the transcript or a
 // panel). The locators fit it as the row fits it, so the body ends above its rows.
-export const workflowFixtureFeedback: ReadonlyMap<string, string> = new Map([
-  ['workflow-command-image-refused', COMMAND_IMAGE_REASON],
-  ['workflow-moved-project-skip', MOVED_PROJECT_MESSAGE],
-  ['workflow-project-gone-at-rest', projectGoneMessage(PROJECT_GONE_DIR)],
+export const workflowFixtureFeedback: ReadonlyMap<string, FeedbackState> = new Map([
+  ['workflow-command-image-refused', { message: COMMAND_IMAGE_REASON, severity: 'info' }],
+  [
+    'workflow-project-gone-at-rest',
+    { message: projectGoneMessage(PROJECT_GONE_DIR), severity: 'error' },
+  ],
 ]);
 
 export function workflowFixtureProjectionFor(
@@ -921,15 +923,17 @@ export const workflowFixtureRegistry: FixtureRegistry = new Map(
   ]),
 );
 
+// A notice wraps its words over its rows, so the markers are read across the rows.
 function includesAll(...markers: readonly string[]): CheckpointPredicate {
   return ({ output, checkpoint }) => {
-    return output.includes(checkpoint.marker) && markers.every((marker) => output.includes(marker));
+    const text = panelText(output);
+    return [checkpoint.marker, ...markers].every((marker) => text.includes(panelText(marker)));
   };
 }
 
-// A panel row that wraps keeps its words: the frame on one line, without the panel's border.
+// A panel or notice row that wraps keeps its words: the frame on one line, without the edges.
 function panelText(output: string): string {
-  return stripAnsiStyles(output).replace(/[│▌]/gu, ' ').replace(/\s+/gu, ' ');
+  return stripAnsiStyles(output).replace(/[│▌▐]/gu, ' ').replace(/\s+/gu, ' ');
 }
 
 function excludesAll(...markers: readonly string[]): CheckpointPredicate {
@@ -1749,8 +1753,12 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('plan-card-usage-refused'),
+    // Below 24 rows the framed refusal takes the rows of the plan box until it clears.
     (context) =>
-      planCardReady(context) && includesAll(END_USAGE_REFUSAL, PLAN_CARD_END_DRAFT)(context),
+      (context.viewport.rows >= 24
+        ? planCardReady(context)
+        : includesAll('End run', 'Edit plan.json')(context)) &&
+      includesAll(END_USAGE_REFUSAL, PLAN_CARD_END_DRAFT)(context),
   ],
   [
     checkpointId('plan-card-steer-row'),
@@ -2076,11 +2084,14 @@ const checkpointPredicates = [
           )
         );
       }
-      return (
-        context.output.includes('PLAN GPT-5.1') &&
-        (context.viewport.cols !== 160 ||
-          headerRow.includes('BUILD Gemini 3.8 Flash → Google Antigravity CLI'))
-      );
+      if (context.viewport.cols === 160) {
+        return (
+          headerRow.includes('PLAN GPT-5.1') &&
+          headerRow.includes('BUILD Gemini 3.8 Flash → Google Antigravity CLI')
+        );
+      }
+      // A narrower header has no room for the whole crew, so it names no seat, never a part of it.
+      return !headerRow.includes('PLAN');
     },
   ],
   [

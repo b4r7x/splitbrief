@@ -73,10 +73,11 @@ function unmountAll() {
   _resetMouseZones();
 }
 
+// A notice row in its bar form opens on the same bar, so a row that ends on the closing bar is not a cursor.
 const cursorLines = (ui: FilteredStdinHarness) =>
   stripAnsiStyles(ui.lastFrame() ?? '')
     .split('\n')
-    .filter((line) => line.includes(glyph('liveBar')))
+    .filter((line) => line.includes(glyph('liveBar')) && !line.includes(glyph('noticeBarEnd')))
     .map((line) => line.replace(/\s+/g, ' ').trim());
 
 function savedSeat({ planner }: Config) {

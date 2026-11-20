@@ -334,7 +334,7 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('preserves the draft when ctrl+enter is rejected during stopping, in the neutral voice', async () => {
+  it('preserves the draft when ctrl+enter is rejected during stopping, as a warning', async () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running' });
     stopStore.__testReset({ intent: 'stop-now', phase: 'terminating' });
@@ -348,7 +348,7 @@ describe('WorkflowFooter', () => {
 
     expect(feedbackStore.get()).toEqual({
       message: 'Finish stopping before steering.',
-      isError: false,
+      severity: 'warning',
     });
     expect(ui.lastFrame()).toContain('keep every word');
     expect(queued).toEqual([]);

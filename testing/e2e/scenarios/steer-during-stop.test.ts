@@ -7,6 +7,7 @@ import { resolveTheme } from '../../../src/core/theme/resolve.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
@@ -232,7 +233,7 @@ it('names the stop as the reason when /steer runs before the run stopped, and st
       expect(screen()).toContain(STOP_REASON);
       const firstLetter = foregroundAt(STOP_REASON, 0);
       expect(firstLetter).toEqual(foregroundAt(STOP_REASON, 'Finish '.length));
-      expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.textDim });
+      expect(firstLetter).toEqual({ mode: 'rgb', color: SCREEN_THEME.text });
       expect(screen()).toContain(`› ${LINE}`);
 
       await expect.poll(screen, PAINT).toContain('○ Stopped at T001');
@@ -248,11 +249,11 @@ it('names the stop as the reason when /steer runs before the run stopped, and st
   }
 });
 
-// The feedback line of the queue: the transcript row of the same message names its timing.
+// The notice of the queue, read inside its frame: the transcript row of the same message names its timing.
 const queueNotice = (text: string) =>
   text
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => acrossNoticeEdges(line).trim())
     .find((line) => line.startsWith('Queued for BUILD on T001') && !line.includes('· read'));
 
 it('names no key in the queue notice when ⏎ sends words before the run stopped', {

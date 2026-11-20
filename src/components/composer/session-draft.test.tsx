@@ -431,7 +431,7 @@ describe('unsent session composer draft', () => {
       expect(draftRefusalStore.get()?.message).toBe(
         'Draft not saved: permission denied · .splitbrief/sessions/one/draft.json',
       );
-      expect(feedbackStore.get()).toEqual({ message: 'Draft not saved', isError: true });
+      expect(feedbackStore.get()).toEqual({ message: 'Draft not saved', severity: 'error' });
       ui.unmount();
     } finally {
       chmodSync(dir, 0o755);
@@ -490,7 +490,7 @@ describe('an emptied composer over an old draft that cannot be removed', () => {
     ui.unmount();
     await flushEffects();
 
-    expect(feedbackStore.get()).toEqual({ message: NOTE, isError: true });
+    expect(feedbackStore.get()).toEqual({ message: NOTE, severity: 'error' });
     expect(draftRefusalStore.get()).toBeNull();
 
     open('one');

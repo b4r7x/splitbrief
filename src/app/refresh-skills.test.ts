@@ -114,7 +114,7 @@ describe('refreshSkills', () => {
 
     refreshSkills();
 
-    await vi.waitFor(() => expect(feedbackStore.get().isError).toBe(true));
+    await vi.waitFor(() => expect(feedbackStore.get().severity).toBe('error'));
     expect(feedbackStore.get().message).toContain('skill scan exploded');
     expect(stderr).not.toHaveBeenCalled();
     expect(availableIds()).toEqual(['stale-skill']);

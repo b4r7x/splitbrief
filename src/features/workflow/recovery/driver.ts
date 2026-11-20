@@ -133,7 +133,7 @@ async function promptRecovery(
       );
       if (applied !== null) return applied;
     } else if (issue.availableActions.every((action) => action === 'end-run')) {
-      feedbackStore.setMessage(NO_CORRECTION_MESSAGE);
+      feedbackStore.setWarning(NO_CORRECTION_MESSAGE);
     }
   }
 

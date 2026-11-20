@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
-import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/seat-line/collapse.js';
+import { seatLineText } from '../../../core/crew/seat-line/collapse.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import type { SeatLineSpan } from '../../../core/crew/seat-line/collapse.js';
 import type { RailStageState } from '../../../core/phases/rail.js';
@@ -84,15 +84,8 @@ export function Header({
   });
   const form = railForm ?? choice.form;
   const railCells = form === 'C' ? railWidths.C : choice.short ? railWidths.BShort : railWidths.B;
-  // The choice already paid for a whole line; only the elided line spends the seat room again.
-  const { seatRoom } = getHeaderLayout({ cols, railCells });
-  const seats = lines.todaySeats;
-  const liveSeatLine =
-    choice.line !== 'elided'
-      ? lines[choice.line]
-      : seats === null
-        ? []
-        : formatCollapsedSeatSpans({ ...seats, budget: seatRoom });
+  // The choice already paid for a whole line; with none that fits the header names no seat.
+  const liveSeatLine = choice.line === 'none' ? [] : lines[choice.line];
   const seatLine = givenSeatLine ?? liveSeatLine;
   return (
     <HeaderRow

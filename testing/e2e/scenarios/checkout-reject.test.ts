@@ -530,13 +530,13 @@ describe('run rejection after a source CLI run', () => {
     await reject();
     expect(feedbackStore.get()).toEqual({
       message: 'Run rejection is unavailable while the run is active.',
-      isError: true,
+      severity: 'error',
     });
     expect(readFileSync(fixture.greetPath, 'utf8')).toBe(GREET_SOURCE);
 
     routerStore.updateRun({ run: record, execution: { kind: 'at-rest' } });
     await reject();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     expect(existsSync(fixture.greetPath)).toBe(false);
     expect(existsSync(fixture.markerPath)).toBe(false);
     expect(loadState(ref)?.closed?.as).toBe('discarded');

@@ -102,7 +102,7 @@ describe('useWorkflowScreen while a brief is parked', () => {
 
     expect(steer).toHaveBeenCalledWith(plainUserMessage(''));
     expect(stopStore.get().phase).toBe('idle');
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get().severity).toBe('info');
     ui.unmount();
   });
 
@@ -126,10 +126,10 @@ describe('useWorkflowScreen while a brief is parked', () => {
   // No state is saved for this run and no call holds the park, so the run cannot continue.
   const NO_STATE = {
     message: 'No saved state to continue. Press esc to return home.',
-    isError: false,
+    severity: 'warning',
   };
 
-  it('blank enter at a park names the reason when the run cannot continue, in the neutral voice', async () => {
+  it('blank enter at a park names the reason when the run cannot continue, as a warning', async () => {
     const capture: { current: Model | null } = { current: null };
     const ui = renderFeature(<Harness capture={capture} />);
     onTestFinished(ui.unmount);
@@ -144,7 +144,7 @@ describe('useWorkflowScreen while a brief is parked', () => {
     expect(composerDraftStore.get().request).toBeNull();
   });
 
-  it('typed instructions come back with the reason when the parked run cannot continue with them, in the neutral voice', async () => {
+  it('typed instructions come back with the reason when the parked run cannot continue with them, as a warning', async () => {
     const capture: { current: Model | null } = { current: null };
     const ui = renderFeature(<Harness capture={capture} />);
     onTestFinished(ui.unmount);

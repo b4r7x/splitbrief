@@ -133,7 +133,7 @@ describe('words typed on a run at rest for a chosen action that reads none', () 
       await vi.waitFor(() => {
         expect(feedbackStore.get()).toEqual({
           message: 'Accept as is takes no message. Clear the input first.',
-          isError: false,
+          severity: 'warning',
         });
       });
       await vi.waitFor(() => {

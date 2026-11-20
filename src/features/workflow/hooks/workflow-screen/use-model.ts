@@ -190,7 +190,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
       if (message.text.trim() !== '') {
         composerDraftStore.requestPrepend(composerLiveStore.get().document);
       }
-      feedbackStore.setMessage(refusal);
+      feedbackStore.setWarning(refusal);
     };
 
   const continuation = useRunContinue({ prepared, inputMode });

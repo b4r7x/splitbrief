@@ -27,7 +27,6 @@ export interface HeaderSeats {
     review?: string | undefined;
   }>;
   notes?: Partial<Record<CrewSeatId, string>> | undefined;
-  haltedSeat?: CrewSeatId | undefined;
 }
 
 export interface HeaderSeatLines {
@@ -35,14 +34,6 @@ export interface HeaderSeatLines {
   model: readonly SeatLineSpan[];
   /** Every seat by the tool word a narrow header has room for. */
   tool: readonly SeatLineSpan[];
-}
-
-export interface DisplayedSeatLines extends HeaderSeatLines {
-  /**
-   * Today's seats, for the line the header elides when neither whole line fits. Null with no
-   * config, and while the run on screen names its recorded crew: the screen passes that line.
-   */
-  todaySeats: HeaderSeats | null;
 }
 
 /**
@@ -89,7 +80,6 @@ export function headerSeats(
     build: running.build?.seat ?? resolveImplementerProfiles(config).defaultProfile.config,
     reviewer: running.review?.seat ?? collapsedReviewSeat(config),
   };
-  const haltedSeat = halt?.issue.seat;
   const notes = seatResetNotes(halt, ranOn, {
     plan: idsOf(seats.planner),
     build: idsOf(seats.build),
@@ -105,7 +95,6 @@ export function headerSeats(
       ...(reviewDisplay !== undefined && { reviewer: reviewDisplay, review: reviewDisplay }),
     },
     ...(notes !== undefined && { notes }),
-    ...(haltedSeat !== undefined && { haltedSeat }),
   };
 }
 
@@ -120,8 +109,8 @@ function headerSeatLines(seats: HeaderSeats): HeaderSeatLines {
 /** The two whole crew lines one recorded crew names, in the words the header lays out. */
 export function recordedCrewSeatLines(seats: RecordedCrew): HeaderSeatLines {
   return {
-    model: crewLine({ seats }, Number.POSITIVE_INFINITY, { line: 'model' }),
-    tool: crewLine({ seats }, Number.POSITIVE_INFINITY, { line: 'tool' }),
+    model: crewLine({ seats }, Number.POSITIVE_INFINITY, 'model'),
+    tool: crewLine({ seats }, Number.POSITIVE_INFINITY, 'tool'),
   };
 }
 
@@ -133,10 +122,8 @@ export function recordedCrewSeatLines(seats: RecordedCrew): HeaderSeatLines {
 export function displayedSeatLines(
   record: RunRecord | undefined,
   todaySeats: HeaderSeats | null,
-): DisplayedSeatLines {
+): HeaderSeatLines {
   const recorded = record === undefined ? null : recordedCrew(record);
-  if (recorded !== null) return { ...recordedCrewSeatLines(recorded), todaySeats: null };
-  return todaySeats === null
-    ? { model: [], tool: [], todaySeats }
-    : { ...headerSeatLines(todaySeats), todaySeats };
+  if (recorded !== null) return recordedCrewSeatLines(recorded);
+  return todaySeats === null ? { model: [], tool: [] } : headerSeatLines(todaySeats);
 }

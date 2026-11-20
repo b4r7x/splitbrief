@@ -239,11 +239,10 @@ describe('Header — seat line', () => {
     expect(frame).toContain('PLAN Claude Code CLI · BUILD Qwen2.5 Coder 7B · REVIEW = PLAN');
   });
 
-  it('gives up one seat name to the tight bar instead of hiding all three', async () => {
+  it('names every seat by its model at 110 columns', async () => {
     const frame = await seatFrame(110);
 
-    expect(frame).toContain('PLAN');
-    expect(frame).toContain('Qwen2.5 Coder 7B');
+    expect(frame).toContain('PLAN Claude Code CLI · BUILD Qwen2.5 Coder 7B · REVIEW = PLAN');
   });
 
   it('says the review seat borrows the planner when no reviewer is configured', async () => {
@@ -263,7 +262,7 @@ describe('Header — seat line', () => {
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
   });
 
-  it('names the tool of each automatic seat, and drops a whole tool name on a tight bar', async () => {
+  it('names the tool of each automatic seat and never cuts one', async () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code' },
       implementer: { kind: 'shell', command: './build.sh', model: 'auto' },
@@ -274,9 +273,10 @@ describe('Header — seat line', () => {
       'PLAN Claude Code CLI · BUILD Custom Shell · REVIEW OpenAI Codex CLI',
     );
     const tight = await seatFrame(110, config);
-    expect(tight).toContain('PLAN Claude Code CLI');
+    expect(tight).toContain('PLAN Claude Code CLI · BUILD Custom Shell · REVIEW OpenAI Codex CLI');
     expect(tight).not.toContain('auto');
     expect(tight).not.toContain('…');
+    expect(await seatFrame(80, config)).toContain('PLAN claude · BUILD shell · REVIEW codex');
   });
 
   it('sanitizes hostile model ids in the visible seat line', async () => {
@@ -389,7 +389,7 @@ describe('Header — seat line', () => {
     ui.unmount();
   });
 
-  it('keeps the halted seat named and spends another seat when the note crowds the bar', async () => {
+  it('keeps the reset clock on the halted seat while the whole line fits', async () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
@@ -402,6 +402,22 @@ describe('Header — seat line', () => {
 
     expect(frame).toContain('BUILD Qwen2.5 Coder 7B (resets 17:00)');
     instance.unmount();
+  });
+
+  it('names no seat beside the rail when no whole crew line fits, never a part of the crew', async () => {
+    const cursor = (model: string) => ({ kind: 'cli', tool: 'cursor', model }) as const;
+    const frame = await seatFrame(
+      60,
+      makeConfig({
+        planner: cursor('gpt-6-astra'),
+        implementer: cursor('gpt-6-astra'),
+        reviewer: cursor('gpt-6-astra'),
+      }),
+    );
+
+    expect(frame).not.toContain('PLAN');
+    expect(frame).not.toContain('BUILD');
+    expect(frame).not.toContain('REVIEW');
   });
 
   it('drops the seat line when the rail crowds the bar', async () => {

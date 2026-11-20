@@ -263,7 +263,7 @@ async function enterEngine(
         loop.steerAtBoundary,
         'seat-change',
       );
-      if (refusal !== undefined) feedbackStore.setMessage(refusal);
+      if (refusal !== undefined) feedbackStore.setWarning(refusal);
     } else await settleRun(ref, true);
     return 'end';
   }

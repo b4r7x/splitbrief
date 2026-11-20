@@ -12,7 +12,7 @@ import { readSession } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { recordSeatIdentities } from '../../../core/state/seats/record.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
-import { recordedCrewHeader, namesEverySeat } from './header.js';
+import { recordedCrewHeader } from './header.js';
 import type { RailForm } from '../layout/chrome-rows.js';
 
 const crew = makeSummary({
@@ -65,10 +65,10 @@ describe('recordedCrewHeader', () => {
     ]);
   });
 
-  it('asks the Run block to name the crew when a seat was elided', () => {
+  it('names no seat when no whole crew line fits, and asks the Run block to name the crew', () => {
     const closed = header({ status: { kind: 'closed', as: 'ended' } }, 60);
     expect(closed?.crewNamed).toBe(false);
-    expect(closed?.seatLine.filter((span) => span.seat !== undefined).length).toBeLessThan(3);
+    expect(closed?.seatLine).toEqual([]);
   });
 
   it('keeps the crew in the Run block when the header names the seats by tool', () => {
@@ -179,27 +179,5 @@ describe('recordedCrewHeader of a run closed on its recorded crew', () => {
 
   it('marks a review seat that follows the planner with = PLAN', () => {
     expect(reviewSpanOfRunClosedOn(makeConfig())).toBe('REVIEW = PLAN');
-  });
-});
-
-describe('namesEverySeat', () => {
-  it('reads the tags even when an identity contains labels and separators', () => {
-    expect(
-      namesEverySeat([
-        { text: 'custom PLAN · BUILD', seat: 'plan' },
-        { text: 'worker', seat: 'build' },
-        { text: '= PLAN', seat: 'review' },
-      ]),
-    ).toBe(true);
-  });
-
-  it('does not mistake a review inheritance mark for the missing planner span', () => {
-    expect(
-      namesEverySeat([
-        { text: 'BUILD worker', seat: 'build' },
-        { text: 'REVIEW = PLAN', seat: 'review' },
-      ]),
-    ).toBe(false);
-    expect(namesEverySeat([{ text: 'PLAN one · BUILD two · REVIEW three' }])).toBe(false);
   });
 });

@@ -209,13 +209,15 @@ describe('fitFeedbackMessage', () => {
   it.each([
     '2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs',
     '2026-10-22-make-the-closed-transcript-block-say-the-run-outcome',
-  ])('keeps the session id %s whole on one row of 4 at any home width', (id) => {
+  ])('never breaks the path of session %s at any home width it does not fit', (id) => {
     const message = `Draft not saved: permission denied · .splitbrief/sessions/${id}/draft.json · quit again leaves without it`;
     for (let width = 64; width <= 78; width++) {
       const rows = fitFeedbackMessage(message, { width, maxRows: 4 }).split('\n');
 
       expect(rows.length).toBeLessThanOrEqual(4);
-      expect(rows.some((row) => row.includes(id))).toBe(true);
+      // The path is wider than the row, so it keeps its first folder and its file name whole.
+      expect(rows.some((row) => row.includes('.splitbrief/…/draft.json ·'))).toBe(true);
+      expect(rows.join('\n')).not.toContain(id.slice(0, 10));
       expect(rows.at(-1)?.endsWith('quit again leaves without it')).toBe(true);
       for (const row of rows) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(width);
     }
@@ -444,8 +446,32 @@ describe('fitFeedbackMessage', () => {
 
       expect(fitFeedbackMessage(message, { width: 36, maxRows: 3 }).split('\n')).toEqual([
         'Config file',
-        '/Users/me/projects/shop/.splitbrief/',
-        'config.yaml exists but could not …',
+        '/…/shop/.splitbrief/config.yaml',
+        'exists but could not be read — …',
+      ]);
+    });
+
+    it('gives a path wider than the row its first folder and file name, never a broken folder name', () => {
+      const path =
+        '.splitbrief/sessions/2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs/draft.json';
+      const message = `Draft not saved: permission denied · ${path} · quit again leaves without it`;
+
+      expect(fitFeedbackMessage(message, { width: 50, maxRows: 5 }).split('\n')).toEqual([
+        'Draft not saved: permission',
+        'denied · .splitbrief/…/draft.json ·',
+        'quit again leaves without it',
+      ]);
+    });
+
+    it('keeps a path that fits the row whole and moves it to the next row', () => {
+      const path =
+        '.splitbrief/sessions/2026-10-22-add-a-greeting-helper-to-the-cli-entry-point-docs/draft.json';
+      const message = `Draft not saved: permission denied · ${path} · quit again leaves without it`;
+
+      expect(fitFeedbackMessage(message, { width: 102, maxRows: 5 }).split('\n')).toEqual([
+        'Draft not saved: permission denied ·',
+        `${path} ·`,
+        'quit again leaves without it',
       ]);
     });
   });

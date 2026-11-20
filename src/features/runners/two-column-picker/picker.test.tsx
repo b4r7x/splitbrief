@@ -241,6 +241,44 @@ describe('TwoColumnPicker', () => {
     },
   );
 
+  it('shows a refusal in the byline as the one notice: tone bars that fit its words', async () => {
+    const cols = 80;
+    const rows = 24;
+    const message = 'BUILD runs Claude Code CLI · Opus now · choose another tool or model';
+    terminalSizeStore.__testReset({ cols, rows, isSmall: true });
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        leftProps={{
+          items: TOOLS,
+          getKey: (tool) => tool.id,
+          renderRow: (tool) => <Text>{tool.displayName}</Text>,
+        }}
+        rightProps={{
+          items: MODELS_BY_TOOL.alpha ?? [],
+          getKey: (model) => model.id,
+          renderRow: (model) => <Text>{model.displayName}</Text>,
+        }}
+        notice={{ message, severity: 'warning' }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+        onRefresh={() => {}}
+      />,
+      { cols, rows },
+    );
+    try {
+      await flushEffects();
+      const lines = ui.lastFrame().split('\n');
+      const row = lines.find((line) => line.includes(message)) ?? '';
+      // A two-row byline has no room for a frame, so the notice keeps its tone on the bars.
+      expect(row.trim()).toBe(`▌ ${glyph('statusWarning')} ${message} ▐`);
+      expect(lines.join('\n').split(message)).toHaveLength(2);
+      expect(lines).toHaveLength(rows);
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('renders identical preview rows and replaces both when the preview changes', async () => {
     const cols = 60;
     const rows = 24;

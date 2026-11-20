@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { feedbackStore } from '../../stores/ui/feedback.js';
+import { feedbackStore, type FeedbackState } from '../../stores/ui/feedback.js';
 import { refreshPickerDetection } from './refresh-detection.js';
 import type {
   DiscoveryRefreshStatus,
@@ -90,14 +90,14 @@ describe('refreshPickerDetection', () => {
     await refreshPickerDetection('/tmp/project', async () => {
       expect(feedbackStore.get()).toEqual({
         message: 'Refreshing models…',
-        isError: false,
+        severity: 'info',
       });
       return refreshSummary('fresh');
     });
 
     expect(feedbackStore.get()).toEqual({
       message: 'Models refreshed',
-      isError: false,
+      severity: 'info',
     });
   });
 
@@ -111,19 +111,19 @@ describe('refreshPickerDetection', () => {
   ] as const)('does not claim success when the refresh is %s', async (status, message) => {
     await refreshPickerDetection('/tmp/project', async () => refreshSummary(status));
 
-    expect(feedbackStore.get()).toEqual({ message, isError: true });
+    expect(feedbackStore.get()).toEqual({ message, severity: 'error' });
   });
 
   it('reports a first-ever all-lane failure without claiming that prior results were retained', async () => {
     await refreshPickerDetection('/tmp/project', async () => refreshSummary('failed'));
 
-    expect(feedbackStore.get()).toEqual({ message: 'Models refresh failed', isError: true });
+    expect(feedbackStore.get()).toEqual({ message: 'Models refresh failed', severity: 'error' });
   });
 
   it('reports a same-context overlapping refresh as superseded without inventing a settings change', async () => {
     const firstRefresh = Promise.withResolvers<DiscoveryRefreshSummary>();
     const secondRefresh = Promise.withResolvers<DiscoveryRefreshSummary>();
-    const feedbacks: Array<{ message: string | null; isError: boolean }> = [];
+    const feedbacks: FeedbackState[] = [];
     const stopObserving = feedbackStore.subscribe(() => feedbacks.push(feedbackStore.get()));
 
     const first = refreshPickerDetection('/tmp/project', async () => firstRefresh.promise);
@@ -134,8 +134,11 @@ describe('refreshPickerDetection', () => {
     await second;
     stopObserving();
 
-    expect(feedbacks).toContainEqual({ message: 'Models refresh was superseded', isError: true });
-    expect(feedbackStore.get()).toEqual({ message: 'Models refreshed', isError: false });
+    expect(feedbacks).toContainEqual({
+      message: 'Models refresh was superseded',
+      severity: 'error',
+    });
+    expect(feedbackStore.get()).toEqual({ message: 'Models refreshed', severity: 'info' });
   });
 
   it('surfaces refresh failures instead of leaving stale progress feedback', async () => {
@@ -144,7 +147,7 @@ describe('refreshPickerDetection', () => {
     });
 
     const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(true);
+    expect(feedback.severity).toBe('error');
     expect(feedback.message).toContain('provider offline');
   });
 });

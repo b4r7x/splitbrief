@@ -237,7 +237,7 @@ describe('StopSheet', () => {
     ui.unmount();
   });
 
-  it('shows the reason when the run refuses to resume from the Resume row, in the neutral voice', async () => {
+  it('shows the reason when the run refuses to resume from the Resume row, as a warning', async () => {
     const reason = 'No saved state to continue.';
     setResumeHandler(() => reason);
     const ui = renderSheet([
@@ -248,7 +248,7 @@ describe('StopSheet', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(feedbackStore.get()).toEqual({ message: reason, isError: false });
+      expect(feedbackStore.get()).toEqual({ message: reason, severity: 'warning' });
     });
     ui.unmount();
   });

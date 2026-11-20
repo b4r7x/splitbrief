@@ -355,7 +355,7 @@ describe('a previewed App spends fixture effects and no production one', () => {
     // preparation followed, and no real project was opened to find one.
     expect(feedbackStore.get()).toEqual({
       message: 'No saved state to continue.',
-      isError: false,
+      severity: 'warning',
     });
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.execution.kind).toBe('at-rest');
@@ -525,7 +525,7 @@ describe('the preview answers for the effects it cannot simulate', () => {
     await press(preview.ui, '/run accept');
     await press(preview.ui, ENTER);
     await vi.waitFor(() => expect(feedbackStore.get().message).toBe(PREVIEW_UNAVAILABLE));
-    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().severity).toBe('error');
 
     await press(preview.ui, '/copy');
     await press(preview.ui, ENTER);

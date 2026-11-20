@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { findVisualScenario } from '../catalog.js';
@@ -30,13 +31,14 @@ describe('a gallery capture of a settings row REVIEW None holds', () => {
       });
       try {
         const frame = stripAnsiStyles(await capture.waitForCheckpoint());
-        expect(frame.split(REASON)).toHaveLength(2);
+        // A notice may wrap the reason, so its words are read across the panel and notice edges.
+        expect(acrossNoticeEdges(frame).split(REASON)).toHaveLength(2);
         expect(configStore.get().config?.reviewer).toBe('none');
         expect(configStore.get().config?.validation.endChecks).toBeUndefined();
         expect(feedbackStore.get()).toEqual(
           renderViewport.rows >= 19
-            ? { message: null, isError: false }
-            : { message: REASON, isError: true },
+            ? { message: null, severity: 'info' }
+            : { message: REASON, severity: 'error' },
         );
       } finally {
         await capture.unmount();

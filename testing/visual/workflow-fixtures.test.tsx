@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { getWorkflowSidebarWidth } from '../../src/features/workflow/layout/rect.js';
 import { getWorkflowPromptRows } from '../../src/features/workflow/prompt-rows/workflow.js';
 import { approvalPromptStore } from '../../src/stores/prompts/approval.js';
@@ -306,8 +307,12 @@ async function captureGalleryFrame(id: string, cols = 120): Promise<CapturedGall
   }
 }
 
+// A notice row opens on its frame or bar edge and, for an error or a warning, on its glyph.
 function startsWithText(frame: string, text: string): boolean {
-  return frame.split('\n').some((line) => line.trimStart().startsWith(text));
+  return frame.split('\n').some((line) => {
+    const row = line.trimStart().replace(/^[│▌|] /u, '');
+    return row.startsWith(text) || row.replace(/^\S /u, '').startsWith(text);
+  });
 }
 
 async function renderProjection(projection: WorkflowFixtureProjection): Promise<string> {
@@ -1853,7 +1858,7 @@ describe('workflow visual fixtures', () => {
       expect(approvalPromptStore.get().status).toBe('pending');
       expect(feedbackStore.get()).toEqual({
         message: 'Confirm or deny the prompt first. Tab back to the actions.',
-        isError: false,
+        severity: 'info',
       });
       expect(composerLiveStore.get().text).toBe('keep the old lockfile');
       expect(frame).toContain('Confirm with a reason');
@@ -1955,23 +1960,30 @@ describe('workflow visual fixtures', () => {
     expect(recheck.frame).toContain('/ for a command…');
     expect(recheck.frame).not.toContain(reason);
 
-    await captureGalleryFrame('workflow-plan-card-usage-refused');
+    const refusedCommand = await captureGalleryFrame('workflow-plan-card-usage-refused');
+    expect(refusedCommand.feedback).toEqual({
+      message: '/end takes no argument. Usage: /end',
+      severity: 'warning',
+    });
+    expect(refusedCommand.frame.split('/end takes no argument. Usage: /end')).toHaveLength(2);
+    expect(refusedCommand.frame).toContain('› /end now');
+    expect(startsWithText(refusedCommand.frame, '/end takes no argument. Usage: /end')).toBe(true);
 
     const palette = await captureGalleryFrame('home-palette-prefill-refused');
     expect(palette.feedback).toEqual({
       message: 'Unknown seat: zzz. Valid: plan, build, review',
-      isError: false,
+      severity: 'warning',
     });
     expect(palette.frame.split('Unknown seat: zzz')).toHaveLength(2);
     expect(palette.frame).toContain('/he');
     expect(startsWithText(palette.frame, 'Unknown seat: zzz')).toBe(true);
 
     const draft = await captureGalleryFrame('workflow-draft-not-saved');
-    expect(draft.feedback.isError).toBe(true);
+    expect(draft.feedback.severity).toBe('error');
     expect(startsWithText(draft.frame, `${glyph('statusFailed')} Draft not saved`)).toBe(true);
 
     const lock = await captureGalleryFrame('workflow-run-lock-not-released');
-    expect(lock.feedback.isError).toBe(true);
+    expect(lock.feedback.severity).toBe('error');
     expect(
       startsWithText(lock.frame, `${glyph('statusFailed')} Could not release the run lock`),
     ).toBe(true);
@@ -2010,7 +2022,7 @@ describe('workflow visual fixtures', () => {
     [
       'a 41-character folder name',
       '/Users/me/projects/acme-internal-billing-service-v2-monorepo',
-      'This run started in …/acme-internal-bi…vice-v2-monorepo.',
+      'This run started in …/acme-interna…v2-monorepo.',
     ],
   ])(
     'keeps every action and the way on of a Skip refused in a moved folder with %s at 60x18',
@@ -2036,10 +2048,7 @@ describe('workflow visual fixtures', () => {
       const lines = frame.split('\n');
       const composer = lines.findIndex((line) => line.trimStart().startsWith('╭'));
       const divider = lines.slice(0, composer).findLastIndex((line) => line.startsWith('─'));
-      const footer = lines
-        .slice(divider + 1, composer)
-        .join(' ')
-        .replace(/\s+/g, ' ');
+      const footer = acrossNoticeEdges(lines.slice(divider + 1, composer).join(' '));
 
       expect(footer, frame).toContain(startedIn);
       expect(footer, frame).toContain(
@@ -2054,7 +2063,7 @@ describe('workflow visual fixtures', () => {
   it('shows a mistyped command refused on Home with its line back and the command list closed', async () => {
     const reason = 'Unknown command: /setings. Did you mean /settings?';
     const typo = await captureGalleryFrame('home-command-typo-refused');
-    expect(typo.feedback).toEqual({ message: reason, isError: false });
+    expect(typo.feedback).toEqual({ message: reason, severity: 'warning' });
     expect(typo.frame.split(reason)).toHaveLength(2);
     expect(startsWithText(typo.frame, 'Unknown command: /setings')).toBe(true);
     expect(typo.frame).toContain(`${glyph('prompt')} /setings`);
@@ -2078,7 +2087,7 @@ describe('workflow visual fixtures', () => {
     const image = await captureGalleryFrame('workflow-command-image-refused');
     expect(image.feedback).toEqual({
       message: 'A command sends no image. Remove the command, then press ctrl+⏎.',
-      isError: false,
+      severity: 'info',
     });
     expect(image.frame).toContain('/steer fix the layout [image #1]');
     expect(startsWithText(image.frame, 'A command sends no image.')).toBe(true);
@@ -2098,7 +2107,7 @@ describe('workflow visual fixtures', () => {
     expect(failedStop.frame).toContain('also fix the typo');
 
     const quit = await captureGalleryFrame('workflow-quit-hint');
-    expect(quit.feedback).toEqual({ message: 'Press ctrl+c again to quit', isError: false });
+    expect(quit.feedback).toEqual({ message: 'Press ctrl+c again to quit', severity: 'info' });
     expect(startsWithText(quit.frame, 'Press ctrl+c again to quit')).toBe(true);
 
     const queued = await captureGalleryFrame('workflow-implementation-queued');

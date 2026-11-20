@@ -191,7 +191,7 @@ describe('settings overlay integration', () => {
 
     await vi.waitFor(() => {
       expect(overlayStore.get().exclusive).toBe(false);
-      expect(feedbackStore.get().isError).toBe(false);
+      expect(feedbackStore.get().severity).toBe('info');
     });
 
     ui.unmount();
@@ -232,7 +232,7 @@ describe('settings overlay integration', () => {
         contextLength: SEEDED_CONTEXT_LENGTH,
       });
       const feedback = feedbackStore.get();
-      expect(feedback.isError).toBe(false);
+      expect(feedback.severity).toBe('info');
       expect(feedback.message).toContain('Context length');
       expect(overlayStore.get().exclusive).toBe(true);
     });
@@ -257,7 +257,7 @@ describe('settings overlay integration', () => {
     await vi.waitFor(() => {
       expect(loadConfig(dir).config.implementer).toMatchObject({ contextLength: 4096 });
       expect(overlayStore.get().exclusive).toBe(false);
-      expect(feedbackStore.get().isError).toBe(false);
+      expect(feedbackStore.get().severity).toBe('info');
     });
 
     ui.unmount();

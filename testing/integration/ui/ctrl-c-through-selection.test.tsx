@@ -223,7 +223,7 @@ describe('Ctrl+C through mouse selection and the app stop ladder', () => {
     const h = setup(true, copy);
     await h.select();
     await h.press();
-    expect(feedbackStore.get()).toMatchObject({ message: 'Could not copy', isError: true });
+    expect(feedbackStore.get()).toMatchObject({ message: 'Could not copy', severity: 'error' });
     expect(h.stop).not.toHaveBeenCalled();
     expect(h.exit).not.toHaveBeenCalled();
   });

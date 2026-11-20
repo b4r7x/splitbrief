@@ -8,6 +8,7 @@ import { writeConfig } from '../../../src/core/config/load/io.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -211,10 +212,17 @@ describe('e2e: a Kilo Code seat names the route it runs through', { timeout: 120
     });
 
     it('keeps the BUILD seat on its own route when Enter takes the row the picker opens on', async (context) => {
-      await onBuildPicker(context, held, async ({ projectDir, text, write, shows }) => {
+      await onBuildPicker(context, held, async ({ projectDir, text, write }) => {
         write('\r');
 
-        await shows('Saved BUILD · Kilo Code CLI · GPT-5.5 · via openai');
+        // The panel notice wraps the save message over its rows, so its words are read across them.
+        await vi.waitFor(
+          () =>
+            expect(acrossNoticeEdges(text())).toContain(
+              'Saved BUILD · Kilo Code CLI · GPT-5.5 · via openai',
+            ),
+          { timeout: 10_000 },
+        );
         // The picker saved the seat and closed: Settings holds the cursor on the BUILD row again.
         await vi.waitFor(
           () => {

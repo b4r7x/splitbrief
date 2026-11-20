@@ -31,7 +31,7 @@ describe('reportConfigSaveFailure', () => {
     expect(feedbackStore.get()).toEqual({
       message:
         'Failed to save config: planner.outputFormat: Configured outputFormat cannot replace the claude-code terminal contract.',
-      isError: true,
+      severity: 'error',
     });
   });
 

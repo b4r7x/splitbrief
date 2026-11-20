@@ -6,12 +6,15 @@ const FEEDBACK_ERROR_AUTO_CLEAR_MS = 5000;
 // About 200 words a minute: a message longer than its base hold stays until it can be read.
 const FEEDBACK_READ_MS_PER_CHAR = 60;
 
-interface FeedbackState {
+/** How a message reads: a failure, a refusal or a step the user must take, or a report. */
+export type FeedbackSeverity = 'error' | 'warning' | 'info';
+
+export interface FeedbackState {
   message: string | null;
-  isError: boolean;
+  severity: FeedbackSeverity;
 }
 
-const initial: FeedbackState = { message: null, isError: false };
+const initial: FeedbackState = { message: null, severity: 'info' };
 
 const store = createStore<FeedbackState>(initial);
 
@@ -19,32 +22,28 @@ let clearTimer: ReturnType<typeof setTimeout> | undefined;
 
 const clearFeedback = () => {
   clearTimer = undefined;
-  store.set({ message: null, isError: false });
+  store.set(initial);
 };
 
 const scheduleAutoClear = (ms: number, msg: string) => {
   clearTimer = setTimeout(clearFeedback, Math.max(ms, msg.length * FEEDBACK_READ_MS_PER_CHAR));
 };
 
-const setError = (msg: string | null) => {
+const show = (msg: string | null, severity: FeedbackSeverity, holdMs: number) => {
   clearTimeout(clearTimer);
   clearTimer = undefined;
-  if (msg) scheduleAutoClear(FEEDBACK_ERROR_AUTO_CLEAR_MS, msg);
-  store.set({ message: msg, isError: msg !== null });
+  if (msg) scheduleAutoClear(holdMs, msg);
+  store.set(msg === null ? initial : { message: msg, severity });
 };
 
-const setMessage = (msg: string | null) => {
-  clearTimeout(clearTimer);
-  clearTimer = undefined;
-  if (msg) scheduleAutoClear(FEEDBACK_AUTO_CLEAR_MS, msg);
-  store.set({ message: msg, isError: false });
-};
+const setError = (msg: string | null) => show(msg, 'error', FEEDBACK_ERROR_AUTO_CLEAR_MS);
 
-const setTransientError = (msg: string) => {
-  clearTimeout(clearTimer);
-  scheduleAutoClear(FEEDBACK_AUTO_CLEAR_MS, msg);
-  store.set({ message: msg, isError: true });
-};
+// A refusal asks for a step from the user, so it stays as long as a failure does.
+const setWarning = (msg: string | null) => show(msg, 'warning', FEEDBACK_ERROR_AUTO_CLEAR_MS);
+
+const setMessage = (msg: string | null) => show(msg, 'info', FEEDBACK_AUTO_CLEAR_MS);
+
+const setTransientError = (msg: string) => show(msg, 'error', FEEDBACK_AUTO_CLEAR_MS);
 
 const reset = () => {
   clearTimeout(clearTimer);
@@ -58,6 +57,7 @@ subscribeFeedbackReset(reset);
 export const feedbackStore = {
   ...storeBase(store),
   setError,
+  setWarning,
   setMessage,
   setTransientError,
   reset,

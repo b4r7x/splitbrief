@@ -505,7 +505,7 @@ describe('a runner trust gate on the continuation page', () => {
       answers: ['confirm'],
       text: WORDS,
       sent: [],
-      feedback: { message: null, isError: false },
+      feedback: { message: null, severity: 'info' },
     });
     ui.unmount();
   });

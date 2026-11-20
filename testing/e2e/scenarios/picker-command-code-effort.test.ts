@@ -10,6 +10,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import type { CliToolId } from '../../../src/core/runners/cli-tool/types.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { seedSignInFile } from '#testing/helpers/sign-in-home.js';
@@ -348,7 +349,10 @@ process.exit(1);`,
         expect(row).not.toContain('▴');
         expect(screen.text()).toContain('⏎ confirm · esc cancel');
         screen.write('\r');
-        await screen.shows(SAVED_BUILD);
+        // The panel notice may wrap the save message over its rows, so its words are read across them.
+        await vi.waitFor(() => expect(acrossNoticeEdges(screen.text())).toMatch(SAVED_BUILD), {
+          timeout: 10_000,
+        });
       },
     });
     if (skipped !== undefined) context.skip(skipped);

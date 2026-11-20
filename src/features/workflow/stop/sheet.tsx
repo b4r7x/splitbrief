@@ -25,7 +25,7 @@ function performStop(id: StopRowId): void {
   switch (id) {
     case 'resume': {
       const refusal = requestResume(plainUserMessage(''));
-      if (refusal !== undefined) feedbackStore.setMessage(refusal);
+      if (refusal !== undefined) feedbackStore.setWarning(refusal);
       return;
     }
     case 'leave':

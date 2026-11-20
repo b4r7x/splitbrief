@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -563,8 +564,9 @@ describe('SettingsOverlay', () => {
   describe('a row that REVIEW None makes read-only', () => {
     const REASON = 'Read-only while REVIEW is None: no review runs.';
 
+    // A notice may wrap the reason over its rows, so its words are read across the panel edges.
     function reasonCount(ui: { lastFrame: () => string }): number {
-      return stripAnsiStyles(ui.lastFrame()).split(REASON).length - 1;
+      return acrossNoticeEdges(stripAnsiStyles(ui.lastFrame())).split(REASON).length - 1;
     }
 
     it('advertises no action key on the row', async () => {
@@ -588,15 +590,14 @@ describe('SettingsOverlay', () => {
       overlayStore.open('settings', 'validation.endChecks');
       const ui = renderAt(60, 18);
       await flushEffects();
-      expect(stripAnsiStyles(ui.lastFrame())).not.toContain(REASON);
+      expect(reasonCount(ui)).toBe(0);
 
       ui.stdin.write(input);
 
       await vi.waitFor(() => {
-        expect(stripAnsiStyles(ui.lastFrame())).toContain(REASON);
+        expect(reasonCount(ui)).toBe(1);
       });
-      expect(reasonCount(ui)).toBe(1);
-      expect(feedbackStore.get()).toEqual({ message: REASON, isError: true });
+      expect(feedbackStore.get()).toEqual({ message: REASON, severity: 'error' });
       expect(configStore.get().config?.validation.endChecks).toBe(true);
 
       ui.unmount();
@@ -618,7 +619,7 @@ describe('SettingsOverlay', () => {
       await tick(20);
 
       expect(reasonCount(ui)).toBe(1);
-      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      expect(feedbackStore.get()).toEqual({ message: null, severity: 'info' });
       expect(configStore.get().config?.validation.endChecks).toBe(true);
 
       ui.unmount();
@@ -634,7 +635,7 @@ describe('SettingsOverlay', () => {
       await tick(20);
 
       expect(reasonCount(ui)).toBe(1);
-      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      expect(feedbackStore.get()).toEqual({ message: null, severity: 'info' });
       expect(configStore.get().config?.validation.endChecks).toBe(true);
 
       ui.unmount();
@@ -651,7 +652,7 @@ describe('SettingsOverlay', () => {
       await tick(20);
 
       expect(reasonCount(ui)).toBe(1);
-      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      expect(feedbackStore.get()).toEqual({ message: null, severity: 'info' });
       expect(configStore.get().config?.validation.endChecks).toBe(true);
 
       ui.unmount();
@@ -703,6 +704,31 @@ describe('SettingsOverlay', () => {
     const frame = ui.lastFrame();
     expect(stripAnsiStyles(frame)).toContain(message);
     expect(colorOf(frame, message)).toBe(inkOf(defaultTheme.textDim));
+
+    ui.unmount();
+  });
+
+  it('frames an error under the list as the one notice, its glyph and frame in the error ink', async () => {
+    const message = 'Could not save the settings: permission denied';
+    feedbackStore.setError(message);
+    const ui = renderAt(120, 40);
+    await flushEffects();
+
+    const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
+    const row = indexOfLine(lines, message);
+    const failed = glyph('statusFailed');
+    const notice = panelText(lines[row] ?? '').trim();
+    expect(
+      notice
+        .replace(/^[|│] /u, '')
+        .replace(/ [|│]$/u, '')
+        .trimEnd(),
+    ).toBe(`${failed} ${message}`);
+    expect(panelText(lines[row - 1] ?? '').trim()).toMatch(/^[╭+][─-]+[╮+]$/u);
+    expect(panelText(lines[row + 1] ?? '').trim()).toMatch(/^[╰+][─-]+[╯+]$/u);
+    const rawRow = ui.lastFrame().split('\n')[row] ?? '';
+    expect(colorOf(rawRow, failed)).toBe(inkOf(defaultTheme.error));
+    expect(colorOf(rawRow, message)).toBe(inkOf(defaultTheme.text));
 
     ui.unmount();
   });

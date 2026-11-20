@@ -1,42 +1,41 @@
 import { REVIEW_NONE, PLANNER_INHERITANCE } from '../../../../core/crew/identity.js';
 import {
   type SeatLineSpan,
-  formatCollapsedSeatSpansFromIdentities,
+  formatCollapsedSeatRowsFromIdentities,
 } from '../../../../core/crew/seat-line/collapse.js';
 import { arrowSep } from '../../../../core/separators.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import type { SummaryView, SeatView } from '../view-model.js';
 
 /**
- * The crew line the header would paint, laid out to whatever the Run block can spare. The summary
- * has names on record rather than runner blocks, so it enters the layout half directly. A budget
- * that cannot seat every name falls back to the tool words; `line` lays out that one line alone.
+ * The crew the header would paint, on at most `rows` rows of `budget` cells, every seat whole or
+ * no row at all. The summary has names on record rather than runner blocks, so it enters the
+ * layout half directly; `line` lays out the model words or the tool words.
  */
-export function crewLine(
+export function crewLineRows(
   view: Pick<SummaryView, 'seats'>,
   budget: number,
-  options: Readonly<{ line?: 'model' | 'tool' | undefined }> = {},
-): readonly SeatLineSpan[] {
+  options: Readonly<{ line: 'model' | 'tool'; rows: number }>,
+): SeatLineSpan[][] {
   const review = view.seats.review;
-  const toolLine = options.line === 'tool';
   const word = (seat: SeatView): string =>
-    toolLine ? (seatToolWord(seat) ?? seatWord(seat)) : seatWord(seat);
-  const planTool = seatToolWord(view.seats.plan);
-  const buildTool = seatToolWord(view.seats.build);
-  const reviewTool = seatToolWord(review);
-  return formatCollapsedSeatSpansFromIdentities({
+    options.line === 'tool' ? (seatToolWord(seat) ?? seatWord(seat)) : seatWord(seat);
+  return formatCollapsedSeatRowsFromIdentities({
     plan: word(view.seats.plan),
     build: word(view.seats.build),
     review: review.kind === 'inherits' ? null : review.kind === 'none' ? REVIEW_NONE : word(review),
-    ...(options.line === undefined && {
-      tools: {
-        ...(planTool !== undefined && { plan: planTool }),
-        ...(buildTool !== undefined && { build: buildTool }),
-        ...(reviewTool !== undefined && { review: reviewTool }),
-      },
-    }),
     budget,
+    rows: options.rows,
   });
+}
+
+/** The crew on one line, or no line. */
+export function crewLine(
+  view: Pick<SummaryView, 'seats'>,
+  budget: number,
+  line: 'model' | 'tool',
+): readonly SeatLineSpan[] {
+  return crewLineRows(view, budget, { line, rows: 1 })[0] ?? [];
 }
 
 /** The command a named seat takes when the line is laid out by tool words. */

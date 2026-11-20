@@ -419,7 +419,7 @@ describe('requestSteer', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
-  it('shows the reason when the run refuses the words after the stop parked, in the neutral voice', () => {
+  it('shows the reason when the run refuses the words after the stop parked, as a warning', () => {
     const refusal = 'No saved state to continue.';
     setStopHandler(vi.fn());
     setResumeHandler(() => refusal);
@@ -427,7 +427,7 @@ describe('requestSteer', () => {
     expect(requestSteer(plainUserMessage('also fix the typo'))).toBeUndefined();
     stopStore.park('mid-brief', 'T001', null);
 
-    expect(feedbackStore.get()).toEqual({ message: refusal, isError: false });
+    expect(feedbackStore.get()).toEqual({ message: refusal, severity: 'warning' });
   });
 
   it('sends the words to the waiting plan card as its change request and stops nothing', async () => {
