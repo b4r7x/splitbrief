@@ -153,7 +153,7 @@ describe('Header — seat line', () => {
       });
       const ui = renderFeature(
         <ThemeProvider theme={theme}>
-          <Header seatLine={seatLine} />
+          <Header crewRows={[]} seatLine={seatLine} />
         </ThemeProvider>,
         { cols: 200, rows: 50 },
       );
@@ -188,7 +188,7 @@ describe('Header — seat line', () => {
       expect(seatLine.some((span) => span.seat === 'review')).toBe(false);
       const ui = renderFeature(
         <ThemeProvider theme={theme}>
-          <Header seatLine={seatLine} />
+          <Header crewRows={[]} seatLine={seatLine} />
         </ThemeProvider>,
         { cols: 200, rows: 50 },
       );
@@ -210,7 +210,7 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 120 });
     configStore.__testReset({ projectDir: '/tmp/p', config });
-    const instance = render(<Header />);
+    const instance = render(<Header crewRows={[]} />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
     instance.unmount();
@@ -287,7 +287,7 @@ describe('Header — seat line', () => {
       config: makeConfig({ implementer: { model: `qwen${hostileSequence}-coder` } }),
     });
 
-    const instance = render(<Header />);
+    const instance = render(<Header crewRows={[]} />);
     await tick();
     const rawFrame = instance.lastFrame() ?? '';
 
@@ -303,7 +303,7 @@ describe('Header — seat line', () => {
     openRun();
     setRunHalt({ issue: QUOTA_HALT, at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 } });
 
-    const instance = render(<Header />);
+    const instance = render(<Header crewRows={[]} />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
@@ -319,7 +319,7 @@ describe('Header — seat line', () => {
     openRun();
     setRunHalt({ issue: QUOTA_HALT, at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 } });
 
-    const instance = render(<Header />);
+    const instance = render(<Header crewRows={[]} />);
     await tick();
     expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('resets 17:00');
 
@@ -338,7 +338,7 @@ describe('Header — seat line', () => {
 
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
-        <Header />
+        <Header crewRows={[]} />
       </Box>,
       { cols: 80, rows: 24 },
     );
@@ -379,7 +379,7 @@ describe('Header — seat line', () => {
 
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
-        <Header />
+        <Header crewRows={[]} />
       </Box>,
       { cols: 80, rows: 24 },
     );
@@ -396,7 +396,7 @@ describe('Header — seat line', () => {
     openRun();
     setRunHalt({ issue: QUOTA_HALT, at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 } });
 
-    const instance = render(<Header />);
+    const instance = render(<Header crewRows={[]} />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
@@ -404,7 +404,7 @@ describe('Header — seat line', () => {
     instance.unmount();
   });
 
-  it('uses catalog labels to keep all three Cursor seats beside the rail', async () => {
+  it('uses tool IDs to keep all three Cursor seats beside the rail', async () => {
     const cursor = (model: string) => ({ kind: 'cli', tool: 'cursor', model }) as const;
     const frame = await seatFrame(
       60,
@@ -415,20 +415,29 @@ describe('Header — seat line', () => {
       }),
     );
 
-    expect(frame).toContain('PLAN Cursor · BUILD Cursor · REVIEW Cursor');
+    expect(frame).toContain('PLAN cursor · BUILD cursor · REVIEW cursor');
   });
 
-  it('wraps every seat under the rail when the crew cannot fit beside it', async () => {
+  it('renders the crew rows reserved by the workflow below the rail', async () => {
     runViewStore.__testReset({ phase: 'planning' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
     terminalSizeStore.__testReset({ cols: 42, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
 
-    const instance = render(<Header />);
+    const crewRows = [
+      [{ text: 'PLAN claude', seat: 'plan' }],
+      [
+        { text: 'BUILD ollama', seat: 'build' },
+        { text: ' · ' },
+        { text: 'REVIEW = PLAN', seat: 'review' },
+      ],
+    ] as const;
+    const instance = render(<Header crewRows={crewRows} />);
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
-    expect(frame).toMatch(/PLAN claude[\s\S]+BUILD ollama[\s\S]+REVIEW = PLAN/u);
-    expect(frame).toContain('Plan');
+    const [rail, ...crew] = frame.split('\n');
+    expect(rail).toContain('Plan');
+    expect(crew.map((row) => row.trim())).toEqual(['PLAN claude', 'BUILD ollama · REVIEW = PLAN']);
     instance.unmount();
   });
 });
@@ -439,7 +448,7 @@ describe('Header — rail', () => {
     runViewStore.__testReset({ phase: 'planning' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
 
-    const instance = render(<Header />);
+    const instance = render(<Header crewRows={[]} />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
@@ -474,7 +483,7 @@ describe('Header — rail', () => {
       configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
       const ui = renderFeature(
         <Box paddingX={WORKFLOW_GUTTER_X}>
-          <Header stages={getRailStages('complete', { apply: 'pending' })} />
+          <Header crewRows={[]} stages={getRailStages('complete', { apply: 'pending' })} />
         </Box>,
         { cols, rows: 24 },
       );
@@ -499,7 +508,7 @@ describe('Header — rail', () => {
     // gutter the workflow header wraps the row in.
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
-        <Header />
+        <Header crewRows={[]} />
       </Box>,
       { cols: 120, rows: 40 },
     );
@@ -527,7 +536,7 @@ describe('Header — rail', () => {
       reason: 'user_cancelled',
     });
 
-    const instance = render(<Header />);
+    const instance = render(<Header crewRows={[]} />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
@@ -541,7 +550,7 @@ describe('Header — rail', () => {
     runViewStore.__testReset({ phase: 'implementing' });
     lifecycleStore.__testReset({ status: 'running', startedAt: 0 });
 
-    const instance = render(<Header />);
+    const instance = render(<Header crewRows={[]} />);
     await vi.advanceTimersByTimeAsync(2_000);
     await flushEffects();
     expect(clockText(instance.lastFrame())).toBeUndefined();
@@ -549,7 +558,7 @@ describe('Header — rail', () => {
 
     runViewStore.__testReset({ phase: 'complete' });
     lifecycleStore.__testReset({ status: 'complete', startedAt: 0 });
-    const done = render(<Header />);
+    const done = render(<Header crewRows={[]} />);
     expect(clockText(done.lastFrame())).toBeUndefined();
     done.unmount();
   });

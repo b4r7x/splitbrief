@@ -176,7 +176,7 @@ const TASKS_PLANNED = {
 
 async function frames(): Promise<{ header: string; sidebar: string }> {
   terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
-  const header = renderFeature(<Header />);
+  const header = renderFeature(<Header crewRows={[]} />);
   await tick();
   const headerText = stripAnsiStyles(header.lastFrame() ?? '');
   header.unmount();

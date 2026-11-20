@@ -215,8 +215,8 @@ export function formatShortSeatIdentity(input: {
 
 /**
  * The tool a seat runs on, in the one word a narrow crew line has room for: a catalogued CLI
- * names its command or its shorter catalog label, an uncatalogued one keeps the word it was configured under, an API
- * seat names its provider, and a command runner names its kind.
+ * uses the shorter of its command and tool ID. An uncatalogued CLI keeps its configured name.
+ * An API seat names its provider, and a command runner names its kind.
  */
 export function formatSeatToolWord(input: {
   seat: RunnerConfig | SeatIds;
@@ -228,8 +228,8 @@ export function formatSeatToolWord(input: {
   if (kind === 'agent') return 'agent';
   const tool = cliVocabularyTool(ids.tool, kind);
   if (tool === undefined) return sanitizeTerminalDisplayText(ids.tool);
-  const { command, shortName } = CLI_TOOL_CATALOG[tool];
-  return shortName.length < command.length ? shortName : command;
+  const { command } = CLI_TOOL_CATALOG[tool];
+  return tool.length < command.length ? tool : command;
 }
 
 type SeatCandidateAxes = Readonly<{

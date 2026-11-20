@@ -44,7 +44,7 @@ export function WorkflowHeader({
   /** A run at rest names its own stages and the crew that actually ran it. */
   stages?: readonly RailStageState[] | undefined;
   seatLine?: readonly SeatLineSpan[] | undefined;
-  crewRows?: readonly (readonly SeatLineSpan[])[] | undefined;
+  crewRows: readonly (readonly SeatLineSpan[])[];
   /** Chrome rows that belong above the divider, so the body starts at one boundary. */
   children?: ReactNode;
 }) {

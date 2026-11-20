@@ -99,18 +99,24 @@ export function checkFailureSummary(command: string, count: number): string {
   return count === 0 ? result : `${result} · ${failures(count)}`;
 }
 
+export function runBaseFailureNote(reason: string): string {
+  return `Could not verify the failure at the run base (${reason}).`;
+}
+
 // Earlier ledgers kept the prompt sent to the implementer as the finding text.
 export function savedFindingText(text: string): string {
   const [heading = '', detail = ''] = text.split(/\r?\n/, 2);
   const reviewer =
-    /^Reviewer check (\S+) \((.+?)\) failed (?:with new failures\.|and .*?; the reviewer decides\.)(?: (Last changed by \S+?\.|No task changed it\.))?$/.exec(
+    /^Reviewer check (?<id>\S+) \((?<command>.+?)\) failed (?:with new failures\.|and .*? \((?<reason>.+)\); the reviewer decides\.)(?: (?<owner>Last changed by \S+?\.|No task changed it\.))?$/.exec(
       heading,
-    );
+    )?.groups;
   const check = /^check (\S+) did not pass \(fail\):\s*(.*)$/.exec(detail);
-  if (reviewer?.[2] !== undefined && check !== null && check[1] === reviewer[1]) {
+  if (reviewer?.command !== undefined && check !== null && check[1] === reviewer.id) {
     const count = /^(\d+) failures?\b|\b(\d+) (?:specs?|tests?) failed\b/i.exec(check[2] ?? '');
-    const summary = checkFailureSummary(reviewer[2], Number(count?.[1] ?? count?.[2] ?? 0));
-    return oneLineDisplayText(reviewer[3] === undefined ? summary : `${summary}. ${reviewer[3]}`);
+    const summary = checkFailureSummary(reviewer.command, Number(count?.[1] ?? count?.[2] ?? 0));
+    const note = reviewer.reason === undefined ? undefined : runBaseFailureNote(reviewer.reason);
+    const details = [note, reviewer.owner].filter(Boolean).join(' ');
+    return oneLineDisplayText(details === '' ? summary : `${summary}. ${details}`);
   }
   const line = oneLineDisplayText(text);
   const match =

@@ -69,7 +69,7 @@ export function closedTranscriptBlock(input: ClosedBlockInput): ConversationRowB
   const form: SummaryForm = whole.length > room ? 'labelled' : 'whole';
   const labelled = form === 'whole' ? [] : linesOf(runRows(view, 'labelled'));
   const sessionRow = labelled.findIndex((line) => line.label === 'Session');
-  const crew = headerShowsCrew && fittedCrew.length + sessionRow > room ? [] : fittedCrew;
+  const crew = headerShowsCrew && fittedCrew.length + sessionRow >= room ? [] : fittedCrew;
   const summary = form === 'whole' ? whole : [...crew, ...labelled].slice(0, room);
   const record = [...recordCrew, ...linesOf(recordRows(view))];
   // A cut from the bottom took the row that closed the tree, so the fold closes it.

@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { createDraftDocument, draftLength } from '../../core/composer/document.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { readSessionDraft, writeSessionDraft } from '../../core/sessions/draft.js';
-import { sessionError } from '../../core/sessions/errors.js';
+import { DRAFT_NOT_REMOVED_TITLE, sessionError } from '../../core/sessions/errors.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { warnStderr } from '../../lib/warn.js';
@@ -87,9 +87,10 @@ export function nameDraftsNotRemoved(where: 'screen' | 'at-exit'): void {
     if (entry.named) continue;
     entry.named = true;
     if (where === 'at-exit') warnStderr(entry.message, 'at-exit');
-    else {
-      if (routerStore.get().screen === 'workflow')
-        refusal.set({ message: entry.message, heldAt: undefined });
+    else if (routerStore.get().screen === 'workflow') {
+      refusal.set({ message: entry.message, heldAt: undefined });
+      feedbackStore.setError(DRAFT_NOT_REMOVED_TITLE);
+    } else {
       feedbackStore.setError(entry.message);
     }
   }

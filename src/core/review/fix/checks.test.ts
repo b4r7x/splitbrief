@@ -155,6 +155,28 @@ describe('savedFindingText', () => {
       'npm run test -- (api) failed · 1 failure. Last changed by T001.',
     );
   });
+
+  it.each([
+    [
+      'SPLITBRIEF could not verify its run base re-run',
+      'the run base could not be prepared (missing checkout)',
+      '',
+    ],
+    [
+      'failed at the run base too, but SPLITBRIEF could not verify it is the same failure',
+      'both runs exited with code 1 without diagnostics',
+      ' No task changed it.',
+    ],
+  ])('keeps the run-base reason when the saved heading says %s', (heading, reason, owner) => {
+    const text = [
+      `Reviewer check V1 (npm test) failed and ${heading} (${reason}); the reviewer decides.${owner}`,
+      'check V1 did not pass (fail): 2 failures',
+      'Output tail:',
+    ].join('\n');
+    expect(savedFindingText(text)).toBe(
+      `npm test failed · 2 failures. Could not verify the failure at the run base (${reason}).${owner}`,
+    );
+  });
 });
 
 it('names any additional briefs that can fix a shared failure', () => {

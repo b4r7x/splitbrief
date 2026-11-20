@@ -63,7 +63,7 @@ writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
 `;
 
 const TODAYS_CREW = makeConfig({
-  planner: { kind: 'cli', tool: 'claude-code' },
+  planner: { kind: 'cli', tool: 'cursor' },
   implementer: { kind: 'cli', tool: 'antigravity' },
   reviewer: { kind: 'cli', tool: 'codex' },
 });
@@ -105,7 +105,7 @@ describe('e2e: the crew strip at a narrow width', () => {
         terminalSizeStore.__testReset({ cols, rows, isSmall: true });
         await flushEffects();
         const firstRow = stripAnsiStyles(opened.screen.lastFrame() ?? '').split('\n')[0] ?? '';
-        expect(firstRow).toContain('PLAN claude · BUILD agy · REVIEW codex');
+        expect(firstRow).toContain('PLAN cursor · BUILD agy · REVIEW codex');
       }
     } finally {
       opened.screen.unmount();

@@ -1,6 +1,7 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
+import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import {
   SESSION_LOG_FILE,
@@ -10,9 +11,11 @@ import {
   sessionDir,
 } from '../../../src/core/paths.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
+import { readSessionDraft, writeSessionDraft } from '../../../src/core/sessions/draft.js';
 import { toEngineEventEntry } from '../../../src/core/sessions/log/writer.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import {
   FIX_CYCLE_RUN_FEATURE,
   fixCycleRun,
@@ -21,6 +24,7 @@ import {
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { finding, makeVerdict } from '#testing/helpers/review-verdict.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { openClosedRun, type ClosedRunScreen } from '../helpers/closed-run-screen.js';
@@ -50,13 +54,17 @@ afterEach(() => {
 });
 
 /** A long applied run: 15 briefs, 65 changed files and three failed reviews before the pass. */
-function seedAppliedRun(target: StopContinueFixture): void {
-  const ref = { projectDir: target.projectDir, sessionId: SESSION };
-  const run = fixCycleRun(SESSION);
-  saveState(ref, run.state);
+function seedAppliedRun(
+  target: StopContinueFixture,
+  sessionId = SESSION,
+  feature = FIX_CYCLE_RUN_FEATURE,
+): void {
+  const ref = { projectDir: target.projectDir, sessionId };
+  const run = fixCycleRun(sessionId);
+  saveState(ref, { ...run.state, feature });
   saveSummary(ref, {
-    id: SESSION,
-    feature: FIX_CYCLE_RUN_FEATURE,
+    id: sessionId,
+    feature,
     startedAt: Date.parse(AT),
     completedAt: Date.parse(AT),
     stateVersion: 1,
@@ -65,7 +73,7 @@ function seedAppliedRun(target: StopContinueFixture): void {
   });
   writeEvidenceLedger(ref, run.ledger);
   writeFileSync(
-    join(sessionDir(target.projectDir, SESSION), SESSION_LOG_FILE),
+    join(sessionDir(target.projectDir, sessionId), SESSION_LOG_FILE),
     fixCycleRunLog()
       .map((event) => `${JSON.stringify(toEngineEventEntry(event))}\n`)
       .join(''),
@@ -271,6 +279,55 @@ it('keeps the outcome of a long applied run on a short terminal, with one row pe
   expect(short).toContain('─ Run closed · Sep 14, 16:54 ─');
 });
 
+it('keeps Session at the seven-row boundary when the closed header shows the crew', async () => {
+  const frame = await openAppliedRun({ cols: 80, rows: 15 }, async ({ screen }) => screen());
+
+  expect(frame.split('\n')[0]).toContain('PLAN claude · BUILD cmd · REVIEW claude');
+  expect(frame).toContain('└ Session  closed-summary');
+});
+
+it('shows a short draft-removal notice and the full transcript message when you open another run', async () => {
+  const draft = createDraftDocument('old unsent words');
+  await openAppliedRun(
+    { cols: 120, rows: 40 },
+    async ({ screen, write, waitForText, waitForNoText }) => {
+      if (fixture === undefined) throw new Error('Expected the applied run fixture.');
+      const ref = { projectDir: fixture.projectDir, sessionId: SESSION };
+      const dir = sessionDir(ref.projectDir, ref.sessionId);
+      seedAppliedRun(fixture, 'other-run', 'Open another run');
+      await waitForText('old unsent words');
+      chmodSync(dir, 0o555);
+      try {
+        write('\x15');
+        await waitForNoText('old unsent words');
+        write('/sessions');
+        await waitForText('Browse past sessions');
+        write(PTY_SUBMIT_INPUT);
+        await waitForText('Sessions · 2', 'Open another run');
+        write('Open another run');
+        await waitForText('› Open another run');
+        write(PTY_SUBMIT_INPUT);
+        await waitForText('Session  other-run', 'Could not remove the old draft');
+        const rows = screen().split('\n');
+        expect(rows.filter((row) => row.includes('permission denied'))).toHaveLength(1);
+        expect(acrossNoticeEdges(rows.join('\n'))).toContain(
+          'its text comes back when you restart SPLITBRIEF and open that run',
+        );
+        expect(rows.some((row) => /✗ Could not remove the old draft\s*[│▐]?\s*$/u.test(row))).toBe(
+          true,
+        );
+        expect(readSessionDraft(ref)).toEqual(draft);
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+    },
+    (target) => {
+      seedAppliedRun(target);
+      writeSessionDraft({ projectDir: target.projectDir, sessionId: SESSION }, draft);
+    },
+  );
+});
+
 it('keeps the outcome and the fold of a long applied run on a very short terminal, and opens the record on ctrl+a', async () => {
   const { folded, opened } = await openAppliedRun(
     { cols: 60, rows: 14 },
@@ -360,7 +417,7 @@ it('shows Briefs and a short saved check finding when reopening a run ended afte
   const blocker = finding({
     severity: 'blocking',
     text: [
-      'Reviewer check V1 (npm test) failed with new failures. Last changed by T001.',
+      'Reviewer check V1 (npm test) failed and SPLITBRIEF could not verify its run base re-run (the run base re-run timed out); the reviewer decides. Last changed by T001.',
       'check V1 did not pass (fail): 1 failure',
       'Output tail:',
       'Empty addresses bypass validation.',
@@ -424,7 +481,9 @@ it('shows Briefs and a short saved check finding when reopening a run ended afte
   );
   expect.soft(frame).toContain('Briefs 1/1');
   const review = frame.slice(frame.indexOf('├ Review'));
-  expect(review).toContain('npm test failed · 1 failure. Last changed by T001.');
+  expect(acrossNoticeEdges(review)).toContain(
+    'npm test failed · 1 failure. Could not verify the failure at the run base (the run base re-run timed out). Last changed by T001.',
+  );
   expect(review).not.toContain('Output tail:');
   const narrow = await openClosedRun(
     {

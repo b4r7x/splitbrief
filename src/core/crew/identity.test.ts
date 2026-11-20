@@ -782,7 +782,7 @@ describe('formatSeatToolWord', () => {
     { name: 'claude-code', seat: { kind: 'cli', tool: 'claude-code' }, word: 'claude' },
     { name: 'codex', seat: { kind: 'cli', tool: 'codex' }, word: 'codex' },
     { name: 'opencode', seat: { kind: 'cli', tool: 'opencode' }, word: 'opencode' },
-    { name: 'cursor', seat: { kind: 'cli', tool: 'cursor' }, word: 'Cursor' },
+    { name: 'cursor', seat: { kind: 'cli', tool: 'cursor' }, word: 'cursor' },
     { name: 'antigravity', seat: { kind: 'cli', tool: 'antigravity' }, word: 'agy' },
     { name: 'kilo-code', seat: { kind: 'cli', tool: 'kilo-code' }, word: 'kilo' },
     { name: 'command-code', seat: { kind: 'cli', tool: 'command-code' }, word: 'cmd' },

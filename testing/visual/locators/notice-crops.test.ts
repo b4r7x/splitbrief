@@ -69,7 +69,7 @@ describe.each([
   ['workflow-ready-seat-moved-auto', 'header', /PLAN codex.*BUILD agy.*REVIEW codex/u],
   ['workflow-closed-undone', 'transcript', /Crew.*PLAN/su],
   ['workflow-plan-card-usage-refused', 'approval-panel', /End run/u],
-  ['home-recent-cursor', 'header', /PLAN Cursor.*BUILD Cursor.*REVIEW Cursor/su],
+  ['home-recent-cursor', 'header', /PLAN cursor.*BUILD cursor.*REVIEW cursor/su],
   ['home-recent-check-failed', 'composer', /Tool check failed/su],
   ['home-recent-selection-error', 'composer', /✗ Apply is still writing/su],
   ['home-cold-failed', 'composer', /Tool check failed/u],

@@ -306,8 +306,7 @@ export interface FeedbackLine {
 
 type FeedbackSize = { width: number; maxRows: number };
 
-/** A file wider than a text row owns the row, including its trailing separator.
- * Keep its original path until the terminal link is painted. */
+/** A wide path starts a row and keeps its original path for the terminal link. */
 export function fitFeedbackRows(message: FeedbackMessageInput, size: FeedbackSize): FeedbackLine[] {
   const { width, maxRows } = size;
   const prose = (part: FeedbackMessageInput, rows: number) =>
@@ -334,8 +333,19 @@ export function fitFeedbackRows(message: FeedbackMessageInput, size: FeedbackSiz
     start = index + 1;
   }
   if (start === 0) return prose(message, maxRows);
-  if (start < parts.length)
-    rows.push(...prose(parts.slice(start).join(SOFT_SEP), maxRows - rows.length));
+  if (start < parts.length) {
+    const tail = parts.slice(start).join(SOFT_SEP);
+    const tailRows = maxRows - rows.length;
+    const pathRow = rows.at(-1);
+    if (pathRow !== undefined && !fitsBox(tail, { maxWidth: width, maxRows: tailRows })) {
+      const [first, ...rest] = wrapFeedback(`${pathRow.text} ${tail}`, width).split('\n');
+      if (first !== undefined && rest.length <= tailRows) {
+        rows.splice(-1, 1, { ...pathRow, text: first }, ...rest.map((text) => ({ text })));
+        return rows;
+      }
+    }
+    rows.push(...prose(tail, tailRows));
+  }
   return rows;
 }
 

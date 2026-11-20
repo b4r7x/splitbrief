@@ -515,7 +515,10 @@ describe('an emptied composer over an old draft that cannot be removed', () => {
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.run.ref.sessionId).toBe('two');
     expect(draftRefusalStore.get()?.message).toBe(NOTE);
-    expect(feedbackStore.get()).toEqual({ message: NOTE, severity: 'error' });
+    expect(feedbackStore.get()).toEqual({
+      message: 'Could not remove the old draft',
+      severity: 'error',
+    });
     ui.unmount();
   });
 
@@ -525,7 +528,10 @@ describe('an emptied composer over an old draft that cannot be removed', () => {
     await flushEffects();
 
     expect(draftRefusalStore.get()?.message).toBe(NOTE);
-    expect(feedbackStore.get()).toEqual({ message: NOTE, severity: 'error' });
+    expect(feedbackStore.get()).toEqual({
+      message: 'Could not remove the old draft',
+      severity: 'error',
+    });
     ui.unmount();
   });
 

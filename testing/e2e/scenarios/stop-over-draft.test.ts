@@ -10,6 +10,7 @@ import { STOP_SHEET_PARKED_LEGEND } from '../../../src/features/workflow/stop/op
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
@@ -18,6 +19,10 @@ import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { PTY_SUBMIT_INPUT } from '../../integration/cli/pty/contract.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+import { findVisualScenario } from '../../visual/catalog.js';
+import { viewport } from '../../visual/contracts/geometry.js';
+import { mountGalleryScenario } from '../../visual/gallery/mount.js';
+import { createFrameGrid, requireCheckpoint } from '../../visual/locators/scenario-locators.js';
 import { moveCursorTo } from '../helpers/move-cursor.js';
 import { createStopContinueFixture } from '../helpers/stop-continue-fixture.js';
 import { readForegroundAtText, type TerminalForeground } from '../helpers/terminal-cells.js';
@@ -34,6 +39,32 @@ const WORDS = 'also fix the typo';
 // dark palette in truecolor.
 const SCREEN_THEME = resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined });
 const TWO_LINE_DRAFT = [WORDS, 'and add the missing test'] as const;
+
+it('keeps the lock path linked and the full stop notice at 80 columns', async () => {
+  const scenario = findVisualScenario('workflow-run-lock-not-released');
+  if (scenario === undefined) throw new Error('Missing run lock scenario.');
+  const size = viewport({ cols: 80, rows: 24 });
+  const handle = await mountGalleryScenario({
+    scenario,
+    checkpoint: requireCheckpoint(scenario),
+    viewport: size,
+  });
+  try {
+    const grid = await createFrameGrid(scenario, size, await handle.waitForCheckpoint());
+    const cells = grid.cells.flat();
+    expect(
+      cells
+        .filter((cell) => cell.hyperlink?.kind === 'project-file')
+        .map((cell) => cell.grapheme)
+        .join(''),
+    ).toBe('.splitbrief/…/lockfile.json');
+    expect(acrossNoticeEdges(cells.map((cell) => cell.grapheme).join(''))).toContain(
+      'lockfile.json · other SPLITBRIEF processes can see the run as running for a few more seconds',
+    );
+  } finally {
+    await handle.unmount();
+  }
+});
 
 const TOTAL_FILE = 'src/total.mjs';
 const TOTAL_TEST_FILE = 'src/total.test.mjs';

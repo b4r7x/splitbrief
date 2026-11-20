@@ -71,6 +71,8 @@ const localSaveFailures = [
   matches('state-conflict-exhausted'),
 ];
 
+export const DRAFT_NOT_REMOVED_TITLE = 'Could not remove the old draft';
+
 export const sessionError = {
   invalidData: (sessionId: string, reason: string) =>
     error('session-invalid-data', `Invalid session data: ${reason}`, { sessionId, reason }),
@@ -116,7 +118,7 @@ export const sessionError = {
   draftNotRemoved: (relativePath: string, cause: unknown) =>
     error(
       'session-draft-not-removed',
-      `${sessionFileFailure('Could not remove the old draft', relativePath, cause)}${SOFT_SEP}its text comes back when you restart SPLITBRIEF and open that run`,
+      `${sessionFileFailure(DRAFT_NOT_REMOVED_TITLE, relativePath, cause)}${SOFT_SEP}its text comes back when you restart SPLITBRIEF and open that run`,
       { relativePath },
       cause,
     ),

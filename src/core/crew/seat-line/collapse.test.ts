@@ -37,7 +37,7 @@ describe('seatLineText', () => {
 });
 
 describe('formatCollapsedSeatSpans', () => {
-  it('fits three Cursor seats by their catalog name at 42 cells', () => {
+  it('fits three Cursor seats by their tool ID at 42 cells', () => {
     const seat = { kind: 'cli', tool: 'cursor', model: 'auto' } as const;
     const line = formatCollapsedSeatSpans({
       planner: seat,
@@ -45,7 +45,17 @@ describe('formatCollapsedSeatSpans', () => {
       reviewer: seat,
       budget: 42,
     });
-    expect(seatLineText(line)).toBe('PLAN Cursor · BUILD Cursor · REVIEW Cursor');
+    expect(seatLineText(line)).toBe('PLAN cursor · BUILD cursor · REVIEW cursor');
+  });
+
+  it('uses the same compact naming rule for a mixed CLI crew', () => {
+    const line = formatCollapsedSeatSpans({
+      planner: { kind: 'cli', tool: 'cursor' },
+      build: { kind: 'cli', tool: 'codex' },
+      reviewer: { kind: 'cli', tool: 'claude-code' },
+      line: 'tool',
+    });
+    expect(seatLineText(line)).toBe('PLAN cursor · BUILD codex · REVIEW claude');
   });
 
   it('states all three seats on one line, with the inheritance mark', () => {

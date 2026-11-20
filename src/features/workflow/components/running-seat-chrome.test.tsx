@@ -51,7 +51,7 @@ function makeActiveOp(overrides: Partial<ActiveOperation> = {}): ActiveOperation
 
 async function headerFrame(cols = 160): Promise<string> {
   terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 120 });
-  const ui = renderFeature(<Header />);
+  const ui = renderFeature(<Header crewRows={[]} />);
   await tick();
   const frame = stripAnsiStyles(ui.lastFrame() ?? '');
   ui.unmount();
@@ -187,7 +187,7 @@ describe('running seat chrome', () => {
     const review = { role: 'review', runnerName: 'codex', model: 'gpt-5-codex' } as const;
     operationsStore.__testReset({ active: makeActiveOp(review) });
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
-    const ui = renderFeature(<Header />);
+    const ui = renderFeature(<Header crewRows={[]} />);
     await flushEffects();
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('REVIEW GPT-5 Codex');
 

@@ -35,6 +35,7 @@ type BlockOptions = Readonly<{
   viewportRows?: number;
   expanded?: boolean;
   crewNamed?: boolean;
+  headerShowsCrew?: boolean;
 }>;
 
 function block(view: SummaryView | null, options: BlockOptions = {}) {
@@ -44,6 +45,7 @@ function block(view: SummaryView | null, options: BlockOptions = {}) {
     width: options.width ?? 120,
     viewportRows: options.viewportRows ?? 40,
     crewNamed: options.crewNamed ?? true,
+    ...(options.headerShowsCrew !== undefined && { headerShowsCrew: options.headerShowsCrew }),
     expanded: options.expanded ?? false,
   });
 }
@@ -278,6 +280,17 @@ describe('closedTranscriptBlock', () => {
     expect(rows).toHaveLength(7);
     expect(rows[1]).toMatch(/^Crew .*PLAN .*BUILD .*REVIEW /u);
     expect(rows.at(-1)).toBe('+2 briefs · 4 files · 1 note');
+  });
+
+  it('keeps Session at seven rows when the header shows the crew by tool', () => {
+    const rows = blockRows(rich, {
+      viewportRows: 7,
+      crewNamed: false,
+      headerShowsCrew: true,
+    }).map(rowText);
+    expect(rows).toHaveLength(7);
+    expect(rows.some((row) => row.startsWith('Session '))).toBe(true);
+    expect(rows.some((row) => row.startsWith('Crew '))).toBe(false);
   });
 
   it('names the accept as is on the Review row of a view shorter than the summary, and keeps the crew', () => {

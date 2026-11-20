@@ -33,6 +33,9 @@
 - Home keeps room for PLAN, BUILD and REVIEW above recent sessions. Narrow run screens use short tool names and wrap the crew when needed. Closed summaries keep the recorded crew visible.
 - Plan approval keeps the plan text visible when a command is refused. Refused commands and duplicate fallback choices show a warning.
 - Home keeps tool-check failures visible while you browse recent sessions. Draft errors appear above the input, with a link to the file when its path is shortened.
+- Older review findings keep the reason SPLITBRIEF could not verify a failure at the run base.
+- Short closed summaries keep the Session row when the header already names the tools. Compact crew lines use consistent tool names.
+- The run screen gives old draft removal a short notice and keeps the details in the transcript. Long file notices keep more of the message.
 
 ### Removed
 

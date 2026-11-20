@@ -18,8 +18,8 @@ import { KEY_LEGEND_LEADING } from '../../../components/key-legend.js';
 import { formatCopyResult } from '../../../core/runtime/commands/types.js';
 import { clearAllHandlers } from '../run-requests/registry.js';
 import { requestSeatChangeAtBoundary } from '../run-requests/boundary.js';
-import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
+import { getChromeContentWidth, getChromeHeight } from '../layout/chrome-rows.js';
+import { FeedbackRow, getFeedbackRows, RUNNING_LEGEND } from './feedback-row.js';
 
 // The frames carry their SGR escapes only when chalk emits colour at all; a silent terminal would
 // make every colour comparison agree by accident.
@@ -78,6 +78,21 @@ function plainRows(frame: string | undefined): string[] {
     .split('\n')
     .map((row) => row.trimEnd());
 }
+
+it('gives the stop menu the legend row when it fills the body exactly', () => {
+  const input = {
+    feedback: { message: null, severity: 'info' } as const,
+    terminalCols: 60,
+    problem: null,
+    maxRows: 3,
+    inputRows: 3,
+    stopMenuRows: 5,
+  };
+  const bodyRows = getChromeHeight(input.inputRows, 0) + input.stopMenuRows;
+  expect(getFeedbackRows({ ...input, bodyRows: bodyRows - 1 })).toBe(1);
+  expect(getFeedbackRows({ ...input, bodyRows })).toBe(0);
+  expect(getFeedbackRows({ ...input, bodyRows: bodyRows + 1 })).toBe(1);
+});
 
 describe('FeedbackRow', () => {
   beforeEach(() => {
@@ -407,16 +422,17 @@ describe('FeedbackRow', () => {
     );
   });
 
-  it('keeps the lock file name and its first folder whole, never a broken folder name, at 80 columns', () => {
-    expect(renderRunLockRelease(80)).toEqual(
-      barred(
-        [
-          'Could not release the run lock: permission denied ·',
-          '.splitbrief/…/lockfile.json ·',
-          'other SPLITBRIEF processes can see the run as running for a few more …',
-        ],
-        FAILED,
-        76,
+  it('keeps the lock file name and the full message on three rows at 80 columns', () => {
+    const rows = renderRunLockRelease(80);
+    expect(rows).toHaveLength(3);
+    expect(
+      rows
+        .map((row) => row.slice(BARS.left.length + 1 + FAILED.length, -BARS.right.length).trim())
+        .join(' '),
+    ).toBe(
+      RUN_LOCK_RELEASE.replace(
+        /\.splitbrief\/sessions\/[^/]+\/lockfile\.json/u,
+        '.splitbrief/…/lockfile.json',
       ),
     );
   });

@@ -15,14 +15,13 @@ import {
   railVariant,
   type RailForm,
 } from '../layout/chrome-rows.js';
-import { wrappedHeaderCrew } from '../display/header-seat-lines.js';
 import { Rail } from './rail.js';
 import { useRailCells } from '../hooks/use-rail-cells.js';
 import { useHeaderSeatLines } from '../hooks/use-header-seat-lines.js';
 
 interface HeaderProps {
   railForm?: RailForm | undefined;
-  crewRows?: readonly (readonly SeatLineSpan[])[] | undefined;
+  crewRows: readonly (readonly SeatLineSpan[])[];
   buildBlockShown?: boolean | undefined;
   /** A run at rest names the stages its own record earned, and the crew that actually ran it. */
   stages?: readonly RailStageState[] | undefined;
@@ -56,7 +55,7 @@ export function Header({
   buildBlockShown = false,
   stages,
   seatLine: givenSeatLine,
-  crewRows: reservedCrewRows,
+  crewRows,
 }: HeaderProps) {
   const cols = terminalSizeStore.use((s) => s.cols);
   const lines = useHeaderSeatLines();
@@ -90,7 +89,6 @@ export function Header({
   const form = railForm ?? choice.form;
   const railCells = railWidths[railVariant(form, choice.short)];
   const liveSeatLine = choice.line === 'none' ? [] : lines[choice.line];
-  const crewRows = reservedCrewRows ?? wrappedHeaderCrew(cols, railWidths.CShort, lines, false);
   const seatLine = crewRows.length > 0 ? [] : (givenSeatLine ?? liveSeatLine);
   return (
     <Box flexDirection="column">

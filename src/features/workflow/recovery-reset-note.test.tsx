@@ -78,7 +78,7 @@ function save(projectDir: string, config: Config): void {
 }
 
 async function seatLine(): Promise<string> {
-  const ui = renderFeature(<Header />);
+  const ui = renderFeature(<Header crewRows={[]} />);
   await tick();
   const frame = stripAnsiStyles(ui.lastFrame() ?? '');
   ui.unmount();

@@ -860,7 +860,7 @@ describe('seats', () => {
       seats: [
         { short: 'OpenAI Codex CLI', tool: 'codex', briefs: 1 },
         { short: 'OpenAI Codex CLI GPT-5', tool: 'codex', briefs: 1 },
-        { short: 'Cursor Agent CLI GPT-5', tool: 'Cursor', briefs: 1 },
+        { short: 'Cursor Agent CLI GPT-5', tool: 'cursor', briefs: 1 },
       ],
       contiguous: true,
     });

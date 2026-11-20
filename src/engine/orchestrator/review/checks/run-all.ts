@@ -1,4 +1,4 @@
-import { checkFailureSummary } from '../../../../core/review/fix/checks.js';
+import { checkFailureSummary, runBaseFailureNote } from '../../../../core/review/fix/checks.js';
 import { resolveEndChecks } from '../../../../core/config/runtime/resolve.js';
 import { readEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
 import type { Config } from '../../../../core/schemas/config.js';
@@ -168,9 +168,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
         file,
         text: [
           `${checkFailureSummary(chosen.command, failureKeys.length || fresh.length)}.`,
-          ...(notVerified === undefined
-            ? []
-            : [`Could not verify the failure at the run base (${notVerified}).`]),
+          ...(notVerified === undefined ? [] : [runBaseFailureNote(notVerified)]),
           ...(owner === undefined ? [] : [owner]),
         ].join(' '),
         checkIds: [chosen.id],
