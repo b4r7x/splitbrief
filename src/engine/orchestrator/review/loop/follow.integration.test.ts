@@ -411,7 +411,6 @@ describe('review answer follower', () => {
     expect(result.state.pendingRecovery?.availableActions).toEqual([
       'revise',
       'accept-as-is',
-      'decide-for-me',
       'end-run',
     ]);
     expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1');
@@ -1445,11 +1444,7 @@ describe('the review that judges a fix cycle', () => {
       expect(result).toMatchObject({ next: 'stop' });
       expect(result.state.phase).toBe('complete');
       expect(result.state.reviewStatus).toBe('failed');
-      expect(result.state.pendingRecovery?.availableActions).toEqual([
-        'revise',
-        'decide-for-me',
-        'end-run',
-      ]);
+      expect(result.state.pendingRecovery?.availableActions).toEqual(['revise', 'end-run']);
     });
 
     it('names a red check on its one line and an Apply conflict in its own words on the halt', async () => {

@@ -202,7 +202,7 @@ console.log('Implemented ' + title);
     expect(state.pendingRecovery).toMatchObject({
       reason: 'review-failed',
       message: 'Review T003 made no progress on F1 after fix cycle 2',
-      availableActions: ['revise', 'decide-for-me', 'end-run'],
+      availableActions: ['revise', 'end-run'],
       details: [`Planner said: ${CANNOT}`],
     });
     if (state.pendingRecovery === undefined) throw new Error('Missing halt');

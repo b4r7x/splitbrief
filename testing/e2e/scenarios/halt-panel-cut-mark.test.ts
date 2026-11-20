@@ -243,9 +243,9 @@ describe('e2e: a halt panel too short for its text', () => {
     const actions = rows.findIndex(
       (row, index) => index > headline && row.includes('Review again'),
     );
-    expect(actions, rows.join('\n')).toBe(headline + 4);
+    expect(actions, rows.join('\n')).toBe(headline + 5);
     const reason = rows.slice(headline + 1, actions).map(panelRow);
-    expect(reason).toHaveLength(3);
+    expect(reason).toHaveLength(4);
     for (const reasonRow of reason) expect(reasonRow, rows.join('\n')).not.toBe('');
     expect(reason[0]).toContain('Planner said: The type test');
     expect(reason.at(-1), rows.join('\n')).toMatch(/…$/);
@@ -269,7 +269,7 @@ describe('e2e: a halt panel too short for its text', () => {
 
     expect(frame).toContain('T001: the planner says it cannot be done');
     expect(frame).toContain('Planner said: No locale service exists');
-    expect(frame).toContain('Decide for me');
+    expect(frame).not.toContain('Decide for me');
     expect(frame).toContain('End run');
     expect(frame).toContain('↑↓ select · ⏎ confirm');
   });
