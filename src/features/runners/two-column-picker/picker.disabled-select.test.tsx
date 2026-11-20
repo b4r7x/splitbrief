@@ -46,6 +46,7 @@ function picker(options: PickerOptions) {
       title="Picker"
       initialColumn={options.initialColumn}
       leftProps={{
+        minRowWidth: 28,
         items: TOOLS,
         getKey: (t) => t.id,
         isDisabled: options.isDisabled ?? ((t) => !!t.disabled),
@@ -293,6 +294,7 @@ describe('TwoColumnPicker model column when the parent reorders the tools', () =
         title="Picker"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: tools,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,

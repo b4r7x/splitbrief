@@ -17,6 +17,7 @@ import { ApprovalPrompt } from '../workflow/components/approval-prompt/prompt.js
 import { formatCustomRunnerDisclosure } from '../../engine/runners/custom/disclosure.js';
 import { escapeTrustLiteral } from '../../core/trust/literal.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { confirmPanelMinRows } from '../workflow/prompt-rows/confirm-panel.js';
@@ -285,6 +286,28 @@ describe('StartPreparationPanel', () => {
     await flushEffects();
     expect(ui.lastFrame()).toContain('--allow-repo-runners`.');
     ui.unmount();
+  });
+
+  it('shows a warning fix before its diagnostic with the same marker as the blocker', async () => {
+    const readiness = report([
+      availability({ state: 'unavailable', diagnostic: 'connection refused' }),
+      {
+        ...check('setting', 'warning'),
+        details: ['Ignored by the tool.'],
+        fix: 'Remove the setting.',
+      },
+    ]);
+    const ui = renderPanel({ state: { kind: 'blocked', report: readiness } });
+    const fix = `${glyph('connectorHandoff')} Remove the setting.`;
+    try {
+      await vi.waitFor(() => {
+        const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+        expect(frame).toContain(fix);
+        expect(frame.indexOf(fix)).toBeLessThan(frame.indexOf('Ignored by the tool.'));
+      });
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('keeps the detail keys whole at 60x18 and scrolls the copy that does not fit', async () => {

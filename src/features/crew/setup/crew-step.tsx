@@ -123,7 +123,7 @@ export function CrewStep({
     },
   });
   const focusedItem = list.filtered[list.selectedIndex];
-  const { layout, presetLines, showHeaders, showGaps } = planSetupList({
+  const { layout, presetPlan, showHeaders, showGaps } = planSetupList({
     crewRows,
     verdict,
     presets,
@@ -132,7 +132,7 @@ export function CrewStep({
     innerWidth,
     budget,
   });
-  const listBudget = budget - (presetLines.length - presets.length);
+  const listBudget = budget - (presetPlan.lines.length + presetPlan.spareRows - presets.length);
 
   const keys =
     focusedItem?.kind === 'continue' && !canContinue
@@ -200,7 +200,7 @@ export function CrewStep({
             ],
             width,
           );
-          const presetEntries = Map.groupBy(presetLines, (line) => line.row);
+          const presetEntries = Map.groupBy(presetPlan.lines, (line) => line.row);
           return (item, { globalIndex, isCursor }) => (
             <ListEntry
               lines={
@@ -214,6 +214,7 @@ export function CrewStep({
           );
         }}
       />
+      {presetPlan.spareRows > 0 && <Box height={presetPlan.spareRows} />}
       {notice !== null && <PanelNotice notice={notice} />}
     </OverlayPanel>
   );

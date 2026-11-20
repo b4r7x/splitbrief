@@ -71,6 +71,7 @@ export function WorkflowHeader({
 export function WorkflowFooter({
   handleInput,
   onEmptySubmit,
+  submitKeepsDraft = false,
   emptyAnswerNotice,
   onRuntimeCommand,
   commands,
@@ -102,6 +103,7 @@ export function WorkflowFooter({
 }: {
   handleInput: (submission: Extract<DraftSubmission, { ok: true }>) => void;
   onEmptySubmit?: (() => void) | undefined;
+  submitKeepsDraft?: boolean | undefined;
   emptyAnswerNotice?: string | undefined;
   onRuntimeCommand: (command: string) => void;
   commands: RuntimeCommandDef[];
@@ -189,6 +191,7 @@ export function WorkflowFooter({
         key={composerSession}
         width={composerWidth}
         onSubmit={handleInput}
+        submitKeepsDraft={submitKeepsDraft}
         onSendNow={(submission) => {
           const refusal = requestSteer(submission.message);
           if (refusal !== undefined) feedbackStore.setWarning(refusal);

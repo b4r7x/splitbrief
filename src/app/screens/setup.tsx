@@ -217,6 +217,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
           ? preparationHint(
               problem,
               overlayRect({ cols, rows, density: CREW_PANEL_DENSITY }).innerWidth,
+              'setup',
             )
           : preparationStatus
       }

@@ -4,10 +4,12 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
+import { glyph } from '../../lib/glyphs.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
@@ -288,8 +290,9 @@ describe('SessionsPicker', () => {
 
     instance.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain(
-        'Apply is still writing to your checkout. Cannot open "another run".',
+      const frame = stripAnsiStyles(instance.lastFrame() ?? '');
+      expect(acrossNoticeEdges(frame)).toContain(
+        `${glyph('statusWarning')} Apply is still writing to your checkout. Cannot open "another run".`,
       );
     });
     const lines = stripAnsiStyles(instance.lastFrame() ?? '').split('\n');

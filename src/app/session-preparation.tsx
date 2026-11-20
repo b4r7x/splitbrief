@@ -3,7 +3,6 @@ import { usePreparationKeys } from '../features/start-preparation/use-preparatio
 import { panelModel } from '../components/preparation-problem.js';
 import {
   cancelSessionPreparation,
-  retrySessionPreparation,
   sessionSelectStore,
 } from '../stores/navigation/session-select.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../stores/prompts/approval.js';
@@ -36,7 +35,6 @@ export function SessionPreparation() {
   usePreparationKeys({
     active: !takesPage && (state.kind === 'preparing' || problem !== null),
     problem,
-    retry: retrySessionPreparation,
     onCancel: () => cancelSessionPreparation(),
   });
 

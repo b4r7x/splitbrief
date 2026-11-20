@@ -103,7 +103,6 @@ export function buildIsolationChecks(
     severity: 'blocker',
     summary: `${check.summary} Run in your checkout.`,
     fix: CHECKOUT_FIX,
-    primaryFix: `${CHECKOUT_SETTING}.`,
     nextAction: 'fix-config',
   }));
 }

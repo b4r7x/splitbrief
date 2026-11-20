@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Setup and the tool picker show "Needs sign-in" when a tool needs you to sign in.
 - Review packets list BUILD routes in settlement order, including briefs a validation hook skips after BUILD runs, and explain routing refusals.
 - The transcript shows each plan’s goal, brief count, criteria count and file links together. Older runs show one link for each planning document.
 - Menu shortcuts stay visible while you type. Command lists align names and descriptions. Filtered palettes, completions and confirmations fit their contents. Page Up and Page Down reveal the rest of a long confirmation.
@@ -18,10 +19,7 @@
 - The runner picker keeps tool names and sign-in status readable at narrow widths. A refused config edit names the field to remove.
 - Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.
 - Review packets count validation results for the briefs in the current plan.
-- Review packets identify API and CLI runners by their own names, even when they share a tool name.
-- Review packets label logged BUILD starts and settlements in the routing section.
 - Review packets keep the BUILD route when you skip a brief that already ran.
-- The model catalog cache omits prices for individual model modes.
 - The closed run summary shows the findings that blocked review. Queued messages show whether they reached a seat, and the brief count appears during Build.
 - If Skip brief finds a moved project, the run screen shows where the run started and offers End run.
 - Paused runs show the Enter key to continue. The consult status tells you when the planner starts answering.

@@ -76,6 +76,7 @@ describe('TwoColumnPicker terminal rows', () => {
       <TwoColumnPicker<Tool, Model>
         title="Reviewer"
         leftProps={{
+          minRowWidth: 28,
           items: [INHERIT, ...TOOLS, ...MANY_TOOLS],
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
@@ -242,6 +243,7 @@ describe('TwoColumnPicker terminal rows', () => {
         <TwoColumnPicker<Tool, Model>
           title="Reviewer"
           leftProps={{
+            minRowWidth: 28,
             items: [offline, ...TOOLS],
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,

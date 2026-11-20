@@ -51,7 +51,7 @@ export interface ListLine {
 
 export function planListRows(
   rows: readonly ListRowModel[],
-  frame: { width: number; marker?: boolean },
+  frame: { width: number; marker?: boolean; nameColumnLimit?: number },
 ): ListLine[] {
   const width = Math.max(1, frame.width);
   const names = new Map<string, number>();
@@ -75,7 +75,13 @@ export function planListRows(
         ? fitRowValue(row, rowWidth - lead)
         : row;
     const plan = (trailing: string) =>
-      planRow(fitted, index, rowWidth, groupWidth, keyCell, lead, trailing);
+      planRow(
+        fitted,
+        index,
+        groupWidth,
+        { width: rowWidth, keyCell, lead, nameColumnLimit: frame.nameColumnLimit },
+        trailing,
+      );
     if (!row.badge) return plan(fitted.trailing ?? '');
     const plain = plan('');
     const marked = plan(row.badge);
@@ -90,12 +96,11 @@ export function planListRows(
 function planRow(
   row: ListRowModel,
   index: number,
-  width: number,
   groupWidth: number,
-  keyCell: string,
-  lead: number,
+  frame: { width: number; keyCell: string; lead: number; nameColumnLimit: number | undefined },
   suffixText: string,
 ): ListLine[] {
+  const { width, keyCell, lead, nameColumnLimit } = frame;
   const room = Math.max(1, width - lead);
   const name = stripTerminalControls(row.name, { preserveLineBreaks: row.wrapName }).trimEnd();
   const trailingGap = suffixText.trim() ? '  ' : '';
@@ -106,14 +111,18 @@ function planRow(
   const tail = trailing ? getTerminalCellWidth(trailing) + trailingGap.length : 0;
   const hasDescription = Boolean(row.description || row.hint);
   const labelRoom = Math.max(1, room - tail);
-  const cap = width * 0.4;
+  const cap = nameColumnLimit ?? width * 0.4;
+  const keepLabel = row.keepWhole === 'label';
   const columnWidth = Math.min(groupWidth, Math.round(cap));
   // A name can use the rounded cell of the gap without moving the description column.
   const column = Math.min(groupWidth, Math.floor(cap)) + 2;
   const beside = labelRoom - column;
-  const below = hasDescription && (row.descriptionBelow || beside < 20);
-  const useColumn =
-    hasDescription && !row.descriptionBelow && !(below && row.keepWhole === 'label');
+  const minimumDetail =
+    nameColumnLimit === undefined
+      ? 20
+      : Math.min(20, getTerminalCellWidth(row.description ?? row.hint ?? ''));
+  const below = hasDescription && (row.descriptionBelow || beside < minimumDetail);
+  const useColumn = hasDescription && !row.descriptionBelow && !(below && keepLabel);
   const nameWidth = useColumn ? Math.min(columnWidth, labelRoom) : labelRoom;
   const label = truncateTerminalDisplayText(name, nameWidth);
   const detailWidth = below ? room : Math.max(1, beside);

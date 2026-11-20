@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import XtermHeadless from '@xterm/headless';
 import { afterEach, expect, it, vi } from 'vitest';
+import { acrossNoticeEdges } from '#testing/helpers/notice-text.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { sessionLockfilePath } from '../../../src/core/sessions/lock/status.js';
 import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
@@ -337,17 +338,21 @@ it('names the whole reason first when the sessions list refuses a pick while App
         await waitForText('▌ ◌ Add generated JSON');
         await delay(PROMPT_TYPEAHEAD_GRACE_MS);
         write('\r');
-        await waitForText('Cannot open "Add generated JSON');
+        await vi.waitFor(
+          () => expect(acrossNoticeEdges(screen())).toContain('Cannot open "Add generated JSON'),
+          { timeout: 30_000 },
+        );
         return screen();
       } finally {
         rmSync(holdPath, { force: true });
       }
     },
   );
-  expect(refused).toContain(
-    'Apply is still writing to your checkout. Cannot open "Add generated JSON data',
+  const notice = acrossNoticeEdges(refused);
+  expect(notice).toContain(
+    '⚠ Apply is still writing to your checkout. Cannot open "Add generated JSON data',
   );
-  expect(refused).toContain('Add generated JSON data fixtures, as one task: - Add');
+  expect(notice).toContain('Add generated JSON data fixtures, as one task: - Add');
   expect(refused).toContain('Sessions · 2');
 });
 

@@ -60,7 +60,9 @@ function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {
 /** The notice Home shows above the box, fitted to the Home width. */
 export function layoutHomeNotice(notice: NoticeMessage, width: number): NoticeLayout {
   return layoutNotice(
-    structureKnownFeedbackMessage(sanitizeTerminalDisplayText(notice.message)),
+    structureKnownFeedbackMessage(
+      sanitizeTerminalDisplayText(notice.message, { preserveLineBreaks: true }),
+    ),
     notice.severity,
     { maxWidth: Math.max(1, width), maxRows: HOME_NOTICE_ROWS },
   );

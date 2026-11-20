@@ -1,4 +1,5 @@
 import { addEvent } from '../stores/workflow/actions/event.js';
+import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -215,9 +216,9 @@ describe('a check running beside the composer', () => {
 
       // The result stays beside the draft until dismissed.
       if (ending !== 'cancel') {
-        expect(ui.lastFrame()).toContain('enter retry');
+        expect(ui.lastFrame()).toContain('⏎ try again');
         ui.stdin.write(ESC);
-        await vi.waitFor(() => expect(ui.lastFrame()).not.toContain('enter retry'));
+        await vi.waitFor(() => expect(ui.lastFrame()).not.toContain('⏎ try again'));
       }
 
       const settled = frameRows(ui);
@@ -385,36 +386,52 @@ describe('a resume checking its tools', () => {
     ui.unmount();
   });
 
-  it('keeps the run visible while a blocked resume owns its repair keys', async () => {
+  it('keeps the transcript scroll and draft active while Continue is blocked', async () => {
     routerStore.init({ screen: 'workflow', run: AT_REST_RUN, execution: { kind: 'at-rest' } });
     addEvent({ type: 'user_message', phase: 'planning', ts: 123, text: AT_REST_RUN.feature });
     const exactRoute = routerStore.get();
     const ui = renderFeature(<WorkflowRoute deps={workflowDeps} />, { cols: 100, rows: 30 });
     await vi.waitFor(() => expect(ui.lastFrame()).toContain(AT_REST_RUN.feature));
-    const atRestFrame = ui.lastFrame();
+    for (let index = 0; index < 32; index++) {
+      addEvent({
+        type: 'user_message',
+        phase: 'planning',
+        ts: 124 + index,
+        text: `Draft ${index}`,
+      });
+    }
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('Draft 31'));
+    const prepareResume = vi.fn(
+      async (): Promise<PreparationOutcome> => ({
+        kind: 'blocked',
+        report: blockedReport(),
+      }),
+    );
 
     await continueRunInPlace({
       record: AT_REST_RUN,
       state: RESUME_STATE,
-      deps: continueDeps(async () => ({ kind: 'blocked', report: blockedReport() })),
+      deps: continueDeps(prepareResume),
     });
-    await tick(20);
+    await vi.waitFor(() =>
+      expect(ui.lastFrame()).toContain('The configured runner could not be admitted.'),
+    );
+    expect.soft(ui.lastFrame()).toContain('⏎ try again · ctrl+d details');
+    expect.soft(ui.lastFrame()).toContain('Draft 31');
 
-    expect(ui.lastFrame()).toContain('The configured runner could not be admitted.');
-    expect(ui.lastFrame()).toContain('r retry · ctrl+d details');
-    expect(ui.lastFrame()).not.toContain('s settings');
-    expect(ui.lastFrame()).toContain(AT_REST_RUN.feature);
+    ui.stdin.write('\x1b[5~');
+    await vi.waitFor(() => expect(conversationScrollStore.get().scrollOffset).toBeGreaterThan(0));
 
-    // The footer owns the repair keys while the draft stays visible.
-    ui.stdin.write('zqx');
-    await tick(20);
-    expect(ui.lastFrame()).not.toContain('zqx');
+    ui.stdin.write('rs');
+    await vi.waitFor(() => expect(ui.lastFrame()).toContain('› rs'));
+    expect.soft(prepareResume).toHaveBeenCalledTimes(1);
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => expect(prepareResume).toHaveBeenCalledTimes(2));
+    expect(ui.lastFrame()).toContain('› rs');
 
     ui.stdin.write(ESC);
     await vi.waitFor(() => expect(preparationStore.get().kind).toBe('idle'));
-    await tick(20);
     expect(routerStore.get()).toBe(exactRoute);
-    expect(ui.lastFrame()).toBe(atRestFrame);
     ui.unmount();
   });
 });

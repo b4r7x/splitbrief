@@ -3,7 +3,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import type { EvidenceTask } from '../schemas/evidence.js';
 import type { Task } from '../schemas/task.js';
 import { emptyEvidenceTask } from './ledger-state.js';
-import { hashTaskBrief, sameCurrentBrief } from './brief-hash.js';
+import { hashTaskBrief } from './brief-hash.js';
+import { sameCurrentBrief } from './same-brief.js';
 
 const brief = makeTask({ id: 'T002', title: 'Second', suggestedFiles: ['src/b.ts'] });
 

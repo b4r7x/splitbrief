@@ -226,8 +226,9 @@ describe('e2e: composer attachments', () => {
       await vi.waitFor(() => expect(screen()).toContain(cause), { timeout: 20_000 });
       const failed = screen();
       expect(failed).toContain('/crew to change');
-      expect(failed).toContain(`✗ ${cause}`);
-      expect(failed).toContain('ctrl+d');
+      expect(failed).toMatch(new RegExp(`✗ ${cause} +[│▐]\\n`));
+      expect(failed).toMatch(/→ Check the folder/u);
+      expect(failed).toContain('⏎ try again · ctrl+d details');
       const input = failed.slice(failed.indexOf(cause));
       expect(input).toContain(`› ${draft}`);
       expect(readActive(fixture.projectDir)).toBeNull();

@@ -1,4 +1,4 @@
-import { sameCurrentBrief } from '../../../core/evidence/brief-hash.js';
+import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
 import { taskTargetParts } from '../../../core/run-view/brief-labels.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';

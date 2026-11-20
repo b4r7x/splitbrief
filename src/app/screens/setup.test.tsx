@@ -58,6 +58,7 @@ import {
   trackProbe,
   trackToolCheck,
 } from '../../engine/probe-activity.js';
+import { PreparationDetails } from '../preparation-gate.js';
 import { SetupScreen } from './setup.js';
 import { PRESET_SECTION } from '../../features/crew/setup/list-plan.js';
 import { testCliSeats } from '#testing/helpers/runner-gate.js';
@@ -331,8 +332,13 @@ describe('SetupScreen', () => {
         expect(frame.split('\n').length).toBeLessThanOrEqual(size.rows);
         expect(frame).toContain('↑↓ select');
       });
-      for (const label of ['PLAN', 'BUILD', 'REVIEW', 'Continue']) {
-        await focusRow(ui, DOWN, label);
+      const labels = ['PLAN', 'BUILD', 'REVIEW', 'Continue'];
+      if (size.cols >= 80) {
+        for (const label of labels) {
+          expect(contentRows(ui)).toContainEqual(expect.stringContaining(label));
+        }
+      } else {
+        for (const label of labels) await focusRow(ui, DOWN, label);
       }
       const rows = contentRows(ui);
       // The notice opens on its bar, or on its frame one row above the words.
@@ -1466,10 +1472,13 @@ describe('SetupScreen', () => {
         'Claude crew, Codex review    Unavailable · needs Claude Code CLI, OpenAI Codex CLI',
       );
 
+      const panelTop = (text: string) =>
+        text.split('\n').findIndex((row) => row.includes('Set up your crew'));
       await focusRow(ui, UP, 'Claude crew, Codex review');
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-        '↑↓ select · this crew needs ready tools · esc quit',
-      );
+      const focused = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(focused).toContain('↑↓ select · this crew needs ready tools · esc quit');
+      expect.soft(focused).toContain('Unavailable · needs Claude Code CLI, OpenAI Codex CLI');
+      expect(panelTop(focused)).toBe(panelTop(frame));
       ui.stdin.write(ENTER);
       await flushEffects();
 
@@ -1918,7 +1927,16 @@ describe('SetupScreen', () => {
           error: new Error('The runner check did not complete.'),
         }),
       );
-      const ui = renderFeature(<SetupScreen prepare={prepare} />);
+      function SetupAndDetails() {
+        const details = overlayStore.use((state) => state.active === 'preparation-details');
+        return (
+          <>
+            <SetupScreen prepare={prepare} />
+            {details && <PreparationDetails />}
+          </>
+        );
+      }
+      const ui = renderFeature(<SetupAndDetails />);
       await flushEffects();
       await continueSetup(ui);
 
@@ -1929,7 +1947,8 @@ describe('SetupScreen', () => {
       expect(frame).not.toContain('A lower-priority warning.');
       expect(frame).toContain('ctrl+d details');
       ui.stdin.write('\x04');
-      await vi.waitFor(() => expect(overlayStore.get().active).toBe('preparation-details'));
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain('The primary blocker.'));
+      expect(ui.lastFrame()).toContain('Tool preparation · Details');
       expect(frame).toContain('r retry');
       expect(frame).toContain('esc dismiss');
       expect(frame).toContain('s settings');

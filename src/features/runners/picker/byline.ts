@@ -1,4 +1,6 @@
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
+import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
+import { declaredCatalogProbe } from '../../../engine/runners/cli-tools/probe/catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { ELLIPSIS } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
@@ -104,7 +106,8 @@ export function formatToolsByline(input: {
   if (status !== undefined) return status;
 
   const lane = laneStatus(input.lane);
-  const count = input.toolId === 'claude-code' ? undefined : countNoun(input.modelCount, 'model');
+  const probe = isCliToolId(input.toolId) ? declaredCatalogProbe(input.toolId) : undefined;
+  const count = probe?.kind === 'not-run' ? undefined : countNoun(input.modelCount, 'model');
   const compose = (version: string | undefined, capabilities: readonly string[]) =>
     [input.toolName, version, count, lane, ...capabilities].filter(Boolean).join(SOFT_SEP);
   for (let kept = input.capabilities.length; kept >= 0; kept--) {

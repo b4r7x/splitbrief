@@ -70,6 +70,7 @@ describe('TwoColumnPicker expandable right rows', () => {
         title="Planner"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -113,6 +114,7 @@ describe('TwoColumnPicker expandable right rows', () => {
         title="Planner"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -212,6 +214,7 @@ describe('TwoColumnPicker expandable right rows', () => {
         title="Planner"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -352,6 +355,7 @@ describe('TwoColumnPicker expandable right rows', () => {
         title="Planner"
         initialColumn={column}
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -394,6 +398,7 @@ describe('TwoColumnPicker expandable right rows', () => {
         title="Planner"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -427,6 +432,7 @@ describe('TwoColumnPicker expandable right rows', () => {
         title="Planner"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -460,6 +466,7 @@ describe('TwoColumnPicker expandable right rows', () => {
         title="Planner"
         initialColumn="left"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           terminalPane: () => ({
@@ -524,6 +531,7 @@ describe('TwoColumnPicker rows that cycle in place', () => {
         title="Planner"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
@@ -590,6 +598,7 @@ describe('TwoColumnPicker rows that cycle in place', () => {
         title="Planner"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),

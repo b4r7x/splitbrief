@@ -113,6 +113,12 @@ export function renderReviewPacketMarkdown(
   const warnings = routingWarnings.flatMap((event) => {
     const reason = event.routingReason ?? event.message ?? event.outcome;
     if (reason === undefined) return [];
+    if (
+      (event.type === 'task_started' || event.type === 'task_settled') &&
+      taskRouting.some((row) => row.taskId === event.taskId && row.routingReason === reason)
+    ) {
+      return [];
+    }
     const subject = event.taskId ?? 'Routing';
     const label =
       event.type === 'task_started'

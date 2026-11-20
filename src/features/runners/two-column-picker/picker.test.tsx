@@ -44,6 +44,7 @@ const picker = (preview: Parameters<typeof TwoColumnPicker<Tool, Model>>[0]['pre
   <TwoColumnPicker<Tool, Model>
     title="Picker"
     leftProps={{
+      minRowWidth: 28,
       items: TOOLS,
       getKey: (tool) => tool.id,
       rowModel: (tool) => ({ name: tool.displayName }),
@@ -109,6 +110,7 @@ describe('TwoColumnPicker', () => {
           title={title}
           stepLabel={label}
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (tool) => tool.id,
             rowModel: (tool) => ({ name: tool.displayName }),
@@ -164,6 +166,7 @@ describe('TwoColumnPicker', () => {
           title="Picker"
           initialColumn="right"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (tool) => tool.id,
             rowModel: (tool) => ({ name: tool.displayName }),
@@ -248,6 +251,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (tool) => tool.id,
           rowModel: (tool) => ({ name: tool.displayName }),
@@ -307,6 +311,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -337,6 +342,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
@@ -385,6 +391,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
@@ -426,6 +433,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: tools,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
@@ -488,6 +496,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: tools,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
@@ -541,6 +550,7 @@ describe('TwoColumnPicker', () => {
           title="Picker"
           initialColumn="right"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             rowModel: (t) => ({ name: t.displayName }),
@@ -599,6 +609,7 @@ describe('TwoColumnPicker', () => {
           title="Picker"
           initialColumn="right"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             rowModel: (t) => ({ name: t.displayName }),
@@ -659,6 +670,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
@@ -701,6 +713,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
@@ -777,6 +790,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: tools,
             getKey: (t) => t.id,
             rowModel: (t) => ({ name: t.displayName }),
@@ -826,6 +840,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: tools,
             getKey: (t) => t.id,
             rowModel: (t) => ({ name: t.displayName }),
@@ -884,6 +899,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
@@ -930,6 +946,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
@@ -964,6 +981,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
@@ -1000,6 +1018,7 @@ describe('TwoColumnPicker', () => {
         title="Picker"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (tool) => tool.id,
           rowModel: (tool) => ({ name: tool.displayName }),
@@ -1041,6 +1060,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: [],
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -1074,6 +1094,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -1109,6 +1130,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t, { isCursor }) => ({
@@ -1147,6 +1169,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
@@ -1239,6 +1262,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items,
           getKey: (item) => item.id,
           rowModel: (item) => ({ name: item.displayName }),
@@ -1268,6 +1292,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="picker"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             label: 'tools',
             getKey: (t) => t.id,
@@ -1307,6 +1332,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           label: 'tools',
           getKey: (t) => t.id,
@@ -1342,6 +1368,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="picker"
         leftProps={{
+          minRowWidth: 28,
           items: many,
           label: 'tools',
           getKey: (t) => t.id,
@@ -1364,6 +1391,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="picker"
         leftProps={{
+          minRowWidth: 28,
           items: [],
           label: 'tools',
           getKey: (t) => t.id,
@@ -1397,6 +1425,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: [],
             getKey: (t) => t.id,
             rowModel: (t) => ({ name: t.displayName }),
@@ -1428,6 +1457,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -1474,6 +1504,7 @@ describe('TwoColumnPicker', () => {
           title="Picker"
           initialColumn="right"
           leftProps={{
+            minRowWidth: 28,
             items: tools,
             getKey: (t) => t.id,
             rowModel: (t) => ({ name: t.displayName }),
@@ -1503,6 +1534,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -1539,6 +1571,7 @@ describe('TwoColumnPicker', () => {
         title="Picker"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -1573,6 +1606,7 @@ describe('TwoColumnPicker', () => {
         title="Picker"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -1625,6 +1659,7 @@ describe('TwoColumnPicker', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             rowModel: (t) => ({ name: t.displayName }),
@@ -1678,6 +1713,7 @@ describe('TwoColumnPicker', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: toolsWithPreview,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -1737,6 +1773,7 @@ describe('TwoColumnPicker', () => {
         title="Picker"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),
@@ -1808,6 +1845,7 @@ describe('TwoColumnPicker', () => {
         title="Picker"
         initialColumn="right"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           rowModel: (t) => ({ name: t.displayName }),

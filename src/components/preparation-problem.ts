@@ -20,7 +20,6 @@ export interface PreparationProblem {
   failed: boolean;
   cause: string;
   action?: string | undefined;
-  primaryFix?: string | undefined;
   reason?: string | undefined;
   diagnostic?: string | undefined;
   settings: boolean;
@@ -71,7 +70,6 @@ export function panelModel(state: PreparationViewState): PreparationProblem | nu
         ? sanitizeTerminalDisplayText(state.report.nextAction.reason)
         : sanitizeTerminalDisplayText(lead.summary),
     action: lead && sanitizeTerminalDisplayText(readinessCheckRemediation(lead) ?? ''),
-    primaryFix: lead?.primaryFix && sanitizeTerminalDisplayText(lead.primaryFix),
     blockers: rest,
     warnings,
     details: lead?.details ?? [],
@@ -79,21 +77,28 @@ export function panelModel(state: PreparationViewState): PreparationProblem | nu
 }
 
 export function preparationNotice(model: PreparationProblem): NoticeMessage {
-  const cause = [model.cause, model.reason].filter(Boolean).join(': ');
   return {
     severity: model.failed ? 'error' : 'warning',
-    message: [cause, model.primaryFix ?? model.action]
+    message: [
+      model.cause,
+      model.reason,
+      model.action && `${glyph('connectorHandoff')} ${model.action}`,
+    ]
       .filter(Boolean)
-      .join(` ${glyph('connectorHandoff')} `),
+      .join('\n'),
   };
 }
 
-export function preparationHint(model: PreparationProblem, width: number, home = false): string {
+export function preparationHint(
+  model: PreparationProblem,
+  width: number,
+  input: 'composer' | 'setup',
+): string {
   return fitHint(
     [
-      home ? 'enter retry' : 'r retry',
+      input === 'composer' ? '⏎ try again' : 'r retry',
       'ctrl+d details',
-      ...(model.settings ? [home ? '/settings' : 's settings'] : []),
+      ...(model.settings ? [input === 'composer' ? '/settings' : 's settings'] : []),
       'esc dismiss',
     ],
     width,

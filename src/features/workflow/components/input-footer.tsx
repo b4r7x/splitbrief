@@ -146,7 +146,11 @@ export function InputFooter({
     recordByline: problem
       ? [
           {
-            text: preparationHint(problem, getChromeContentWidth(width ?? cols) - MARK_SLOT_CELLS),
+            text: preparationHint(
+              problem,
+              getChromeContentWidth(width ?? cols) - MARK_SLOT_CELLS,
+              'composer',
+            ),
             tone: 'textDim',
           },
         ]

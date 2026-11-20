@@ -31,7 +31,7 @@ export function readinessCheckLines(
     details?: readonly string[] | undefined;
     remediation?: string | null | undefined;
   }>,
-): string[] {
+): [string, ...string[]] {
   return [
     check.summary,
     ...(check.details ?? []),

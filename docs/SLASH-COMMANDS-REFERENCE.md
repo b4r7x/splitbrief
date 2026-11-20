@@ -39,7 +39,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+/`.
 - **Example**: `/help`
-- **Behavior**: Opens the `help` overlay. Help uses the same filter as the command palette (`buildCommandItems`). It leaves out `hidden` commands, commands for another screen and commands that a `guard` blocks now. Command rows follow the five categories, and a **Keyboard shortcuts** section follows them. That section leaves out `ctrl+d` while no row of the conversation has details to show or hide (`readLatestDiffKey`). Category headers appear when the panel has room for at least 12 rows (`SECTION_HEADER_MIN_ROWS`); a smaller panel keeps the order without headers. Press `Esc` to close.
+- **Behavior**: Opens the `help` overlay. Help uses the same filter as the command palette (`buildCommandItems`). It leaves out `hidden` commands, commands for another screen and commands that a `guard` blocks now. Command rows follow the five categories, and a **Keyboard shortcuts** section follows them. Help lists `ctrl+d` when there are preparation details or a conversation row has details to show or hide. Category headers appear when the panel has room for at least 12 rows (`SECTION_HEADER_MIN_ROWS`); a smaller panel keeps the order without headers. Press `Esc` to close.
 - **Implementation**: opens overlay via `overlayStore.open`.
 - **See also**: `/palette`.
 
@@ -326,6 +326,9 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 |---|---|
 | `Ctrl+S` | Rescan skill sources and open the skills overlay |
 | `Ctrl+R` | Focus the recent sessions list |
+| `Enter` | Retry when preparation blocks or fails |
+| `Ctrl+D` | Open details when preparation blocks or fails |
+| `Esc` | Dismiss a preparation notice |
 
 ### Workflow screen
 
@@ -337,7 +340,8 @@ macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or 
 |---|---|
 | `Enter` with text | Queue a message for the active stage's seat while the run is live |
 | `ctrl+⏎` with text | The same as `/steer <text>`: stop now and continue with the text; over a waiting plan card, request changes with the text (also with `approve`, which `Enter` takes as the approval), over a waiting planner question, answer the round with the text, and over a waiting recovery panel, send the text as the typed correction, as `Enter` does; a refusal shows its reason and keeps the text in the composer |
-| `Ctrl+D` | Show or hide the details of the latest row that has them: a diff, a cut failure cause or Recovery details |
+| `Ctrl+D` | Open preparation details when Continue blocks or fails. Otherwise, show or hide the details of the latest conversation row that has them |
+| `Enter` | Retry when Continue blocks or fails |
 | `Esc` | Open the stop menu while a run is live; go home once the run is stopping or parked, and on a run at rest |
 | `Shift+↑` | Scroll conversation up by one line |
 | `Shift+↓` | Scroll conversation down by one line |
@@ -430,10 +434,11 @@ The `SHORTCUTS` table of the keybinding registry is the single source of truth f
 | `skills` | `ctrl+s` | Skills picker | home |
 | `settings` | `ctrl+,` | Settings | all |
 | `close-overlay` | `esc` | Close overlay | home, setup |
+| `preparation-details` | `ctrl+d` | Read preparation details | all |
 | `toggle-diff` | `ctrl+d` | Show or hide details | workflow |
 | `scroll` | `shift+↑/↓, pgup/pgdn, home/end` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
 | `review-edit` | `ctrl+e` | Open editor in review mode only | workflow |
-| `activity` | `ctrl+a` | Expand the last folded rows | workflow |
+| `activity` | `ctrl+a` | Expand or collapse the last folded rows | workflow |
 
 ---
 

@@ -29,8 +29,6 @@ function artifactEvent(
 
 function rowsFor(event: EngineEventOf<'artifact_written'>, width = 78): ConversationRow[] {
   const block = artifactWrittenRowBlock('ev', event, width);
-  expect(block).not.toBeNull();
-  if (block === null) throw new Error('rowsFor: block was null');
   return block.createRows(0, block.rowCount);
 }
 

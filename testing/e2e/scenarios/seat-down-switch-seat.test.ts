@@ -391,9 +391,9 @@ writeSync(2, ${JSON.stringify(first)});`)}`,
       })),
     );
     const markdown = readFileSync(reviewPacketMarkdownPath(ref), 'utf8');
-    expect(markdown).toContain(
-      '- T001 started: Selected profile default (fits)\n- T001 settled: Selected profile default (fits)\n',
-    );
+    expect(markdown.match(/^- T001.*Selected profile default \(fits\)$/gm)).toEqual([
+      expect.stringMatching(/^- T001: Claude Code CLI/),
+    ]);
     expect(markdown).not.toContain('1110/1000000');
     expect(state?.seatSwitches).toEqual([
       expect.objectContaining({

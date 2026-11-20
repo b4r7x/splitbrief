@@ -64,7 +64,7 @@ function layoutFeedback(
   const standing = feedback.message === null && problem !== null;
   const notice = standing ? preparationNotice(problem) : feedback;
   if (notice.message === null) return null;
-  const text = summarizeDisplayLine(notice.message);
+  const text = standing ? notice.message : summarizeDisplayLine(notice.message);
   if (!text) return null;
   return layoutNotice(text, notice.severity, {
     maxWidth: getChromeContentWidth(terminalCols),

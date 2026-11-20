@@ -75,7 +75,6 @@ export function preformattedOutputBlock(
 
   const footer = sourceFooterSegments({
     hidden,
-    unit: 'line',
     width: bodyWidth,
     ...(input.moreHint === undefined ? {} : { pointer: { text: input.moreHint, tone: 'textDim' } }),
   });

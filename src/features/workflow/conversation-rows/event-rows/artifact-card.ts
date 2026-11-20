@@ -20,7 +20,7 @@ export function artifactWrittenRowBlock(
   keyPrefix: string,
   event: EngineEventOf<'artifact_written'>,
   width: number,
-): ConversationRowBlock | null {
+): ConversationRowBlock {
   const budget = wrapWidthFor('message', width);
   const labelWidth = Math.min(LABEL_CELLS, Math.max(1, budget - 1));
   const label = truncateTerminalDisplayText(artifactLabel(event.filename), labelWidth - 1);

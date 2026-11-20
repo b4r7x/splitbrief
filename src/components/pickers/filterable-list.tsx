@@ -2,8 +2,7 @@ import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import type { Key } from 'ink';
 import { OverlayPanel } from '../overlays/panel.js';
-import { ThemeText as Text, useTheme } from '../theme.js';
-import { wrapPathAware } from '../../utils/display-text/wrap.js';
+import { layoutPanelNotice, PANEL_NOTICE_ROWS, PanelNotice, panelNoticeRows } from '../notice.js';
 import { FilterInput } from '../filter-input.js';
 import type { FilterableListKeyContext } from '../../hooks/use-filterable-list.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
@@ -59,10 +58,16 @@ export function FilterableList<T>({
 }: FilterableListProps<T>) {
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const { innerWidth } = overlayRect({ cols, rows, density });
-  const t = useTheme();
-  const message = notice ? wrapPathAware(notice, innerWidth) : undefined;
-  const messageRows = message === undefined ? 0 : 1 + message.split('\n').length;
-  const available = availableRows({ rows, chromeRows: chromeRows + messageRows, floor: listFloor });
+  const listRoom = availableRows({ rows, chromeRows });
+  const warning = layoutPanelNotice(
+    { message: notice ?? null, severity: 'warning' },
+    { width: innerWidth, maxRows: Math.min(PANEL_NOTICE_ROWS, listRoom - 4) },
+  );
+  const available = availableRows({
+    rows,
+    chromeRows: chromeRows + panelNoticeRows(warning),
+    floor: listFloor,
+  });
   const rowBudget =
     maxVisibleProp === undefined
       ? available
@@ -127,11 +132,7 @@ export function FilterableList<T>({
             }
           : {})}
       />
-      {message !== undefined && (
-        <Box marginTop={1}>
-          <Text color={t.warning}>{message}</Text>
-        </Box>
-      )}
+      {warning !== null && <PanelNotice notice={warning} />}
     </OverlayPanel>
   );
 }

@@ -1,6 +1,7 @@
 import { useInput, type Key } from 'ink';
 import { questionPromptStore } from '../../../stores/prompts/question.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { sessionSelectStore } from '../../../stores/navigation/session-select.js';
 import { completionStore } from '../../../stores/ui/completion.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -116,9 +117,13 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
   const [overlay, completion] = useStores(overlayStore, completionStore);
   const { active: overlayActive } = overlay;
   const isOpen = overlayActive !== 'none';
+  const preparationDetails = sessionSelectStore.use(
+    ({ preparation }) => preparation.kind === 'failed' || preparation.kind === 'blocked',
+  );
 
   useInput(
     (input, key) => {
+      if (preparationDetails && key.ctrl && input === 'd') return;
       const question = questionPromptStore.get();
       if (question.questions?.length && question.focus !== 'composer') return;
       const inputMode = controlsStore.get().inputMode;

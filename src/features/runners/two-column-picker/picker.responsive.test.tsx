@@ -32,12 +32,13 @@ function mount(
   const cancel = vi.fn();
   const collapse = vi.fn();
   const confirm = vi.fn();
-  resize(options.cols ?? 79);
+  resize(options.cols ?? 78);
   const ui = renderFeature(
     <TwoColumnPicker
       title="PLAN"
       initialColumn={options.initial}
       leftProps={{
+        minRowWidth: 30,
         label: 'Tools',
         items: tools,
         getKey: (tool) => tool.id,
@@ -102,7 +103,7 @@ describe('single-pane tool picker', () => {
     }
   });
 
-  it('shows one list at 79, both at 80, and keeps the active model and query on resize', async () => {
+  it('fits both lists when the tool row fits and keeps the model and query on resize', async () => {
     const { ui, frame, send } = mount();
     try {
       await flushEffects();
@@ -112,11 +113,11 @@ describe('single-pane tool picker', () => {
       expect(frame()).toContain('▌ onyx');
       expect(frame()).toContain('Models · Alpha');
       expect(frame()).not.toContain('Beta');
-      resize(80);
+      resize(79);
       await flushEffects();
       expect(frame()).toContain('Beta');
       expect(frame()).toContain('▌ onyx');
-      resize(79);
+      resize(78);
       await flushEffects();
       expect(frame()).not.toContain('Beta');
       expect(frame()).toContain('▌ onyx');

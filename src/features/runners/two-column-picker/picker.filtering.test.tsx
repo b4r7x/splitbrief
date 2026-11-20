@@ -45,6 +45,7 @@ function fallbackPicker(opts: {
     <TwoColumnPicker<Tool, Model>
       title="Picker"
       leftProps={{
+        minRowWidth: 28,
         items: [...TOOLS, NO_FALLBACK],
         getKey: (t) => t.id,
         isDisabled: (t) => !!t.disabled,
@@ -77,6 +78,7 @@ function customRowPicker(opts: {
     <TwoColumnPicker<Tool, Model>
       title="Picker"
       leftProps={{
+        minRowWidth: 28,
         items: TOOLS,
         getKey: (t) => t.id,
         isDisabled: (t) => !!t.disabled,
@@ -109,6 +111,7 @@ describe('TwoColumnPicker type-anywhere filtering', () => {
         <TwoColumnPicker<Tool, Model>
           title="Picker"
           leftProps={{
+            minRowWidth: 28,
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
@@ -352,6 +355,7 @@ function effortPicker(opts: { onCycle?: (id: string) => void }) {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: TOOLS,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
@@ -413,6 +417,7 @@ describe('TwoColumnPicker space policy', () => {
       <TwoColumnPicker<Tool, Model>
         title="Picker"
         leftProps={{
+          minRowWidth: 28,
           items: [...TOOLS, SPACED_TOOL],
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,

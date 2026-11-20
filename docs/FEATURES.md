@@ -727,8 +727,8 @@ Plain commands (`status`, `spec`, `review`, snapshot diffs, the crash line) do n
 ```yaml
 hooks:
   post_task:
-    - command: "npx"
-      args: ["prettier", "--write", "${event.file}"]
+    - command: ".splitbrief/hooks/record-completed.sh"
+      args: ["${event.taskId}"]
       on_failure: warn
 ```
 

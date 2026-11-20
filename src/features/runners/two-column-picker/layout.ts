@@ -1,3 +1,4 @@
+import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { availableRows } from '../../../components/pickers/scroll-offset.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { wrapOnWords } from '../picker/byline.js';
@@ -12,7 +13,7 @@ const HEAD_GAP = 2;
 const VISIBLE_ROWS_CAP = 18;
 
 export function pickerLayout(input: {
-  minRowWidth?: number | undefined;
+  minRowWidth: number;
   cols: number;
   rows: number;
   title: string;
@@ -22,10 +23,7 @@ export function pickerLayout(input: {
   const totalBoxWidth = overlayWidth({ cols, density: 'wide' });
   const splitWidth = Math.floor((totalBoxWidth - COLUMN_GAP) / 2);
   // Each list reserves two cells for the scrollbar, in addition to the panel padding.
-  const singlePane =
-    input.minRowWidth === undefined
-      ? cols < 80
-      : splitWidth - INNER_PADDING - 2 < input.minRowWidth;
+  const singlePane = getScrollViewportContentWidth(splitWidth - INNER_PADDING) < input.minRowWidth;
   // The columns reserve every wrapped label row so the header stays inside the viewport.
   const headStacked =
     stepLabel !== undefined &&

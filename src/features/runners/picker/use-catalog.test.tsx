@@ -282,6 +282,7 @@ function ControlledCatalogPicker({
     <TwoColumnPicker<PickerOption, ModelOption>
       title="Picker"
       leftProps={{
+        minRowWidth: 28,
         items: catalog.items,
         getKey: (item) => item.id,
         isDisabled: (item) => !item.available,

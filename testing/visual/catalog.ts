@@ -6887,6 +6887,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'setup-preparation-blocked',
+      title: 'Setup · preparation blocked',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Preparation blocker shown in Setup',
+        kind: 'failure',
+        marker: 'ctrl+d details',
+      },
+      elements: [{ id: 'setup-panel', title: 'Setup panel' }],
+    }),
+    defineScenario({
       id: 'setup-saved',
       title: 'Setup · saved crew',
       surface: screenSurface('setup'),
@@ -6956,7 +6968,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
           id: 'focused-preset',
           title: 'The focused crew names both tools it needs',
           kind: 'ready',
-          marker: 'needs Claude Code CLI, OpenAI Codex CLI',
+          marker: 'this crew needs ready tools',
         },
       ],
       elements: [

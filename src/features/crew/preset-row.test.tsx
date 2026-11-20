@@ -32,7 +32,7 @@ async function frameFor(
 ): Promise<string> {
   const ui = renderFeature(
     <ListEntry
-      lines={planPresetRows([preset], width, { focusedId: isCursor ? preset.id : undefined })}
+      lines={planPresetRows([preset], width, { focusedId: isCursor ? preset.id : undefined }).lines}
       selected={isCursor}
       width={width}
     />,
@@ -51,7 +51,11 @@ async function lineFor(width: number, cols: number, isCursor = true): Promise<st
 async function themedFrameFor(isCursor: boolean): Promise<string> {
   const ui = renderFeature(
     <ThemeProvider theme={{ ...defaultTheme, accent: 'red' }}>
-      <ListEntry lines={planPresetRows([PRESET], 102)} selected={isCursor} width={102} />
+      <ListEntry
+        lines={planPresetRows([PRESET], 102, { focusedId: undefined }).lines}
+        selected={isCursor}
+        width={102}
+      />
     </ThemeProvider>,
     { cols: 120, rows: 24 },
   );
@@ -114,19 +118,21 @@ describe('crew preset row', () => {
     const frame = await frameFor(102, 120, true, { ...PRESET, notReady: ['claude-code', 'codex'] });
     const [label, reason] = stripAnsiStyles(frame).split('\n');
 
-    expect(label).toContain(`${PRESET.label}  Unavailable`);
-    expect(reason?.trim()).toBe('needs Claude Code CLI, OpenAI Codex CLI');
+    expect(label).toContain(
+      `${PRESET.label}  Unavailable · needs Claude Code CLI, OpenAI Codex CLI`,
+    );
+    expect(reason).toBeUndefined();
     expect(frame).not.toContain(DESCRIPTION);
   });
 
-  it('keeps the gutter and caps the name when the description moves below it', async () => {
+  it('keeps the gutter and full name when the description moves below it', async () => {
     const width = getTerminalCellWidth(PRESET.label) + 3;
     for (const notReady of [[], ['opencode']] as const) {
       const line =
         stripAnsiStyles(await frameFor(width, 40, true, { ...PRESET, notReady })).split('\n')[0] ??
         '';
 
-      expect(line.trimEnd()).toBe(`${listRowLead('active')}Claude cre…`);
+      expect(line.trimEnd()).toBe(`${listRowLead('active')}${PRESET.label}`);
     }
   });
 

@@ -79,7 +79,6 @@ function providerName(fact: RunnerAvailabilityFact): string {
 
 function availabilityFix(fact: RunnerAvailabilityFact, action: string) {
   return {
-    primaryFix: `${action}.`,
     fix: `${action}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
   };
 }
@@ -99,7 +98,6 @@ interface AvailabilityCopy {
   summary: string;
   details?: string[] | undefined;
   fix?: string | undefined;
-  primaryFix?: string | undefined;
 }
 
 function availabilityCopy(fact: RunnerAvailabilityFact, label: string): AvailabilityCopy {

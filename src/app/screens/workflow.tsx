@@ -54,7 +54,11 @@ import type { readClipboardImage } from '../../core/attachments/clipboard-image.
 import type { listProjectFiles } from '../../lib/fs/listing.js';
 import { draftRefusalStore } from '../../stores/ui/session-drafts.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { sessionSelectStore } from '../../stores/navigation/session-select.js';
+import {
+  retrySessionPreparation,
+  sessionSelectStore,
+} from '../../stores/navigation/session-select.js';
+import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
 import { panelModel } from '../../components/preparation-problem.js';
 import {
   getFeedbackRows,
@@ -184,8 +188,8 @@ export function WorkflowScreen({
     atRest: model.atRestRecord !== undefined,
     parked,
   });
-  // While the notice offers repair keys, the composer keeps its draft and yields input.
-  const covered = useSessionPreparationTakesPage() || problem !== null;
+  const covered = useSessionPreparationTakesPage();
+  const retryPreparation = () => observePreparationCleanup(retrySessionPreparation());
   const keys = usePanelKeys({
     model,
     panels,
@@ -296,6 +300,11 @@ export function WorkflowScreen({
           <WorkflowFooter
             noticeBudget={noticeBudget}
             {...keys.footer}
+            {...(problem && {
+              handleInput: retryPreparation,
+              onEmptySubmit: retryPreparation,
+              submitKeepsDraft: true,
+            })}
             compactInput={panelBelow}
             beforeComposer={
               panelBelow ? (

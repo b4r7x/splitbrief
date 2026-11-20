@@ -75,10 +75,14 @@ export function layoutPanelNotice(
   { width, maxRows }: { width: number; maxRows: number },
 ): NoticeLayout | null {
   if (feedback.message === null) return null;
-  return layoutNotice(sanitizeTerminalDisplayText(feedback.message), feedback.severity, {
-    maxWidth: width,
-    maxRows: Math.max(1, maxRows),
-  });
+  return layoutNotice(
+    sanitizeTerminalDisplayText(feedback.message, { preserveLineBreaks: true }),
+    feedback.severity,
+    {
+      maxWidth: width,
+      maxRows: Math.max(1, maxRows),
+    },
+  );
 }
 
 /** The rows a panel notice takes, the blank row that sets it off the list included. */

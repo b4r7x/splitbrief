@@ -67,6 +67,19 @@ it('chooses a remembered crew after refresh fails and checks readiness on Contin
                 cliDetectionFor('unauthenticated', 'codex'),
               ],
             });
+            await shows('Unavailable · needs OpenAI Codex CLI');
+            const panelTop = () =>
+              frame()
+                .split('\n')
+                .findIndex((row) => row.includes('Set up your crew'));
+            const beforeFocus = panelTop();
+            ui.stdin.write('\u001b[H');
+            await focused('Claude crew, Codex review');
+            const selectedPreset = frame()
+              .split('\n')
+              .find((row) => row.includes(`${glyph('liveBar')} Claude crew, Codex review`));
+            expect(selectedPreset).toContain('Unavailable · needs OpenAI Codex CLI');
+            expect(panelTop()).toBe(beforeFocus);
             ui.stdin.write('\u001b[F');
             await focused('Continue');
             ui.stdin.write('\r');

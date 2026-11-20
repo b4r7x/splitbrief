@@ -19,6 +19,7 @@ import {
 import { closeApprovalPrompt, openApprovalPrompt } from '../stores/prompts/approval.js';
 import {
   continueRunInPlace,
+  retrySessionPreparation,
   sessionSelectStore,
   type SessionSelectDeps,
 } from '../stores/navigation/session-select.js';
@@ -300,7 +301,7 @@ describe('SessionPreparation', () => {
     await flushEffects();
     expect(sessionSelectStore.get().preparation.kind).toBe('blocked');
 
-    ui.stdin.write('r');
+    await retrySessionPreparation();
     await vi.waitFor(() => {
       const current = routerStore.get();
       expect(current.screen === 'workflow' && current.execution.kind === 'local').toBe(true);

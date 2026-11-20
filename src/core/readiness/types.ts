@@ -40,8 +40,6 @@ export interface ReadinessCheck {
   summary: string;
   details?: string[] | undefined;
   fix?: string | undefined;
-  /** The first repair to show beside the draft when the full fix also explains alternatives. */
-  primaryFix?: string | undefined;
   /** Stable failure family, set by the builder that knows why the check failed. */
   diagnosticState?: ReadinessDiagnosticStateId | undefined;
   nextAction?: ReadinessNextActionKind | undefined;

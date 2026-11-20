@@ -1341,6 +1341,85 @@ describe('visual catalog', () => {
     },
   );
 
+  it.each([
+    ['home-preparation-failed', 'Recent sessions'],
+    ['setup-preparation-blocked', 'ctrl+d details'],
+  ])('shows preparation in context in %s', async (id, marker) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error(`Missing ${id}`);
+    for (const viewport of REQUIRED_VIEWPORTS) {
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        expect(stripAnsiStyles(await handle.waitForCheckpoint())).toContain(marker);
+      } finally {
+        await handle.unmount();
+      }
+    }
+  });
+
+  it('plans one preset description column and shows all inline reasons or none', async () => {
+    for (const [id, cols] of [
+      ['setup-initial', 120],
+      ['setup-signed-out-tools', 80],
+    ] as const) {
+      const scenario = findVisualScenario(id);
+      const checkpoint = scenario?.checkpoints[0];
+      const size = REQUIRED_VIEWPORTS.find((viewport) => viewport.cols === cols);
+      if (!scenario || !checkpoint || !size) throw new Error(`Missing ${id}`);
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+      try {
+        const rows = stripAnsiStyles(await handle.waitForCheckpoint()).split('\n');
+        const presetRows = rows.filter((row) => /crew, .* review|plan, .* build/u.test(row));
+        expect(presetRows).toHaveLength(3);
+        if (id === 'setup-initial') {
+          const columns = presetRows.map((row) => {
+            const details = / {2,}(?=\S)/u.exec(row.slice(row.indexOf('│') + 5).trimEnd());
+            return details ? details.index + details[0].length : -1;
+          });
+          expect(columns).not.toContain(-1);
+          expect(new Set(columns).size).toBe(1);
+        } else {
+          expect(presetRows.every((row) => !row.includes(' · needs '))).toBe(true);
+        }
+      } finally {
+        await handle.unmount();
+      }
+    }
+  });
+
+  it.each([
+    ['home-preparation-blocked', 'choose another tool in Settings > Crew > PLAN'],
+    ['home-preparation-isolation-blocked', '`workflow.isolation: worktree` to keep the worktree'],
+  ])('shows both repair choices in %s', async (id, repair) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const size = REQUIRED_VIEWPORTS.find(({ cols }) => cols === 120);
+    if (!scenario || !checkpoint || !size) throw new Error(`Missing ${id}`);
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(acrossNoticeEdges(frame)).toContain(repair);
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it('keeps more than one session visible below a narrow refusal', async () => {
+    const scenario = findVisualScenario('overlay-sessions-refused-applying');
+    const checkpoint = scenario?.checkpoints[0];
+    const size = REQUIRED_VIEWPORTS.find(({ cols }) => cols === 60);
+    if (!scenario || !checkpoint || !size) throw new Error('Missing Sessions refusal');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain('Apply is still writing to your checkout.');
+      expect(frame.match(/◌ /gu)?.length).toBeGreaterThan(1);
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it('retains fixtures for the changed composer, preparation, usage and picker surfaces', () => {
     for (const id of [
       'home-preparing',

@@ -764,15 +764,15 @@ Interactively, select the skill with `/skills house-rules` before you start.
 
 ### 22. Run pre/post task shell hooks
 
-**When:** you want to format with Prettier and run Biome after every task without modifying the validation pipeline.
+**When:** you want to scan the brief before work starts and log its ID after it succeeds.
 
 **Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 hooks:
   post_task:
-    - command: "npx"
-      args: ["biome", "check", "--write", "${event.file}"]
+    - command: "echo"
+      args: ["Completed", "${event.taskId}"]
       timeout_ms: 10000
       on_failure: warn
   pre_task:
@@ -793,10 +793,9 @@ splitbrief start --allow-hooks "add the User model"
 SPLITBRIEF config declares hooks this machine has not trusted:
 
   pre_task:
-    Executable: "prettier"
-    Resolved: "/usr/local/bin/prettier"
-    Arguments: "--check"
-    On failure: warn
+    Executable: ".splitbrief/hooks/scan.sh"
+    Arguments: "\${event.file}"
+    On failure: block
 
   Execution: runs on this machine as you, in the project directory, on every matching workflow event
   Environment access: Inherits the full SPLITBRIEF process environment, including credentials

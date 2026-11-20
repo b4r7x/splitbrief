@@ -292,7 +292,7 @@ export function HomeScreen({
                 homeStatus={preparationStatus}
                 homeNotice={
                   problem && !sessionsActive
-                    ? preparationHint(problem, layout.width, true)
+                    ? preparationHint(problem, layout.width, 'composer')
                     : homeNotice
                 }
                 homeStandingNotice={

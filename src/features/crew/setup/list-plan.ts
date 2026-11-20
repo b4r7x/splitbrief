@@ -1,5 +1,4 @@
 import { planPresetRows } from '../preset-row.js';
-import type { ListLine } from '../../../components/list-row/plan.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import type { CrewLabVerdict } from '../../../core/crew/labs.js';
 import type { CrewPreset } from '../../../core/crew/presets.js';
@@ -47,9 +46,9 @@ type SetupListInput = Readonly<{
 function planStage(
   input: SetupListInput,
   stage: (typeof LADDER)[number],
-  lines: readonly ListLine[],
+  presets: ReturnType<typeof planPresetRows>,
 ): Readonly<{ plan: SetupListPlan; rows: number }> {
-  const presetRows = lines.length;
+  const presetRows = presets.lines.length + presets.spareRows;
   const blocks = presetRows > 0 ? 2 : 1;
   const gaps = blocks + (input.signIn ? 1 : 0);
   const around = presetRows + (stage.headers ? blocks : 0) + (stage.gaps ? gaps : 0) + 1;
@@ -71,23 +70,27 @@ function planStage(
 
 export function planSetupList(input: SetupListInput) {
   const focusedId = input.focusedPresetId;
-  let presetLines = planPresetRows(input.presets, input.innerWidth, { focusedId });
-  let staged = planStage(input, LADDER[0], presetLines);
+  let presetPlan = planPresetRows(input.presets, input.innerWidth, { focusedId });
+  let staged = planStage(input, LADDER[0], presetPlan);
   for (const stage of LADDER.slice(1)) {
-    if (staged.rows <= input.budget) return { ...staged.plan, presetLines };
+    if (staged.rows <= input.budget) return { ...staged.plan, presetPlan };
     if ('compact' in stage) {
-      presetLines = planPresetRows(input.presets, input.innerWidth, { focusedId, compact: true });
+      presetPlan = planPresetRows(input.presets, input.innerWidth, { focusedId, compact: true });
     }
-    staged = planStage(input, stage, presetLines);
+    staged = planStage(input, stage, presetPlan);
   }
   if (staged.rows > input.budget) {
-    presetLines = planPresetRows(
-      input.presets,
-      getScrollViewportContentWidth(input.innerWidth, 'padding'),
-      { focusedId, compact: true },
-    );
+    // A full list already sets the panel height. Use its last row for a focused reason only.
+    if (staged.rows - presetPlan.spareRows > input.budget) {
+      presetPlan = planPresetRows(
+        input.presets,
+        getScrollViewportContentWidth(input.innerWidth, 'padding'),
+        { focusedId, compact: true },
+      );
+    }
+    presetPlan = { ...presetPlan, spareRows: 0 };
   }
-  return { ...staged.plan, presetLines };
+  return { ...staged.plan, presetPlan };
 }
 
 export function sectionOf(item: SetupItem): string {

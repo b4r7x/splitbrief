@@ -238,16 +238,18 @@ it('x on a trust gate over typed words denies it and leaves the words in the com
 }, async (context) => {
   await withTrustGateOverWords(context, async (child, screen) => {
     child.write('x');
-    await vi.waitFor(() => expect(screen()).toContain('r retry'), { timeout: 20_000 });
+    await vi.waitFor(() => expect(screen()).toContain('⏎ try again'), { timeout: 20_000 });
+    child.write('rs');
+    await vi.waitFor(() => expect(composerText(screen())).toBe(`› ${WORDS}rs`));
     child.write('\x1b');
     await vi.waitFor(
       () => {
-        expect(screen()).not.toContain('r retry');
+        expect(screen()).not.toContain('⏎ try again');
         expect(screen()).toContain('/sessions');
       },
       { timeout: 10_000 },
     );
-    expect(composerText(screen())).toBe(`› ${WORDS}`);
+    expect(composerText(screen())).toBe(`› ${WORDS}rs`);
   });
 });
 

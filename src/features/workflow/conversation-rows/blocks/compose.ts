@@ -14,6 +14,14 @@ import type {
 
 export function rowsBlock(
   key: string,
+  rows: readonly [ConversationRow, ...ConversationRow[]],
+): ConversationRowBlock;
+export function rowsBlock(
+  key: string,
+  rows: readonly ConversationRow[],
+): ConversationRowBlock | null;
+export function rowsBlock(
+  key: string,
   rows: readonly ConversationRow[],
 ): ConversationRowBlock | null {
   if (rows.length === 0) return null;

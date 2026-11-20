@@ -69,6 +69,7 @@ function Harness({ log, column }: { log: string[]; column: 'left' | 'right' }) {
       title="Picker"
       initialColumn={column}
       leftProps={{
+        minRowWidth: 28,
         items: TOOLS,
         getKey: (t) => t.id,
         isDisabled: (t) => t.id === 'beta',

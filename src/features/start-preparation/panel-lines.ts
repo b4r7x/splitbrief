@@ -87,17 +87,50 @@ function blank(key: string): PanelLine {
   return { kind: 'text', key, text: '', tone: 'dim' };
 }
 
-function checkLines(check: ReadinessCheck, index: number, budget: number): PanelLine[] {
-  return readinessCheckLines({ ...check, remediation: readinessCheckRemediation(check) }).flatMap(
-    (text, line) =>
+function checkEntry(input: {
+  key: string;
+  summary: string;
+  tone: LineTone;
+  reason?: string | undefined;
+  action?: string | null | undefined;
+  details: readonly string[];
+  budget: number;
+}): PanelLine[] {
+  const { key, summary, tone, reason, action, details, budget } = input;
+  return [
+    ...paragraph({ key, text: summary, tone, budget }),
+    ...(reason ? paragraph({ key: `${key}:reason`, text: reason, tone: 'text', budget }) : []),
+    ...(action
+      ? paragraph({
+          key: `${key}:action`,
+          text: sanitizeTerminalDisplayText(action),
+          tone: 'text',
+          budget,
+          marker: glyph('connectorHandoff'),
+        })
+      : []),
+    ...details.flatMap((text, index) =>
       paragraph({
-        key: `${check.id}:${index}:${line}`,
+        key: `${key}:detail:${index}`,
         text: sanitizeTerminalDisplayText(text),
-        tone: line === 0 ? 'text' : 'dim',
+        tone: 'dim',
         budget,
-        indent: line === 0 ? '' : INDENT,
+        indent: INDENT,
       }),
-  );
+    ),
+  ];
+}
+
+function checkLines(check: ReadinessCheck, index: number, budget: number): PanelLine[] {
+  const [summary, ...details] = readinessCheckLines(check);
+  return checkEntry({
+    key: `${check.id}:${index}`,
+    summary: sanitizeTerminalDisplayText(summary),
+    tone: 'text',
+    action: readinessCheckRemediation(check),
+    details,
+    budget,
+  });
 }
 
 /** Every entry gets its own air: two checks with no row between them read as one paragraph. */
@@ -113,30 +146,16 @@ function section(label: string, lines: PanelLine[]): PanelLine[] {
 }
 
 export function panelLines(model: PreparationProblem, budget: number): PanelLine[] {
-  const lead = [
-    ...paragraph({ key: 'cause', text: model.cause, tone: 'cause', budget }),
-    ...(model.reason ? paragraph({ key: 'reason', text: model.reason, tone: 'text', budget }) : []),
-    ...(model.action
-      ? paragraph({
-          key: 'action',
-          text: model.action,
-          tone: 'text',
-          budget,
-          marker: glyph('connectorHandoff'),
-        })
-      : []),
-  ];
   return [
-    ...lead,
-    ...model.details.flatMap((text, index) =>
-      paragraph({
-        key: `lead-detail:${index}`,
-        text: sanitizeTerminalDisplayText(text),
-        tone: 'dim',
-        budget,
-        indent: INDENT,
-      }),
-    ),
+    ...checkEntry({
+      key: 'cause',
+      summary: model.cause,
+      tone: 'cause',
+      reason: model.reason,
+      action: model.action,
+      details: model.details,
+      budget,
+    }),
     ...(model.diagnostic
       ? section(
           'File error',

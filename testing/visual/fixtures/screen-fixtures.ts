@@ -986,8 +986,14 @@ function homePreparationProblem(
   details = false,
   options?: HomeFixtureOptions,
 ): FixtureLifecycle {
+  const home = createHomeStartingFixture(options);
   return {
-    ...createHomeStartingFixture(options),
+    ...home,
+    setup: async (context) => {
+      await home.setup(context);
+      const { seedSessions } = await import('./overlay-fixtures.js');
+      seedSessions();
+    },
     prepareExecution: async () => outcome(),
     afterMount: async (write) => {
       await write.press('\r');
@@ -1109,8 +1115,8 @@ function createHomePreparationIsolationBlockedFixture(): FixtureLifecycle {
 }
 
 /** A repository with no commits: the blocker and its fix line come from `buildRepoChecks`. */
-function createHomePreparationNoCommitsFixture(): FixtureLifecycle {
-  return homePreparationProblem(() => ({
+function noCommitsPreparation(): PreparationOutcome {
+  return {
     kind: 'blocked',
     report: preparationReport(
       buildRepoChecks({
@@ -1121,7 +1127,18 @@ function createHomePreparationNoCommitsFixture(): FixtureLifecycle {
       }),
       { section: { id: 'repo', title: 'Repository' } },
     ),
-  }));
+  };
+}
+
+function createHomePreparationNoCommitsFixture(): FixtureLifecycle {
+  return homePreparationProblem(noCommitsPreparation);
+}
+
+function createSetupPreparationBlockedFixture(): FixtureLifecycle {
+  return {
+    ...createSetupStartingFixture(),
+    prepareExecution: async () => noCommitsPreparation(),
+  };
 }
 
 const CONTINUING_FEATURE = 'Refine terminal navigation';
@@ -1817,6 +1834,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('workflow-removed-command'), createRemovedCommandFixture],
   [scenarioId('setup-initial'), () => createSetupFixture()],
+  [scenarioId('setup-preparation-blocked'), createSetupPreparationBlockedFixture],
   [scenarioId('setup-saved'), () => createSetupFixture('saved')],
   [scenarioId('setup-saved-ignore-rule'), () => createSetupFixture('saved-ignore-rule')],
   [scenarioId('setup-unavailable-seat'), () => createSetupFixture('unavailable')],
