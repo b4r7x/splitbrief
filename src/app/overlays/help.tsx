@@ -120,10 +120,9 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const lines = planViewportRows(
     helpRows.map((row) => ({
       name: row.label,
-      wrapName: row.section === SHORTCUTS_SECTION,
       description: row.description,
       hint: row.hint,
-      trailing: row.shortcut,
+      badge: row.shortcut,
       group: row.section === SHORTCUTS_SECTION ? 'shortcuts' : 'commands',
     })),
     innerWidth,

@@ -1,7 +1,9 @@
+import { planListRows } from '../../../components/list-row/plan.js';
+import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import { sessionsStore } from '../../../stores/project/sessions.js';
-import { SessionRow } from '../../../components/session-row.js';
+import { SessionRow, sessionRowModel } from '../../../components/session-row.js';
 import type { Session } from '../../../core/schemas/session.js';
 import { RecentSessionsList } from './list.js';
 import { RecentSessionsShell } from './shell.js';
@@ -30,6 +32,7 @@ export function RecentSessions({
   const totalCount = sessionsStore.use((s) => s.totalCount);
   const theme = useTheme();
 
+  const now = useSharedClock({ active: () => !focused && sessions.length > 0 });
   const shouldLoad = Boolean(focused) || limit === undefined || limit > 0;
   if (!shouldLoad) return null;
 
@@ -53,11 +56,18 @@ export function RecentSessions({
     );
   }
 
+  const lines = planListRows(
+    visibleSessions.map((session) => sessionRowModel(session, now, theme)),
+    {
+      width: width - 2 * MARK_SLOT_CELLS,
+      marker: false,
+    },
+  );
   return (
     <RecentSessionsShell>
       <Box flexDirection="column">
-        {visibleSessions.map((s) => (
-          <SessionRow key={s.id} session={s} />
+        {lines.map((line) => (
+          <SessionRow key={visibleSessions[line.row]?.id} line={line} />
         ))}
         {showHiddenCount && hiddenCount > 0 && (
           <Box>

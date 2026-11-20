@@ -127,6 +127,7 @@ describe('StopSheet', () => {
     await tick(30);
     const frame = ui.lastFrame() ?? '';
 
+    expect(frame).not.toContain('…');
     expect(frame).toContain('start T003');
     expect(frame.replaceAll(/[│|]/gu, ' ').replace(/\s+/gu, ' ')).toContain(
       'finish T002 including checks and review; do not start T003',

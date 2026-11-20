@@ -243,8 +243,9 @@ describe('e2e: a halt panel too short for its text', () => {
     const actions = rows.findIndex(
       (row, index) => index > headline && row.includes('Review again'),
     );
-    expect(actions, rows.join('\n')).toBeGreaterThan(headline + 2);
+    expect(actions, rows.join('\n')).toBe(headline + 4);
     const reason = rows.slice(headline + 1, actions).map(panelRow);
+    expect(reason).toHaveLength(3);
     for (const reasonRow of reason) expect(reasonRow, rows.join('\n')).not.toBe('');
     expect(reason[0]).toContain('Planner said: The type test');
     expect(reason.at(-1), rows.join('\n')).toMatch(/…$/);

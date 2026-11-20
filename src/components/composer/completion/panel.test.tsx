@@ -37,6 +37,7 @@ describe('CompletionPanel', () => {
           selectedIndex={0}
           maxVisible={3}
           footer="select · esc close"
+          entryIndex={(_item, index) => index}
           itemKey={(item) => item}
           renderRow={({ item, isSelected }) => (
             <Text>
@@ -71,6 +72,7 @@ describe('CompletionPanel', () => {
             selectedIndex={0}
             maxVisible={3}
             footer="select · esc close"
+            entryIndex={(_item, index) => index}
             itemKey={(item) => item}
             renderRow={({ item, isSelected }) => (
               <Text>
@@ -110,6 +112,7 @@ describe('CompletionPanel', () => {
             selectedIndex={0}
             maxVisible={3}
             footer="select · esc close"
+            entryIndex={(_item, index) => index}
             itemKey={(item) => item}
             renderRow={({ item }) => <Text>{item}</Text>}
           />
@@ -133,6 +136,7 @@ describe('CompletionPanel', () => {
           selectedIndex={0}
           maxVisible={1}
           footer="select · esc close"
+          entryIndex={(_item, index) => index}
           itemKey={(item) => item}
           renderRow={({ item }) => <Text>{item}</Text>}
         />
@@ -156,6 +160,7 @@ describe('CompletionPanel', () => {
           selectedIndex={0}
           maxVisible={3}
           footer="select · esc close"
+          entryIndex={(_item, index) => index}
           itemKey={(item) => item}
           renderRow={({ item }) => <Text>{item}</Text>}
         />
@@ -169,6 +174,7 @@ describe('CompletionPanel', () => {
             selectedIndex={selectedIndex}
             maxVisible={3}
             footer="select · esc close"
+            entryIndex={(_item, index) => index}
             itemKey={(item) => item}
             renderRow={({ item }) => <Text>{item}</Text>}
           />
@@ -201,6 +207,7 @@ describe('CompletionPanel', () => {
           selectedIndex={0}
           maxVisible={3}
           footer="select · esc close"
+          entryIndex={(_item, index) => index}
           itemKey={(item) => item}
           renderRow={({ item }) => <Text wrap="truncate-end">{item}</Text>}
         />

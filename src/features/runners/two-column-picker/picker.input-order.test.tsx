@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type ReactElement, useState } from 'react';
-import { Text } from 'ink';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
@@ -75,16 +74,14 @@ function Harness({ log, column }: { log: string[]; column: 'left' | 'right' }) {
         isDisabled: (t) => t.id === 'beta',
         terminalPane: (t) =>
           t.id === 'delta' ? { label: 'Ready', verb: 'use', lines: [] } : undefined,
-        renderRow: (t, { isCursor, isContext }) => (
-          <Text>{`${isCursor ? '>' : isContext ? '*' : ' '}${t.displayName}`}</Text>
-        ),
+        rowModel: (t, { isCursor, isContext }) => ({
+          name: `${isCursor ? '>' : isContext ? '*' : ' '}${t.displayName}`,
+        }),
       }}
       rightProps={{
         items: rows,
         getKey: (row) => row.id,
-        renderRow: (row, { isCursor }) => (
-          <Text>{`${isCursor ? '>' : ' '}${row.displayName}`}</Text>
-        ),
+        rowModel: (row, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${row.displayName}` }),
         onLeftChange: (t) => setTool(t.id),
         isExpanded: tool === 'alpha' && expanded,
         activationOf: (row) => {

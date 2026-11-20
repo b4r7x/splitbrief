@@ -166,6 +166,20 @@ describe('HelpOverlay', () => {
     floor.unmount();
   });
 
+  it('keeps a long shortcut on one name line at 80 columns', async () => {
+    const ui = renderFeature(<HelpOverlay currentScreen="workflow" commands={[]} />);
+    try {
+      await flushEffects();
+      ui.stdin.write(END);
+      await flushEffects();
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toMatch(/shift\+↑\/↓,[^\n]*…/);
+      expect(frame).not.toMatch(/^[^\w\n]*home\/end/m);
+    } finally {
+      ui.unmount();
+    }
+  });
+
   it('shows workflow scroll and activity affordances', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const ui = renderFeature(

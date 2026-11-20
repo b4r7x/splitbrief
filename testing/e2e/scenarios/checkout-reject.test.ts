@@ -7,7 +7,7 @@ import { buildCommandContext } from '../../../src/app/command-context.js';
 import { sessionsRoot, sessionDir } from '../../../src/core/paths.js';
 import { readRunRecord } from '../../../src/core/sessions/run/record-io.js';
 import { listSessions, readSession } from '../../../src/core/sessions/io.js';
-import { SessionRow } from '../../../src/components/session-row.js';
+import { RecentSessionsList } from '../../../src/features/home/recent-sessions/list.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
@@ -414,7 +414,15 @@ describe('run rejection after a source CLI run', () => {
     });
     const [session] = listSessions(fixture.projectDir);
     if (session === undefined) throw new Error('undone run left no session row');
-    const ui = renderFeature(createElement(SessionRow, { session }));
+    const ui = renderFeature(
+      createElement(RecentSessionsList, {
+        sessions: [session],
+        width: 80,
+        hasOverlay: false,
+        onSelect: () => {},
+        onClose: () => {},
+      }),
+    );
     const row = stripAnsiStyles(ui.lastFrame() ?? '');
     ui.unmount();
     expect(row).toContain('apply undone');

@@ -12,7 +12,7 @@ import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { buildSettingsItems } from '../../features/settings/items.js';
 import { settingsHelpLines } from '../../features/settings/help.js';
 import { settingsListWindow } from '../../features/settings/list-window.js';
-import { SettingRow } from '../../features/settings/components/setting-row.js';
+import { settingRowModel } from '../../features/settings/components/setting-row.js';
 import { DESCRIPTION_ROWS, HelpBlock } from '../../features/settings/components/help-block.js';
 import { parseSettingsFocus } from '../../features/settings/focus.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
@@ -20,8 +20,9 @@ import { resolveSeatDisplayName } from '../../engine/providers/model/display-nam
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { hintFor } from '../../features/settings/presentation.js';
 import { useSettingsEditor } from '../../features/settings/hooks/use-settings-editor.js';
-import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
-import { FallbackRowView } from '../../features/crew/fallback-row-view.js';
+import { crewRowModel, CrewVerdictLine } from '../../features/crew/row-view.js';
+import { fallbackRowModel } from '../../features/crew/fallback-row.js';
+import { ListEntry, planListEntries } from '../../components/list-row/rows.js';
 import { planSeatBlock } from '../../features/crew/format.js';
 import { crewActivate, crewVerdict, fallbackActivate } from '../../features/crew/rows.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
@@ -173,25 +174,22 @@ export function SettingsOverlay() {
           hasAfter: listWindow.decorations.after,
           renderAfter: () => verdictLine,
         }}
-        renderItem={(item, { isCursor, contentWidth }) => {
-          if (item.kind === 'crew') {
-            return <CrewRowView row={item.row} layout={layout} isCursor={isCursor} />;
-          }
-          if (item.kind === 'fallback') {
-            return <FallbackRowView row={item.row} isCursor={isCursor} width={contentWidth} />;
-          }
-
-          const def = item.def;
-          return (
-            <SettingRow
-              def={def}
-              label={def.readLabel?.(config) ?? def.label}
-              value={getValue(def)}
-              editBuffer={editingId === def.id ? editBuffer : undefined}
-              isCursor={isCursor}
-              width={contentWidth}
-              detectedContextLength={detectedContextLength}
-            />
+        prepareItems={(width) => {
+          const models = filtered.map((item) => {
+            if (item.kind === 'crew') return crewRowModel(item.row, width, t);
+            if (item.kind === 'fallback') return fallbackRowModel(item.row, width);
+            const { def } = item;
+            return settingRowModel({
+              def,
+              label: def.readLabel?.(config) ?? def.label,
+              value: getValue(def),
+              editBuffer: editingId === def.id ? editBuffer : undefined,
+              detectedContextLength,
+            });
+          });
+          const entries = planListEntries(models, width);
+          return (_item, { isCursor, globalIndex }) => (
+            <ListEntry lines={entries.get(globalIndex) ?? []} selected={isCursor} width={width} />
           );
         }}
       />

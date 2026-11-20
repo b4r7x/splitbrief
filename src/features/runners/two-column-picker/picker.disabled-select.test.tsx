@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Text } from 'ink';
 import { useLayoutEffect, useState } from 'react';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
@@ -52,14 +51,14 @@ function picker(options: PickerOptions) {
         isDisabled: options.isDisabled ?? ((t) => !!t.disabled),
         terminalPane: (t) => (t.pane ? { label: 'Ready', verb: 'use', lines: [] } : undefined),
         initialIndex: options.initialIndex,
-        renderRow: (t, { isCursor, isSelected, isContext }) => (
-          <Text>{`${isCursor ? '>' : isContext ? '*' : ' '}${isSelected ? '+' : ' '}${t.displayName}`}</Text>
-        ),
+        rowModel: (t, { isCursor, isSelected, isContext }) => ({
+          name: `${isCursor ? '>' : isContext ? '*' : ' '}${isSelected ? '+' : ' '}${t.displayName}`,
+        }),
       }}
       rightProps={{
         items: [{ id: 'model-1' }],
         getKey: (m) => m.id,
-        renderRow: (m) => <Text>{m.id}</Text>,
+        rowModel: (m) => ({ name: m.id }),
         ...(options.onLeftChange ? { onLeftChange: options.onLeftChange } : {}),
       }}
       onConfirm={options.onConfirm ?? (() => {})}
@@ -298,14 +297,14 @@ describe('TwoColumnPicker model column when the parent reorders the tools', () =
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
           initialIndex: 1,
-          renderRow: (t, { isCursor, isContext }) => (
-            <Text>{`${isCursor ? '>' : isContext ? '*' : ' '}${t.displayName}`}</Text>
-          ),
+          rowModel: (t, { isCursor, isContext }) => ({
+            name: `${isCursor ? '>' : isContext ? '*' : ' '}${t.displayName}`,
+          }),
         }}
         rightProps={{
           items: [{ id: 'm-1' }, { id: 'm-2' }],
           getKey: (m) => m.id,
-          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.id}`}</Text>,
+          rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.id}` }),
           onLeftChange: (t) => log.push(`left ${t.id}`),
         }}
         onConfirm={(left, right) => log.push(`confirm ${left.id}:${right?.id ?? 'none'}`)}

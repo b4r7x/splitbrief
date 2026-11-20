@@ -21,9 +21,10 @@ import { overlayStore, selectHasOverlay } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { wrapPathAware } from '../../../utils/display-text/wrap.js';
 import { crewActivate } from '../rows.js';
-import { CrewVerdictLine } from '../row-view.js';
+import { crewRowModel, CrewVerdictLine } from '../row-view.js';
 import { useCrew } from '../use-rows.js';
-import { SetupItemRow } from './item-row.js';
+import { ListEntry, planListEntries } from '../../../components/list-row/rows.js';
+import { formatPickerStatusLabel } from '../../../core/readiness/cli-remediation.js';
 import {
   CONTINUE_SECTION,
   crewKeysHint,
@@ -179,20 +180,39 @@ export function CrewStep({
               <CrewVerdictLine verdict={verdict} width={ctx.contentWidth} />
             ),
         }}
-        renderItem={(item, ctx) => (
-          <SetupItemRow
-            item={item}
-            isCursor={ctx.isCursor}
-            width={ctx.contentWidth}
-            presetLines={
-              item.kind === 'preset'
-                ? presetLines.filter((line) => presets[line.row]?.id === item.preset.id)
-                : []
-            }
-            seatStatuses={seatStatuses}
-            canContinue={canContinue}
-          />
-        )}
+        prepareItems={(width) => {
+          const name = 'Continue' + (canContinue ? '' : SOFT_SEP + 'choose ready seats');
+          const active = focusedItem?.kind === 'continue' && canContinue;
+          const actions = planListEntries(
+            [
+              ...crewRows.map((row) =>
+                crewRowModel(
+                  row,
+                  width,
+                  t,
+                  formatPickerStatusLabel({ state: seatStatuses.get(row.id) ?? 'ready' }),
+                ),
+              ),
+              {
+                name,
+                nameParts: [{ text: name, color: active ? t.accent : t.textDim, bold: active }],
+              },
+            ],
+            width,
+          );
+          const presetEntries = Map.groupBy(presetLines, (line) => line.row);
+          return (item, { globalIndex, isCursor }) => (
+            <ListEntry
+              lines={
+                (item.kind === 'preset'
+                  ? presetEntries.get(globalIndex)
+                  : actions.get(globalIndex - presets.length)) ?? []
+              }
+              selected={isCursor}
+              width={width}
+            />
+          );
+        }}
       />
       {notice !== null && <PanelNotice notice={notice} />}
     </OverlayPanel>

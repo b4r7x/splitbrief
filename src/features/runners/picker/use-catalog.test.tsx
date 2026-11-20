@@ -34,7 +34,8 @@ import { formatModelCatalogGuidance } from './catalog-guidance.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { renderModelRow } from '../tool-row.js';
+import { modelRowModel } from '../tool-row.js';
+import { ListRowFixture } from '#testing/helpers/list-row.js';
 
 /** The models behind the rows the picker actually renders. */
 function rowModels(rows: readonly RightRow[]) {
@@ -285,12 +286,12 @@ function ControlledCatalogPicker({
         getKey: (item) => item.id,
         isDisabled: (item) => !item.available,
         initialIndex: catalog.initialLeftIdx,
-        renderRow: (item) => <Text>{item.displayName}</Text>,
+        rowModel: (item) => ({ name: item.displayName }),
       }}
       rightProps={{
         items: rowModels(catalog.rightRows),
         getKey: (model) => model.id,
-        renderRow: (model) => <Text>{model.id}</Text>,
+        rowModel: (model) => ({ name: model.id }),
         onLeftChange: (item) => setSelectedItemId(item.id),
       }}
       onConfirm={() => {}}
@@ -418,18 +419,20 @@ describe('usePickerCatalog', () => {
               .filter((row) => row.kind === 'model')
               .map((row) => (
                 <Box key={row.model.id}>
-                  {renderModelRow({
-                    row,
-                    isCursor: false,
-                    maxWidth: 80,
-                    currentModel: currentCatalog.currentModel,
-                    auth: {
-                      providerAuth: currentCatalog.providerAuth,
-                      catalog: currentCatalog.toolCatalog,
-                      tool: undefined,
-                    },
-                    plan: planModelRows({ rows: [row], width: 80, providerId: undefined }),
-                  })}
+                  <ListRowFixture
+                    width={80}
+                    {...modelRowModel({
+                      row,
+                      isCursor: false,
+                      currentModel: currentCatalog.currentModel,
+                      auth: {
+                        providerAuth: currentCatalog.providerAuth,
+                        catalog: currentCatalog.toolCatalog,
+                        tool: undefined,
+                      },
+                      plan: planModelRows({ rows: [row], width: 80, providerId: undefined }),
+                    })}
+                  />
                 </Box>
               ))}
           </Box>
@@ -501,18 +504,20 @@ describe('usePickerCatalog', () => {
         <Box flexDirection="column">
           {catalog.rightRows.map((row) => (
             <Box key={rightRowKey(row)}>
-              {renderModelRow({
-                row,
-                isCursor: false,
-                maxWidth: 80,
-                currentModel: catalog.currentModel,
-                auth: {
-                  providerAuth: catalog.providerAuth,
-                  catalog: catalog.toolCatalog,
-                  tool: undefined,
-                },
-                plan: planModelRows({ rows: [row], width: 80, providerId: undefined }),
-              })}
+              <ListRowFixture
+                width={80}
+                {...modelRowModel({
+                  row,
+                  isCursor: false,
+                  currentModel: catalog.currentModel,
+                  auth: {
+                    providerAuth: catalog.providerAuth,
+                    catalog: catalog.toolCatalog,
+                    tool: undefined,
+                  },
+                  plan: planModelRows({ rows: [row], width: 80, providerId: undefined }),
+                })}
+              />
             </Box>
           ))}
         </Box>

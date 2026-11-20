@@ -1,10 +1,11 @@
 import { Box } from 'ink';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
-import { PickerRow } from '../../../components/list-row/picker-row.js';
+import { ListEntry, planListEntries } from '../../../components/list-row/rows.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { SingleColumnPicker } from './single-column.js';
 import { TerminalPaneCard } from './terminal-pane-card.js';
 import { buildRightDisplay, type RightDisplaySlot } from './right-display.js';
@@ -36,6 +37,17 @@ export function ModelsColumn<L extends FilterableItem, R extends { id: string }>
     0,
     display.findIndex((slot) => slot.kind === 'row' && slot.navIndex === nav.right.index),
   );
+
+  const maxWidth = getScrollViewportContentWidth(rightContentWidth);
+  const models = nav.right.items.map((item, index) =>
+    isVirtualCustomItem(item)
+      ? { name: '+ Add custom model…', keepWhole: 'label' as const }
+      : rightProps.rowModel(item, {
+          isCursor: nav.activeColumn === 'right' && nav.right.index === index,
+          maxWidth,
+        }),
+  );
+  const lines = planListEntries(models, maxWidth);
 
   return terminalPane !== undefined ? (
     <TerminalPaneCard pane={terminalPane} contentWidth={rightContentWidth} height={columnHeight} />
@@ -93,17 +105,15 @@ export function ModelsColumn<L extends FilterableItem, R extends { id: string }>
           );
         }
         if (slot.kind === 'guidance') return rightProps.placeholder ?? null;
-        if (isVirtualCustomItem(slot.item)) {
-          return (
-            <PickerRow
-              label="+ Add custom model…"
-              state={isCursor ? 'active' : 'default'}
-              width={maxWidth}
-              keepWhole="label"
-            />
-          );
-        }
-        return rightProps.renderRow(slot.item, { isCursor, maxWidth });
+        const model = models[slot.navIndex];
+        return (
+          <ListEntry
+            lines={lines.get(slot.navIndex) ?? []}
+            selected={isCursor}
+            state={model?.state}
+            width={model?.maxWidth ?? maxWidth}
+          />
+        );
       }}
     />
   );

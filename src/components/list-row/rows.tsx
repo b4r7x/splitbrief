@@ -1,10 +1,37 @@
 import type { ReactNode } from 'react';
+import { Box } from 'ink';
+import type { ListRowState } from './lead.js';
 import { ListRow } from './row.js';
 import { ListViewport } from '../pickers/list-viewport.js';
 import { PanelRow } from '../overlays/row.js';
 import { planListRows, type ListLine, type ListRowModel } from './plan.js';
 import { computeListDisplayWindow } from '../pickers/scroll-window.js';
 import { getScrollViewportContentWidth } from '../scrollbar.js';
+
+/** Lists with their own sections, input fields or selection markers still plan all entries together. */
+export function planListEntries(rows: readonly ListRowModel[], width: number) {
+  return Map.groupBy(planListRows(rows, { width }), (line) => line.row);
+}
+
+export function ListEntry({
+  lines,
+  selected,
+  width,
+  state,
+}: {
+  lines: readonly ListLine[];
+  selected: boolean;
+  width: number;
+  state?: ListRowState | undefined;
+}) {
+  return (
+    <Box flexDirection="column" width={width}>
+      {lines.map((line) => (
+        <ListRow key={line.part} line={line} selected={selected} state={state} width={width} />
+      ))}
+    </Box>
+  );
+}
 
 export function planViewportRows(
   rows: readonly ListRowModel[],

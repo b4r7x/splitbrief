@@ -1,3 +1,4 @@
+import { ListEntry } from '../../components/list-row/rows.js';
 import { describe, expect, it } from 'vitest';
 import chalk from 'chalk';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -7,7 +8,7 @@ import { defaultTheme, ThemeProvider } from '../../components/theme.js';
 import { paint } from '../../core/theme/paint.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
-import { planPresetRows, PresetRowView } from './preset-row.js';
+import { planPresetRows } from './preset-row.js';
 
 const DESCRIPTION = 'Claude Code plans and builds; Codex reviews the diff from another lab.';
 
@@ -30,9 +31,9 @@ async function frameFor(
   preset: CrewPreset = PRESET,
 ): Promise<string> {
   const ui = renderFeature(
-    <PresetRowView
+    <ListEntry
       lines={planPresetRows([preset], width, { focusedId: isCursor ? preset.id : undefined })}
-      isCursor={isCursor}
+      selected={isCursor}
       width={width}
     />,
     { cols, rows: 24 },
@@ -50,7 +51,7 @@ async function lineFor(width: number, cols: number, isCursor = true): Promise<st
 async function themedFrameFor(isCursor: boolean): Promise<string> {
   const ui = renderFeature(
     <ThemeProvider theme={{ ...defaultTheme, accent: 'red' }}>
-      <PresetRowView lines={planPresetRows([PRESET], 102)} isCursor={isCursor} width={102} />
+      <ListEntry lines={planPresetRows([PRESET], 102)} selected={isCursor} width={102} />
     </ThemeProvider>,
     { cols: 120, rows: 24 },
   );

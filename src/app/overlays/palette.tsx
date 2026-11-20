@@ -108,10 +108,8 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     name: result.label,
     description: result.source === 'task' || result.source === 'session' ? '' : result.description,
     hint: result.hint,
-    trailing:
-      result.source === 'task' || result.source === 'session'
-        ? result.description
-        : result.shortcut,
+    trailing: result.source === 'task' || result.source === 'session' ? result.description : null,
+    badge: result.shortcut,
     group: result.source,
   }));
   const section =

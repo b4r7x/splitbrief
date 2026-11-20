@@ -4,6 +4,8 @@ import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import { useStores } from '../../../stores/use-many.js';
+import { ListEntry, planListEntries } from '../../../components/list-row/rows.js';
+import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import { SingleColumnPicker } from './single-column.js';
 import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
 import type { LeftColumnProps, RightColumnProps } from './types.js';
@@ -173,6 +175,21 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const leftEmptyText = `No ${(leftProps.label ?? 'items').toLowerCase()} match`;
   const wheelStep = (direction: 'up' | 'down'): 1 | -1 => (direction === 'up' ? -1 : 1);
 
+  const leftRowWidth = getScrollViewportContentWidth(leftContentWidth);
+  const leftModels = nav.left.items.map((item, index) => {
+    const isCursor = nav.activeColumn === 'left' && nav.left.index === index;
+    const key = leftProps.getKey(item);
+    const isSelected = nav.selectedLeftKey
+      ? nav.selectedLeftKey === key
+      : !!('isCurrent' in item && item.isCurrent);
+    const isContext =
+      nav.activeColumn === 'right' &&
+      nav.left.currentItem !== undefined &&
+      leftProps.getKey(item) === leftProps.getKey(nav.left.currentItem);
+    return leftProps.rowModel(item, { isCursor, isSelected, isContext, maxWidth: leftRowWidth });
+  });
+  const leftLines = planListEntries(leftModels, leftRowWidth);
+
   return (
     <Box
       width={cols}
@@ -215,17 +232,14 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
               onWheel={(direction) => nav.wheelLeft(wheelStep(direction))}
               rowZonePrefix="runner-left"
               rowZoneZ={ROW_ZONE_Z_OVERLAY}
-              renderRow={(item, isCursor, maxWidth) => {
-                const key = leftProps.getKey(item);
-                const isSelected = nav.selectedLeftKey
-                  ? nav.selectedLeftKey === key
-                  : !!('isCurrent' in item && item.isCurrent);
-                const isContext =
-                  nav.activeColumn === 'right' &&
-                  nav.left.currentItem !== undefined &&
-                  leftProps.getKey(item) === leftProps.getKey(nav.left.currentItem);
-                return leftProps.renderRow(item, { isCursor, isSelected, isContext, maxWidth });
-              }}
+              renderRow={(_item, isCursor, width, index) => (
+                <ListEntry
+                  lines={leftLines.get(index) ?? []}
+                  selected={isCursor}
+                  state={leftModels[index]?.state}
+                  width={width}
+                />
+              )}
             />
           </Box>
         )}

@@ -43,7 +43,7 @@ function mount(
         getKey: (tool) => tool.id,
         isDisabled: (tool) => tool.id === 'alpha' && options.pane !== undefined,
         terminalPane: (tool) => (tool.id === 'alpha' ? options.pane : undefined),
-        renderRow: (tool) => <Text>{tool.displayName}</Text>,
+        rowModel: (tool) => ({ name: tool.displayName }),
       }}
       rightProps={{
         label: 'Models',
@@ -52,12 +52,7 @@ function mount(
         items: options.empty ? [] : models,
         getKey: (model) => model.id,
         placeholder: <Text>Refresh the model catalog.</Text>,
-        renderRow: (model, { isCursor }) => (
-          <Text>
-            {isCursor ? '▌ ' : ''}
-            {model.id}
-          </Text>
-        ),
+        rowModel: (model, { isCursor }) => ({ name: (isCursor ? '▌ ' : '') + model.id }),
       }}
       onCancel={cancel}
       onConfirm={confirm}

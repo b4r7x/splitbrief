@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones, hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
-import { PickerRow } from '../../../components/list-row/picker-row.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
@@ -48,12 +46,12 @@ const picker = (preview: Parameters<typeof TwoColumnPicker<Tool, Model>>[0]['pre
     leftProps={{
       items: TOOLS,
       getKey: (tool) => tool.id,
-      renderRow: (tool) => <Text>{tool.displayName}</Text>,
+      rowModel: (tool) => ({ name: tool.displayName }),
     }}
     rightProps={{
       items: MODELS_BY_TOOL.alpha ?? [],
       getKey: (model) => model.id,
-      renderRow: (model) => <Text>{model.displayName}</Text>,
+      rowModel: (model) => ({ name: model.displayName }),
     }}
     preview={preview}
     onConfirm={() => {}}
@@ -113,12 +111,12 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: TOOLS,
             getKey: (tool) => tool.id,
-            renderRow: (tool) => <Text>{tool.displayName}</Text>,
+            rowModel: (tool) => ({ name: tool.displayName }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL.alpha ?? [],
             getKey: (model) => model.id,
-            renderRow: (model) => <Text>{model.displayName}</Text>,
+            rowModel: (model) => ({ name: model.displayName }),
           }}
           onConfirm={() => {}}
           onCancel={() => {}}
@@ -168,12 +166,12 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: TOOLS,
             getKey: (tool) => tool.id,
-            renderRow: (tool) => <Text>{tool.displayName}</Text>,
+            rowModel: (tool) => ({ name: tool.displayName }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL.alpha ?? [],
             getKey: (model) => model.id,
-            renderRow: (model) => <Text>{model.displayName}</Text>,
+            rowModel: (model) => ({ name: model.displayName }),
             isExpanded: true,
             enterHint: () => 'space cycle · ⏎ confirm',
           }}
@@ -252,12 +250,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (tool) => tool.id,
-          renderRow: (tool) => <Text>{tool.displayName}</Text>,
+          rowModel: (tool) => ({ name: tool.displayName }),
         }}
         rightProps={{
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (model) => model.id,
-          renderRow: (model) => <Text>{model.displayName}</Text>,
+          rowModel: (model) => ({ name: model.displayName }),
         }}
         notice={{ message, severity: 'warning' }}
         onConfirm={() => {}}
@@ -311,12 +309,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -342,12 +340,12 @@ describe('TwoColumnPicker', () => {
           items: TOOLS,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
           onLeftChange: (t) => {
             leftChanges.push(t.id);
           },
@@ -390,12 +388,12 @@ describe('TwoColumnPicker', () => {
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             onLeftChange: (t) => {
               setLeftId(t.id);
             },
@@ -431,14 +429,12 @@ describe('TwoColumnPicker', () => {
             items: tools,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
-            renderRow: (t, { isCursor }) => (
-              <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>
-            ),
+            rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             onLeftChange: (t) => {
               leftChanges.push(t.id);
               setLeftId(t.id);
@@ -496,14 +492,12 @@ describe('TwoColumnPicker', () => {
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
             initialIndex: 2,
-            renderRow: (t, { isCursor }) => (
-              <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>
-            ),
+            rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             onLeftChange: (t) => {
               leftChanges.push(t.id);
               setLeftId(t.id);
@@ -549,15 +543,13 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: TOOLS,
             getKey: (t) => t.id,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: rows,
             getKey: (m) => m.id,
             initialIndex: 1,
-            renderRow: (m, { isCursor }) => (
-              <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>
-            ),
+            rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
             customRow: { onSelect: () => {} },
           }}
           onConfirm={(l, r) => {
@@ -609,14 +601,12 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: TOOLS,
             getKey: (t) => t.id,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: rows,
             getKey: (m) => m.id,
-            renderRow: (m, { isCursor }) => (
-              <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>
-            ),
+            rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
             customRow: {
               onSelect: (tool) => {
                 customOpens.push(tool.id);
@@ -672,12 +662,12 @@ describe('TwoColumnPicker', () => {
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             onLeftChange: (t) => {
               setLeftId(t.id);
             },
@@ -714,12 +704,12 @@ describe('TwoColumnPicker', () => {
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             // Only alpha resolves an index; every other destination takes the default.
             resolveInitialIndex: (left) => (left?.id === 'alpha' ? 1 : undefined),
             onLeftChange: (t) => {
@@ -789,12 +779,12 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: tools,
             getKey: (t) => t.id,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: modelsByTool[leftId] ?? [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             resolveInitialIndex: () => 0,
             onLeftChange: (t) => {
               setLeftId(t.id);
@@ -838,12 +828,12 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: tools,
             getKey: (t) => t.id,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [{ id: 'p-1', displayName: 'plan-1' }],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             onLeftChange: (t) => {
               setLeftId(t.id);
             },
@@ -898,12 +888,12 @@ describe('TwoColumnPicker', () => {
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
             initialIndex: 2,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             resolveInitialIndex: (left) => (left?.id === 'alpha' ? 1 : undefined),
             onLeftChange: (t) => {
               setLeftId(t.id);
@@ -943,12 +933,12 @@ describe('TwoColumnPicker', () => {
           items: TOOLS,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
           onLeftChange: (t) => {
             leftChanges.push(t.id);
           },
@@ -977,12 +967,12 @@ describe('TwoColumnPicker', () => {
           items: TOOLS,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={(l, r) => {
           confirms.push({ l: l.id, r: r?.id ?? null });
@@ -1012,12 +1002,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (tool) => tool.id,
-          renderRow: (tool) => <Text>{tool.displayName}</Text>,
+          rowModel: (tool) => ({ name: tool.displayName }),
         }}
         rightProps={{
           items: models,
           getKey: (model) => model.id,
-          renderRow: (model) => <Text>{model.displayName}</Text>,
+          rowModel: (model) => ({ name: model.displayName }),
         }}
         onConfirm={(_, model) => {
           if (model) confirms.push(model.id);
@@ -1053,12 +1043,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: [],
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {
@@ -1086,12 +1076,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {
@@ -1121,14 +1111,15 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t, { isCursor }) => (
-            <PickerRow label={t.displayName} state={isCursor ? 'active' : 'default'} />
-          ),
+          rowModel: (t, { isCursor }) => ({
+            name: t.displayName,
+            state: isCursor ? 'active' : 'default',
+          }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -1159,22 +1150,22 @@ describe('TwoColumnPicker', () => {
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
-            renderRow: (t, { isCursor, isSelected, isContext }) => {
+            rowModel: (t, { isCursor, isSelected, isContext }) => {
               // The state comes from the meta the picker passes, never re-derived
               // here — a fixture that recomputes it cannot fail when the picker
               // stops forwarding the flag.
               const state = isCursor ? 'active' : isContext === true ? 'context' : 'default';
               leftCalls.push({ id: t.id, isCursor, isSelected, state });
-              return <PickerRow label={t.displayName} state={state} />;
+              return { name: t.displayName, state: state };
             },
           }}
           rightProps={{
             items: MODELS_BY_TOOL[leftId] ?? [],
             getKey: (m) => m.id,
-            renderRow: (m, { isCursor }) => {
+            rowModel: (m, { isCursor }) => {
               const state = isCursor ? 'active' : 'default';
               rightCalls.push({ id: m.id, isCursor, state });
-              return <PickerRow label={m.displayName} state={state} />;
+              return { name: m.displayName, state: state };
             },
             onLeftChange: (t) => {
               setLeftId(t.id);
@@ -1250,12 +1241,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items,
           getKey: (item) => item.id,
-          renderRow: (item) => <Text>{item.displayName}</Text>,
+          rowModel: (item) => ({ name: item.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (item) => item.id,
-          renderRow: (item) => <Text>{item.displayName}</Text>,
+          rowModel: (item) => ({ name: item.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -1280,12 +1271,12 @@ describe('TwoColumnPicker', () => {
             items: TOOLS,
             label: 'tools',
             getKey: (t) => t.id,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
           }}
           onConfirm={() => {}}
           onCancel={() => {}}
@@ -1319,12 +1310,12 @@ describe('TwoColumnPicker', () => {
           items: TOOLS,
           label: 'tools',
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -1354,12 +1345,12 @@ describe('TwoColumnPicker', () => {
           items: many,
           label: 'tools',
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -1376,12 +1367,12 @@ describe('TwoColumnPicker', () => {
           items: [],
           label: 'tools',
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -1408,12 +1399,12 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: [],
             getKey: (t) => t.id,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
           }}
           onConfirm={() => {}}
           onCancel={() => {
@@ -1439,12 +1430,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={(tool) => {
           confirms.push(tool.id);
@@ -1485,12 +1476,12 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: tools,
             getKey: (t) => t.id,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: models,
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             ...(custom ? { customRow: { onSelect: () => {} } } : {}),
           }}
           onConfirm={() => {}}
@@ -1514,12 +1505,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -1550,12 +1541,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
           isExpanded: true,
           enterHint: () => undefined,
           customRow: { onSelect: () => {} },
@@ -1584,12 +1575,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
           isExpanded: true,
           enterHint: () => 'space cycle · ⏎ confirm',
         }}
@@ -1636,12 +1627,12 @@ describe('TwoColumnPicker', () => {
           leftProps={{
             items: TOOLS,
             getKey: (t) => t.id,
-            renderRow: (t) => <Text>{t.displayName}</Text>,
+            rowModel: (t) => ({ name: t.displayName }),
           }}
           rightProps={{
             items: models,
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
           }}
           onConfirm={() => {}}
           onCancel={() => {}}
@@ -1689,12 +1680,12 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: toolsWithPreview,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -1748,13 +1739,13 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: sectionedModels,
           getKey: (m) => m.id,
           section: { by: (m) => m.section },
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={(l, r) => {
           confirms.push({ l: l.id, r: r?.id ?? null });
@@ -1819,14 +1810,15 @@ describe('TwoColumnPicker', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
-          renderRow: (m, { isCursor }) => (
-            <PickerRow label={m.displayName} state={isCursor ? 'active' : 'default'} />
-          ),
+          rowModel: (m, { isCursor }) => ({
+            name: m.displayName,
+            state: isCursor ? 'active' : 'default',
+          }),
           customRow: { onSelect: () => {} },
         }}
         onConfirm={() => {}}

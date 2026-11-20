@@ -1,3 +1,5 @@
+import type { ListRowModel } from '../../../components/list-row/plan.js';
+import type { ListRowState } from '../../../components/list-row/lead.js';
 import type { ReactNode } from 'react';
 import type { RightItemOrVirtual } from './virtual-items.js';
 
@@ -35,6 +37,8 @@ export interface RightSectionProps<R> {
   headerFor?: ((section: string) => boolean) | undefined;
 }
 
+export type PickerEntry = ListRowModel & { state?: ListRowState };
+
 export interface LeftRowMeta {
   isCursor: boolean;
   isSelected: boolean;
@@ -48,7 +52,7 @@ export interface LeftColumnProps<L> {
   items: L[];
   label?: string | undefined;
   filterBy?: ((item: L, query: string) => boolean) | undefined;
-  renderRow: (item: L, meta: LeftRowMeta) => ReactNode;
+  rowModel: (item: L, meta: LeftRowMeta) => PickerEntry;
   getKey: (item: L) => string;
   terminalPane?: ((item: L) => TerminalPane | undefined) | undefined;
   isDisabled?: ((item: L) => boolean) | undefined;
@@ -68,7 +72,7 @@ export interface RightColumnProps<L, R> {
   items: R[];
   label?: string | undefined;
   filterBy?: ((item: R, query: string) => boolean) | undefined;
-  renderRow: (item: R, meta: { isCursor: boolean; maxWidth: number }) => ReactNode;
+  rowModel: (item: R, meta: { isCursor: boolean; maxWidth: number }) => PickerEntry;
   getKey: (item: R) => string;
   placeholder?: ReactNode | undefined;
   customRow?: CustomRowOptions<L, R> | undefined;

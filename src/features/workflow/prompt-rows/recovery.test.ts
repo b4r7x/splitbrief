@@ -4,6 +4,8 @@ import { PLAN_CORRECTION_GOES_AGAIN } from '../../../core/recovery/causes.js';
 import { fitRecoveryMenu, getRecoveryPromptRows } from './recovery.js';
 import { clipPromptBodyRows, countPromptBodyRows, promptBodyRows } from './body.js';
 import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
+import { planListRows } from '../../../components/list-row/plan.js';
+import { recoveryMenuRows } from '../recovery/menu-label.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 const LONG_TEXT = `${'greet.ts needs a locale table, but the brief names no locale source. '.repeat(4)}Which file?`;
@@ -44,8 +46,15 @@ describe('getRecoveryPromptRows', () => {
 });
 
 describe('fitRecoveryMenu', () => {
+  function fitMenu(issue: ReturnType<typeof makeRecoveryIssue>, width: number, boxRows: number) {
+    const actionRows = planListRows(recoveryMenuRows(issue, false, false), {
+      width: Math.max(1, width - 4),
+    }).length;
+    return fitRecoveryMenu({ issue, width, boxRows, actionRows });
+  }
+
   function layout(width: number, boxRows: number) {
-    const { summary, ...rest } = fitRecoveryMenu({ issue: makeRecoveryIssue(), width, boxRows });
+    const { summary, ...rest } = fitMenu(makeRecoveryIssue(), width, boxRows);
     return rest;
   }
 
@@ -54,7 +63,7 @@ describe('fitRecoveryMenu', () => {
     (cols) => {
       const issue = makeRecoveryIssue();
       const width = getChromeContentWidth(cols);
-      const fit = fitRecoveryMenu({ issue, width, boxRows: getRecoveryPromptRows(issue, cols) });
+      const fit = fitMenu(issue, width, getRecoveryPromptRows(issue, cols));
       const summary = recoveryPromptSummaryRows(issue, width - 4);
       expect(fit).toEqual({
         innerWidth: width - 4,
@@ -94,7 +103,7 @@ describe('fitRecoveryMenu', () => {
         'Implementer said: I changed the expiry, but the clock is frozen in the test',
       ],
     });
-    const { summary, ...fit } = fitRecoveryMenu({ issue, width: 56, boxRows: 8 });
+    const { summary, ...fit } = fitMenu(issue, 56, 8);
 
     expect(fit).toEqual({
       innerWidth: 52,
@@ -126,7 +135,7 @@ describe('fitRecoveryMenu', () => {
             ? ['retry-same-worker', 'decide-for-me', 'skip-current-task', 'end-run']
             : ['retry-same-worker', 'skip-current-task', 'end-run'],
       });
-      const fit = fitRecoveryMenu({ issue, width: 76, boxRows });
+      const fit = fitMenu(issue, 76, boxRows);
       const shown = clipPromptBodyRows(
         promptBodyRows(fit.summary, fit.innerWidth),
         fit.summaryRows,

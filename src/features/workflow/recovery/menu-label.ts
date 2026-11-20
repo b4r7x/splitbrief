@@ -85,8 +85,9 @@ export function recoveryMenuRow(
     key: recoveryActionKey(action),
     name: label.map((part) => part.text).join(''),
     nameParts: label,
+    keepWhole: 'label' as const,
     description: consequence,
-    trailing: action === recommendedRecoveryAction(issue) ? 'recommended' : undefined,
+    badge: action === recommendedRecoveryAction(issue) ? 'recommended' : undefined,
   };
 }
 

@@ -6,6 +6,7 @@ import { PanelRow } from '../../../components/overlays/row.js';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import {
   getScrollbarThumb,
+  getScrollViewportContentWidth,
   hasScrollbarOverflow,
   scrollbarCell,
 } from '../../../components/scrollbar.js';
@@ -22,7 +23,7 @@ interface SingleColumnPickerProps<T> {
   height: number;
   visibleRows: number;
   getKey: (item: T) => string;
-  renderRow: (item: T, isCursor: boolean, maxWidth: number) => ReactNode;
+  renderRow: (item: T, isCursor: boolean, maxWidth: number, index: number) => ReactNode;
   contentMaxWidth: number;
   placeholderWhenEmpty?: ReactNode;
   emptyText?: string;
@@ -150,7 +151,7 @@ function PickerRows<T>({
     lineCount: items.length,
     visibleHeight: visibleRows,
   });
-  const rowContentWidth = contentMaxWidth - 2;
+  const rowContentWidth = getScrollViewportContentWidth(contentMaxWidth);
   const renderedLineCount = visibleSlice.reduce(
     (sum, item) => sum + (lineCountOf ? lineCountOf(item) : 1),
     0,
@@ -165,7 +166,7 @@ function PickerRows<T>({
         const rowNode = (
           <PanelRow key={itemKey} width="100%" active={isCursor}>
             <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-              {renderRow(item, isCursor, rowContentWidth)}
+              {renderRow(item, isCursor, rowContentWidth, itemIndex)}
             </Box>
             <ScrollbarGutter
               onThumb={overflow && scrollbarCell(index, thumb)}

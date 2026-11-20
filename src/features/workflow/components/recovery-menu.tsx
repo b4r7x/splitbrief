@@ -45,7 +45,7 @@ export function RecoveryMenu({
   const lines = planListRows(actions, { width: Math.max(1, width - 4) });
   const initialAction = Math.max(
     0,
-    actions.findIndex((item) => item.trailing !== undefined),
+    actions.findIndex((item) => item.badge !== undefined),
   );
   const fit = fitRecoveryMenu({ issue, width, boxRows: clampedBoxRows, actionRows: lines.length });
 

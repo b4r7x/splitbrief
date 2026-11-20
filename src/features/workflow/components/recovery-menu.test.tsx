@@ -282,10 +282,9 @@ it('keeps every action label whole on a 56-column panel', async () => {
     .split('\n')
     .filter((line) => /Try again|Change REVIEW tool|Skip brief|End run/.test(line));
   expect(rows).toHaveLength(4);
-  const nameRow = frame.split('\n').findIndex((line) => line.includes('Change REVIEW tool'));
-  const name = frame.split('\n')[nameRow] ?? '';
-  const detail = frame.split('\n')[nameRow + 1] ?? '';
-  expect(detail.indexOf('runs the review again')).toBe(name.indexOf('Change REVIEW tool'));
+  const change = rows.find((line) => line.includes('Change REVIEW tool'));
+  expect(change).toMatch(/Change REVIEW tool +runs the review again/u);
+  expect(change).not.toContain('recommended');
   for (const row of rows) expect(row).not.toContain('…');
   ui.unmount();
 });
@@ -609,7 +608,7 @@ it.each([true, false])(
   },
 );
 
-it('keeps the key and recommendation inside a narrow row and wraps the consequence', () => {
+it('keeps the whole action and its seat colour when the recommendation does not fit', () => {
   const colorLevel = chalk.level;
   chalk.level = 3;
   const ui = mount(
@@ -624,7 +623,12 @@ it('keeps the key and recommendation inside a narrow row and wraps the consequen
   const line = stripAnsiStyles(ui.lastFrame())
     .split('\n')
     .find((line) => line.includes('Change'));
-  expect(line).toContain('w  Change …  recommended');
+  expect(line).toContain('w  Change BUILD tool');
+  expect(line).not.toContain('recommended');
+  expect(ui.lastFrame()).toContain(
+    paint(defaultTheme.implementer, 'BUILD').replace('\u001b[39m', ''),
+  );
+  expect(ui.lastFrame()).toContain(paint(defaultTheme.accent, ' tool').replace('\u001b[39m', ''));
   expect(getTerminalCellWidth(line ?? '')).toBe(30);
   expect(stripAnsiStyles(ui.lastFrame())).toContain('restarts this brief');
   ui.unmount();
@@ -1021,8 +1025,7 @@ it('says what Accept as is and Decide for me do on a failed review the planner c
   const ui = await mountPanel(issue, 18, 60);
   const rows = frameRows(ui);
   const review = rows.findIndex((line) => line.includes('v  Review again'));
-  expect(rows[review]).toMatch(/Review again {2,}sends your note to {2,}recommended/);
-  expect(rows[review + 1]?.indexOf('the reviewer')).toBe(rows[review]?.indexOf('sends your'));
+  expect(rows[review]).toMatch(/Review again {2,}sends your note to the reviewer/);
   expect(rows.join('\n')).toMatch(/k {2}Accept as is {2,}records the blockers/);
   expect(rows.join('\n')).toMatch(/d {2}Decide for me {2,}closes this run/);
   expect(rows.join('\n')).toContain('a  End run');

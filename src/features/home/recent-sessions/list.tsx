@@ -1,8 +1,10 @@
+import { planListRows } from '../../../components/list-row/plan.js';
+import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import type { Session } from '../../../core/schemas/session.js';
 import { BACK_HINT, formatKeyHints, SELECT_HINT } from '../../../components/key-legend.js';
-import { SessionRow } from '../../../components/session-row.js';
+import { SessionRow, sessionRowModel } from '../../../components/session-row.js';
 import { RecentSessionsShell } from './shell.js';
 import { FilterInput } from '../../../components/filter-input.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
@@ -39,6 +41,7 @@ export function RecentSessionsList({
   width,
 }: RecentSessionsListProps) {
   const theme = useTheme();
+  const now = useSharedClock({ active: () => true });
   const pageSize = maxVisible === undefined ? sessions.length : Math.max(0, maxVisible);
   const list = useFilterableList({
     items: sessions,
@@ -92,9 +95,16 @@ export function RecentSessionsList({
                 },
               })}
           placeholder={<Text color={theme.textDim}>No matching sessions</Text>}
-          renderItem={(session, { isCursor }) => (
-            <SessionRow session={session} cursor={{ kind: 'outdent', isCursor }} />
-          )}
+          prepareItems={(contentWidth) => {
+            const lines = planListRows(
+              filtered.map((session) => sessionRowModel(session, now, theme)),
+              { width: contentWidth, marker: false },
+            );
+            return (_session, { globalIndex, isCursor }) => {
+              const line = lines[globalIndex];
+              return line && <SessionRow line={line} cursor={{ kind: 'outdent', isCursor }} />;
+            };
+          }}
         />
       </Box>
     </RecentSessionsShell>

@@ -1,9 +1,8 @@
 import { Box } from 'ink';
 import { PanelRow } from '../../../components/overlays/row.js';
-import { PickerRow } from '../../../components/list-row/picker-row.js';
+import { ListEntry, planListEntries } from '../../../components/list-row/rows.js';
 import { OverlayPanel } from '../../../components/overlays/panel.js';
 import { windowSlice } from '../../../components/pickers/scroll-offset.js';
-import { useTheme } from '../../../components/theme.js';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { overlayInnerRowCapacity, overlayRect } from '../../../core/navigation/overlay-rect.js';
 import {
@@ -28,7 +27,6 @@ const OVERLAY_CHROME_ROWS = 4;
 
 export function LocalConnectionForm(props: LocalConnectionFormProps) {
   const { role, provider, seat } = props;
-  const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const descriptor: ApiProviderDescriptor = API_PROVIDER_CATALOG[provider];
   const {
@@ -64,6 +62,22 @@ export function LocalConnectionForm(props: LocalConnectionFormProps) {
     ),
   });
 
+  const entryLines = planListEntries(
+    [
+      { name: `${checked ? 'Retry' : 'Check'} this connection` },
+      ...modelRows.map((model) => ({
+        name: model.label,
+        metadata: model.label === model.id ? undefined : model.id,
+        trailing: model.state,
+        checked: model.id === seat.model,
+        trailingParts:
+          model.state === 'not in this catalog'
+            ? [{ text: model.state, tone: 'warning' as const }]
+            : undefined,
+      })),
+    ],
+    innerWidth,
+  );
   return (
     <OverlayPanel
       density="roomy"
@@ -106,11 +120,7 @@ export function LocalConnectionForm(props: LocalConnectionFormProps) {
       />
       <Box height={1} />
       <PanelRow active={row === 2}>
-        <PickerRow
-          label={`${checked ? 'Retry' : 'Check'} this connection`}
-          state={row === 2 ? 'active' : 'default'}
-          width={innerWidth}
-        />
+        <ListEntry lines={entryLines.get(0) ?? []} selected={row === 2} width={innerWidth} />
       </PanelRow>
       <DimLine text={status.line} />
       {status.detail === undefined ? (
@@ -118,18 +128,14 @@ export function LocalConnectionForm(props: LocalConnectionFormProps) {
       ) : (
         <DimLine text={status.detail} tone="warning" />
       )}
-      {slice.visibleSlice.map((model) => {
+      {slice.visibleSlice.map((model, i) => {
         const active = modelRows[modelIndex]?.id === model.id;
         return (
           <PanelRow key={model.id} active={active}>
-            <PickerRow
-              label={model.label}
-              state={active ? 'active' : 'default'}
+            <ListEntry
+              lines={entryLines.get(slice.scrollOffset + i + 1) ?? []}
+              selected={active}
               width={innerWidth}
-              trailing={model.state}
-              selected={model.id === seat.model}
-              {...(model.label === model.id ? {} : { metadata: model.id })}
-              {...(model.state === 'not in this catalog' ? { trailingColor: t.warning } : {})}
             />
           </PanelRow>
         );

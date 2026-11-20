@@ -28,7 +28,7 @@ import {
 } from '../right-column/policy.js';
 import { cycleRightRow } from '../right-column/drafts.js';
 import { expansionDraft } from '../right-column/drafts.js';
-import { renderToolRow, renderModelRow } from '../tool-row.js';
+import { toolRowModel, modelRowModel } from '../tool-row.js';
 import { TwoColumnPicker } from '../two-column-picker/picker.js';
 import type { PickerCatalog } from './use-catalog.js';
 import { fallbackInheritanceNotice, isPickerItemDisabled } from './labels.js';
@@ -123,13 +123,12 @@ export function PickerView({
         isDisabled: (item) =>
           isPickerItemDisabled(item) && localConnectionProvider(item) === undefined,
         initialIndex: catalog.initialLeftIdx,
-        renderRow: (item, { isCursor, isSelected, isContext, maxWidth }) =>
-          renderToolRow({
+        rowModel: (item, { isCursor, isSelected, isContext, maxWidth }) =>
+          toolRowModel({
             item,
             isCursor,
             isSelected,
             isContext,
-            maxWidth,
             showStatus: statusesFitAt(maxWidth),
           }),
       }}
@@ -177,11 +176,10 @@ export function PickerView({
           isCustom: (row: KeyedRightRow) =>
             slot === 'seat' && row.kind === 'model' && isCustomModel(row.model),
         },
-        renderRow: (row, { isCursor, maxWidth }) =>
-          renderModelRow({
+        rowModel: (row, { isCursor, maxWidth }) =>
+          modelRowModel({
             row,
             isCursor,
-            maxWidth,
             currentModel: catalog.currentModel,
             auth: authContext,
             plan: rowPlanAt(maxWidth),

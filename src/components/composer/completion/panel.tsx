@@ -15,6 +15,7 @@ export function CompletionPanel<T>({
   footer,
   isOpen,
   width,
+  entryIndex,
   itemKey,
   renderRow,
   renderEmpty,
@@ -25,6 +26,7 @@ export function CompletionPanel<T>({
   footer: string;
   isOpen?: boolean | undefined;
   width?: number | undefined;
+  entryIndex: (item: T, index: number) => number;
   itemKey: (item: T) => string;
   renderRow: (opts: { item: T; globalIndex: number; isSelected: boolean }) => ReactNode;
   renderEmpty?: (() => ReactNode) | undefined;
@@ -35,9 +37,10 @@ export function CompletionPanel<T>({
   const offsetRef = useRef(0);
   if (!(isOpen ?? items.length > 0)) return null;
 
+  const entries = items.map(entryIndex);
   const scrollOffset = keepInViewOffset({
     previous: offsetRef.current,
-    index: selectedIndex,
+    index: entries.indexOf(selectedIndex),
     windowSize: maxVisible,
     totalItems: items.length,
   });
@@ -46,15 +49,16 @@ export function CompletionPanel<T>({
   const showScrollUp = scrollOffset > 0;
   const showScrollDown = scrollOffset + visibleSlice.length < items.length;
   const overflow = showScrollUp || showScrollDown;
-  const aboveCount = scrollOffset;
-  const belowCount = items.length - (scrollOffset + visibleSlice.length);
-  const upLabel = showScrollUp ? `↑${aboveCount}` : '';
-  const downLabel = showScrollDown ? `↓${belowCount}` : '';
+  const lastEntry = entries.at(-1) ?? -1;
+  const aboveCount = entries[scrollOffset] ?? 0;
+  const belowCount = lastEntry - (entries[scrollOffset + visibleSlice.length - 1] ?? lastEntry);
+  const upLabel = aboveCount > 0 ? `↑${aboveCount}` : '';
+  const downLabel = belowCount > 0 ? `↓${belowCount}` : '';
   // A single constant-width gutter for every visible row: the count column is sized from the whole
   // list (not the labels the current window happens to show) so neither the description nor the bar
   // moves as the window scrolls, and it is padded on both sides so the counter never touches the
   // description or the bar. Arrows and digits are one cell wide, so string length is cell width.
-  const countWidth = String(items.length).length + 1;
+  const countWidth = String(lastEntry + 1).length + 1;
   const thumb = getScrollbarThumb({
     offset: scrollOffset,
     lineCount: items.length,
@@ -65,12 +69,11 @@ export function CompletionPanel<T>({
   const rows: ReactNode[] = [];
   for (const [i, item] of visibleSlice.entries()) {
     const globalIndex = scrollOffset + i;
-    const isSelected = globalIndex === selectedIndex;
+    const isSelected = entries[globalIndex] === selectedIndex;
     const onThumb = scrollbarCell(i, thumb);
     const isFirst = i === 0;
     const isLast = i === visibleSlice.length - 1;
-    const countLabel =
-      isFirst && showScrollUp ? upLabel : isLast && showScrollDown ? downLabel : '';
+    const countLabel = isFirst && upLabel ? upLabel : isLast ? downLabel : '';
     rows.push(
       <PanelRow active={isSelected} key={itemKey(item)} width="100%" height={1} overflow="hidden">
         <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">

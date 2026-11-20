@@ -5,9 +5,16 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../lib/glyphs.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { SessionRow } from './session-row.js';
+import {
+  SessionRow as PlannedSessionRow,
+  sessionRowModel,
+  type SessionRowCursor,
+} from './session-row.js';
+import { planListRows } from './list-row/plan.js';
+import { useStdout } from 'ink';
+import type { Session } from '../core/schemas/session.js';
 import chalk from 'chalk';
-import { defaultTheme } from './theme.js';
+import { defaultTheme, useTheme } from './theme.js';
 import { paint } from '../core/theme/paint.js';
 import { SOFT_SEP } from '../core/separators.js';
 
@@ -35,6 +42,15 @@ function withAsciiTier(run: () => void): void {
       forceUnicodeGlyphs();
     }
   }
+}
+
+function SessionRow({ session, cursor }: { session: Session; cursor?: SessionRowCursor }) {
+  const theme = useTheme();
+  const { stdout } = useStdout();
+  const [line] = planListRows([sessionRowModel(session, Date.now(), theme)], {
+    width: stdout.columns,
+  });
+  return line && <PlannedSessionRow line={line} {...(cursor && { cursor })} />;
 }
 
 function frameOf(element: Parameters<typeof renderFeature>[0]): string {

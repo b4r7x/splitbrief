@@ -1,3 +1,5 @@
+import chalk from 'chalk';
+import { defaultTheme } from '../../../theme.js';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -246,6 +248,47 @@ describe('CommandCompletionMenu', () => {
     expect(continuation.slice(column)).toMatch(/^\S/);
     expect(rows.join('\n')).not.toMatch(/\S↓\d/);
     ui.unmount();
+  });
+
+  it('bands every visible line of the selected skill', () => {
+    const previous = chalk.level;
+    chalk.level = 3;
+    const ui = render(
+      <CommandCompletionMenu width={60} filtered={SKILL_ROWS} selectedIndex={0} maxVisible={2} />,
+    );
+    try {
+      const lines = (ui.lastFrame() ?? '').split('\n');
+      const first = lines.findIndex((line) => stripAnsiStyles(line).includes('Sprites'));
+      expect(first).toBeGreaterThan(0);
+      const band = chalk.bgHex(defaultTheme.selectionBg!)('x').split('x')[0]!;
+      expect(lines[first]).toContain(band);
+      expect(lines[first + 1]).toContain(band);
+    } finally {
+      ui.unmount();
+      chalk.level = previous;
+    }
+  });
+
+  it('counts hidden entries when only part of a skill description is visible', () => {
+    const rows = ['alpha', 'beta', 'gamma'].map((name) => ({
+      name,
+      description: 'one two three four five six seven eight nine ten '.repeat(4),
+    }));
+    const ui = render(
+      <CommandCompletionMenu width={46} filtered={rows} selectedIndex={0} maxVisible={2} />,
+    );
+    try {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('alpha');
+      expect(frame).not.toContain('beta');
+      expect(frame).toMatch(/↓2\s/);
+      ui.rerender(
+        <CommandCompletionMenu width={46} filtered={rows} selectedIndex={2} maxVisible={2} />,
+      );
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/↑[12]\s/);
+    } finally {
+      ui.unmount();
+    }
   });
 
   it('sizes the name column from the whole filtered list as selection scrolls', () => {

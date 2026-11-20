@@ -1,4 +1,4 @@
-import { PickerRow } from './picker-row.js';
+import { ListRowFixture } from '#testing/helpers/list-row.js';
 import type { ReactElement } from 'react';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
@@ -64,22 +64,16 @@ function frameOf(node: ReactElement, width = 40): string {
   return frame;
 }
 
-describe('PickerRow', () => {
-  it('accepts structured labels only with end truncation or whole-word fitting', () => {
-    type StructuredLabel = { label: string; labelParts: { text: string }[] };
-    expectTypeOf<StructuredLabel & { labelTruncate: 'end' }>().toExtend<
-      Parameters<typeof PickerRow>[0]
-    >();
-    expectTypeOf<StructuredLabel & { keepWhole: 'label' }>().toExtend<
-      Parameters<typeof PickerRow>[0]
-    >();
-    expectTypeOf<StructuredLabel & { labelTruncate: 'path' }>().not.toExtend<
-      Parameters<typeof PickerRow>[0]
-    >();
-    expectTypeOf<StructuredLabel & { labelTruncate: 'start' }>().not.toExtend<
-      Parameters<typeof PickerRow>[0]
-    >();
+describe('ListRowFixture', () => {
+  it('accepts structured names only with end truncation or whole-word fitting', () => {
+    type StructuredName = { name: string; nameParts: { text: string; tone: 'text' }[] };
+    type Row = Parameters<typeof ListRowFixture>[0];
+    expectTypeOf<StructuredName>().toExtend<Row>();
+    expectTypeOf<StructuredName & { keepWhole: 'label' }>().toExtend<Row>();
+    expectTypeOf<StructuredName & { nameTruncate: 'path' }>().not.toExtend<Row>();
+    expectTypeOf<StructuredName & { nameTruncate: 'start' }>().not.toExtend<Row>();
   });
+
   beforeEach(() => {
     forceUnicodeGlyphs();
   });
@@ -93,10 +87,10 @@ describe('PickerRow', () => {
   it('elides a path label at a separator, so what is left is still a whole path', () => {
     const label = 'kilo/anthropic/claude-opus-4.5';
     const wide = stripAnsiStyles(
-      frameOf(<PickerRow label={label} labelTruncate="path" width={40} />),
+      frameOf(<ListRowFixture name={label} nameTruncate="path" width={40} />),
     );
     const narrow = stripAnsiStyles(
-      frameOf(<PickerRow label={label} labelTruncate="path" width={24} />),
+      frameOf(<ListRowFixture name={label} nameTruncate="path" width={24} />),
     );
 
     expect(wide).toContain(label);
@@ -105,7 +99,7 @@ describe('PickerRow', () => {
   });
 
   it('renders a default row with no focus or active glyph', () => {
-    const frame = frameOf(<PickerRow label="claude code" />);
+    const frame = frameOf(<ListRowFixture name="claude code" />);
     expect(frame).toContain('claude code');
     expect(frame).not.toContain('▌');
     expect(frame).not.toContain('▸');
@@ -113,10 +107,10 @@ describe('PickerRow', () => {
 
   it('renders state context with the liveBar glyph in dim lead and default text colors', () => {
     const activeFrame = frameOf(
-      <PickerRow label="claude code" state="active" metadata="active-meta" />,
+      <ListRowFixture name="claude code" state="active" metadata="active-meta" />,
     );
     const contextFrame = frameOf(
-      <PickerRow label="claude code" state="context" metadata="active-meta" />,
+      <ListRowFixture name="claude code" state="context" metadata="active-meta" />,
     );
 
     // ANSI-stripped equality of glyph and structure between context and active
@@ -138,55 +132,56 @@ describe('PickerRow', () => {
 
   it('uses the ascii live bar for state context when the glyph tier is ascii', () => {
     withAsciiTier(() => {
-      const frame = frameOf(<PickerRow label="codex" state="context" />);
+      const frame = frameOf(<ListRowFixture name="codex" state="context" />);
       expect(stripAnsiStyles(frame)).toContain(`${glyph('liveBar', 'ascii')} `);
       expect(frame).not.toContain('▌');
     });
   });
 
   it('leads a non-highlighted row with two blanks and no dot', () => {
-    const frame = frameOf(<PickerRow label="codex" />);
+    const frame = frameOf(<ListRowFixture name="codex" />);
     const line = stripAnsiStyles(frame.split('\n')[0] ?? '');
     expect(line.startsWith('  codex')).toBe(true);
     expect(frame).not.toContain('·');
   });
 
   it('marks an active row with the ▌ accent bar only', () => {
-    const frame = frameOf(<PickerRow label="sonnet 4.5" state="active" />);
+    const frame = frameOf(<ListRowFixture name="sonnet 4.5" state="active" />);
     expect(frame).toContain('▌');
     expect(frame).not.toContain('▸');
   });
 
   it('uses the ascii live bar when the glyph tier is ascii', () => {
     withAsciiTier(() => {
-      const frame = frameOf(<PickerRow label="codex" state="active" />);
+      const frame = frameOf(<ListRowFixture name="codex" state="active" />);
       expect(frame).toContain(`${glyph('liveBar', 'ascii')} `);
       expect(frame).not.toContain('▌');
     });
   });
 
   it('renders dim metadata after the label', () => {
-    const frame = frameOf(<PickerRow label="sonnet 4.5" metadata="200k" />);
+    const frame = frameOf(<ListRowFixture name="sonnet 4.5" metadata="200k" />);
     expect(frame).toContain('sonnet 4.5');
     expect(frame).toContain('200k');
   });
 
-  it('reserves a blank 2-cell check column when selected is false', () => {
+  it('reserves a blank 2-cell check column when checked is false', () => {
     const withoutCheckColumn = stripAnsiStyles(
-      frameOf(<PickerRow label="tool" metadata="1.2" width={24} />, 24),
+      frameOf(<ListRowFixture name="tool" metadata="1.2" width={24} />, 24),
     );
     const withBlankCheckColumn = stripAnsiStyles(
-      frameOf(<PickerRow label="tool" metadata="1.2" selected={false} width={24} />, 24),
+      frameOf(<ListRowFixture name="tool" metadata="1.2" checked={false} width={24} />, 24),
     );
 
     expect(withBlankCheckColumn).not.toContain(glyph('check'));
     expect(withBlankCheckColumn.indexOf('1.2')).toBe(withoutCheckColumn.indexOf('1.2') - 2);
   });
 
-  it('renders metadata flush right with the check column when selected', () => {
+  it('renders metadata flush right with the check column when checked', () => {
     const line = stripAnsiStyles(
-      frameOf(<PickerRow label="tool" metadata="1.2" selected width={24} />, 24).split('\n')[0] ??
-        '',
+      frameOf(<ListRowFixture name="tool" metadata="1.2" checked width={24} />, 24).split(
+        '\n',
+      )[0] ?? '',
     );
 
     expect(line.trimEnd().endsWith(`1.2 ${glyph('check')}`)).toBe(true);
@@ -194,7 +189,7 @@ describe('PickerRow', () => {
 
   it('truncates label with … when width overflows', () => {
     const line = stripAnsiStyles(
-      frameOf(<PickerRow label="a very long label that overflows" width={14} />, 40).split(
+      frameOf(<ListRowFixture name="a very long label that overflows" width={14} />, 40).split(
         '\n',
       )[0] ?? '',
     );
@@ -206,8 +201,8 @@ describe('PickerRow', () => {
   it('long metadata renders with a trailing `…`', () => {
     const line = stripAnsiStyles(
       frameOf(
-        <PickerRow
-          label="/palette"
+        <ListRowFixture
+          name="/palette"
           metadata="a very long description that cannot possibly fit on one short row"
           width={40}
         />,
@@ -221,7 +216,7 @@ describe('PickerRow', () => {
 
   it('right-aligns dim trailing metadata at the row edge', () => {
     const frame = frameOf(
-      <PickerRow label="/settings" metadata="planner & model" trailing="ctrl+," width={40} />,
+      <ListRowFixture name="/settings" metadata="planner & model" trailing="ctrl+," width={40} />,
       40,
     );
     const line = frame.split('\n')[0] ?? '';
@@ -232,8 +227,8 @@ describe('PickerRow', () => {
 
   it('keeps the trailing key visible while truncating an overflowing description', () => {
     const frame = frameOf(
-      <PickerRow
-        label="/settings"
+      <ListRowFixture
+        name="/settings"
         metadata="a very long description that cannot possibly fit on one short row"
         trailing="ctrl+,"
         width={40}
@@ -245,14 +240,14 @@ describe('PickerRow', () => {
     expect(stripAnsiStyles(frame.split('\n')[0] ?? '').length).toBeLessThanOrEqual(40);
   });
 
-  it('renders a trailing ✓ only when selected', () => {
-    expect(frameOf(<PickerRow label="opus 4.1" selected />)).toContain(glyph('check'));
-    expect(frameOf(<PickerRow label="opus 4.1" />)).not.toContain(glyph('check'));
+  it('renders a trailing ✓ only when checked', () => {
+    expect(frameOf(<ListRowFixture name="opus 4.1" checked />)).toContain(glyph('check'));
+    expect(frameOf(<ListRowFixture name="opus 4.1" />)).not.toContain(glyph('check'));
   });
 
-  it('uses the ascii check mark when a selected row renders in the ascii tier', () => {
+  it('uses the ascii check mark when a checked row renders in the ascii tier', () => {
     withAsciiTier(() => {
-      const frame = frameOf(<PickerRow label="opus 4.1" selected />);
+      const frame = frameOf(<ListRowFixture name="opus 4.1" checked />);
       expect(frame).toContain(glyph('check', 'ascii'));
       expect(frame).not.toContain('✓');
     });
@@ -260,7 +255,7 @@ describe('PickerRow', () => {
 
   it('right-aligns the multi-select ✓ at the row edge even without trailing metadata', () => {
     const frame = frameOf(
-      <PickerRow label="security-review" metadata="auth, secrets" selected width={60} />,
+      <ListRowFixture name="security-review" metadata="auth, secrets" checked width={60} />,
       60,
     );
     const line = stripAnsiStyles(frame.split('\n')[0] ?? '');
@@ -268,7 +263,7 @@ describe('PickerRow', () => {
   });
 
   it('stays one line tall and strips terminal controls', () => {
-    const frame = frameOf(<PickerRow label={'A\x1b[31m\nB'} metadata="meta" />);
+    const frame = frameOf(<ListRowFixture name={'A\x1b[31m\nB'} metadata="meta" />);
     expect(frame).toContain('A B');
     expect(frame).toContain('meta');
     expect(frame).not.toContain('\x1b[31m');
@@ -277,13 +272,13 @@ describe('PickerRow', () => {
 
   it('keeps the same frame length when a tree lead is paid for from the label budget', () => {
     const withoutTree = stripAnsiStyles(
-      frameOf(<PickerRow label="effort" selected={false} trailing={' '} width={40} />, 40).split(
+      frameOf(<ListRowFixture name="effort" checked={false} trailing={' '} width={40} />, 40).split(
         '\n',
       )[0] ?? '',
     );
     const withTree = stripAnsiStyles(
       frameOf(
-        <PickerRow label="effort" treeLead="├─ " selected={false} trailing={' '} width={40} />,
+        <ListRowFixture name="effort" treeLead="├─ " checked={false} trailing={' '} width={40} />,
         40,
       ).split('\n')[0] ?? '',
     );
@@ -295,7 +290,7 @@ describe('PickerRow', () => {
 
   it('draws the tree lead between the gutter and the label', () => {
     const frame = stripAnsiStyles(
-      frameOf(<PickerRow label="effort" treeLead="AB " width={40} />, 40).split('\n')[0] ?? '',
+      frameOf(<ListRowFixture name="effort" treeLead="AB " width={40} />, 40).split('\n')[0] ?? '',
     );
 
     expect(frame).toContain('AB ');
@@ -305,8 +300,8 @@ describe('PickerRow', () => {
   it('truncates long metadata instead of overflowing when a tree lead is present', () => {
     const line = stripAnsiStyles(
       frameOf(
-        <PickerRow
-          label="effort"
+        <ListRowFixture
+          name="effort"
           treeLead="│  ├─ "
           metadata="a very long description that cannot possibly fit on one short row"
           width={24}
@@ -322,11 +317,11 @@ describe('PickerRow', () => {
   it('keeps a tree row metadata visible at a 21-cell width', () => {
     const withTree = stripAnsiStyles(
       frameOf(
-        <PickerRow
-          label="effort"
+        <ListRowFixture
+          name="effort"
           treeLead="│  ├─ "
           metadata="high"
-          selected={false}
+          checked={false}
           trailing={' '}
           width={21}
         />,
@@ -335,7 +330,7 @@ describe('PickerRow', () => {
     );
     const withoutTree = stripAnsiStyles(
       frameOf(
-        <PickerRow label="effort" metadata="high" selected={false} trailing={' '} width={21} />,
+        <ListRowFixture name="effort" metadata="high" checked={false} trailing={' '} width={21} />,
         21,
       ).split('\n')[0] ?? '',
     );
@@ -346,22 +341,22 @@ describe('PickerRow', () => {
 
   it('does not change cell text when metadataTone is set', () => {
     const withoutColor = stripAnsiStyles(
-      frameOf(<PickerRow label="tool" metadata="warn" width={40} />, 40),
+      frameOf(<ListRowFixture name="tool" metadata="warn" width={40} />, 40),
     );
     const withColor = stripAnsiStyles(
-      frameOf(<PickerRow label="tool" metadata="warn" metadataTone="warning" width={40} />, 40),
+      frameOf(<ListRowFixture name="tool" metadata="warn" metadataTone="warning" width={40} />, 40),
     );
 
     expect(withColor).toBe(withoutColor);
   });
 
-  it.each(['text', 'warning', 'dim'] as const)(
+  it.each(['text', 'warning', 'textDim'] as const)(
     'resolves the %s metadata tone from the theme',
     (tone) => {
       const frame = frameOf(
-        <PickerRow label="tool" metadata="value" metadataTone={tone} width={40} />,
+        <ListRowFixture name="tool" metadata="value" metadataTone={tone} width={40} />,
       );
-      const color = tone === 'dim' ? defaultTheme.textDim : defaultTheme[tone];
+      const color = defaultTheme[tone];
       expect(colorOf(frame, 'value')).toBe(colorOf(paint(color, 'value'), 'value'));
     },
   );
@@ -370,7 +365,7 @@ describe('PickerRow', () => {
     const theme = resolveTheme({ variant: 'dark', level: 1, terminalBackground: undefined });
     const frame = frameOf(
       <ThemeProvider theme={theme}>
-        <PickerRow label="tool" metadata="value" metadataTone="text" width={40} />
+        <ListRowFixture name="tool" metadata="value" metadataTone="text" width={40} />
       </ThemeProvider>,
     );
     expect(frame).toContain(' value');
@@ -378,7 +373,7 @@ describe('PickerRow', () => {
   });
 });
 
-describe('PickerRow keepWhole', () => {
+describe('ListRowFixture keepWhole', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
   });
@@ -388,12 +383,12 @@ describe('PickerRow keepWhole', () => {
 
   it('gives a short label only the cells it fills, so the value beside it stays whole', () => {
     const line = lineOf(
-      <PickerRow
-        label="effort"
+      <ListRowFixture
+        name="effort"
         treeLead="└─ "
         metadata="medium"
         trailing={' '}
-        selected={false}
+        checked={false}
         width={22}
         keepWhole="metadata"
       />,
@@ -406,12 +401,12 @@ describe('PickerRow keepWhole', () => {
 
   it('sheds a trailing metadata segment whole instead of cutting into it', () => {
     const line = lineOf(
-      <PickerRow
-        label="openai"
+      <ListRowFixture
+        name="openai"
         treeLead="├─ "
         metadata="signed in · api key"
         trailing={' '}
-        selected={false}
+        checked={false}
         width={31}
         keepWhole="label"
       />,
@@ -427,12 +422,12 @@ describe('PickerRow keepWhole', () => {
 
   it('spends its blank alignment cells before it drops a word', () => {
     const line = lineOf(
-      <PickerRow
-        label="effort"
+      <ListRowFixture
+        name="effort"
         treeLead="│  ├─ "
         metadata="auto"
         trailing={' '}
-        selected={false}
+        checked={false}
         width={22}
         keepWhole="metadata"
       />,
@@ -445,12 +440,12 @@ describe('PickerRow keepWhole', () => {
 
   it('keeps the provider whole and drops the sign-in word when both cannot fit', () => {
     const line = lineOf(
-      <PickerRow
-        label="opencode-go"
+      <ListRowFixture
+        name="opencode-go"
         treeLead="└─ "
         metadata="needs sign-in"
         trailing={' '}
-        selected={false}
+        checked={false}
         width={22}
         keepWhole="label"
       />,
@@ -464,12 +459,12 @@ describe('PickerRow keepWhole', () => {
 
   it('keeps the value and gives up the axis name when the pair cannot fit', () => {
     const line = lineOf(
-      <PickerRow
-        label="thinking"
+      <ListRowFixture
+        name="thinking"
         treeLead="│  ├─ "
         metadata="medium"
         trailing={' '}
-        selected={false}
+        checked={false}
         width={17}
         keepWhole="metadata"
       />,
@@ -483,10 +478,10 @@ describe('PickerRow keepWhole', () => {
 
   it('sheds whole trailing label words so a status word it outranks keeps its place', () => {
     const line = lineOf(
-      <PickerRow
-        label="Command Code CLI"
+      <ListRowFixture
+        name="Command Code CLI"
         metadata="Unavailable"
-        selected={false}
+        checked={false}
         width={23}
         keepWhole="metadata"
       />,
@@ -498,7 +493,13 @@ describe('PickerRow keepWhole', () => {
 
   it('drops metadata the label outranks before the label sheds a word', () => {
     const line = lineOf(
-      <PickerRow label="OpenAI Codex CLI" metadata="1.2.0" selected width={22} keepWhole="label" />,
+      <ListRowFixture
+        name="OpenAI Codex CLI"
+        metadata="1.2.0"
+        checked
+        width={22}
+        keepWhole="label"
+      />,
       22,
     );
 
@@ -509,7 +510,7 @@ describe('PickerRow keepWhole', () => {
 
   it('never leaves a separator hanging before the ellipsis of a shed label', () => {
     const line = lineOf(
-      <PickerRow label="output · my-planner --json" width={14} keepWhole="label" />,
+      <ListRowFixture name="output · my-planner --json" width={14} keepWhole="label" />,
       14,
     );
 

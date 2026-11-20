@@ -7,7 +7,6 @@ import {
   type PromptBodyLine,
 } from './body.js';
 import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
-import { getRecoveryPromptActions } from '../recovery/actions.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { planListRows } from '../../../components/list-row/plan.js';
 import { recoveryMenuRows } from '../recovery/menu-label.js';
@@ -62,13 +61,13 @@ export function fitRecoveryMenu(input: {
   issue: RecoveryIssue;
   width: number;
   boxRows: number;
-  actionRows?: number;
+  actionRows: number;
 }) {
   const { issue, width, boxRows } = input;
   const innerWidth = Math.max(MIN_TEXT_WIDTH, width - RECOVERY_PROMPT_HORIZONTAL_CHROME);
   const fullSummary = recoveryPromptSummaryRows(issue, innerWidth);
   const fullRows = promptBodyRows(fullSummary, innerWidth);
-  const actionCount = Math.max(input.actionRows ?? getRecoveryPromptActions(issue).length, 1);
+  const actionCount = Math.max(input.actionRows, 1);
   const listFloor = Math.min(2, actionCount);
   const askedRow = (row: PromptBodyLine): boolean =>
     row.kind === 'facts-line' && isAskedDetail(row.text.trimStart());

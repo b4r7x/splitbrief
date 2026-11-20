@@ -7,13 +7,21 @@ import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 import { CREW_IDENTITY_COLUMN, CREW_MARKER_GUTTER } from './format.js';
-import { FallbackRowView } from './fallback-row-view.js';
+import { fallbackRowModel } from './fallback-row.js';
+import { ListEntry, planListEntries } from '../../components/list-row/rows.js';
 
 async function rowLines(row: FallbackRow, width: number, isCursor = false): Promise<string[]> {
-  const ui = renderFeature(<FallbackRowView row={row} width={width} isCursor={isCursor} />, {
-    cols: 120,
-    rows: 40,
-  });
+  const ui = renderFeature(
+    <ListEntry
+      lines={planListEntries([fallbackRowModel(row, width)], width).get(0) ?? []}
+      width={width}
+      selected={isCursor}
+    />,
+    {
+      cols: 120,
+      rows: 40,
+    },
+  );
   await flushEffects();
   const lines = stripAnsiStyles(ui.lastFrame())
     .split('\n')
@@ -22,7 +30,7 @@ async function rowLines(row: FallbackRow, width: number, isCursor = false): Prom
   return lines;
 }
 
-describe('FallbackRowView', () => {
+describe('fallbackRowModel', () => {
   beforeAll(forceUnicodeGlyphs);
 
   it('aligns the cursor, seat label and None words with the crew columns on one line', async () => {

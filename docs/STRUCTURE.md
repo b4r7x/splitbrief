@@ -63,7 +63,7 @@ The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes
 
 **Dissolved (pure-entry) surfaces** (e.g. `setup`, `help`, `sessions`, `skills`):
 
-A dissolved surface has **no `features/` folder** — the page *is* the whole surface. It may still compose a context-free feature owned by another domain: the setup page renders the `crew` feature's setup step, `CrewStep` in `features/crew/setup/` (`useCrew` + `CrewRowView` + `PresetRowView`), and `CrewStep` reaches the runners picker through `crewActivate`, which owns the seat→overlay map and performs the `overlayStore.open`. The cross-surface hop is a **store-mediated overlay transition**, not a render prop. `runners` is the feature boundary; `ToolModelPicker` is a component name, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone.
+A dissolved surface has **no `features/` folder** — the page *is* the whole surface. It may still compose a context-free feature owned by another domain: the setup page renders the `crew` feature's setup step, `CrewStep` in `features/crew/setup/` (`useCrew`, `crewRowModel` and `planPresetRows`), and `CrewStep` reaches the runners picker through `crewActivate`, which owns the seat→overlay map and performs the `overlayStore.open`. The cross-surface hop is a **store-mediated overlay transition**, not a render prop. `runners` is the feature boundary; `ToolModelPicker` is a component name, not a `tool-picker` feature. `help`, `sessions`, and `skills` are likewise the page alone.
 
 Rules:
 - **`components/` subfolder** appears only when the feature has ≥2 component files.

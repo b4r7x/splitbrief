@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useState, type ReactElement } from 'react';
-import { Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
@@ -73,12 +72,12 @@ describe('TwoColumnPicker expandable right rows', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: ROWS,
           getKey: (m) => m.id,
-          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+          rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
           activationOf: (m) => m.activation,
           isExpanded: opts.expanded,
           ...(opts.onExpand ? { onExpand: opts.onExpand } : {}),
@@ -116,12 +115,12 @@ describe('TwoColumnPicker expandable right rows', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: rows,
           getKey: (m) => m.id,
-          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+          rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
           activationOf: (m) =>
             m.id === 'luna' && expanded ? 'collapse' : (m.activation as Route['activation']),
           isExpanded: expanded,
@@ -215,12 +214,12 @@ describe('TwoColumnPicker expandable right rows', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: rows,
           getKey: (m) => m.id,
-          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+          rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
           activationOf: (m) => (m.id === expandedId ? 'confirm' : m.activation),
           isExpanded: expandedId !== null,
           onExpand: (row) => setExpandedId(row.id),
@@ -343,7 +342,7 @@ describe('TwoColumnPicker expandable right rows', () => {
     const rightProps = (expanded: boolean, rows: Route[]) => ({
       items: rows,
       getKey: (m: Route) => m.id,
-      renderRow: (m: Route) => <Text>{m.displayName}</Text>,
+      rowModel: (m: Route) => ({ name: m.displayName }),
       activationOf: (m: Route) => m.activation,
       isExpanded: expanded,
       enterHint,
@@ -355,7 +354,7 @@ describe('TwoColumnPicker expandable right rows', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={rightProps(expanded, rows)}
         onConfirm={() => {}}
@@ -397,13 +396,13 @@ describe('TwoColumnPicker expandable right rows', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: ROWS,
           getKey: (m) => m.id,
           initialIndex: 1,
-          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+          rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -430,13 +429,13 @@ describe('TwoColumnPicker expandable right rows', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: ROWS,
           getKey: (m) => m.id,
           isExpanded: true,
-          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+          rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -468,12 +467,12 @@ describe('TwoColumnPicker expandable right rows', () => {
             verb: 'select',
             lines: ['Terminal info'],
           }),
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: ROWS,
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}
@@ -527,13 +526,13 @@ describe('TwoColumnPicker rows that cycle in place', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>,
+          rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
         }}
         rightProps={{
           items: LADDER,
           getKey: (m) => m.id,
           initialIndex: opts.initialIndex,
-          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+          rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
           isExpanded: true,
           onCollapse: () => opts.collapses.push('collapse'),
           onCycle: (m) => {
@@ -593,12 +592,12 @@ describe('TwoColumnPicker rows that cycle in place', () => {
         leftProps={{
           items: TOOLS,
           getKey: (t) => t.id,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: SPACED,
           getKey: (m) => m.id,
-          renderRow: (m, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${m.displayName}`}</Text>,
+          rowModel: (m, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${m.displayName}` }),
           onCycle: (m) => {
             if (m.cycle === 'stepped') cycled.push(m.id);
             return m.cycle;

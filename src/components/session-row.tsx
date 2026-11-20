@@ -2,15 +2,13 @@ import { ThemeText as Text, useTheme } from './theme.js';
 import { Box } from 'ink';
 import { PanelRow } from './overlays/row.js';
 import { ListRow } from './list-row/row.js';
-import { planListRows, type ListRowModel } from './list-row/plan.js';
+import type { ListLine, ListRowModel } from './list-row/plan.js';
 import type { Theme } from '../core/theme/palette.js';
-import { useStdout } from 'ink';
 import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
 import { oneLineDisplayText } from '../utils/display-text/sanitize.js';
-import { useSharedClock } from '../hooks/use-shared-clock.js';
 
 export type SessionRowCursor =
   | { kind: 'none' }
@@ -36,25 +34,6 @@ function formatRelativeTime(timestamp: number, now: number): string {
   return `${diffDays}d ago`;
 }
 
-interface SessionRowProps {
-  session: Session;
-  cursor?: SessionRowCursor;
-}
-
-function isSelected(cursor: SessionRowCursor): boolean {
-  switch (cursor.kind) {
-    case 'none':
-      return false;
-    case 'inline':
-    case 'outdent':
-      return cursor.isCursor;
-    default: {
-      const _exhaustive: never = cursor;
-      return _exhaustive;
-    }
-  }
-}
-
 export function sessionRowModel(session: Session, now: number, theme: Theme): ListRowModel {
   const display = getSessionStatusDisplay(session, theme);
   const time = formatRelativeTime(session.completedAt ?? session.startedAt, now);
@@ -69,13 +48,15 @@ export function sessionRowModel(session: Session, now: number, theme: Theme): Li
   };
 }
 
-export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps) {
+export function SessionRow({
+  line,
+  cursor = NO_ROW_CURSOR,
+}: {
+  line: ListLine;
+  cursor?: SessionRowCursor;
+}) {
   const t = useTheme();
-  const { stdout } = useStdout();
-  const now = useSharedClock({ active: () => true });
-  const selected = isSelected(cursor);
-  const [line] = planListRows([sessionRowModel(session, now, t)], { width: stdout.columns });
-  if (!line) return null;
+  const selected = cursor.kind !== 'none' && cursor.isCursor;
   const row = <ListRow line={line} selected={selected} marker={cursor.kind === 'inline'} />;
   if (cursor.kind !== 'outdent') return row;
 

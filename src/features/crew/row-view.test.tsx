@@ -1,3 +1,5 @@
+import { useTheme } from '../../components/theme.js';
+import { ListEntry, planListEntries } from '../../components/list-row/rows.js';
 import { Box } from 'ink';
 import type { ReactElement } from 'react';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -14,8 +16,8 @@ import { crewRowKey, deriveCrewRows, type CrewRowKey } from '../../core/crew/row
 import type { Config } from '../../core/schemas/config.js';
 import { glyph, type GlyphName } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
-import { CREW_IDENTITY_COLUMN, CREW_MARKER_GUTTER, planSeatBlock } from './format.js';
-import { CrewRowView, CrewVerdictLine } from './row-view.js';
+import { CREW_IDENTITY_COLUMN, CREW_MARKER_GUTTER } from './format.js';
+import { crewRowModel, CrewVerdictLine } from './row-view.js';
 
 /** The label column starts here: cursor gutter (2). */
 const LABEL_COLUMN = CREW_MARKER_GUTTER;
@@ -24,16 +26,19 @@ type BlockProps = Readonly<{ config: Config; width: number; cursor?: CrewRowKey 
 
 function CrewBlock({ config, width, cursor }: BlockProps) {
   const rows = deriveCrewRows({ config });
-  const layout = planSeatBlock({ rows, verdict: undefined, innerWidth: width, rowBudget: 20 });
-
+  const theme = useTheme();
+  const lines = planListEntries(
+    rows.map((row) => crewRowModel(row, width, theme)),
+    width,
+  );
   return (
     <Box flexDirection="column">
-      {rows.map((row) => (
-        <CrewRowView
+      {rows.map((row, i) => (
+        <ListEntry
           key={crewRowKey(row)}
-          row={row}
-          layout={layout}
-          isCursor={crewRowKey(row) === cursor}
+          width={width}
+          lines={lines.get(i) ?? []}
+          selected={crewRowKey(row) === cursor}
         />
       ))}
     </Box>

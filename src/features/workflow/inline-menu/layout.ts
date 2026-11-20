@@ -7,7 +7,7 @@ export function inlineMenuLayout(
 ) {
   const width = getChromeContentWidth(cols);
   const lines = planListRows(
-    rows.map((row) => ({ name: row.label, description: row.consequence })),
+    rows.map((row) => ({ name: row.label, description: row.consequence, keepWhole: 'label' })),
     { width: Math.max(1, width - 4) },
   );
   return { width, lines, bodyRows: lines.length, height: lines.length + 4 };

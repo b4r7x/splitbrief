@@ -44,7 +44,6 @@ interface ListViewportBaseProps<T> {
   /** Where the bar sits relative to `width`; `padding` rides the enclosing frame's padding column. */
   barColumn?: ScrollbarColumn | undefined;
   getKey: (item: T) => string;
-  renderItem: (item: T, ctx: ListRowContext) => ReactNode;
   placeholder?: ReactNode;
   section?: ListSectionConfig<T>;
   decorations?: ListDecorationsConfig<T> | undefined;
@@ -71,7 +70,12 @@ type ListViewportTerminalBudgetProps = {
   rowBudget?: never;
 };
 
+type RenderItem<T> = (item: T, ctx: ListRowContext) => ReactNode;
 type ListViewportProps<T> = ListViewportBaseProps<T> &
+  (
+    | { renderItem: RenderItem<T>; prepareItems?: never }
+    | { prepareItems: (width: number) => RenderItem<T>; width: number; renderItem?: never }
+  ) &
   (ListViewportExplicitBudgetProps | ListViewportTerminalBudgetProps);
 
 export function ListViewport<T>(props: ListViewportProps<T>) {
@@ -82,7 +86,6 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
     width,
     barColumn = 'inside',
     getKey,
-    renderItem,
     placeholder,
     section,
     decorations,
@@ -143,6 +146,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
       ? undefined
       : Math.max(1, overflows ? getScrollViewportContentWidth(width, barColumn) : width);
   const rowContentWidth = contentWidth ?? Number.POSITIVE_INFINITY;
+  const renderItem = props.prepareItems ? props.prepareItems(rowContentWidth) : props.renderItem;
   const thumb = getScrollbarThumb({
     offset: scrollOffset,
     lineCount: totalSlots,

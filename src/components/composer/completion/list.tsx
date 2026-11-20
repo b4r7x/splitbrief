@@ -24,7 +24,7 @@ export function CompletionList({
   let lines = planListRows(rows, { width: room });
   let gutter = 0;
   if (lines.length > maxVisible) {
-    gutter = String(lines.length).length + 4;
+    gutter = String(rows.length).length + 4;
     lines = planListRows(rows, { width: Math.max(1, room - gutter) });
   }
   if (lines.length === 0) return null;
@@ -37,7 +37,8 @@ export function CompletionList({
     <CompletionPanel
       width={frame}
       items={lines}
-      selectedIndex={lines.findIndex((line) => line.row === selectedIndex)}
+      selectedIndex={selectedIndex}
+      entryIndex={(line) => line.row}
       maxVisible={maxVisible}
       footer={footer}
       itemKey={(line) => `${line.row}:${line.part}`}

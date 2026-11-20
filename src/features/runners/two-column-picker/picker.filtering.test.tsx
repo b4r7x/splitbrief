@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useState } from 'react';
-import { Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -56,12 +55,12 @@ function fallbackPicker(opts: {
         filterBy: (t, query) =>
           t.id === NO_FALLBACK.id || filterByFields(t, query, ['id', 'displayName']),
         initialIndex: opts.initialIndex,
-        renderRow: (t, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>,
+        rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
       }}
       rightProps={{
         items: [],
         getKey: (m) => m.id,
-        renderRow: (m) => <Text>{m.displayName}</Text>,
+        rowModel: (m) => ({ name: m.displayName }),
       }}
       onConfirm={opts.onConfirm ?? (() => {})}
       onCancel={() => {}}
@@ -81,12 +80,12 @@ function customRowPicker(opts: {
         items: TOOLS,
         getKey: (t) => t.id,
         isDisabled: (t) => !!t.disabled,
-        renderRow: (t) => <Text>{t.displayName}</Text>,
+        rowModel: (t) => ({ name: t.displayName }),
       }}
       rightProps={{
         items: ALPHA_MODELS,
         getKey: (m) => m.id,
-        renderRow: (m) => <Text>{m.displayName}</Text>,
+        rowModel: (m) => ({ name: m.displayName }),
         customRow: { onSelect: opts.onCustomSelect ?? (() => {}) },
       }}
       onConfirm={opts.onConfirm ?? (() => {})}
@@ -113,14 +112,12 @@ describe('TwoColumnPicker type-anywhere filtering', () => {
             items: TOOLS,
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
-            renderRow: (t, { isCursor }) => (
-              <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>
-            ),
+            rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
           }}
           rightProps={{
             items: leftId === 'alpha' ? ALPHA_MODELS : [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
             onLeftChange: (t) => {
               setLeftId(t.id);
             },
@@ -358,7 +355,7 @@ function effortPicker(opts: { onCycle?: (id: string) => void }) {
           items: TOOLS,
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
-          renderRow: (t) => <Text>{t.displayName}</Text>,
+          rowModel: (t) => ({ name: t.displayName }),
         }}
         rightProps={{
           items: [
@@ -366,9 +363,9 @@ function effortPicker(opts: { onCycle?: (id: string) => void }) {
             { id: 'effort', displayName: 'effort' },
           ],
           getKey: (m) => m.id,
-          renderRow: (m) => (
-            <Text>{m.id === 'effort' ? `effort ${EFFORT_LEVELS[level]}` : m.displayName}</Text>
-          ),
+          rowModel: (m) => ({
+            name: m.id === 'effort' ? `effort ${EFFORT_LEVELS[level]}` : m.displayName,
+          }),
           onCycle: (m) => {
             if (m.id !== 'effort') return 'none';
             opts.onCycle?.(m.id);
@@ -420,12 +417,12 @@ describe('TwoColumnPicker space policy', () => {
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
           filterBy: (t, query) => filterByFields(t, query, ['id', 'displayName']),
-          renderRow: (t, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>,
+          rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
         }}
         rightProps={{
           items: [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
         }}
         onConfirm={() => {}}
         onCancel={() => {}}

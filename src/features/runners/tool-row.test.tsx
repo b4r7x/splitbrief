@@ -22,7 +22,21 @@ import { AUTO_ROW_METADATA, BROWSE_CATALOG_TEXT } from './model-catalog/rows.js'
 import type { RightAxisName, RightRow, TreeLead } from './model-catalog/types.js';
 import type { RouteAuthState } from '../../core/runners/route-auth.js';
 import { planModelRows } from './model-catalog/row-plan.js';
-import { renderModelRow, renderToolRow } from './tool-row.js';
+import { modelRowModel, toolRowModel } from './tool-row.js';
+import { ListRowFixture } from '#testing/helpers/list-row.js';
+
+function renderToolRow({
+  maxWidth,
+  ...props
+}: Parameters<typeof toolRowModel>[0] & { maxWidth: number }) {
+  return <ListRowFixture {...toolRowModel(props)} width={maxWidth} />;
+}
+function renderModelRow({
+  maxWidth,
+  ...props
+}: Parameters<typeof modelRowModel>[0] & { maxWidth: number }) {
+  return <ListRowFixture {...modelRowModel(props)} width={maxWidth} />;
+}
 
 const AUTH = { tool: undefined, providerAuth: undefined, catalog: undefined };
 
@@ -473,7 +487,7 @@ describe('runner row grammar', () => {
       currentModel: undefined,
       auth: AUTH,
     }).props;
-    expect(squeezed.label).toBe('Fable 5.1');
+    expect(squeezed.name).toBe('Fable 5.1');
     expect(squeezed.metadata).toBeUndefined();
 
     // The catalog id can stand on its own.
@@ -487,7 +501,7 @@ describe('runner row grammar', () => {
       currentModel: undefined,
       auth: AUTH,
     }).props;
-    expect(bare.label).toBe('Best');
+    expect(bare.name).toBe('Best');
     expect(bare.metadata).toBe('claude-fable-5-1');
   });
 
@@ -500,9 +514,9 @@ describe('runner row grammar', () => {
       currentModel: undefined,
       auth: AUTH,
     });
-    expect(el.props.label).toBe('Opus 5.5');
+    expect(el.props.name).toBe('Opus 5.5');
     expect(el.props.metadata).toBe('opus · 1M');
-    expect(el.props.label).not.toContain('opus · 1M');
+    expect(el.props.name).not.toContain('opus · 1M');
     const line = await rowLine(row, 60);
     expect(line).toContain('Opus 5.5');
     expect(line).toContain('opus · 1M');
@@ -751,7 +765,7 @@ describe('runner row grammar', () => {
         currentModel: 'cursor-grok-4.6-low',
         auth: AUTH,
       }).props;
-      expect(squeezed.label).toBe('Cursor Grok 4.6');
+      expect(squeezed.name).toBe('Cursor Grok 4.6');
       expect(squeezed.metadata).toContain('Stale');
       expect(squeezed.metadata).not.toContain('3 options');
     });

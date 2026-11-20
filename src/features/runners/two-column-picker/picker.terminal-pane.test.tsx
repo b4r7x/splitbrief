@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -81,12 +80,12 @@ describe('TwoColumnPicker terminal rows', () => {
           getKey: (t) => t.id,
           isDisabled: (t) => !!t.disabled,
           terminalPane: (t) => (t.id === INHERIT.id ? pane : undefined),
-          renderRow: (t, { isCursor }) => <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>,
+          rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
         }}
         rightProps={{
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
-          renderRow: (m) => <Text>{m.displayName}</Text>,
+          rowModel: (m) => ({ name: m.displayName }),
           ...(opts.onLeftChange ? { onLeftChange: opts.onLeftChange } : {}),
         }}
         onConfirm={opts.onConfirm ?? (() => {})}
@@ -247,14 +246,12 @@ describe('TwoColumnPicker terminal rows', () => {
             getKey: (t) => t.id,
             isDisabled: (t) => !!t.disabled,
             terminalPane: (t) => (t.id === offline.id ? pane : undefined),
-            renderRow: (t, { isCursor }) => (
-              <Text>{`${isCursor ? '>' : ' '}${t.displayName}`}</Text>
-            ),
+            rowModel: (t, { isCursor }) => ({ name: `${isCursor ? '>' : ' '}${t.displayName}` }),
           }}
           rightProps={{
             items: MODELS_BY_TOOL.alpha ?? [],
             getKey: (m) => m.id,
-            renderRow: (m) => <Text>{m.displayName}</Text>,
+            rowModel: (m) => ({ name: m.displayName }),
           }}
           onConfirm={(left, right) => {
             confirms.push({ l: left.id, r: right?.id ?? null });

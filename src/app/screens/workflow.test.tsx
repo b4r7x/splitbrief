@@ -4475,7 +4475,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
       expect(frame()).not.toMatch(/tab close\S/);
       ui.stdin.write('\u001B[B');
       await flushEffects();
-      expect(frame()).toMatch(/\| Pause after (?:this brief|this bri…|…)/);
+      expect(frame()).toMatch(/\| Pause after this brief/);
       ui.stdin.write('\u001B[B');
       await flushEffects();
       expect(frame()).toMatch(/\| End run/);

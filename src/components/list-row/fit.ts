@@ -1,5 +1,13 @@
+import type { ListRowModel } from './plan.js';
+import type { TextSpan } from '../text-spans.js';
+import { glyph } from '../../lib/glyphs.js';
+import { stripTerminalControls } from '../../utils/display-text/sanitize.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { ELLIPSIS, truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
+import {
+  elidePathLabel,
+  ELLIPSIS,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
 
 /** Cells the label keeps whatever the metadata asks for: the metadata has a ceiling of its own. */
@@ -39,7 +47,7 @@ interface WholeFit {
  * label and metadata fits in the row's own room: alignment is spent before a part is dropped, and
  * a part is dropped before a word is cut. Only a single word wider than the whole row is cut.
  */
-export function fitWholeWords(
+function fitWholeWords(
   input: Readonly<{
     label: string;
     metadata: string | undefined;
@@ -82,4 +90,62 @@ export function fitWholeWords(
       spent: widest,
     }
   );
+}
+
+/** Fit the right-aligned value and its marks before laying out the name column. */
+export function fitRowValue(row: ListRowModel, room: number): ListRowModel {
+  const name = stripTerminalControls(row.name);
+  const prefix = stripTerminalControls(row.treeLead ?? '');
+  const metadata = stripTerminalControls(row.metadata ?? '');
+  const mark = stripTerminalControls(row.trailing ?? '');
+  const markWidth = mark ? getTerminalCellWidth(mark) + 1 : 0;
+  const checkWidth = row.checked === undefined ? 0 : 2;
+  const blankMark = mark.trim() ? 0 : markWidth;
+  const blankCheck = row.checked === false ? checkWidth : 0;
+  const available = room - getTerminalCellWidth(prefix) - markWidth - checkWidth;
+  const whole =
+    row.keepWhole &&
+    fitWholeWords({
+      label: name,
+      metadata: metadata || undefined,
+      room: available,
+      gap: 2,
+      spares: [...new Set([0, blankMark, blankMark + blankCheck])],
+      keep: row.keepWhole,
+    });
+  const spent = whole?.spent ?? 0;
+  const nameFloor = Math.min(LIST_ROW_LABEL_FLOOR, getTerminalCellWidth(name));
+  const valueWidth = Math.max(available - nameFloor, prefix ? Math.min(5, available - 1) : 0) - 2;
+  const value = whole ? whole.metadata : truncateTerminalDisplayText(metadata, valueWidth);
+  const right: TextSpan[] = [];
+  if (value) right.push({ text: value, tone: row.metadataTone ?? 'textDim' });
+  if (mark && !(blankMark && spent >= blankMark)) {
+    right.push(
+      { text: ' ', tone: 'textDim' },
+      ...(row.trailingParts ?? [{ text: mark, tone: 'textDim' as const }]),
+    );
+  }
+  if (row.checked !== undefined && !(blankCheck && spent >= blankMark + blankCheck)) {
+    right.push({ text: row.checked ? ' ' + glyph('check') : '  ', tone: 'success' });
+  }
+  const nameWidth = available + spent - (value ? getTerminalCellWidth(value) + 2 : 0);
+  const label = whole
+    ? whole.label
+    : row.nameTruncate === 'path'
+      ? elidePathLabel(name, nameWidth)
+      : name;
+  const nameParts = prefix
+    ? [
+        { text: prefix, tone: 'border' as const },
+        ...(row.nameParts ?? [{ text: label, tone: 'text' as const }]),
+      ]
+    : row.nameParts;
+  return {
+    ...row,
+    name: prefix + label,
+    nameParts,
+    nameTruncate: undefined,
+    trailing: right.map((part) => part.text).join(''),
+    trailingParts: right.length ? right : undefined,
+  };
 }

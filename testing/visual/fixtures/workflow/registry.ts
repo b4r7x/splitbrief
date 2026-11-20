@@ -2345,8 +2345,9 @@ const checkpointPredicates = [
   [
     checkpointId('recovery-model-pick'),
     (context) =>
-      includesAll('Pick another REVIEW', 'recommended')(context) &&
-      (context.viewport.cols < 80 || context.output.includes('Pick another REVIEW model')),
+      includesAll(`${listRowLead('active')}w  Pick another REVIEW`)(context) &&
+      (context.viewport.cols < 80 ||
+        includesAll('Pick another REVIEW model', 'recommended')(context)),
   ],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-plan-swapped'), includesAll()],
