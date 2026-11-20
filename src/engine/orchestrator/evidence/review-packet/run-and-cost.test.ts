@@ -5,7 +5,7 @@ import { writeSeatIdentities } from '../../../../core/state/seats/record.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { createInitialState } from '../../../../core/state/machine.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
-import { buildRun } from './run-and-cost.js';
+import { buildRun } from './run.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';

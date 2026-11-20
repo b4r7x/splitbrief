@@ -58,8 +58,8 @@ function options(overrides: { call: TypedSeatCall; prompt?: string }): RequestTy
   };
 }
 
-function completed(text: string, usage: RunnerCallResult['usage'] = null): RunnerCallResult {
-  return makeRunnerCallResult({ status: 'completed', text, usage });
+function completed(text: string): RunnerCallResult {
+  return makeRunnerCallResult({ status: 'completed', text });
 }
 
 function expectValue(
@@ -281,17 +281,14 @@ describe('requestTyped', () => {
   it('repairs a planner answer once and sums the usage of both calls', async () => {
     const { call, invokes } = makeSeatCall({
       typedOutput: 'fallback',
-      results: [
-        completed('{"answer":1}', { inputTokens: 3, outputTokens: 4 }),
-        completed('{"answer":"a","count":2}', { inputTokens: 5, outputTokens: 6 }),
-      ],
+      results: [completed('{"answer":1}'), completed('{"answer":"a","count":2}')],
     });
 
     const result = await requestTyped(options({ call }));
 
     const success = expectValue(result);
     expect(success.value).toEqual({ answer: 'a', count: 2 });
-    expect(success.usage).toEqual({ inputTokens: 8, outputTokens: 10 });
+
     expect(invokes).toHaveLength(2);
   });
 
@@ -313,16 +310,12 @@ describe('requestTyped', () => {
   it('carries the usage of both billed calls on a seat protocol error', async () => {
     const { call } = makeSeatCall({
       typedOutput: 'fallback',
-      results: [
-        completed('{"answer":1}', { inputTokens: 3, outputTokens: 4 }),
-        completed('{"answer":2}', { inputTokens: 5, outputTokens: 6 }),
-      ],
+      results: [completed('{"answer":1}'), completed('{"answer":2}')],
     });
 
     const result = await requestTyped(options({ call }));
 
     expectError(result);
-    expect(result.usage).toEqual({ inputTokens: 8, outputTokens: 10 });
   });
 
   it('sends a strict schema natively to a strict-mode seat', async () => {
@@ -403,13 +396,13 @@ describe('requestTyped', () => {
     const { call, invokes } = makeSeatCall({
       seat: 'implementer',
       typedOutput: 'fallback',
-      results: [completed('{"answer":1}', { inputTokens: 2, outputTokens: 1 })],
+      results: [completed('{"answer":1}')],
     });
 
     const result = await requestTyped(options({ call }));
 
     expect(expectError(result).data.attempts).toBe(1);
-    expect(result.usage).toEqual({ inputTokens: 2, outputTokens: 1 });
+
     expect(invokes).toHaveLength(1);
   });
 

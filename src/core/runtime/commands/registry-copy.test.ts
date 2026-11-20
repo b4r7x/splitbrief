@@ -70,7 +70,7 @@ describe('/copy command', () => {
     expect(feedback).toBe('Nothing to copy');
   });
 
-  it('rejects an unknown target without copying', async () => {
+  it.each(['bogus', 'cost'])('rejects /copy %s without copying', async (target) => {
     let copied = false;
     let error: string | undefined;
     const commands = createRuntimeCommands(
@@ -84,7 +84,7 @@ describe('/copy command', () => {
 
     await runCommandInTest({
       commands: commands,
-      raw: '/copy bogus',
+      raw: `/copy ${target}`,
       screen: 'workflow',
       onError: (m) => {
         error = m;

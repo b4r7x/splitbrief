@@ -25,7 +25,7 @@ describe('planning disposition contract', () => {
     const { result } = await runPlanningTurn(dirs, {
       config: makeConfig(),
       planner: makePassingPlanner({
-        typedCall: typedCallFromTasks([], { inputTokens: 5, outputTokens: 1 }),
+        typedCall: typedCallFromTasks([]),
       }),
     });
 

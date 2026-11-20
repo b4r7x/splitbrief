@@ -189,7 +189,7 @@ export async function runTargetWriteRetry(opts: {
     attempts: 1,
     method: 'local',
     transitionType: 'VALIDATION_PASS',
-    usageCategory: 'implementer',
+
     retryFailureFallback: 'failed',
     invokeRetry: opts.invokeRetry,
   });

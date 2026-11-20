@@ -12,7 +12,7 @@ Dispatch resolves a typed line in three steps:
 
 1. Exact match on `name`, ignoring case (`findRuntimeCommand`). There are no aliases and no prefix match.
 2. If no exact match, a removed name gets a pointer to its replacement (`removedCommandPointer`) instead of `Unknown command`.
-3. Otherwise `suggestRuntimeCommand` may suggest a close command in the error message — it does not auto-execute. Example: `/usge` returns `Unknown command: /usge. Did you mean /usage?` without running `/usage`.
+3. Otherwise `suggestRuntimeCommand` may suggest a close command in the error message — it does not auto-execute. Example: `/hepl` can suggest `/help`.
 
 Each command declares `validScreens`. The screens are `home`, `workflow`, and `setup`. Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` is shorthand for "available everywhere".
 
@@ -22,7 +22,7 @@ A typed command that SPLITBRIEF refuses stays in the composer. SPLITBRIEF refuse
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface, assembled by `createCommandContext`; the TUI only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation.
 
-The slash commands — enumerated by the runtime command registry, the single source of truth — are 22 commands. Every one declares a `category` from a closed set — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
+The slash commands — enumerated by the runtime command registry, the single source of truth — are 21 commands. Every one declares a `category` from a closed set — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
 A composer line is a slash command only when its first word is `/name` without another `/`; `/Users/me/notes.md` goes to the planner as text. A slash command runs in every composer mode, also while a question or a recovery menu waits for an answer; no seat ever reads it as a message. The command list opens there too; only a comment on an approval card gets no list. While the list is open, Tab fills in the highlighted row.
 
@@ -83,7 +83,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Args**: none.
 - **Shortcut**: `Ctrl+,`.
 - **Example**: `/settings`
-- **Behavior**: Opens the `settings` overlay. Crew is first, with one read-only row per seat: PLAN, BUILD, REVIEW. Enter opens the seat's tool/model picker. Fallback is directly below Crew, with one fallback row per seat. Enter opens the same picker in its fallback slot; None clears the fallback. See [Configuration §fallback](./CONFIGURATION.md#fallback) for REVIEW inheritance and picker rules. The section order is Crew → Fallback → Tuning → Workflow → Validation. The Workflow group carries Plan approval (`plan` or `none`), Review cadence (`end` or `task`), Compaction format and Isolation. While REVIEW is None, Review cadence and End-of-run checks are read-only: Enter or Space on either row changes nothing, the help gives the reason, and it shows as an error notice only in a terminal too short for the help. Space cycles Isolation through `worktree`, `staged copy` and `your checkout`, saving `workflow.isolation` as `worktree`, `staged-copy` or `none`. Show spend and Commit strategy controls have been removed. Mutations are persisted to project config on save. A run keeps the settings it started with. A Settings save while a run is open or checks its tools says `<setting> · <value> applies at the next run or Resume`. Resume in Session options reads the saved file.
+- **Behavior**: Opens the `settings` overlay. Crew is first, with one read-only row per seat: PLAN, BUILD, REVIEW. Enter opens the seat's tool/model picker. Fallback is directly below Crew, with one fallback row per seat. Enter opens the same picker in its fallback slot; None clears the fallback. See [Configuration §fallback](./CONFIGURATION.md#fallback) for REVIEW inheritance and picker rules. The section order is Crew → Fallback → Tuning → Workflow → Validation. The Workflow group carries Plan approval (`plan` or `none`), Review cadence (`end` or `task`), Compaction format and Isolation. While REVIEW is None, Review cadence and End-of-run checks are read-only: Enter or Space on either row changes nothing, the help gives the reason, and it shows as an error notice only in a terminal too short for the help. Space cycles Isolation through `worktree`, `staged copy` and `your checkout`, saving `workflow.isolation` as `worktree`, `staged-copy` or `none`. Mutations are persisted to project config on save. A run keeps the settings it started with. A Settings save while a run is open or checks its tools says `<setting> · <value> applies at the next run or Resume`. Resume in Session options reads the saved file.
 - **Implementation**: opens the overlay via `overlayStore.open`; a focus of `seat:<id>`, `fallback:<seat>` or `filter:<text>` is parsed by `parseSettingsFocus`.
 - **See also**: `/crew`, `/skills`.
 
@@ -118,7 +118,7 @@ Commands that decide who does the work and how: the three seats and tool detecti
 - **Screens**: all.
 - **Args**: optional. One of `plan`, `build`, `review` (the `CREW_SEAT_IDS` tuple, re-exported for commands as `CREW_COMMAND_SEATS`). Any other value prints `"Unknown seat: <x>. Valid: plan, build, review"`.
 - **Example**: `/crew`, `/crew plan`, `/crew build`, `/crew review`
-- **Behavior**: Bare `/crew` opens the `settings` overlay focused on the Crew section with the cursor on `plan` (`seat:plan`). `/crew <seat>` opens that seat's picker in the `seat` slot directly (`planner-picker`, `implementer-picker`, `reviewer-picker`, via `seatPickerOverlayFor`). Esc from a directly opened picker returns to the screen it came from. Each Crew row shows one identity, with tool and model separated by ` · ` and billing posture beside it. The row mirrors effort and shows no fallback line. Enter opens the same picker and returns to Crew with the seat updated. The sub-screen titles name the seat, for example `Custom model · PLAN`. Saving writes the seat's tool, model and effort to `.splitbrief/config.yaml`. During a live run the panel says where the seat changes: `<SEAT> seat changes after T001` under a running brief, `after the next brief` while the plan is made, and `at the next review or fix brief` in the final review; the composer key legend says the same while the change waits. A seat that you save back to the seat the run uses is no change: the panel shows `Saved <SEAT> · <identity> to .splitbrief/config.yaml`, the legend goes, and the run does not stop at the next boundary. The running brief finishes on its original seat, then the run prepares the next brief on the saved config. In the final review the review that runs finishes on its seat, its checks included, then the run takes the saved seat before the next review or fix brief: the review that runs again after your answer or your correction, and the first fix brief, run on it. After you save a seat during a live run, the header and the sidebar keep naming the seat the run uses until that seat's change point, then the saved seat. This holds through a question, the plan checks, the plan card, the running brief and its checks, and a consult inside the brief; a stop parked inside a call keeps that call's seat, and a stop that ends the run, or a halt, shows the saved seat. A shell or agent seat reads `Custom Shell · <model>` or `Agent · <model>` on every surface. A seat saved while the run waits paused is taken when you continue it: after a pause between briefs the next brief runs on it, and after a stop inside a brief that brief picks up again on it. A seat saved while a halt waits is taken when the run goes on: Try again or a correction runs on it. The header shows a usage-limit reset clock beside a seat only while that seat has the tool and model that hit the limit; after you save another tool or model, the clock stays in the halt title, for example `Seat down · Usage limit on Claude Code · resets 17:00`. Change <SEAT> tool on the halt switches to the row you take in its picker; Esc keeps the halt and the saved seat. With no `reviewer` block, the REVIEW Crew row shows `= PLAN · <identity>`. With `reviewer: none` it shows `None`, and no seat reviews the run. Set a fallback separately in Settings › Fallback; a saved fallback applies at the next halt in any phase.
+- **Behavior**: Bare `/crew` opens the `settings` overlay focused on the Crew section with the cursor on `plan` (`seat:plan`). `/crew <seat>` opens that seat's picker in the `seat` slot directly (`planner-picker`, `implementer-picker`, `reviewer-picker`, via `seatPickerOverlayFor`). Esc from a directly opened picker returns to the screen it came from. Each Crew row shows one identity, with tool and model separated by ` · `. The row mirrors effort and shows no fallback line. Enter opens the same picker and returns to Crew with the seat updated. The sub-screen titles name the seat, for example `Custom model · PLAN`. Saving writes the seat's tool, model and effort to `.splitbrief/config.yaml`. During a live run the panel says where the seat changes: `<SEAT> seat changes after T001` under a running brief, `after the next brief` while the plan is made, and `at the next review or fix brief` in the final review; the composer key legend says the same while the change waits. A seat that you save back to the seat the run uses is no change: the panel shows `Saved <SEAT> · <identity> to .splitbrief/config.yaml`, the legend goes, and the run does not stop at the next boundary. The running brief finishes on its original seat, then the run prepares the next brief on the saved config. In the final review the review that runs finishes on its seat, its checks included, then the run takes the saved seat before the next review or fix brief: the review that runs again after your answer or your correction, and the first fix brief, run on it. After you save a seat during a live run, the header and the sidebar keep naming the seat the run uses until that seat's change point, then the saved seat. This holds through a question, the plan checks, the plan card, the running brief and its checks, and a consult inside the brief; a stop parked inside a call keeps that call's seat, and a stop that ends the run, or a halt, shows the saved seat. A shell or agent seat reads `Custom Shell · <model>` or `Agent · <model>` on every surface. A seat saved while the run waits paused is taken when you continue it: after a pause between briefs the next brief runs on it, and after a stop inside a brief that brief picks up again on it. A seat saved while a halt waits is taken when the run goes on: Try again or a correction runs on it. The header shows a usage-limit reset clock beside a seat only while that seat has the tool and model that hit the limit; after you save another tool or model, the clock stays in the halt title, for example `Seat down · Usage limit on Claude Code · resets 17:00`. Change <SEAT> tool on the halt switches to the row you take in its picker; Esc keeps the halt and the saved seat. With no `reviewer` block, the REVIEW Crew row shows `= PLAN · <identity>`. With `reviewer: none` it shows `None`, and no seat reviews the run. Set a fallback separately in Settings › Fallback; a saved fallback applies at the next halt in any phase.
 - **Implementation**: overlay routing via `seatPickerOverlayFor`; effort delivery rules in [`CONFIGURATION.md`](./CONFIGURATION.md).
 - **See also**: `/settings`, `/refresh`.
 
@@ -250,32 +250,20 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Implementation**: toggles `controlsStore.sidebarVisible` through the command context, and reads the briefs from the run view (`runViewStore`) through the context's `listBriefs` port.
 - **See also**: `/sidebar`, `/scroll`.
 
-### `/usage`
-
-- **Purpose**: Open reported token usage and monetary estimates explicitly.
-- **Screens**: `workflow`, live or at rest.
-- **Args**: none.
-- **Example**: `/usage`
-- **Behavior**: Opens the `usage-details` overlay for the current run. Missing or partial usage remains labelled; unknown pricing is not zero cost. Closing the details returns to a workflow without token or cost counters. The Rates rows and the Billing rows name each tool or endpoint with the same words.
-- **See also**: `/sessions`, `/copy`.
-
----
-
 ## Input & output
 
 Commands that move data in or out: clipboard copies and image attachments. `category: 'io'` in the registry.
 
-### `/copy [message|brief|path|command|cost]`
+### `/copy [message|brief|path|command]`
 
-- **Purpose**: Copy a value you are reviewing to the system clipboard, so you do not have to select terminal text. Grabs the planner's last message, a Task Brief, a brief's file path, the planner command, or the cost summary.
+- **Purpose**: Copy a value you are reviewing to the system clipboard, so you do not have to select terminal text. Grabs the planner's last message, a Task Brief, a brief's file path, or the planner command.
 - **Screens**: `workflow` only. Not available on `home` — copy targets read workflow review state.
-- **Args**: optional target. One of `message`, `brief`, `path`, `command`, `cost` (the `COPY_TARGETS` tuple). Defaults to `message` when omitted. Any other value prints `"Invalid copy target: <x>. Valid: message, brief, path, command, cost"`.
+- **Args**: optional target. One of `message`, `brief`, `path`, or `command` (the `COPY_TARGETS` tuple). Defaults to `message` when omitted. Any other value prints `"Invalid copy target: <x>. Valid: message, brief, path, command"`.
   - `message` — the planner's most recent assistant text.
   - `brief` — the source text of the Task Brief at the top of the visible window.
   - `path` — the file path of the brief at the top of the visible window, relative to the project directory.
   - `command` — the configured planner runner command.
-  - `cost` — an explicit export of available cost details; it reads the same spend text as `/usage`, and the legacy `workflow.showSpend` key does not switch it off. There is no Settings toggle or main-screen counter.
-- **Example**: `/copy`, `/copy brief`, `/copy path`, `/copy cost`
+- **Example**: `/copy`, `/copy brief`, `/copy path`
 - **Behavior**: Resolves the raw value (never the sanitized display copy) and writes it to the clipboard. When the target has no value the feedback line reads `"Nothing to copy"`. A confirmed native or tmux copy reads `"Copied (native)"` / `"Copied (tmux-buffer)"`; an OSC-52 escape the terminal may silently drop reads `"Copy escape sent; verify your clipboard (some terminals block it)"`; a failure reads `"Could not copy"`.
 - **See also**: `/image`.
 
@@ -454,7 +442,7 @@ The `SHORTCUTS` table of the keybinding registry is the single source of truth f
 Alphabetical, for fast lookup.
 
 - [`/activity`](#activity) — expand or collapse the last folded rows.
-- [`/copy`](#copy-messagebriefpathcommandcost) — copy a reviewed value to the system clipboard.
+- [`/copy`](#copy-messagebriefpathcommand) — copy a reviewed value to the system clipboard.
 - [`/crew`](#crew-planbuildreview) — change who fills the `PLAN`, `BUILD`, or `REVIEW` seat.
 - [`/end`](#end) — close the run, saving unapplied changes.
 - [`/help`](#help) — open the help overlay.
@@ -474,7 +462,6 @@ Alphabetical, for fast lookup.
 - [`/skills`](#skills) — pick skills for every seat, bare or by id.
 - [`/steer`](#steer-text) — send a correction now; a running call stops first.
 - [`/tasks`](#tasks) — show the brief list.
-- [`/usage`](#usage) — open token and monetary details for the run.
 
 ---
 

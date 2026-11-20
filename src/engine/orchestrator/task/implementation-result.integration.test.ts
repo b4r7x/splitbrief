@@ -81,7 +81,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
         error: 'error: unknown flag --print-timeout',
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -113,7 +113,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
         error: 'OpenAI Codex CLI version is not compatible.',
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -148,7 +148,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
         error: evidence,
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -186,7 +186,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
         error: 'branch escaped',
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -223,7 +223,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
         error: 'model not found',
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -249,7 +249,7 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
         error: 'implementer timed out',
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -303,7 +303,7 @@ describe('handleFailedImplementation — an account the provider refuses is a se
         ...(outcome.state !== 'success' && { outcome: outcome.state }),
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -376,7 +376,7 @@ describe('handleFailedImplementation — a seat refused on the retry counts both
       state,
       implState: implState({ success: false, output: '', error: 'type error in src/a.ts' }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -424,7 +424,7 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
         outcome: 'usage-limit',
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -509,7 +509,7 @@ describe('handleFailedImplementation — a stop with a hand-back is consulted', 
         error: 'exited without changing any files',
       }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -563,7 +563,7 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
         error,
       }),
       taskStartSnapshot,
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -579,7 +579,6 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
     const retry = vi.fn().mockResolvedValue({
       success: false,
       error: 'still blocked',
-      usage: { inputTokens: 1, outputTokens: 1 },
     });
     const { bus } = makeBusRecorder();
     let consults = 0;
@@ -603,7 +602,7 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
       state,
       implState: implState({ success: false, output: '', error }),
       taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });

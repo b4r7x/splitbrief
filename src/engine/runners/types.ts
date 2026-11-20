@@ -1,10 +1,8 @@
 import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
-import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ChangedFilesSnapshot } from '../../core/schemas/workflow/changed-files.js';
 import { MAX_DECLARED_ARTIFACT_BYTES } from '../../core/schemas/planner-artifact.js';
 import type {
   RunnerCallTextChannel,
-  RUNNER_CALL_USAGE_SEMANTICS,
   RUNNER_CALL_WARNING_SEVERITIES,
   RUNNER_CALL_WARNING_SURFACES,
 } from '../../core/schemas/runner-call.js';
@@ -61,14 +59,11 @@ export interface ParsedWarningInfo {
 
 export type ParsedTextChannel = RunnerCallTextChannel;
 export type ParsedTextSemantics = RunnerCallTextSemantics;
-export type ParsedUsageSemantics = (typeof RUNNER_CALL_USAGE_SEMANTICS)[number];
 
 export type ParsedLine =
   | {
       text: string;
       channel?: ParsedTextChannel | undefined;
-      usage?: TokenDelta | undefined;
-      usageSemantics?: ParsedUsageSemantics | undefined;
       isResult?: boolean | undefined;
       isError?: boolean | undefined;
       sessionId?: string | undefined;
@@ -84,25 +79,6 @@ export type ParsedLine =
   | {
       text?: undefined;
       channel?: undefined;
-      usage: TokenDelta;
-      usageSemantics?: ParsedUsageSemantics | undefined;
-      isResult?: boolean | undefined;
-      isError?: boolean | undefined;
-      sessionId?: string | undefined;
-      resolvedModel?: string | undefined;
-      subagentId?: string | undefined;
-      toolUse?: ToolUseInfo[] | undefined;
-      toolUseStart?: ToolUseInfo[] | undefined;
-      toolUseDelta?: ToolUseDeltaInfo[] | undefined;
-      toolUseDone?: ToolUseInfo[] | undefined;
-      warning?: ParsedWarningInfo[] | undefined;
-      isHeartbeat?: boolean | undefined;
-    }
-  | {
-      text?: undefined;
-      channel?: undefined;
-      usage?: undefined;
-      usageSemantics?: undefined;
       isResult?: undefined;
       isError?: boolean | undefined;
       sessionId?: string | undefined;

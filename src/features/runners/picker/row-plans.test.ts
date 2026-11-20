@@ -15,7 +15,7 @@ function tool(id: string, displayName: string, status: PickerOption['status']): 
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
     modelCapability: deriveModelCatalogCapability('optional'),
-    billing: 'subscription-included',
+
     permissions: {
       directWrite: false,
       network: true,

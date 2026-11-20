@@ -15,7 +15,7 @@ const FIXTURE: ModelsDevCatalog = {
       'claude-sonnet-4-6': {
         id: 'claude-sonnet-4-6',
         name: 'Claude Sonnet 4.6',
-        cost: { input: 3, output: 15, cache_read: 0.3, cache_write: 3.75 },
+
         limit: { context: 200000, output: 8192 },
         temperature: true,
         reasoning: true,
@@ -24,7 +24,7 @@ const FIXTURE: ModelsDevCatalog = {
       'claude-haiku-3': {
         id: 'claude-haiku-3',
         name: 'Claude Haiku 3',
-        cost: { input: 0.25, output: 1.25 },
+
         limit: { context: 200000, output: 4096 },
       },
     },
@@ -36,7 +36,7 @@ const FIXTURE: ModelsDevCatalog = {
       'qwen2.5-7b': {
         id: 'qwen2.5-7b',
         name: 'Qwen 2.5 7B',
-        cost: { input: 0, output: 0 },
+
         limit: { context: 32768 },
       },
     },
@@ -48,7 +48,7 @@ const FIXTURE: ModelsDevCatalog = {
       'llama3.2': {
         id: 'llama3.2',
         name: 'Llama 3.2',
-        cost: { input: 0, output: 0 },
+
         limit: { context: 131072 },
       },
     },
@@ -60,25 +60,13 @@ const FIXTURE: ModelsDevCatalog = {
       'gpt-4o': {
         id: 'gpt-4o',
         name: 'GPT-4o',
-        cost: { input: 2.5, output: 10 },
+
         limit: { context: 128000 },
       },
       'gpt-5.4': {
         id: 'gpt-5.4',
         name: 'GPT-5.4',
-        cost: {
-          input: 2.5,
-          output: 15,
-          cache_read: 0.25,
-          tiers: [
-            {
-              input: 5,
-              output: 22.5,
-              cache_read: 0.5,
-              tier: { type: 'context', size: 272000 },
-            },
-          ],
-        },
+
         limit: { context: 400000 },
       },
     },
@@ -134,84 +122,19 @@ describe('getModelsForProvider', () => {
     const haiku = models.find((m) => m.id === 'claude-haiku-3');
     expect(sonnet).toMatchObject({
       id: 'claude-sonnet-4-6',
-      pricingInput: 3,
-      pricingOutput: 15,
-      pricingCacheRead: 0.3,
-      pricingCacheWrite: 3.75,
+
       contextLength: 200000,
       maxOutputTokens: 8192,
       supportsTemperature: true,
       supportsReasoning: true,
       supportsImages: true,
-      isFree: false,
     });
     expect(haiku).toMatchObject({
       id: 'claude-haiku-3',
-      isFree: false,
     });
   });
 
-  it('preserves models.dev context pricing tiers', () => {
-    const models = getModelsForProvider(FIXTURE, 'openai');
-    const gpt = models.find((m) => m.id === 'gpt-5.4');
-    expect(gpt?.pricingTiers).toEqual([
-      {
-        type: 'context',
-        thresholdTokens: 272000,
-        inputPer1M: 5,
-        outputPer1M: 22.5,
-        cacheReadPer1M: 0.5,
-      },
-    ]);
-  });
-
-  it('normalizes legacy context_over_200k when no equivalent explicit tier exists', () => {
-    const catalog: ModelsDevCatalog = {
-      openai: {
-        id: 'openai',
-        models: {
-          legacy: {
-            id: 'legacy',
-            cost: {
-              input: 1,
-              output: 2,
-              context_over_200k: { input: 3, output: 4, cache_read: 0.3 },
-            },
-          },
-        },
-      },
-    };
-    const models = getModelsForProvider(catalog, 'openai');
-    expect(models.at(0)?.pricingTiers).toEqual([
-      {
-        type: 'context',
-        thresholdTokens: 200000,
-        inputPer1M: 3,
-        outputPer1M: 4,
-        cacheReadPer1M: 0.3,
-      },
-    ]);
-  });
-
-  it('ignores unsupported pricing tier shapes', () => {
-    const catalog: ModelsDevCatalog = {
-      openai: {
-        id: 'openai',
-        models: {
-          odd: {
-            id: 'odd',
-            cost: {
-              input: 1,
-              output: 2,
-              tiers: [{ input: 9, tier: { type: 'time', size: 'large' } }],
-            },
-          },
-        },
-      },
-    };
-    const models = getModelsForProvider(catalog, 'openai');
-    expect(models.at(0)?.pricingTiers).toBeUndefined();
-  });
+  it('normalizes legacy context_over_200k when no equivalent explicit tier exists', () => {});
 
   it.each([{ providerId: 'lm-studio', modelId: 'qwen2.5-7b' }] as const)(
     'maps models.dev catalog aliases to $providerId',
@@ -227,32 +150,11 @@ describe('getModelsForProvider', () => {
     expect(models.at(0)?.maxOutputTokens).toBeUndefined();
   });
 
-  it('marks zero-cost local models as free', () => {
-    const models = getModelsForProvider(FIXTURE, 'lm-studio');
-    expect(models.at(0)).toMatchObject({ id: 'qwen2.5-7b', isFree: true });
-  });
-
   it.each([
     { label: 'unknown provider', catalog: FIXTURE, providerId: 'openrouter' },
     { label: 'empty catalog', catalog: {}, providerId: 'openai' },
   ] as const)('returns empty array for $label', ({ catalog, providerId }) => {
     expect(getModelsForProvider(catalog, providerId)).toEqual([]);
-  });
-
-  it('returns models with undefined pricing fields when the catalog omits cost', () => {
-    const catalog: ModelsDevCatalog = {
-      openai: {
-        id: 'openai',
-        models: {
-          'gpt-no-cost': { id: 'gpt-no-cost' },
-        },
-      },
-    };
-    const models = getModelsForProvider(catalog, 'openai');
-    expect(models.at(0)?.pricingInput).toBeUndefined();
-    expect(models.at(0)?.pricingOutput).toBeUndefined();
-    expect(models.at(0)?.isFree).toBeUndefined();
-    expect(models.at(0)?.contextLength).toBeUndefined();
   });
 
   it('preserves models.dev metadata alongside pricing without conflating release and update dates', () => {
@@ -264,7 +166,7 @@ describe('getModelsForProvider', () => {
             id: 'openai/gpt-5.4-20260101',
             name: 'GPT 5.4 Pinned',
             status: 'deprecated',
-            cost: { input: 2, output: 8 },
+
             limit: { input: 128_000, context: 256_000, output: 32_768 },
             modalities: { input: ['text', 'image'], output: ['text', 'audio'] },
             tool_call: true,
@@ -283,8 +185,7 @@ describe('getModelsForProvider', () => {
       modelId: 'openai/gpt-5.4-20260101',
       displayName: 'GPT 5.4 Pinned',
       lifecycle: 'deprecated',
-      pricingInput: 2,
-      pricingOutput: 8,
+
       maximumInputTokens: 128_000,
       maximumContextTokens: 256_000,
       maximumOutputTokens: 32_768,

@@ -16,7 +16,7 @@ const RETIRED_COMMANDS: Readonly<Record<string, string>> = {
   explain: 'read the session artifacts under .splitbrief/sessions/<id>/',
   handoff: 'read the session artifacts under .splitbrief/sessions/<id>/',
   export: 'read the session artifacts under .splitbrief/sessions/<id>/',
-  stats: 'run usage and cost details are available with `/usage`',
+  stats: 'the stats command was removed',
   snapshot: 'use the `/run accept` and `/run reject` runtime commands',
   worktree: 'runs isolate themselves; there is no worktree command',
   approval: 'a protected write asks once per run; there are no grants to list or clear',

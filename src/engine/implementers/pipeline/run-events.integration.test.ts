@@ -213,7 +213,6 @@ describe('createImplementerBase — bus events', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nexport const hello = () => "world";\n```',
-        usage: { inputTokens: 10, outputTokens: 20 },
       }),
     );
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], action: 'modify' });

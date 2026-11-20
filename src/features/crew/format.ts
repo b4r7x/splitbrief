@@ -3,24 +3,18 @@ import { cutSeatIdentity } from '../../core/crew/seat-line/wrap.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { crewSeatWord } from '../../core/crew/seats.js';
-import { billingWord } from '../../core/runners/billing.js';
 
 export const CREW_COLUMN_GAP = '  ';
 export const CREW_MARKER_GUTTER = 2;
-/** Below this a truncated model id no longer names a model, so the posture tag yields the room. */
-const MIN_IDENTITY_WIDTH = 28;
 
 export interface SeatBlockLayout {
   identityWidth: number;
-  posture: boolean;
   verdict: boolean;
   rows: number;
 }
 
 /** Inner column where every identity starts: cursor gutter, the label and its gap. */
 export const CREW_IDENTITY_COLUMN = CREW_MARKER_GUTTER + CREW_LABEL_WIDTH + CREW_COLUMN_GAP.length;
-/** The widest posture word plus the gap that separates it from the identity column. */
-const CREW_POSTURE_COLUMN = 14;
 
 export function planSeatBlock(
   input: Readonly<{
@@ -30,20 +24,14 @@ export function planSeatBlock(
     rowBudget: number;
   }>,
 ): SeatBlockLayout {
-  // A block where no seat can name its billing spends nothing on the column: a
-  // CLI seat states no posture, so the identities take the whole width.
-  const posture =
-    input.rows.some((row) => billingWord(row.seat.posture) !== undefined) &&
-    input.innerWidth - CREW_IDENTITY_COLUMN - CREW_POSTURE_COLUMN >= MIN_IDENTITY_WIDTH;
-  const identityWidth =
-    input.innerWidth - CREW_IDENTITY_COLUMN - (posture ? CREW_POSTURE_COLUMN : 0);
+  const identityWidth = input.innerWidth - CREW_IDENTITY_COLUMN;
 
   let verdict = input.verdict !== undefined;
   const rowCount = (): number => input.rows.length + (verdict ? 1 : 0);
 
   if (rowCount() > input.rowBudget && verdict) verdict = false;
 
-  return { identityWidth, posture, verdict, rows: rowCount() };
+  return { identityWidth, verdict, rows: rowCount() };
 }
 
 /** What a crew row shows beside its label, before the row's own width cuts it. */
@@ -60,13 +48,10 @@ export function formatCrewRow(
 ): Readonly<{
   label: string;
   content: string;
-  posture?: string | undefined;
 }> {
   const { row, layout } = input;
-  const posture = layout.posture ? billingWord(row.seat.posture) : undefined;
   return {
     label: rowLabel(row).padEnd(CREW_LABEL_WIDTH),
     content: cutSeatIdentity(rowContent(row), layout.identityWidth),
-    ...(posture !== undefined && { posture }),
   };
 }

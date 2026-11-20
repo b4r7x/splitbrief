@@ -35,10 +35,7 @@ function runTurn(opts: OwnedRunOpts = {}) {
 describe('runPlanningPhase — the plan card', () => {
   it('reaches implementing without user interaction when the run asks no approval', async () => {
     const { callbacks } = makeCallbacks();
-    const typedCall = typedCallFromTasks([makePassingTask('T099')], {
-      inputTokens: 50,
-      outputTokens: 25,
-    });
+    const typedCall = typedCallFromTasks([makePassingTask('T099')]);
     const planner = makePassingPlanner({ typedCall });
 
     const { result } = await runTurn({

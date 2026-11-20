@@ -165,14 +165,7 @@ export function SettingsOverlay() {
         }}
         renderItem={(item, { isCursor, contentWidth }) => {
           if (item.kind === 'crew') {
-            return (
-              <CrewRowView
-                row={item.row}
-                layout={layout}
-                isCursor={isCursor}
-                width={contentWidth}
-              />
-            );
+            return <CrewRowView row={item.row} layout={layout} isCursor={isCursor} />;
           }
           if (item.kind === 'fallback') {
             return <FallbackRowView row={item.row} isCursor={isCursor} width={contentWidth} />;

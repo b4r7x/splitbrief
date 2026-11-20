@@ -18,7 +18,7 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { processError } from '../../../lib/process/errors.js';
@@ -53,13 +53,12 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       implement: vi.fn().mockResolvedValue({
         success: true,
         output: 'ok',
-        usage: { inputTokens: 300, outputTokens: 120 },
       }),
     });
 
     const wctx = makeWorkflowContext({ callbacks, implementer, bus });
 
-    const taskBreakdowns: TaskTokenUsage[] = [];
+    const taskBreakdowns: BriefExecution[] = [];
     const setTrackedState = vi.fn();
     const setCurrentTask = vi.fn();
 
@@ -77,9 +76,6 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
     expect(result.currentTaskIndex).toBe(1);
     expect(result.tasks[0]?.status).toBe('done');
     expect(result.pendingRecovery).toBeUndefined();
-
-    expect(result.tokenUsage.implementerInput).toBe(300);
-    expect(result.tokenUsage.implementerOutput).toBe(120);
 
     const start = events.find((e) => e.type === 'task_started');
     const complete = events.find((e) => e.type === 'task_completed');
@@ -224,7 +220,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       implement: vi.fn().mockImplementation(async () => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 1;\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       }),
       retry: vi.fn(),
     });
@@ -280,7 +276,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       implement: vi.fn().mockImplementation(async () => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 1;\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       }),
       retry: vi.fn(),
     });
@@ -339,7 +335,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
         writeFileSync(join(runDir, 'package.json'), '{"name":"hello"}\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       }),
     });
     const callbacks = {
@@ -410,12 +406,12 @@ describe('runSingleTask — checks log per validation attempt', { timeout: 60_00
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
         write('export const main = 1;\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       }),
       retry: vi.fn().mockImplementation(async () => {
         retries += 1;
         write(`export const main = ${retries + 1};\n`);
-        return { success: true, output: 'fixed', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'fixed' };
       }),
     });
     let validations = 0;
@@ -486,7 +482,6 @@ describe('runSingleTask — a brief keeps its corrections on every attempt', {
       success: false,
       output: '',
       error: 'still red',
-      usage: { inputTokens: 1, outputTokens: 1 },
     });
     const wctx = makeWorkflowContext({
       projectDir,
@@ -568,13 +563,11 @@ describe('runSingleTask — a brief keeps its corrections on every attempt', {
       success: false,
       output: '',
       error: 'tsc: Type X is not assignable to Y',
-      usage: { inputTokens: 1, outputTokens: 1 },
     });
     const retry = vi.fn().mockResolvedValue({
       success: false,
       output: '',
       error: 'still red',
-      usage: { inputTokens: 1, outputTokens: 1 },
     });
 
     await runSingleTask({

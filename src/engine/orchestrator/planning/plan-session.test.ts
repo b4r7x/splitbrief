@@ -23,7 +23,6 @@ const questions = (round: number): PlanResult => ({
 const answer = (result: PlanResult): RequestTypedResult<PlanAnswer> => ({
   value: { result },
   nativeSessionId: 'thread-1',
-  usage: null,
 });
 
 const uncovered: PlanCheckError = {
@@ -233,7 +232,7 @@ describe('runPlanSession', () => {
       errors: ['result: Invalid input'],
       answerPreview: '{}',
     });
-    const { ask } = scripted([{ error, usage: null }]);
+    const { ask } = scripted([{ error }]);
     const outcome = await runPlanSession({
       rounds: 0,
       ask,

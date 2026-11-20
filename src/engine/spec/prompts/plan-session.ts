@@ -155,7 +155,9 @@ export function planAnswersTurn(
 export function planRepairTurn(errors: readonly PlanCheckError[], plan?: PlanProposal): string {
   const failed = plan === undefined ? '' : `Your plan:\n${JSON.stringify(plan, null, 2)}\n\n`;
   return `${failed}The plan failed SPLITBRIEF's checks:\n${errors
-    .map((error) => `- ${error.code}: ${error.message}`)
+    .map(({ code, message, detail }) =>
+      detail === undefined ? `- ${code}: ${message}` : `- ${code}: ${message}\n  ${detail}`,
+    )
     .join('\n')}\n\nReturn the corrected complete plan.`;
 }
 

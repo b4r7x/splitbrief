@@ -92,7 +92,7 @@ function runnerAborted(
     startedAt: 1_000,
     endedAt: 1_900,
     durationMs: 900,
-    usage: null,
+
     nativeSessionId: null,
     ...overrides,
   };
@@ -119,7 +119,7 @@ function runnerCompleted(
     startedAt: 1_000,
     endedAt: 1_900,
     durationMs: 900,
-    usage: null,
+
     nativeSessionId: null,
     ...overrides,
   };

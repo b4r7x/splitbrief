@@ -27,7 +27,7 @@ import {
 } from '../display/recorded-seat-identity.js';
 import { buildActivityBatchViewModel } from '../conversation-rows/activity/batch-model.js';
 import { formatTaskStartedParts } from '../conversation-rows/event-rows/format.js';
-import { deriveUsageDetails } from '../usage/derive.js';
+
 import { Sidebar } from './sidebar/panel.js';
 
 const SEATS = [
@@ -238,28 +238,6 @@ describe.each(SEATS)('a $kind seat reads one name on every surface', (seat) => {
     expect(formatRecoveryHeadline(issue)).toContain(`Usage limit on ${seat.name}`);
   });
 
-  it('/usage names its billing row by kind', () => {
-    const view = deriveUsageDetails({
-      tokenUsage: null,
-      costBreakdown: {
-        actualPlannerCost: 0,
-        actualImplementerCost: 0,
-        totalActualCost: 0,
-        providerRunMetadata: {
-          [`${seat.kind}:${seat.command}`]: {
-            service: seat.kind,
-            offering: 'local',
-            normalizedEndpoint: `${seat.kind}://${seat.command}`,
-            billing: 'unknown',
-            asOf: '2026-01-01',
-          },
-        },
-      },
-    });
-
-    expect(view.billing.map((row) => row.tool)).toEqual([seat.name]);
-  });
-
   it('the running seat matches the saved seat of the same kind and model', () => {
     const config = makeConfig({ implementer: runnerOf(seat, seat.swapped) });
 
@@ -276,7 +254,7 @@ describe.each(SEATS)('a $kind seat reads one name on every surface', (seat) => {
           durationMs: null,
           partial: false,
           reason: null,
-          usage: null,
+
           warnings: [],
           runnerName: seat.command,
           model: seat.model,

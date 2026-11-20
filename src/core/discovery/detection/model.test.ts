@@ -3,46 +3,11 @@ import { cloneDetectedModel } from '../clone-model.js';
 import { DetectedModelSchema } from './model.js';
 
 describe('detection schemas', () => {
-  it('accepts source-bearing pricing dates without requiring pricing on every model', () => {
-    expect(
-      DetectedModelSchema.safeParse({
-        id: 'priced-model',
-        pricingInput: 1,
-        pricingOutput: 2,
-        pricingProvenance: {
-          asOf: '2026-07-31',
-          source: 'test fixture pricing record',
-        },
-      }).success,
-    ).toBe(true);
-    expect(DetectedModelSchema.safeParse({ id: 'unpriced-model' }).success).toBe(true);
-  });
-
   it.each([
     { asOf: '2026-7-31', source: 'test fixture pricing record' },
     { asOf: '2026-07-31', source: '   ' },
   ])('rejects invalid pricing provenance %#', (pricingProvenance) => {
     expect(DetectedModelSchema.safeParse({ id: 'model-1', pricingProvenance }).success).toBe(false);
-  });
-
-  it('clones pricing provenance without sharing the nested object', () => {
-    const original = {
-      id: 'model-1',
-      pricingInput: 1,
-      pricingProvenance: {
-        asOf: '2026-07-31',
-        source: 'test fixture pricing record',
-      },
-    };
-
-    const cloned = cloneDetectedModel(original);
-    if (!cloned.pricingProvenance) throw new Error('Expected cloned pricing provenance');
-    cloned.pricingProvenance.source = 'updated test fixture pricing record';
-
-    expect(original.pricingProvenance).toEqual({
-      asOf: '2026-07-31',
-      source: 'test fixture pricing record',
-    });
   });
 
   it('round-trips and clones exact native catalog metadata without changing selection identity', () => {

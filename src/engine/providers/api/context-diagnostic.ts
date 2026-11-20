@@ -6,11 +6,7 @@ import { isRecord, typedEntries } from '../../../utils/type-guards.js';
 /** A measurement that was actually taken; an absent one is omitted, never zero. */
 const TokenCount = z.number().int().nonnegative().optional();
 const BudgetSource = z.enum(['configured', 'observed-active', 'application-default']);
-const OmittedRequestOption = z.enum([
-  'temperature',
-  'reasoning_effort',
-  'stream_options.include_usage',
-]);
+const OmittedRequestOption = z.enum(['temperature', 'reasoning_effort']);
 export type ApiContextOmittedRequestOption = z.infer<typeof OmittedRequestOption>;
 
 export const ApiContextDiagnosticSchema = z

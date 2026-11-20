@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { isRecord } from '../../../../utils/type-guards.js';
-import { toTokenDelta } from '../../../calls/usage/normalize.js';
 import { firstString } from '../fields.js';
 import type { StreamParseResult } from './result.js';
 
@@ -46,7 +45,6 @@ export const ResultEvent = z.object({
   result: z.string().optional(),
   is_error: z.boolean().optional(),
   session_id: z.string().optional(),
-  usage: z.unknown().optional(),
   structured_output: z.unknown().optional(),
 });
 
@@ -119,10 +117,8 @@ export function parseStreamEvent(event: Record<string, unknown>): StreamParseRes
     const stopReason = isRecord(streamEvent.delta)
       ? firstString(streamEvent.delta.stop_reason)
       : undefined;
-    const usage = isRecord(streamEvent.usage) ? toTokenDelta(streamEvent.usage) : null;
     return {
       sessionId,
-      ...(usage && { usage, usageSemantics: 'cumulative' }),
       ...(stopReason !== undefined && { stopReason }),
     };
   }

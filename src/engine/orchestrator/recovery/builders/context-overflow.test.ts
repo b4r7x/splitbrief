@@ -47,7 +47,6 @@ describe('buildContextOverflowRecoveryIssue', () => {
     expect(issue.reason).toBe('context-overflow');
     expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
-    expect(issue.facts).toMatchObject({ estimatedTokens: 45_000, contextLength: 32_768 });
     expectValidRecoveryIssue(issue);
   });
 });

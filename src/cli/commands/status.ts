@@ -25,56 +25,33 @@ import {
 } from '../../core/crew/identity.js';
 import type { SeatIds } from '../../core/crew/seat-ids.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
-import type { RunnerKind } from '../../core/schemas/enums.js';
-import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';
-import { resolveCallUsageEvidence } from '../../engine/orchestrator/summary/call-evidence.js';
+import {
+  recordedRunnerKind,
+  type CallIdentity,
+} from '../../engine/orchestrator/summary/call-identities.js';
+import { resolveCallIdentities } from '../../engine/orchestrator/summary/call-evidence.js';
 import { oneLineDisplayText, stripTerminalControls } from '../../utils/display-text/sanitize.js';
 import { recordedSeatIdentityInput } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { loadRememberedCatalog } from '../bootstrap/discovery.js';
 import { briefPosition } from '../../core/state/selectors.js';
 
-/**
- * The kind the displayed seat's own calls recorded for its tool name, when they
- * recorded exactly one. A seat whose calls recorded both an API and a CLI kind
- * for the same name is ambiguous and keeps the literal name; a seat with no
- * record at all is missing legacy evidence and resolves through the merged
- * catalog as before.
- */
-function recordedRunnerKind(
-  evidence: readonly CallUsageEvidence[] | undefined,
-  role: CallUsageEvidence['role'],
-  tool: string,
-): RunnerKind | 'ambiguous' | undefined {
-  if (evidence === undefined) return undefined;
-  const kinds = new Set<RunnerKind>();
-  for (const call of evidence) {
-    if (call.role !== role) continue;
-    const runner = call.invocationIdentity?.runner;
-    const id = runner?.id ?? call.runnerName;
-    if (id !== tool) continue;
-    kinds.add(runner?.kind ?? call.backendKind);
-  }
-  if (kinds.size === 0) return undefined;
-  return kinds.size === 1 ? [...kinds][0] : 'ambiguous';
-}
-
 const STATUS_LABEL_WIDTH = 'Escalated: '.length;
 
 /** A seat as the run state recorded it, and the role its own calls were recorded under. */
-type RecordedSeat = Readonly<{ seat: SeatIds; callRole: CallUsageEvidence['role'] }>;
+type RecordedSeat = Readonly<{ seat: SeatIds; callRole: CallIdentity['role'] }>;
 
 type RunRecords = Readonly<{
   state: WorkflowState;
   seats: ReturnType<typeof readSeatIdentityRecord>;
-  evidence: ReturnType<typeof resolveCallUsageEvidence>;
+  evidence: ReturnType<typeof resolveCallIdentities>;
 }>;
 
 function seatIdentity(
   { state, seats, evidence }: RunRecords,
   seatId: CrewSeatId,
   seat: SeatIds,
-  callRole: CallUsageEvidence['role'],
+  callRole: CallIdentity['role'],
 ): string {
   const switchIndex = state.seatSwitches?.findLastIndex((change) => change.seat === seatId) ?? -1;
   const switched = state.seatSwitches?.[switchIndex];
@@ -234,7 +211,7 @@ async function runStatus(opts: { project?: string }): Promise<void> {
   const { state } = run.hydration;
   const records: RunRecords = {
     state,
-    evidence: resolveCallUsageEvidence(ref),
+    evidence: resolveCallIdentities(ref),
     seats: readSeatIdentityRecord(ref),
   };
   printRunLines(state, run, theme);

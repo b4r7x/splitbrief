@@ -89,25 +89,18 @@ type SeatLadderPort = Readonly<{
 
 async function seatCallLadder<T>(
   call: (signal: AbortSignal) => Promise<SeatAttempt<T>>,
-  onDiscarded: (value: T) => void,
   port: SeatLadderPort,
 ): Promise<SeatAttempt<T>> {
   const attempt = (): Promise<SeatAttempt<T>> =>
     withSeatRetry(call, {
       ...(port.signal !== undefined && { signal: port.signal }),
       onRetry: port.onRetry,
-      onDiscarded,
     });
   const first = await attempt();
   if (first.ok) return first;
   const deadline = seatResetWaitDeadline(first.failure);
   if (deadline === undefined) return first;
-  const waits = await port.waits().catch((error: unknown) => {
-    onDiscarded(first.value);
-    throw error;
-  });
-  if (!waits) return first;
-  onDiscarded(first.value);
+  if (!(await port.waits())) return first;
   await port.wait(deadline);
   return attempt();
 }
@@ -119,8 +112,7 @@ async function seatCallLadder<T>(
  * (`automaticSeatSwitch`). Otherwise a reported reset of any length is waited
  * out once and the same call repeats, and an unknown reset comes back as the
  * failure. None of these retries is a lineage attempt — no state transition
- * counts them. `onDiscarded` receives every attempt value a retry or the wait
- * replaced, or a stop ended, so the caller can keep its usage.
+ * counts them.
  *
  * A wait of this seat still saved when the call starts is one a `/steer` cut:
  * a stop or a Retry at is waited out on re-entry before any seat call runs.
@@ -130,7 +122,6 @@ async function seatCallLadder<T>(
 export async function runSeatCall<T>(
   ctx: SeatCallContext,
   call: (signal: AbortSignal) => Promise<SeatAttempt<T>>,
-  onDiscarded: (value: T) => void,
 ): Promise<SeatAttempt<T>> {
   let state = ctx.state;
   const head = loadState(ctx.ref) ?? state;
@@ -140,7 +131,7 @@ export async function runSeatCall<T>(
     ctx.onStateChange?.(state);
   }
 
-  return seatCallLadder(call, onDiscarded, {
+  return seatCallLadder(call, {
     ...(ctx.signal !== undefined && { signal: ctx.signal }),
     onRetry: (info) =>
       publishSeatRetry({ bus: ctx.ref.bus, phase: ctx.state.phase }, { seat: ctx.seat, ...info }),
@@ -202,8 +193,7 @@ export async function runThrowingSeatCall<T>(
   ctx: SeatCallContext,
   call: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  // A thrown call carries no usage to keep.
-  return answerOrThrow(await runSeatCall(ctx, throwingAttempt(call), () => {}));
+  return answerOrThrow(await runSeatCall(ctx, throwingAttempt(call)));
 }
 
 /**
@@ -232,7 +222,6 @@ export function runCommandSeatCall<T>(
             throwIfAborted(attemptSignal);
             return result;
           },
-          () => {},
           {
             signal,
             onRetry: (info) => write(seatRetrySentence(info)),

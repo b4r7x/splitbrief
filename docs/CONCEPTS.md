@@ -308,7 +308,7 @@ All workflow state lives under `.splitbrief/` in the target project. Each sessio
 ├── active                                  # JSON receipt of the currently-active run (or absent)
 └── sessions/
     ├── 2026-04-14-add-email-validator/
-    │   ├── state.json                      # mutable: phase, tasks, currentTaskIndex, tokenUsage, plannerSessionId
+    │   ├── state.json                      # mutable: phase, tasks, currentTaskIndex, plannerSessionId
     │   ├── session.jsonl                   # append-only log: type-tagged events + messages
     │   ├── summary.json                    # the session row, saved at the end of every run pass (status, stop, apply, Summary)
     │   ├── plan.json                       # the checked plan the planning session answered

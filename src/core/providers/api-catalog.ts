@@ -1,5 +1,4 @@
 import { includes, typedEntries } from '../../utils/type-guards.js';
-import type { RunnerBillingPosture } from '../runners/billing.js';
 import type { EndpointPolicy } from './endpoint-policy.js';
 import { HIDDEN_API_PROVIDER_IDS } from './hidden.js';
 
@@ -83,7 +82,6 @@ export interface ApiProviderDescriptor<
   readonly authDiscoveryMode: ApiAuthDiscoveryMode;
   readonly modelDiscoveryMode: ApiModelDiscoveryMode;
   readonly mandatoryPreflightFacts: readonly ApiPreflightFact[];
-  readonly billing: RunnerBillingPosture;
   readonly compatibility: CompatibilityQualification;
   readonly dataUse: DataUsePosture;
   readonly privacyURL: string;
@@ -135,7 +133,6 @@ export const API_PROVIDER_CATALOG = Object.freeze({
     authDiscoveryMode: 'not-required',
     modelDiscoveryMode: 'native-local-inventory',
     mandatoryPreflightFacts: LOCAL_API_PREFLIGHT_FACTS,
-    billing: 'local',
     compatibility: 'verified',
     dataUse: 'local',
     privacyURL: 'https://ollama.com/privacy',
@@ -156,7 +153,6 @@ export const API_PROVIDER_CATALOG = Object.freeze({
     authDiscoveryMode: 'optional-api-key-unverified',
     modelDiscoveryMode: 'native-local-inventory',
     mandatoryPreflightFacts: LOCAL_API_PREFLIGHT_FACTS,
-    billing: 'local',
     compatibility: 'verified',
     dataUse: 'local',
     privacyURL: 'https://lmstudio.ai/app-privacy',
@@ -177,7 +173,6 @@ export const API_PROVIDER_CATALOG = Object.freeze({
     authDiscoveryMode: 'optional-api-key-unverified',
     modelDiscoveryMode: 'native-local-inventory',
     mandatoryPreflightFacts: LOCAL_API_PREFLIGHT_FACTS,
-    billing: 'local',
     compatibility: 'beta',
     dataUse: 'local',
     // llama.cpp ships no hosted service: the server README is the endpoint

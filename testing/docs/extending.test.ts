@@ -24,7 +24,7 @@ const PROVIDER_REQUIRED_STEPS = [
   'service/offering',
   'endpoint',
   'credential',
-  'billing/privacy/asOf',
+  'privacy and asOf',
   'policy',
   'production conformance',
   'eval',

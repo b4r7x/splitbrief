@@ -2,7 +2,6 @@ import {
   tryParseStructuredSummary,
   type StructuredSummary,
 } from '../../core/schemas/compaction.js';
-import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import type {
   PlannerCallEventCallbacks,
@@ -10,7 +9,6 @@ import type {
   PlannerSummaryMessage,
   PlannerSummaryOptions,
 } from './types.js';
-import { runnerCallTokenDelta } from '../calls/usage/normalize.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 import { createRunnerCallId } from '../calls/id.js';
 import { requireCompletedCall } from './require-completed-call.js';
@@ -88,8 +86,8 @@ export async function summarize(
   config: PlannerSummaryConfig,
   messages: PlannerSummaryMessage[],
   opts: PlannerSummaryOptions = {},
-): Promise<{ text: string; usage: TokenDelta | null }> {
-  if (messages.length === 0) return { text: '', usage: null };
+): Promise<{ text: string }> {
+  if (messages.length === 0) return { text: '' };
   throwIfAborted(opts.signal);
   const callContext = createSummaryCallContext(config, opts.role ?? 'summary');
   const result = requireCompletedCall(
@@ -106,15 +104,15 @@ export async function summarize(
       signal: opts.signal,
     }),
   );
-  return { text: result.text.trim(), usage: runnerCallTokenDelta(result.usage) };
+  return { text: result.text.trim() };
 }
 
 export async function summarizeStructured(
   config: PlannerSummaryConfig,
   messages: PlannerSummaryMessage[],
   opts: PlannerStructuredSummaryOptions = {},
-): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }> {
-  if (messages.length === 0) return { text: '', structured: null, usage: null };
+): Promise<{ text: string; structured: StructuredSummary | null }> {
+  if (messages.length === 0) return { text: '', structured: null };
   throwIfAborted(opts.signal);
   const callContext = createSummaryCallContext(config, opts.role ?? 'summary');
   const result = requireCompletedCall(
@@ -135,6 +133,5 @@ export async function summarizeStructured(
   return {
     text,
     structured: tryParseStructuredSummary(text),
-    usage: runnerCallTokenDelta(result.usage),
   };
 }

@@ -10,7 +10,11 @@ import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProfileFit, RouteTaskOptions } from './types.js';
 import type { CurrentCodeContextMode, TaskContextFit } from '../../../core/schemas/enums.js';
 import { profileEffectiveModelId, resolveProfileContextLength } from './context-length.js';
-import { estimateFormattedTaskPromptTokens, classifyContextFit } from './estimation.js';
+import {
+  estimateFormattedTaskPromptTokens,
+  classifyContextFit,
+  contextFitRequirement,
+} from './estimation.js';
 import { currentCodeContextMode } from './headings.js';
 import { requiredWriteModeForTask } from './decision.js';
 
@@ -90,6 +94,20 @@ export function assessProfile(
   const formattedFit = classifyContextFit(estimatedTokens, inputBudget, opts);
   const untruncatedFit = classifyContextFit(untruncatedEstimatedTokens, inputBudget, opts);
   const fit = determineFit({ currentCodeTruncated, mode, formattedFit, untruncatedFit });
+  const contextOverflow =
+    userBudget && fit === 'overflow'
+      ? {
+          requiredTokens:
+            outputReserve +
+            contextFitRequirement(
+              currentCodeTruncated
+                ? Math.max(estimatedTokens, untruncatedEstimatedTokens)
+                : estimatedTokens,
+              opts,
+            ),
+          availableTokens: contextLength,
+        }
+      : undefined;
   const requiredWriteMode = requiredWriteModeForTask(opts.task);
   const credentialFailure = credentialFailureReason(profile);
   const capabilityFailure =
@@ -104,10 +122,10 @@ export function assessProfile(
     estimatedTokens,
     untruncatedEstimatedTokens,
     contextLength,
+    contextOverflow,
     currentCodeTruncated,
     currentCodeContextMode: mode,
     usedConservativeContextLength,
-    userBudget,
     requiredWriteMode,
     credentialFailure,
     capabilityFailure,

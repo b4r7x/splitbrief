@@ -50,7 +50,7 @@ When Continue is your first save, home shows:
 Saved your crew to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore
 ```
 
-`init` opens the crew screen. Until you save, it writes nothing in your checkout. The first save creates `.splitbrief/` with `.splitbrief/config.yaml` (`version: 3`) and adds `.splitbrief/` to `.gitignore` when git does not ignore it yet. `splitbrief init --yes` saves a detected ready crew without the screen and prints the same two facts. The default planner is the admitted `claude-code` CLI (subscription-included billing; see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). Each `splitbrief start` saves its own session under `.splitbrief/sessions/<session-id>/`. Run `splitbrief doctor` after setup or runner changes — it is read-only and surfaces remediation copy for non-ready CLI/API states without starting a workflow.
+`init` opens the crew screen. Until you save, it writes nothing in your checkout. The first save creates `.splitbrief/` with `.splitbrief/config.yaml` (`version: 3`) and adds `.splitbrief/` to `.gitignore` when git does not ignore it yet. `splitbrief init --yes` saves a detected ready crew without the screen and prints the same two facts. The default planner is the admitted `claude-code` CLI (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). Each `splitbrief start` saves its own session under `.splitbrief/sessions/<session-id>/`. Run `splitbrief doctor` after setup or runner changes — it is read-only and surfaces remediation copy for non-ready CLI/API states without starting a workflow.
 
 **Variations:** `splitbrief init --reconfigure` overwrites an existing config. To initialize another project, run `splitbrief init` from that project directory.
 
@@ -191,7 +191,7 @@ The planner may ask questions, for at most two rounds; every question has a defa
 
 ---
 
-## Spend
+## Choose the crew
 
 ### 6. Use a smaller implementer
 
@@ -241,12 +241,11 @@ splitbrief start "add a CSV exporter"
 **You'll see:**
 
 ```
-planner: claude-code (cli)  · subscription, no API spend tracked
+planner: claude-code (cli)
 implementer: custom-endpoint · your-implementer-model
 validate · tsc ✓ lint ✓ test ✓
 ```
 
-The planner bills through your Claude Code subscription, so its usage reads `unpriced` — never zero cost.
 
 **Variations:** The implementer can also be a CLI tool on a smaller model: `kind: cli` with a `tool:` and a `model:`. Swap the planner `tool` using the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
 
@@ -254,27 +253,9 @@ The planner bills through your Claude Code subscription, so its usage reads `unp
 
 ---
 
-### 7. Review what a run spent
-
-**When:** the run is over (or paused) and you want to see where the spend went.
-
-**Run:**
-
-Open `/usage` from the workflow, including a saved run. The details show reported usage, missing or partial coverage, and available monetary estimates. The sidebar and closed-run summary do not display spend; there is no Show spend control.
-
-For a recorded event-level export:
-
-```bash
-jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl | tail -20
-```
-
-Unknown or unpriced usage is not zero cost. Estimates in the explicit details view do not prove the vendor’s invoice or the CLI’s authentication method.
-
----
-
 ### 8. Use Claude Code subscription as planner
 
-**When:** you have a Claude Pro / Max subscription and don't want to pay per-token through the API.
+**When:** you want PLAN to use your Claude Code sign-in.
 
 **Setup (`.splitbrief/config.yaml`):**
 
@@ -286,7 +267,7 @@ validation:
   end_checks: true
 ```
 
-`claude-code` is a supported CLI runner with subscription-included billing (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). With no `implementer` block, Claude Code also builds.
+`claude-code` is a supported CLI runner (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). With no `implementer` block, Claude Code also builds.
 
 **Run:**
 
@@ -298,12 +279,11 @@ splitbrief start "add input validation to the signup form"
 **You'll see:**
 
 ```
-planner: claude-code (cli)  · subscription, no API spend tracked
+planner: claude-code (cli)
 implementer: claude-code (cli)
 validate · tsc ✓ lint ✓ test ✓
 ```
 
-`kind: cli` spawns `claude` as a subprocess with the brief on stdin. Spend goes through your subscription, so SPLITBRIEF shows the planner as `unpriced`, and the session total reads `unpriced`.
 
 **Variations:** Swap `tool` for any admitted CLI in the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix); `splitbrief init` auto-detects installed tools. For an implementer behind your own endpoint, use recipe 6.
 
@@ -599,56 +579,11 @@ Each event comes wrapped as `{"type":"event","data":<event>}`. The other records
 
 **Variations:** `CI=1` env var auto-disables fullscreen mode even without `--json`.
 
-**See also:** recipes 18–20.
+**See also:** recipes 18–19.
 
 ---
 
-### 18. Parse cost in CI
-
-**When:** you want to extract the final cost from a CI run and post it as a build comment.
-
-**Run:**
-
-```bash
-splitbrief start --json "..." 2>/dev/null > events.ndjson
-
-# Tokens per seat at the end of the run
-jq -s -c 'map(select(.type == "event" and .data.type == "cost_update")) | last | .data.tokenUsage
-  | {planner: (.plannerInput + .plannerOutput), implementer: (.implementerInput + .implementerOutput),
-     escalation: (.escalationInput + .escalationOutput), reviewer: (.reviewerInput + .reviewerOutput)}' \
-  events.ndjson
-
-# Tokens per task
-jq -c 'select(.type == "event" and .data.type == "task_tokens") | .data
-  | {task: .taskId, method, implementer: .implementerTokens, escalation: .escalationTokens}' \
-  events.ndjson
-
-# Dollars, from the summary of the run
-jq -c '.summary.costBreakdown | {planner: .actualPlannerCost, implementer: .actualImplementerCost,
-  reviewer: .actualReviewerCost, total: .totalActualCost, complete: .isTotalActualCostKnown}' \
-  .splitbrief/sessions/<id>/summary.json
-jq -c '.summary.taskBreakdown[] | {task: .taskId, method, cost}' \
-  .splitbrief/sessions/<id>/summary.json
-```
-
-**You'll see:**
-
-```json
-{"planner":1040,"implementer":1132,"escalation":0,"reviewer":324}
-{"task":"T001","method":"consulted","implementer":1132,"escalation":0}
-{"planner":0,"implementer":0,"reviewer":0,"total":0,"complete":false}
-{"task":"T001","method":"consulted","cost":null}
-```
-
-The event stream carries token counts only. The dollar figures are in `.splitbrief/sessions/<id>/summary.json`, which SPLITBRIEF writes when the run finishes or stops. In this sample the seats ran a model with no price: `complete` is `false`, the totals count only the usage that has a price, and a task with no price has no `cost`, so `jq` prints `null`. A run whose seats report no usage writes no `cost_update` event, and the first command then prints `null` for each seat. `method` names how the brief passed: `local` for the BUILD seat's own attempt, `consulted` when it passed after a consult with the planner.
-
-**Variations:** Filter for failures: `jq -c 'select(.type == "recovery_required" or .type == "final_review_failed" or .type == "error" or .data.type == "error")' events.ndjson`.
-
-**See also:** [docs/TROUBLESHOOTING.md](./TROUBLESHOOTING.md#event-log-jsonl-sink) §Event log, [docs/CONFIGURATION.md](./CONFIGURATION.md), recipe 7.
-
----
-
-### 19. Read a headless run without a JSON parser
+### 18. Read a headless run without a JSON parser
 
 **When:** CI or a shell script needs the shape of a run — which phase, which task, what the review said — and piping NDJSON through `jq` is more machinery than the job deserves.
 
@@ -691,8 +626,6 @@ splitbrief start --plain "..." | grep -c '^task .*: failed' # tasks that did not
 splitbrief start --plain "..." | tail -1                    # the closing line
 ```
 
-Cost is reported in tokens, not dollars: the event stream carries token counts, and the price catalog lives outside the run. For dollars, read `summary.json` after the run (recipe 18).
-
 `--plain` and `--json` are two renderings of one stream and cannot share stdout — passing both exits `2` with `--plain and --json cannot be combined; choose one output mode.`
 
 **Variations:** `splitbrief resume --plain` and `splitbrief continue --plain` render a resumed run the same way. A resume that lands on a different crew than the one that started the run prints `PLAN seat changed <old> → <new>; context will be rebuilt` to stderr first, so redirect stderr if you want stdout alone.
@@ -701,7 +634,7 @@ Cost is reported in tokens, not dollars: the event stream carries token counts, 
 
 ---
 
-### 20. Answer a halted run without a TUI
+### 19. Answer a halted run without a TUI
 
 **When:** a `--json` or `--plain` run stopped on a recovery issue in CI, and you want to resolve it from the shell instead of opening the recovery panel.
 
@@ -764,7 +697,7 @@ The second command prints the same sentence first, and the word is the confirmat
 
 ---
 
-### 21. Prime every seat with project skills
+### 20. Prime every seat with project skills
 
 **When:** the repo carries skills — house conventions, a testing standard, a security checklist — and you want a scripted run to use them without opening the picker.
 
@@ -797,7 +730,7 @@ with exit `2`.
 
 ## Power user
 
-### 22. Define project-level coding rules
+### 21. Define project-level coding rules
 
 **When:** you want every seat — planner, implementer and reviewer — to follow project conventions (no React Context, ESM `.js` suffix, etc.).
 
@@ -829,7 +762,7 @@ Interactively, select the skill with `/skills house-rules` before you start.
 
 ---
 
-### 23. Run pre/post task shell hooks
+### 22. Run pre/post task shell hooks
 
 **When:** you want to format with Prettier and run Biome after every task without modifying the validation pipeline.
 
@@ -883,7 +816,7 @@ The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout —
 
 ## TUI quick reference
 
-### 24. Open the command palette
+### 23. Open the command palette
 
 **When:** you want to discover or quickly invoke any of the slash commands from anywhere in the TUI.
 
@@ -932,7 +865,7 @@ Captured at 80x24 on the workflow screen, in a project with two skills. Their `S
 
 ---
 
-### 25. Confirm a destructive file write
+### 24. Confirm a destructive file write
 
 **When:** a file write is classified as `destructive` (a control-plane path under `.git/**` or `.splitbrief/**`). A protected write always asks; no setting turns it off.
 
@@ -973,7 +906,7 @@ Captured at 80x24 on the workflow screen, in a project with two skills. Their `S
 
 ---
 
-### 26. Adapt the plan from a rejection
+### 25. Adapt the plan from a rejection
 
 **When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run. Planner and implementer roles: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
@@ -1010,7 +943,7 @@ On the next turn of the planning session (for example after a correction at the 
 
 ## One-shot review
 
-### 27. Review a diff without starting a run
+### 26. Review a diff without starting a run
 
 **When:** the code is already written — by you, a teammate, or another agent — and you want SPLITBRIEF's review seat on it without a plan, a session, or a state machine.
 

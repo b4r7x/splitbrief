@@ -6,7 +6,7 @@ import { saveState } from '../../../src/core/state/persistence.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
-import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState, RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -150,7 +150,7 @@ describe('release matrix row caller', () => {
           phase: 'complete',
           reviewStatus: 'passed',
           tasks: [makeTask({ status: 'done', suggestedFiles: [artifact.path] })],
-          tokenUsage: makeUsage({ plannerInput: 1, implementerInput: 1 }),
+
           workspace: {
             kind: 'staged-copy',
             path: join(ref.projectDir, 'workspace'),

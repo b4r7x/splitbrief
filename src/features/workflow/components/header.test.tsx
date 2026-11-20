@@ -14,7 +14,7 @@ import { approvalPromptStore } from '../../../stores/prompts/approval.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { seedBriefs } from '#testing/helpers/stores.js';
-import { tokensStore } from '../../../stores/workflow/tokens/state.js';
+
 import { eventsStore } from '../../../stores/workflow/events/state.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -80,7 +80,7 @@ function resetStores(): void {
   approvalPromptStore.__testReset();
   lifecycleStore.reset();
   seedBriefs();
-  tokensStore.__testReset();
+
   eventsStore.__testReset();
   configStore.__testReset();
 }

@@ -613,7 +613,7 @@ describe('Codex JSONL protocol adapter', () => {
     expect(parseJsonlLine(line).toolUseDone?.[0]?.input).toEqual(row.input);
   });
 
-  it('projects session, assistant text, usage, and a required terminal result', () => {
+  it('projects session, assistant text, and a required terminal result', () => {
     const events = [
       ...codexProtocolEvents(JSON.stringify({ type: 'thread.started', thread_id: 'session-2' })),
       ...codexProtocolEvents(
@@ -631,22 +631,6 @@ describe('Codex JSONL protocol adapter', () => {
     ];
     expect(events).toContainEqual({ type: 'session', nativeSessionId: 'session-2' });
     expect(events).toContainEqual({ type: 'text', channel: 'assistant', text: 'hello' });
-    expect(events).toContainEqual({
-      type: 'usage',
-      usage: {
-        inputTokens: 2,
-        outputTokens: 1,
-        counterCoverage: {
-          input: 'reported',
-          output: 'partial',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'missing',
-        },
-        providerTotals: { output: 1 },
-      },
-      semantics: 'final',
-    });
     expect(terminalInput(codexPlannerAdapter, events)).toMatchObject({
       type: 'result',
       status: 'completed',

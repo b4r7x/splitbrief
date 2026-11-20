@@ -50,7 +50,7 @@ describe('createPlannerBase — structured summarization', () => {
       projectDir,
     });
 
-    expect(result).toEqual({ text: JSON.stringify(structured), structured, usage: null });
+    expect(result).toEqual({ text: JSON.stringify(structured), structured });
   });
 
   it('uses the merge prompt when a previous structured summary is provided', async () => {

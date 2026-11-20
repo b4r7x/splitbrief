@@ -4,7 +4,7 @@ The four pipeline skills run one planning session, Markdown briefs, deterministi
 The loading session is the planner. It spawns one headless implementer CLI per task.
 The reviewer reads the candidate without editing it; this session reviews when no reviewer seat is configured.
 The skills require no SPLITBRIEF CLI.
-The CLI also owns sessions, the TUI, isolation, snapshots and token accounting.
+The CLI also owns sessions, the TUI, isolation, and snapshots.
 The skills execute in the working tree.
 
 ## Install

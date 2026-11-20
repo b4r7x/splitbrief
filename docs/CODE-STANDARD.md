@@ -129,7 +129,7 @@ When a function immediately fans its positional args into an options object for 
 
 ## 5. Naming & file naming
 
-- **kebab-case** files and folders (`models-dev/`, `lm-studio.ts`); single word where natural (`pricing.ts`).
+- **kebab-case** files and folders (`models-dev/`, `lm-studio.ts`); single word where natural (`cache.ts`).
 - **ESM with `.js` extension** in every import: `'./config.js'`, not `'./config'`.
 - **File name matches its primary export / responsibility.** `platform.ts` exporting only `assertNotWindows` oversells; `format.ts` holding one generic `capitalize` is mislocated and misnamed. A single-export file reads `verb-of-noun` (`build-routing-event-fields.ts` → `buildRoutingEventFields`).
 - **No `dir/dir.ts` stutter.** A folder's entry file names its responsibility, not the folder: `run/workflow.ts`, `escalation/handle.ts`, `commands/dispatch.ts`/`registry.ts` — never `run/run.ts`, `escalation/escalation.ts`, or `commands/commands.ts`.
@@ -169,13 +169,13 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 | DRY at the third occurrence — two copies of a pattern may stay local; a third triggers an extraction (§7) | this doc | review |
 | EventBus port — the engine emits all events through the `EventBus`; UI, persistence, observability and hooks attach as sinks. `EngineEvent` is the single source of truth; `TuiEvent`, `OrchestratorEvent` and `callbacks.onEvent` are gone. **Event sinks are synchronous** (registered in order, throw isolated per sink) and **hook dispatch is sequential per event** (`pre_*` runs one hook at a time, deny short-circuits; `post_*`/`on_*` runs without awaiting) | [ENGINE.md](./ENGINE.md#eventbus) | INVARIANTS #10, #11, #13, #52 |
 | Hook system — user-extensible workflow lifecycle commands (unrelated to React hooks) fire at workflow events (`pre_task`, `post_commit`, etc.); a trust prompt prevents RCE | [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) | none |
-| One run contract — a run is a durable record whose status is derived once by `deriveRunStatus`; an open run stays continuable, `idle` is the pre-`START` phase and nothing resets to it, gates never reject, and continuing is one path (`continueRun`). Spend is a reported fact, never a gate or a routing input | [WORKFLOW.md](./WORKFLOW.md), [CONCEPTS.md](./CONCEPTS.md) | INVARIANTS #49–#51 |
+| One run contract — a run is a durable record whose status is derived once by `deriveRunStatus`; an open run stays continuable, `idle` is the pre-`START` phase and nothing resets to it, gates never reject, and continuing is one path (`continueRun`) | [WORKFLOW.md](./WORKFLOW.md), [CONCEPTS.md](./CONCEPTS.md) | INVARIANTS #49–#51 |
 | Parameter objects for wide APIs — options object at ≥4 parameters, or ≥3 when exported or cross-boundary; no bare `boolean`, no two adjacent same-typed params; split oversized option objects by concern | this doc §4 | review |
 
 **Type-safety judgment items (not fully gated):**
 - **Single-source every closed set.** A union/enum (conflict kinds, context-fit, hook-event names, recovery outcomes) defined once — as a Zod `z.enum` over an `as const` tuple in `core/schemas/`, with the TS type via `z.infer`. Re-spelling the same literals in a second file (TS union ↔ Zod ↔ `Set`) is a drift hazard. Engine/UI copies must derive *from* the core schema, never the reverse.
 - **Exhaustive `switch` over a closed union ends in `assertNever`.** A value-returning switch with a pass-through `default: return x` silently degrades when the union grows. (`noImplicitReturns` is enabled in `tsconfig.json`; void switches still need an explicit exhaustiveness arm.)
-- **Narrow, don't assert.** Use the existing `isRecord` type guard instead of `as Record<string, unknown>`; re-validate hand-rebuilt shapes through their Zod schema instead of `as Config`. Reuse `BackendTokenUsageSchema` from its canonical owner, or `TaskIdSchema` rather than re-typing a token-usage shape or using a bare `string` for a branded ID.
+- **Narrow, don't assert.** Use the existing `isRecord` type guard instead of `as Record<string, unknown>`; re-validate hand-rebuilt shapes through their Zod schema instead of `as Config`.
 - **No config object built from fake data to satisfy a type.** Fabricating `{ name: 'unknown', runtime: 'node' }` just to call an engine function means the function's parameter is too wide — narrow it or thread the real value.
 
 ---
@@ -215,7 +215,7 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 
 **Tests**
 - [ ] Tests assert observable behavior, not implementation — no `vi.mock` of `./` siblings, no `toHaveBeenCalledTimes` unless the call count *is* the contract ([TESTING.md](./TESTING.md), §6).
-- [ ] No coupling to exact glyphs, spacing, or verbatim user-facing copy in rendered-frame assertions — assert stable signals (the id is flagged, an action exists), not `'▸ /usage'` or `'[3|]'`.
+- [ ] No coupling to exact glyphs, spacing, or verbatim user-facing copy in rendered-frame assertions — assert stable signals (the id is flagged, an action exists), not `'▸ /tasks'` or `'[3|]'`.
 - [ ] No `as any` fakes standing in for a real typed contract; no test of a trivial helper/wiring (`typeof x === 'function'`).
 - [ ] Check which reviewer check failures were marked pre-existing (also red at the run base). Confirm the review packet names them next to raw pass counts and records their keys in the Checks Log.
 - [ ] Oversized test files (>500 LOC) split by concern, with shared setup in `testing/helpers/` factories rather than copy-pasted per test.

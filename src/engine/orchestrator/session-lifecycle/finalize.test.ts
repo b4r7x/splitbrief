@@ -25,7 +25,7 @@ import {
 import { readSession } from '../../../core/sessions/io.js';
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { writeSeatIdentities } from '../../../core/state/seats/record.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { RUN_CREW } from '#testing/helpers/factories/workflow-state.js';
 
 let dirs: string[] = [];
@@ -50,7 +50,7 @@ function makeSummary(): Summary {
     skipped: 0,
     failed: 0,
     totalTime: 10,
-    tokenUsage: makeUsage(),
+
     escalationRate: 0,
   };
 }
@@ -415,7 +415,7 @@ describe('finalizeEndedRun seat identity', () => {
   it('keeps the brief each BUILD seat built, with its retries and profile', () => {
     const projectDir = makeProjectDir();
     const ref = { projectDir, sessionId: 'sess-two-build-seats' };
-    const brief = { method: 'local', implementerTokens: 10, escalationTokens: 0 } as const;
+    const brief = { method: 'local' } as const;
     const taskBreakdowns = [
       {
         ...brief,

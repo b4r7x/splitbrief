@@ -5041,22 +5041,22 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
     });
     await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
 
-    for (const key of '/usage') {
+    for (const key of '/help') {
       ui.stdin.write(key);
       await flushEffects();
     }
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('› /usage');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('› /help');
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(onRuntimeCommand).toHaveBeenCalledWith('/usage', 'answer');
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/help', 'answer');
     });
     await flushEffects();
-    expect(onRuntimeCommand.mock.calls).toEqual([['/usage', 'answer']]);
+    expect(onRuntimeCommand.mock.calls).toEqual([['/help', 'answer']]);
     expect(replies).toEqual([]);
     expect(feedbackStore.get().isError).toBe(false);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Question 1 of 1');
-    expect(frame).not.toContain('› /usage');
+    expect(frame).not.toContain('› /help');
     ui.unmount();
   });
 
@@ -5151,7 +5151,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
       ui.unmount();
     });
 
-    it.each([['/usage'], ['/crew plan'], ['/stop']])(
+    it.each([['/help'], ['/crew plan'], ['/stop']])(
       'runs %s typed in the empty field without answering, and leaves the default row',
       async (command) => {
         const { ui, replies, onRuntimeCommand } = await openQuestion();
@@ -5172,7 +5172,7 @@ describe('WorkflowScreen handing a slash command from a live panel to the compos
       },
     );
 
-    it.each([['/usage'], ['/crew plan'], ['/stop']])(
+    it.each([['/help'], ['/crew plan'], ['/stop']])(
       'runs %s typed over the rows without answering',
       async (command) => {
         const { ui, replies, onRuntimeCommand } = await openQuestion();

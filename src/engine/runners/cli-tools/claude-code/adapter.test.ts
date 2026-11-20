@@ -1,5 +1,3 @@
-import type { TokenDelta } from '../../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../../calls/usage/accumulate.js';
 import {
   mkdirSync,
   mkdtempSync,
@@ -678,7 +676,7 @@ describe('Claude Code stream protocol adapter', () => {
     expect(withoutModel).not.toHaveProperty('resolvedModel');
   });
 
-  it('projects assistant/session/usage records and a required terminal result', () => {
+  it('projects assistant and session records and a required terminal result', () => {
     const events = claudeProtocolEvents(
       JSON.stringify({
         type: 'assistant',
@@ -696,7 +694,6 @@ describe('Claude Code stream protocol adapter', () => {
         type: 'result',
         session_id: 'session-2',
         result: 'hello',
-        usage: { input_tokens: 2, output_tokens: 1 },
       }),
     );
     expect(terminal.at(-1)).toMatchObject({
@@ -706,22 +703,6 @@ describe('Claude Code stream protocol adapter', () => {
       nativeSessionId: 'session-2',
       error: null,
       partial: false,
-    });
-    expect(terminal).toContainEqual({
-      type: 'usage',
-      usage: {
-        inputTokens: 2,
-        outputTokens: 1,
-        counterCoverage: {
-          input: 'reported',
-          output: 'partial',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'missing',
-        },
-        providerTotals: { output: 1 },
-      },
-      semantics: 'final',
     });
   });
 
@@ -1056,36 +1037,28 @@ describe('Claude steering transport', () => {
     const lines = [
       {
         type: 'assistant',
-        message: { id: 'a', content: [], usage: { input_tokens: 100, output_tokens: 0 } },
+        message: { id: 'a', content: [] },
       },
       {
         type: 'result',
         result: 'first',
-        usage: { input_tokens: 10, output_tokens: 5 },
+
         total_cost_usd: 1,
       },
       { type: 'system', subtype: 'init' },
       {
         type: 'assistant',
-        message: { id: 'a', content: [], usage: { input_tokens: 2, output_tokens: 0 } },
+        message: { id: 'a', content: [] },
       },
       {
         type: 'result',
         result: 'last',
         structured_output: { answer: 'last' },
-        usage: { input_tokens: 3, output_tokens: 7 },
+
         total_cost_usd: 2,
       },
     ];
     const events = lines.flatMap((line) => parse(JSON.stringify(line)));
-    let usage: TokenDelta | null = null;
-    for (const event of events)
-      if (event.type === 'usage') usage = accumulateTokenUsage(usage, event.usage, event.semantics);
-    expect(usage).toMatchObject({ inputTokens: 13, outputTokens: 12 });
-    expect(events.filter((event) => event.type === 'usage').at(-2)).toMatchObject({
-      usage: { inputTokens: 12, outputTokens: 5 },
-      semantics: 'cumulative',
-    });
     expect(
       claudeCodeImplementerAdapter.terminal({
         outputContract: claudeCodeImplementerAdapter.outputContract,
@@ -1097,7 +1070,6 @@ describe('Claude steering transport', () => {
     ).toMatchObject({
       text: 'last',
       structured: { answer: 'last' },
-      usage: { inputTokens: 13, outputTokens: 12 },
     });
   });
 });

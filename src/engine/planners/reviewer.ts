@@ -1,4 +1,3 @@
-import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { PlannerOutputCallbacks, TypedCallContext } from './types.js';
 import type { TypedSeatCall } from '../runners/typed-output.js';
 
@@ -17,7 +16,7 @@ export interface Reviewer {
     prompt: string,
     projectDir: string,
     callbacks: PlannerOutputCallbacks,
-  ): Promise<{ text: string; usage: TokenDelta | null }>;
+  ): Promise<{ text: string }>;
   /** The binding a typed review call reaches this seat through. */
   typedCall(ctx: TypedCallContext): TypedSeatCall;
 }

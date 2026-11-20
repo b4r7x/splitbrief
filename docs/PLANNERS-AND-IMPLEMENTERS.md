@@ -46,9 +46,9 @@ Every planner implements:
 ```typescript
 interface Planner extends RunnerRuntime {          // RunnerRuntime: isAvailable(), getVersion()
   typedCall(ctx: TypedCallContext): TypedSeatCall   // the binding requestTyped calls, the consult included
-  review(prompt, projectDir, callbacks): Promise<{ text: string; usage: TokenDelta | null }>
-  summarize(messages, opts?): Promise<{ text: string; usage: TokenDelta | null }>
-  summarizeStructured?(messages, opts?): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }>
+  review(prompt, projectDir, callbacks): Promise<{ text: string }>
+  summarize(messages, opts?): Promise<{ text: string }>
+  summarizeStructured?(messages, opts?): Promise<{ text: string; structured: StructuredSummary | null }>
   injectUserTurn?(opts): Promise<PlannerUserTurnResult>
   resolvePlanningContext?(signal?): Promise<ApiRuntimeContext> // a seat that reads no files of its own
   unavailabilityReason?(): string | undefined
@@ -60,7 +60,7 @@ interface Planner extends RunnerRuntime {          // RunnerRuntime: isAvailable
 
 Every consult is a typed call on this same interface: `askPlannerSession` sends `buildConsultPrompt` through `typedCall` with the `ConsultAnswer` schema, read-only, and the answer moves the task on. The consult of a fix task (`task.fix`) goes to the planner too, with the full consult prompt and the findings' `failureKeys` and `redKeys`. The planner never writes the implementation. The review is a typed call too: `runReviewerCall` sends it through `requestTyped` and the seat's `typedCall`. The untyped `review()` call remains for the conformance harness.
 
-`PlannerUserTurnResult` distinguishes `{ status: 'delivered', usage }` from `{ status: 'not-delivered', reason: 'not-ready' }`. Usage may be null after successful delivery. The queue retains a not-ready correction for a later prompt and acknowledges only the IDs that prompt actually carried; arrivals during regeneration stay pending.
+`PlannerUserTurnResult` distinguishes `{ status: 'delivered' }` from `{ status: 'not-delivered', reason: 'not-ready' }`. The queue retains a not-ready correction for a later prompt and acknowledges only the IDs that prompt actually carried; arrivals during regeneration stay pending.
 
 The planning prompt follows one chain. `planTurnText` composes `buildPlanSessionPrompt` from the feature, the project context, the language and skills context, and any earlier planning of an older run. `planFullTurn` restates that prompt for a turn that is not on a native session. The session sends each turn through `requestTyped`, which calls the seat's `typedCall`.
 
@@ -76,7 +76,7 @@ The review seat is one stateless, read-only call:
 
 ```typescript
 interface Reviewer {
-  review(prompt, projectDir, callbacks): Promise<{ text: string; usage: TokenDelta | null }>
+  review(prompt, projectDir, callbacks): Promise<{ text: string }>
   typedCall(ctx: TypedCallContext): TypedSeatCall   // the binding a typed review call reaches this seat through
 }
 ```
@@ -151,7 +151,7 @@ When a capability is missing, the orchestrator falls back. No session resume mea
 Wraps a backend-specific `invokePlan()` function as the seat's `typedCall` binding. Each call:
 - Creates a transcript buffer (16KB, flushed to `session.jsonl`)
 - Injects `priorMessages` into the first call of the planning session, and never again. API backends receive them as an OpenAI messages array (`consumesPriorMessages: true`); CLI backends get them in the prompt
-- Converts the backend response into `RunnerCallResult` immediately, then accumulates token usage from the typed call result
+- Converts the backend response into `RunnerCallResult` immediately
 - Returns the answer from the completed terminal result only; stdin/stdout adapters never reopen files that a backend wrote
 
 An `api` planner reads no files of its own, so it declares `resolvePlanningContext` and the planning session's prompt carries an explicit evidence packet in place of the project context (`apiPlanningPacket`, built by `buildApiPlanningContext`): the project instructions, the current source of every path the request or the earlier planning names, and a list of named files it could not read. The whole prompt is measured against the model's context; a missing, unreadable or oversized required section refuses before any call and halts as `planner-call-failed` with the `insufficient-context` diagnosis. A tool that reads files on its own still reads them.
@@ -358,82 +358,14 @@ The implementer base normalizes backend output into `RunnerCallResult` before pr
 
 ---
 
-## Token accounting
+## Runner call records
 
-Token usage is tracked as `TokenDelta`:
-
-```typescript
-type TokenDelta = {
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens?: number
-  cacheCreateTokens?: number
-  reasoningTokens?: number
-  counterCoverage?: RunnerCallCounterCoverage
-  providerTotals?: { input?: number; output?: number }
-}
-```
-
-Deltas are normalized by `normalizeRunnerCallUsage`, which handles delta, cumulative, and final samples consistently. Accumulated usage is published through `cost_update` events.
-
-### Unknown is not zero
-
-The five counters are disjoint where the provider reports all of them: `inputTokens` is ordinary input without cache, `outputTokens` is ordinary output without reasoning. `counterCoverage` says which of the five the provider actually reported — `reported`, `partial` or `missing` per category — and `providerTotals` keeps the inclusive totals the provider sent (`prompt_tokens`, `completion_tokens`) as metadata, never as further counters to add up.
-
-An absent optional counter means the provider never reported it. It is not a zero, and nothing in the pipeline turns it into one: a missing reasoning count leaves the seat's `*Reasoning` field absent, while a reported `0` creates that field at `0`. An absent `counterCoverage` on a historical record means legacy-unknown, not "nothing reported". Pricing may still know the cost of generation from `providerTotals.output` without a reasoning breakdown, because one output rate covers the whole total; a missing cache split, where the cache rates differ, is incomplete pricing rather than a rate to guess.
-
-### Session totals
-
-Session totals (`TokenUsage`) carry four categories, not three: `planner*`, `implementer*`, `escalation*`, and `reviewer*`. Each category owns the same five counters — `Input`, `Output`, the optional `CacheRead` / `CacheCreate` / `Reasoning` — plus an optional `*Coverage`, the same five-category coverage object per role. `usageCategoryForRunnerCallRole()` routes the `'review'` call role into the `reviewer` bucket; `'planner'`, `'summary'`, and `'compaction'` stay on the planner.
-
-The `*Output` fields stay ordinary output. `totalOutputTokens()` and the seat's billing projection (`SeatTokenTotals.output`) add the known reasoning to it **exactly once**; `SeatTokenTotals.reasoning` repeats that known part for display, and a caller that adds it to `output` bills those tokens twice.
-
-A consult runs on the planner's runner and is recorded as planner usage, like every other strong-side call. The `escalation*` fields remain for records written before the consult replaced the hint rung and are never newly spent; `splitSeatTokenTotals` also folds those legacy buckets back onto one planner seat for pricing. A record written before those fields pooled escalation cache into the planner buckets; there the escalation fields are simply absent, and that pooled amount is never counted a second time as escalation.
-
-Live booking (`addUsage`) and the replay of recorded calls (`addRunnerCallUsageToTokenUsage`) run the same category rules, so a reconciled run cannot drift from the run that produced it. Seat coverage is set by the first evidence on an empty seat and degrades to `partial` where later evidence disagrees; a seat that already carries counters but no coverage is a legacy record and stays unknown rather than borrowing a new call's word.
-
-All of these fields are **additive within state v4** (`WORKFLOW_STATE_VERSION = 4`): they are optional, so a `state.json` or `summary.json` written before them parses unchanged and no migration runs. The one non-optional back-compatibility rule predates them — `reviewerInput` / `reviewerOutput` default to `0` for state written before reviewer accounting existed. New optional fields deliberately do **not** default, because a default would be exactly the reported zero they must stay distinguishable from.
-
-`reconcileTokenUsageWithSessionLog` replays `session.jsonl` when the ledger lost a call: a seat the ledger books alone takes the higher of booked and observed, the planner/reviewer pool takes only the shortfall the log shows, and coverage takes the log's word where it has one. Reconciling an already-reconciled record changes nothing.
-
-Pricing follows the seat: with a `reviewer` block, the reviewer's tokens are priced at the reviewer runner's rates and shown as their own line in the run summary; without one, they are priced at the planner's rates and folded into the planner line, exactly as before.
-
-CLI runners report usage through their protocol terminal: codex through its `turn.completed` record, claude-code and opencode through their streamed terminal events. Codex's `input_tokens` counts cached input, so the normalizer excludes `cached_input_tokens` from the reported input total and surfaces it as `cacheReadTokens`; claude-code's terminal `result` line takes precedence over mid-stream deltas. A CLI runner that completes without reporting usage records zero implementer tokens — by design for structurally unpriced runners, and never fabricated.
-
-Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected. Alongside the combined `implementerTokens` / `escalationTokens` it carries the optional directional counters `implementerInputTokens` / `implementerOutputTokens` / `escalationInputTokens` / `escalationOutputTokens` and the optional `*ReasoningTokens`. These come only from a delta the ledger actually knows — the difference between the run totals before and after the task — never from a share of the run. A record written before them keeps its combined count alone: its split is unknown, not zero, and is not imputed.
-
-A runner completing a task without reporting usage is recorded as zero tokens and surfaced, not hidden: `recordTaskUsage` publishes exactly one warning with `category: 'usage'` and `code: 'implementer_usage_not_reported'`, naming the runner and the task, when neither the implementer nor the escalation delta is non-zero. The warning lands in `session.jsonl` and in the review packet's warnings list. A consulted task that spent planner tokens does not warn. SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none — a CLI runner staying structurally unpriced is by design, and this warning is what makes a run that did real work distinguishable from a run whose runner reported nothing.
-
-**Legacy prompt allocation**, used only with a Prompt budget (`contextLength`):
-
-```
-budget = contextLength - systemPromptTokens - taskBodyTokens - (contextLength * 0.25)
-```
-
-With no Prompt budget, the prompt is sent whole. `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` and the 8192 application default only rank a profile whose window is unknown; neither stops, refuses or cuts a brief. API bundle routing retains full supplied file contents and reserves bundle output instead of shrinking them through this allocation. An API seat with a Prompt budget applies the measured input margin and output reserve described in [CONFIGURATION.md](./CONFIGURATION.md) before dispatch.
-
-A boot-probed window applies only to the default implementer profile — the profile the probe ran for. A sibling profile uses its own model/configuration metadata; an API profile without known active or configured capacity uses the API application fallback.
-
-A CLI runner under `model: auto` — or with the model omitted — is resolved at preparation to the model the tool itself has selected on this host (`readHostModelSelection`), and the prepared config carries that id, so the window is that model's. When the tool exposes no readable selection, the seat stays on automatic selection, no `--model` flag is added, and the window is the smallest the bundled catalog guarantees for that tool (`resolveRunnerContextWindow`).
-
-Routing between configured profiles is by capability, never by price: `compareProfileRouteRank` ranks the capable profiles by context window, smallest sufficient window first, then by name. A routed selection names the profile and the fit it was chosen on: `Selected profile <name> (fits, estimated N/M tokens)`. Only a profile with a Prompt budget drops out on an overflow. When no profile fits and no Prompt budget stops the brief, a recovery pin keeps its profile, else the default profile takes the brief, else the usable profile with the largest window: `Selected profile <name> (overflow, estimated N/M tokens; no Prompt budget is set)`.
-
-Token estimation uses a per-model-family character-to-token ratio: Claude models use 3.5, GPT uses 4.0, DeepSeek/Qwen/Llama/etc. use family-specific ratios. When a model ID is available (e.g., during implementer profile routing), the calibrated ratio produces more accurate estimates — reducing unnecessary escalations from overestimates and overflow failures from underestimates. Calls without a model ID default to 4.0 chars/token.
-
-The 25% reserve is for output. The remaining budget goes to `currentCode`. If the whole file doesn't fit, the prompt formatter tries these modes in order:
-
-1. **whole-file** -- entire file content
-2. **function-level** -- imports + target function only (extracted via signature name)
-3. **truncated-middle** -- first half + `// ... truncated ...` + last half
-4. **none** -- no code context
-
----
+Runner call records keep the seat identity, native session ID, and outcome.
 
 ## Model catalog lanes
 
 models.dev serves `api` runners only. A CLI tool's picker rows come from its own listing (`confirmed` / `stale`), from claude-code's local option cache, and — until a list lands — from the bundled `KNOWN_MODELS` aliases (`bundled-suggestion`); `buildRightRows` hides bundled rows when a live lane is present, except the persisted model and custom rows. An `api` runner also renders models.dev rows (`catalog-suggestion`) beside its runtime list. `resolveModelCatalog` still classifies bundled membership — the hide is a picker filter, not an engine-catalog drop.
 
-Pricing lookup keeps its ladder — cached models.dev first, then runtime metadata, then the bundled catalog (`resolvePricing`) — and applies to api-priced runners. A CLI tool's context window comes from its own listing, then from models.dev by model id, then from the bundled table (`resolveRunnerContextWindow`); an `api` runner's window keeps models.dev ahead of runtime metadata and the bundled catalog.
 
 ---
 
@@ -491,16 +423,16 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 ##### Admitted support summary
 
-| `tool` | command | roles | tested version | version scheme | evidence as-of | model policy (planner / implementer) | model discovery | billing | typed output |
-|---|---|---|---|---|---|---|---|---|---|
-| `claude-code` | `claude` | planner, implementer | 2.0.0 | `semver` | 2026-07-31 | optional / optional | `native-aliases-and-custom` | subscription-included | native from 2.1.287 |
-| `codex` | `codex` | planner, implementer | 0.40.0 | `semver` | 2026-07-31 | optional / optional | `capability-gated-native` | subscription-included | strict-native from 0.157.1 |
-| `opencode` | `opencode` | planner, implementer | 2.0.14 | `semver` | 2026-09-22 | optional / optional | `native-cli` (`opencode api GET /api/model --standalone`; `opencode models --verbose` below 2.0.0) | provider-dependent | fallback |
-| `copilot` | `copilot` | planner, implementer | 1.0.77 | `semver` | 2026-09-02 | optional / optional | `native-cli` (`copilot help config`) | subscription-included | fallback |
-| `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent | fallback |
-| `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included | fallback |
-| `command-code` | `cmd` | planner, implementer | 1.39.2 | `semver` | 2026-09-01 | optional / optional | `native-cli` (`--list-models`) | subscription-included | fallback |
-| `antigravity` | `agy` | planner, implementer | 1.4.7 | `semver` | 2026-10-24 | optional / optional | `native-cli` (`agy models`) | subscription-included | native from 1.2.14 |
+| `tool` | command | roles | tested version | version scheme | evidence as-of | model policy (planner / implementer) | model discovery | typed output |
+|---|---|---|---|---|---|---|---|---|
+| `claude-code` | `claude` | planner, implementer | 2.0.0 | `semver` | 2026-07-31 | optional / optional | `native-aliases-and-custom` | native from 2.1.287 |
+| `codex` | `codex` | planner, implementer | 0.40.0 | `semver` | 2026-07-31 | optional / optional | `capability-gated-native` | strict-native from 0.157.1 |
+| `opencode` | `opencode` | planner, implementer | 2.0.14 | `semver` | 2026-09-22 | optional / optional | `native-cli` (`opencode api GET /api/model --standalone`; `opencode models --verbose` below 2.0.0) | fallback |
+| `copilot` | `copilot` | planner, implementer | 1.0.77 | `semver` | 2026-09-02 | optional / optional | `native-cli` (`copilot help config`) | fallback |
+| `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | fallback |
+| `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | fallback |
+| `command-code` | `cmd` | planner, implementer | 1.39.2 | `semver` | 2026-09-01 | optional / optional | `native-cli` (`--list-models`) | fallback |
+| `antigravity` | `agy` | planner, implementer | 1.4.7 | `semver` | 2026-10-24 | optional / optional | `native-cli` (`agy models`) | native from 1.2.14 |
 
 **Command Code's row was captured from the real binary on 2026-09-01 against `cmd` 1.39.2**, replacing the hand-authored fixtures that stood in for it. The raw `cli-conformance` leg passes; the production leg records `OMIT` because the conformance sandbox gives the child a fresh `HOME` and never bridges host CLI session state, so a `session`-auth tool reaches the CLI unauthenticated. That gap is the harness's, not the adapter's — the adapter's own argv was replayed against the authenticated binary and its terminal `result` frame parses. See `testing/fixtures/command-code/README.md` for the recorded evidence and the remaining gap.
 
@@ -537,7 +469,7 @@ Each tool has one auth channel, and SPLITBRIEF runs the tool with the sign-in th
 | `command-code` | no / yes | yes / yes | yes / yes | `--yolo` | none / none | session | — |
 | `antigravity` | no / yes | yes / yes | yes / yes | `--dangerously-skip-permissions` | none / none | session (host account on macOS, see below) | — |
 
-A session channel gives a staged runner the tool's own host sign-in: the state bridge brings a sign-in file into the sandbox, and a keychain sign-in stays with the host account (see below). SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
+A session channel gives a staged runner the tool's own host sign-in: the state bridge brings a sign-in file into the sandbox, and a keychain sign-in stays with the host account (see below). SPLITBRIEF never copies credentials into argv.
 
 The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms`, which today names macOS for the Claude Code, Cursor Agent CLI, Antigravity and Copilot `session` channels: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays, except that a Claude Code or Copilot child also keeps a set `CLAUDE_CONFIG_DIR` or `COPILOT_HOME`, the folder the tool reads its config from (`CLI_TOOL_HOME_ENV`). On bridged files the bridge reads a tool's sign-in from that same folder (`cliToolHome`), and the child keeps its private home. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. Copilot has no status command, so its keychain sign-in reads as unknown unless a token variable of its channel is set. See [docs/API-KEYS.md](./API-KEYS.md).
 
@@ -620,7 +552,7 @@ REST call to an OpenAI-compatible HTTP endpoint. Ollama, LM Studio and llama.cpp
 
 Local server connections do not require a provider executable on PATH. Start the server externally. The connection form and its Retry open from a local provider's picker row, and no such row is listed (see the hidden-provider note under [cli](#cli)). Discovery and admission never implicitly load or download models. Observed active context, maximum context and the configured application budget are separate values.
 
-The planner uses `dispatchStreamCompletion()`, which streams the OpenAI-compatible chat-completions protocol. Prior messages are passed as a proper messages array (`consumesPriorMessages: true`). Token usage comes from the API response.
+The planner uses `dispatchStreamCompletion()`, which streams the OpenAI-compatible chat-completions protocol. Prior messages are passed as a proper messages array (`consumesPriorMessages: true`).
 
 Every newly dispatched API BUILD call uses file-bundle-v1, including single-file tasks, retries, and continuation.
 
@@ -673,7 +605,7 @@ The role vector is pinned and effect-verified per backend. A role that is missin
 
 **Workspace.** Every seat is spawned with its directory as the cwd. A tool that keeps its workspace apart from its cwd also gets that directory on a flag: `codex --cd`, `cursor --workspace`, `agy --add-dir`. Without `--add-dir`, or with a relative `--add-dir .`, `agy -p` has no workspace, and on 1.2.9 its model ran the shell in `~/.gemini/antigravity-cli/scratch` (upstream antigravity-cli issues #231, #253, #507, #598). With the workspace, agy also loads that directory's `AGENTS.md` and `GEMINI.md`, and `codex` loads its `AGENTS.md`; no flag of either tool skips it. `WORKSPACE_FLAGS` in `testing/integration/orchestrator/cli-adapter-contract.test.ts` pins the flag per tool, and the cwd leg of `scripts/cli-conformance.ts` ([EXTENDING.md](./EXTENDING.md#rawproduction-transaction-cli)) measures where the live tool writes. On 2026-09-23 `claude-code`, `opencode`, `command-code` and `antigravity` passed it; `codex`, `cursor`, `copilot` and `kilo-code` could not be measured on that host.
 
-**Output protocol.** Every admitted tool is spawned in a machine-readable output mode and parsed into the same protocol events, so tool calls, assistant text and token usage arrive while the call is still running rather than in one block at the end. A `tool-use` event carries `stage: 'started'` when the call begins and `stage: 'done'` or no stage when it completes; the idle watchdog measures the gaps between frames, so a streaming tool is never mistaken for a stalled one.
+**Output protocol.** Every admitted tool is spawned in a machine-readable output mode and parsed into the same protocol events, so tool calls and assistant text arrive while the call is still running rather than in one block at the end. A `tool-use` event carries `stage: 'started'` when the call begins and `stage: 'done'` or no stage when it completes; the idle watchdog measures the gaps between frames, so a streaming tool is never mistaken for a stalled one.
 
 | Backend | Output flag | Parser | Text deltas | Tool calls | Usage | Session id |
 |---|---|---|---|---|---|---|

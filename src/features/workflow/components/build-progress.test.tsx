@@ -14,7 +14,7 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
-import { tokensStore } from '../../../stores/workflow/tokens/state.js';
+
 import { BuildProgressBlock } from './build-progress.js';
 
 // Ink resolves chalk's colour level against the capture stdout unless FORCE_COLOR is set before
@@ -55,20 +55,6 @@ beforeEach(() => {
 });
 
 /** A brief on its second attempt, with a six-figure count the block would once have rounded. */
-function seedRunningAttemptTokens(): void {
-  tokensStore.__testReset({
-    perTask: {
-      T002: {
-        totalTokens: 148_000,
-        title: 'Two',
-        attempts: [
-          { method: 'local', retryCount: 0, implementerTokens: 24_000, escalationTokens: 0 },
-          { method: 'local', retryCount: 1, implementerTokens: 124_000, escalationTokens: 0 },
-        ],
-      },
-    },
-  });
-}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -93,23 +79,6 @@ describe('BuildProgressBlock', () => {
     expect(frame.split('\n').filter((line) => line.trim().length > 0)).toHaveLength(3);
 
     ui.unmount();
-  });
-
-  it('names no token count for a brief whose attempt booked one', () => {
-    seedRunningAttemptTokens();
-
-    for (const cols of [120, 80, 60]) {
-      const ui = renderFeature(<BuildProgressBlock cols={cols} />);
-      const frame = stripAnsiStyles(ui.lastFrame());
-
-      expect(frame).toContain('1/3 briefs passed');
-      expect(frame).toContain('Between calls');
-      expect(frame).not.toMatch(/token/i);
-      expect(frame).not.toContain('124k');
-      expect(frame).not.toContain('0k');
-
-      ui.unmount();
-    }
   });
 
   it('counts the quiet up while nothing else repaints it, and stops with the run', async () => {

@@ -2308,7 +2308,6 @@ describe('runScheduledReview saved recovery', () => {
             rejected: [{ findingId: 'U3', reason: 'The correction guides continuation' }],
           };
         },
-        undefined,
         () => cannotFix,
       ),
     });
@@ -2385,7 +2384,6 @@ describe('runScheduledReview saved recovery', () => {
       typedCall: typedCallPlanAndReview(
         () => planFromTasks(state.tasks),
         (prompt) => failedReviewVerdict(prompt, 'Preserve the error', { taskId: 'T001' }),
-        undefined,
         () => ({ answer: { diagnosis: 'The next brief replaces it', action: 'accept', note } }),
       ),
     });

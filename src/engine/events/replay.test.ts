@@ -33,7 +33,6 @@ const terminalFields = {
   startedAt: TS,
   endedAt: TS + 10,
   durationMs: 10,
-  usage: null,
   nativeSessionId: null,
 } as const;
 
@@ -122,12 +121,6 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     ...callContext,
     channel: 'assistant',
     text: 'partial',
-  },
-  runner_call_usage: {
-    phase: 'implementing',
-    ...callContext,
-    usage: { inputTokens: 10, outputTokens: 4 },
-    semantics: 'final',
   },
   runner_call_tool_use: {
     phase: 'implementing',
@@ -274,12 +267,10 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   task_touched_not_suggested: { phase: 'implementing', taskId: 'T001', files: ['src/b.ts'] },
   task_full_fail: { phase: 'implementing', taskId: 'T001', reason: 'retries exhausted' },
   review_fix_started: { phase: 'final-review', cycle: 1, taskIds: ['T001'] },
-  task_tokens: {
+  task_settled: {
     phase: 'implementing',
     taskId: 'T001',
     method: 'local',
-    implementerTokens: 900,
-    escalationTokens: 0,
     retryCount: 0,
   },
   task_review_needed: {
@@ -290,7 +281,6 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     filesTouched: ['src/a.ts'],
     validation: { passed: true, summary: 'all gates green', stages: [] },
     evidence: { summary: 'diff reviewed', expected: [], observed: [] },
-    cost: { tokenUsage },
     availableCommands: ['continue'],
   },
   hint_failed: { phase: 'escalating', taskId: 'T001' },
@@ -424,7 +414,6 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     reason: 'unsupported-backend',
   },
   build_images_as_paths: { phase: 'implementing', taskId: 'T001', count: 1 },
-  cost_update: { phase: 'implementing', tokenUsage },
   workspace_closed: { phase: 'implementing' },
   approval_prompted: { phase: 'implementing', tier: 'confirm', actionClass: 'write_in_scope' },
   approval_granted: {
@@ -556,6 +545,93 @@ describe('readRunEvents', () => {
 
     expect(diagnostics).toEqual({ total: corpus.length, skipped: 0, unknownTypes: [] });
     expect(events.slice(1, -1)).toEqual(corpus);
+  });
+
+  it('replays call outcomes and brief history in a log with old accounting events', async () => {
+    const append = createSessionLogAppender(ref());
+    const context = {
+      ...callContext,
+      taskId: 'T001',
+      runnerName: 'codex',
+      model: 'gpt-5',
+      usageBoundary: 'aggregate',
+      invocationIdentity: {
+        version: 1,
+        capturedAt: TS,
+        runner: { kind: 'cli', id: 'codex' },
+        model: 'gpt-5',
+        billing: { posture: 'unknown', basis: 'unknown' },
+      },
+    };
+    const usage = { inputTokens: 10, outputTokens: 4 };
+    const records = {
+      runner_call_usage: { ...context, usage, semantics: 'final' },
+      cost_update: { tokenUsage },
+      task_tokens: {
+        taskId: 'T001',
+        method: 'consulted',
+        retryCount: 2,
+        tool: 'codex',
+        model: 'gpt-5',
+        implementerTokens: 14,
+        escalationTokens: 0,
+      },
+      runner_call_completed: {
+        ...context,
+        ...terminalFields,
+        nativeSessionId: 'old-native-call',
+        status: 'completed',
+        error: null,
+        partial: false,
+        usage,
+      },
+      runner_call_error: {
+        ...context,
+        ...terminalFields,
+        callId: 'failed-call',
+        status: 'failed',
+        error: { code: 'exit_1', message: 'process failed' },
+        partial: false,
+        usage,
+      },
+    };
+    for (const [type, data] of Object.entries(records)) {
+      append({
+        kind: 'event',
+        ts: new Date(TS).toISOString(),
+        type,
+        phase: 'implementing',
+        data,
+      });
+    }
+
+    const { events } = await readRunEvents(ref());
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: 'T001',
+          method: 'consulted',
+          retryCount: 2,
+          tool: 'codex',
+          model: 'gpt-5',
+        }),
+        expect.objectContaining({
+          type: 'runner_call_completed',
+          callId: 'call-1',
+          backendKind: 'cli',
+          nativeSessionId: 'old-native-call',
+          status: 'completed',
+          invocationIdentity: expect.objectContaining({ runner: { kind: 'cli', id: 'codex' } }),
+        }),
+        expect.objectContaining({
+          type: 'runner_call_error',
+          callId: 'failed-call',
+          status: 'failed',
+          error: expect.objectContaining({ code: 'exit_1' }),
+        }),
+      ]),
+    );
   });
 
   it.each([undefined, 3])('replays review notes with outOfScope=%s', async (outOfScope) => {
@@ -757,18 +833,18 @@ describe('readRunEvents', () => {
     // The fixture holds two task_completed records, one sound and one with a retired method.
     // Only brief_compiled is unknown; a type that parsed somewhere is never named.
     expect(diagnostics).toEqual({
-      total: 13,
+      total: 12,
       skipped: 2,
       unknownTypes: ['brief_compiled'],
     });
-    expect(events).toHaveLength(13);
+    expect(events).toHaveLength(12);
     expect(events[events.length - 1]).toMatchObject({
       type: 'replay_complete',
       diagnostics: {
         totalLines: 16,
-        replayedEvents: 11,
+        replayedEvents: 10,
         skippedBlank: 0,
-        skippedNonEvent: 1,
+        skippedNonEvent: 2,
         skippedMalformed: 2,
         skippedUnknown: 2,
         skippedOversized: 0,

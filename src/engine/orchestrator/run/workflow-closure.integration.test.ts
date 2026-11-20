@@ -240,7 +240,6 @@ describe('workflow closure', () => {
               review === 'passed'
                 ? passingReviewVerdict(prompt)
                 : failedReviewVerdict(prompt, 'the closure fixture fails the review'),
-            undefined,
             () => cannotConsult(),
           ),
         }),

@@ -50,7 +50,7 @@ import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { enqueueUserMessage } from '../queue/enqueue.js';
-import { transitionAndSave } from '../state-ops/transition.js';
+
 import { runRetryStep } from './step.js';
 import type { RetryInvokeResult } from './types.js';
 
@@ -185,7 +185,7 @@ describe('runRetryStep', () => {
         attempts: 1,
         method: 'local',
         transitionType: 'VALIDATION_PASS',
-        usageCategory: 'implementer',
+
         retryFailureFallback: 'retry failed',
         invokeRetry,
       }),
@@ -237,7 +237,7 @@ describe('runRetryStep', () => {
       attempts: 1,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
+
       retryFailureFallback: 'retry failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
@@ -294,7 +294,7 @@ describe('runRetryStep', () => {
       attempts: 2,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
+
       retryFailureFallback: 'retry failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
@@ -339,7 +339,7 @@ describe('runRetryStep', () => {
           attempts: 2,
           method: 'local',
           transitionType: 'VALIDATION_PASS',
-          usageCategory: 'implementer',
+
           retryFailureFallback: 'retry failed',
           invokeRetry: vi.fn(),
         }),
@@ -395,7 +395,7 @@ describe('runRetryStep', () => {
       attempts: 1,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
+
       retryFailureFallback: 'retry failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
@@ -419,80 +419,66 @@ describe('runRetryStep', () => {
     ).toHaveLength(1);
   });
 
-  it.each([undefined, { inputTokens: 2, outputTokens: 1 }])(
-    'preserves completed-call usage when an interrupted correction returns usage %j',
-    async (usage) => {
-      const ref = setupProject();
-      const task = makeTask();
-      const state = makeImplState([task]);
-      const controller = new AbortController();
-      const { bus, events } = makeBusRecorder();
-      const retry = vi.fn<Implementer['retry']>(async () => {
-        const current = loadState(ref);
-        if (current === null) throw new Error('missing state during retry');
-        enqueueUserMessage({
-          ...ref,
-          state: current,
-          message: plainUserMessage('keep the alias'),
-          phase: current.phase,
-          bus,
-          reviewNone: false,
-        });
-        return { success: true, output: 'fixed', usage: { inputTokens: 7, outputTokens: 3 } };
+  it('keeps the correction words when the follow-up call is interrupted', async () => {
+    const ref = setupProject();
+    const task = makeTask();
+    const state = makeImplState([task]);
+    const controller = new AbortController();
+    const { bus, events } = makeBusRecorder();
+    const retry = vi.fn<Implementer['retry']>(async () => {
+      const current = loadState(ref);
+      if (current === null) throw new Error('missing state during retry');
+      enqueueUserMessage({
+        ...ref,
+        state: current,
+        message: plainUserMessage('keep the alias'),
+        phase: current.phase,
+        bus,
+        reviewNone: false,
       });
-      const implement = vi.fn<Implementer['implement']>(async () => {
-        controller.abort();
-        return { success: false, output: '', outcome: 'user-abort', usage };
-      });
-      const ctx = {
-        ...makeWctx({
-          ...ref,
-          implementer: makeImplementer({ retry, implement }),
-          signal: controller.signal,
-          bus,
-        }),
-        taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
-        dependsOnFiles: [],
-      };
+      return { success: true, output: 'fixed' };
+    });
+    const implement = vi.fn<Implementer['implement']>(async () => {
+      controller.abort();
+      return { success: false, output: '', outcome: 'user-abort' };
+    });
+    const ctx = {
+      ...makeWctx({
+        ...ref,
+        implementer: makeImplementer({ retry, implement }),
+        signal: controller.signal,
+        bus,
+      }),
+      taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
+      dependsOnFiles: [],
+    };
 
-      const outcome = await runRetryStep({
-        ctx,
-        task,
-        state,
-        lastError: 'failed check',
-        attempts: 1,
-        method: 'local',
-        transitionType: 'VALIDATION_PASS',
-        usageCategory: 'implementer',
-        retryFailureFallback: 'retry failed',
-        invokeRetry: makeImplementerRetryInvoker({
-          context: ctx.context,
-          kind: 'correction',
-          sessionId: ref.sessionId,
-          languageContext: buildLanguageContext('typescript'),
-          phase: state.phase,
-        }),
-      });
+    const outcome = await runRetryStep({
+      ctx,
+      task,
+      state,
+      lastError: 'failed check',
+      attempts: 1,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
 
-      expect(retry).toHaveBeenCalledTimes(1);
-      expect(implement).toHaveBeenCalledTimes(1);
-      expect(implement.mock.calls[0]?.[0].continuation?.steer).toContain('keep the alias');
-      expect(outcome.result).toMatchObject({ completed: false, method: 'failed', attempts: 1 });
-      const expected = {
-        implementerInput: 7 + (usage?.inputTokens ?? 0),
-        implementerOutput: 3 + (usage?.outputTokens ?? 0),
-      };
-      expect(outcome.state.tokenUsage).toMatchObject(expected);
-      expect(loadState(ref)?.tokenUsage).toMatchObject(expected);
-      const counted = transitionAndSave(ctx, outcome.state, {
-        type: 'COUNT_ATTEMPT',
-        taskId: task.id,
-      });
-      expect(counted.tokenUsage).toMatchObject(expected);
-      expect(loadState(ref)?.tokenUsage).toMatchObject(expected);
-      expect(events.filter((event) => event.type === 'task_completed')).toEqual([]);
-    },
-  );
+      retryFailureFallback: 'retry failed',
+      invokeRetry: makeImplementerRetryInvoker({
+        context: ctx.context,
+        kind: 'correction',
+        sessionId: ref.sessionId,
+        languageContext: buildLanguageContext('typescript'),
+        phase: state.phase,
+      }),
+    });
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(implement).toHaveBeenCalledTimes(1);
+    expect(implement.mock.calls[0]?.[0].continuation?.steer).toContain('keep the alias');
+    expect(outcome.result).toMatchObject({ completed: false, method: 'failed', attempts: 1 });
+
+    expect(events.filter((event) => event.type === 'task_completed')).toEqual([]);
+  });
 
   it.each(['partial', 'failed'] as const)(
     'puts back a checkout retry with a %s API write and saves the replaced bytes',
@@ -534,7 +520,7 @@ describe('runRetryStep', () => {
           attempts: 1,
           method: 'local',
           transitionType: 'VALIDATION_PASS',
-          usageCategory: 'implementer',
+
           retryFailureFallback: 'retry failed',
           invokeRetry: async ({ projectDir: dir }) => {
             writeFileSync(join(dir, task.suggestedFiles[0]), bytes);
@@ -628,7 +614,7 @@ describe('runRetryStep', () => {
         attempts: 1,
         method: 'local',
         transitionType: 'VALIDATION_PASS',
-        usageCategory: 'implementer',
+
         retryFailureFallback: 'retry failed',
         invokeRetry: async ({ projectDir: dir }) => {
           receivedDirs.push(dir);
@@ -687,7 +673,7 @@ describe('runRetryStep', () => {
       attempts: 1,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
+
       retryFailureFallback: 'retry failed',
       invokeRetry,
     });
@@ -696,89 +682,6 @@ describe('runRetryStep', () => {
     expect(retrySignal?.aborted).toBe(false);
     controller.abort();
     expect(retrySignal?.aborted).toBe(true);
-  });
-
-  it('records the usage of a transient attempt a retry replaced', async () => {
-    vi.useFakeTimers();
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T007', suggestedFiles: ['src/transient.ts'] });
-    const state = makeImplState([task]);
-    const config = configWithProfiles();
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    let calls = 0;
-    const implementer = makeImplementer({
-      retry: vi.fn(async () => {
-        calls += 1;
-        return calls === 1
-          ? {
-              success: false,
-              output: 'busy',
-              error: 'HTTP 503 Service Unavailable',
-              outcome: 'non-zero-exit' as const,
-              usage: { inputTokens: 7, outputTokens: 3 },
-            }
-          : { success: true, output: 'fixed', usage: { inputTokens: 2, outputTokens: 1 } };
-      }),
-    });
-
-    const pending = runRetryStep({
-      ctx: {
-        projectDir,
-        workspaceDir: projectDir,
-        sessionId,
-        config,
-        callbacks,
-        bus,
-        planner: makePlanner(),
-        reviewer: makePlanner(),
-        context: defaultContext,
-        implementer: makeImplementer(),
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        taskStartSnapshot,
-        dependsOnFiles: [],
-      },
-      task,
-      state,
-      lastError: 'validation failed',
-      attempts: 1,
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
-      retryFailureFallback: 'retry failed',
-      invokeRetry: makeImplementerRetryInvoker({
-        context: defaultContext,
-        kind: 'correction',
-        sessionId,
-        languageContext: buildLanguageContext('typescript'),
-        phase: state.phase,
-        implementer,
-        config,
-      }),
-    });
-    let settled = false;
-    void pending.then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
-    while (!settled) {
-      await vi.advanceTimersByTimeAsync(vi.getTimerCount() === 0 ? 1 : 2_000);
-    }
-    const outcome = await pending;
-
-    expect(outcome.result).toMatchObject({ completed: true, method: 'local' });
-    // The replaced attempt's tokens persist beside the surviving attempt's own.
-    const saved = loadState({ projectDir, sessionId });
-    expect(saved?.tokenUsage.implementerInput).toBe(9);
-    expect(saved?.tokenUsage.implementerOutput).toBe(4);
   });
 
   it('intermediate-tier usage-limit failure records the intermediate runner in lastFailure.runner', async () => {
@@ -841,7 +744,7 @@ describe('runRetryStep', () => {
       attempts: 1,
       method: 'escalated-intermediate',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
+
       retryFailureFallback: 'Intermediate escalation failed',
       invokeRetry: makeImplementerRetryInvoker({
         context: defaultContext,
@@ -871,7 +774,6 @@ describe('runRetryStep', () => {
     const defaultRetry = async () => ({
       success: true,
       output: 'done',
-      usage: { inputTokens: 10, outputTokens: 5 },
     });
     const defaultImplementer = makeImplementer({ retry: defaultRetry });
     const createProfileImplementer = () => {
@@ -904,7 +806,7 @@ describe('runRetryStep', () => {
       attempts: 1,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
+
       retryFailureFallback: 'retry failed',
       invokeRetry: ({
         implementer,
@@ -998,11 +900,11 @@ describe('runRetryStep', () => {
         attempts: 1,
         method: 'local',
         transitionType: 'VALIDATION_PASS',
-        usageCategory: 'implementer',
+
         retryFailureFallback: 'retry failed',
         invokeRetry: async ({ projectDir: retryDir }) => {
           retryDirs.push(retryDir);
-          return { success: true, output: 'fixed', usage: { inputTokens: 10, outputTokens: 5 } };
+          return { success: true, output: 'fixed' };
         },
       });
 
@@ -1080,7 +982,7 @@ describe('runRetryStep', () => {
         attempts: 1,
         method: 'local',
         transitionType: 'VALIDATION_PASS',
-        usageCategory: 'implementer',
+
         retryFailureFallback: 'retry failed',
         invokeRetry: makeImplementerRetryInvoker({
           context: defaultContext,
@@ -1119,7 +1021,7 @@ describe('runRetryStep — a failed attempt keeps its story', () => {
       attempts: 1,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
+
       retryFailureFallback: 'retry failed',
       invokeRetry: async () => ({ ...retryResult, success: false }),
     });
@@ -1212,7 +1114,7 @@ describe('runRetryStep — gate denial', () => {
       attempts: 1,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
+
       retryFailureFallback: 'retry failed',
       invokeRetry: async ({ projectDir: runDir }) => {
         retryWorkspaceDirs.push(runDir);
@@ -1307,7 +1209,7 @@ describe('runRetryStep — what a retry hears about the earlier attempts', () =>
         attempts: 1,
         method: 'local',
         transitionType: 'VALIDATION_PASS',
-        usageCategory: 'implementer',
+
         retryFailureFallback: 'retry failed',
         invokeRetry: makeImplementerRetryInvoker({
           context: ctx.context,
@@ -1322,7 +1224,6 @@ describe('runRetryStep — what a retry hears about the earlier attempts', () =>
       expect(prompts).toHaveLength(1);
       expect(prompt).toContain(`${noEarlierOutput} The user says:`);
       expect(prompt).toContain(userSays);
-      expect(prompt).not.toContain('discarded');
     } finally {
       await disposeWctxIsolations();
     }

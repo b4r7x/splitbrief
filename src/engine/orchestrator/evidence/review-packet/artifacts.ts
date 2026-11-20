@@ -32,6 +32,7 @@ import {
   listCheckpointSummaries,
   type CheckpointSummary,
 } from '../../../snapshots/checkpoint-summary.js';
+import { normalizeLoggedTaskRouting } from '../../../events/replay.js';
 import { readRunSnapshotLedger } from '../../../snapshots/run/ledger.js';
 import type { BriefQualityArtifact, PacketEvent } from './types.js';
 
@@ -162,7 +163,8 @@ export async function readPacketEvents(
   }
 
   const events: PacketEvent[] = [];
-  for await (const entry of readEvents({ projectDir: projectDir, sessionId: sessionId })) {
+  for await (const logged of readEvents({ projectDir, sessionId })) {
+    const entry = normalizeLoggedTaskRouting(logged);
     const data = narrowRecord(entry.data) ?? {};
     const switchRecord =
       entry.type === 'seat_switched' ? ReviewPacketSeatSwitchSchema.parse(data) : undefined;
@@ -179,6 +181,10 @@ export async function readPacketEvents(
       optionalString(data.reason) ??
       optionalString(data.routingReason);
     const outcome = optionalString(data.outcome) ?? optionalString(data.contextFit);
+    const implementerProfile =
+      entry.type === 'task_started' || entry.type === 'task_settled'
+        ? optionalString(data.implementerProfile)
+        : undefined;
     const routingReason =
       entry.type === 'recovery_prompted' && reason === 'context-overflow'
         ? optionalString(narrowRecord(narrowRecord(data.issue)?.facts)?.routingReason)
@@ -204,6 +210,7 @@ export async function readPacketEvents(
       ...(recommendedAction !== undefined && { recommendedAction }),
       ...(action !== undefined && { action }),
       ...(outcome !== undefined && { outcome }),
+      ...(implementerProfile !== undefined && { implementerProfile }),
       ...(message !== undefined && { message }),
       ...(routingReason !== undefined && { routingReason }),
     };

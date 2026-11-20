@@ -17,7 +17,7 @@ function callResult(status: RunnerCallStatus, code = 'provider-error'): RunnerCa
     endedAt: 2,
     durationMs: 1,
     text: '',
-    usage: null,
+
     nativeSessionId: null,
     toolUses: [],
     warnings: [],

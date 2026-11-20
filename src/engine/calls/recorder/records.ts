@@ -11,19 +11,6 @@ import type { RunnerCallRecorder, RunnerCallRecorderState } from './types.js';
 
 const RUNNER_CALL_HEARTBEAT_INTERVAL_MS = 1_000;
 
-export function recordUsage(
-  state: RunnerCallRecorderState,
-  eventOpts: Parameters<RunnerCallRecorder['usage']>[0],
-): void {
-  emit(state, {
-    type: 'call_usage',
-    ts: eventOpts.ts ?? Date.now(),
-    ...state.context,
-    usage: eventOpts.usage,
-    semantics: eventOpts.semantics,
-  });
-}
-
 export function recordSessionId(
   state: RunnerCallRecorderState,
   eventOpts: Parameters<RunnerCallRecorder['sessionId']>[0],

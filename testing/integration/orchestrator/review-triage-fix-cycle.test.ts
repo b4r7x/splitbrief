@@ -65,7 +65,6 @@ function scriptedSeat(answer: (prompt: string, call: number) => unknown) {
         return makeRunnerCallResult({
           status: 'completed',
           text: JSON.stringify(answer(prompt, prompts.length)),
-          usage: { inputTokens: 10, outputTokens: 5 },
         });
       },
     }),
@@ -132,7 +131,7 @@ describe('review fix cycle', { timeout: 90_000 }, () => {
           file === 'src/shared/widget.ts' ? FIXED_WIDGET : "export const greeting = 'hello';\n",
           'utf-8',
         );
-        return { success: true, output: 'written', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'written' };
       }),
       retry: vi.fn(),
     });

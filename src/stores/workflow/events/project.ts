@@ -23,13 +23,11 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
         startedAt: event.startedAt,
         endedAt: event.endedAt,
         durationMs: event.durationMs,
-        usage: null,
         nativeSessionId: null,
       };
     case 'runner_call_started':
     case 'runner_call_runtime_status':
     case 'runner_call_text_delta':
-    case 'runner_call_usage':
     case 'runner_call_tool_use':
     case 'runner_call_session_id':
     case 'runner_call_warning':

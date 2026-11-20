@@ -177,7 +177,6 @@ async function runLineage(opts: {
         return makeRunnerCallResult({
           status: 'completed',
           text: JSON.stringify(verdict),
-          usage: null,
         });
       },
     };

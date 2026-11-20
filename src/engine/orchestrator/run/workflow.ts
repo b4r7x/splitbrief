@@ -125,17 +125,11 @@ async function runScopedWorkflow(
   // boundary on an interrupt nobody requested.
   opts.sinks.consumeBoundaryInterrupt?.();
   const startTime = resolveSessionStart(requestedSavedState);
-  // The run's display identity is the seat it is on now, so it comes from the
-  // config and never from the saved state. The seat the tokens were spent
-  // against is recorded in the state, and `buildSummary` prices the run from
-  // there — a run that swapped seats mid-flight names the new one and is still
-  // costed against the old one.
   const summaryBase = summaryBaseFromIdentity(runSeatIdentity(config), {
     feature,
     startTime,
     projectDir,
     sessionId,
-    ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
   });
 
   const metadata: SpecMetadata = resolveSpecMetadata(config, opts.modelCache ?? NULL_CACHE);

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import http from 'node:http';
 import { z } from 'zod';
 import { createMetadataProvider } from './metadata.js';
-import { resolveProviderRunMetadata } from '../cost/run-metadata.js';
+
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 const REAL_HTTP_RELEASE_DEADLINE_MS = 1_000;
@@ -457,12 +457,12 @@ describe('createMetadataProvider', () => {
     const p = createMetadataProvider({
       ...opts,
       toDetected: (raw) => {
-        const base = { id: raw.id, pricingInput: 1 };
+        const base = { id: raw.id };
         return raw.context !== undefined ? { ...base, contextLength: raw.context } : base;
       },
     });
     const detected = await p.listModelsWithMetadata();
-    expect(detected).toEqual([{ id: 'a', contextLength: 50, pricingInput: 1 }]);
+    expect(detected).toEqual([{ id: 'a', contextLength: 50 }]);
   });
 });
 
@@ -522,54 +522,4 @@ describe('metadata provider cancellation', () => {
       }
     },
   );
-});
-
-describe('metadata provider offering billing metadata', () => {
-  setupFetchMock();
-
-  const RawSchema = z.object({ id: z.string(), context: z.number().optional() }).passthrough();
-  type Raw = z.infer<typeof RawSchema>;
-
-  it('keys run metadata by the metadata provider name and base URL', () => {
-    const p = createMetadataProvider<Raw>({
-      name: 'lm-studio',
-      defaultBaseURL: 'http://localhost:1234/v1',
-      envKeyName: '',
-      isLocal: true,
-      schema: RawSchema,
-      fallback: (id): Raw => ({ id }),
-    });
-
-    expect(
-      resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL }),
-    ).toMatchObject({
-      service: 'lm-studio',
-      normalizedEndpoint: 'http://localhost:1234/v1',
-    });
-  });
-
-  it('retains normalized endpoint overrides in run metadata', () => {
-    const p = createMetadataProvider<Raw>(
-      {
-        name: 'lm-studio',
-        defaultBaseURL: 'http://localhost:1234/v1',
-        envKeyName: '',
-        isLocal: true,
-        schema: RawSchema,
-        fallback: (id): Raw => ({ id }),
-      },
-      { apiBase: 'HTTP://LOCALHOST:1234/v1/' },
-    );
-
-    expect(p.baseURL).toBe('http://localhost:1234/v1');
-    expect(
-      resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL }),
-    ).toMatchObject({
-      service: 'lm-studio',
-      offering: 'local',
-      normalizedEndpoint: 'http://localhost:1234/v1',
-      billing: 'local',
-      asOf: '2026-07-31',
-    });
-  });
 });

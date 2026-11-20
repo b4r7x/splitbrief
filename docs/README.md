@@ -20,7 +20,7 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 | [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) | The same flow with file paths and function names. CLI entry → stores → TUI → engine → planning → tasks → review. |
 | [WORKFLOW.md](./WORKFLOW.md) | The state machine: every phase, every transition, the run contract, stopping and continuing, rewind. |
 | [ENGINE.md](./ENGINE.md) | The orchestrator, EventBus, sinks, callbacks vs events, abort handling, message queue. |
-| [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) | Four runner kinds, planner/implementer interfaces, Task Brief structure, token accounting. |
+| [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) | Four runner kinds, planner/implementer interfaces, and Task Brief structure. |
 | [STORES-AND-UI.md](./STORES-AND-UI.md) | Store factory, store groups, how events reach React, screens, overlays. |
 | [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) | The plan card, protected-path confirmation, the retry-and-consult ladder, recovery system, drift detection. |
 | [SUBSYSTEMS.md](./SUBSYSTEMS.md) | Hooks, snapshots, planning context, runtime commands, detection, compaction, evidence ledger, session lifecycle. |

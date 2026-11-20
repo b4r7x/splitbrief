@@ -125,7 +125,7 @@ describe('runner call records', () => {
       backendMetadata: { backendKind: 'api', source: 'test', parser: 'jsonl' },
       ts: 1_104,
     });
-    recorder.usage({ usage: { inputTokens: 3, outputTokens: 2 }, semantics: 'final', ts: 1_105 });
+
     recorder.text({ channel: 'result', text: 'Done.', semantics: 'final', ts: 1_106 });
     const result = recorder.finishCompleted({ endedAt: 1_200, structured: { verdict: 'pass' } });
 
@@ -213,10 +213,6 @@ describe('runner call records', () => {
           rawPreview: 'odd frame',
           backendMetadata: { backendKind: 'api', source: 'test', parser: 'jsonl' },
         }),
-        record('call_usage', 1_105, {
-          usage: { inputTokens: 3, outputTokens: 2 },
-          semantics: 'final',
-        }),
         record('call_text_delta', 1_106, { channel: 'result', text: 'Done.', semantics: 'final' }),
         record('call_completed', 1_200, {
           status: 'completed',
@@ -225,7 +221,7 @@ describe('runner call records', () => {
           startedAt: 10,
           endedAt: 1_200,
           durationMs: 1_190,
-          usage: { inputTokens: 3, outputTokens: 2 },
+
           nativeSessionId: 'sid-1',
           structured: { verdict: 'pass' },
         }),
@@ -236,7 +232,7 @@ describe('runner call records', () => {
           endedAt: 1_200,
           durationMs: 1_190,
           text: 'Done.',
-          usage: { inputTokens: 3, outputTokens: 2 },
+
           nativeSessionId: 'sid-1',
           toolUses: [
             { id: 'tool-1', name: 'Read', input: { path: 'a.ts' }, output: { lines: 3 } },
@@ -348,7 +344,7 @@ describe('runner call records', () => {
           startedAt: 1,
           endedAt: 9,
           durationMs: 8,
-          usage: null,
+
           nativeSessionId: null,
         }),
         {
@@ -358,7 +354,7 @@ describe('runner call records', () => {
           endedAt: 9,
           durationMs: 8,
           text: `${'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 10)}tail`,
-          usage: null,
+
           nativeSessionId: null,
           toolUses: [],
           warnings: [
@@ -455,7 +451,7 @@ describe('runner call records', () => {
           startedAt: 1,
           endedAt: 9,
           durationMs: 8,
-          usage: null,
+
           nativeSessionId: null,
         }),
         {
@@ -465,7 +461,7 @@ describe('runner call records', () => {
           endedAt: 9,
           durationMs: 8,
           text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 10),
-          usage: null,
+
           nativeSessionId: null,
           toolUses,
           warnings: [stopWarning],
@@ -529,7 +525,7 @@ describe('runner call records', () => {
           startedAt: 1,
           endedAt: 9,
           durationMs: 8,
-          usage: null,
+
           nativeSessionId: null,
           structured: '[... oversized payload omitted ...]',
         }),
@@ -540,7 +536,7 @@ describe('runner call records', () => {
           endedAt: 9,
           durationMs: 8,
           text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 10),
-          usage: null,
+
           nativeSessionId: null,
           toolUses: [],
           warnings: [
@@ -651,7 +647,7 @@ describe('runner call records', () => {
           startedAt: 1,
           endedAt: 9,
           durationMs: 8,
-          usage: null,
+
           nativeSessionId: null,
         }),
         {
@@ -661,7 +657,7 @@ describe('runner call records', () => {
           endedAt: 9,
           durationMs: 8,
           text: '',
-          usage: null,
+
           nativeSessionId: null,
           toolUses: [toolUse],
           warnings: notes.map(({ message, fingerprint, ...fields }) => ({
@@ -710,7 +706,7 @@ describe('runner call records', () => {
           startedAt: 1,
           endedAt: 9,
           durationMs: 8,
-          usage: null,
+
           nativeSessionId: null,
         }),
       ]),
@@ -774,7 +770,7 @@ describe('runner call records', () => {
     recorder.stderr({ text: 'warn: late', ts: 3 });
     recorder.toolUseDelta({ toolUseId: 'tool-1', name: 'Read', inputDelta: '{}', ts: 3 });
     recorder.toolUseDone({ toolUse: { id: 'tool-1', name: 'Read', input: {} }, ts: 3 });
-    recorder.usage({ usage: { inputTokens: 1, outputTokens: 1 }, semantics: 'final', ts: 3 });
+
     recorder.sessionId({ nativeSessionId: 'sid-late', ts: 3 });
     recorder.warning({ warning: { code: 'late', message: 'late warning' }, ts: 3 });
     recorder.unknownUpstream({
@@ -812,7 +808,7 @@ describe('runner call records', () => {
           startedAt: 1,
           endedAt: 5_000,
           durationMs: 4_999,
-          usage: null,
+
           nativeSessionId: null,
         }),
         {
@@ -822,7 +818,7 @@ describe('runner call records', () => {
           endedAt: 5_000,
           durationMs: 4_999,
           text: 'partial',
-          usage: null,
+
           nativeSessionId: null,
           toolUses: [],
           warnings: [],

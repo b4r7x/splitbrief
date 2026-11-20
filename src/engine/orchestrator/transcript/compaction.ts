@@ -4,8 +4,6 @@ import {
 } from '../../../core/sessions/compaction.js';
 import { sessionDir } from '../../../core/paths.js';
 import type { Planner, PlannerSummaryMessage } from '../../planners/types.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
 import type {
   ResolvedCompactionFormat,
   StructuredSummary,
@@ -43,7 +41,6 @@ export type PlannerCompactionAdapter = {
 export type PlannerCompactionAdapterOptions = {
   projectDir: string;
   signal?: AbortSignal | undefined;
-  onUsage?: ((usage: TokenDelta | null) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
 };
 
@@ -61,7 +58,6 @@ export function bindPlannerToProjectDir(
         ...(opts.signal !== undefined && { signal: opts.signal }),
         ...(opts.onCallEvent !== undefined && { callbacks: { onCallEvent: opts.onCallEvent } }),
       });
-      opts.onUsage?.(result.usage);
       return result.text;
     },
     ...(summarizeStructured
@@ -77,17 +73,12 @@ export function bindPlannerToProjectDir(
                 callbacks: { onCallEvent: opts.onCallEvent },
               }),
             });
-            opts.onUsage?.(result.usage);
             return { text: result.text, structured: result.structured };
           },
         }
       : {}),
   };
 }
-
-export type ResumeCompactionResult = TranscriptCompactionResult & {
-  usage: TokenDelta | null;
-};
 
 export async function compactResumeTranscript(opts: {
   projectDir: string;
@@ -99,7 +90,7 @@ export async function compactResumeTranscript(opts: {
   signal?: AbortSignal | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   onFallback?: ((text: string) => void | Promise<void>) | undefined;
-}): Promise<ResumeCompactionResult> {
+}): Promise<TranscriptCompactionResult> {
   const { projectDir, sessionId, planner, keepRecentCount, onFallback } = opts;
   const ref = { projectDir, sessionId };
   const dir = sessionDir(projectDir, sessionId);
@@ -128,14 +119,10 @@ export async function compactResumeTranscript(opts: {
       text: content,
     }));
   };
-  let usage: TokenDelta | null = null;
   const adapter = bindPlannerToProjectDir(planner, {
     projectDir: opts.workspaceDir ?? projectDir,
     ...(opts.signal !== undefined && { signal: opts.signal }),
     ...(opts.onCallEvent !== undefined && { onCallEvent: opts.onCallEvent }),
-    onUsage: (delta) => {
-      if (delta) usage = accumulateTokenUsage(usage, delta);
-    },
   });
   const summarizeStructured = adapter.summarizeStructured;
   const result = await compactTranscript({
@@ -158,5 +145,5 @@ export async function compactResumeTranscript(opts: {
     const kept = await readCompactedMessages(dir);
     pruneResumeUserMessages(ref, reconstructPlannerConversation(kept, state).unmatched);
   }
-  return { ...result, usage };
+  return result;
 }

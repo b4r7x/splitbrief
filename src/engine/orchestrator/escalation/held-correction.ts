@@ -90,7 +90,6 @@ export async function runHeldCorrection(
       deliversAnswer: true,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
       retryFailureFallback: 'Retry failed to produce valid code',
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,

@@ -18,7 +18,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
-import { tokensStore } from '../../../src/stores/workflow/tokens/state.js';
+
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import {
@@ -39,8 +39,7 @@ afterEach(() => {
 });
 
 const REVIEW_TEXT = '# Final review\n\nThe planner reviewed the run diff.\n\n### Verdict\npass\n';
-const REVIEW_USAGE = { inputTokens: 60, outputTokens: 30 };
-const PLAN_USAGE = { inputTokens: 140, outputTokens: 90 };
+
 const PLANNER_PROVIDER = 'planner-endpoint';
 const PLANNER_MODEL = 'claude-sonnet-5';
 const IMPLEMENTED_MARKER = 'from-implementer';
@@ -83,7 +82,6 @@ describe('run with no reviewer configured', () => {
           callbacks.onOutput(REVIEW_TEXT);
           return passingReviewVerdict(prompt);
         },
-        { plan: PLAN_USAGE, review: REVIEW_USAGE },
       ),
     });
 
@@ -95,7 +93,7 @@ describe('run with no reviewer configured', () => {
           join(opts.projectDir, targetFile),
           `export const loop = "${IMPLEMENTED_MARKER}";\n`,
         );
-        return { success: true, output: 'created', usage: { inputTokens: 50, outputTokens: 20 } };
+        return { success: true, output: 'created' };
       }),
     });
 
@@ -167,21 +165,21 @@ describe('run with no reviewer configured', () => {
       'snapshot_created',
       'snapshot_created',
       'workflow_config',
-      // One planning session: it starts, it books its tokens, and plan.md and tasks.md, rendered
+      // One planning session starts, and plan.md and tasks.md, rendered
       // from the plan, are on disk before the build begins.
       'planner_status',
-      'cost_update',
+
       'artifact_written',
       'artifact_written',
       'tasks_planned',
       'task_started',
-      'cost_update',
+
       'task_validating',
       // The brief's own check runs at its gate.
       'task_validating',
       'checks_run',
       'task_completed',
-      'task_tokens',
+      'task_settled',
       'snapshot_created',
       'full_suite',
       'full_suite',
@@ -193,7 +191,7 @@ describe('run with no reviewer configured', () => {
       // step is the verdict.
       'review_checks',
       'drift_report',
-      'cost_update',
+
       'review_completed',
       'workflow_complete',
     ]);
@@ -236,25 +234,5 @@ describe('run with no reviewer configured', () => {
 
     expect(summary.reviewerTool).toBeUndefined();
     expect(summary.reviewerModel).toBeUndefined();
-    expect(summary.tokenUsage.reviewerInput).toBe(REVIEW_USAGE.inputTokens);
-    expect(summary.tokenUsage.reviewerOutput).toBe(REVIEW_USAGE.outputTokens);
-
-    // A run without a reviewer bills the review tokens on the strong side's single cost line.
-    // Each planner call books its own usage, so the planning half is one charge per call.
-    const planningCalls = vi.mocked(planner.typedCall).mock.calls.length - reviewCalls;
-    const providerCosts = summary.costBreakdown?.providerCosts ?? {};
-    expect(Object.keys(providerCosts)).toEqual([PLANNER_PROVIDER]);
-    expect(providerCosts[PLANNER_PROVIDER]).toMatchObject({
-      inputTokens: PLAN_USAGE.inputTokens * planningCalls + REVIEW_USAGE.inputTokens,
-      outputTokens: PLAN_USAGE.outputTokens * planningCalls + REVIEW_USAGE.outputTokens,
-    });
-    expect(summary.costBreakdown?.actualReviewerCost).toBeUndefined();
-
-    // The per-phase drilldown still bills the final review: moving the tokens
-    // into the reviewer bucket must not zero the phase the planner carried.
-    expect(tokensStore.get().perPhase['final-review']).toMatchObject({
-      inputTokens: REVIEW_USAGE.inputTokens,
-      outputTokens: REVIEW_USAGE.outputTokens,
-    });
   }, 90_000);
 });

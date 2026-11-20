@@ -84,27 +84,29 @@ export const ConfigSchema = z.object({
     stack: z.enum(STACK_IDS).optional(),
     render: z.string().min(1).optional(),
   }),
-  workflow: z.strictObject({
-    approve: ApproveLevelSchema.optional(),
-    review: z.enum(['end', 'task']).optional(),
-    /** Retired: loads with one notice and changes nothing. */
-    maxRetries: z.unknown().optional(),
-    git: GitWorkflowConfigSchema.optional(),
-    isolation: IsolationStrategySchema.optional(),
-    /** Retired: loads with one notice and changes nothing. */
-    speckit: z.unknown().optional(),
-    /** Retired: loads with one notice and changes nothing. */
-    mode: z.unknown().optional(),
-    /** Retired: loads with one notice and changes nothing. */
-    briefReview: z.unknown().optional(),
-    /** Retired: loads with one notice and changes nothing. */
-    taskReview: z.unknown().optional(),
-    /** Retired: loads with one notice and changes nothing. */
-    driftChainThreshold: z.unknown().optional(),
-    compactionThreshold: z.number().int().min(10).optional(),
-    compactionFormat: CompactionFormatSchema.default('auto'),
-    showSpend: z.boolean().optional(),
-  }),
+  workflow: z
+    .strictObject({
+      approve: ApproveLevelSchema.optional(),
+      review: z.enum(['end', 'task']).optional(),
+      /** Retired: loads with one notice and changes nothing. */
+      maxRetries: z.unknown().optional(),
+      git: GitWorkflowConfigSchema.optional(),
+      isolation: IsolationStrategySchema.optional(),
+      /** Retired: loads with one notice and changes nothing. */
+      speckit: z.unknown().optional(),
+      /** Retired: loads with one notice and changes nothing. */
+      mode: z.unknown().optional(),
+      /** Retired: loads with one notice and changes nothing. */
+      briefReview: z.unknown().optional(),
+      /** Retired: loads with one notice and changes nothing. */
+      taskReview: z.unknown().optional(),
+      /** Retired: loads with one notice and changes nothing. */
+      driftChainThreshold: z.unknown().optional(),
+      compactionThreshold: z.number().int().min(10).optional(),
+      compactionFormat: CompactionFormatSchema.default('auto'),
+      showSpend: z.unknown().optional(),
+    })
+    .transform(({ showSpend: _showSpend, ...workflow }) => workflow),
   sessions: z
     .object({
       scope: z.enum(['project']).optional(),

@@ -48,32 +48,6 @@ describe('projectRunnerCallEvent', () => {
     expect(events[0]).toMatchObject({ nativeSessionId: 'native-1' });
   });
 
-  it('projects call events to strict engine event variants', () => {
-    const event: RunnerCallEvent = {
-      type: 'call_usage',
-      ts: 10,
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'api',
-      usage: { inputTokens: 5, outputTokens: 6 },
-      semantics: 'delta',
-    };
-
-    expect(
-      projectRunnerCallEvent(event, { rootDir: '/project', phase: 'planning', sequence: 3 }),
-    ).toEqual({
-      type: 'runner_call_usage',
-      ts: 10,
-      phase: 'planning',
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'api',
-      sequence: 3,
-      usage: { inputTokens: 5, outputTokens: 6 },
-      semantics: 'delta',
-    });
-  });
-
   it('preserves text delta channels when projecting runner call events', () => {
     const event: RunnerCallEvent = {
       type: 'call_text_delta',
@@ -239,7 +213,7 @@ describe('projectRunnerCallEvent', () => {
       endedAt: 20,
       durationMs: 10,
       partial: false,
-      usage: { inputTokens: 5, outputTokens: 6 },
+
       nativeSessionId: null,
     };
 
@@ -262,7 +236,7 @@ describe('projectRunnerCallEvent', () => {
       endedAt: 20,
       durationMs: 10,
       partial: false,
-      usage: { inputTokens: 5, outputTokens: 6 },
+
       nativeSessionId: null,
     });
   });
@@ -281,7 +255,7 @@ describe('projectRunnerCallEvent', () => {
         endedAt: 20,
         durationMs: 10,
         partial: false,
-        usage: null,
+
         nativeSessionId: null,
       },
       { rootDir: '/project', phase: 'implementing', sequence: 7 },
@@ -409,7 +383,7 @@ describe('projectRunnerCallEvent', () => {
         endedAt: 10,
         durationMs: 9,
         partial: true,
-        usage: null,
+
         nativeSessionId: null,
       },
       { rootDir: '/project', phase: 'planning', sequence: 5 },

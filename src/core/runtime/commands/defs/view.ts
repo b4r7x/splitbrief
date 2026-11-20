@@ -114,14 +114,5 @@ export function viewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
         ctx.setFeedbackMessage('Brief list shown');
       },
     },
-    {
-      kind: 'noarg',
-      name: '/usage',
-      label: 'usage',
-      description: 'Show tokens, estimate and rates',
-      category: 'view',
-      validScreens: ['workflow'],
-      handler: () => ctx.openOverlay('usage-details'),
-    },
   ];
 }

@@ -42,10 +42,5 @@ describe('e2e: one-task plan adds an endpoint', () => {
 
     expect(hasSessionArtifact(ctx.projectDir, SESSION_LOG_FILE)).toBe(true);
     expect(summary.totalTime).toBeGreaterThan(0);
-
-    expect(summary.tokenUsage.plannerInput).toBeGreaterThan(0);
-    expect(summary.tokenUsage.plannerOutput).toBeGreaterThan(0);
-    expect(summary.tokenUsage.implementerInput).toBeGreaterThan(0);
-    expect(summary.tokenUsage.implementerOutput).toBeGreaterThan(0);
   });
 });

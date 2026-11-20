@@ -53,7 +53,6 @@ interface OperationBase {
   attempt?: number;
   startedAt: number;
   reason: string | null;
-  usage: unknown | null;
   warnings: readonly OperationWarningGroup[];
   apiRuntimeStatus?: EngineEventOf<'runner_call_runtime_status'>['runtimeStatus'];
   openTools?: readonly OpenTool[];

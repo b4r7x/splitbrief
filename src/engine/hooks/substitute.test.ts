@@ -91,14 +91,4 @@ describe('substituteEventFields', () => {
     );
     expect(output).toContain(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER);
   });
-
-  it('handles nested object access via dot path', () => {
-    const event: EngineEvent = {
-      type: 'cost_update',
-      ts: 1,
-      phase: 'planning',
-      tokenUsage: { plannerInput: 1 } as never,
-    };
-    expect(substituteEventFields(S('event.tokenUsage.plannerInput'), event)).toBe('1');
-  });
 });

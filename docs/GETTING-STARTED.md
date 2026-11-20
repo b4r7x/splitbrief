@@ -17,7 +17,7 @@ It splits the work an AI normally does in one shot into two roles:
 
 The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; an open run stays continuable, a ready run waits for Apply or Discard, and the brief is durable on disk. The implementer never certifies its own work, and the advantage compounds when the two sides come from different labs: a reviewer from another model family does not inherit the implementer's blind spots.
 
-The split follows capability: the strong tool spends its tokens on research, brief compilation, review, and escalation; the weak one spends its tokens typing. SPLITBRIEF reports the token split per run, and the spend alongside it when the prices are known.
+The planner writes the briefs and reviews the changes. The implementer writes the code.
 
 ---
 
@@ -186,11 +186,11 @@ Full semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ### Concise onboarding route
 
-Fastest path from install to a validated run using **admitted** runners only. Full support tables: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (CLI matrix, readiness states, billing posture per tool) and [CONFIGURATION.md](./CONFIGURATION.md) (API providers, model catalog, profiles).
+Fastest path from install to a validated run using **admitted** runners only. Full support tables: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (CLI matrix, readiness states) and [CONFIGURATION.md](./CONFIGURATION.md) (API providers, model catalog, profiles).
 
-**1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue. `doctor` runs no validation command. During a run, the project gate also runs once at the run base, beside the build, and a red reviewer check is compared with it. SPLITBRIEF reports a failure that your tree already had as pre-existing.
+**1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before the run calls a model. Fix every blocker, then continue. `doctor` runs no validation command. During a run, the project gate also runs once at the run base, beside the build, and a red reviewer check is compared with it. SPLITBRIEF reports a failure that your tree already had as pre-existing.
 
-**2. Hybrid recipe (subscription planner + API implementer).** The CLI tool `claude-code` uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with a smaller model behind your own OpenAI-compatible endpoint. A custom provider takes its key inline and has no default model, so set the exact model ID that the endpoint serves:
+**2. Hybrid recipe.** Claude Code uses your existing login. The API implementer uses the service and credentials in its configuration.
 
 ```yaml
 version: 3
@@ -224,17 +224,11 @@ With `end_checks: true` (the default), SPLITBRIEF runs the project gate that the
 
 **4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `small-cloud` (the endpoint above) and `codex-small` (a CLI tool on a smaller model); set `default` to the profile SPLITBRIEF should pick when routing names none. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
 
-**5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md).
+**5. Privacy.** SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md).
 
 **No recommended API models.** No bundled model row is `recommended`: every row is **compatible-only** — selectable, with no SPLITBRIEF quality claim (see [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog)). The endpoint above is a starting point, not a recommendation.
 
 For every other planner/implementer combination, swap tools and models via the canonical matrices rather than duplicating lists here.
-
----
-
-## 8. Usage details
-
-Open `/usage` from the workflow to inspect reported token counters and monetary estimates. These details are available for live and saved runs. Unknown usage stays unknown; an unpriced run is not a zero-cost run. Main workflow screens and the closed-run summary do not show these counters. There is no Show spend control.
 
 ---
 

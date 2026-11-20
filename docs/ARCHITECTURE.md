@@ -183,7 +183,7 @@ The old file-halt enums and event schemas remain readers for saved sessions. [Re
 `spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_card_opened` (the plan card opened and waits; `plan_approved`, `plan_rejected` and `plan_regenerated` close it), `plan_approved`, `plan_rejected`, `plan_regenerated`, `briefs_approved`, `briefs_rejected`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `apply_started` and `apply_finished` (the start and the end of an Apply, whatever its outcome; a window that shows the run counts the Apply clock between them), `run_rejected`, `mode_resolved`, `mode_advice`, `instant_plan_received`, `artifact_written`. `run_rejected` records `/run reject confirm` on a run that wrote the checkout: `restored` (every file it put back or removed), `removed` (the part of `restored` the run had created), `conflicted` (the paths it left as the user changed them), `missing` (the files with no saved copy) and `savedTo` (the folder that holds what it replaced). It is the reject's transcript row (`rejectCheckoutRun`). The plan card publishes `plan_approved` when it is approved, `plan_regenerated` when it sends a correction back to the planner, and `plan_rejected` when End run closes the run there (`runPlanApproval`, `planning/approval.ts`). `artifact_written` announces `plan.md` and `tasks.md` as one card each, with the file's path, line count and an excerpt (`publishArtifactWritten`). Replay only: `spec_*`, `briefs_*`, `rewind_to_*`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` and `drift_chain_detected` have no producer now and stay so older logs replay. The `brief_quality_*` and `brief_readiness_*` events no longer replay. Older sessions lose that detail.
 
 **Task lifecycle:**
-`tasks_planned` (the ordered brief list, published at loop entry and after each structural change: `tasks` with `id`, `title`, `index`, `file`, `action`, and `total`), `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_replaced`, `tasks_inserted`, `task_touched_not_suggested` (the files a completed brief changed that no brief suggested), `task_reset`, `task_tokens`, `task_review_needed` (replay only: the per-task review gate is deleted), `review_fix_started`. Replay only: `task_scope_widened`, `hint_failed`, `task_full_fail`
+`tasks_planned` (the ordered brief list, published at loop entry and after each structural change: `tasks` with `id`, `title`, `index`, `file`, `action`, and `total`), `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_replaced`, `tasks_inserted`, `task_touched_not_suggested` (the files a completed brief changed that no brief suggested), `task_reset`, `task_settled`, `task_review_needed` (replay only: the per-task review gate is deleted), `review_fix_started`. Replay only: `task_scope_widened`, `hint_failed`, `task_full_fail`
 
 **Consult / seat:**
 `consult_answered` (one row per answer: the task, reason, action, diagnosis and any new ids, revision or check ids; a rewrite or a split with reason `failed` or `blocked` shows its row once its `task_replaced` or `tasks_inserted` follows), `consult_bound_spent` (replay only: no producer now), `seat_retry`, `seat_wait_started` (with `wait`, the saved wait), `seat_wait_ended` (the wait is over: its deadline passed, its seat moved, or the steered call of its seat started; with `kept: true` when a stop or a steer cut it and the saved wait stays), `no_progress_cut`, `seat_answer_refused` (rowless: the planner's or the reviewer's first typed answer broke its contract, with `seat` and the `reasons` the repair call carries), `seat_switched` (published when a seat switch commits, and on resume for a crew change made between runs with cause `crew-changed` and labelled `from`/`to`: `seat`, `from`, `to`, `cause`, `auto`, `configRevision`)
@@ -215,16 +215,13 @@ Older logs without these fields still render. `message_injected_native` keeps it
 `planner_attachments_dropped`, `build_images_as_paths` (one event per BUILD correction delivery with images when the seat takes no images: `taskId`, `count`)
 
 **Cost (1):**
-`cost_update`
-
-**Workspace (1):**
 `workspace_closed` — row-less. `removeClosedRunWorkspace` publishes it when End run, Discard or Apply closes a workspace run, also when the removal fails. Once a run's log holds it, the transcript drops the earlier `workspace_kept` warning.
 
 **Protected-write approval:**
 `approval_prompted`, `approval_granted`, `approval_rejected`. Replay only: `approval_mode_changed` (no producer now) and `approval_sticky_recorded` (sticky grants are deleted)
 
 **Runner calls (13):**
-`runner_call_started`, `runner_call_runtime_status`, `runner_call_text_delta`, `runner_call_usage`, `runner_call_tool_use`, `runner_call_activity`, `runner_call_session_id`, `runner_call_warning`, `runner_call_error`, `runner_call_completed`, `runner_call_stalled`, `runner_call_stall_cleared`, `runner_call_heartbeat`. Each carries the call's context fields and a `sequence` number. `projectRunnerCallEvents` projects a seat call's stream into them. The summary reads its per-call usage from them.
+`runner_call_started`, `runner_call_runtime_status`, `runner_call_text_delta`, `runner_call_tool_use`, `runner_call_activity`, `runner_call_session_id`, `runner_call_warning`, `runner_call_error`, `runner_call_completed`, `runner_call_stalled`, `runner_call_stall_cleared`, `runner_call_heartbeat`. Each carries the call's context fields and a `sequence` number. `projectRunnerCallEvents` projects a seat call's stream into them. The summary reads its per-call usage from them.
 
 **Session replay (2):**
 `replay_started`, `replay_complete` — published only by `readRunEvents`, which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents`. See [ENGINE.md](./ENGINE.md#replay).
@@ -523,13 +520,12 @@ The registry holds 22 commands in five categories. A removed command, such as `/
 | `/activity` | Expand or collapse the last folded rows |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list |
-| `/usage` | Show tokens, estimate and rates |
 
 **Input & output**
 
 | Runtime command | Description |
 |---|---|
-| `/copy [message\|brief\|path\|command\|cost]` | Copy a reviewed value to the clipboard |
+| `/copy [message\|brief\|path\|command]` | Copy a reviewed value to the clipboard |
 | `/image <path> \| list \| remove <index\|id>` | Attach, list or remove images for the next planner call |
 
 ---
@@ -544,7 +540,7 @@ palette:
     - id: my-action            # unique id (string, min 1 char)
       label: My Action         # display label
       description: Optional    # optional description shown in palette
-      command: /usage          # runtime command to invoke (must start with '/')
+      command: /tasks          # runtime command to invoke (must start with '/')
 ```
 
 All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, the optional `reviewer`, `validation`, `workflow.{approve,git,isolation,...}`, `hooks`, `approval`) are unchanged in shape. The retired `workflow.max_retries`, `escalation` and `codebase` keys still load with one notice each and are ignored.

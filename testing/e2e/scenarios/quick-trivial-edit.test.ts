@@ -38,12 +38,5 @@ describe('e2e: one-task plan makes a trivial edit', () => {
     expect(readFileSync(join(ctx.projectDir, 'README.md'), 'utf-8')).toBe(
       '# SPLITBRIEF\n\nA small fixture project for e2e replay.',
     );
-
-    expect(summary.tokenUsage.plannerInput + summary.tokenUsage.implementerInput).toBeGreaterThan(
-      0,
-    );
-    expect(summary.tokenUsage.plannerOutput + summary.tokenUsage.implementerOutput).toBeGreaterThan(
-      0,
-    );
   });
 });

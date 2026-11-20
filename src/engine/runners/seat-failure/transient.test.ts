@@ -81,8 +81,6 @@ describe('isTransientSeatFailure', () => {
 });
 
 describe('withSeatRetry', () => {
-  const onDiscarded = (): void => {};
-
   it('retries a transient failure ten times, doubling from 2s and never waiting above 60s', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
@@ -95,7 +93,6 @@ describe('withSeatRetry', () => {
 
     const pending = withSeatRetry<string>(call, {
       onRetry: (info) => retries.push(info),
-      onDiscarded,
     });
     await vi.runAllTimersAsync();
     const result = await pending;
@@ -116,7 +113,7 @@ describe('withSeatRetry', () => {
       return calls <= 4 ? failed('HTTP 503 Service Unavailable') : { ok: true, value: 'fixed' };
     });
 
-    const pending = withSeatRetry<string>(call, { onDiscarded });
+    const pending = withSeatRetry<string>(call, {});
     await vi.runAllTimersAsync();
 
     await expect(pending).resolves.toEqual({ ok: true, value: 'fixed' });
@@ -148,7 +145,6 @@ describe('withSeatRetry', () => {
 
       const pending = withSeatRetry<string>(call, {
         onRetry: (info) => retries.push(info),
-        onDiscarded,
       });
       await vi.runAllTimersAsync();
 
@@ -177,7 +173,6 @@ describe('withSeatRetry', () => {
 
     const pending = withSeatRetry<string>(call, {
       onRetry: (info) => retries.push(info),
-      onDiscarded,
     });
     await vi.runAllTimersAsync();
 
@@ -207,7 +202,6 @@ describe('withSeatRetry', () => {
 
     const pending = withSeatRetry<string>(call, {
       onRetry: (info) => retries.push(info),
-      onDiscarded,
     });
     await vi.runAllTimersAsync();
 
@@ -223,29 +217,11 @@ describe('withSeatRetry', () => {
       return calls === 1 ? failed('HTTP 503') : { ok: true, value: 'fixed' };
     });
 
-    const pending = withSeatRetry<string>(call, { onDiscarded });
+    const pending = withSeatRetry<string>(call, {});
     await vi.runAllTimersAsync();
 
     await expect(pending).resolves.toEqual({ ok: true, value: 'fixed' });
     expect(call).toHaveBeenCalledTimes(2);
-  });
-
-  it('hands every replaced attempt to onDiscarded', async () => {
-    vi.useFakeTimers();
-    const discarded: string[] = [];
-    let calls = 0;
-    const call = vi.fn(async (): Promise<SeatAttempt<string>> => {
-      calls += 1;
-      return calls === 1 ? failed('HTTP 503') : { ok: true, value: 'fixed' };
-    });
-
-    const pending = withSeatRetry<string>(call, {
-      onDiscarded: (value) => discarded.push(value),
-    });
-    await vi.runAllTimersAsync();
-    await pending;
-
-    expect(discarded).toEqual(['HTTP 503']);
   });
 
   it('does not retry a checkout-changed failure whose paths read as network words', async () => {
@@ -256,7 +232,7 @@ describe('withSeatRetry', () => {
         value: 'left the checkout changed',
       }),
     );
-    const result = await withSeatRetry<string>(call, { onDiscarded });
+    const result = await withSeatRetry<string>(call, {});
 
     expect(call).toHaveBeenCalledTimes(1);
     expect(result.ok).toBe(false);
@@ -264,7 +240,7 @@ describe('withSeatRetry', () => {
 
   it('does not spend a retry on a failure that is not transient', async () => {
     const call = vi.fn(async () => failed('invalid api key'));
-    const result = await withSeatRetry<string>(call, { onDiscarded });
+    const result = await withSeatRetry<string>(call, {});
     expect(call).toHaveBeenCalledTimes(1);
     expect(result.ok).toBe(false);
   });
@@ -275,7 +251,6 @@ describe('withSeatRetry', () => {
     const call = vi.fn(async () => failed('fetch failed'));
     const pending = withSeatRetry<string>(call, {
       signal: controller.signal,
-      onDiscarded,
     });
     await vi.advanceTimersByTimeAsync(0);
     controller.abort(new Error('stop requested'));
@@ -287,9 +262,9 @@ describe('withSeatRetry', () => {
     const controller = new AbortController();
     controller.abort(new Error('already stopped'));
     const call = vi.fn(async () => ({ ok: true as const, value: 'never' }));
-    await expect(
-      withSeatRetry<string>(call, { signal: controller.signal, onDiscarded }),
-    ).rejects.toThrow('already stopped');
+    await expect(withSeatRetry<string>(call, { signal: controller.signal })).rejects.toThrow(
+      'already stopped',
+    );
     expect(call).not.toHaveBeenCalled();
   });
 });

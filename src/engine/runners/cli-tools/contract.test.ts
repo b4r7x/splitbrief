@@ -25,7 +25,7 @@ const terminalResult = {
   type: 'result',
   status: 'completed',
   text: '',
-  usage: null,
+
   nativeSessionId: null,
   error: null,
   partial: false,

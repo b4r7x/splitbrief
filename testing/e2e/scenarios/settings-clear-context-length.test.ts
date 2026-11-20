@@ -128,7 +128,10 @@ implementer:
           child.write('\r');
           await shows(/Settings/);
           child.write('context');
-          await shows(/Context length +8192\b/);
+          await shows(/▌ Context length +8192\b/);
+          expect(text()).toContain(
+            'Stop a brief above this limit. With auto, the tool manages context.',
+          );
           child.write('\r');
           await shows(/Context length +\[8192/);
           child.write('\x7f'.repeat(contextLength.length));

@@ -7,7 +7,7 @@ import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.j
 import { sessionDir } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
-import type { TaskTokenUsage } from '../../../src/core/schemas/tokens.js';
+import type { BriefExecution } from '../../../src/core/schemas/brief-execution.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
@@ -126,13 +126,12 @@ it('lists a BUILD seat changed between stop and continue in the review packet wi
   const saved = loadState(ref);
   const current = saved?.tasks[0];
   if (saved === null || current === undefined) throw new Error('Missing parked brief');
-  const earlierRoute: TaskTokenUsage = {
+  const earlierRoute: BriefExecution = {
     taskId: current.id,
     taskTitle: current.title,
     method: 'local',
     retryCount: 0,
-    implementerTokens: 7,
-    escalationTokens: 0,
+
     tool: 'codex',
     model: 'gpt-5-codex',
     routingReason: 'The earlier brief fit.',
@@ -178,7 +177,6 @@ it('lists a BUILD seat changed between stop and continue in the review packet wi
       taskId: current.id,
       kind: 'cli',
       model: 'gpt-5.1-codex',
-      implementerTokens: 15,
     }),
   ]);
   expect.soft(routing).toMatch(/^- T001: codex · GPT-5 Codex · The earlier brief fit\.$/m);

@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { API_PROVIDER_CATALOG, KNOWN_API_PROVIDER_IDS } from '../../providers/api-catalog.js';
 import { CLI_TOOL_IDS } from '../../runners/cli-tool/catalog.js';
-import {
-  DetectedModelSchema,
-  DetectedPricingProvenanceSchema,
-  DetectedPricingTierSchema,
-  type DetectedPricingProvenance,
-} from './model.js';
+import { DetectedModelSchema } from './model.js';
 import {
   CLI_READINESS_STATES,
   CliCompatibilityStateSchema,
@@ -111,11 +106,7 @@ describe('detection schemas', () => {
     ).toBe(false);
   });
 
-  it('round-trips provider model metadata, pricing tiers, and pricing provenance', () => {
-    const pricingProvenance: DetectedPricingProvenance = {
-      asOf: '2026-07-31',
-      source: 'test fixture pricing record',
-    };
+  it('round-trips provider model metadata', () => {
     const detection = {
       provider: 'ollama',
       available: true,
@@ -124,22 +115,7 @@ describe('detection schemas', () => {
           id: 'model-1',
           contextLength: 200_000,
           maxOutputTokens: 16_000,
-          pricingInput: 2,
-          pricingOutput: 8,
-          pricingCacheRead: 0.2,
-          pricingCacheWrite: 2.5,
-          pricingTiers: [
-            {
-              type: 'context',
-              thresholdTokens: 200_000,
-              inputPer1M: 4,
-              outputPer1M: 12,
-              cacheReadPer1M: 0.4,
-              cacheWritePer1M: 5,
-            },
-          ],
-          pricingProvenance,
-          isFree: false,
+
           supportsTemperature: true,
           supportsReasoning: true,
           supportsImages: true,
@@ -245,19 +221,8 @@ describe('detection schemas', () => {
   });
 
   it('rejects unknown keys at every detection boundary', () => {
-    const pricingProvenance = {
-      asOf: '2026-07-31',
-      source: 'test fixture pricing record',
-    } as const;
-    const pricingTier = {
-      type: 'context',
-      thresholdTokens: 200_000,
-      inputPer1M: 2,
-    } as const;
     const model = {
       id: 'model-1',
-      pricingTiers: [pricingTier],
-      pricingProvenance,
     };
     const provider = {
       provider: 'ollama',
@@ -267,17 +232,11 @@ describe('detection schemas', () => {
       hasKey: true,
     } as const;
 
-    expect(DetectedPricingTierSchema.safeParse({ ...pricingTier, extra: true }).success).toBe(
-      false,
-    );
-    expect(
-      DetectedPricingProvenanceSchema.safeParse({ ...pricingProvenance, extra: true }).success,
-    ).toBe(false);
     expect(DetectedModelSchema.safeParse({ ...model, extra: true }).success).toBe(false);
     expect(
       ProviderDetectionSchema.safeParse({
         ...provider,
-        models: [{ ...model, pricingTiers: [{ ...pricingTier, extra: true }] }],
+        models: [{ ...model, extra: true }],
       }).success,
     ).toBe(false);
     expect(ProviderDetectionSchema.safeParse({ ...provider, extra: true }).success).toBe(false);

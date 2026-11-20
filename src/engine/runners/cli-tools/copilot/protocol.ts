@@ -1,6 +1,6 @@
+import { isRecord } from '../../../../utils/type-guards.js';
 import { z } from 'zod';
 import type { ParsedLine } from '../../types.js';
-import { BackendTokenUsageSchema, toProviderTokenDelta } from '../../../calls/usage/normalize.js';
 import {
   parsedMalformedRecordWarning,
   parsedUnknownRecordWarning,
@@ -24,14 +24,6 @@ const AssistantMessageEvent = z.object({
   data: z.looseObject({
     text: z.string().optional(),
     content: z.union([z.string(), z.array(z.unknown())]).optional(),
-    usage: BackendTokenUsageSchema.optional(),
-  }),
-});
-
-const AssistantUsageEvent = z.object({
-  type: z.literal('assistant.usage'),
-  data: z.looseObject({
-    usage: BackendTokenUsageSchema.optional(),
   }),
 });
 
@@ -88,17 +80,10 @@ export function parseCopilotLine(line: string): ParsedLine {
   const message = AssistantMessageEvent.safeParse(event);
   if (message.success) {
     const text = extractText(message.data.data);
-    const usage = message.data.data.usage ? toProviderTokenDelta(message.data.data.usage) : null;
-    if (text !== undefined && usage) return { text, channel: 'assistant', usage };
     if (text !== undefined) return { text, channel: 'assistant' };
-    if (usage) return { usage };
   }
 
-  const usageEvent = AssistantUsageEvent.safeParse(event);
-  if (usageEvent.success && usageEvent.data.data.usage) {
-    const usage = toProviderTokenDelta(usageEvent.data.data.usage);
-    if (usage) return { usage };
-  }
+  if (isRecord(event) && event.type === 'assistant.usage') return {};
 
   const tool = ToolUseEvent.safeParse(event);
   if (tool.success) {

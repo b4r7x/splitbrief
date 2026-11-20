@@ -618,7 +618,7 @@ describe('recovery prompt', () => {
     expect(visible.match(/evidence\.json/g)).toHaveLength(1);
   });
 
-  it('names the review seat, and calls it a call that was never made rather than a verdict', async () => {
+  it('gives the cause and required and available tokens in the context-window halt', async () => {
     const issue = apiContextIssue({
       id: 'rec_api_context_review',
       reason: 'review-failed',
@@ -639,11 +639,11 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('Nothing was sent to REVIEW · larger than the context window');
+    expect(visible).toContain('REVIEW · larger than the context window');
     expect(recoveryMenuText('retry-same-worker', issue)).toBe('Try again');
     expect(visible).toContain('/crew review');
     expect(visible).not.toMatch(/blocking/i);
-    expect(visible).not.toMatch(/412,?000|32,?768/);
+    expect(visible).toMatch(/needs\s+412,000\s+tokens[\s\S]*at most\s+32,768/);
     expect(visible).not.toMatch(/review fix|repair/i);
   });
 

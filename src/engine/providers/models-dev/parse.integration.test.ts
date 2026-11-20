@@ -19,6 +19,16 @@ const rawCatalog = JSON.stringify({
         id: 'demo',
         reasoning_options: [{ type: 'effort', values: [null, 12, 'low', 'high'] }],
         extra: { nested: ['retained'] },
+        cost: { input: 1, output: 2 },
+        experimental: {
+          modes: {
+            fast: {
+              cost: { input: 2.5, output: 20 },
+              provider: { body: { service_tier: 'priority' } },
+            },
+            standard: { cost: { input: 1, output: 2 } },
+          },
+        },
       },
     },
   },
@@ -47,6 +57,7 @@ describe('models.dev parser runtime', () => {
       'engine/providers/models-dev/parse-worker.ts',
       'engine/providers/models-dev/record.ts',
       'core/schemas/models-dev.ts',
+      'utils/type-guards.ts',
       'utils/error.ts',
     ]) {
       const output = join(emitted, source.replace(/\.ts$/, '.js'));
@@ -134,6 +145,14 @@ describe('models.dev parser runtime', () => {
         },
         null,
       ]);
+      expect(results[0]).not.toHaveProperty('catalog.demo.models.demo.cost');
+      expect(results[4]).not.toHaveProperty('catalog.demo.models.demo.cost');
+      for (const result of [results[0], results[4]]) {
+        expect.soft(result.catalog.demo.models.demo.experimental.modes).toEqual({
+          fast: { provider: { body: { service_tier: 'priority' } } },
+          standard: {},
+        });
+      }
       expect(results[6]).not.toHaveProperty('catalog');
     },
   );

@@ -6,7 +6,7 @@ export type SeatAccountCause = z.infer<typeof SeatAccountCauseSchema>;
 
 const ACCOUNT_CAUSE_WORDS: Readonly<Record<SeatAccountCause, string>> = {
   balance: 'Balance spent on',
-  billing: 'Billing refused by',
+  billing: 'Account issue with',
   quota: 'Quota spent on',
   access: 'Access refused by',
   auth: 'Signed out of',
@@ -18,7 +18,7 @@ const ACCOUNT_CAUSE_ADVICE: Readonly<
   Record<Exclude<SeatAccountCause, 'auth'>, (tool: string) => string>
 > = {
   balance: () => 'Add credit or',
-  billing: () => "Fix the account's billing or",
+  billing: () => 'Check your account settings or',
   quota: () => 'Wait for the quota to renew or',
   access: (tool) => `Check what the ${tool} account allows, or`,
 };

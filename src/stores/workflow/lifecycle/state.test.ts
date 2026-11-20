@@ -6,7 +6,6 @@ import { resetWorkflow } from '../actions/reset.js';
 import { hydrateFromState } from '../actions/hydrate.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('lifecycleStore', () => {
   beforeEach(() => resetWorkflow());
@@ -191,7 +190,7 @@ describe('lifecycleStore', () => {
         attempt: 0,
         tasks: [],
         startedAt: new Date().toISOString(),
-        tokenUsage: makeUsage(),
+
         awaitingContinue: false,
         messageQueue: [],
       },

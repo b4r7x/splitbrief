@@ -12,6 +12,7 @@ import type { PlanContext } from './spec/prompts/task.js';
 import { isENOENT } from '../utils/errno.js';
 import { assertWritablePathConfined } from '../lib/fs/confinement.js';
 import type { TaskContextFit, CurrentCodeContextMode } from '../core/schemas/enums.js';
+import type { BuildContextOverflow } from './orchestrator/context-routing/types.js';
 
 function previewProjectContext(projectDir: string, skillsContext: string | undefined) {
   return {
@@ -92,6 +93,9 @@ export function buildRoutingPreviewMetadata(
         contextFit: decision.fit,
         estimatedTokens: decision.estimatedTokens,
         ...(decision.contextLength !== undefined && { contextLength: decision.contextLength }),
+        ...(decision.contextOverflow !== undefined && {
+          contextOverflow: decision.contextOverflow,
+        }),
         ...(estimateStatus !== undefined && { estimateStatus }),
         routingReason,
         ...(routeBlocked && { routingBlockKind: 'no-capable-worker' as const }),
@@ -164,6 +168,7 @@ export interface PlanTaskReviewMetadata {
   contextFit?: TaskContextFit | undefined;
   estimatedTokens?: number | undefined;
   contextLength?: number | undefined;
+  contextOverflow?: BuildContextOverflow | undefined;
   estimateStatus?: PlanReviewEstimateStatus | undefined;
   routingReason?: string | undefined;
   routingBlockKind?: PlanReviewRoutingBlockKind | undefined;

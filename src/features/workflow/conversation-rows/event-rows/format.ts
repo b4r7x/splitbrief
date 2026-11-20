@@ -1,10 +1,5 @@
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
-import { formatContextLength } from '../../../../core/formatting.js';
-import {
-  ValidationStageSchema,
-  type TaskContextFit,
-  type ValidationStage,
-} from '../../../../core/schemas/enums.js';
+import { ValidationStageSchema, type ValidationStage } from '../../../../core/schemas/enums.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import type {
@@ -15,7 +10,6 @@ import type {
 import { glyph } from '../../../../lib/glyphs.js';
 import { formatDuration } from '../../../../utils/format/time.js';
 import { formatRecordedSeatIdentity } from '../../display/recorded-seat-identity.js';
-import { formatUsageTokens } from '../../usage/format.js';
 import type { ConversationRowSegment, ConversationRowTone } from '../types.js';
 import { separatedSegments } from './full-suite.js';
 
@@ -36,12 +30,6 @@ export function formatTaskStartedParts(
     role: CREW_SEAT_ROLES.build,
   });
   if (identity !== null) parts.push({ text: identity, tone: CREW_SEAT_ROLES.build });
-  if (event.contextFit && event.contextFit !== 'fits') {
-    parts.push({
-      text: formatEventContextFit(event.contextFit, event.estimatedTokens, event.contextLength),
-      tone: 'textDim',
-    });
-  }
   if (event.currentCodeContextMode && event.currentCodeContextMode !== 'none') {
     parts.push({ text: `code ${event.currentCodeContextMode}`, tone: 'textDim' });
   }
@@ -136,20 +124,6 @@ export function reviewNoneSegments(): ConversationRowSegment[] {
       { text: 'no seat reviewed this run', tone: 'textDim' },
     ]),
   ];
-}
-
-function formatEventContextFit(
-  contextFit: TaskContextFit,
-  estimatedTokens: number | undefined,
-  contextLength: number | undefined,
-): string {
-  if (estimatedTokens === undefined) return `context (${contextFit})`;
-  // A brief over its window runs only with Prompt budget `auto`, where the tool handles its own
-  // context, so the row shows the estimate alone.
-  if (contextFit === 'overflow') return `~${formatUsageTokens(estimatedTokens)} context tokens`;
-  const window = formatContextLength(contextLength);
-  const share = window === '' ? '' : ` of ${window}`;
-  return `~${formatUsageTokens(estimatedTokens)}${share} context tokens (${contextFit})`;
 }
 
 type ValidationStageState = 'passed' | 'failed' | 'exempt' | 'running' | 'skipped' | 'not-run';

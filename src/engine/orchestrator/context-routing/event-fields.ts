@@ -3,25 +3,12 @@ import type { RoutingDecision } from './types.js';
 
 export type RoutingEventFields = Pick<
   RoutingDecision,
-  | 'fit'
-  | 'estimatedTokens'
-  | 'untruncatedEstimatedTokens'
-  | 'contextLength'
-  | 'usedConservativeContextLength'
-  | 'currentCodeTruncated'
-  | 'currentCodeContextMode'
-  | 'reason'
+  'fit' | 'currentCodeTruncated' | 'currentCodeContextMode' | 'reason'
 >;
 
 type RoutingPayloadFields = Pick<
-  Extract<EngineEvent, { type: 'task_started' | 'task_tokens' }>,
-  | 'contextFit'
-  | 'estimatedTokens'
-  | 'untruncatedEstimatedTokens'
-  | 'contextLength'
-  | 'currentCodeTruncated'
-  | 'currentCodeContextMode'
-  | 'routingReason'
+  Extract<EngineEvent, { type: 'task_started' | 'task_settled' }>,
+  'contextFit' | 'currentCodeTruncated' | 'currentCodeContextMode' | 'routingReason'
 >;
 
 export function buildRoutingEventFields(decision: RoutingEventFields | undefined): {
@@ -30,10 +17,6 @@ export function buildRoutingEventFields(decision: RoutingEventFields | undefined
   if (decision === undefined) return {};
   return {
     contextFit: decision.fit,
-    estimatedTokens: decision.estimatedTokens,
-    untruncatedEstimatedTokens: decision.untruncatedEstimatedTokens,
-    ...(decision.contextLength !== undefined &&
-      !decision.usedConservativeContextLength && { contextLength: decision.contextLength }),
     currentCodeTruncated: decision.currentCodeTruncated,
     currentCodeContextMode: decision.currentCodeContextMode,
     routingReason: decision.reason,

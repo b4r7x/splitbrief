@@ -18,7 +18,7 @@ function readyCliTool(): PickerOption {
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
     modelCapability: deriveModelCatalogCapability('optional', false),
-    billing: 'subscription-included',
+
     permissions: {
       directWrite: false,
       network: true,

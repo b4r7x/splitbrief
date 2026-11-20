@@ -45,7 +45,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         opts.onOutput?.('streamed chunk');
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, task.suggestedFiles[0]), 'implementation');
-        return { success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } };
+        return { success: true, output: 'code' };
       }),
     });
 
@@ -80,39 +80,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(taskComplete).toMatchObject({ type: 'task_completed', taskId: 'T001', method: 'local' });
   });
 
-  it('token usage accumulated on state through implementer', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001' });
-    const state = makeImplState([task]);
-
-    const implementer = makeImplementer({
-      implement: vi.fn().mockResolvedValue({
-        success: true,
-        output: 'code',
-        usage: { inputTokens: 500, outputTokens: 200 },
-      }),
-    });
-
-    const { callbacks } = makeCallbacks();
-
-    const result = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig(),
-        callbacks,
-        implementer,
-        bus: makeBusRecorder().bus,
-      }),
-      initialState: state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.state.tokenUsage.implementerInput).toBe(500);
-    expect(result.state.tokenUsage.implementerOutput).toBe(200);
-  });
-
   it('persists per-task breakdowns and re-seeds them on re-entry (F-454)', async () => {
     const { projectDir, sessionId } = setupProject();
     const first = makeTask({ id: 'T001', suggestedFiles: ['src/first.ts'] });
@@ -122,7 +89,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implement: vi.fn().mockResolvedValue({
         success: true,
         output: 'code',
-        usage: { inputTokens: 300, outputTokens: 120 },
       }),
     });
     const { callbacks } = makeCallbacks();
@@ -171,7 +137,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implement: vi.fn().mockImplementation(async () => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, task.suggestedFiles[0]), 'implementation');
-        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'code' };
       }),
     });
 
@@ -204,7 +170,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implement: vi.fn().mockResolvedValue({
         success: true,
         output: 'code',
-        usage: { inputTokens: 10, outputTokens: 5 },
       }),
     });
     const { callbacks } = makeCallbacks();
@@ -254,7 +219,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           });
           seen.push({ index: persisted.currentTaskIndex, cut: stopped.interruptedStep?.step });
         }
-        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'code' };
       }),
     });
 

@@ -99,8 +99,7 @@ function briefBreakdown(count: number): NonNullable<Summary['taskBreakdown']> {
       taskId: taskId(id),
       taskTitle: `Task ${id}`,
       method: 'local' as const,
-      implementerTokens: 10,
-      escalationTokens: 0,
+
       retryCount: 0,
     };
   });
@@ -424,8 +423,7 @@ describe('the workflow screen showing a closed run', () => {
             taskId: taskId('T001'),
             taskTitle: 'Local task',
             method: 'local',
-            implementerTokens: 100,
-            escalationTokens: 0,
+
             retryCount: 0,
             tool: 'ollama',
             model: 'qwen-small',
@@ -435,8 +433,7 @@ describe('the workflow screen showing a closed run', () => {
             taskId: taskId('T002'),
             taskTitle: 'Cloud task',
             method: 'local',
-            implementerTokens: 100,
-            escalationTokens: 0,
+
             retryCount: 0,
             tool: 'custom-endpoint',
             model: 'remote-coder',
@@ -498,16 +495,6 @@ describe('the workflow screen showing a closed run', () => {
         completedByLocal: 0,
         plannerTool: 'opencode',
         implementerTool: 'opencode',
-        costBreakdown: {
-          actualPlannerCost: 0,
-          actualImplementerCost: 0,
-          totalActualCost: 0,
-          hasPricedUsage: false,
-          hasUnpricedUsage: true,
-          isActualPlannerCostKnown: false,
-          isActualImplementerCostKnown: false,
-          isTotalActualCostKnown: false,
-        },
       }),
       as: 'ended',
     });
@@ -528,17 +515,7 @@ describe('the workflow screen showing a closed run', () => {
 
   it('states no spend for a priced run, and nothing that used to sit beside it', () => {
     showClosedRun({
-      summary: makeSummary({
-        costBreakdown: {
-          actualPlannerCost: 0.05,
-          actualImplementerCost: 0.1,
-          totalActualCost: 0.15,
-          hasPricedUsage: true,
-          isActualPlannerCostKnown: true,
-          isActualImplementerCostKnown: true,
-          isTotalActualCostKnown: true,
-        },
-      }),
+      summary: makeSummary({}),
     });
 
     const ui = mount(160, 40);
@@ -552,37 +529,6 @@ describe('the workflow screen showing a closed run', () => {
     expect(frame).not.toContain('saved');
 
     ui.unmount();
-  });
-
-  it('reads the same with the spend display turned off as with it on', () => {
-    const pricedCrew = {
-      costBreakdown: {
-        actualPlannerCost: 0.05,
-        actualImplementerCost: 0.1,
-        totalActualCost: 0.15,
-        hasPricedUsage: true,
-        isActualPlannerCostKnown: true,
-        isActualImplementerCostKnown: true,
-        isTotalActualCostKnown: true,
-      },
-    } as const;
-
-    showClosedRun({ summary: makeSummary(pricedCrew) });
-    const shown = mount(160, 40);
-    const withSpendOn = stripAnsiStyles(shown.lastFrame() ?? '');
-    shown.unmount();
-
-    resetAllStores();
-    configStore.__testReset({ config: makeConfig({ workflow: { showSpend: false } }) });
-    showClosedRun({ summary: makeSummary(pricedCrew) });
-    const hidden = mount(160, 40);
-    const withSpendOff = stripAnsiStyles(hidden.lastFrame() ?? '');
-    hidden.unmount();
-
-    // No screen reads the setting, so the closed block paints the same frame either way.
-    expect(withSpendOff).toBe(withSpendOn);
-    expect(withoutTextLead(withSpendOff)).not.toMatch(/^Cost/m);
-    expect(withSpendOff).not.toContain('$0.15');
   });
 
   it('names no mode, neither the one the summary recorded nor the live config', () => {

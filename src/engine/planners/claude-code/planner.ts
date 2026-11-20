@@ -9,7 +9,6 @@ import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import { createCommandExistsAvailability } from '../../availability.js';
 import { invokeClaudePlanner } from './invoke.js';
 import { typedRunnerCallErrorCode } from '../../implementers/pipeline/call-result.js';
-import { runnerCallTokenDelta } from '../../calls/usage/normalize.js';
 import { resolveCliModel } from '../../../core/providers/automatic-model.js';
 import {
   createSessionResumeState,
@@ -247,7 +246,7 @@ export function createClaudeCodePlanner(opts: ClaudeCodePlannerOptions): Planner
         }
         session.capture(returnedSessionId);
         callbackBuffer.flush();
-        return { status: 'delivered', usage: runnerCallTokenDelta(result.usage) };
+        return { status: 'delivered' };
       } catch (caught) {
         const err =
           mismatchedId !== undefined ? sessionResumeMismatchError(sessionId, mismatchedId) : caught;

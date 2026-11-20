@@ -73,7 +73,7 @@ describe('API planning wire budgets', () => {
         requiredOutputTokens: 2_048,
         outputCap: 1_024,
         budgetSource: 'observed-active',
-        omittedRequestOptions: ['temperature', 'stream_options.include_usage'],
+        omittedRequestOptions: ['temperature'],
       });
       if (!(failure instanceof Error)) throw new Error('expected typed refusal');
       expect(failure.message).not.toMatch(/\d/);

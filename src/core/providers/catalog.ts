@@ -19,7 +19,6 @@ export interface ProviderInfo {
   locality?: 'local' | 'remote';
   baseURL?: string;
   isLocal?: boolean;
-  isSubscription?: boolean;
   apiKeyEnv?: string;
 }
 
@@ -52,7 +51,6 @@ function providerInfoFromCliDescriptor(descriptor: CliToolDescriptor): ProviderI
     id: descriptor.id,
     displayName: descriptor.displayName,
     category: descriptor.category,
-    ...(descriptor.isSubscription ? { isSubscription: true } : {}),
   });
 }
 
@@ -147,14 +145,6 @@ export function getRunnerIdentityDisplayName(kind: RunnerKind | undefined, id: s
 }
 
 /**
- * The kind-qualified identity one recorded runner is keyed by, so `api:opencode`
- * and `cli:opencode` are two runners and never one.
- */
-export function runnerIdentityKey(kind: RunnerKind, id: string): string {
-  return `${kind}:${id}`;
-}
-
-/**
  * Reads a key back. A name that carries no kind prefix — including a custom
  * name that itself contains a colon — is a legacy name-only identity.
  */
@@ -170,16 +160,6 @@ export function parseRunnerIdentityKey(key: string): { kind: RunnerKind | undefi
 export function getProviderBaseURL(id: string): string {
   if (!isProviderId(id)) return '';
   return providerInfo(id).baseURL ?? '';
-}
-
-export function isProviderLocal(id: string): boolean {
-  if (!isProviderId(id)) return false;
-  return Boolean(providerInfo(id).isLocal);
-}
-
-export function isProviderSubscription(id: string): boolean {
-  if (!isProviderId(id)) return false;
-  return Boolean(providerInfo(id).isSubscription);
 }
 
 function getProviderApiKeyEnv(id: string): string | undefined {

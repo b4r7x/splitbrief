@@ -1,3 +1,4 @@
+import { narrowRecord } from '../../../utils/type-guards.js';
 import { existsSync } from 'node:fs';
 import { getSplitbriefPath } from '../../../core/paths.js';
 import type { CliToolId } from '../../../core/runners/cli-tool/types.js';
@@ -19,7 +20,41 @@ import {
 } from './schema.js';
 
 function parseCache(value: unknown): DetectionCache | null {
-  const result = DetectionCacheSchema.safeParse(value);
+  const cache = narrowRecord(value);
+  const entriesWithoutPrices = (entries: unknown): unknown =>
+    Array.isArray(entries)
+      ? entries.map((value: unknown) => {
+          const entry = narrowRecord(value);
+          if (entry === null || !Array.isArray(entry.models)) return value;
+          return {
+            ...entry,
+            models: entry.models.map((value: unknown) => {
+              const model = narrowRecord(value);
+              if (model === null) return value;
+              const {
+                isFree: _isFree,
+                pricingInput: _input,
+                pricingOutput: _output,
+                pricingCacheRead: _read,
+                pricingCacheWrite: _write,
+                pricingTiers: _tiers,
+                pricingProvenance: _provenance,
+                ...identity
+              } = model;
+              return identity;
+            }),
+          };
+        })
+      : entries;
+  const projected =
+    cache === null
+      ? value
+      : {
+          ...cache,
+          providers: entriesWithoutPrices(cache.providers),
+          cliCatalogs: entriesWithoutPrices(cache.cliCatalogs),
+        };
+  const result = DetectionCacheSchema.safeParse(projected);
   return result.success ? result.data : null;
 }
 

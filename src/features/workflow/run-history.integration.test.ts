@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   makeRunnerCallStarted,
@@ -41,7 +41,7 @@ import { eventsStore } from '../../stores/workflow/events/state.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { selectRunningBrief } from '../../core/run-view/briefs.js';
-import { tokensStore } from '../../stores/workflow/tokens/state.js';
+
 import { operationsStore } from '../../stores/workflow/operations/state.js';
 import { hydrateRun, readRunHistory } from './run-history.js';
 
@@ -86,7 +86,7 @@ function savedState(): WorkflowState {
     ],
     plannerSessionId: null,
     startedAt: new Date(1_000).toISOString(),
-    tokenUsage: makeUsage({ plannerInput: 400, plannerOutput: 100 }),
+
     plannerTool: 'claude-code',
     implementerTool: 'ollama',
     awaitingContinue: false,
@@ -818,7 +818,7 @@ describe('hydrateRun', () => {
 
     expect(runViewStore.get().briefs.totalTasks).toBe(2);
     expect(runViewStore.get().briefs.taskMap.get('T002')?.status).toBe('pending');
-    expect(tokensStore.get().tokenUsage?.plannerInput).toBe(400);
+
     expect(lifecycleStore.get().status).toBe('paused');
   });
 
@@ -926,7 +926,6 @@ describe('hydrateRun', () => {
     expect(runViewStore.get().briefs.totalTasks).toBe(2);
     expect(runViewStore.get().briefs.taskMap.get('T001')?.status).toBe('done');
     expect(runViewStore.get().briefs.taskMap.get('T002')).toBeUndefined();
-    expect(tokensStore.get().tokenUsage).toBeNull();
   });
 });
 
@@ -1144,7 +1143,7 @@ describe('readRunHistory', () => {
   it('reads without touching a store, and the run lands only when it is published', async () => {
     addEvent({ type: 'workflow_started', ts: 500, phase: 'planning', feature: 'the other run' });
     writeLog(RUN);
-    const stores = [eventsStore, runViewStore, lifecycleStore, tokensStore];
+    const stores = [eventsStore, runViewStore, lifecycleStore];
     const before = stores.map((store) => store.get());
 
     const publish = await readRunHistory(
@@ -1164,7 +1163,7 @@ describe('readRunHistory', () => {
     expect(texts).not.toContain('the other run');
     expect(texts).toContain('replay me');
     expect(runViewStore.get().briefs.totalTasks).toBe(2);
-    expect(tokensStore.get().tokenUsage?.plannerInput).toBe(400);
+
     expect(lifecycleStore.get().status).toBe('paused');
   });
 });

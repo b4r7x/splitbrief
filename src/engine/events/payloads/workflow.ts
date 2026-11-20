@@ -5,7 +5,6 @@ import {
   WorkflowModeSchema,
 } from '../../../core/schemas/enums.js';
 import { StepCutSchema, StepRefSchema } from '../../../core/schemas/run-step.js';
-import { TokenUsageSchema } from '../../../core/schemas/tokens.js';
 import { WORKFLOW_CANCEL_REASONS } from '../workflow-cancel.js';
 import { noPhaseEvent, phaseEvent, stringArray } from './fields.js';
 
@@ -112,7 +111,6 @@ export const WorkflowEventSchemas = [
     factors: stringArray,
     missing: stringArray,
   }),
-  phaseEvent('cost_update').extend({ tokenUsage: TokenUsageSchema }),
   phaseEvent('workspace_closed'),
   phaseEvent('replay_started').extend({
     totalEvents: z.number(),

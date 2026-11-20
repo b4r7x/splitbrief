@@ -334,30 +334,7 @@ describe('Kilo Code planner JSON adapter', () => {
       { type: 'session', nativeSessionId: 'ses-kilo' },
       { type: 'text', channel: 'assistant', text: 'plan' },
     ]);
-    expect(
-      kiloPlannerProtocolEvents(
-        JSON.stringify({
-          type: 'step_finish',
-          sessionID: 'ses-kilo',
-          part: { type: 'step-finish', tokens: { input: 5, output: 2, reasoning: 1 } },
-        }),
-      ),
-    ).toContainEqual({
-      type: 'usage',
-      usage: {
-        inputTokens: 5,
-        outputTokens: 2,
-        reasoningTokens: 1,
-        counterCoverage: {
-          input: 'reported',
-          output: 'reported',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'reported',
-        },
-      },
-      semantics: 'delta',
-    });
+
     expect(
       kiloPlannerProtocolEvents(
         JSON.stringify({
@@ -422,7 +399,6 @@ describe('Kilo Code implementer JSON adapter', () => {
       output: expect.stringContaining('This is a throwaway probe repository for kilo.'),
     });
     expect(captured).toContainEqual({ type: 'text', channel: 'assistant', text: 'OK' });
-    expect(captured.filter((event) => event.type === 'usage')).toHaveLength(2);
     expect(captured.some((event) => event.type === 'warning')).toBe(false);
     expect(kiloImplementerProtocolEvents('plain text line')).toEqual([
       expect.objectContaining({ type: 'warning', code: 'malformed_opencode' }),
@@ -474,18 +450,7 @@ describe('Kilo Code terminal outcomes', () => {
       type: 'result',
       status: 'completed',
       text: 'final plan',
-      usage: {
-        inputTokens: 5,
-        outputTokens: 3,
-        reasoningTokens: 1,
-        counterCoverage: {
-          input: 'reported',
-          output: 'reported',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'reported',
-        },
-      },
+
       nativeSessionId: 'ses-final',
       error: null,
       partial: false,
@@ -526,17 +491,7 @@ describe('Kilo Code terminal outcomes', () => {
         type: 'result',
         status: 'failed',
         text: '',
-        usage: {
-          inputTokens: 7,
-          outputTokens: 2,
-          counterCoverage: {
-            input: 'reported',
-            output: 'reported',
-            cacheRead: 'missing',
-            cacheCreate: 'missing',
-            reasoning: 'missing',
-          },
-        },
+
         nativeSessionId: 'ses-kilo',
         error: { code: 'kilo-code-error', message: 'APIError: Upstream stream ended' },
         partial: true,
@@ -554,7 +509,7 @@ describe('Kilo Code terminal outcomes', () => {
       type: 'result' as const,
       status: 'aborted' as const,
       text: '',
-      usage: null,
+
       nativeSessionId: null,
       error: { code: 'user-abort', message: 'Kilo Code invocation was aborted' },
       partial: true,

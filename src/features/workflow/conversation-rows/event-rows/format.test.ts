@@ -202,7 +202,10 @@ describe('reviewNoneSegments', () => {
 });
 
 function taskStartedEvent(
-  overrides: Partial<Extract<EngineEvent, { type: 'task_started' }>>,
+  overrides: Partial<Extract<EngineEvent, { type: 'task_started' }>> & {
+    estimatedTokens?: number;
+    contextLength?: number;
+  },
 ): Extract<EngineEvent, { type: 'task_started' }> {
   return {
     type: 'task_started',
@@ -341,7 +344,7 @@ describe('formatTaskStartedParts', () => {
     }
   });
 
-  it('gives a tight brief its estimate against the context window', () => {
+  it('keeps the file and seat on a tight brief row without the token count', () => {
     const parts = taskStartedPartTexts(
       taskStartedEvent({
         implementerProfile: 'default',
@@ -352,34 +355,6 @@ describe('formatTaskStartedParts', () => {
       }),
     );
 
-    expect(parts).toEqual([
-      'src/validate.ts (create)',
-      'Claude Code CLI · Opus 5.5',
-      '~24,310 of 32K context tokens (tight)',
-    ]);
-  });
-
-  it('shows only the estimate for a brief over its window', () => {
-    const parts = taskStartedPartTexts(
-      taskStartedEvent({ contextFit: 'overflow', estimatedTokens: 31_012, contextLength: 32_768 }),
-    );
-
-    expect(parts).toEqual([
-      'src/validate.ts (create)',
-      'Claude Code CLI · Opus 5.5',
-      '~31,012 context tokens',
-    ]);
-  });
-
-  it('keeps the estimate when the context window is unknown', () => {
-    const parts = taskStartedPartTexts(
-      taskStartedEvent({ contextFit: 'tight', estimatedTokens: 41_200 }),
-    );
-
-    expect(parts).toEqual([
-      'src/validate.ts (create)',
-      'Claude Code CLI · Opus 5.5',
-      '~41,200 context tokens (tight)',
-    ]);
+    expect(parts).toEqual(['src/validate.ts (create)', 'Claude Code CLI · Opus 5.5']);
   });
 });

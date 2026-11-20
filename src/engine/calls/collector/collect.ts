@@ -11,7 +11,6 @@ import { isRunnerCallTerminalEvent } from '../status.js';
 import { contributesToResultText } from '../result-text.js';
 import type { RunnerCallEvent, RunnerCallResult } from '../types.js';
 import { unknownUpstreamWarningInput } from '../unknown-upstream.js';
-import { applyRunnerCallUsageSample } from '../usage/accumulate.js';
 import { eventContext, assertSameCall } from './identity.js';
 import {
   type RunnerCallCollectionState,
@@ -28,7 +27,6 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
     endedAt: null,
     durationMs: null,
     text: '',
-    usage: null,
     nativeSessionId: null,
     toolUses: [],
     warnings: [],
@@ -97,15 +95,11 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
       invocationIdentity: state.context.invocationIdentity,
     }),
     ...(state.context.taskId !== undefined && { taskId: state.context.taskId }),
-    ...(state.context.usageBoundary !== undefined && {
-      usageBoundary: state.context.usageBoundary,
-    }),
     status,
     startedAt,
     endedAt,
     durationMs,
     text: state.text,
-    usage: state.usage,
     nativeSessionId: state.nativeSessionId,
     toolUses: state.toolUses,
     warnings: state.warnings,
@@ -155,12 +149,6 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
         if (bounded.limit !== null) noteLimit(state, bounded.limit);
       }
       return;
-    case 'call_usage':
-      state.usage = applyRunnerCallUsageSample(state.usage, {
-        semantics: event.semantics,
-        usage: event.usage,
-      });
-      return;
     case 'call_session_id':
       state.nativeSessionId = event.nativeSessionId;
       return;
@@ -175,12 +163,6 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       state.endedAt = event.endedAt;
       state.durationMs = event.durationMs;
       if (state.startedAt === null) state.startedAt = event.startedAt;
-      if (event.usage !== null) {
-        state.usage = applyRunnerCallUsageSample(state.usage, {
-          semantics: 'final',
-          usage: event.usage,
-        });
-      }
       state.nativeSessionId = event.nativeSessionId;
       return;
     case 'call_completed':
@@ -190,12 +172,6 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       state.endedAt = event.endedAt;
       state.durationMs = event.durationMs;
       if (state.startedAt === null) state.startedAt = event.startedAt;
-      if (event.usage !== null) {
-        state.usage = applyRunnerCallUsageSample(state.usage, {
-          semantics: 'final',
-          usage: event.usage,
-        });
-      }
       state.nativeSessionId = event.nativeSessionId;
       state.structured = event.structured;
       return;

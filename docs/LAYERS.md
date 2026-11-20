@@ -130,7 +130,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 - `core/runtime/commands/` — runtime command definitions (pure data + handlers; see also `core/keybindings/`)
 - `core/providers/` — provider catalog, known-models, model-selection logic
 - `core/hooks/` — workflow hook trust grant + sha256 config/file digest
-- `core/tokens/` — pure token accounting helpers used by planner and API calls
+- `core/tokens/` — estimates used for prompt sizing
 - `core/pipeline-spec/` — the typed pipeline contract: retry ladder, test check narrowing rule, capture limits, halt signatures, brief body order and the brief grouping rule, scope and baseline rules, timeouts. Pure data read by the engine and rendered into `skills/` by `scripts/skill-blocks.ts`
 - `core/scope/` — the one matcher that decides whether a changed path is inside a brief's declared set
 - `core/validation/stacks/` — the five validation stacks (TypeScript, JavaScript, Python, Go, Rust) and their registry: markers, the test command a planner `test` check runs, test patterns, narrowing, allowed commands
@@ -161,7 +161,7 @@ export async function diffTaskResult(taskId: TaskId) { ... }
 - `engine/planners/reviewer.ts` — the reviewer port
 - `engine/runners/` — the runner factory, CLI tool adapters, execution preparation and the runner sandbox environment
 - `engine/calls/` — normalized runner-call events and results
-- `engine/providers/` — HTTP clients, pricing, streaming
+- `engine/providers/` — HTTP clients and streaming
 - `engine/snapshots/` — content-addressed run snapshots
 - `engine/spec/` — plan checks, plan rendering, prompt templates
 - `engine/parsers/` — response parsers (code extraction, scope extraction, final-review verdict)

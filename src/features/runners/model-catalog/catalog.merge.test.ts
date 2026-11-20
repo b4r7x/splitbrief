@@ -32,7 +32,7 @@ function tool(
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
     modelCapability: deriveModelCatalogCapability('optional', input.automatic ?? false),
-    billing: 'subscription-included',
+
     permissions: {
       directWrite: false,
       network: true,

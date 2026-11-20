@@ -9,7 +9,7 @@ import { runViewStore } from '../run-view.js';
 import { operationsStore } from '../operations/state.js';
 import { selectRunningBrief } from '../../../core/run-view/briefs.js';
 import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
-import { tokensStore } from '../tokens/state.js';
+
 import { stopStore } from '../stop.js';
 import { parseEngineEvent } from '../../../engine/events/schema.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -25,7 +25,6 @@ function event(candidate: Record<string, unknown>): EngineEvent {
 function snapshot(): Record<string, unknown> {
   return {
     events: eventsStore.get().events,
-    tokens: tokensStore.get(),
     lifecycle: lifecycleStore.get(),
     operations: operationsStore.get(),
     runView: runViewStore.get(),
@@ -93,28 +92,12 @@ function mixedFixture(): EngineEvent[] {
           stages: { typecheck: false, lint: false, test: false },
         }),
         event({
-          type: 'cost_update',
-          ts: ts++,
-          phase: 'implementing',
-          tokenUsage: {
-            plannerInput: attempt,
-            plannerOutput: attempt,
-            implementerInput: attempt,
-            implementerOutput: attempt,
-            escalationInput: 0,
-            escalationOutput: 0,
-            reviewerInput: 0,
-            reviewerOutput: 0,
-          },
-        }),
-        event({
-          type: 'task_tokens',
+          type: 'task_settled',
           ts: ts++,
           phase: 'implementing',
           taskId: id,
           method: 'local',
-          implementerTokens: 100 + attempt,
-          escalationTokens: 0,
+
           retryCount: attempt,
         }),
         event({
@@ -429,13 +412,12 @@ describe('loadEvents', () => {
         action: 'create',
       }),
       event({
-        type: 'task_tokens',
+        type: 'task_settled',
         ts: TS + 3,
         phase: 'implementing',
         taskId: 'T009',
         method: 'local',
-        implementerTokens: 7,
-        escalationTokens: 0,
+
         retryCount: 0,
       }),
     ]);
@@ -443,8 +425,7 @@ describe('loadEvents', () => {
     expect(snapshot()).not.toEqual(afterFirst);
     expect(runViewStore.get().briefs.tasks.map((task) => task.id)).toEqual(['T009']);
     expect(runViewStore.get().briefs.totalTasks).toBe(1);
-    expect(Object.keys(tokensStore.get().perTask)).toEqual(['T009']);
-    expect(tokensStore.get().tokenUsage).toBeNull();
+
     expect(runViewStore.get().phaseFirstSeen).toEqual({
       researching: TS + 1,
       implementing: TS + 2,

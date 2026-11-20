@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import type { WorkflowContext } from '../types.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishTaskValidating } from '../publish/task.js';
@@ -15,7 +15,7 @@ import { recordSteerCorrection } from '../queue/build-corrections.js';
 import { runPreTaskHooksAndPublish } from './start.js';
 import { runImplementationStep } from './implementation-result.js';
 import { runBriefGate } from './gates/brief.js';
-import { recordSettledTaskUsage } from './record-usage.js';
+import { recordSettledBrief } from './record-settlement.js';
 
 type RunSingleTaskOptions = {
   wctx: WorkflowContext;
@@ -24,7 +24,7 @@ type RunSingleTaskOptions = {
   index: number;
   totalTasks: number;
   state: WorkflowState;
-  taskBreakdowns: TaskTokenUsage[];
+  taskBreakdowns: BriefExecution[];
   setTrackedState: (s: WorkflowState) => void;
   setCurrentTask: (t: Pick<Task, 'suggestedFiles' | 'action'> | undefined) => void;
   onTaskStartSnapshot?:
@@ -103,7 +103,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   state = transitionAndSave(wctx, state, { type: 'RECORD_DISPATCH', taskId: task.id });
   setTrackedState(state);
 
-  const tokensBefore = { ...state.tokenUsage };
   if (wctx.signal?.aborted) return state;
 
   // A brief parked at its consult runs that consult again, on the files its ended attempt left: it
@@ -122,7 +121,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       unfinishedCalls: parked.question.unfinishedCalls,
       state,
       taskStartSnapshot,
-      tokensBefore,
       taskBreakdowns,
       setTrackedState,
     });
@@ -134,7 +132,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     task,
     state,
     taskStartSnapshot,
-    tokensBefore,
     taskBreakdowns,
     setTrackedState,
   });
@@ -188,7 +185,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   }
   state = gated.state;
   if (gated.stop === 'skipped') {
-    recordSettledTaskUsage({ wctx, state, task, tokensBefore, taskBreakdowns, method: 'skipped' });
+    recordSettledBrief({ wctx, state, task, taskBreakdowns, method: 'skipped' });
   }
   if (gated.stop !== undefined) return state;
   const { acceptance } = gated;
@@ -202,7 +199,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       acceptance,
       taskChangedFiles,
       applyResult: implState.implResult.applyResult,
-      tokensBefore,
       taskBreakdowns,
       setTrackedState,
       onTaskAcceptedFiles: opts.onTaskAcceptedFiles,
@@ -223,7 +219,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     ...(gated.correction && { initialAnswer: gated.error }),
     state,
     taskStartSnapshot,
-    tokensBefore,
     taskBreakdowns,
     setTrackedState,
     initialChangedFiles: taskChangedFiles,

@@ -56,7 +56,6 @@ describe('deriveCrewSeats', () => {
     expect(review.runner).toEqual(config.reviewer);
     expect(review.model).toContain('OpenAI Codex CLI');
     expect(review.model).toContain('GPT-5 Codex');
-    expect(review.posture).toBe('unknown');
   });
 
   it('resolves the build seat from the default implementer profile', () => {
@@ -65,7 +64,6 @@ describe('deriveCrewSeats', () => {
     expect(build.runner.kind).toBe('api');
     expect(build.model).toContain('Ollama');
     expect(build.model).toContain('Qwen2.5 Coder 7B');
-    expect(build.posture).toBe('local');
   });
 
   it('keeps the YAML-only escalation config out of the build seat', () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { addEvent } from './event.js';
 import { resetWorkflow } from './reset.js';
 import { eventsStore } from '../events/state.js';
-import { tokensStore } from '../tokens/state.js';
+
 import { lifecycleStore } from '../lifecycle/state.js';
 import { runViewStore } from '../run-view.js';
 import { stopStore } from '../stop.js';
@@ -70,7 +70,6 @@ describe('resetWorkflow', () => {
     expect(eventsStore.get().events).toEqual([]);
     expect(runViewStore.get().briefs.currentTask).toBe(0);
     expect(runViewStore.get().briefs.totalTasks).toBe(0);
-    expect(tokensStore.get().perTask).toEqual({});
     expect(runViewStore.get().phase).toBe('idle');
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);

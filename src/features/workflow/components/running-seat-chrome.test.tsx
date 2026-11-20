@@ -40,7 +40,7 @@ function makeActiveOp(overrides: Partial<ActiveOperation> = {}): ActiveOperation
     durationMs: null,
     partial: false,
     reason: null,
-    usage: null,
+
     warnings: [],
     runnerName: 'codex',
     model: 'gpt-5-codex',
@@ -272,7 +272,7 @@ function buildCall(type: string, callId: string, ts: number, extra: object = {})
       startedAt: ts - 100,
       endedAt: ts,
       durationMs: 100,
-      usage: null,
+
       nativeSessionId: null,
     }),
     ...extra,

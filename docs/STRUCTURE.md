@@ -246,7 +246,7 @@ Three `testing/integration/` subfolders align with the three stable seams: comma
 
 **Companion rules:**
 
-- **Pure helpers get colocated tests.** `keyboard.ts`, `layout.ts`, `core/state/machine.ts`, parsers, pricing math — inputs → outputs, zero I/O.
+- **Pure helpers get colocated tests.** `keyboard.ts`, `layout.ts`, `core/state/machine.ts`, parsers — inputs → outputs, zero I/O.
 - **Ink tested at behavior seams.** Page entries (`app/screens/<x>.tsx`, `app/overlays/<x>.tsx`) and behavior-heavy feature sub-components get tests. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`) and the runner feature's `TwoColumnPicker` earn dedicated tests because their cost amortises across consumers.
 - **Engine tested by blast radius.** Pure decision modules and narrow orchestrator control-flow modules get colocated units; cross-module workflow behavior is covered through integration tests at the `runWorkflow()` seam with fakes from `testing/helpers/`.
 - **Trivial hooks (≤30 LOC, no branching) do not need tests.** Covered through the component that uses them. See [`HOOKS.md`](./HOOKS.md).

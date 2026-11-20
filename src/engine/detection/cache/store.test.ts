@@ -107,6 +107,25 @@ describe('detection cache', () => {
     ).resolves.toBeNull();
   });
 
+  it('loads a saved catalog whose model rows include the old free-price flag', async () => {
+    const model = { id: 'claude-sonnet-4', displayName: 'Claude Sonnet 4', contextLength: 200_000 };
+    await writeFile(
+      join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'),
+      JSON.stringify({
+        version: DETECTION_CACHE_VERSION,
+        ...cacheSnapshot(),
+        cliCatalogs: [{ tool: 'claude-code', models: [{ ...model, isFree: false }], probedAt: 1 }],
+      }),
+    );
+
+    const loaded = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+
+    expect(loaded?.cliCatalogs).toMatchObject([{ tool: 'claude-code', models: [model] }]);
+  });
+
   it('warns and writes nothing when the snapshot fails schema validation', async () => {
     enableDebugLog(tempDir);
     // ':' is outside the accepted context-key alphabet.
@@ -213,8 +232,7 @@ describe('detection cache', () => {
                 id: 'deepseek/deepseek-chat',
                 contextLength: 131_072,
                 releaseDate: '2025-11-01',
-                pricingInput: 3,
-                pricingOutput: 12,
+
                 nativeHidden: false,
                 displayName: 'DeepSeek Chat',
               },

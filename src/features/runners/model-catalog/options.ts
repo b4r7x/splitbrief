@@ -24,7 +24,6 @@ import {
   type ActiveRunnerRole,
   type SeatPickerRole,
 } from '../../../core/runners/seat-roles.js';
-import type { RunnerBillingPosture } from '../../../core/runners/billing.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ImplementerConfig } from '../../../core/schemas/runner/implementer.js';
 import type { PlannerConfig } from '../../../core/schemas/runner/planner.js';
@@ -58,7 +57,6 @@ interface PickerOptionBase {
   roles: readonly RunnerRole[];
   modelPolicy: PickerModelPolicy;
   modelCapability: ModelCatalogCapability;
-  billing: RunnerBillingPosture;
   dataUse?: DataUsePosture;
   permissions: RunnerPermissionPosture;
   status: PickerOptionStatus;
@@ -123,7 +121,6 @@ export function configuredCommandOption(
     roles: ['planner', 'implementer'],
     modelPolicy: 'none',
     modelCapability: deriveModelCatalogCapability('none'),
-    billing: 'unknown',
     permissions: trustPermissions(runner.kind, runnerRoleForActiveRole(role)),
     status: { state: 'ready', remediation: null },
     available: false,
@@ -139,7 +136,6 @@ export function noFallbackOption(input: Readonly<{ isCurrent: boolean }>): NoFal
     roles: ['planner', 'implementer'],
     modelPolicy: 'none',
     modelCapability: deriveModelCatalogCapability('none'),
-    billing: 'unknown',
     permissions: trustPermissions('shell', 'planner'),
     status: { state: 'ready', remediation: null },
     available: true,
@@ -155,7 +151,6 @@ export function reviewNoneOption(input: Readonly<{ isCurrent: boolean }>): Revie
     roles: ['planner'],
     modelPolicy: 'none',
     modelCapability: deriveModelCatalogCapability('none'),
-    billing: 'unknown',
     permissions: trustPermissions('shell', 'planner'),
     status: { state: 'ready', remediation: null },
     available: true,
@@ -164,7 +159,7 @@ export function reviewNoneOption(input: Readonly<{ isCurrent: boolean }>): Revie
 }
 
 /**
- * The inherit row borrows the planner's posture because that is what the seat
+ * The inherit row uses the planner's permissions because that is what the seat
  * will actually run, but never its model axis or its readiness: clearing the
  * `reviewer` block is an edit that always succeeds.
  */
@@ -180,7 +175,6 @@ export function inheritPlannerOption(
     roles: command ? ['planner'] : planner.roles,
     modelPolicy: 'none',
     modelCapability: deriveModelCatalogCapability('none'),
-    billing: command ? 'unknown' : planner.billing,
     permissions: command ? trustPermissions(planner, 'planner') : planner.permissions,
     status: { state: 'ready', remediation: null },
     available: true,
@@ -225,8 +219,6 @@ function projectCliOption(
     roles: descriptor.roles,
     modelPolicy: descriptor.modelPolicy[policyRole],
     modelCapability: deriveModelCatalogCapability(descriptor.modelPolicy[policyRole], true),
-    // A tool's calls bill to whatever its own login uses, which no list can prove.
-    billing: 'unknown',
     permissions: cliPermissions(descriptor, policyRole),
     status,
     available: isSelectable(status),
@@ -255,7 +247,6 @@ function projectApiOption(
       'per-call',
       hasAutomaticModelDefault(descriptor.id),
     ),
-    billing: descriptor.billing,
     dataUse: descriptor.dataUse,
     permissions: trustPermissions('api', runnerRoleForActiveRole(role)),
     status,
@@ -266,7 +257,6 @@ function projectApiOption(
 
 function projectCommandLauncher(role: ActiveRunnerRole): CustomCommandLauncherOption {
   // The launcher runs whatever command the user types: it names no model and
-  // its billing belongs to whatever that command calls.
   const status: PickerOptionStatus = { state: 'ready', remediation: null };
 
   return {
@@ -276,7 +266,6 @@ function projectCommandLauncher(role: ActiveRunnerRole): CustomCommandLauncherOp
     roles: ['planner', 'implementer'] satisfies readonly RunnerRole[],
     modelPolicy: 'none',
     modelCapability: deriveModelCatalogCapability('none', false),
-    billing: 'unknown',
     permissions: trustPermissions('shell', runnerRoleForActiveRole(role)),
     status,
     available: true,

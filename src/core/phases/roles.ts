@@ -8,33 +8,8 @@ const IMPLEMENTER_PHASES: ReadonlySet<Phase> = new Set([
   'escalating',
 ]);
 
-const PLANNER_TOKEN_PHASES: ReadonlySet<Phase> = new Set([
-  'planning',
-  'researching',
-  'specifying',
-  'reviewing-spec',
-  'clarifying',
-  'constitution-check',
-  'reviewing-plan',
-  'reviewing-briefs',
-  'analyzing',
-]);
-
-const IMPLEMENTER_TOKEN_PHASES: ReadonlySet<Phase> = new Set([
-  'implementing',
-  'validating-task',
-  'escalating',
-  'final-review',
-]);
-
 export function phaseRole(phase: Phase): PhaseRole {
   return IMPLEMENTER_PHASES.has(phase) ? 'implementer' : 'planner';
-}
-
-export function phaseTokenRole(phase: Phase): PhaseRole | null {
-  if (PLANNER_TOKEN_PHASES.has(phase)) return 'planner';
-  if (IMPLEMENTER_TOKEN_PHASES.has(phase)) return 'implementer';
-  return null;
 }
 
 const LIVE_PHASES: ReadonlySet<Phase> = new Set<Phase>([

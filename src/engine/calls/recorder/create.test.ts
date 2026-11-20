@@ -102,11 +102,7 @@ describe('createRunnerCallRecorder', () => {
     });
 
     recorder.text({ channel: 'assistant', text: 'partial', ts: 12 });
-    recorder.usage({
-      usage: { inputTokens: 3, outputTokens: 2 },
-      semantics: 'final',
-      ts: 13,
-    });
+
     const failed = recorder.finishFailed({
       status: 'truncated',
       error: { code: 'max_tokens', message: 'output limit reached' },
@@ -121,7 +117,7 @@ describe('createRunnerCallRecorder', () => {
       durationMs: 10,
       text: 'partial',
       partial: true,
-      usage: { inputTokens: 3, outputTokens: 2 },
+
       error: { code: 'max_tokens', message: 'output limit reached' },
     });
     expect(duplicate).toEqual(failed);
@@ -163,7 +159,6 @@ describe('createRunnerCallRecorder', () => {
     });
     recorder.text({ channel: 'assistant', text: 'late text', ts: 11 });
     recorder.warning({ warning: { code: 'late', message: 'late warning' }, ts: 12 });
-    recorder.usage({ usage: { inputTokens: 1, outputTokens: 1 }, semantics: 'final', ts: 13 });
 
     expect(events.map((event) => event.type)).toEqual(['call_started', 'call_error']);
   });

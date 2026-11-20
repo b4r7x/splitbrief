@@ -394,7 +394,7 @@ describe('a seat whose account the provider refuses', () => {
     [
       'billing',
       'plan',
-      "Billing refused by deepseek (OpenCode CLI). Fix the account's billing or change the PLAN tool, then continue.",
+      'Account issue with deepseek (OpenCode CLI). Check your account settings or change the PLAN tool, then continue.',
     ],
     [
       'quota',

@@ -21,7 +21,7 @@ export interface StreamCompletionOptions {
   policy?: OpenAICompatPolicy | undefined;
   /** The seat's `timeout`; absent, the call has no deadline. */
   timeoutMs?: number | undefined;
-  /** Supplied by a dispatch that resolved its provider; absent, auth and billing stay unknown. */
+  /** Supplied by a dispatch that resolved its provider; absent, authentication stays unknown. */
   invocationEvidence?: ApiInvocationEvidence | undefined;
   runtimeObservation?: ApiRuntimeObservation | undefined;
 }

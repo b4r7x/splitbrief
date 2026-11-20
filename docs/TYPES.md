@@ -100,7 +100,7 @@ The current residents (TS-only, no Zod schema):
 - `core/types/session-ref.ts` — `SessionRef`, the `{ projectDir, sessionId }` handle threaded across `cli/` + `engine/` (carve-out — a cross-folder reference with no producer folder).
 - `core/types/user-input.ts` — `UserMessageInput` (text, display text, images and attached inputs) plus its `plainUserMessage()` constructor, the user-message shape that the CLI, the composer, the stores and the engine all pass along (cross-cutting bar).
 
-Inferred counterparts (`Config`, `Task`, `WorkflowState`, `Summary`, `TokenUsage`, etc.) live beside their Zod schema in `core/schemas/`. `z.infer` is forbidden inside `core/types/`.
+Inferred counterparts (`Config`, `Task`, `WorkflowState`, `Summary`, `BriefExecution`, etc.) live beside their Zod schema in `core/schemas/`. `z.infer` is forbidden inside `core/types/`.
 
 Everything else moves to Case A/B/C.
 

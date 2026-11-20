@@ -27,45 +27,6 @@ describe('parseOpencodeLine', () => {
     expect(result.sessionId).toBe('ses_13f89223effeq85h7RlKmjsV3M');
   });
 
-  it('parses step_finish usage from part.tokens', () => {
-    const event = {
-      type: 'step_finish',
-      timestamp: 1781345484609,
-      sessionID: 'ses_13f89223effeq85h7RlKmjsV3M',
-      part: {
-        id: 'prt_ec076ff3f001seD4fnNJbMtL5k',
-        sessionID: 'ses_13f89223effeq85h7RlKmjsV3M',
-        messageID: 'msg_ec076de2d001eIfRD5tzzP0L6w',
-        type: 'step-finish',
-        reason: 'stop',
-        cost: 0.1121604,
-        tokens: {
-          total: 64362,
-          input: 64328,
-          output: 34,
-          reasoning: 32,
-          cache: { read: 0, write: 0 },
-        },
-      },
-    };
-    const result = parseOpencodeLine(JSON.stringify(event));
-    expect(result.usage).toEqual({
-      inputTokens: 64328,
-      outputTokens: 34,
-      reasoningTokens: 32,
-      cacheReadTokens: 0,
-      cacheCreateTokens: 0,
-      counterCoverage: {
-        input: 'reported',
-        output: 'reported',
-        cacheRead: 'reported',
-        cacheCreate: 'reported',
-        reasoning: 'reported',
-      },
-    });
-    expect(result.sessionId).toBe('ses_13f89223effeq85h7RlKmjsV3M');
-  });
-
   it('returns a bounded warning for invalid JSON', () => {
     expect(parseOpencodeLine('broken')).toEqual({
       warning: [
@@ -226,26 +187,11 @@ describe('parseOpencodeLine', () => {
     });
   });
 
-  it('skips a step_finish whose token counts are not counts, with a warning', () => {
-    const result = parseOpencodeLine(
-      JSON.stringify({
-        type: 'step_finish',
-        part: { type: 'step-finish', tokens: { input: -3, output: 10 } },
-      }),
-    );
-    expect(result.usage).toBeUndefined();
-    expect(result.warning?.[0]?.code).toBe('malformed_opencode');
-  });
-
   it('ignores the legacy top-level text/usage shapes that opencode never emits', () => {
     expect(parseOpencodeLine(JSON.stringify({ type: 'text', text: 'generated code' }))).toEqual({
       warning: [expect.objectContaining({ code: 'unknown_opencode_record' })],
     });
-    expect(
-      parseOpencodeLine(
-        JSON.stringify({ type: 'step_finish', usage: { tokens: { input: 500, output: 200 } } }),
-      ),
-    ).toEqual({
+    expect(parseOpencodeLine(JSON.stringify({ type: 'step_finish' }))).toEqual({
       warning: [expect.objectContaining({ code: 'unknown_opencode_record' })],
     });
   });

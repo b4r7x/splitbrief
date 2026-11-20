@@ -22,12 +22,10 @@ import {
   FinalReviewFindingCountsSchema,
   FinalReviewVerdictSchema,
 } from '../summary.js';
-import { CostAmountBasisSchema } from '../cost.js';
-import { CostBreakdownSchema } from '../cost.js';
 import { CheckStatusSchema, TaskIdSchema } from '../task.js';
 import { ReviewProvenanceSchema } from './changes.js';
 import { ReviewPacketSeatSwitchSchema } from './seat-switch.js';
-import { TaskTokenUsageSchema, TokenUsageSchema } from '../tokens.js';
+import { BriefExecutionSchema } from '../brief-execution.js';
 import { RunSnapshotKindSchema } from '../snapshot.js';
 import {
   ReadinessNextActionKindSchema,
@@ -255,6 +253,7 @@ const ReviewPacketEventSchema = z.preprocess(
     recommendedAction: RecoveryActionSchema.optional(),
     action: RecoveryActionSchema.optional(),
     outcome: z.string().optional(),
+    implementerProfile: z.string().optional(),
     message: z.string().optional(),
     routingReason: z.string().optional(),
   }),
@@ -346,36 +345,8 @@ const ReviewPacketEscalationsSchema = z.object({
   warnings: z.array(ReviewPacketEventSchema),
 });
 
-const ReviewPacketCostSchema = z.object({
-  tokenUsage: TokenUsageSchema,
-  costBreakdown: CostBreakdownSchema.pick({
-    actualPlannerCost: true,
-    actualImplementerCost: true,
-    actualReviewerCost: true,
-    totalActualCost: true,
-    hasPricedUsage: true,
-    hasUnpricedUsage: true,
-    isActualReviewerCostKnown: true,
-    isTotalActualCostKnown: true,
-    // The rates and identities the run was priced against travel with the
-    // export, so a reader of the packet reads what it was priced at instead of
-    // recosting it against whatever the catalog says by then.
-    requestEstimate: true,
-    providerRunMetadata: true,
-  }).nullable(),
-  /** What the amounts above are: a catalog estimate, unavailable, or a sum from
-   * a run that recorded no provenance. Never an invoice. */
-  amountBasis: CostAmountBasisSchema.default('legacy-unattributed'),
-});
-
 const ReviewPacketRoutingSchema = z.object({
-  taskRouting: z.array(
-    TaskTokenUsageSchema.partial({
-      method: true,
-      implementerTokens: true,
-      escalationTokens: true,
-    }),
-  ),
+  taskRouting: z.array(BriefExecutionSchema.partial({ method: true })),
   routingWarnings: z.array(ReviewPacketEventSchema),
 });
 
@@ -405,7 +376,6 @@ const ReviewPacketRecordSchema = z.object({
   evidence: ReviewPacketEvidenceSchema,
   drift: ReviewPacketDriftSchema,
   escalations: ReviewPacketEscalationsSchema,
-  cost: ReviewPacketCostSchema,
   routing: ReviewPacketRoutingSchema,
   finalReview: ReviewPacketFinalReviewSchema,
   reviewInput: z

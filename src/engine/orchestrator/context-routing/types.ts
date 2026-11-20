@@ -24,6 +24,8 @@ export interface ContextFitOptions {
   tightThreshold?: number | undefined;
 }
 
+export type BuildContextOverflow = Readonly<{ requiredTokens: number; availableTokens: number }>;
+
 export interface RouteTaskOptions extends ContextFitOptions {
   task: Task;
   context: ProjectContext;
@@ -57,6 +59,7 @@ export interface RoutingDecision {
   estimatedTokens: number;
   untruncatedEstimatedTokens: number;
   contextLength?: number | undefined;
+  contextOverflow?: BuildContextOverflow | undefined;
   usedConservativeContextLength: boolean;
   currentCodeTruncated: boolean;
   currentCodeContextMode: CurrentCodeContextMode;
@@ -70,11 +73,10 @@ export interface ProfileFit {
   estimatedTokens: number;
   untruncatedEstimatedTokens: number;
   contextLength: number;
+  contextOverflow?: BuildContextOverflow | undefined;
   currentCodeTruncated: boolean;
   currentCodeContextMode: CurrentCodeContextMode;
   usedConservativeContextLength: boolean;
-  /** The profile sets a Prompt budget (`contextLength`); only then does an overflow stop the brief. */
-  userBudget: boolean;
   requiredWriteMode: ImplementerWriteMode;
   credentialFailure?: string | undefined;
   capabilityFailure?: string | undefined;

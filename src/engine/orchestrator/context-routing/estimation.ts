@@ -3,7 +3,11 @@ import { buildImplementerSystemPreamble } from '../../spec/prompts/system.js';
 import { formatTaskPrompt } from '../../spec/prompts/task.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
-import type { TaskPromptEstimateOptions, ContextFitOptions } from './types.js';
+import type {
+  BuildContextOverflow,
+  TaskPromptEstimateOptions,
+  ContextFitOptions,
+} from './types.js';
 
 const DEFAULT_SAFETY_MARGIN = 0.15;
 const DEFAULT_TIGHT_THRESHOLD = 0.8;
@@ -41,11 +45,20 @@ export function classifyContextFit(
   contextLength: number,
   opts: ContextFitOptions = {},
 ): TaskContextFit {
-  const safetyMargin = opts.safetyMargin ?? DEFAULT_SAFETY_MARGIN;
   const tightThreshold = opts.tightThreshold ?? DEFAULT_TIGHT_THRESHOLD;
-  const estimatedWithSafety = Math.ceil(estimatedTokens * (1 + safetyMargin));
+  const estimatedWithSafety = contextFitRequirement(estimatedTokens, opts);
 
   if (estimatedWithSafety > contextLength) return 'overflow';
   if (estimatedWithSafety > Math.floor(contextLength * tightThreshold)) return 'tight';
   return 'fits';
+}
+
+export function contextFitRequirement(estimatedTokens: number, opts: ContextFitOptions): number {
+  return Math.ceil(estimatedTokens * (1 + (opts.safetyMargin ?? DEFAULT_SAFETY_MARGIN)));
+}
+
+export function formatBuildContextOverflow(overflow: BuildContextOverflow): string {
+  const required = overflow.requiredTokens.toLocaleString('en-US');
+  const available = overflow.availableTokens.toLocaleString('en-US');
+  return `The brief needs about ${required} tokens. The BUILD seat can take at most ${available}.`;
 }

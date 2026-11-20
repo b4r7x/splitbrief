@@ -48,8 +48,6 @@ function runnerTool(runnerName: string): string {
   return cliToolIdForCommand(runnerName) ?? runnerName;
 }
 
-// What the run is doing, not what it has spent: usage is reported where a reader asks for it,
-// through `/usage`, and never as a rounded count that reads `0k` until the first report lands.
 function activityLine(
   input: DeriveBuildProgressInput,
 ): Pick<BuildProgress, 'activity' | 'activitySpans' | 'activityIdentity'> {

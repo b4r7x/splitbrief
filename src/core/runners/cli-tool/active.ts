@@ -25,12 +25,9 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'session',
         env: [],
-        billing: 'subscription-included',
         hostKeychainPlatforms: ['darwin'],
       }),
     ]),
-    billing: 'subscription-included',
-    isSubscription: false,
     sandbox: rolePolicy({ planner: 'none', implementer: 'cli-managed' }),
     internalStatePaths: [],
     compatibility: compatibility({
@@ -59,11 +56,8 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'session',
         env: [],
-        billing: 'subscription-included',
       }),
     ]),
-    billing: 'subscription-included',
-    isSubscription: false,
     sandbox: rolePolicy({ planner: 'mode-dependent', implementer: 'cli-managed' }),
     internalStatePaths: [],
     compatibility: compatibility({
@@ -92,11 +86,8 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'provider-dependent',
         env: [],
-        billing: 'provider-dependent',
       }),
     ]),
-    billing: 'provider-dependent',
-    isSubscription: false,
     sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [
       '.opencode/package-lock.json',
@@ -129,12 +120,9 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'session',
         env: ['COPILOT_GITHUB_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN'],
-        billing: 'subscription-included',
         hostKeychainPlatforms: ['darwin'],
       }),
     ]),
-    billing: 'subscription-included',
-    isSubscription: true,
     sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({
@@ -163,11 +151,8 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'provider-dependent',
         env: [],
-        billing: 'provider-dependent',
       }),
     ]),
-    billing: 'provider-dependent',
-    isSubscription: true,
     sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({
@@ -196,12 +181,9 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'session',
         env: [],
-        billing: 'subscription-included',
         hostKeychainPlatforms: ['darwin'],
       }),
     ]),
-    billing: 'subscription-included',
-    isSubscription: false,
     sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({
@@ -230,11 +212,8 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'session',
         env: [],
-        billing: 'subscription-included',
       }),
     ]),
-    billing: 'subscription-included',
-    isSubscription: false,
     sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({
@@ -263,13 +242,10 @@ export const ACTIVE_CLI_TOOL_DECLARATIONS = Object.freeze({
       authChannel({
         id: 'session',
         env: [],
-        billing: 'subscription-included',
         hostKeychainPlatforms: ['darwin'],
         supportedPlatforms: ['darwin'],
       }),
     ]),
-    billing: 'subscription-included',
-    isSubscription: false,
     sandbox: rolePolicy({ planner: 'none', implementer: 'none' }),
     internalStatePaths: [],
     compatibility: compatibility({

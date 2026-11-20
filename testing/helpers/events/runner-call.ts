@@ -155,7 +155,7 @@ export function makeRunnerCallCompleted(
     startedAt: 1_000,
     endedAt: 2_500,
     durationMs: 1_500,
-    usage: null,
+
     nativeSessionId: null,
     ...overrides,
   };
@@ -178,7 +178,7 @@ export function makeRunnerCallError(
     startedAt: 1_000,
     endedAt: 2_500,
     durationMs: 1_500,
-    usage: null,
+
     nativeSessionId: null,
     ...overrides,
   };

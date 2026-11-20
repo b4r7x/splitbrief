@@ -65,7 +65,6 @@ describe('createParsedLineRecorder', () => {
     parsed.apply({
       text: 'final answer',
       channel: 'result',
-      usage: { inputTokens: 5, outputTokens: 2 },
     });
 
     expect(recorder.snapshot().text).toBe('final answer');
@@ -74,35 +73,6 @@ describe('createParsedLineRecorder', () => {
         type: 'call_text_delta',
         channel: 'result',
         text: 'final answer',
-      }),
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'call_usage',
-        semantics: 'final',
-        usage: { inputTokens: 5, outputTokens: 2 },
-      }),
-    );
-  });
-
-  it('records cumulative usage semantics without double-counting local totals', () => {
-    const { events, parsed } = createHarness();
-
-    parsed.apply({
-      usage: { inputTokens: 10, outputTokens: 2 },
-      usageSemantics: 'cumulative',
-    });
-    parsed.apply({
-      usage: { inputTokens: 12, outputTokens: 4 },
-      usageSemantics: 'cumulative',
-    });
-
-    expect(parsed.usage).toEqual({ inputTokens: 12, outputTokens: 4 });
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'call_usage',
-        semantics: 'cumulative',
-        usage: { inputTokens: 12, outputTokens: 4 },
       }),
     );
   });

@@ -41,7 +41,6 @@ function baseProjection(
     ...(event.invocationIdentity !== undefined && {
       invocationIdentity: event.invocationIdentity,
     }),
-    ...(event.usageBoundary !== undefined && { usageBoundary: event.usageBoundary }),
   };
 }
 
@@ -77,13 +76,6 @@ export function projectRunnerCallEvent(
       };
     case 'call_tool_use_done':
       return { type: 'runner_call_tool_use', ...base, stage: 'done', toolUse: event.toolUse };
-    case 'call_usage':
-      return {
-        type: 'runner_call_usage',
-        ...base,
-        usage: event.usage,
-        semantics: event.semantics,
-      };
     case 'call_session_id':
       return {
         type: 'runner_call_session_id',
@@ -114,7 +106,6 @@ export function projectRunnerCallEvent(
         endedAt: event.endedAt,
         durationMs: event.durationMs,
         partial: event.partial,
-        usage: event.usage,
         nativeSessionId: event.nativeSessionId,
         ...(event.endUnknown && { endUnknown: true }),
       };
@@ -128,7 +119,6 @@ export function projectRunnerCallEvent(
         endedAt: event.endedAt,
         durationMs: event.durationMs,
         partial: event.partial,
-        usage: event.usage,
         nativeSessionId: event.nativeSessionId,
       };
     case 'call_unknown_upstream':

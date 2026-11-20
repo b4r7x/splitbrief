@@ -81,7 +81,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       typedCall: typedCallPlanAndConsult(
         () => planFromTasks([task]),
         () => guidanceConsult('Use the from-retry marker from validate.mjs.'),
-        { inputTokens: 140, outputTokens: 90 },
       ),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nValidation passed after one consult.\n\n### Verdict\npass',
@@ -240,7 +239,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     const typedCall = typedCallPlanAndConsult(
       () => planFromTasks([task]),
       () => guidanceConsult('Use the from-retry marker from validate.mjs.'),
-      { inputTokens: 140, outputTokens: 90 },
     );
     const planner = makePlanner({
       typedCall: vi.fn((ctx: TypedCallContext) => {
@@ -368,7 +366,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     const typedCall = typedCallPlanAndConsult(
       () => planFromTasks([task]),
       () => guidanceConsult('Use the from-retry marker from validate.mjs.'),
-      { inputTokens: 140, outputTokens: 90 },
     );
     const planner = makePlanner({
       typedCall: vi.fn((ctx: TypedCallContext) => {

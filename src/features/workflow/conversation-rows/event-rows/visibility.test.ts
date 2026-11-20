@@ -101,14 +101,13 @@ describe('isTranscriptRowlessEvent', () => {
       phase: 'planning',
       status: 'running',
     };
-    const tokens: EngineEventOf<'task_tokens'> = {
-      type: 'task_tokens',
+    const tokens: EngineEventOf<'task_settled'> = {
+      type: 'task_settled',
       ts: 0,
       phase: 'implementing',
       taskId: taskId('T001'),
       method: 'local',
-      implementerTokens: 10,
-      escalationTokens: 0,
+
       retryCount: 0,
     };
     const text: EngineEvent = {

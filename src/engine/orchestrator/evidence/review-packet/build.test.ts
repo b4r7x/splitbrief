@@ -1,10 +1,13 @@
+import { copyFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createEvidenceLedger } from '../../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
-import type { TaskTokenUsage } from '../../../../core/schemas/tokens.js';
+import { SESSION_LOG_FILE, sessionDir } from '../../../../core/paths.js';
+import type { BriefExecution } from '../../../../core/schemas/brief-execution.js';
 import { ensureSessionDir } from '../../../../core/sessions/spec-files.js';
 import { createInitialState } from '../../../../core/state/machine.js';
 import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
@@ -24,23 +27,22 @@ describe('review packet after a rewind', () => {
 
   it('prints each settlement with its own route and usage in settlement order', async () => {
     const task = makeTask({ id: 'T001', title: 'Add greeting', status: 'done' });
-    const first: TaskTokenUsage = {
+    const first: BriefExecution = {
       taskId: task.id,
       taskTitle: task.title,
       method: 'local',
       retryCount: 0,
-      implementerTokens: 10,
-      escalationTokens: 0,
+
       tool: 'codex',
       model: 'gpt-5',
       implementerProfile: 'quick',
       routingReason: 'The quick profile fits.',
     };
-    const second: TaskTokenUsage = {
+    const second: BriefExecution = {
       ...first,
       method: 'escalated-hint',
       retryCount: 1,
-      implementerTokens: 25,
+
       tool: 'opencode',
       model: 'deepseek/deepseek-flash',
       implementerProfile: 'careful',
@@ -52,7 +54,7 @@ describe('review packet after a rewind', () => {
       sessionId,
       finalReviewStatus: 'written',
       state: { ...createInitialState('Greeting'), tasks: [task], taskBreakdowns: [first, second] },
-      summary: makeSummary({ taskBreakdown: [{ ...second, implementerTokens: 35, cost: 0.02 }] }),
+      summary: makeSummary({ taskBreakdown: [{ ...second }] }),
     });
 
     expect(packet.routing.taskRouting).toEqual([first, second]);
@@ -64,6 +66,56 @@ describe('review packet after a rewind', () => {
     expect(routes).toEqual([
       '- T001: codex · GPT-5 · quick · The quick profile fits.',
       '- T001: opencode · DeepSeek Flash · careful · The careful profile fits.',
+    ]);
+  });
+
+  it('keeps both routing events when rebuilding a packet from an older run', async () => {
+    copyFileSync(
+      join(
+        import.meta.dirname,
+        '../../../../../testing/fixtures/session-log/review-after-pause.jsonl',
+      ),
+      join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE),
+    );
+    const packet = await buildReviewPacket({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      finalReviewStatus: 'written',
+      state: createInitialState('Add isEven'),
+      summary: makeSummary({}),
+    });
+
+    const route = {
+      taskId: 'T001',
+      implementerProfile: 'default',
+      outcome: 'fits',
+      message: 'Selected profile default (fits)',
+    };
+    expect(packet.routing.routingWarnings).toMatchObject([
+      { ...route, type: 'task_started' },
+      { ...route, type: 'task_settled' },
+    ]);
+    const markdown = renderReviewPacketMarkdown(packet, NULL_CACHE);
+    expect(markdown.split('\n').filter((line) => line.includes(route.message))).toEqual([
+      '- T001 started: Selected profile default (fits)',
+      '- T001 settled: Selected profile default (fits)',
+    ]);
+    expect(markdown).not.toContain('1110/1000000');
+
+    const repeated = {
+      ...packet,
+      routing: {
+        ...packet.routing,
+        routingWarnings: [...packet.routing.routingWarnings, ...packet.routing.routingWarnings],
+      },
+    };
+    const repeatedMarkdown = renderReviewPacketMarkdown(repeated, NULL_CACHE);
+    expect(repeatedMarkdown.split('\n').filter((line) => line.includes(route.message))).toEqual([
+      '- T001 started: Selected profile default (fits)',
+      '- T001 settled: Selected profile default (fits)',
+      '- T001 started: Selected profile default (fits)',
+      '- T001 settled: Selected profile default (fits)',
     ]);
   });
 

@@ -1,5 +1,3 @@
-import { accumulateTokenUsage } from '../../../calls/usage/accumulate.js';
-import type { TokenDelta } from '../../../../core/schemas/tokens.js';
 import { CLI_TOOL_CATALOG } from '../../../../core/runners/cli-tool/catalog.js';
 import type { ParsedLine } from '../../types.js';
 import { contractSha256 } from '../../../providers/candidate/contract.js';
@@ -52,13 +50,6 @@ function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
       text: parsed.text,
     });
   }
-  if (parsed.usage !== undefined) {
-    events.push({
-      type: 'usage',
-      usage: parsed.usage,
-      semantics: parsed.usageSemantics ?? (parsed.isResult ? 'final' : 'delta'),
-    });
-  }
   if (parsed.sessionId !== undefined)
     events.push({ type: 'session', nativeSessionId: parsed.sessionId });
   // Copilot's completion event is unverified live, so a tool event is recorded as done when it arrives.
@@ -106,7 +97,6 @@ function copilotFailureEvents(line: string): readonly CliProtocolEvent[] | null 
       type: 'result',
       status: 'failed',
       text: '',
-      usage: null,
       nativeSessionId: null,
       error: { code: 'copilot-error', message },
       partial: false,
@@ -134,17 +124,14 @@ function terminal(input: { events: readonly CliProtocolEvent[] }): CopilotTermin
     (event): event is CopilotTerminalEvent => event.type === 'result',
   );
   if (explicit !== undefined && explicit.status !== 'completed') return explicit;
-  let usage: TokenDelta | null = null;
   let nativeSessionId: string | null = null;
   for (const event of input.events) {
-    if (event.type === 'usage') usage = accumulateTokenUsage(usage, event.usage, event.semantics);
     if (event.type === 'session') nativeSessionId = event.nativeSessionId;
   }
   return {
     type: 'result',
     status: 'completed',
     text: '',
-    usage,
     nativeSessionId,
     error: null,
     partial: false,

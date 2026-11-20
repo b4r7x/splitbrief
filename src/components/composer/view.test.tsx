@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { flushEffects, renderFeature, type RenderFeatureResult } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { renderDockedComposer } from '#testing/helpers/composer.js';
@@ -26,7 +26,7 @@ import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../stores/workflow/run-view.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import { tokensStore } from '../../stores/workflow/tokens/state.js';
+
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
@@ -269,7 +269,7 @@ describe('Composer send now', () => {
       await flushEffects();
       expect(sent).toEqual([]);
       expect(queued).toEqual([]);
-      expect(dispatched).toEqual(suggestions === 'command' ? ['/usage'] : []);
+
       if (suggestions === 'reference') expect(ui.lastFrame()).toContain('@src/parser.ts');
     },
   );
@@ -299,7 +299,7 @@ describe('Composer send now', () => {
     await flushEffects();
     ui.stdin.write('\x1b[13;5u');
     await flushEffects();
-    expect(dispatched).toEqual(['/usage']);
+
     expect(sent).toEqual([]);
     expect(queued).toEqual([]);
     expect(ui.lastFrame()).not.toContain('/usage');
@@ -2661,9 +2661,7 @@ describe('Composer in-box hints', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
     // A run whose tokens carry a price, so an amount would be painted if the box still asked for
     // one. The composer reads no usage at all: /usage is the only surface that names it.
-    tokensStore.__testReset({
-      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
-    });
+
     configStore.__testReset({
       projectDir: '/tmp/composer-hints-test',
       config: makeConfig({
@@ -2680,7 +2678,7 @@ describe('Composer in-box hints', () => {
       catalog: {
         vendor: {
           id: 'vendor',
-          models: { 'priced-model': { id: 'priced-model', cost: { input: 1, output: 2 } } },
+          models: { 'priced-model': { id: 'priced-model' } },
         },
       },
       fetchedAt: 1,

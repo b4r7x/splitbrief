@@ -55,7 +55,7 @@ describe('mergeEvent throughput', () => {
       durationMs: 1999,
       partial: false,
       error: null,
-      usage: null,
+
       nativeSessionId: 'native-1',
     };
     const rawRunnerEvents = [startEvent, ...textEvents, terminalEvent];
@@ -77,7 +77,7 @@ describe('mergeEvent throughput', () => {
     ]);
     expect(workflowEvents[1]).toMatchObject({
       callId: 'call-1',
-      usage: null,
+
       nativeSessionId: null,
     });
 

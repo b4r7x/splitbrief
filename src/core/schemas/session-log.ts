@@ -41,7 +41,6 @@ export const SessionLogSummaryEntrySchema = z.object({
   text: z.string(),
   summarizedUpTo: SessionLogTimestampSchema,
   summarizedCount: z.number().int().nonnegative().optional(),
-  tokenEstimate: z.number().optional(),
   structured: StructuredSummarySchema.optional(),
 });
 export type SessionLogSummaryEntry = z.infer<typeof SessionLogSummaryEntrySchema>;

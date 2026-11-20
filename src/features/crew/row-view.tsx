@@ -5,11 +5,7 @@ import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { glyph } from '../../lib/glyphs.js';
-import {
-  padTerminalDisplayTextEnd,
-  truncateTerminalDisplayText,
-} from '../../utils/display-text/truncate.js';
-import { getTerminalCellWidth } from '../../utils/display-text/width.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text/truncate.js';
 import {
   CREW_COLUMN_GAP,
   CREW_IDENTITY_COLUMN,
@@ -27,26 +23,15 @@ function seatHue(theme: Theme, row: CrewRow): string | undefined {
   return theme[CREW_SEAT_ROLES[row.id]];
 }
 
-function padStartToCells(text: string, width: number): string {
-  return `${' '.repeat(Math.max(0, width - getTerminalCellWidth(text)))}${text}`;
-}
-
 export type CrewRowViewProps = Readonly<{
   row: CrewRow;
   layout: SeatBlockLayout;
   isCursor: boolean;
-  width: number;
 }>;
 
-export function CrewRowView({ row, layout, isCursor, width }: CrewRowViewProps) {
+export function CrewRowView({ row, layout, isCursor }: CrewRowViewProps) {
   const t = useTheme();
   const formatted = formatCrewRow({ row, layout });
-  // The posture word is right-aligned to the row edge, so the identity fills its own column first.
-  const postureWidth = width - CREW_IDENTITY_COLUMN - layout.identityWidth - CREW_COLUMN_GAP.length;
-  const content =
-    formatted.posture === undefined
-      ? formatted.content
-      : padTerminalDisplayTextEnd(formatted.content, layout.identityWidth);
   return (
     <Box>
       <Text color={t.accent}>
@@ -55,12 +40,7 @@ export function CrewRowView({ row, layout, isCursor, width }: CrewRowViewProps) 
       <Text color={seatHue(t, row)} bold>
         {formatted.label}
       </Text>
-      <Text color={t.text}>{`${CREW_COLUMN_GAP}${content}`}</Text>
-      {formatted.posture !== undefined && (
-        <Text color={t.textDim}>
-          {`${CREW_COLUMN_GAP}${padStartToCells(formatted.posture, postureWidth)}`}
-        </Text>
-      )}
+      <Text color={t.text}>{`${CREW_COLUMN_GAP}${formatted.content}`}</Text>
     </Box>
   );
 }

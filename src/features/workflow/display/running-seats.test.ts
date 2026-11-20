@@ -29,7 +29,7 @@ function makeOperation(overrides: Partial<ActiveOperation> = {}): ActiveOperatio
     durationMs: null,
     partial: false,
     reason: null,
-    usage: null,
+
     warnings: [],
     ...overrides,
   } as ActiveOperation;

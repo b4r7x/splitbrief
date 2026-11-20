@@ -101,41 +101,6 @@ describe('parseJsonlLine', () => {
     expect(result.channel).toBe('assistant');
   });
 
-  it('parses turn.completed with usage (input_tokens/output_tokens)', () => {
-    const event = { type: 'turn.completed', usage: { input_tokens: 100, output_tokens: 50 } };
-    const result = parseJsonlLine(JSON.stringify(event));
-    expect(result.usage).toEqual({
-      inputTokens: 100,
-      outputTokens: 50,
-      counterCoverage: {
-        input: 'reported',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { output: 50 },
-    });
-    expect(result.usageSemantics).toBe('final');
-  });
-
-  it('parses turn.completed with usage (prompt_tokens/completion_tokens)', () => {
-    const event = { type: 'turn.completed', usage: { prompt_tokens: 200, completion_tokens: 75 } };
-    const result = parseJsonlLine(JSON.stringify(event));
-    expect(result.usage).toEqual({
-      inputTokens: 200,
-      outputTokens: 75,
-      counterCoverage: {
-        input: 'partial',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { input: 200, output: 75 },
-    });
-  });
-
   it('returns text from event.text field', () => {
     const event = { text: 'some text' };
     const result = parseJsonlLine(JSON.stringify(event));
@@ -355,26 +320,6 @@ describe('parseJsonlLine', () => {
     };
     const result = parseJsonlLine(JSON.stringify(event));
     expect(result.text).toBe('real text');
-  });
-
-  it('prefers input_tokens over prompt_tokens when both present', () => {
-    const event = {
-      type: 'turn.completed',
-      usage: { input_tokens: 100, prompt_tokens: 999, output_tokens: 50, completion_tokens: 888 },
-    };
-    const result = parseJsonlLine(JSON.stringify(event));
-    expect(result.usage).toEqual({
-      inputTokens: 100,
-      outputTokens: 50,
-      counterCoverage: {
-        input: 'reported',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { output: 50 },
-    });
   });
 
   it('returns empty for turn.completed without usage', () => {

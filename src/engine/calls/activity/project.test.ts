@@ -800,7 +800,7 @@ describe('projectRunnerCallActivity', () => {
           endedAt: 2_000,
           durationMs: 1_000,
           partial: false,
-          usage: null,
+
           nativeSessionId: null,
         },
         10,
@@ -819,7 +819,7 @@ describe('projectRunnerCallActivity', () => {
           endedAt: 2_000,
           durationMs: 1_000,
           partial: true,
-          usage: null,
+
           nativeSessionId: null,
         },
         11,
@@ -1297,7 +1297,7 @@ describe('projectRunnerCallActivity', () => {
           endedAt: 2_000,
           durationMs: 1_000,
           partial: false,
-          usage: null,
+
           nativeSessionId: null,
         },
         3,
@@ -1321,7 +1321,7 @@ describe('projectRunnerCallActivity', () => {
           endedAt: 2_000,
           durationMs: 1_000,
           partial: true,
-          usage: null,
+
           nativeSessionId: null,
         },
         4,

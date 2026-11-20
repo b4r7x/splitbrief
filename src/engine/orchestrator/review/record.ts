@@ -21,7 +21,7 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format/time.js';
 import type { EngineEventOf, EventBus } from '../../events/types.js';
-import { NULL_CACHE } from '../../providers/model/runtime-snapshot.js';
+import { NULL_CACHE, type ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import { persistReviewEvidence } from '../evidence/decisions.js';
 import { recordFinalReviewEvidence } from '../evidence/reporting.js';
 import { writeReviewPacket } from '../evidence/review-packet/build.js';
@@ -154,6 +154,7 @@ export async function finishReview(input: {
   summaryBase: SummaryBase | undefined;
   reviewScope: RunReviewScope | undefined;
   reviewInput: BuildReviewPacketOptions['reviewInput'];
+  modelCache: ModelCacheAccessor | undefined;
 }): Promise<void> {
   const { projectDir, workspaceDir, sessionId, bus, state, verdict, setAside } = input;
   recordFinalReviewStatus({ projectDir, sessionId }, input.writeStatus);
@@ -198,7 +199,7 @@ export async function finishReview(input: {
       }),
       state,
       finalReviewStatus: input.writeStatus,
-      modelCache: summaryBase.pricingCache ?? NULL_CACHE,
+      modelCache: input.modelCache ?? NULL_CACHE,
       ...(reviewScope !== undefined && { provenance: reviewScope.provenance }),
       ...(reviewInput !== undefined && { reviewInput }),
     });

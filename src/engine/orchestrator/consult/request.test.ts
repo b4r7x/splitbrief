@@ -62,7 +62,6 @@ function consultPlanner(
           status: 'completed',
           text: next.text,
           ...(next.nativeSessionId !== undefined && { nativeSessionId: next.nativeSessionId }),
-          usage: { inputTokens: 10, outputTokens: 5 },
         });
       },
     };
@@ -279,7 +278,7 @@ describe('requestConsult', () => {
       });
       const planned = startedAt({ ...consultState(), tasks: [task] }, startSnapshot);
       let stopped = transition(
-        { ...planned, tokenUsage: { ...planned.tokenUsage, plannerInput: 40, plannerOutput: 12 } },
+        { ...planned },
         { type: 'SET_PLANNER_SESSION_ID', sessionId: 'native-q' },
       );
       stopped = transition(stopped, {
@@ -295,7 +294,7 @@ describe('requestConsult', () => {
       const continued = loadState(ref);
       if (continued === null) throw new Error('the stopped run left no state');
       expect(continued.plannerSessionId).toBe('native-q');
-      expect(continued.tokenUsage).toEqual(stopped.tokenUsage);
+
       expect(continued.lineages?.T003?.consultRecords).toHaveLength(1);
       expect(continued.lineages).toEqual(stopped.lineages);
 
@@ -341,8 +340,7 @@ describe('requestConsult', () => {
       expect(loadState(ref)?.plannerSessionId).toBe('native-2');
       expect(state.lineages?.T003?.consultRecords).toHaveLength(2);
       expect(events.filter((event) => event.type === 'consult_answered')).toHaveLength(1);
-      expect(state.tokenUsage.plannerInput).toBe(50);
-      expect(state.tokenUsage.plannerOutput).toBe(17);
+
       expect(existsSync(join(workspaceDir, '.splitbrief'))).toBe(false);
     },
   );
@@ -398,7 +396,7 @@ describe('requestConsult', () => {
     const afterSecond = seen.at(-1)!;
     expect(afterSecond.plannerSessionId).toBe('native-2');
     expect(afterSecond.lineages?.T003?.consultRecords).toHaveLength(2);
-    expect(afterSecond.tokenUsage.plannerInput).toBe(20);
+
     expect(events.filter((event) => event.type === 'consult_answered')).toHaveLength(2);
   });
 
@@ -1045,9 +1043,7 @@ describe('requestConsult seats', () => {
     );
     const after = seen.at(-1)!;
     expect(after.lineages?.T003?.consultRecords.at(-1)?.seat).toBeUndefined();
-    expect(after.tokenUsage.plannerInput).toBe(10);
-    expect(after.tokenUsage.plannerOutput).toBe(5);
-    expect(after.tokenUsage.reviewerInput).toBe(0);
+
     const answered = events.events.find((event) => event.type === 'consult_answered');
     expect(answered).toMatchObject({ taskId: 'T003' });
     expect(answered).not.toHaveProperty('seat');

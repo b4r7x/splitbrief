@@ -1,46 +1,10 @@
 import type { SeatIds } from '../../../../core/crew/seat-ids.js';
-import { costAmountBasis } from '../../../../core/schemas/cost.js';
 import type { RunnerKind } from '../../../../core/schemas/enums.js';
 import type { ReviewPacket } from '../../../../core/schemas/review/packet.js';
 import type { Summary } from '../../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow/state.js';
 import { readSeatIdentities } from '../../../../core/state/seats/record.js';
 import type { PacketEvent, BuildReviewPacketOptions } from './types.js';
-
-export function buildCost(summary: Summary): ReviewPacket['cost'] {
-  return {
-    tokenUsage: summary.tokenUsage,
-    costBreakdown: summary.costBreakdown
-      ? {
-          actualPlannerCost: summary.costBreakdown.actualPlannerCost,
-          actualImplementerCost: summary.costBreakdown.actualImplementerCost,
-          ...(summary.costBreakdown.actualReviewerCost !== undefined && {
-            actualReviewerCost: summary.costBreakdown.actualReviewerCost,
-          }),
-          totalActualCost: summary.costBreakdown.totalActualCost,
-          ...(summary.costBreakdown.hasPricedUsage !== undefined && {
-            hasPricedUsage: summary.costBreakdown.hasPricedUsage,
-          }),
-          ...(summary.costBreakdown.hasUnpricedUsage !== undefined && {
-            hasUnpricedUsage: summary.costBreakdown.hasUnpricedUsage,
-          }),
-          ...(summary.costBreakdown.isActualReviewerCostKnown !== undefined && {
-            isActualReviewerCostKnown: summary.costBreakdown.isActualReviewerCostKnown,
-          }),
-          ...(summary.costBreakdown.isTotalActualCostKnown !== undefined && {
-            isTotalActualCostKnown: summary.costBreakdown.isTotalActualCostKnown,
-          }),
-          ...(summary.costBreakdown.requestEstimate !== undefined && {
-            requestEstimate: summary.costBreakdown.requestEstimate,
-          }),
-          ...(summary.costBreakdown.providerRunMetadata !== undefined && {
-            providerRunMetadata: summary.costBreakdown.providerRunMetadata,
-          }),
-        }
-      : null,
-    amountBasis: costAmountBasis(summary.costBreakdown),
-  };
-}
 
 function latestWorkflowComplete(events: PacketEvent[]): string | null {
   return events.filter((event) => event.type === 'workflow_complete').at(-1)?.ts ?? null;

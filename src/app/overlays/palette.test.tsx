@@ -1036,6 +1036,7 @@ describe('CommandPaletteOverlay', () => {
     sessionsStore.load(projectDir);
 
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    enterWorkflowScreen();
     const instance = renderCommandPalette();
     await tick(1);
     await tick(1);
@@ -1046,10 +1047,10 @@ describe('CommandPaletteOverlay', () => {
 
     const rows = paletteResultRows(instance.lastFrame() ?? '');
     const sessionsColumn = descriptionStart(rowContaining(rows, '/sessions'), '/sessions');
-    const skillsColumn = descriptionStart(rowContaining(rows, '/skills'), '/skills');
+    const stopColumn = descriptionStart(rowContaining(rows, '/stop'), '/stop');
     const sessionRowColumn = descriptionStart(rowContaining(rows, feature), feature);
 
-    expect(sessionsColumn).toBe(skillsColumn);
+    expect(sessionsColumn).toBe(stopColumn);
     expect(sessionRowColumn).toBeGreaterThan(sessionsColumn);
     instance.unmount();
   });

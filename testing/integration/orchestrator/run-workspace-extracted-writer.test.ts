@@ -71,7 +71,6 @@ describe('an extracted-code writer in the run workspace', { timeout: 90_000 }, (
       typedCall: typedCallPlanAndReview(
         () => planFromTasks([task]),
         (prompt) => passingReviewVerdict(prompt),
-        undefined,
         () => guidanceConsult(),
       ),
     });

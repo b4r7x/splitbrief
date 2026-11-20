@@ -145,7 +145,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     );
   });
 
-  it('keeps a priced pre-resume taskBreakdown row when re-entering at currentTaskIndex 1', async () => {
+  it('keeps a saved pre-resume taskBreakdown row when re-entering at currentTaskIndex 1', async () => {
     const { projectDir, sessionId } = setupProject();
     const completed = makeTask({ id: 'T001', status: 'failed' });
     const blocked = makeTask({ id: 'T002', dependsOn: ['T001'] });
@@ -153,8 +153,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       taskId: taskId('T001'),
       taskTitle: 'pre-resume task',
       method: 'local' as const,
-      implementerTokens: 500_000,
-      escalationTokens: 0,
       retryCount: 0,
       tool: 'ollama',
       model: 'deepseek-chat',

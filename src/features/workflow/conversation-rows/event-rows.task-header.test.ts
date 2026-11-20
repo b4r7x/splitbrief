@@ -156,7 +156,6 @@ describe('eventRows task header and planner phase header', () => {
         .join('');
       expect(meta).toContain('src/storage/loans.js (modify)');
       expect(meta).toContain('+3 files');
-      expect(meta).toContain('context tokens (tight)');
       expect(segments.every((part) => part.tone !== 'markdownLink')).toBe(true);
       expect(segments.filter((part) => part.bold).every((part) => part.tone === 'text')).toBe(true);
     },

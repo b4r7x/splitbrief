@@ -194,7 +194,6 @@ function expectHostConfiguredIdentity(tool: string): void {
       version: 1,
       capturedAt: expect.any(Number),
       runner: { kind: 'cli', id: tool },
-      billing: { posture: 'unknown', basis: 'unknown' },
     });
     expect(events[0]).toMatchObject({ type: 'call_started', invocationIdentity: identity });
     expect(events.length).toBeGreaterThan(1);

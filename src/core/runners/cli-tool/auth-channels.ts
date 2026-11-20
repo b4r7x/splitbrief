@@ -1,5 +1,3 @@
-import type { RunnerBillingPosture } from '../billing.js';
-
 export const CLI_AUTH_CHANNEL_IDS = Object.freeze([
   'api-key',
   'session',
@@ -11,7 +9,6 @@ export type CliAuthChannelId = (typeof CLI_AUTH_CHANNEL_IDS)[number];
 export type CliAuthChannel = Readonly<{
   id: CliAuthChannelId;
   env: readonly string[];
-  billing: RunnerBillingPosture;
   /**
    * Platforms where this channel's credential is an OS keychain item rather
    * than a file, so the file-copying state bridge has nothing to carry. macOS

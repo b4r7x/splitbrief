@@ -1350,10 +1350,6 @@ describe('visual catalog', () => {
       'workflow-planning-path-notice',
       'workflow-start-readiness-warning',
       'workflow-start-variant-not-applied',
-      'overlay-usage-details',
-      'overlay-usage-details-legacy',
-      'overlay-usage-details-unpriced',
-      'overlay-usage-context-insufficient',
     ]) {
       expect(findVisualScenario(id), id).toBeDefined();
     }

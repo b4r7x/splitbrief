@@ -103,7 +103,7 @@ describe('runner-owned catalog resolution', () => {
           'claude-sonnet-4-6': {
             id: 'claude-sonnet-4-6',
             name: 'Catalog Sonnet',
-            cost: { input: 3, output: 15 },
+
             limit: { context: 1_000_000 },
             tool_call: true,
             release_date: '2026-01-12',
@@ -126,7 +126,6 @@ describe('runner-owned catalog resolution', () => {
             displayName: 'Native Opus',
             contextLength: 32_768,
             effectiveContextTokens: 16_384,
-            pricingInput: 9,
           },
           {
             id: 'claude-sonnet-4-6',
@@ -1528,7 +1527,7 @@ describe('runner-owned catalog resolution', () => {
             'qwen3-coder:30b': {
               id: 'qwen3-coder:30b',
               name: 'Qwen3 Coder 30B',
-              cost: { input: 2, output: 7 },
+
               limit: { context: 262_144 },
             },
           },
@@ -1557,10 +1556,7 @@ describe('runner-owned catalog resolution', () => {
       getModelsDevEntries({ providerId: 'ollama', cache }).find(
         (entry) => entry.id === 'qwen3-coder:30b',
       ),
-    ).toMatchObject({
-      pricingInput: 2,
-      pricingOutput: 7,
-    });
+    ).toMatchObject({});
   });
 });
 

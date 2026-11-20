@@ -13,7 +13,7 @@ import { persistReadyExecutionState } from '#testing/helpers/persisted-execution
 import { makePassingPlanner } from '#testing/helpers/planning-phase.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { readSession } from '../../../core/sessions/io.js';
@@ -30,11 +30,10 @@ afterEach(async () => {
 
 const brief = {
   method: 'local',
-  implementerTokens: 10,
-  escalationTokens: 0,
+
   retryCount: 0,
 } as const;
-const BUILT_ON_TWO_SEATS: TaskTokenUsage[] = [
+const BUILT_ON_TWO_SEATS: BriefExecution[] = [
   { ...brief, taskId: taskId('T001'), taskTitle: 'First', tool: 'claude-code', model: 'haiku' },
   { ...brief, taskId: taskId('T002'), taskTitle: 'Fix', tool: 'claude-code', model: 'sonnet' },
 ];

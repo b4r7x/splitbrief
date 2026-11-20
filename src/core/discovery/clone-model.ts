@@ -9,10 +9,6 @@ export function cloneDetectedModel(model: DetectedModel): DetectedModel {
     ...(model.nativeReasoningEfforts
       ? { nativeReasoningEfforts: [...model.nativeReasoningEfforts] }
       : {}),
-    ...(model.pricingTiers
-      ? { pricingTiers: model.pricingTiers.map((tier) => ({ ...tier })) }
-      : {}),
-    ...(model.pricingProvenance ? { pricingProvenance: { ...model.pricingProvenance } } : {}),
     ...(model.runtime
       ? {
           runtime: {

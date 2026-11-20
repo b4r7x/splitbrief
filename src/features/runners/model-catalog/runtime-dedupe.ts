@@ -70,7 +70,7 @@ function bucketOf(
 
 /**
  * Two runtime rows are two routes the tool really offers — `anthropic/x` and
- * `openrouter/anthropic/x` bill differently — so they collapse only on an exact
+ * `openrouter/anthropic/x` can use different provider routes — so they collapse only on an exact
  * id, and `mergeProviderVariants` decides which routes are one model. Everything
  * speculative folds into whatever the runtime lane already names.
  */

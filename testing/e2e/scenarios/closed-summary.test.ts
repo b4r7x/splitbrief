@@ -2,7 +2,13 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
-import { SESSION_LOG_FILE, SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
+import {
+  SESSION_LOG_FILE,
+  SPLITBRIEF_DIR,
+  STATE_FILE,
+  SUMMARY_FILE,
+  sessionDir,
+} from '../../../src/core/paths.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
 import { toEngineEventEntry } from '../../../src/core/sessions/log/writer.js';
 import { saveState } from '../../../src/core/state/persistence.js';
@@ -62,6 +68,66 @@ function seedAppliedRun(target: StopContinueFixture): void {
   );
 }
 
+function addOldAccounting(target: StopContinueFixture): void {
+  const dir = sessionDir(target.projectDir, SESSION);
+  const tokenUsage = {
+    plannerInput: 120,
+    plannerOutput: 30,
+    implementerInput: 40,
+    implementerOutput: 10,
+    escalationInput: 0,
+    escalationOutput: 0,
+  };
+  const brief = {
+    taskId: 'T001',
+    taskTitle:
+      'Make drift_report rowless and remove the Drift row code, tests, and gallery fixtures',
+    method: 'local',
+    retryCount: 0,
+    tool: 'command-code',
+    model: 'deepseek/deepseek-v4.1-flash-fast',
+    kind: 'cli',
+    implementerTokens: 50,
+    escalationTokens: 0,
+    cost: 0.01,
+  };
+  const statePath = join(dir, STATE_FILE);
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  writeFileSync(statePath, JSON.stringify({ ...state, tokenUsage, taskBreakdowns: [brief] }));
+  const summaryPath = join(dir, SUMMARY_FILE);
+  const stored = JSON.parse(readFileSync(summaryPath, 'utf8'));
+  writeFileSync(
+    summaryPath,
+    JSON.stringify({
+      ...stored,
+      summary: {
+        ...stored.summary,
+        tokenUsage,
+        taskBreakdown: [brief],
+        costBreakdown: { actualPlannerCost: 0, actualImplementerCost: 0.01, totalActualCost: 0.01 },
+      },
+    }),
+  );
+  const logPath = join(dir, SESSION_LOG_FILE);
+  const context = { callId: 'old-build', role: 'implementer', backendKind: 'cli', sequence: 1 };
+  const oldEvents = {
+    cost_update: { tokenUsage },
+    runner_call_usage: {
+      ...context,
+      usage: { inputTokens: 40, outputTokens: 10 },
+      semantics: 'final',
+    },
+    task_tokens: brief,
+  };
+  const oldLog = Object.entries(oldEvents)
+    .map(([type, data]) =>
+      JSON.stringify({ kind: 'event', type, data, ts: AT, phase: 'implementing' }),
+    )
+    .join('\n');
+  const log = readFileSync(logPath, 'utf8');
+  writeFileSync(logPath, `${oldLog}\n${log}`);
+}
+
 /** The stdin reads of the CLI, one line of its key log for each read. */
 function stdinReads(target: StopContinueFixture): string[] {
   const dir = join(target.projectDir, SPLITBRIEF_DIR, 'debug');
@@ -81,10 +147,11 @@ type AppliedRunScreen = ClosedRunScreen & {
 async function openAppliedRun<T>(
   viewport: { cols: number; rows: number },
   read: (run: AppliedRunScreen) => Promise<T>,
+  seed: (target: StopContinueFixture) => void = seedAppliedRun,
 ): Promise<T> {
   const target = createStopContinueFixture(() => '', { isolation: 'none' });
   fixture = target;
-  seedAppliedRun(target);
+  seed(target);
   const home = join(target.tmpDir, 'home');
   mkdirSync(home);
   return openClosedRun(
@@ -114,6 +181,25 @@ async function openAppliedRun<T>(
     },
   );
 }
+
+it('opens a run saved with accounting fields and shows its seats and briefs', async () => {
+  const opened = await openAppliedRun(
+    { cols: 160, rows: 45 },
+    async ({ screen, write, waitForText }) => {
+      write(CTRL_A);
+      await waitForText('T001 Make drift_report rowless', '├ collapse · ctrl+a');
+      return screen();
+    },
+    (target) => {
+      seedAppliedRun(target);
+      addOldAccounting(target);
+    },
+  );
+
+  expect(opened).toContain('Opus 5.5');
+  expect(opened).toContain('DeepSeek V4.1 Flash');
+  expect(opened).toContain('T001 Make drift_report rowless');
+});
 
 it('closes the transcript of a long applied run with its summary, and opens the whole record on ctrl+a', async () => {
   const { folded, opened, foldedAgain } = await openAppliedRun(

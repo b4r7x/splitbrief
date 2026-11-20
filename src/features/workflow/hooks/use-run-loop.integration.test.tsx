@@ -3554,7 +3554,6 @@ describe('useRunLoop — a seat wait after the seat changed', () => {
             failure: { message: "You've hit your usage limit. Try again in 5 minutes." },
             value: undefined,
           }),
-          () => {},
         );
       } catch {
         // The stop aborts the wait.

@@ -1,10 +1,5 @@
 import type { EffortLevel } from '../../core/schemas/enums.js';
-import {
-  effortField,
-  temperatureField,
-  tokenLimitFields,
-  usageField,
-} from './openai-stream/request.js';
+import { effortField, temperatureField, tokenLimitFields } from './openai-stream/request.js';
 
 export const OPENAI_COMPAT_STANDARD_FINISH_REASONS = Object.freeze([
   'stop',
@@ -23,7 +18,6 @@ export type OpenAICompatExtraBody = Readonly<Record<string, unknown>> | undefine
 
 export interface OpenAICompatPolicy {
   readonly tokenField: OpenAICompatTokenField;
-  readonly streamUsage: boolean;
   readonly temperature: OpenAICompatTemperaturePolicy;
   readonly effort: OpenAICompatEffortPolicy;
   readonly reasoning: OpenAICompatReasoningPolicy;
@@ -39,7 +33,6 @@ export interface ResolveOpenAICompatPolicyOptions {
 
 const CONSERVATIVE_POLICY: OpenAICompatPolicy = Object.freeze({
   tokenField: 'max_tokens',
-  streamUsage: false,
   temperature: 'omit',
   effort: 'omit',
   reasoning: 'omit',
@@ -66,7 +59,6 @@ export interface EffectiveRequestOptions {
   readonly maxTokens: number | undefined;
   readonly temperature: OpenAICompatControl<number>;
   readonly effort: OpenAICompatControl<EffortLevel>;
-  readonly streamUsage: boolean;
   readonly extraBody: OpenAICompatExtraBody;
   readonly finishReasons: readonly OpenAICompatFinishReason[];
 }
@@ -101,7 +93,6 @@ export function resolveEffectiveRequestOptions(
     maxTokens: tokenLimit.max_completion_tokens ?? tokenLimit.max_tokens,
     temperature: control(input.temperature, (value) => temperatureField(policy, value).temperature),
     effort: control(input.effort, (value) => effortField(policy, value).reasoning_effort),
-    streamUsage: usageField(policy).stream_options !== undefined,
     extraBody: policy.extraBody,
     finishReasons: policy.finishReasons,
   };

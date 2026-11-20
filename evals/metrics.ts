@@ -1,8 +1,4 @@
 import type { FinalReviewVerdict, Summary } from '../src/core/schemas/summary.js';
-import { costKnownFlags } from '../src/core/schemas/cost.js';
-import type { CostBreakdown } from '../src/core/schemas/cost.js';
-import { totalInputTokens, totalOutputTokens } from '../src/core/schemas/tokens.js';
-import { splitSeatTokenTotals } from '../src/core/providers/seat-totals.js';
 import { classifyTaskCompletionMethod } from '../src/core/task-completion.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import type { QualityCheckResult } from './scenarios/types.js';
@@ -41,22 +37,6 @@ export type QualityScore = {
   score: number;
 };
 
-export type CostMetrics = {
-  plannerInputTokens: number;
-  plannerOutputTokens: number;
-  implementerInputTokens: number;
-  implementerOutputTokens: number;
-  escalationInputTokens: number;
-  escalationOutputTokens: number;
-  reviewerInputTokens: number;
-  reviewerOutputTokens: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  estimatedCostUSD: number;
-  costBreakdown: CostBreakdown | null;
-  pricingAvailable: boolean;
-};
-
 export type RunMetrics = {
   scenarioId: string;
   mode: 'baseline' | 'routed';
@@ -69,7 +49,6 @@ export type RunMetrics = {
   skippedTasks: number;
   retryCount: number;
   quality: QualityScore;
-  cost: CostMetrics;
   testsPassedAfterRun: boolean;
   outcome: OutcomeMetrics;
   review: ReviewMetrics;
@@ -81,8 +60,6 @@ export type ScenarioComparison = {
   baseline: RunMetrics;
   routed: RunMetrics;
   qualityRetentionPercent: number;
-  baselineCostUSD: number;
-  routedCostUSD: number;
   firstPassRateDeltaPercent: number;
 };
 
@@ -94,10 +71,6 @@ export type EvalReport = {
   scenarios: ScenarioComparison[];
   aggregate: {
     avgQualityRetentionPercent: number;
-    /** Sum over the priced baseline runs; `null` when none of them was priced. */
-    totalBaselineCostUSD: number | null;
-    /** Sum over the priced routed runs; `null` when none of them was priced. */
-    totalRoutedCostUSD: number | null;
     scenariosRun: number;
     scenariosWhereRoutedMatchedBaseline: number;
     avgBaselineFirstPassRatePercent: number;
@@ -111,30 +84,6 @@ export type EvalReport = {
     greenRunsCriticalFindings: number;
   };
 };
-
-export function collectCostMetrics(summary: Summary): CostMetrics {
-  const usage = summary.tokenUsage;
-  const costBreakdown = summary.costBreakdown ?? null;
-  const seats = splitSeatTokenTotals({ tokenUsage: usage, reviewerTool: summary.reviewerTool });
-  return {
-    plannerInputTokens: seats.planner.input,
-    plannerOutputTokens: seats.planner.output,
-    implementerInputTokens: usage.implementerInput,
-    implementerOutputTokens: usage.implementerOutput,
-    escalationInputTokens: usage.escalationInput,
-    escalationOutputTokens: usage.escalationOutput,
-    reviewerInputTokens: seats.reviewer?.input ?? 0,
-    reviewerOutputTokens: seats.reviewer?.output ?? 0,
-    totalInputTokens: totalInputTokens(usage),
-    totalOutputTokens: totalOutputTokens(usage),
-    estimatedCostUSD: costBreakdown?.totalActualCost ?? 0,
-    costBreakdown,
-    pricingAvailable:
-      costBreakdown !== null &&
-      costBreakdown.hasPricedUsage === true &&
-      costKnownFlags(costBreakdown).totalCostKnown,
-  };
-}
 
 export function collectQualityScore(results: QualityCheckResult[]): QualityScore {
   const passed = results.filter((result) => result.passed);
@@ -207,7 +156,6 @@ export function collectRunMetrics(
     skippedTasks: summary.skipped,
     retryCount: retryEvents.length,
     quality: collectQualityScore(qualityResults),
-    cost: collectCostMetrics(summary),
     testsPassedAfterRun: qualityResults.every((result) => result.passed),
     outcome: collectOutcomeMetrics(summary, {
       retryAttempts: retryEvents.length,
@@ -237,10 +185,6 @@ function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
-function sumOrNull(values: number[]): number | null {
-  return values.length > 0 ? sum(values) : null;
-}
-
 function average(values: number[]): number {
   return values.length > 0 ? sum(values) / values.length : 0;
 }
@@ -250,20 +194,12 @@ function roundTenth(value: number): number {
 }
 
 export function aggregateComparisons(comparisons: ScenarioComparison[]): EvalReport['aggregate'] {
-  const pricedBaselines = comparisons.filter(
-    (comparison) => comparison.baseline.cost.pricingAvailable,
-  );
-  const pricedRouted = comparisons.filter((comparison) => comparison.routed.cost.pricingAvailable);
   const greenRuns = collectGreenRunAggregates(comparisons);
 
   return {
     avgQualityRetentionPercent: roundTenth(
       average(comparisons.map((comparison) => comparison.qualityRetentionPercent)),
     ),
-    totalBaselineCostUSD: sumOrNull(
-      pricedBaselines.map((comparison) => comparison.baselineCostUSD),
-    ),
-    totalRoutedCostUSD: sumOrNull(pricedRouted.map((comparison) => comparison.routedCostUSD)),
     scenariosRun: comparisons.length,
     scenariosWhereRoutedMatchedBaseline: comparisons.filter(
       (comparison) => comparison.qualityRetentionPercent >= 100,
@@ -307,8 +243,6 @@ export function compareScenario(
   }>,
 ): ScenarioComparison {
   const { scenarioId, scenarioName, baseline, routed } = input;
-  const baselineCost = baseline.cost.estimatedCostUSD;
-  const routedCost = routed.cost.estimatedCostUSD;
 
   const baselineQuality = baseline.quality.score;
   const routedQuality = routed.quality.score;
@@ -320,8 +254,6 @@ export function compareScenario(
     baseline,
     routed,
     qualityRetentionPercent: Math.round(qualityRetention * 10) / 10,
-    baselineCostUSD: baselineCost,
-    routedCostUSD: routedCost,
     firstPassRateDeltaPercent:
       Math.round((routed.outcome.firstPassRate - baseline.outcome.firstPassRate) * 100 * 10) / 10,
   };

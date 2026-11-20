@@ -37,7 +37,6 @@ export type StreamRequestBody = {
   policy?: OpenAICompatPolicy | undefined;
   temperature?: number | undefined;
   stream: true;
-  stream_options?: { include_usage: boolean } | undefined;
   max_tokens?: number | undefined;
   max_completion_tokens?: number | undefined;
   reasoning_effort?: ReasoningEffortWord | undefined;
@@ -106,8 +105,6 @@ export function toOpenAIRequest(
       ? (body.max_completion_tokens ?? body.max_tokens)
       : (body.max_tokens ?? body.max_completion_tokens);
   const temperature = policy?.temperature === 'omit' ? undefined : body.temperature;
-  const includeUsage =
-    policy === undefined ? body.stream_options?.include_usage : policy.streamUsage;
   const reasoningEffort =
     policy?.reasoning === 'omit' || policy?.effort === 'omit' ? undefined : body.reasoning_effort;
   const tokenFields =
@@ -129,7 +126,6 @@ export function toOpenAIRequest(
     messages: body.messages.map(toOpenAIMessage),
     ...(temperature !== undefined ? { temperature } : {}),
     stream: true,
-    ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
     ...tokenFields,
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
     ...(body.response_format !== undefined ? { response_format: body.response_format } : {}),
@@ -175,10 +171,4 @@ export function responseFormatField(
   format: OpenAIResponseFormat | undefined,
 ): Pick<StreamRequestBody, 'response_format'> {
   return format === undefined ? {} : { response_format: format };
-}
-
-export function usageField(
-  policy: OpenAICompatPolicy,
-): { stream_options: { include_usage: true } } | Record<string, never> {
-  return policy.streamUsage ? { stream_options: { include_usage: true } } : {};
 }

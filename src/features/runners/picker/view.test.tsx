@@ -36,7 +36,7 @@ import type { PickerCatalog } from './use-catalog.js';
 import type { PickerActions } from './use-actions.js';
 
 function pickerItem(
-  item: Omit<PickerOption, 'modelCapability'> & { modelPolicy: PickerOption['modelPolicy'] },
+  item: Omit<PickerOption, 'modelCapability'> & { billing?: string },
   automatic = false,
 ): PickerOption {
   return {
@@ -92,7 +92,7 @@ describe('PickerView fallback slot', () => {
         displayName: 'Codex CLI',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'subscription-included',
+
         permissions: readyPermissions,
         status: { state: 'ready', remediation: null },
         available: true,
@@ -147,7 +147,7 @@ describe('PickerView model confirmation', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -165,7 +165,7 @@ describe('PickerView model confirmation', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -245,7 +245,7 @@ describe('PickerView previews', () => {
       kind: 'api',
       roles: ['planner', 'implementer'],
       modelPolicy: 'required',
-      billing: 'local',
+
       permissions: readyPermissions,
       status: { state: 'unavailable', remediation: 'Ollama is not answering.' },
       available: false,
@@ -272,7 +272,7 @@ describe('PickerView previews', () => {
     ui.unmount();
   });
 
-  it('previews keep catalog casing and semantic posture fields', async () => {
+  it('shows the model and permissions without billing or context size', async () => {
     const tool = pickerItem({
       id: 'opencode',
       displayName: 'OpenCode',
@@ -308,7 +308,7 @@ describe('PickerView previews', () => {
     expect(initialFrame).toContain('Models');
     expect(initialFrame).toContain(`OpenCode${SOFT_SEP}1.0.0`);
     expect(initialFrame).toContain('direct write');
-    expect(initialFrame).toContain('subscription');
+    expect.soft(initialFrame).not.toContain('subscription');
     expect(initialFrame).toContain('1 model');
     expect(initialFrame).toContain('from opencode api GET /api/model --standalone');
 
@@ -317,7 +317,7 @@ describe('PickerView previews', () => {
     await flushEffects();
     const modelFrame = ui.lastFrame() ?? '';
     expect(modelFrame).toContain('GPT-4o');
-    expect(modelFrame).toContain('128K');
+    expect(modelFrame).not.toContain('128K');
 
     await flushEffects();
     ui.stdin.write('\u001B[A');
@@ -336,7 +336,7 @@ describe('PickerView previews', () => {
         kind: 'cli',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'local',
+
         permissions: { ...readyPermissions, network: false },
         status: { state: 'ready', remediation: null },
         available: true,
@@ -381,7 +381,7 @@ describe('PickerView previews', () => {
       kind: 'api',
       roles: ['planner', 'implementer'],
       modelPolicy: 'per-call',
-      billing: 'api-metered',
+
       dataUse: 'no-training',
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
@@ -440,7 +440,7 @@ describe('PickerView previews', () => {
       kind: 'api',
       roles: ['planner', 'implementer'],
       modelPolicy: 'per-call',
-      billing: 'api-metered',
+
       dataUse: 'no-training',
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
@@ -466,7 +466,7 @@ describe('PickerView previews', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('No models detected');
     expect(frame).toContain('Press ctrl+r to refresh detection');
-    expect(frame).toContain('metered');
+
     ui.unmount();
   });
 
@@ -481,7 +481,7 @@ describe('PickerView previews', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status,
       available: false,
@@ -562,7 +562,7 @@ describe('PickerView previews', () => {
         kind: 'cli',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'subscription-included',
+
         permissions: readyPermissions,
         status,
         available: status.state === 'ready',
@@ -650,7 +650,7 @@ describe('PickerView previews', () => {
         kind: 'cli',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'subscription-included',
+
         permissions: readyPermissions,
         status,
         available: false,
@@ -706,7 +706,7 @@ describe('PickerView previews', () => {
       kind: 'cli',
       roles: ['implementer'],
       modelPolicy: 'auto-only',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -740,7 +740,7 @@ describe('PickerView previews', () => {
       kind: 'api',
       roles: ['planner', 'implementer'],
       modelPolicy: 'per-call',
-      billing: 'api-metered',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -775,7 +775,7 @@ describe('PickerView previews', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -817,7 +817,7 @@ describe('PickerView feedback', () => {
     kind: 'cli',
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
-    billing: 'subscription-included',
+
     permissions: readyPermissions,
     status: { state: 'ready', remediation: null },
     available: true,
@@ -929,7 +929,7 @@ describe('PickerView initial left highlight', () => {
         kind: 'cli',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'subscription-included',
+
         permissions: readyPermissions,
         status: { state: 'ready', remediation: null },
         available: true,
@@ -944,7 +944,7 @@ describe('PickerView initial left highlight', () => {
         kind: 'cli',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'subscription-included',
+
         permissions: readyPermissions,
         status: { state: 'ready', remediation: null },
         available: true,
@@ -991,7 +991,7 @@ describe('PickerView refreshing discovery', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -1029,7 +1029,7 @@ describe('PickerView browse-catalog escape', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -1142,7 +1142,7 @@ describe('PickerView variant axis', () => {
     kind: 'cli',
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
-    billing: 'subscription-included',
+
     permissions: readyPermissions,
     status: { state: 'ready', remediation: null },
     available: true,
@@ -1154,7 +1154,7 @@ describe('PickerView variant axis', () => {
     kind: 'cli',
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
-    billing: 'subscription-included',
+
     permissions: readyPermissions,
     status: { state: 'ready', remediation: null },
     available: true,

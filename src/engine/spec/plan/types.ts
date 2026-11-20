@@ -1,4 +1,5 @@
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
+import type { BuildContextOverflow } from '../../orchestrator/context-routing/types.js';
 
 export type PlanCheckCode =
   | 'empty-plan'
@@ -30,6 +31,10 @@ export type PlanCheckCode =
   | 'refused-check-command';
 
 /** BUILD's fit for one task, and the routing reason when no implementer can take it. */
-export type PlanTaskFit = Readonly<{ fit: TaskContextFit; blocked?: string | undefined }>;
+export type PlanTaskFit = Readonly<{
+  fit: TaskContextFit;
+  blocked?: string | undefined;
+  contextOverflow?: BuildContextOverflow | undefined;
+}>;
 
-export type PlanCheckError = Readonly<{ code: PlanCheckCode; message: string }>;
+export type PlanCheckError = Readonly<{ code: PlanCheckCode; message: string; detail?: string }>;

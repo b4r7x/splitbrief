@@ -16,7 +16,7 @@ export async function invokeRetryAttempt(
   opts: RetryStepOpts,
   workspace: AttemptWorkspace,
 ): Promise<{ state: WorkflowState; value: RetryInvokeResult }> {
-  const { ctx, task, lastError, usageCategory, invokeRetry } = opts;
+  const { ctx, task, lastError, invokeRetry } = opts;
   let state = opts.state;
   try {
     return await withContinuationLoop<RetryInvokeResult>({
@@ -68,7 +68,7 @@ export async function invokeRetryAttempt(
               deliversAnswer: opts.deliversAnswer,
               ...(continuation !== undefined && { continuation }),
               recordOutput,
-              seat: { ref: ctx, state, usageCategory },
+              seat: { ref: ctx, state },
             }),
         });
       },

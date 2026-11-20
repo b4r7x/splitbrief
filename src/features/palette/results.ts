@@ -1,4 +1,4 @@
-import { fuzzyMatchExtended } from './fuzzy-match.js';
+import { fuzzyMatch, fuzzyMatchExtended } from './fuzzy-match.js';
 import { COMMAND_CATEGORIES } from '../../core/runtime/commands/types.js';
 import type { CommandCategory } from '../../core/runtime/commands/types.js';
 
@@ -229,6 +229,16 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
     const target = [candidate.label, candidate.description, candidate.hint ?? '', candidate.source]
       .filter((part) => part !== '')
       .join(' ');
+    if (
+      candidate.source === 'command' &&
+      !termList.every((term) => {
+        if (target.toLowerCase().includes(term.toLowerCase())) return true;
+        if (fuzzyMatch(term, candidate.label) !== null) return true;
+        const words = [candidate.description, candidate.hint ?? ''].join(' ').split(/\s+/);
+        return words.some((word) => fuzzyMatch(term, word) !== null);
+      })
+    )
+      continue;
     const match = fuzzyMatchExtended(terms, target);
     if (match === null) continue;
     scored.push({

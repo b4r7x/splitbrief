@@ -51,7 +51,7 @@ export type RunWorkflowOptions = {
   _implementer?: Implementer | undefined;
   /** Test-only: inject a pre-built reviewer (avoids spawning real subprocesses in tests). */
   _reviewer?: Reviewer | undefined;
-  /** Model cache accessor for pricing/cost lookups — injected from composition layer. */
+  /** Model catalog used to resolve runner models and context windows. */
   modelCache?: ModelCacheAccessor | undefined;
   /** Implementer context length sourced from boot provider detection (not explicit config/CLI/env). Injected from composition layer. */
   detectedContextLength?: number | undefined;

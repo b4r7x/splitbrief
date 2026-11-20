@@ -1150,7 +1150,7 @@ const buildBriefCheckProjection: WorkflowFixtureProjection = {
       status: 'completed',
       error: null,
       partial: false,
-      usage: null,
+
       nativeSessionId: null,
     },
     {
@@ -1700,9 +1700,6 @@ const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// Three briefs: the first ran tight on a known 32K window, the second ran tight on a seat whose
-// window SPLITBRIEF only assumed, so its row shows the estimate alone, and the live one is over its
-// window, so its row shows the estimate alone too.
 const taskRowsContextFitProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-task-rows-context-fit'),
   feature: WORKFLOW_FEATURE,
@@ -1714,8 +1711,6 @@ const taskRowsContextFitProjection: WorkflowFixtureProjection = {
     {
       ...orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 100),
       contextFit: 'tight',
-      estimatedTokens: 24_310,
-      contextLength: 32_768,
     },
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 200),
     {
@@ -1724,7 +1719,6 @@ const taskRowsContextFitProjection: WorkflowFixtureProjection = {
         FIXED_TS + 300,
       ),
       contextFit: 'tight',
-      estimatedTokens: 7_000,
     },
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[1], FIXED_TS + 400),
     {
@@ -1733,8 +1727,6 @@ const taskRowsContextFitProjection: WorkflowFixtureProjection = {
         FIXED_TS + 500,
       ),
       contextFit: 'overflow',
-      estimatedTokens: 31_012,
-      contextLength: 32_768,
     },
   ],
 };
@@ -2560,7 +2552,7 @@ const reviewVerifyProjection: WorkflowFixtureProjection = {
         startedAt: FIXED_TS + 520,
         endedAt: FIXED_TS + 20_000,
         durationMs: 19_480,
-        usage: null,
+
         nativeSessionId: null,
       },
       {
@@ -3525,7 +3517,7 @@ const consultQuestionProjection: WorkflowFixtureProjection = {
       status: 'completed',
       error: null,
       partial: false,
-      usage: null,
+
       nativeSessionId: null,
     },
     {
@@ -3635,7 +3627,7 @@ const failureProjection: WorkflowFixtureProjection = {
       startedAt: FIXED_TS + 200,
       endedAt: FIXED_TS + 700,
       durationMs: 500,
-      usage: null,
+
       nativeSessionId: null,
     },
     {
@@ -4323,6 +4315,42 @@ const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
       base: { snapshotId: 'visual-base', head: null },
     },
     pendingRecovery: reviewFailedRecoveryIssue,
+  }),
+};
+
+const contextWindowRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-context-window'),
+  config: {
+    ...AGY_CREW,
+    reviewer: {
+      kind: 'api',
+      provider: 'ollama',
+      model: 'qwen3-coder-30b',
+      apiBase: 'http://127.0.0.1:11434/v1',
+      contextLength: 32_768,
+    },
+  },
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'final-review',
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_visual_context_window',
+      phase: 'final-review',
+      createdAt: new Date(FIXED_TS).toISOString(),
+      failure: {
+        kind: 'insufficient-context',
+        diagnostic: {
+          code: 'insufficient-context',
+          seat: 'review',
+          cause: 'input-budget',
+          missingSections: [],
+          requiredTokens: 412_096,
+          availableTokens: 32_768,
+        },
+      },
+    }),
   }),
 };
 
@@ -6251,19 +6279,16 @@ const SPENT_B2_REPLAY_LOG = `
 {"ts":"2026-10-11T13:56:54.095Z","kind":"event","type":"runner_call_activity","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":421,"activityId":"implementer-2:tool:call_00_ite0q1t16woz95buk0ph9o02","stage":"completed","kind":"read","label":"reading src/text.js","target":"src/text.js","redacted":false,"rawAvailable":false,"expandId":"implementer-2:tool:call_00_ite0q1t16woz95buk0ph9o02"}}
 {"ts":"2026-10-11T13:56:54.128Z","kind":"event","type":"runner_call_tool_use","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":422,"stage":"done","toolUse":{"id":"call_01_hivt3g7zu711ale5u0b4uk9d","name":"read","input":{"path":"/Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/test/text.test.js"},"output":"Read file /Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/test/text.test.js, lines 1-22\\n1: import test from 'node:test';\\n2: import assert from 'node:assert/strict';\\n3: import { compactWhitespace } from '../src/text.js';\\n4: \\n5: test('compacts spaces, tabs, and newlines', () => {\\n6:   assert.equal(compactWhitespace('  Hello\\\\t world\\\\n again  '), 'Hello world again');\\n7: });\\n8: \\n9: test('keeps letter case and punctuation', () => {\\n10:   assert.equal(compactWhitespace('Hello, World!'), 'Hello, World!');\\n11: });\\n12: \\n13: test('empty and whitespace-only strings become empty', () => {\\n14:   assert.equal(compactWhitespace(''), '');\\n15:   assert.equal(compactWhitespace(' \\\\t\\\\n '), '');\\n16: });\\n17: \\n18: test('rejects non-string text', () => {\\n19:   for (const value of [null, undefined, 7, {}, []]) {\\n20:     assert.throws(() => compactWhitespace(value), TypeError);\\n21:   }\\n22: });"}}}
 {"ts":"2026-10-11T13:56:54.128Z","kind":"event","type":"runner_call_activity","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":422,"activityId":"implementer-2:tool:call_01_hivt3g7zu711ale5u0b4uk9d","stage":"completed","kind":"read","label":"reading test/text.test.js","target":"test/text.test.js","redacted":false,"rawAvailable":false,"expandId":"implementer-2:tool:call_01_hivt3g7zu711ale5u0b4uk9d"}}
-{"ts":"2026-10-11T13:56:54.142Z","kind":"event","type":"runner_call_usage","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":423,"usage":{"inputTokens":39503,"outputTokens":143,"cacheReadTokens":1408,"cacheCreateTokens":0,"reasoningTokens":7},"semantics":"delta"}}
 {"ts":"2026-10-11T13:57:00.288Z","kind":"event","type":"runner_call_tool_use","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":424,"stage":"done","toolUse":{"id":"call_00_dwh9e2pefls02duk3ut249vx","name":"edit","input":{"path":"/Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/src/text.js","oldString":"export function compactWhitespace(value) {\\n  if (typeof value !== 'string') {\\n    throw new TypeError('value must be a string');\\n  }\\n  return value.trim().replace(/\\\\s+/g, ' ');\\n}","newString":"export function compactWhitespace(value) {\\n  if (typeof value !== 'string') {\\n    throw new TypeError('value must be a string');\\n  }\\n  return value.trim().replace(/\\\\s+/g, ' ');\\n}\\n\\nexport function wordCount(value) {\\n  if (typeof value !== 'string') {\\n    throw new TypeError('value must be a string');\\n  }\\n  return (value.match(/\\\\S+/g) ?? []).length;\\n}"},"output":"Edited src/text.js (1 replacement)"}}}
 {"ts":"2026-10-11T13:57:00.288Z","kind":"event","type":"runner_call_activity","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":424,"activityId":"implementer-2:tool:call_00_dwh9e2pefls02duk3ut249vx","stage":"completed","kind":"write","label":"editing src/text.js","target":"src/text.js","redacted":false,"rawAvailable":false,"expandId":"implementer-2:tool:call_00_dwh9e2pefls02duk3ut249vx"}}
 {"ts":"2026-10-11T13:57:00.316Z","kind":"event","type":"runner_call_tool_use","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":425,"stage":"done","toolUse":{"id":"call_01_lp0z70gkmvxw222l1zqfskl4","name":"edit","input":{"path":"/Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/test/text.test.js","oldString":"import { compactWhitespace } from '../src/text.js';","newString":"import { compactWhitespace, wordCount } from '../src/text.js';"},"output":"Edited test/text.test.js (1 replacement)"}}}
 {"ts":"2026-10-11T13:57:00.316Z","kind":"event","type":"runner_call_activity","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":425,"activityId":"implementer-2:tool:call_01_lp0z70gkmvxw222l1zqfskl4","stage":"completed","kind":"write","label":"editing test/text.test.js","target":"test/text.test.js","redacted":false,"rawAvailable":false,"expandId":"implementer-2:tool:call_01_lp0z70gkmvxw222l1zqfskl4"}}
 {"ts":"2026-10-11T13:57:00.318Z","kind":"event","type":"runner_call_tool_use","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":426,"stage":"done","toolUse":{"id":"call_02_t16s4ijhtveiv4kz5okdgyfq","name":"edit","input":{"path":"/Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/test/text.test.js","oldString":"test('rejects non-string text', () => {\\n  for (const value of [null, undefined, 7, {}, []]) {\\n    assert.throws(() => compactWhitespace(value), TypeError);\\n  }\\n});","newString":"test('rejects non-string text', () => {\\n  for (const value of [null, undefined, 7, {}, []]) {\\n    assert.throws(() => compactWhitespace(value), TypeError);\\n  }\\n});\\n\\ntest('counts nonempty whitespace-separated words', () => {\\n  assert.equal(wordCount('  one\\\\ttwo\\\\nthree  '), 3);\\n});\\n\\ntest('keeps punctuation inside a word', () => {\\n  assert.equal(wordCount('hello,world'), 1);\\n});\\n\\ntest('empty and whitespace-only strings count zero words', () => {\\n  assert.equal(wordCount(''), 0);\\n  assert.equal(wordCount(' \\\\t\\\\n '), 0);\\n});\\n\\ntest('wordCount rejects non-string input', () => {\\n  assert.throws(() => wordCount(null), TypeError);\\n  assert.throws(() => wordCount(42), TypeError);\\n  assert.throws(() => wordCount(undefined), TypeError);\\n});"},"output":"Edited test/text.test.js (1 replacement)"}}}
 {"ts":"2026-10-11T13:57:00.318Z","kind":"event","type":"runner_call_activity","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":426,"activityId":"implementer-2:tool:call_02_t16s4ijhtveiv4kz5okdgyfq","stage":"completed","kind":"write","label":"editing test/text.test.js","target":"test/text.test.js","redacted":false,"rawAvailable":false,"expandId":"implementer-2:tool:call_02_t16s4ijhtveiv4kz5okdgyfq"}}
-{"ts":"2026-10-11T13:57:00.373Z","kind":"event","type":"runner_call_usage","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":427,"usage":{"inputTokens":648,"outputTokens":719,"cacheReadTokens":40832,"cacheCreateTokens":0,"reasoningTokens":38},"semantics":"delta"}}
 {"ts":"2026-10-11T13:57:03.287Z","kind":"event","type":"planner_text","phase":"implementing","data":{"text":"Added \`wordCount(value)\` as a named export in \`src/text.js\`, matching \`compactWhitespace\`'s validation style, and extended \`test/text.test.js\` with the required cases.\\n\\n{\\"status\\":\\"done\\",\\"filesChanged\\":[\\"src/text.js\\",\\"test/text.test.js\\"],\\"touchedNotSuggested\\":[],\\"notes\\":null,\\"decisions\\":[]}","role":"implementer","content":"markdown"}}
 {"ts":"2026-10-11T13:57:03.312Z","kind":"event","type":"steerable_call","phase":"implementing","data":{}}
 {"ts":"2026-10-11T13:57:03.355Z","kind":"event","type":"runner_call_completed","taskId":"T001","phase":"implementing","data":{"callId":"implementer-2","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727008291,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":430,"status":"completed","error":null,"partial":false,"startedAt":1791727008291,"endedAt":1791727023355,"durationMs":15064,"usage":{"inputTokens":40151,"outputTokens":862,"cacheReadTokens":42240,"cacheCreateTokens":0,"reasoningTokens":45},"nativeSessionId":"ses_ed4bf81f5ffeJnkbVh4fsKPGKi"}}
 {"ts":"2026-10-11T13:57:03.432Z","kind":"event","type":"implementer_generate_done","taskId":"T001","phase":"implementing","data":{"file":"src/text.js","duration":15409}}
-{"ts":"2026-10-11T13:57:03.490Z","kind":"event","type":"cost_update","phase":"implementing","data":{"tokenUsage":{"plannerInput":4,"plannerOutput":3222,"implementerInput":40151,"implementerOutput":862,"escalationInput":0,"escalationOutput":0,"reviewerInput":0,"reviewerOutput":0,"plannerCacheRead":39876,"plannerCacheCreate":43816,"implementerCacheRead":42240,"implementerCacheCreate":0,"implementerReasoning":45,"plannerCoverage":{"input":"reported","output":"partial","cacheRead":"reported","cacheCreate":"reported","reasoning":"missing"}}}}
 {"ts":"2026-10-11T13:57:03.672Z","kind":"event","type":"task_completed","taskId":"T001","phase":"implementing","data":{"title":"Add wordCount to src/text.js","method":"local","retries":0,"duration":15822,"tool":"opencode","model":"opencode-go/deepseek-v4.1-flash","implementerProfile":"default"}}
 {"ts":"2026-10-11T13:57:03.781Z","kind":"event","type":"task_tokens","taskId":"T001","phase":"implementing","data":{"method":"local","implementerTokens":41013,"escalationTokens":0,"implementerCacheReadTokens":42240,"implementerCacheCreateTokens":0,"implementerInputTokens":40151,"implementerOutputTokens":862,"implementerReasoningTokens":45,"retryCount":0,"tool":"opencode","model":"opencode-go/deepseek-v4.1-flash","implementerProfile":"default","contextFit":"fits","estimatedTokens":1573,"untruncatedEstimatedTokens":1573,"contextLength":1000000,"currentCodeTruncated":false,"currentCodeContextMode":"none","routingReason":"Selected profile default (fits, estimated 1573/1000000 tokens)"}}
 {"ts":"2026-10-11T13:57:03.917Z","kind":"event","type":"task_started","taskId":"T002","phase":"implementing","data":{"title":"Add optional suffix to truncate in src/preview.js","index":1,"total":2,"lineageAttempt":1,"attemptAllowance":8,"file":"src/preview.js","files":["src/preview.js","test/preview.test.js"],"action":"modify","tool":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"backendKind":"cli","implementerProfile":"default","contextFit":"fits","estimatedTokens":1872,"untruncatedEstimatedTokens":1872,"contextLength":1000000,"currentCodeTruncated":false,"currentCodeContextMode":"none","routingReason":"Selected profile default (fits, estimated 1872/1000000 tokens)"}}
@@ -6275,18 +6300,14 @@ const SPENT_B2_REPLAY_LOG = `
 {"ts":"2026-10-11T13:57:09.403Z","kind":"event","type":"runner_call_activity","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":433,"activityId":"implementer-3:tool:call_01_kt2eae9el2zmaorf0yhv806o","stage":"completed","kind":"read","label":"reading test/preview.test.js","target":"test/preview.test.js","redacted":false,"rawAvailable":false,"expandId":"implementer-3:tool:call_01_kt2eae9el2zmaorf0yhv806o"}}
 {"ts":"2026-10-11T13:57:09.431Z","kind":"event","type":"runner_call_tool_use","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":434,"stage":"done","toolUse":{"id":"call_00_9rcxaynqzhmwd3bwvry296vy","name":"read","input":{"path":"/Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/src/preview.js"},"output":"Read file /Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/src/preview.js, lines 1-9\\n1: export function truncate(value, maxLength) {\\n2:   if (typeof value !== 'string') {\\n3:     throw new TypeError('value must be a string');\\n4:   }\\n5:   if (!Number.isSafeInteger(maxLength) || maxLength < 1) {\\n6:     throw new RangeError('maxLength must be a positive safe integer');\\n7:   }\\n8:   return value.slice(0, maxLength);\\n9: }"}}}
 {"ts":"2026-10-11T13:57:09.431Z","kind":"event","type":"runner_call_activity","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":434,"activityId":"implementer-3:tool:call_00_9rcxaynqzhmwd3bwvry296vy","stage":"completed","kind":"read","label":"reading src/preview.js","target":"src/preview.js","redacted":false,"rawAvailable":false,"expandId":"implementer-3:tool:call_00_9rcxaynqzhmwd3bwvry296vy"}}
-{"ts":"2026-10-11T13:57:09.443Z","kind":"event","type":"runner_call_usage","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":435,"usage":{"inputTokens":5079,"outputTokens":145,"cacheReadTokens":36096,"cacheCreateTokens":0,"reasoningTokens":6},"semantics":"delta"}}
 {"ts":"2026-10-11T13:57:15.811Z","kind":"event","type":"runner_call_tool_use","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":436,"stage":"done","toolUse":{"id":"call_00_2wge1tf6goxk0aq1jks95wlj","name":"edit","input":{"path":"/Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/src/preview.js","oldString":"export function truncate(value, maxLength) {\\n  if (typeof value !== 'string') {\\n    throw new TypeError('value must be a string');\\n  }\\n  if (!Number.isSafeInteger(maxLength) || maxLength < 1) {\\n    throw new RangeError('maxLength must be a positive safe integer');\\n  }\\n  return value.slice(0, maxLength);\\n}","newString":"export function truncate(value, maxLength, suffix = '') {\\n  if (typeof value !== 'string') {\\n    throw new TypeError('value must be a string');\\n  }\\n  if (!Number.isSafeInteger(maxLength) || maxLength < 1) {\\n    throw new RangeError('maxLength must be a positive safe integer');\\n  }\\n  if (typeof suffix !== 'string') {\\n    throw new TypeError('suffix must be a string');\\n  }\\n  if (suffix.length > maxLength) {\\n    throw new RangeError('suffix must not be longer than maxLength');\\n  }\\n  if (value.length <= maxLength) {\\n    return value;\\n  }\\n  return value.slice(0, maxLength - suffix.length) + suffix;\\n}"},"output":"Edited src/preview.js (1 replacement)"}}}
 {"ts":"2026-10-11T13:57:15.811Z","kind":"event","type":"runner_call_activity","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":436,"activityId":"implementer-3:tool:call_00_2wge1tf6goxk0aq1jks95wlj","stage":"completed","kind":"write","label":"editing src/preview.js","target":"src/preview.js","redacted":false,"rawAvailable":false,"expandId":"implementer-3:tool:call_00_2wge1tf6goxk0aq1jks95wlj"}}
 {"ts":"2026-10-11T13:57:15.841Z","kind":"event","type":"runner_call_tool_use","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":437,"stage":"done","toolUse":{"id":"call_01_czqqhx6led5sg96jyox9o1zy","name":"edit","input":{"path":"/Users/alice/.local/state/splitbrief/trees/8ffd6ae95841/2026-10-11-word-counts-and-marked-previews/test/preview.test.js","oldString":"test('rejects non-string previews', () => {\\n  assert.throws(() => truncate(null, 3), TypeError);\\n});\\n\\ntest('rejects invalid maximum lengths', () => {\\n  for (const length of [0, -1, 1.5, '3', NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {\\n    assert.throws(() => truncate('abc', length), RangeError);\\n  }\\n});","newString":"test('marks cut previews with a suffix', () => {\\n  assert.equal(truncate('abcdef', 4, '..'), 'ab..');\\n  assert.equal(truncate('abcdef', 3, '...'), '...');\\n  assert.equal(truncate('abcdef', 3), 'abc');\\n});\\n\\ntest('keeps short, exact-length, and empty previews with a suffix', () => {\\n  assert.equal(truncate('ab', 4, '..'), 'ab');\\n  assert.equal(truncate('abcd', 4, '..'), 'abcd');\\n  assert.equal(truncate('', 4, '..'), '');\\n});\\n\\ntest('rejects non-string previews', () => {\\n  assert.throws(() => truncate(null, 3), TypeError);\\n  assert.throws(() => truncate(null, 3, '..'), TypeError);\\n});\\n\\ntest('rejects invalid maximum lengths', () => {\\n  for (const length of [0, -1, 1.5, '3', NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {\\n    assert.throws(() => truncate('abc', length), RangeError);\\n    assert.throws(() => truncate('abc', length, '..'), RangeError);\\n  }\\n});\\n\\ntest('rejects non-string suffixes', () => {\\n  assert.throws(() => truncate('a', 4, null), TypeError);\\n  assert.throws(() => truncate('a', 4, 42), TypeError);\\n});\\n\\ntest('rejects suffixes longer than the maximum length', () => {\\n  assert.throws(() => truncate('a', 2, '...'), RangeError);\\n});"},"output":"Edited test/preview.test.js (1 replacement)"}}}
 {"ts":"2026-10-11T13:57:15.841Z","kind":"event","type":"runner_call_activity","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":437,"activityId":"implementer-3:tool:call_01_czqqhx6led5sg96jyox9o1zy","stage":"completed","kind":"write","label":"editing test/preview.test.js","target":"test/preview.test.js","redacted":false,"rawAvailable":false,"expandId":"implementer-3:tool:call_01_czqqhx6led5sg96jyox9o1zy"}}
-{"ts":"2026-10-11T13:57:15.914Z","kind":"event","type":"runner_call_usage","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":438,"usage":{"inputTokens":744,"outputTokens":898,"cacheReadTokens":41088,"cacheCreateTokens":0,"reasoningTokens":7},"semantics":"delta"}}
 {"ts":"2026-10-11T13:57:18.858Z","kind":"event","type":"planner_text","phase":"implementing","data":{"text":"I updated \`truncate\` with the optional \`suffix\` parameter and added the requested node:test cases.\\n\\n{\\"status\\":\\"done\\",\\"filesChanged\\":[\\"src/preview.js\\",\\"test/preview.test.js\\"],\\"touchedNotSuggested\\":[],\\"notes\\":null,\\"decisions\\":[]}","role":"implementer","content":"markdown"}}
-{"ts":"2026-10-11T13:57:18.927Z","kind":"event","type":"runner_call_usage","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":440,"usage":{"inputTokens":1046,"outputTokens":62,"cacheReadTokens":41728,"cacheCreateTokens":0,"reasoningTokens":0},"semantics":"delta"}}
 {"ts":"2026-10-11T13:57:18.936Z","kind":"event","type":"steerable_call","phase":"implementing","data":{}}
 {"ts":"2026-10-11T13:57:19.008Z","kind":"event","type":"runner_call_completed","taskId":"T002","phase":"implementing","data":{"callId":"implementer-3","role":"implementer","backendKind":"cli","runnerName":"opencode","model":"opencode-go/deepseek-v4.1-flash","axes":["high"],"attempt":0,"invocationIdentity":{"version":1,"capturedAt":1791727024337,"runner":{"kind":"cli","id":"opencode"},"billing":{"posture":"unknown","basis":"unknown"}},"usageBoundary":"aggregate","sequence":442,"status":"completed","error":null,"partial":false,"startedAt":1791727024337,"endedAt":1791727039008,"durationMs":14671,"usage":{"inputTokens":6869,"outputTokens":1105,"cacheReadTokens":118912,"cacheCreateTokens":0,"reasoningTokens":13},"nativeSessionId":"ses_ed4bf433bffe6j7ebzmv48B3vx"}}
 {"ts":"2026-10-11T13:57:19.106Z","kind":"event","type":"implementer_generate_done","taskId":"T002","phase":"implementing","data":{"file":"src/preview.js","duration":15018}}
-{"ts":"2026-10-11T13:57:19.136Z","kind":"event","type":"cost_update","phase":"implementing","data":{"tokenUsage":{"plannerInput":4,"plannerOutput":3222,"implementerInput":47020,"implementerOutput":1967,"escalationInput":0,"escalationOutput":0,"reviewerInput":0,"reviewerOutput":0,"plannerCacheRead":39876,"plannerCacheCreate":43816,"implementerCacheRead":161152,"implementerCacheCreate":0,"implementerReasoning":58,"plannerCoverage":{"input":"reported","output":"partial","cacheRead":"reported","cacheCreate":"reported","reasoning":"missing"}}}}
 {"ts":"2026-10-11T13:57:19.316Z","kind":"event","type":"task_completed","taskId":"T002","phase":"implementing","data":{"title":"Add optional suffix to truncate in src/preview.js","method":"local","retries":0,"duration":15385,"tool":"opencode","model":"opencode-go/deepseek-v4.1-flash","implementerProfile":"default"}}
 `;
 
@@ -7601,7 +7622,7 @@ const plannerSessionExpiredProjection: WorkflowFixtureProjection = {
           startedAt: FIXED_TS + 90,
           endedAt: FIXED_TS + 101,
           durationMs: 11,
-          usage: null,
+
           nativeSessionId: null,
         },
       ]),
@@ -8363,7 +8384,7 @@ const reviewCheckRunningProjection: WorkflowFixtureProjection = {
       startedAt: LAST_BRIEF_PASSED_TS - 115_000,
       endedAt: LAST_BRIEF_PASSED_TS - 5_000,
       durationMs: 110_000,
-      usage: null,
+
       nativeSessionId: null,
     },
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[2], LAST_BRIEF_PASSED_TS),
@@ -9663,7 +9684,7 @@ const projections = [
         startedAt: FIXED_TS + 520,
         endedAt: FIXED_TS + 20_000,
         durationMs: 19_480,
-        usage: null,
+
         nativeSessionId: null,
       },
       refusedReviewAnswer,
@@ -9973,6 +9994,7 @@ const projections = [
 
   completedOrphanRowsProjection,
   taskRowsContextFitProjection,
+  contextWindowRecoveryProjection,
   usageLimitRecoveryProjection,
   noFallbackRecoveryProjection,
   fallbackUsedRecoveryProjection,

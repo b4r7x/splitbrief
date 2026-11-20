@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { projectRunnerCallActivity } from '../../../calls/activity/project.js';
-import { toTokenDelta } from '../../../calls/usage/normalize.js';
+
 import type { EffortLevel } from '../../../../core/schemas/enums.js';
 import { CLI_TOOL_CATALOG } from '../../../../core/runners/cli-tool/catalog.js';
 import { COMMAND_CODE_CLI_ADMISSION_VERDICT } from '../../../../core/runners/cli-tool/builders.js';
@@ -326,7 +326,7 @@ describe('Command Code role adapters', () => {
     ).toEqual({ valid: true });
   });
 
-  it('maps the recorded NDJSON fixture to session, usage, and one terminal result', () => {
+  it('maps the recorded NDJSON fixture to a session and one terminal result', () => {
     const events = fixtureEvents();
     const results = events.filter((event) => event.type === 'result');
     expect(results).toHaveLength(1);
@@ -341,17 +341,6 @@ describe('Command Code role adapters', () => {
     expect(events.filter((event) => event.type === 'session')).toEqual([
       { type: 'session', nativeSessionId: 'cbb9c239-83c1-4e53-aa48-b0efeb5589d1' },
     ]);
-    const expectedUsage = toTokenDelta({
-      inputTokens: 20154,
-      outputTokens: 2,
-      cacheReadTokens: 5888,
-      cacheWriteTokens: 0,
-    });
-    expect(expectedUsage).not.toBeNull();
-    expect(events.filter((event) => event.type === 'usage')).toEqual([
-      { type: 'usage', usage: expectedUsage, semantics: 'final' },
-    ]);
-    expect(terminalOf(events).usage).toEqual(expectedUsage);
   });
 
   it('labels a read_file call with the path it reads', () => {
@@ -390,7 +379,7 @@ describe('Command Code role adapters', () => {
         type: 'result',
         status: 'failed',
         text: '',
-        usage: null,
+
         nativeSessionId: null,
         error: {
           code: 'malformed-command-code-json',
@@ -418,31 +407,6 @@ describe('Command Code role adapters', () => {
         JSON.stringify({ type: 'event', event: { type: 'tool_queued', toolCallId: 'call_1' } }),
       ),
     ).toEqual([]);
-  });
-
-  it('fails the protocol when a result carries usage it cannot normalize', () => {
-    expect(
-      commandCodeProtocolEvents(
-        JSON.stringify({
-          type: 'result',
-          subtype: 'success',
-          sessionId: 's1',
-          finalText: 'done',
-          usage: { tokens_in: 100, tokens_out: 20 },
-        }),
-      ),
-    ).toMatchObject([
-      {
-        type: 'result',
-        status: 'failed',
-        error: { code: 'malformed-command-code-record' },
-      },
-    ]);
-    expect(
-      commandCodeProtocolEvents(
-        JSON.stringify({ type: 'result', subtype: 'success', finalText: 'done', usage: {} }),
-      ),
-    ).toMatchObject([{ type: 'result', status: 'completed', usage: null }]);
   });
 
   it('reports a non-success subtype as a failed terminal result', () => {

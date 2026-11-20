@@ -366,6 +366,7 @@ export async function runFinalReviewPhase(
     summaryBase,
     reviewScope,
     reviewInput: sent.reviewInput,
+    modelCache: opts.modelCache,
   });
 
   const reviewStatus: ReviewPhaseStatus =

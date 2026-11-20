@@ -7,7 +7,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeBriefBoundaryEvents } from '#testing/helpers/events/task.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -20,7 +20,7 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import { clearAllHandlers, setResumeHandler } from '../run-requests/registry.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
-import { tokensStore } from '../../../stores/workflow/tokens/state.js';
+
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -150,9 +150,6 @@ describe('WorkflowFooter', () => {
   // A run whose tokens carry a price: before /usage the footer painted `$3.00` next to the keys
   // from exactly this fixture.
   function seedPricedRun(): void {
-    tokensStore.__testReset({
-      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
-    });
     configStore.__testReset({
       projectDir: '/tmp/splitbrief-test',
       config: makeConfig({
@@ -169,7 +166,7 @@ describe('WorkflowFooter', () => {
       catalog: {
         vendor: {
           id: 'vendor',
-          models: { 'priced-model': { id: 'priced-model', cost: { input: 1, output: 2 } } },
+          models: { 'priced-model': { id: 'priced-model' } },
         },
       },
       fetchedAt: 1,
@@ -355,32 +352,6 @@ describe('WorkflowFooter', () => {
     });
     expect(ui.lastFrame()).toContain('keep every word');
     expect(queued).toEqual([]);
-    ui.unmount();
-  });
-
-  it('paints no money or token total for a priced run, with or without override keys', async () => {
-    seedPricedRun();
-    const { cols, rows } = terminalSizeStore.get();
-    const ui = renderFeature(
-      <WorkflowFooter
-        handleInput={() => {}}
-        onRuntimeCommand={() => {}}
-        commands={[]}
-        mode="normal"
-        inputHint=""
-        boxHintOverride={{ keys: 'ctrl+d diff' }}
-        disabled={false}
-      />,
-      { cols, rows },
-    );
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain('ctrl+d diff');
-    expect(frame).not.toContain('$');
-    expect(frame).not.toContain('3.00');
-    expect(frame).not.toContain('1,000,000');
-    expect(frame).not.toMatch(/\btokens?\b/i);
     ui.unmount();
   });
 

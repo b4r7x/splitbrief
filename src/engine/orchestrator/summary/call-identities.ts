@@ -1,22 +1,22 @@
-import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
+import type { RunnerKind } from '../../../core/schemas/enums.js';
 import { isRunnerCallEvent, type RunnerCallEngineEvent } from '../../calls/interrupted.js';
-import { applyRunnerCallUsageSample } from '../../calls/usage/accumulate.js';
 import type { EngineEvent } from '../../events/types.js';
 
+export type CallIdentity = Pick<RunnerCallEngineEvent, 'callId' | 'role' | 'backendKind'> &
+  Partial<
+    Pick<
+      RunnerCallEngineEvent,
+      'phase' | 'taskId' | 'attempt' | 'runnerName' | 'model' | 'invocationIdentity'
+    >
+  >;
+
 type CallFold = {
-  evidence: CallUsageEvidence;
+  evidence: CallIdentity;
   started: boolean;
   terminal: boolean;
 };
 
-/**
- * One row per recorded call, attributed only from what the call itself recorded:
- * a task, attempt or boundary the record does not carry stays absent (`unknown`
- * for the boundary), and a call that reported no usage keeps `usage: null`.
- * Samples follow the collector: delta adds, cumulative and final replace, and
- * nothing after the terminal record counts, so a repeated final is not added twice.
- */
-export function collectCallUsageEvidence(events: Iterable<EngineEvent>): CallUsageEvidence[] {
+export function collectCallIdentities(events: Iterable<EngineEvent>): CallIdentity[] {
   const rows: CallFold[] = [];
   const open = new Map<string, CallFold>();
 
@@ -24,7 +24,7 @@ export function collectCallUsageEvidence(events: Iterable<EngineEvent>): CallUsa
     if (!isRunnerCallEvent(event)) continue;
     let call = open.get(event.callId);
     // Call ids restart with the process, so a resumed run can reuse one; a second
-    // start is a new call, not more usage for the old one.
+    // start is a new call.
     if (
       call === undefined ||
       (event.type === 'runner_call_started' && (call.started || call.terminal))
@@ -34,8 +34,6 @@ export function collectCallUsageEvidence(events: Iterable<EngineEvent>): CallUsa
           callId: event.callId,
           role: event.role,
           backendKind: event.backendKind,
-          usageBoundary: 'unknown',
-          usage: null,
         },
         started: false,
         terminal: false,
@@ -45,32 +43,19 @@ export function collectCallUsageEvidence(events: Iterable<EngineEvent>): CallUsa
     }
     fillAttribution(call.evidence, event);
     if (event.type === 'runner_call_started') call.started = true;
-    if (call.terminal) continue;
-
-    if (event.type === 'runner_call_usage') {
-      call.evidence.usage = applyRunnerCallUsageSample(call.evidence.usage, {
-        semantics: event.semantics,
-        usage: event.usage,
-      });
-    } else if (event.type === 'runner_call_completed' || event.type === 'runner_call_error') {
+    if (event.type === 'runner_call_completed' || event.type === 'runner_call_error') {
       call.terminal = true;
-      if (event.usage !== null) {
-        call.evidence.usage = applyRunnerCallUsageSample(call.evidence.usage, {
-          semantics: 'final',
-          usage: event.usage,
-        });
-      }
     }
   }
 
   return rows.map((row) => row.evidence);
 }
 
-function fillAttribution(evidence: CallUsageEvidence, event: RunnerCallEngineEvent): void {
+function fillAttribution(evidence: CallIdentity, event: RunnerCallEngineEvent): void {
   // A `review` role is also used for planning-time checks. Keep its phase on
   // the live evidence so the projection applies the same seat rule as the
   // persisted reconciliation path.
-  if (evidence.phase === undefined && event.role === 'review') evidence.phase = event.phase;
+  if (evidence.phase === undefined) evidence.phase = event.phase;
   if (evidence.taskId === undefined && event.taskId !== undefined) evidence.taskId = event.taskId;
   if (evidence.attempt === undefined && event.attempt !== undefined) {
     evidence.attempt = event.attempt;
@@ -79,10 +64,25 @@ function fillAttribution(evidence: CallUsageEvidence, event: RunnerCallEngineEve
     evidence.runnerName = event.runnerName;
   }
   if (evidence.model === undefined && event.model !== undefined) evidence.model = event.model;
-  if (evidence.usageBoundary === 'unknown' && event.usageBoundary !== undefined) {
-    evidence.usageBoundary = event.usageBoundary;
-  }
   if (evidence.invocationIdentity === undefined && event.invocationIdentity !== undefined) {
     evidence.invocationIdentity = event.invocationIdentity;
   }
+}
+
+export function recordedRunnerKind(
+  evidence: readonly CallIdentity[] | undefined,
+  role: CallIdentity['role'],
+  tool: string,
+): RunnerKind | 'ambiguous' | undefined {
+  if (evidence === undefined) return undefined;
+  const kinds = new Set<RunnerKind>();
+  for (const call of evidence) {
+    if (call.role !== role) continue;
+    const runner = call.invocationIdentity?.runner;
+    const id = runner?.id ?? call.runnerName;
+    if (id !== tool) continue;
+    kinds.add(runner?.kind ?? call.backendKind);
+  }
+  if (kinds.size === 0) return undefined;
+  return kinds.size === 1 ? [...kinds][0] : 'ambiguous';
 }

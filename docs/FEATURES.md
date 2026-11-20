@@ -109,7 +109,7 @@ Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CON
 
 ### Run Readiness / Doctor
 
-**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, the plan approval level, runner posture, context length, validation settings and Git status. Blockers stop the run; warnings can continue.
+**What it does.** Before `splitbrief start` calls a runner, SPLITBRIEF checks config, the plan approval level, runner posture, context length, validation settings and Git status. Blockers stop the run; warnings can continue.
 
 **How to use.**
 
@@ -129,7 +129,7 @@ The `splitbrief doctor` readiness report is read-only. It makes no model call an
 
 **When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, or End-of-run checks turned off.
 
-**Events/output.** Human output groups checks into config, runners, context, validation, repository, and cost. JSON output uses `{ type: "readiness_report", report: ... }`. Validation readiness is posture only: it reports whether End-of-run checks are on (`validation.configured`, `validation.end-checks-off`), the command a planner `test` check resolves, and a missing npm script, without running any command. With REVIEW None it reports End-of-run checks off, with no warning, and says that each brief runs its own checks, except a render check, and that no other check runs.
+**Events/output.** Human output groups checks into config, runners, context, validation, and repository. JSON output uses `{ type: "readiness_report", report: ... }`. Validation readiness is posture only: it reports whether End-of-run checks are on (`validation.configured`, `validation.end-checks-off`), the command a planner `test` check resolves, and a missing npm script, without running any command. With REVIEW None it reports End-of-run checks off, with no warning, and says that each brief runs its own checks, except a render check, and that no other check runs.
 
 ### Validation pipeline + checkpoints
 
@@ -189,7 +189,7 @@ Events: `validate`. Historical `git_commit`, `git_checkpoint` and `git_branch_cr
 
 **When to use.** Automatic. The retired `workflow.max_retries` and `escalation` block load with one notice each and change nothing; there is no intermediate model and no hint verdict to configure.
 
-Outcome events include `task_escalating`, `consult_answered`, `task_replaced`, `tasks_inserted` and `checks_run`; the old `task_retry`, `escalate`, `hint_failed`, `task_scope_widened` and `consult_bound_spent` events stay replayable for older runs. A consult is recorded as planner usage and can be inspected through `/usage`.
+Outcome events include `task_escalating`, `consult_answered`, `task_replaced`, `tasks_inserted` and `checks_run`; the old `task_retry`, `escalate`, `hint_failed`, `task_scope_widened` and `consult_bound_spent` events stay replayable for older runs. A consult is recorded with the brief’s outcome.
 
 ### Final review by the review seat
 
@@ -294,36 +294,6 @@ A run from an older release keeps the files it wrote (`research.md`, `spec.md`, 
 **What it does.** `Ctrl+E`, `e` and `edit` at the plan card all open the same file, the run's `plan.json`, in the in-app editor overlay. The editor title names the file from the project root and shortens a long path in the middle. `Ctrl+S` checks the text before it writes it: the JSON, the plan schema and `checkPlan` (the engine checks the context fit after the save). A text that fails stays open with the reason in red, `Not saved: <first message> (+N more)`, and no check codes. A long reason takes up to three rows above the key legend. When the project folder moved away, `Ctrl+S` and `Ctrl+O` keep the editor open with `Not saved: the project folder <path> is gone`. A valid save closes the editor and settles the card with the edit: the engine compiles the edited plan, rewrites `plan.md` and `tasks.md`, and shows the card again. The transcript shows the `Plan` or `Tasks` block again only when the edit changed what that block shows. An edit the engine refuses restores `plan.json` and publishes `The edited plan was not applied: …`.
 
 **How to use.** `Ctrl+O` inside the editor opens `plan.json` in the external editor instead (`VISUAL`, then non-terminal `EDITOR`, then detected GUI editors with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`); saving there settles the card with the edit the same way. There is no per-brief field editor: a brief changes through `plan.json` or a correction.
-
----
-
-## Spend
-
-### Where usage appears
-
-Token usage and monetary estimates are available only in explicitly opened usage details.
-
-Open `/usage` from a live or saved workflow to inspect reported counters and available estimates. Missing counters remain unknown; partial totals keep their coverage label. The main workflow, build progress, sidebar and closed-run summary do not display token counts or monetary estimates. There is no Show spend setting. `/copy cost` is an explicit export and does not add a counter to the main screen.
-
-### Pricing catalog
-
-**What it does.** Per-model pricing for any metered API runner, including a custom endpoint you configure yourself. Rates follow the model, not the provider preset: a `vendor/model` id is rated through that vendor's catalog row, a bare id is matched across the catalog. `local` replaces the dollar amount when the implementer is unpriced (for example an OpenCode/Claude-Code subscription).
-
-**How to use.** Pricing is auto-resolved from the model id against the models.dev catalog, the runtime model cache, or the bundled fallback. Local, CLI and shell/agent runners are never priced.
-
-### Planner heartbeat
-
-**What it does.** During a planner call the composer byline shows proof of life: `Planning… m:ss`, counted from the moment the call opened. While the planner waits on you, the byline reads `Waiting for your answer · Plan`.
-
-**How to use.** Always active. No configuration needed.
-
-### Streaming partial output (extracted-code implementers)
-
-**What it does.** For `extracted-code` implementers (`kind: api` and `kind: shell`), the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner or elapsed-time counter. A `direct` implementer (a CLI tool or an agent) gets no preview: its narration appears in transcript rows; its closing report, bare or in a code fence, reads as one dim `Report  done` row, with `· M decisions` when the report names a decision, with no fence row. CLI messages with known boundaries start distinct rows.
-
-**How to use.** Always active for `extracted-code` implementers that stream their output. No configuration needed.
-
-**When to use.** Automatic during implementation when the implementer returns its code as text. The lines render under the brief's `working on <file>…` row.
 
 ---
 
@@ -436,7 +406,7 @@ The summary of a closed run shows a `Scope` row with the counts, such as `1 erro
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/usage`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker. It lists the commands whose names start with the typed word, and `⏎` runs the highlighted row. A typed line runs only on an exact command name, ignoring case; there are no aliases. An unknown name runs nothing: the error suggests a close name (`Did you mean /usage?`). The command palette ranks commands by fuzzy match. Every one of the 22 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output. The palette and the help overlay group their rows by category and show the category headers when the panel has room for at least 12 rows. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter. A draft you had typed stays: it comes back in the composer once you send or clear that command.
+**What it does.** Runtime commands use slash names (for example, `/help`), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker. It lists the commands whose names start with the typed word, and `⏎` runs the highlighted row. A typed line runs only on an exact command name, ignoring case; there are no aliases. An unknown name runs nothing: the error suggests a close name (`Did you mean /help?`). The command palette ranks commands by fuzzy match. Every one of the 21 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output. The palette and the help overlay group their rows by category and show the category headers when the panel has room for at least 12 rows. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter. A draft you had typed stays: it comes back in the composer once you send or clear that command.
 
 **Navigate**
 
@@ -476,13 +446,12 @@ The summary of a closed run shows a `Scope` row with the counts, such as `1 erro
 | `/activity` | Expand or collapse the last folded rows |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list — opens the sidebar and leaves it open (at or below 120 columns there is no sidebar, so the command answers with the list itself) |
-| `/usage` | Open token and monetary details for the run |
 
 **Input & output**
 
 | Command | Purpose |
 |---|---|
-| `/copy [message\|brief\|path\|command\|cost]` | Copy to clipboard |
+| `/copy [message\|brief\|path\|command]` | Copy to clipboard |
 | `/image <path> \| list \| remove <index-or-id>` | Attach, list or remove images for the next planner call |
 
 **Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images:
@@ -512,9 +481,9 @@ Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 ```yaml
 palette:
   customActions:
-    - id: usage
-      label: "Show token usage"
-      command: /usage
+    - id: briefs
+      label: "Show briefs"
+      command: /tasks
 ```
 
 ### Help overlay (`Ctrl+/`)
@@ -559,7 +528,7 @@ Set up a custom command in [`.splitbrief/config.yaml`](./CONFIGURATION.md#12-cus
 
 At 80 columns or more, Tools and Models appear side by side. In a narrower terminal, choose a tool to open its models. Use the left arrow or click the back control to return to Tools. Resizing keeps the active list, model and filters. In the narrow model list, Esc first collapses an expanded model, then clears a filter, then returns to Tools.
 
-**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor`, `command-code` and `antigravity` (`agy models`) render their own `--list-models`-style native output as `Detected` rows. Rows remembered from an earlier run render as `Stale`. A successful read that omits cached rows also makes the catalog `Stale` while it retains those rows. New rows appear at once. A row disappears only after two consecutive successful reads omit its id. See the [CLI catalog cache rules](./SUBSYSTEMS.md#5-detection) and [CLI runner configuration](./CONFIGURATION.md#kind-cli). `claude-code` has no listing command, so it renders one row per shipped alias — `sonnet`, `opus`, `fable`, `haiku`, `opusplan`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]` — each labelled in Claude's own vocabulary (`Sonnet 5.5`, `Opus 5.5 Plan Mode`, `Fable 5.1 (1M)`); `default` is not one of them, it is the Auto row; the local `~/.claude.json` `additionalModelOptionsCache` folds in by a specific rule — an entry merges into the one alias row whose resolved catalog id plus that alias's own bracket suffix it equals, case-insensitively, and whose key is already among the shipped aliases, lending its `description` to that row as `detail`; otherwise it renders as its own row under the cache's own label or, failing that, its id; and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it. The one explicit "Browse the full catalog" row is offered only where browsing actually widens the list — where the authoritative lane hid bundled rows — never beside a recovery row the escape cannot help; nothing speculative appears otherwise.
+**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor`, `command-code` and `antigravity` (`agy models`) render their own `--list-models`-style native output as `Detected` rows. Rows remembered from an earlier run render as `Stale`. A successful read that omits cached rows also makes the catalog `Stale` while it retains those rows. New rows appear at once. A row disappears only after two consecutive successful reads omit its id. See the [CLI catalog cache rules](./SUBSYSTEMS.md#5-detection) and [CLI runner configuration](./CONFIGURATION.md#kind-cli). `claude-code` has no listing command, so it renders one row per shipped alias — `sonnet`, `opus`, `fable`, `haiku`, `opusplan`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]` — each labelled in Claude's own vocabulary (`Sonnet 5.5`, `Opus 5.5 Plan Mode`, `Fable 5.1 (1M)`); `default` is not one of them, it is the Auto row; the local `~/.claude.json` `additionalModelOptionsCache` folds in by a specific rule — an entry merges into the one alias row whose resolved catalog id plus that alias's own bracket suffix it equals, case-insensitively, and whose key is already among the shipped aliases, lending its `description` to that row as `detail`; otherwise it renders as its own row under the cache's own label or, failing that, its id; and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it. The one explicit "Browse the full catalog" row is offered only where browsing actually widens the list — where the authoritative lane hid bundled rows — never beside a recovery row the escape cannot help; nothing speculative appears otherwise.
 
 **Option families.** Detected models whose ids differ only by effort, speed or thinking fold into one row that expands into an axis row per axis. Suffix peeling is provider-aware, so a provider-routed (`provider/model`) id folds into its family per route instead of keeping a row of its own, and a family that also spans providers expands into one provider route row per route, each followed by that route's own axis rows — so every spelling of every route stays reachable. A genuinely branded id with no sibling to fold with (`opencode/grok-code-fast`) stays flat, spelled exactly as the tool listed it. Only custom models keep their own rows. `space` cycles the axis under the cursor in place, moving the draft onto that axis's route, and `⏎` confirms the drafted id: its own route's from a route or axis row, the family's from the parent.
 
@@ -703,7 +672,7 @@ A run nothing can pick up says why before where — `Saved state unreadable · s
 - `Plan`, `Build` and `Review` — one row per stage. The label has the colour of its seat. A count is bright and its words are dim. Each row ends with the time that the run ran in that stage, across every stop and Continue, so the three times add up to `Ran`. A row too wide for the terminal drops whole facts from the right and keeps its time.
 - `Review` — the verdict, the findings in the words of the review row above it (`1 blocking`, `2 notes`) and the criteria that passed. These counts and the notes are the same as in the review packet: SPLITBRIEF reads them after it compared the review with the results of its checks. It names the review it reads: `final review not run` when the final review did not run, also on a run whose task reviews ran, and `final review no verdict` when it ran and returned no verdict, also after Skip review. On a run with REVIEW None it reads `no review`. When a reviewer check of that review was red at the run base too, a row under `Review` names it — `V1 pre-existing · <command>` — and one indented row for each of its first three failing tests, then `+2 more`. These failures also fail before the run's changes and raise no finding. Each red check that review set aside reads `Set aside V1: <reason>` on a row under `Review`, its reason wrapped at words. The first two notes of the review follow. A note that names a file takes one row for its id and file, then at most two rows of text. A note with no file takes at most two rows. One row counts the reviews that failed before it: `3 earlier reviews failed (10, 2, 1 blocking) · fixed in 3 fix cycles`.
 - `Files` — the count of changed files, the count of test files and `1 partial` when the stopped brief left a file half-written. Under it is every changed file when the run changed five or fewer. Otherwise three files are under it: source files before test files, and in each group the files that the most briefs changed first.
-- `Crew` (at 80 columns or fewer, and above 80 columns when the header does not name all three seats by their models), `Apply` (`undone` after the Apply is undone), `Patch` (the project-relative `run.patch` path, only when the close saved a patch of changed files), `Scope` (the counts such as `1 error · 1 warning`, only when the scope check found one), `Briefs` (brief quality, only on an older run that wrote `brief-quality.json`) and `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated`, `not recorded` — never `—`, `n/a` or `$0.00`. The run's cost and token counts are not in the summary; `/usage` keeps those counters and the spend.
+- `Crew` (at 80 columns or fewer, and above 80 columns when the header does not name all three seats by their models), `Apply` (`undone` after the Apply is undone), `Patch` (the project-relative `run.patch` path, only when the close saved a patch of changed files), `Scope` (the counts such as `1 error · 1 warning`, only when the scope check found one), `Briefs` (brief quality, only on an older run that wrote `brief-quality.json`) and `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated`, `not recorded`.
 - The fold row counts what the summary hides, such as `+15 briefs · 62 files · 3 reviews · ctrl+a`. A terminal too narrow for every count drops counts from the right.
 
 On a terminal too short for the whole summary, the summary keeps one row for each label and leaves out the rows under them. The fold row then counts those rows too, such as `+15 briefs · 65 files · 1 note · 3 reviews · ctrl+a`. On a terminal too short for those rows, the summary leaves out whole labelled rows until it fits: `Crew` first, then the other labelled rows from the bottom up, `Session` first and `Plan` last. The outcome row and the fold row always stay on the screen, and `ctrl+a` still opens the whole record.
@@ -711,7 +680,7 @@ On a terminal too short for the whole summary, the summary keeps one row for eac
 `ctrl+a`, `/activity` or a click on the fold row opens the whole record under the outcome row; the row then reads `collapse · ctrl+a`. The record keeps every labelled row of the summary and adds these:
 
 - One row per brief under `Build`, in the saved current plan, including a plan ended at its approval gate before evidence was written: `T001 Add validator module  src/validate.ts (create) · passed · 84.2s`. The state reads `passed`, `consulted`, `escalated`, `failed`, `skipped` or `stopped` (`· stopped · 2 partial files` on the brief the run stopped inside), and a brief that never started has no state. Done rows keep `· <method> · <duration>` at every width. A row drops retries before it shortens the path by whole directory segments, keeping the first directory and filename (`src/…/form.ts`), then only `…/form.ts` or `form.ts`. A filename that does not fit whole leaves the row. Settled durations keep their duration format, such as `2m 0s` or `14.0s`. A brief's duration is its working time: a brief that was stopped, steered, parked or halted and then continued adds every stretch it ran, and the time between them is left out. Each brief has one row. Its target label comes from the current plan. The stopped brief keeps retries and duration from its ledger entry, including a failed attempt. Briefs outside the current plan use their recorded ledger target.
-- `Earlier work` — present when ledger or spend entries cannot be joined safely to the current plan, as on an older run that rewound its plan. An old T001 remains distinct from a newly compiled T001. A run recorded before each entry carried its own brief's hash keeps whole-plan stamps, so its briefs read as earlier work. The outcome fraction counts only current briefs; the `Files` rows and `/usage` keep the run's earlier work and spend.
+- `Earlier work` — present when ledger or brief execution records cannot be joined safely to the current plan, as on an older run that rewound its plan. An old T001 remains distinct from a newly compiled T001. A run recorded before each entry carried its own brief's hash keeps whole-plan stamps, so its briefs read as earlier work. The outcome fraction counts only current briefs; the `Files` rows include earlier work.
 - Every note of the review, whole, and each review that failed before it with one row per finding, then its own set-aside inputs.
 - Every changed file under `Files`, sorted and project-relative, with ` · partial` on a file the stopped brief left half-written. A run that closes inside a brief books the files that brief left in its workspace first, so the list names every file `run.patch` holds.
 - `Packet` (the review packet), `Scope` (`clean`, the counts, or `not checked`) and `Ran` (how long the run ran, such as `1m 51s`: time the run sat stopped, halted or at rest, or ran its Apply, is left out, and time it waited on you while it ran counts; `not recorded` on a run recorded before this was kept).

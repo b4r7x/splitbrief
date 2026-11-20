@@ -60,7 +60,7 @@ function cliTool(id: string, displayName: string): PickerOption {
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
     modelCapability: deriveModelCatalogCapability('optional', false),
-    billing: 'subscription-included',
+
     permissions: readyPermissions,
     status: { state: 'ready', remediation: null },
     available: true,
@@ -183,7 +183,7 @@ describe('PickerView terminal panes', () => {
     expect(frame).toContain('Claude Code CLI · Claude Sonnet 4');
     // A CLI names no billing, so the inherited posture line is its trust alone.
     expect(frame).toContain('network · shell');
-    expect(frame).not.toContain('subscription');
+
     const hintRow = frame.split('\n').find((row) => row.includes('↑↓ select')) ?? '';
     expect(hintRow.trim().startsWith('↑↓ select')).toBe(true);
     expect(hintRow).toContain('⏎ confirm');

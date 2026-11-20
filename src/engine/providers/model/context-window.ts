@@ -77,7 +77,7 @@ export function resolveRunnerContextWindow(
     }
 
     // A CLI tool owns no catalog vendor, so its pinned model is only found by
-    // identity — the same lane pricing uses for a vendorless runner.
+    // identity.
     if (cliLane) {
       const byIdentity = lookupCatalogModelByModelId(modelId, input.cache);
       if (byIdentity?.contextLength !== undefined) {

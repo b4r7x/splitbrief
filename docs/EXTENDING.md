@@ -105,8 +105,6 @@ A *seat* is a place in the run where a runner is called. Adding one is not the s
 5. **The port.** Define the narrowest interface the seat actually needs in `src/engine/<seat>s/types.ts`. Narrower is better: it lets an existing runner satisfy the seat structurally and hold it unadapted. Do not put tool or model fields on the port — identity for user-facing messages comes from the config accessor that resolved the seat.
 6. **The factory.** Add `create<Seat>()` to the runner factory, reusing the existing lazy backend loaders. Create the seat in the run's seat setup (the reviewer is built in `createPlannerSeat()`), reusing an already-built runner when the resolver says the seat falls back.
 7. **The call.** Give the seat its own call module (`src/engine/orchestrator/<seat>-call.ts`) rather than repointing an existing helper. Repointing a shared helper silently moves every other call site with it — count them first.
-8. **Token accounting.** Add the seat's fields to `TokenUsageSchema` with `.default(0)` so older session state still loads, add the category to `categoryFields` and `usageCategoryForRunnerCallRole()`, and check `attributePhaseTokenDelta` — moving tokens out of a bucket a phase's delta is computed from silently zeroes that phase in the recorded per-phase totals.
-9. **Pricing and summary.** Price the new bucket at the seat's own rates when configured and fold it into the fallback seat's line when not. The run's own rollup is `summary.json`, built by `buildSummary()` from the state's `tokenUsage` and `calculateCostBreakdown()` — the bucket has to reach both or the seat's spend is dropped from the summary.
 10. **CLI flags.** Mirror the existing per-seat flags in `addWorkflowOptions()`, map them in `workflowOptsToCLIOverrides()`, and apply them through `applyRunnerOverrides()`.
 11. **UI.** Widen the role-parameterised picker rather than writing a new one, add the overlay to `SEAT_PICKER_OVERLAYS`, add the seat to `CREW_SEAT_IDS` / `CREW_SEAT_LABELS` and to `deriveCrewSeats()`, which `deriveCrewRows()` turns into rows — Settings, Setup, home and the workflow header all derive from those rows; there is no settings section to add.
 12. **Docs.** [CONFIGURATION.md](./CONFIGURATION.md) for the block, [CLI-REFERENCE.md](./CLI-REFERENCE.md) for the flags, [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) for the command, [WORKFLOW.md](./WORKFLOW.md) for which seat runs which phase, and [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for admission and call-time failure.
@@ -157,11 +155,10 @@ The rule that made the review seat cheap: **no automatic fallback at call time.*
 
 Complete the [provider admission checklist](#provider-admission-checklist) before touching the registry.
 
-1. Add an `ApiProviderDescriptor` entry to `API_PROVIDER_CATALOG`: `id`, display name, `service`, `offering`, `endpointPolicy`, credential fields, billing and privacy facts, and `asOf`. `ApiProviderId` derives from the catalog keys.
+1. Add an `ApiProviderDescriptor` entry to `API_PROVIDER_CATALOG`: `id`, display name, `service`, `offering`, `endpointPolicy`, credential fields and privacy facts, and `asOf`. `ApiProviderId` derives from the catalog keys.
 2. Create `src/engine/providers/<name>.ts`
    - Export a factory function: `createMyProvider(overrides?: ProviderOverrides): ProviderDef`
 3. Register the factory in `KNOWN_PROVIDERS`. The map is typed `Record<ApiProviderId, …>`, so a catalog entry without a factory fails the type check. `getProvider()` resolves the descriptor's endpoint policy and calls the factory with the normalized `apiBase`.
-4. Add bundled model pricing in `KNOWN_MODELS` when a fallback is needed. Runtime/model catalog pricing is resolved through the models.dev catalog, the runtime model metadata, and `resolvePricing`.
 
 ---
 
@@ -275,7 +272,7 @@ Complete in order before registering in `KNOWN_PROVIDERS`:
 1. **Service/offering** — `ApiProviderDescriptor` with explicit `service` and `offering` (`payg`, `free-quota`, `coding-subscription`, `local`). Never infer offering from credential prefix alone.
 2. **Endpoint** — `EndpointPolicy`; normalize and validate origin before client creation. Cross-origin redirects must not receive credentials.
 3. **Credential** — `credentialEnv` and `credentialPrefix`; prefix or family mismatch fails before network access.
-4. **Billing/privacy/asOf** — dated `billing`, `dataUse`, privacy/terms URLs in the descriptor. No runtime fetch of pricing, terms, or marketing pages.
+4. **Privacy and asOf** — dated data-use and privacy information in the descriptor.
 5. **Policy** — `OpenAICompatPolicy` enables provider-specific request fields only when exact conformance fixtures prove them.
 6. **Production conformance** — credentialed harness via `npx tsx scripts/provider-conformance.ts production …` reusing the same record as raw capture.
 7. **Eval** — implementation-quality/privacy evaluation verdict is applied to runtime recommendation state before docs label a model recommended.

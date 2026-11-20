@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { resolveReviewCadence } from '../../../core/config/runtime/resolve.js';
@@ -89,7 +89,7 @@ export async function finishTask(input: {
   taskIndex: number;
   refreshedTask: Task;
   taskAcceptedFiles: Set<string>;
-  taskBreakdowns: readonly TaskTokenUsage[];
+  taskBreakdowns: readonly BriefExecution[];
 }): Promise<{
   state: WorkflowState;
   baseline: ChangedFilesBaseline;
@@ -111,7 +111,7 @@ export async function finishTask(input: {
     taskAcceptedFiles: input.taskAcceptedFiles,
   });
   // A stop at this boundary parks from the persisted head, which would otherwise lack this
-  // brief's files and usage.
+  // brief's files and execution record.
   let state = commitOnHead(
     ref,
     input.state,

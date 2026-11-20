@@ -1,6 +1,5 @@
 import type { MachineAction } from './types.js';
 import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../schemas/workflow/state.js';
-import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { transitionError } from './errors.js';
 import { canApplyAction } from './phase-actions.js';
@@ -23,7 +22,6 @@ export function createInitialState(feature: string, now: Date = new Date()): Wor
     tasks: [],
     plannerSessionId: null,
     startedAt: now.toISOString(),
-    tokenUsage: { ...ZERO_TOKEN_USAGE },
     awaitingContinue: false,
     messageQueue: [],
   };

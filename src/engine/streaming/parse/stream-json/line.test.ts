@@ -13,26 +13,6 @@ function expectNoTerminalResult(parsed: ReturnType<typeof parseStreamLine>): voi
   expect(parsed.isError).toBeUndefined();
 }
 
-it('replaces restated turn usage before adding a subsequent steered turn', () => {
-  const parse = createStreamParser();
-  const result = (input: number, output: number) =>
-    jsonLine({
-      type: 'result',
-      result: 'done',
-      usage: { input_tokens: input, output_tokens: output },
-    });
-  expect(parse(result(10, 5)).usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
-  expect(parse(result(12, 6)).usage).toMatchObject({ inputTokens: 12, outputTokens: 6 });
-  parse(jsonLine({ type: 'system', subtype: 'init', session_id: 'same-session' }));
-  expect(parse(result(3, 7)).usage).toMatchObject({ inputTokens: 15, outputTokens: 13 });
-  expect(parse(result(3, 7)).usage).toMatchObject({ inputTokens: 15, outputTokens: 13 });
-  parse(jsonLine({ type: 'system', subtype: 'init', session_id: 'same-session' }));
-  expect(parse(jsonLine({ type: 'result', result: 'no usage' })).usage).toMatchObject({
-    inputTokens: 15,
-    outputTokens: 13,
-  });
-});
-
 describe('parseStreamLine', () => {
   it.each([
     [
@@ -60,26 +40,12 @@ describe('parseStreamLine', () => {
         type: 'result',
         session_id: 'sess-2',
         result: 'Final answer here',
-        usage: { input_tokens: 1000, output_tokens: 500 },
       }),
       {
         text: 'Final answer here',
         channel: 'result',
         sessionId: 'sess-2',
         isResult: true,
-        usage: {
-          inputTokens: 1000,
-          outputTokens: 500,
-          counterCoverage: {
-            input: 'reported',
-            output: 'partial',
-            cacheRead: 'missing',
-            cacheCreate: 'missing',
-            reasoning: 'missing',
-          },
-          providerTotals: { output: 500 },
-        },
-        usageSemantics: 'final',
       },
     ],
     [
@@ -652,7 +618,6 @@ describe('parseStreamLine', () => {
       type: 'result',
       session_id: 'sess-bad-usage',
       result: 'Final answer survives',
-      usage: { input_tokens: '10', output_tokens: 5 },
     });
 
     expect(parseStreamLine(line)).toEqual({

@@ -3,7 +3,6 @@ import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { Planner } from '../../planners/types.js';
 import type { EventBus } from '../../events/types.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { claimQueuedMessage, releaseQueuedMessage } from './drain.js';
@@ -111,13 +110,7 @@ export async function dispatchNativeInjection(
       setState(pending);
       return { status: 'not-delivered', reason: injection.reason };
     }
-    const booked = addUsageAndSave(
-      { projectDir, sessionId, bus },
-      latest,
-      'planner',
-      injection.usage,
-    );
-    const next = transitionAndSave(ref, booked, {
+    const next = transitionAndSave(ref, latest, {
       type: 'MARK_DELIVERED_NATIVE',
       id: message.id,
     });

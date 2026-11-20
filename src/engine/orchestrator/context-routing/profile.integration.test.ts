@@ -242,17 +242,26 @@ function routingDecision(overrides: Partial<RoutingDecision>): RoutingDecision {
 }
 
 describe('routingBlockMessage', () => {
-  it('formats message with estimated tokens', () => {
+  it('states the task and routing failure when no budget was measured', () => {
     const message = routingBlockMessage(routingDecision({}));
     expect(message).toContain('T001');
-    expect(message).toContain('5000 estimated tokens');
+    expect(message).toContain('too large');
+    expect(message).not.toContain('tokens');
   });
 
-  it('formats message with context length ratio', () => {
+  it('shows the required and available prompt sizes when the configured cap blocks the brief', () => {
     const message = routingBlockMessage(
-      routingDecision({ contextLength: 4000, reason: 'overflow' }),
+      routingDecision({
+        contextLength: 4000,
+        contextOverflow: { requiredTokens: 5000, availableTokens: 4000 },
+        reason: 'overflow',
+      }),
     );
-    expect(message).toContain('5000/4000 estimated tokens');
+    expect(message).toContain(
+      'The brief needs about 5,000 tokens. The BUILD seat can take at most 4,000.',
+    );
+    expect(message).toContain('reduce required context');
+    expect(message).toContain('overflow');
   });
 });
 

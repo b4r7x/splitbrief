@@ -5,7 +5,6 @@ import { eventsStore } from '../../stores/workflow/events/state.js';
 import { getRunnerCommand } from '../../core/config/accessors/runner-config.js';
 import type { CopyTarget } from '../../core/runtime/commands/types.js';
 import { assertNever } from '../../utils/type-guards.js';
-import { readCostText } from './usage/spend-text.js';
 
 function lastAssistantMessage(): string | null {
   const { events } = eventsStore.get();
@@ -52,8 +51,6 @@ export function resolveCopyValue(target: CopyTarget): string | null {
     }
     case 'message':
       return lastAssistantMessage();
-    case 'cost':
-      return readCostText();
     default:
       return assertNever(target);
   }

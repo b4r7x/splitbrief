@@ -15,7 +15,7 @@ const scenario = {
 describe('e2e: two-task plan builds in order', () => {
   const ctx = setupE2eScenario(scenario);
 
-  it('plans multiple tasks, completes them sequentially, and emits cost updates', async () => {
+  it('plans multiple tasks, completes them sequentially', async () => {
     const summary = await runE2eWorkflow(ctx, scenario);
 
     expect(summary.totalTasks).toBeGreaterThanOrEqual(2);
@@ -43,14 +43,5 @@ describe('e2e: two-task plan builds in order', () => {
         (event.phase === 'planning' || event.phase === 'reviewing-plan'),
     );
     expect(planningStatuses.length).toBeGreaterThan(0);
-
-    const costEvents = ctx.events.filter((event) => event.type === 'cost_update');
-    expect(costEvents.length).toBeGreaterThan(0);
-    expect(summary.tokenUsage.plannerInput + summary.tokenUsage.implementerInput).toBeGreaterThan(
-      0,
-    );
-    expect(summary.tokenUsage.plannerOutput + summary.tokenUsage.implementerOutput).toBeGreaterThan(
-      0,
-    );
   });
 });

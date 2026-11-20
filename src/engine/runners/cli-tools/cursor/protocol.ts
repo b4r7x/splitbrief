@@ -1,7 +1,5 @@
-import type { TokenDelta } from '../../../../core/schemas/tokens.js';
 import { error } from '../../../../utils/error.js';
 import { isRecord, optionalString } from '../../../../utils/type-guards.js';
-import { toTokenDelta } from '../../../calls/usage/normalize.js';
 import type { CliProtocolEvent } from '../contract.js';
 import { lastMessageGroupText } from '../final-group.js';
 
@@ -12,7 +10,6 @@ function protocolFailure(code: string, message: string): CursorTerminalEvent {
     type: 'result',
     status: 'failed',
     text: '',
-    usage: null,
     nativeSessionId: null,
     error: { code, message },
     partial: false,
@@ -83,21 +80,9 @@ function parseCursorRecord(record: Record<string, unknown>): readonly CliProtoco
           : [];
     }
     case 'result': {
-      const hasUsage = Object.hasOwn(record, 'usage');
-      let usage: TokenDelta | null = null;
-      if (hasUsage && record.usage !== undefined) {
-        if (!isRecord(record.usage)) {
-          return [protocolFailure('malformed-cursor-record', 'Cursor usage record is malformed')];
-        }
-        usage = toTokenDelta(record.usage);
-        if (usage === null && Object.keys(record.usage).length > 0) {
-          return [protocolFailure('malformed-cursor-record', 'Cursor usage record is malformed')];
-        }
-      }
       const subtype = optionalString(record.subtype, { trim: true, nonEmpty: true });
       const failed = record.is_error === true || subtype !== 'success';
       const events: CliProtocolEvent[] = [];
-      if (usage !== null) events.push({ type: 'usage', usage, semantics: 'final' });
       if (failed) {
         const message =
           optionalString(record.result, { trim: true, nonEmpty: true }) ?? 'Cursor result failed';
@@ -108,7 +93,6 @@ function parseCursorRecord(record: Record<string, unknown>): readonly CliProtoco
         type: 'result',
         status: 'completed',
         text: '',
-        usage,
         nativeSessionId: null,
         error: null,
         partial: false,

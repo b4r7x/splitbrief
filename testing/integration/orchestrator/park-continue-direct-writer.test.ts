@@ -99,7 +99,7 @@ describe('a brief parked inside a direct writer', { timeout: 90_000 }, () => {
           prompts.push(opts.prompt);
           mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
           writeFileSync(join(opts.projectDir, targetFile), 'export const parked = true;\n');
-          return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+          return makeRunnerCallResult({ status: 'completed', text: 'done' });
         },
       }),
     });

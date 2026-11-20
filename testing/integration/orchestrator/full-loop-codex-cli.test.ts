@@ -148,7 +148,7 @@ async function runCodexLoop(opts: {
   });
 
   const planner = makePlanner({
-    typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
+    typedCall: typedCallFromTasks([task]),
     review: vi.fn().mockResolvedValue({
       text: '# Final review\n\nCodex CLI implementer passed validation.\n\n### Verdict\npass',
       usage: { inputTokens: 60, outputTokens: 30 },
@@ -219,7 +219,7 @@ async function runCodexLoop(opts: {
 }
 
 describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
-  it('records codex turn usage in the summary with cached input excluded from input tokens', async () => {
+  it('settles a Codex CLI brief whose result carries counters without publishing call usage', async () => {
     const requiredPromptText = 'Codex CLI backed module';
     const { summary, events, runLog, projectDir, workspaceDir } = await runCodexLoop({
       marker: 'from-codex-cli',
@@ -254,11 +254,6 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
       failed: 0,
       implementerTool: 'codex',
       implementerModel: 'codex/test-cheap-model',
-      tokenUsage: {
-        implementerInput: 70,
-        implementerOutput: 40,
-        implementerCacheRead: 30,
-      },
     });
     expect(summary.taskBreakdown).toEqual([
       expect.objectContaining({
@@ -277,11 +272,12 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
         'workflow_complete',
       ]),
     );
+    expect(events.map((event) => event.type)).not.toContain('runner_call_usage');
   }, 90_000);
 
-  it('records zero implementer input and publishes the usage-not-reported warning when codex reports no usage', async () => {
+  it('completes a Codex CLI brief without reported usage', async () => {
     const sessionId = 'sess-full-loop-codex-cli-no-usage';
-    const { summary, events, projectDir, workspaceDir } = await runCodexLoop({
+    const { summary, workspaceDir } = await runCodexLoop({
       marker: 'from-codex-cli-no-usage',
       sessionId,
       requiredPromptText: 'Codex CLI backed module without usage',
@@ -299,10 +295,6 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
       escalatedToPlanner: 0,
       failed: 0,
       implementerTool: 'codex',
-      tokenUsage: {
-        implementerInput: 0,
-        implementerOutput: 0,
-      },
     });
     expect(summary.taskBreakdown).toEqual([
       expect.objectContaining({
@@ -310,34 +302,7 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
         method: 'local',
         retryCount: 0,
         tool: 'codex',
-        implementerTokens: 0,
       }),
     ]);
-    const warning = events.findLast(
-      (event): event is Extract<EngineEvent, { type: 'warning' }> =>
-        event.type === 'warning' && event.code === 'implementer_usage_not_reported',
-    );
-    expect(warning).toMatchObject({
-      type: 'warning',
-      taskId: 'T001',
-      category: 'usage',
-      code: 'implementer_usage_not_reported',
-    });
-    expect(warning?.message).toContain('codex');
-    expect(warning?.message).toContain('T001');
-
-    const reviewPacket = JSON.parse(
-      readFileSync(
-        join(projectDir, '.splitbrief', 'sessions', sessionId, 'review-packet.json'),
-        'utf-8',
-      ),
-    ) as { escalations: { warnings: Array<{ type: string; taskId?: string; message?: string }> } };
-    expect(reviewPacket.escalations.warnings).toContainEqual(
-      expect.objectContaining({
-        type: 'warning',
-        taskId: 'T001',
-        message: expect.stringContaining('codex'),
-      }),
-    );
   }, 90_000);
 });

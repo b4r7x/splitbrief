@@ -4,11 +4,8 @@ import type {
   TypedOutputTransport,
 } from '../../core/runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
-import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { type AppError, error, matches } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact/secrets.js';
-import { runnerCallTokenDelta } from '../calls/usage/normalize.js';
-import { accumulateTokenUsage } from '../calls/usage/accumulate.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from '../planners/require-completed-call.js';
 import { inputTooLargeRefusal, type PromptLimit } from './input-limit.js';
@@ -59,8 +56,8 @@ export type RequestTypedOptions<T> = Readonly<{
   (TypedRequestInput | Readonly<{ prepareCall: () => Promise<TypedRequestInput> }>);
 
 export type RequestTypedResult<T> =
-  | Readonly<{ value: T; nativeSessionId: string | null; usage: TokenDelta | null }>
-  | Readonly<{ error: SeatProtocolError; usage: TokenDelta | null }>;
+  | Readonly<{ value: T; nativeSessionId: string | null }>
+  | Readonly<{ error: SeatProtocolError }>;
 
 const ANSWER_PREVIEW_MAX_LENGTH = 2000;
 
@@ -179,12 +176,6 @@ function seatProtocolError(
   });
 }
 
-function totalUsage(first: RunnerCallResult, repair: RunnerCallResult): TokenDelta | null {
-  const repairUsage = runnerCallTokenDelta(repair.usage);
-  const firstUsage = runnerCallTokenDelta(first.usage);
-  return repairUsage === null ? firstUsage : accumulateTokenUsage(firstUsage, repairUsage);
-}
-
 function transportFor(
   capability: TypedOutputCapability,
   jsonSchema: Readonly<Record<string, unknown>>,
@@ -233,14 +224,12 @@ export async function requestTyped<T>(
     return {
       value: firstCheck.value,
       nativeSessionId: first.nativeSessionId,
-      usage: runnerCallTokenDelta(first.usage),
     };
   }
 
   if (seat === 'implementer') {
     return {
       error: seatProtocolError(seat, 1, transport, firstCheck),
-      usage: runnerCallTokenDelta(first.usage),
     };
   }
 
@@ -264,11 +253,9 @@ export async function requestTyped<T>(
     return {
       value: repairCheck.value,
       nativeSessionId: repair.nativeSessionId,
-      usage: totalUsage(first, repair),
     };
   }
   return {
     error: seatProtocolError(seat, 2, transport, repairCheck),
-    usage: totalUsage(first, repair),
   };
 }

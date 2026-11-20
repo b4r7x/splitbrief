@@ -130,7 +130,7 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     });
 
     const planner = makePlanner({
-      typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
+      typedCall: typedCallFromTasks([task]),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nOpenCode CLI implementer passed validation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
@@ -245,10 +245,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       failed: 0,
       implementerTool: 'opencode',
       implementerModel: 'opencode/test-cheap-model',
-      tokenUsage: {
-        implementerInput: 77,
-        implementerOutput: 22,
-      },
     });
     expect(summary.taskBreakdown).toEqual([
       expect.objectContaining({

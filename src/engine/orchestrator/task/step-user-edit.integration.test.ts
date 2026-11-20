@@ -39,7 +39,7 @@ describe('runSingleTask — user edits', () => {
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
         writeFileSync(join(projectDir, '.env.local'), 'export const v = 99; // implementer\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       }),
     });
     const concurrentUserEdit = 'export const v = 3; // concurrent user edit\n';
@@ -100,7 +100,7 @@ describe('runSingleTask — user edits', () => {
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
         writeFileSync(join(runDir, '.env.local'), 'export const v = 99; // implementer\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       }),
     });
     const concurrentUserEdit = 'export const v = 3; // concurrent user edit\n';
@@ -157,7 +157,7 @@ describe('runSingleTask — user edits', () => {
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
         writeFileSync(join(runDir, '.env.local'), 'export const v = 99; // implementer\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       }),
     });
     const concurrentUserEdit = 'export const v = 3; // concurrent user edit\n';
@@ -230,7 +230,6 @@ describe('runSingleTask — user edits', () => {
         makeRunnerCallResult({
           status: 'completed',
           text: '```ts\nexport const value = "implementer";\n```',
-          usage: { inputTokens: 10, outputTokens: 5 },
         }),
       ),
     });

@@ -386,7 +386,7 @@ describe('metadata overlay', () => {
           'claude-sonnet-4-6': {
             id: 'claude-sonnet-4-6',
             name: 'Claude Sonnet 4.6',
-            cost: { input: 3, output: 15 },
+
             limit: { context: 1_000_000 },
             release_date: '2026-01-10',
           },
@@ -402,7 +402,6 @@ describe('metadata overlay', () => {
             providerId: 'ollama',
             displayName: 'Native Sonnet',
             contextLength: 32_768,
-            pricingInput: 8,
           },
         ],
       },
@@ -418,13 +417,12 @@ describe('metadata overlay', () => {
       id: 'claude-sonnet-4-6',
       displayName: 'Native Sonnet',
       contextLength: 32_768,
-      pricingInput: 8,
     });
     expect(
       lookupModelsDevModel({ providerId: 'ollama', modelId: 'claude-sonnet-4-6', cache }),
     ).toMatchObject({
       id: 'claude-sonnet-4-6',
-      pricingOutput: 15,
+
       releaseDate: '2026-01-10',
     });
   });

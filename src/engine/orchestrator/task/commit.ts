@@ -2,7 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import type { ValidationAcceptance } from '../validation/types.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
@@ -18,7 +18,7 @@ import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/decla
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { readBriefWorkedMs } from './worked-time.js';
 import { lineageRemainder } from './booking.js';
-import { recordSettledTaskUsage } from './record-usage.js';
+import { recordSettledBrief } from './record-settlement.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/changed-since.js';
 
 type ValidateCommitOptions = {
@@ -169,8 +169,7 @@ export async function acceptLocalAttempt(opts: {
   acceptance: ValidationAcceptance;
   taskChangedFiles: string[];
   applyResult: BundleApplyResult | undefined;
-  tokensBefore: TokenUsage;
-  taskBreakdowns: TaskTokenUsage[];
+  taskBreakdowns: BriefExecution[];
   setTrackedState: (s: WorkflowState) => void;
   onTaskAcceptedFiles?: ((files: string[]) => void) | undefined;
 }): Promise<WorkflowState | undefined> {
@@ -196,11 +195,10 @@ export async function acceptLocalAttempt(opts: {
   const { state } = commitResult;
   opts.setTrackedState(state);
   opts.onTaskAcceptedFiles?.(commitResult.bookedFiles);
-  recordSettledTaskUsage({
+  recordSettledBrief({
     wctx,
     task,
     method: 'local',
-    tokensBefore: opts.tokensBefore,
     state,
     taskBreakdowns: opts.taskBreakdowns,
   });

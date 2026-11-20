@@ -20,7 +20,7 @@ import { sortModelsByRecency, type ModelOption } from './recency.js';
 import { resolveAndSort } from './runtime-dedupe.js';
 import { withSpendableLadders } from './effort-ladders.js';
 
-// A selection policy, not catalog data: it carries no context length, pricing,
+// A selection policy, not catalog data: it carries no context length,
 // release date or provenance, and is synthesized per render rather than merged.
 const AUTOMATIC_MODEL_OPTION: ModelOption = Object.freeze({ id: AUTOMATIC_MODEL });
 

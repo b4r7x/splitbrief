@@ -153,7 +153,7 @@ export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): {
 
 export function makePlanner(overrides?: Partial<Planner>): Planner {
   const task = makeTask();
-  const usage = { inputTokens: 100, outputTokens: 50 };
+
   return {
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
@@ -164,7 +164,6 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
     typedCall: typedCallPlanAndReview(
       () => planFromTasks([task]),
       (prompt) => passingReviewVerdict(prompt),
-      { plan: usage, review: usage },
     ),
     capabilities: {
       supportsConversationalPlanning: false,

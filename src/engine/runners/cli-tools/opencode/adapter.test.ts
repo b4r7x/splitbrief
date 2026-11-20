@@ -526,30 +526,6 @@ describe('OpenCode JSON envelope adapter', () => {
       { type: 'text', channel: 'assistant', text: 'hello' },
     ]);
 
-    const usage = opencodeProtocolEvents(
-      JSON.stringify({
-        type: 'step_finish',
-        sessionID: 'ses-open',
-        part: { type: 'step-finish', tokens: { input: 5, output: 2, reasoning: 1 } },
-      }),
-    );
-    expect(usage).toContainEqual({
-      type: 'usage',
-      usage: {
-        inputTokens: 5,
-        outputTokens: 2,
-        reasoningTokens: 1,
-        counterCoverage: {
-          input: 'reported',
-          output: 'reported',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'reported',
-        },
-      },
-      semantics: 'delta',
-    });
-
     expect(
       opencodeProtocolEvents(
         JSON.stringify({
@@ -663,17 +639,7 @@ describe('OpenCode JSON envelope adapter', () => {
       type: 'result',
       status: 'failed',
       text: '',
-      usage: {
-        inputTokens: 7,
-        outputTokens: 2,
-        counterCoverage: {
-          input: 'reported',
-          output: 'reported',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'missing',
-        },
-      },
+
       nativeSessionId: 'ses-open',
       error: { code: 'opencode-error', message: 'APIError: Upstream stream ended' },
       partial: true,
@@ -727,18 +693,7 @@ describe('OpenCode JSON envelope adapter', () => {
       type: 'result',
       status: 'completed',
       text: 'final message',
-      usage: {
-        inputTokens: 5,
-        outputTokens: 3,
-        reasoningTokens: 1,
-        counterCoverage: {
-          input: 'reported',
-          output: 'reported',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'reported',
-        },
-      },
+
       nativeSessionId: 'ses-final',
       error: null,
       partial: false,
@@ -767,7 +722,7 @@ describe('OpenCode JSON envelope adapter', () => {
       type: 'result',
       status: 'completed',
       text: 'edit applied',
-      usage: null,
+
       nativeSessionId: 'ses-impl',
       error: null,
       partial: false,

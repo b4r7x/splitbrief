@@ -14,6 +14,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { wrapHard } from '../../../utils/display-text/wrap.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { formatRecoveryHeaderParts } from './headline.js';
+import { readRecoveryContext } from './recovery-context.js';
 
 /** The indent every fact row of a prompt panel starts with. */
 export const FACT_INDENT = '  ';
@@ -174,15 +175,28 @@ function fitFileList(files: string[], room: number): string {
 
 function formatDetailLines(issue: RecoveryIssue): string[] {
   const dropQuotedReset = formatResetAt(issue.resetAt) !== undefined;
-  return issue.details
-    .filter((detail) => !detail.startsWith('Worker profile:'))
+  const details = issue.details
+    .filter(
+      (detail) =>
+        !/^(?:Worker profile|Estimated prompt|Untruncated estimate|Context limit): /.test(detail),
+    )
     .map(formatDetailLine)
     .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
+  const context = readRecoveryContext(issue);
+  if (
+    context?.cause === 'input-budget' &&
+    context.requiredTokens !== null &&
+    context.availableTokens !== null
+  ) {
+    const needed = context.requiredTokens.toLocaleString('en-US');
+    const available = context.availableTokens.toLocaleString('en-US');
+    details.unshift(`The call needs ${needed} tokens. The call can take at most ${available}.`);
+  }
+  return details;
 }
 
 function formatDetailLine(detail: string): string {
   if (detail.startsWith('Validation: ')) return `Last check ${detail.slice('Validation: '.length)}`;
   if (detail.startsWith('Validation ')) return `Last check ${detail.slice('Validation '.length)}`;
-  if (detail.startsWith('Spent ')) return `Spent ${detail.slice('Spent '.length)}`;
   return detail;
 }

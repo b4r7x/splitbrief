@@ -112,7 +112,7 @@ describe('runner row grammar', () => {
       kind: 'api',
       roles: ['implementer'],
       modelPolicy: 'per-call',
-      billing: 'api-metered',
+
       permissions: readyPermissions,
       status: { state: 'unavailable', remediation: 'Start DeepSeek and refresh detection.' },
       available: false,
@@ -157,7 +157,7 @@ describe('runner row grammar', () => {
         kind: 'cli',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'subscription-included',
+
         permissions: { ...readyPermissions, directWrite: true, automaticApproval: true },
         status,
         available: false,
@@ -188,7 +188,7 @@ describe('runner row grammar', () => {
         kind: 'cli',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'subscription-included',
+
         permissions: readyPermissions,
         status,
         available: status.state === 'ready',
@@ -240,7 +240,7 @@ describe('runner row grammar', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'incompatible', remediation: 'Install tested version.' },
       available: false,
@@ -270,7 +270,7 @@ describe('runner row grammar', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -301,7 +301,7 @@ describe('runner row grammar', () => {
       kind: 'api',
       roles: ['implementer'],
       modelPolicy: 'per-call',
-      billing: 'api-metered',
+
       permissions: readyPermissions,
       status: { state: 'unavailable', remediation: 'Start DeepSeek and refresh detection.' },
       available: false,
@@ -312,7 +312,7 @@ describe('runner row grammar', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -401,36 +401,6 @@ describe('runner row grammar', () => {
     ui.unmount();
   });
 
-  it('shows a floored context window on a model row', async () => {
-    const million = renderFeature(
-      renderModelRowAlone({
-        row: modelRow({ id: 'gpt-5.6', contextLength: 1_048_576 }, 'Detected'),
-        isCursor: false,
-        maxWidth: 60,
-        currentModel: undefined,
-        auth: AUTH,
-      }),
-    );
-    await tick(20);
-    const millionFrame = million.lastFrame() ?? '';
-    expect(millionFrame).toContain('1M');
-    expect(millionFrame).not.toContain('1.0M');
-    million.unmount();
-
-    const thousands = renderFeature(
-      renderModelRowAlone({
-        row: modelRow({ id: 'gpt-5.6-mini', contextLength: 262_144 }, 'Detected'),
-        isCursor: false,
-        maxWidth: 60,
-        currentModel: undefined,
-        auth: AUTH,
-      }),
-    );
-    await tick(20);
-    expect(thousands.lastFrame() ?? '').toContain('262K');
-    thousands.unmount();
-  });
-
   it('renders the browse-catalog escape as an affordance, not a failure', async () => {
     forceUnicodeGlyphs();
     const ui = renderFeature(
@@ -487,22 +457,21 @@ describe('runner row grammar', () => {
     };
     const wide = await rowLine(modelRow(alias, 'Known'), 60);
     expect(wide).toContain('Fable 5.1');
-    expect(wide).toContain(`1M${SOFT_SEP}claude-fable-5-1`);
+    expect(wide).toContain('claude-fable-5-1');
 
     // The id gives way whole before the name loses a cell, and a truncated id —
     // which would name a model that does not exist — never paints at all.
     const squeezed = renderModelRowAlone({
       row: modelRow(alias, 'Known'),
       isCursor: false,
-      maxWidth: 34,
+      maxWidth: 24,
       currentModel: undefined,
       auth: AUTH,
     }).props;
     expect(squeezed.label).toBe('Fable 5.1');
-    expect(squeezed.metadata).toBe('1M');
-    expect(squeezed.metadata).not.toContain('claude-fable');
+    expect(squeezed.metadata).toBeUndefined();
 
-    // A row with no size or detail carries the id alone.
+    // The catalog id can stand on its own.
     const bare = renderModelRowAlone({
       row: modelRow(
         { id: 'best', displayName: 'Best', catalogModelId: 'claude-fable-5-1' },
@@ -532,57 +501,6 @@ describe('runner row grammar', () => {
     const line = await rowLine(row, 60);
     expect(line).toContain('Opus 5.5');
     expect(line).toContain('opus · 1M');
-  });
-
-  it('places the vendor tag left of the context size in the metadata cell', async () => {
-    const row = modelRow(
-      {
-        id: 'claude-fable-5.1',
-        displayName: 'Claude Fable 5.1',
-        vendorTag: 'no ZDR',
-        contextLength: 1_000_000,
-      },
-      'Known',
-    );
-    const el = renderModelRowAlone({
-      row,
-      isCursor: false,
-      maxWidth: 80,
-      currentModel: undefined,
-      auth: AUTH,
-    });
-    expect(el.props.label).toBe('Claude Fable 5.1');
-    expect(el.props.label).not.toContain('no ZDR');
-    expect(el.props.label).not.toContain('1M');
-    const metadata = el.props.metadata ?? '';
-    expect(metadata).toContain('no ZDR');
-    expect(metadata).toContain('1M');
-    expect(metadata.indexOf('no ZDR')).toBeLessThan(metadata.indexOf('1M'));
-    const line = await rowLine(row, 80);
-    expect(line).toContain('no ZDR');
-    expect(line).toContain('1M');
-  });
-
-  it('falls back to the formatted context length, and leaves metadata empty when neither is present', () => {
-    const withSize = renderModelRowAlone({
-      row: modelRow({ id: 'gpt-5.6', displayName: 'GPT-5.6', contextLength: 1_000_000 }, 'Known'),
-      isCursor: false,
-      maxWidth: 40,
-      currentModel: undefined,
-      auth: AUTH,
-    });
-    expect(withSize.props.metadata).toBe('1M');
-    expect(withSize.props.label).not.toContain('1M');
-
-    const empty = renderModelRowAlone({
-      row: modelRow({ id: 'plain', displayName: 'Plain' }, 'Known'),
-      isCursor: false,
-      maxWidth: 40,
-      currentModel: undefined,
-      auth: AUTH,
-    });
-    expect(empty.props.metadata).toBeUndefined();
-    expect(empty.props.label).toBe('Plain');
   });
 
   it('drops the provenance word when the section header already carries it', async () => {
@@ -651,7 +569,7 @@ describe('runner row grammar', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -800,9 +718,8 @@ describe('runner row grammar', () => {
       const wide = await frameAt(60);
       expect(wide).toContain('Claude Opus 5');
       expect(wide).toContain('4 options');
-      expect(wide).toContain('1M');
 
-      const narrow = await frameAt(30);
+      const narrow = await frameAt(23);
       expect(narrow).toContain('Claude Opus 5');
       expect(narrow).not.toContain('4 options');
     });
@@ -821,12 +738,11 @@ describe('runner row grammar', () => {
       const wide = await rowFrame(modelRow(grok, 'Stale'), 60, 'cursor-grok-4.6-low');
       expect(wide).toContain('3 options');
       expect(wide).toContain('Stale');
-      expect(wide).toContain('272K');
 
       const squeezed = renderModelRowAlone({
         row: modelRow(grok, 'Stale'),
         isCursor: false,
-        maxWidth: 32,
+        maxWidth: 27,
         currentModel: 'cursor-grok-4.6-low',
         auth: AUTH,
       }).props;
@@ -853,17 +769,15 @@ describe('runner row grammar', () => {
         auth: AUTH,
       }).props;
       expect(wide.metadata).toContain('2 options');
-      expect(wide.metadata).toContain('200K');
 
       const squeezed = renderModelRowAlone({
         row: modelRow(opus48, 'Detected'),
         isCursor: false,
-        maxWidth: 32,
+        maxWidth: 27,
         currentModel: undefined,
         auth: AUTH,
       }).props;
-      expect(squeezed.metadata).toContain('200K');
-      expect(squeezed.metadata).not.toMatch(/\b2\b/);
+      expect(squeezed.metadata).toBeUndefined();
     });
 
     it('leaves a non-family row to ListRow at a width that clips the family chip', async () => {
@@ -1114,7 +1028,7 @@ describe('runner row grammar', () => {
       expect(frame).not.toContain(glyph('disclosureClosed'));
     });
 
-    it('puts the flag-channel chevron after the metadata and before the check', async () => {
+    it('puts the flag-channel chevron before the check', async () => {
       const withLadder: ModelOption = {
         id: 'opus',
         displayName: 'Opus 5.5',
@@ -1124,8 +1038,7 @@ describe('runner row grammar', () => {
       };
       const line = await rowLine(modelRow(withLadder, 'Detected'), 60, 'opus');
 
-      expect(line.indexOf('1M')).toBeGreaterThan(-1);
-      expect(line.indexOf(glyph('disclosureClosed'))).toBeGreaterThan(line.indexOf('1M'));
+      expect(line.indexOf(glyph('disclosureClosed'))).toBeGreaterThan(line.indexOf('Opus 5.5'));
       expect(line.indexOf(glyph('check'))).toBeGreaterThan(line.indexOf(glyph('disclosureClosed')));
     });
 
@@ -1150,7 +1063,6 @@ describe('runner row grammar', () => {
 
       expect(collapsed).toContain('3 options');
       expect(expanded).toContain('3 options');
-      expect(expanded).toContain('1M');
     });
 
     it('renders a single-variant row without any provider annotation', async () => {
@@ -1266,7 +1178,7 @@ describe('runner row grammar', () => {
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy: 'optional',
-      billing: 'subscription-included',
+
       permissions: readyPermissions,
       status: { state: 'ready', remediation: null },
       available: true,

@@ -47,7 +47,7 @@ type RunSeats =
 export async function buildSeats(input: SeatStepInput): Promise<RunSeats> {
   const { opts, config, projectDir, sessionId, bus, setTrackedState } = input;
   const { planSeatChanged, hasPendingRecovery } = input;
-  let savedState = input.savedState;
+  const savedState = input.savedState;
   // Every seat carries the run's skills, so the block is built before the first seat is.
   const skills = await buildSkillsContext({
     projectDir,
@@ -72,7 +72,7 @@ export async function buildSeats(input: SeatStepInput): Promise<RunSeats> {
   });
   const { planner } = plannerSeat;
   if (savedState && !hasPendingRecovery) {
-    savedState = await autoCompactResumeContext({
+    await autoCompactResumeContext({
       projectDir,
       workspaceDir: input.workspaceDir,
       sessionId,

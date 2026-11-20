@@ -15,12 +15,7 @@ import {
   makeRunnerCallActivity,
   makeRunnerCallCompleted,
 } from '#testing/helpers/events/runner-call.js';
-import {
-  makeTaskStart,
-  makeValidate,
-  makeRetry,
-  makeCostUpdate,
-} from '#testing/helpers/events/task.js';
+import { makeTaskStart, makeValidate, makeRetry } from '#testing/helpers/events/task.js';
 import { makeRunnerActivity } from '#testing/helpers/events/workflow-activity.js';
 
 function makeRunnerTextDelta(
@@ -99,7 +94,7 @@ function makeRunnerError(
     startedAt: 1_000,
     endedAt: 1_900,
     durationMs: 900,
-    usage: { inputTokens: 1, outputTokens: 2 },
+
     nativeSessionId: null,
     ...overrides,
   };
@@ -546,7 +541,7 @@ describe('eventsStore — append via addEvent', () => {
     expect(operationsStore.get().last).toMatchObject({
       callId: 'call-1',
       status: 'failed',
-      usage: { inputTokens: 1, outputTokens: 2 },
+
       reason: `failed ${rawSentinel}`,
     });
   });
@@ -659,11 +654,6 @@ describe('eventsStore — append via addEvent', () => {
     expect(s.events).toHaveLength(3);
     expect((s.events[0] as { text: string }).text).toBe('a');
     expect((s.events[2] as { text: string }).text).toBe('b');
-  });
-
-  it('does not add cost-update to events array', () => {
-    addEvent(makeCostUpdate());
-    expect(eventsStore.get().events).toHaveLength(0);
   });
 
   describe('validate coalescing', () => {

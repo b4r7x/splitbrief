@@ -8,13 +8,13 @@ import { createEventBus } from '../../events/bus.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import type { EngineEvent } from '../../events/types.js';
-import type { RunnerCallContext } from '../../calls/types.js';
+
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { QueuedMessage } from '../../../core/schemas/workflow/queue.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
+
 import { fauxPlanner } from '#testing/helpers/faux/planner.js';
 import { readQueueForPrompt, releaseQueuedMessage } from './drain.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
+
 import { makeResearchingState, setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { trustedShimGate } from '#testing/helpers/command-shim.js';
@@ -65,7 +65,7 @@ describe('dispatchNativeInjection', () => {
     let received: unknown;
     planner.injectUserTurn = async (turn) => {
       received = turn;
-      return { status: 'delivered', usage: null };
+      return { status: 'delivered' };
     };
     const result = await dispatchNativeInjection({
       ...ref,
@@ -137,7 +137,6 @@ describe('dispatchNativeInjection', () => {
     expect(loadState({ projectDir, sessionId })?.messageQueue).toEqual([correction]);
     expect(events.some((event) => event.type.startsWith('runner_call_'))).toBe(false);
     expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
-    expect(events.some((event) => event.type === 'cost_update')).toBe(false);
 
     const next = await drainAndFormat(projectDir, sessionId, state, bus);
     expect(next.prefix).toContain('use JWT instead');
@@ -145,7 +144,7 @@ describe('dispatchNativeInjection', () => {
     expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
   });
 
-  it('acknowledges a delivered turn without usage exactly once and books nothing', async () => {
+  it('acknowledges a delivered turn exactly once', async () => {
     const { planner: faux } = fauxPlanner();
     const events: EngineEvent[] = [];
     const bus = createEventBus();
@@ -169,13 +168,11 @@ describe('dispatchNativeInjection', () => {
     await expect(dispatch()).resolves.toEqual({ status: 'delivered' });
     await expect(dispatch()).resolves.toEqual({ status: 'not-delivered', reason: 'already-owned' });
 
-    expect(state.tokenUsage.plannerInput).toBe(0);
-    expect(state.tokenUsage.plannerOutput).toBe(0);
     expect(loadState({ projectDir, sessionId })?.messageQueue[0]?.nativeDeliveryState).toBe(
       'delivered',
     );
     expect(events.filter((event) => event.type === 'message_injected_native')).toHaveLength(1);
-    expect(events.some((event) => event.type === 'cost_update')).toBe(false);
+
     expect(readQueueForPrompt({ projectDir, sessionId, state }).messages).toEqual([]);
   });
 
@@ -248,83 +245,9 @@ describe('dispatchNativeInjection', () => {
     expect(events.filter((e) => e.type === 'warning')).toEqual([]);
   });
 
-  it('books the injected turn token usage into planner accumulators and emits a cost update', async () => {
-    const { planner } = fauxPlanner();
-    const startedAt = Date.now();
-    const call: RunnerCallContext = {
-      callId: 'native-injection-call',
-      role: 'planner',
-      backendKind: 'cli',
-      runnerName: 'native-planner',
-    };
-    planner.injectUserTurn = async (injection) => {
-      injection.callbacks?.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
-      injection.callbacks?.onCallEvent?.({
-        type: 'call_completed',
-        ts: startedAt + 1,
-        ...call,
-        status: 'completed',
-        error: null,
-        partial: false,
-        startedAt,
-        endedAt: startedAt + 1,
-        durationMs: 1,
-        usage: { inputTokens: 120, outputTokens: 40 },
-        nativeSessionId: null,
-      });
-      return { status: 'delivered', usage: { inputTokens: 120, outputTokens: 40 } };
-    };
-
-    const events: EngineEvent[] = [];
-    const bus = createEventBus();
-    bus.subscribe((e) => events.push(e));
-
-    const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
-    const before = state.tokenUsage.plannerInput;
-
-    const result = await dispatchNativeInjection({
-      message,
-      planner,
-      projectDir,
-      sessionId,
-      getState: () => state,
-      setState: (s) => {
-        state = s;
-      },
-      bus,
-    });
-
-    expect(result).toEqual({ status: 'delivered' });
-    await expect(
-      dispatchNativeInjection({
-        message,
-        planner,
-        projectDir,
-        sessionId,
-        getState: () => state,
-        setState: (s) => {
-          state = s;
-        },
-        bus,
-      }),
-    ).resolves.toEqual({ status: 'not-delivered', reason: 'already-owned' });
-    expect(state.tokenUsage.plannerInput).toBe(before + 120);
-    expect(state.tokenUsage.plannerOutput).toBe(40);
-    expect(events.filter((e) => e.type === 'cost_update')).toHaveLength(1);
-    expect(events.filter((e) => e.type === 'message_injected_native')).toHaveLength(1);
-    expect(
-      events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
-    ).toEqual(['runner_call_started', 'runner_call_completed']);
-    expect(events.find((event) => event.type === 'runner_call_completed')).toMatchObject({
-      callId: 'native-injection-call',
-      role: 'planner',
-    });
-  });
-
   it('publishes a redacted preview for injected messages', async () => {
     const { planner } = fauxPlanner();
-    planner.injectUserTurn = async () => ({ status: 'delivered', usage: null });
+    planner.injectUserTurn = async () => ({ status: 'delivered' });
 
     const events: EngineEvent[] = [];
     const bus = createEventBus();
@@ -361,7 +284,7 @@ describe('dispatchNativeInjection', () => {
     let injected = false;
     planner.injectUserTurn = async () => {
       injected = true;
-      return { status: 'delivered', usage: null };
+      return { status: 'delivered' };
     };
 
     const events: EngineEvent[] = [];
@@ -388,12 +311,12 @@ describe('dispatchNativeInjection', () => {
     expect(events.find((event) => event.type === 'warning')).toBeUndefined();
   });
 
-  it('does not book usage or mark delivered when aborted after injectUserTurn resolves', async () => {
+  it('does not mark delivered when aborted after injectUserTurn resolves', async () => {
     const { planner } = fauxPlanner();
     const controller = new AbortController();
     planner.injectUserTurn = async () => {
       controller.abort(new Error('cancelled'));
-      return { status: 'delivered', usage: { inputTokens: 500, outputTokens: 100 } };
+      return { status: 'delivered' };
     };
 
     const events: EngineEvent[] = [];
@@ -401,7 +324,6 @@ describe('dispatchNativeInjection', () => {
     bus.subscribe((e) => events.push(e));
     const { projectDir, sessionId } = setupProject(dirs);
     let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
-    const beforeInput = state.tokenUsage.plannerInput;
 
     const result = await dispatchNativeInjection({
       message,
@@ -417,8 +339,7 @@ describe('dispatchNativeInjection', () => {
     });
 
     expect(result).toEqual({ status: 'not-delivered', reason: 'aborted' });
-    expect(state.tokenUsage.plannerInput).toBe(beforeInput);
-    expect(events.some((event) => event.type === 'cost_update')).toBe(false);
+
     expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
   });
 
@@ -429,10 +350,10 @@ describe('dispatchNativeInjection', () => {
     bus.subscribe((e) => events.push(e));
     const { projectDir, sessionId } = setupProject(dirs);
     let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
-    const beforeInput = state.tokenUsage.plannerInput;
+
     planner.injectUserTurn = async () => {
       saveState({ projectDir, sessionId }, { ...state, messageQueue: [] });
-      return { status: 'delivered', usage: { inputTokens: 25, outputTokens: 5 } };
+      return { status: 'delivered' };
     };
 
     const result = await dispatchNativeInjection({
@@ -448,9 +369,8 @@ describe('dispatchNativeInjection', () => {
     });
 
     expect(result).toEqual({ status: 'not-delivered', reason: 'cleared' });
-    expect(state.tokenUsage.plannerInput).toBe(beforeInput);
+
     expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
-    expect(events.some((event) => event.type === 'cost_update')).toBe(false);
   });
 
   it('does not erase persisted rewindPending or rewind phase when injection completes after a rewind', async () => {
@@ -470,7 +390,7 @@ describe('dispatchNativeInjection', () => {
           { type: 'CORRECT_PLAN', comment: 'change architecture' },
         ),
       );
-      return { status: 'delivered', usage: null };
+      return { status: 'delivered' };
     };
 
     const result = await dispatchNativeInjection({
@@ -496,14 +416,14 @@ describe('dispatchNativeInjection', () => {
     expect(events.some((event) => event.type === 'message_injected_native')).toBe(true);
   });
 
-  it('keeps a live native owner out of prompt drain while both usage deltas persist', async () => {
+  it('keeps a live native owner out of prompt drain', async () => {
     const { planner } = fauxPlanner();
-    let finishInjection: (usage: TokenDelta) => void = () => {
+    let finishInjection: () => void = () => {
       throw new Error('native injection was not started');
     };
     planner.injectUserTurn = async () =>
       new Promise((resolve) => {
-        finishInjection = (usage) => resolve({ status: 'delivered', usage });
+        finishInjection = () => resolve({ status: 'delivered' });
       });
 
     const events: EngineEvent[] = [];
@@ -527,16 +447,10 @@ describe('dispatchNativeInjection', () => {
     const prompt = readQueueForPrompt({ projectDir, sessionId, state });
     expect(prompt.messages).toEqual([]);
 
-    const bookedByPrompt = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', {
-      inputTokens: 13,
-      outputTokens: 5,
-    });
-    state = bookedByPrompt;
-    finishInjection({ inputTokens: 11, outputTokens: 7 });
+    finishInjection();
 
     await expect(native).resolves.toEqual({ status: 'delivered' });
-    expect(state.tokenUsage.plannerInput).toBe(24);
-    expect(state.tokenUsage.plannerOutput).toBe(12);
+
     expect(state.messageQueue[0]?.nativeDeliveryState).toBe('delivered');
     expect(events.filter((event) => event.type === 'message_injected_native')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(0);
@@ -546,7 +460,6 @@ describe('dispatchNativeInjection', () => {
     const { planner } = fauxPlanner();
     planner.injectUserTurn = async () => ({
       status: 'delivered',
-      usage: { inputTokens: 99, outputTokens: 9 },
     });
     const events: EngineEvent[] = [];
     const bus = createEventBus();
@@ -570,7 +483,7 @@ describe('dispatchNativeInjection', () => {
       }),
     ).resolves.toEqual({ status: 'not-delivered', reason: 'already-owned' });
     expect(events.filter((event) => event.type === 'message_injected_native')).toHaveLength(0);
-    expect(state.tokenUsage.plannerInput).toBe(0);
+
     releaseQueuedMessage({ projectDir, sessionId }, message.id, 'prompt');
   });
 });

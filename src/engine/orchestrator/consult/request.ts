@@ -13,7 +13,6 @@ import { publishConsultAnswered } from '../publish/recovery.js';
 import { publishRunnerCallEvent } from '../publish/runner.js';
 import { readWorkspaceSeed } from '../isolation/seed.js';
 import { askPlannerSession, type PlannerSessionTurn } from '../planner-session.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import {
   checkRegistry,
@@ -131,7 +130,6 @@ export async function requestConsult(
   input: ConsultRequestInput,
 ): Promise<ConsultOutcome> {
   const ref = { projectDir: ctx.projectDir, sessionId: ctx.sessionId };
-  const usageCtx = { ...ref, bus: ctx.bus };
   let state = ctx.state;
   const apply = (next: WorkflowState): void => {
     state = next;
@@ -196,7 +194,6 @@ export async function requestConsult(
   });
 
   if ('error' in answer.result) {
-    apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
     consultErrors.add(answer.result.error);
     return { error: answer.result.error };
   }
@@ -212,6 +209,5 @@ export async function requestConsult(
     }),
   );
   publishAnswer(ctx, state, input, consulted);
-  apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
   return { answer: consulted };
 }

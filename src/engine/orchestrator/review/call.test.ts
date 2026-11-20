@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { loadState } from '../../../core/state/persistence.js';
+
 import { ensureSessionDir } from '../../../core/sessions/spec-files.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
@@ -207,7 +207,6 @@ describe('runReviewerCall', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: JSON.stringify(VERDICT),
-        usage: { inputTokens: 41, outputTokens: 17 },
       }),
     );
 
@@ -226,14 +225,6 @@ describe('runReviewerCall', () => {
     });
 
     expect('value' in result.result && result.result.value).toEqual(VERDICT);
-    expect(result.state.tokenUsage).toMatchObject({
-      reviewerInput: 41,
-      reviewerOutput: 17,
-      plannerInput: 0,
-      plannerOutput: 0,
-    });
-    const persisted = loadState({ projectDir, sessionId });
-    expect(persisted?.tokenUsage).toMatchObject({ reviewerInput: 41, reviewerOutput: 17 });
   });
 
   it('streams no seat text and publishes no artifact card for the typed answer', async () => {

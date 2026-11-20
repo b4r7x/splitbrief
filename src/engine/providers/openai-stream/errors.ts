@@ -8,7 +8,6 @@ import {
   type RunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
 } from '../../calls/status.js';
-import type { RunnerCallUsage } from '../../calls/types.js';
 import { throwMappedError } from '../../streaming/stream-errors.js';
 import type { StreamCompletionOptions } from './types.js';
 
@@ -71,7 +70,6 @@ export function finishOpenAiFailure(
   recorder: RunnerCallRecorder,
   err: unknown,
   endpoint: StreamCompletionOptions['endpoint'],
-  usage: RunnerCallUsage | null,
   credentialValues: readonly string[],
   redactCredential: RunnerCallCredentialRedactor,
 ): never {
@@ -80,7 +78,6 @@ export function finishOpenAiFailure(
   recorder.finishFailed({
     status: 'failed',
     error: runnerCallErrorFromUnknown(safeMapped, 'openai_stream_error', credentialValues),
-    usage,
     nativeSessionId: null,
   });
   throw safeMapped;

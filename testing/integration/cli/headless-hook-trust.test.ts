@@ -93,7 +93,7 @@ function captureOutput(): { stdout: string[]; stderr: string[] } {
 
 function seats() {
   const planner = makePlanner({
-    typedCall: typedCallFromTasks([TASK], { inputTokens: 140, outputTokens: 90 }),
+    typedCall: typedCallFromTasks([TASK]),
     review: vi.fn().mockResolvedValue({
       text: '# Final review\n\nPassed validation.\n\n### Verdict\npass\n',
       usage: { inputTokens: 60, outputTokens: 30 },

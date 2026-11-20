@@ -38,15 +38,12 @@ describe('start command — liveness record', () => {
     let midRunPid: number | undefined;
     let midRunExitedAt: number | undefined;
     const planner = makePlanner({
-      typedCall: typedCallAnswering(
-        () => {
-          const lock = readLockfile(sessionDir(tmp, onlySessionId(tmp)));
-          midRunPid = lock?.pid;
-          midRunExitedAt = lock?.exitedAt;
-          return planFromTasks([]);
-        },
-        { inputTokens: 50, outputTokens: 25 },
-      ),
+      typedCall: typedCallAnswering(() => {
+        const lock = readLockfile(sessionDir(tmp, onlySessionId(tmp)));
+        midRunPid = lock?.pid;
+        midRunExitedAt = lock?.exitedAt;
+        return planFromTasks([]);
+      }),
     });
     const implementer = makeImplementer();
 

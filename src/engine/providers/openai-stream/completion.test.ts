@@ -24,12 +24,6 @@ interface MockChunk {
     function_call?: { name?: string; arguments?: string };
     tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
   };
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number };
-    completion_tokens_details?: { reasoning_tokens?: number };
-  };
 }
 
 function makeMockClient(chunks: MockChunk[]): MockClient {
@@ -45,14 +39,6 @@ function makeMockClient(chunks: MockChunk[]): MockClient {
                   if (i >= chunks.length) return { done: true, value: undefined };
                   const chunk = chunks[i++];
                   if (!chunk) return { done: true, value: undefined };
-                  if (
-                    chunk.usage &&
-                    chunk.content === undefined &&
-                    chunk.delta === undefined &&
-                    chunk.finishReason === undefined
-                  ) {
-                    return { done: false, value: { choices: [], usage: chunk.usage } };
-                  }
                   return {
                     done: false,
                     value: {
@@ -64,7 +50,6 @@ function makeMockClient(chunks: MockChunk[]): MockClient {
                           }),
                         },
                       ],
-                      usage: chunk.usage ?? null,
                     },
                   };
                 },
@@ -247,7 +232,7 @@ describe('streamCompletion', () => {
   it('uses the supplied policy to accept only declared finish reasons', async () => {
     const policy: OpenAICompatPolicy = {
       tokenField: 'max_tokens',
-      streamUsage: false,
+
       temperature: 'verbatim',
       effort: 'omit',
       reasoning: 'omit',
@@ -302,7 +287,7 @@ describe('streamCompletion', () => {
   it('keeps separate reasoning deltas out of final content', async () => {
     const policy: OpenAICompatPolicy = {
       tokenField: 'max_tokens',
-      streamUsage: true,
+
       temperature: 'verbatim',
       effort: 'omit',
       reasoning: 'omit',
@@ -348,61 +333,12 @@ describe('streamCompletion', () => {
     expect(progressCalls).toEqual(['a', 'c']);
   });
 
-  it('captures usage from final chunk', async () => {
-    const client = makeMockClient([
-      { content: 'response' },
-      { finishReason: 'stop' },
-      { usage: { prompt_tokens: 100, completion_tokens: 50 } },
-    ]);
-
-    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
-      temperature: 0.2,
-      onProgress: () => {},
-    });
-
-    expect(result.usage).toEqual({
-      inputTokens: 100,
-      outputTokens: 50,
-      counterCoverage: {
-        input: 'partial',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { input: 100, output: 50 },
-    });
-  });
-
   it('preserves OpenAI reasoning tokens in usage', async () => {
-    const client = makeMockClient([
-      { finishReason: 'stop' },
-      {
-        usage: {
-          prompt_tokens: 100,
-          completion_tokens: 50,
-          completion_tokens_details: { reasoning_tokens: 20 },
-        },
-      },
-    ]);
+    const client = makeMockClient([{ finishReason: 'stop' }, {}]);
 
-    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+    await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
       temperature: 0.2,
       onProgress: () => {},
-    });
-
-    expect(result.usage).toEqual({
-      inputTokens: 100,
-      outputTokens: 30,
-      reasoningTokens: 20,
-      counterCoverage: {
-        input: 'partial',
-        output: 'reported',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'reported',
-      },
-      providerTotals: { input: 100, output: 50 },
     });
   });
 
@@ -414,7 +350,7 @@ describe('streamCompletion', () => {
           create: async () =>
             (async function* () {
               yield { choices: 'not-an-array' };
-              yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }], usage: null };
+              yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] };
             })(),
         },
       },
@@ -599,7 +535,6 @@ describe('streamCompletion', () => {
             (async function* () {
               yield {
                 choices: [{ delta: { content: 'partial' }, finish_reason: null }],
-                usage: null,
               };
               throw new Error('socket closed');
             })(),
@@ -624,34 +559,11 @@ describe('streamCompletion', () => {
   });
 
   it('subtracts nested cached prompt tokens from billable input usage', async () => {
-    const client = makeMockClient([
-      { finishReason: 'stop' },
-      {
-        usage: {
-          prompt_tokens: 1000,
-          completion_tokens: 200,
-          prompt_tokens_details: { cached_tokens: 800 },
-        },
-      },
-    ]);
+    const client = makeMockClient([{ finishReason: 'stop' }, {}]);
 
-    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+    await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
       temperature: 0.2,
       onProgress: () => {},
-    });
-
-    expect(result.usage).toEqual({
-      inputTokens: 200,
-      outputTokens: 200,
-      cacheReadTokens: 800,
-      counterCoverage: {
-        input: 'partial',
-        output: 'partial',
-        cacheRead: 'reported',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { input: 1000, output: 200 },
     });
   });
 
@@ -671,11 +583,7 @@ describe('streamCompletion', () => {
   it('preserves streamed usage when aborted after usage arrives', async () => {
     const controller = new AbortController();
     const events: RunnerCallEvent[] = [];
-    const client = makeMockClient([
-      { usage: { prompt_tokens: 100, completion_tokens: 50 } },
-      { content: 'partial' },
-      { content: ' must-not-complete' },
-    ]);
+    const client = makeMockClient([{}, { content: 'partial' }, { content: ' must-not-complete' }]);
 
     await expect(
       streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
@@ -690,7 +598,6 @@ describe('streamCompletion', () => {
     expect(terminal).toMatchObject({
       status: 'aborted',
       error: { code: 'runner_interrupted', message: 'stopped by you' },
-      usage: { inputTokens: 100, outputTokens: 50 },
     });
   });
 

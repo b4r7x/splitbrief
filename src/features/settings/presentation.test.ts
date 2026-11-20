@@ -54,7 +54,7 @@ describe('displayValue', () => {
 
   it('describes the Prompt budget as a stop the user sets', () => {
     expect(getDef('implementer.contextLength').description).toBe(
-      'Stop a brief that does not fit this many tokens (auto = no stop; the tool handles its own context)',
+      'Stop a brief above this limit. With auto, the tool manages context.',
     );
   });
 

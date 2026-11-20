@@ -34,7 +34,6 @@ function CrewBlock({ config, width, cursor }: BlockProps) {
           row={row}
           layout={layout}
           isCursor={crewRowKey(row) === cursor}
-          width={width}
         />
       ))}
     </Box>
@@ -64,40 +63,9 @@ function lineWith(lines: readonly string[], token: string): string {
 }
 
 /** Every seat on a local endpoint, so each row names its billing and the column has a word on all three. */
-const LOCAL_CREW = {
-  planner: {
-    kind: 'api',
-    provider: 'lm-studio',
-    model: 'qwen2.5-coder:7b',
-    apiBase: 'http://localhost:1234/v1',
-  },
-} as const;
 
 describe('crew row view', () => {
   beforeAll(forceUnicodeGlyphs);
-
-  it('ends every posture word on one column across the block', async () => {
-    const lines = await linesFor({ config: makeConfig(LOCAL_CREW), width: 78 });
-
-    for (const label of Object.values(CREW_SEAT_LABELS)) {
-      // Width 78: identity column 12 + identity 52 + gap 2 + posture 12 = the row edge.
-      expect(getTerminalCellWidth(lineWith(lines, label).trimEnd())).toBe(78);
-    }
-  });
-
-  it('drops the posture column for the whole block when the identity would not survive', async () => {
-    const config = makeConfig(LOCAL_CREW);
-    const wide = await linesFor({ config, width: 78 });
-    const posture = lineWith(wide, CREW_SEAT_LABELS.plan).trim().split(/\s+/).at(-1) ?? '';
-    expect(posture).not.toBe('');
-
-    const narrow = await linesFor({ config, width: 50 });
-
-    for (const label of Object.values(CREW_SEAT_LABELS)) {
-      expect(lineWith(narrow, label)).not.toContain(posture);
-      expect(getTerminalCellWidth(lineWith(narrow, label).trimEnd())).toBeLessThan(50);
-    }
-  });
 
   it('marks only the cursor row in its gutter', async () => {
     const config = makeConfig();

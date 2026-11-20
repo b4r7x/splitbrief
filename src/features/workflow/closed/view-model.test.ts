@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { makeCostBreakdown } from '#testing/helpers/factories/cost-breakdown.js';
+
 import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { Summary } from '../../../core/schemas/summary.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import { SummarySchema, type Summary } from '../../../core/schemas/summary.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ReviewRecord } from '../../../core/schemas/workflow/review-record.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -52,15 +52,14 @@ function makeLedger(tasks: EvidenceTask[]): EvidenceLedger {
   };
 }
 
-function booked(overrides: Partial<TaskTokenUsage> & Pick<TaskTokenUsage, 'taskId'>) {
+function booked(overrides: Partial<BriefExecution> & Pick<BriefExecution, 'taskId'>) {
   return {
     taskTitle: `title ${overrides.taskId}`,
     method: 'local',
-    implementerTokens: 0,
-    escalationTokens: 0,
+
     retryCount: 0,
     ...overrides,
-  } satisfies TaskTokenUsage;
+  } satisfies BriefExecution;
 }
 
 function derive(
@@ -739,22 +738,11 @@ describe('seats', () => {
     expect(view.seats.build.kind).toBe('named');
   });
 
-  it('spells a recorded API seat model pretty when the cost record kept its kind', () => {
+  it('spells a recorded API seat model pretty when the old summary recorded its kind', () => {
     const view = derive(
-      makeSummary({
-        plannerTool: 'opencode',
-        plannerModel: 'gpt-5',
-        costBreakdown: makeCostBreakdown({
-          providerRunMetadata: {
-            'api:opencode': {
-              service: 'opencode',
-              offering: 'payg',
-              normalizedEndpoint: 'https://my-endpoint.example/v1',
-              billing: 'api-metered',
-              asOf: '',
-            },
-          },
-        }),
+      SummarySchema.parse({
+        ...makeSummary({ plannerTool: 'opencode', plannerModel: 'gpt-5' }),
+        costBreakdown: { providerRunMetadata: { 'api:opencode': {} } },
       }),
     );
 
@@ -771,17 +759,7 @@ describe('seats', () => {
       makeSummary({
         plannerTool: 'claude-code',
         plannerModel: 'sonnet',
-        costBreakdown: makeCostBreakdown({
-          providerRunMetadata: {
-            'api:claude-code': {
-              service: 'claude-code',
-              offering: 'payg',
-              normalizedEndpoint: 'https://my-endpoint.example/v1',
-              billing: 'api-metered',
-              asOf: '',
-            },
-          },
-        }),
+        plannerKind: 'api',
       }),
     );
 
@@ -799,17 +777,6 @@ describe('seats', () => {
       makeSummary({
         plannerTool: 'claude-code',
         plannerModel: 'sonnet',
-        costBreakdown: makeCostBreakdown({
-          providerRunMetadata: {
-            'claude-code': {
-              service: 'claude-code',
-              offering: 'payg',
-              normalizedEndpoint: 'cli:claude-code',
-              billing: 'provider-dependent',
-              asOf: '',
-            },
-          },
-        }),
       }),
     );
 
@@ -823,27 +790,9 @@ describe('seats', () => {
 
   it('leaves a recorded name the run used under two kinds on the name-only words', () => {
     const view = derive(
-      makeSummary({
-        plannerTool: 'claude-code',
-        plannerModel: 'sonnet',
-        costBreakdown: makeCostBreakdown({
-          providerRunMetadata: {
-            'api:claude-code': {
-              service: 'claude-code',
-              offering: 'payg',
-              normalizedEndpoint: 'https://my-endpoint.example/v1',
-              billing: 'api-metered',
-              asOf: '',
-            },
-            'cli:claude-code': {
-              service: 'claude-code',
-              offering: 'payg',
-              normalizedEndpoint: 'cli:claude-code',
-              billing: 'provider-dependent',
-              asOf: '',
-            },
-          },
-        }),
+      SummarySchema.parse({
+        ...makeSummary({ plannerTool: 'claude-code', plannerModel: 'sonnet' }),
+        costBreakdown: { providerRunMetadata: { 'api:claude-code': {}, 'cli:claude-code': {} } },
       }),
     );
 
@@ -867,24 +816,8 @@ describe('seats', () => {
     const view = derive(
       makeSummary({
         implementerTool: 'opencode',
-        costBreakdown: makeCostBreakdown({
-          providerRunMetadata: {
-            'api:opencode': {
-              service: 'opencode',
-              offering: 'payg',
-              normalizedEndpoint: 'https://my-endpoint.example/v1',
-              billing: 'api-metered',
-              asOf: '',
-            },
-            'cli:codex': {
-              service: 'codex',
-              offering: 'payg',
-              normalizedEndpoint: 'cli:codex',
-              billing: 'subscription-included',
-              asOf: '',
-            },
-          },
-        }),
+        implementerKind: 'api',
+
         taskBreakdown: [
           on({ id: 'T001', tool: 'opencode', model: 'auto' }),
           on({ id: 'T002', tool: 'codex', model: 'auto' }),
@@ -936,7 +869,7 @@ describe('seats', () => {
   it('names every BUILD seat of a closed run read back from disk', () => {
     const projectDir = createTempDir('closed-crew-from-disk');
     const ref = { projectDir, sessionId: 'sess-two-build-seats' };
-    const brief = { method: 'local', implementerTokens: 10, escalationTokens: 0 } as const;
+    const brief = { method: 'local' } as const;
     try {
       finalizeRunAtRest({
         ref,

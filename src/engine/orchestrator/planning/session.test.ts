@@ -1888,24 +1888,21 @@ describe('the order of the turns of one planning session', () => {
     const calls: { prompt: string; images: string[] }[] = [];
     const order: string[] = [];
     let queuedTwo: string | undefined;
-    const typedCall = typedCallAnswering(
-      (prompt, ctx) => {
-        calls.push({ prompt, images: (ctx.images ?? []).map((image) => image.id) });
-        if (calls.length > 1) return makePlanProposal();
-        const state = loadState(ref);
-        if (state === null) throw new Error('state not saved');
-        queuedTwo = enqueueUserMessage({
-          ...ref,
-          state,
-          bus: makeBusRecorder().bus,
-          phase: 'planning',
-          message: withShot('QUEUED-TWO', 'shot-two'),
-          reviewNone: false,
-        }).message?.id;
-        return questions(1);
-      },
-      { inputTokens: 100, outputTokens: 10 },
-    );
+    const typedCall = typedCallAnswering((prompt, ctx) => {
+      calls.push({ prompt, images: (ctx.images ?? []).map((image) => image.id) });
+      if (calls.length > 1) return makePlanProposal();
+      const state = loadState(ref);
+      if (state === null) throw new Error('state not saved');
+      queuedTwo = enqueueUserMessage({
+        ...ref,
+        state,
+        bus: makeBusRecorder().bus,
+        phase: 'planning',
+        message: withShot('QUEUED-TWO', 'shot-two'),
+        reviewNone: false,
+      }).message?.id;
+      return questions(1);
+    });
     const drainedName = (id: string) =>
       id === 'queued-one' ? 'one' : id === queuedTwo ? 'two' : id;
 
@@ -1951,9 +1948,6 @@ describe('the order of the turns of one planning session', () => {
     expect(calls[1]?.prompt).not.toContain('QUEUED-ONE');
     expect(order).toEqual(['drained one', 'answer ANSWER-ONE', 'drained two']);
     expect(run.result.disposition).toBe('ready-for-tasks');
-    for (const saved of [run.result.state, loadState(run)]) {
-      expect(saved?.tokenUsage).toMatchObject({ plannerInput: 200, plannerOutput: 20 });
-    }
   });
 
   it('says a correction once to a planner on its own session, on the turn that opens the session', async () => {

@@ -1,5 +1,4 @@
 import { isRecord } from '../../../../utils/type-guards.js';
-import { toTokenDelta } from '../../../calls/usage/normalize.js';
 import type { ToolUseInfo } from '../../../runners/types.js';
 import { parsedUnknownRecordWarning, parsedMalformedRecordWarning } from '../warnings.js';
 import {
@@ -13,12 +12,7 @@ import {
   parseStreamEvent,
   SessionEvent,
 } from './events.js';
-import {
-  type StreamParseResult,
-  type OpenTools,
-  type CollectMessageUsage,
-  EMPTY_RESULT,
-} from './result.js';
+import { type StreamParseResult, type OpenTools, EMPTY_RESULT } from './result.js';
 import { parseSystemProgress, parseRateLimitEvent } from './system-frames.js';
 
 export function parseStreamLine(line: string): StreamParseResult {
@@ -45,17 +39,12 @@ function closedTools(content: readonly unknown[], openTools: OpenTools | undefin
   return closed;
 }
 
-export function parseLine(
-  line: string,
-  collectUsage?: CollectMessageUsage,
-  openTools?: OpenTools,
-): StreamParseResult {
+export function parseLine(line: string, openTools?: OpenTools): StreamParseResult {
   if (!line.trim()) return EMPTY_RESULT;
 
   try {
     const event: unknown = JSON.parse(line);
     const record = isRecord(event) ? event : null;
-    const usage = record === null ? undefined : collectUsage?.(record);
     const parentToolUseId = record?.parent_tool_use_id;
     const subagentId = typeof parentToolUseId === 'string' ? parentToolUseId : undefined;
 
@@ -88,21 +77,18 @@ export function parseLine(
         sessionId: assistant.data.session_id ?? undefined,
         // The input is whole, but the tool has not run yet: its `tool_result` closes it.
         toolUseInput: tools.length > 0 ? tools : undefined,
-        ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }),
         ...(subagentId !== undefined && { subagentId }),
       };
     }
 
     const result = ResultEvent.safeParse(event);
     if (result.success) {
-      const usage = toTokenDelta(result.data.usage ?? undefined) ?? undefined;
       return {
         text: result.data.result ?? undefined,
         channel: result.data.result !== undefined ? 'result' : undefined,
         sessionId: result.data.session_id ?? undefined,
         isResult: true,
         ...(result.data.is_error !== undefined && { isError: result.data.is_error }),
-        ...(usage !== undefined && { usage, usageSemantics: 'final' }),
         ...(result.data.structured_output !== undefined && {
           structured: result.data.structured_output,
         }),
@@ -136,10 +122,7 @@ export function parseLine(
       const streamEvent = parseStreamEvent(record);
       if (streamEvent) {
         rememberTools(openTools, streamEvent.toolUseStart ?? []);
-        const scoped = subagentId !== undefined ? { ...streamEvent, subagentId } : streamEvent;
-        if (collectUsage === undefined) return scoped;
-        const { usage: _messageUsage, usageSemantics: _semantics, ...rest } = scoped;
-        return { ...rest, ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }) };
+        return subagentId === undefined ? streamEvent : { ...streamEvent, subagentId };
       }
       const systemProgress = parseSystemProgress(record);
       if (systemProgress) return systemProgress;

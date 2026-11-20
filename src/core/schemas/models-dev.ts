@@ -1,25 +1,5 @@
 import { z } from 'zod';
-
-const ModelsDevCostFieldsSchema = z
-  .object({
-    input: z.number().optional(),
-    output: z.number().optional(),
-    reasoning: z.number().optional(),
-    cache_read: z.number().optional(),
-    cache_write: z.number().optional(),
-    input_audio: z.number().optional(),
-    output_audio: z.number().optional(),
-  })
-  .passthrough();
-
-export const ModelsDevCostTierSchema = ModelsDevCostFieldsSchema.extend({
-  tier: z
-    .object({
-      type: z.unknown().optional(),
-      size: z.unknown().optional(),
-    })
-    .optional(),
-}).passthrough();
+import { mapRecord, narrowRecord } from '../../utils/type-guards.js';
 
 export const ModelsDevModelSchema = z
   .object({
@@ -27,14 +7,6 @@ export const ModelsDevModelSchema = z
     name: z.string().optional(),
     family: z.string().optional(),
     description: z.string().optional(),
-    cost: z
-      .object({
-        ...ModelsDevCostFieldsSchema.shape,
-        tiers: z.array(ModelsDevCostTierSchema).optional(),
-        context_over_200k: ModelsDevCostFieldsSchema.optional(),
-      })
-      .passthrough()
-      .optional(),
     limit: z
       .object({
         context: z.number().optional(),
@@ -79,7 +51,26 @@ export const ModelsDevModelSchema = z
       )
       .optional(),
   })
-  .passthrough();
+  .passthrough()
+  .transform(({ cost: _cost, ...model }) => {
+    const experimental = narrowRecord(model.experimental);
+    if (experimental === null) return model;
+    const modes = narrowRecord(experimental.modes);
+    if (modes === null) return model;
+
+    return {
+      ...model,
+      experimental: {
+        ...experimental,
+        modes: mapRecord(modes, (value) => {
+          const mode = narrowRecord(value);
+          if (mode === null) return value;
+          const { cost: _modeCost, ...metadata } = mode;
+          return metadata;
+        }),
+      },
+    };
+  });
 export type ModelsDevModel = z.infer<typeof ModelsDevModelSchema>;
 
 export const ModelsDevProviderSchema = z

@@ -23,7 +23,6 @@ import type { ContinuationSeed } from '../continuation/holder.js';
 import { withContinuationLoop } from '../continuation/loop.js';
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { publishSeatAnswerRefused } from '../publish/seat.js';
 import type { SteeringPort } from '../../calls/steering.js';
 import { runThrowingSeatCall } from '../escalation/seat/call.js';
@@ -59,8 +58,7 @@ export type RunReviewerCallResult<T> = {
 
 /**
  * A review call: a typed request through the reviewer seat under the REVIEW seat's trouble
- * ladder (`runSeatCall`), with the seat's own one-repair contract, and the usage it spent
- * booked against the reviewer bucket whichever way it landed.
+ * ladder (`runSeatCall`), with the seat's own one-repair contract.
  */
 export async function runReviewerCall<T>(
   opts: RunReviewerCallOptions<T>,
@@ -110,8 +108,7 @@ export async function runReviewerCall<T>(
           publishSeatAnswerRefused({ bus, phase: current.phase }, 'reviewer', reasons),
       }),
   );
-  const state = addUsageAndSave(ref, current, 'reviewer', result.usage);
-  return { state, result };
+  return { state: current, result };
 }
 
 /** What the review seat gave back once no message waits for it. */

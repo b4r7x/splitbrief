@@ -12,7 +12,6 @@ import {
   STATE_FILE,
   SUMMARY_FILE,
 } from '../../../src/core/paths.js';
-import { phaseTokenRole } from '../../../src/core/phases/roles.js';
 import { DriftReportSchema } from '../../../src/core/schemas/drift.js';
 import { EvidenceLedgerSchema } from '../../../src/core/schemas/evidence.js';
 import { SessionSchema } from '../../../src/core/schemas/session.js';
@@ -90,9 +89,7 @@ export function assertSessionDir(
   expect(breakdown.length).toBe(summary.totalTasks);
   for (const task of breakdown) {
     expect(task.method).toBe('local');
-    expect(task.implementerTokens).toBeGreaterThan(0);
   }
-  expect(summary.tokenUsage.reviewerInput).toBeGreaterThan(0);
 
   const events = readEventEntries(sessionDir);
   const calls = countRunnerCalls(events);
@@ -158,16 +155,7 @@ export function countRunnerCalls(events: readonly SessionLogEventEntry[]): Runne
   for (const entry of events) {
     if (entry.type !== 'runner_call_started') continue;
     const role = eventField(entry.data, 'role');
-    // A planner-seat call outside the planning phases is an escalation or a
-    // summary, and carries its own role; the planning session's one call counts
-    // only the phases `phaseTokenRole` attributes to the planner.
-    if (
-      role === 'planner' &&
-      entry.phase !== undefined &&
-      phaseTokenRole(entry.phase) === 'planner'
-    ) {
-      planner += 1;
-    }
+    if (role === 'planner' && entry.phase === 'planning') planner += 1;
     if (role === 'implementer') implementer += 1;
     if (role === 'review') review += 1;
   }

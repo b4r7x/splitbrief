@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
+import { BriefExecutionSchema } from './brief-execution.js';
 import { PhaseSchema, REVIEW_VERDICTS, RunnerKindSchema, WorkflowModeSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
-import { CostBreakdownSchema } from './cost.js';
+import { parseRunnerIdentityKey } from '../providers/catalog.js';
+import { narrowRecord } from '../../utils/type-guards.js';
 
 export const BriefQualitySummarySchema = z.object({
   score: z.number().min(0).max(1),
@@ -57,7 +58,7 @@ export const ReviewPacketSummarySchema = z.object({
   missingArtifactCount: z.number().int().nonnegative(),
 });
 
-export const SummarySchema = z.object({
+const SummaryRecordSchema = z.object({
   feature: z.string(),
   totalTasks: z.number().nonnegative(),
   completedByLocal: z.number().nonnegative(),
@@ -67,10 +68,8 @@ export const SummarySchema = z.object({
   totalTime: z.number().nonnegative(),
   /** How long the run ran, in ms: its running stretches, read from its log. Absent on older records. */
   activeTime: z.number().nonnegative().optional(),
-  tokenUsage: TokenUsageSchema,
   escalationRate: z.number().nonnegative(),
-  taskBreakdown: z.array(TaskTokenUsageSchema).optional(),
-  costBreakdown: CostBreakdownSchema.optional(),
+  taskBreakdown: z.array(BriefExecutionSchema).optional(),
   plannerTool: z.string().optional(),
   plannerModel: z.string().optional(),
   plannerKind: RunnerKindSchema.optional(),
@@ -118,6 +117,38 @@ export const SummarySchema = z.object({
     .optional(),
   phase: PhaseSchema.optional(),
 });
+
+export const SummarySchema = z.preprocess((value) => {
+  const summary = narrowRecord(value);
+  const cost = narrowRecord(summary?.costBreakdown);
+  const metadata = narrowRecord(cost?.providerRunMetadata);
+  if (summary === null || metadata === null) return value;
+
+  const kindsByTool = new Map<string, Set<string>>();
+  for (const key of Object.keys(metadata)) {
+    const { id, kind } = parseRunnerIdentityKey(key);
+    if (kind === undefined) continue;
+    const kinds = kindsByTool.get(id) ?? new Set<string>();
+    kinds.add(kind);
+    kindsByTool.set(id, kinds);
+  }
+  const kindOf = (tool: unknown) => {
+    const kinds = typeof tool === 'string' ? kindsByTool.get(tool) : undefined;
+    return kinds?.size === 1 ? [...kinds][0] : undefined;
+  };
+  return {
+    ...summary,
+    plannerKind: summary.plannerKind ?? kindOf(summary.plannerTool),
+    implementerKind: summary.implementerKind ?? kindOf(summary.implementerTool),
+    reviewerKind: summary.reviewerKind ?? kindOf(summary.reviewerTool),
+    taskBreakdown: Array.isArray(summary.taskBreakdown)
+      ? summary.taskBreakdown.map((value: unknown) => {
+          const task = narrowRecord(value);
+          return task === null ? value : { ...task, kind: task.kind ?? kindOf(task.tool) };
+        })
+      : summary.taskBreakdown,
+  };
+}, SummaryRecordSchema);
 
 export type BriefQualitySummary = z.infer<typeof BriefQualitySummarySchema>;
 export type FinalReviewVerdict = z.infer<typeof FinalReviewVerdictSchema>;

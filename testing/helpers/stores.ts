@@ -1,5 +1,4 @@
 import { eventsStore } from '../../src/stores/workflow/events/state.js';
-import { tokensStore } from '../../src/stores/workflow/tokens/state.js';
 import { lifecycleStore } from '../../src/stores/workflow/lifecycle/state.js';
 import { stopStore } from '../../src/stores/workflow/stop.js';
 import { departureStore } from '../../src/stores/workflow/departure.js';
@@ -45,7 +44,6 @@ import { __testResetProbeActivity } from '../../src/engine/probe-activity.js';
 
 export function resetAllStores(): void {
   eventsStore.reset();
-  tokensStore.reset();
   lifecycleStore.reset();
   stopStore.reset();
   departureStore.reset();

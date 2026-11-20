@@ -29,7 +29,7 @@ import { apiContextError } from '../../providers/api/context-diagnostic.js';
 import { streamCompletion } from '../../providers/openai-stream/completion.js';
 import { interruptedError } from '../../planners/claude-code/invoke.js';
 import type { PlannerCallbacksContext } from '../types.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
+
 import { handlePlanningFailure } from './failure.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { runPlanningSession } from './session.js';
@@ -294,34 +294,6 @@ describe('handlePlanningFailure', () => {
     expect(result.state.interruptedStep).toBeUndefined();
     expect(loadState({ projectDir, sessionId })?.interruptedStep).toBeUndefined();
     expect(events.some((event) => event.type === 'turn_interrupted')).toBe(false);
-  });
-
-  it('rebases the halt after planner usage booking so the paid usage remains persisted', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const staleState = { ...createInitialState('feature'), phase: 'planning' as const };
-    saveState({ projectDir, sessionId }, staleState);
-    const { bus } = makeBusRecorder();
-
-    addUsageAndSave({ projectDir, sessionId, bus }, staleState, 'planner', {
-      inputTokens: 125,
-      outputTokens: 40,
-    });
-
-    const result = await handlePlanningFailure({
-      err: error('planning-parse-failed', 'planner output could not be parsed'),
-      projectDir,
-      sessionId,
-      state: staleState,
-      wctx: makeWctx({ projectDir, sessionId }),
-    });
-
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
-    expect(result.state.phase).toBe('planning');
-    expect(result.state.tokenUsage).toMatchObject({ plannerInput: 125, plannerOutput: 40 });
-    expect(loadState({ projectDir, sessionId })?.tokenUsage).toMatchObject({
-      plannerInput: 125,
-      plannerOutput: 40,
-    });
   });
 
   it('raises a plan-seat recovery the operator can answer', async () => {

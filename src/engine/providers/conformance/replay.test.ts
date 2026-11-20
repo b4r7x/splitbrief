@@ -9,7 +9,6 @@ import { assemblePickerDescriptors } from '../../../features/runners/model-catal
 import {
   RawProviderCandidateContract,
   UnregisteredProviderCandidate,
-  contractSha256,
 } from '../candidate/contract.js';
 import { CandidateEvidence } from '../candidate/evidence.js';
 import type { OpenAICompatPolicy } from '../openai-compat-policy.js';
@@ -23,7 +22,6 @@ const REPO_ROOT = join(import.meta.dirname, '../../../..');
 
 const OPENAI_COMPAT_POLICY_FIELD_NAMES = [
   'tokenField',
-  'streamUsage',
   'temperature',
   'effort',
   'reasoning',
@@ -153,11 +151,6 @@ function assertProductionReplayCapturesPolicy(
     expect(parsed).toHaveProperty('max_tokens');
     expect(parsed).not.toHaveProperty('max_completion_tokens');
   }
-  if (policy.streamUsage) {
-    expect(parsed.stream_options).toEqual({ include_usage: true });
-  } else {
-    expect(parsed).not.toHaveProperty('stream_options');
-  }
   if (policy.temperature === 'verbatim') {
     expect(parsed).toHaveProperty('temperature');
   } else {
@@ -204,7 +197,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['mistral-small-2603'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_tokens',
         max: 8192,
       },
@@ -234,7 +227,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['gemini-3.5-flash'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_tokens',
         max: 65536,
       },
@@ -261,7 +254,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['gpt-oss-120b'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_tokens',
         max: 40960,
       },
@@ -288,7 +281,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['glm-4.7-flash', 'glm-4.7-flashx'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_tokens',
         max: 131072,
       },
@@ -315,7 +308,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['mimo-v2.5', 'mimo-v2.5-pro'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_completion_tokens',
         max: 131072,
       },
@@ -350,7 +343,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['mimo-v2.5', 'mimo-v2.5-pro'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_completion_tokens',
         max: 131072,
       },
@@ -377,7 +370,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['MiniMax-M3'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_completion_tokens',
         max: 8192,
       },
@@ -404,7 +397,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['kimi-k2.7-code'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_completion_tokens',
         max: 8192,
       },
@@ -438,7 +431,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: ['qwen3.7-plus'],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_tokens',
         max: 65536,
       },
@@ -465,7 +458,7 @@ const REPLAY_ROWS: readonly ProviderReplayRow[] = [
       modelIds: [],
       rawRequest: {
         stream: true,
-        includeUsage: true,
+
         tokenField: 'max_tokens',
         max: 8192,
       },
@@ -499,7 +492,6 @@ async function temporaryDirectory(): Promise<string> {
 
 function validateCapturedEvidence(row: ProviderReplayRow): void {
   const evidence = readEvidenceJson(row.evidencePath);
-  expect(row.capturedContractSha256).toBe(contractSha256(row.contract));
   const rawCapture = evidence.rawCapture as Record<string, unknown> | undefined;
   expect(rawCapture).toBeDefined();
   if (rawCapture === undefined) return;

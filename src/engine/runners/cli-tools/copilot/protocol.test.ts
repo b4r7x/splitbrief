@@ -37,75 +37,6 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
     expect(result.text).toBe('part one part two');
   });
 
-  it('extracts token usage nested under assistant.message data', () => {
-    const result = parse({
-      type: 'assistant.message',
-      data: {
-        text: 'done',
-        usage: { input_tokens: 1200, output_tokens: 340, cache_read_input_tokens: 800 },
-      },
-    });
-    expect(result.text).toBe('done');
-    expect(result.usage).toEqual({
-      inputTokens: 1200,
-      outputTokens: 340,
-      cacheReadTokens: 800,
-      counterCoverage: {
-        input: 'reported',
-        output: 'partial',
-        cacheRead: 'reported',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { output: 340 },
-    });
-  });
-
-  it('extracts token usage from a standalone assistant.usage event', () => {
-    const result = parse({
-      type: 'assistant.usage',
-      data: { usage: { inputTokens: 500, outputTokens: 120 } },
-    });
-    expect(result.usage).toEqual({
-      inputTokens: 500,
-      outputTokens: 120,
-      counterCoverage: {
-        input: 'reported',
-        output: 'reported',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-    });
-  });
-
-  it('extracts cache token usage from assistant events', () => {
-    const result = parse({
-      type: 'assistant.usage',
-      data: {
-        usage: {
-          inputTokens: 500,
-          outputTokens: 120,
-          cacheWriteTokens: 30,
-          cacheReadTokens: 20,
-        },
-      },
-    });
-    expect(result.usage).toEqual({
-      inputTokens: 500,
-      outputTokens: 120,
-      cacheReadTokens: 20,
-      cacheCreateTokens: 30,
-      counterCoverage: {
-        input: 'reported',
-        output: 'reported',
-        cacheRead: 'reported',
-        cacheCreate: 'reported',
-        reasoning: 'missing',
-      },
-    });
-  });
-
   it('extracts tool-use envelopes', () => {
     const result = parse({
       type: 'tool.execution_start',
@@ -120,7 +51,6 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
       item: { type: 'agent_message', text: 'codex-shaped' },
     });
     expect(result.text).toBeUndefined();
-    expect(result.usage).toBeUndefined();
   });
 
   it('returns bounded warnings for unknown event types and empty for blank lines', () => {

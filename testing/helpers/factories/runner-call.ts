@@ -26,7 +26,6 @@ export function makeRunnerCallResult(
     | 'startedAt'
     | 'endedAt'
     | 'durationMs'
-    | 'usage'
     | 'nativeSessionId'
     | 'toolUses'
     | 'warnings'
@@ -37,7 +36,7 @@ export function makeRunnerCallResult(
     startedAt: 1,
     endedAt: 2,
     durationMs: 1,
-    usage: null,
+
     nativeSessionId: null,
     toolUses: [],
     warnings: [],

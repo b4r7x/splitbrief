@@ -46,9 +46,6 @@ export function publishTaskStart(
     backendKind?: RunnerKind;
     implementerProfile?: string;
     contextFit?: TaskContextFit;
-    estimatedTokens?: number;
-    untruncatedEstimatedTokens?: number;
-    contextLength?: number;
     currentCodeTruncated?: boolean;
     currentCodeContextMode?: CurrentCodeContextMode;
     routingReason?: string;

@@ -11,8 +11,6 @@ import type {
   RunnerCallEvent,
   RunnerCallFailureStatus,
   RunnerCallResult,
-  RunnerCallUsage,
-  RunnerCallUsageSemantics,
   RunnerCallWarningInput,
 } from '../types.js';
 
@@ -46,11 +44,6 @@ export interface RunnerCallRecorder {
     ts?: number | undefined;
   }) => void;
   toolUseDone: (opts: { toolUse: RunnerCallToolUse; ts?: number | undefined }) => void;
-  usage: (opts: {
-    usage: RunnerCallUsage;
-    semantics: RunnerCallUsageSemantics;
-    ts?: number | undefined;
-  }) => void;
   sessionId: (opts: {
     nativeSessionId: string;
     /** The model id the tool reports it runs, when it reports one. */
@@ -67,7 +60,6 @@ export interface RunnerCallRecorder {
   stallCleared: (opts?: { ts?: number | undefined }) => void;
   heartbeat: (opts?: { ts?: number | undefined }) => void;
   finishCompleted: (opts?: {
-    usage?: RunnerCallUsage | null | undefined;
     nativeSessionId?: string | null | undefined;
     endedAt?: number | undefined;
     structured?: unknown;
@@ -77,7 +69,6 @@ export interface RunnerCallRecorder {
     error: RunnerCallError;
     /** Delivery can fail after a configured runner has already reported its result. */
     supersedeParsedFailure?: true | undefined;
-    usage?: RunnerCallUsage | null | undefined;
     nativeSessionId?: string | null | undefined;
     partial?: boolean | undefined;
     endedAt?: number | undefined;

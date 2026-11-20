@@ -203,7 +203,7 @@ describe('autoCompactResumeContext', () => {
       runnerName: 'summary-planner',
     };
 
-    const nextState = await autoCompactResumeContext({
+    await autoCompactResumeContext({
       projectDir,
       sessionId,
       bus,
@@ -223,12 +223,11 @@ describe('autoCompactResumeContext', () => {
             startedAt,
             endedAt: startedAt + 1,
             durationMs: 1,
-            usage: { inputTokens: 800, outputTokens: 120 },
+
             nativeSessionId: null,
           });
           return {
             text: '## Summary\nCompacted older work',
-            usage: { inputTokens: 800, outputTokens: 120 },
           };
         },
       }),
@@ -249,9 +248,7 @@ describe('autoCompactResumeContext', () => {
       summarizedUpTo: '1002',
     });
     expect(events.find((event) => event.type === 'warning')).toBeUndefined();
-    expect(nextState.tokenUsage.plannerInput).toBe(800);
-    expect(nextState.tokenUsage.plannerOutput).toBe(120);
-    expect(events.some((event) => event.type === 'cost_update')).toBe(true);
+
     expect(
       events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
     ).toEqual(['runner_call_started', 'runner_call_completed']);
@@ -297,7 +294,7 @@ describe('autoCompactResumeContext', () => {
       remainingWork: ['continue'],
     };
 
-    const nextState = await autoCompactResumeContext({
+    await autoCompactResumeContext({
       projectDir,
       sessionId,
       bus,
@@ -307,7 +304,6 @@ describe('autoCompactResumeContext', () => {
         summarizeStructured: async () => ({
           text: JSON.stringify(structured),
           structured,
-          usage: { inputTokens: 500, outputTokens: 60 },
         }),
       }),
     });
@@ -324,8 +320,6 @@ describe('autoCompactResumeContext', () => {
       structured,
     });
     expect(events.find((event) => event.type === 'warning')).toBeUndefined();
-    expect(nextState.tokenUsage.plannerInput).toBe(500);
-    expect(nextState.tokenUsage.plannerOutput).toBe(60);
   });
 
   it('records a structured compaction that fell back to freeform text as a debug event', async () => {
@@ -340,7 +334,7 @@ describe('autoCompactResumeContext', () => {
       config: { workflow: workflowConfig(10), planner: apiPlannerConfig },
       state: createInitialState('resume'),
       planner: summarizingPlanner({
-        summarizeStructured: async () => ({ text: 'not json', structured: null, usage: null }),
+        summarizeStructured: async () => ({ text: 'not json', structured: null }),
       }),
     });
 
@@ -350,7 +344,7 @@ describe('autoCompactResumeContext', () => {
     expect(events.filter((event) => event.type === 'warning')).toEqual([]);
   });
 
-  it('records a failed auto-compaction as a debug event and keeps the state', async () => {
+  it('records a failed auto-compaction as a debug event', async () => {
     const originalEntries = Array.from({ length: 12 }, (_, index) => numberedMessageEntry(index));
     const { projectDir, sessionId } = setupSession(originalEntries);
     const { bus, events } = makeBusRecorder();
@@ -359,7 +353,7 @@ describe('autoCompactResumeContext', () => {
       throw new Error('summarize timed out');
     };
 
-    const nextState = await autoCompactResumeContext({
+    await autoCompactResumeContext({
       projectDir,
       sessionId,
       bus,
@@ -368,7 +362,6 @@ describe('autoCompactResumeContext', () => {
       planner: summarizingPlanner({ summarize: timedOut, summarizeStructured: timedOut }),
     });
 
-    expect(nextState).toBe(state);
     expect(events.filter((event) => event.type === 'debug')).toEqual([
       expect.objectContaining({
         message: 'Transcript auto-compaction failed: summarize timed out',

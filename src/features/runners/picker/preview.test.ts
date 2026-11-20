@@ -86,7 +86,7 @@ describe('terminalPaneFor', () => {
       roles: ['planner', 'implementer'],
       modelPolicy: 'required',
       modelCapability: deriveModelCatalogCapability('required'),
-      billing: 'local',
+
       permissions: readyPermissions,
       status: { state: 'unavailable', remediation: 'Ollama is not answering.' },
       available: false,

@@ -51,13 +51,6 @@ function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
       text: parsed.text,
     });
   }
-  if (parsed.usage !== undefined) {
-    events.push({
-      type: 'usage',
-      usage: parsed.usage,
-      semantics: parsed.usageSemantics ?? 'delta',
-    });
-  }
   for (const toolUse of parsed.toolUseStart ?? []) {
     events.push({
       type: 'tool-use',

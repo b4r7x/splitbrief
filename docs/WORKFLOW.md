@@ -250,7 +250,7 @@ Each phase has three properties derived from the source sets. There is no resuma
 | `final-review` | planner | yes | yes |
 | `complete` | — | no | no |
 
-**Role** — `phaseRole()`: implementer for `implementing`, `validating-task`, `escalating`; planner for everything else (token accounting adds `final-review` to the implementer bucket via `phaseTokenRole()`).
+**Role** — `phaseRole()`: implementer for `implementing`, `validating-task`, `escalating`; planner for everything else.
 
 **Cancellable** — Stop now (`ctrl+c`, or the stop sheet's first row) aborts the active model call. This matches `isLivePhase()`.
 
@@ -778,7 +778,6 @@ type WorkflowState = {
   tasks: Task[]
   plannerSessionId: string | null
   startedAt: string                       // ISO 8601
-  tokenUsage: TokenUsage
   awaitingContinue: boolean               // true while a step is parked
   messageQueue: QueuedMessage[]           // user messages typed during live phases
 
@@ -834,7 +833,7 @@ type QueuedMessage = {
 
 The closing, stopping, workspace, and queue fields are additive. States written before them still load. When `cut` is absent, `deriveRunStatus` uses `awaitingContinue` and the captured partial.
 
-`createInitialState(feature)` returns a minimal state: `phase: 'idle'`, `currentTaskIndex: 0`, `attempt: 0`, `tasks: []`, `plannerSessionId: null`, `tokenUsage` zeroed, `awaitingContinue: false`, `messageQueue: []`. All optional fields are absent. The version constant is `WORKFLOW_STATE_VERSION` — the one home for the number; every reader and `commitWorkflowState` read it rather than spelling `4`.
+`createInitialState(feature)` returns a minimal state: `phase: 'idle'`, `currentTaskIndex: 0`, `attempt: 0`, `tasks: []`, `plannerSessionId: null`, `awaitingContinue: false`, `messageQueue: []`. All optional fields are absent. The version constant is `WORKFLOW_STATE_VERSION` — the one home for the number; every reader and `commitWorkflowState` read it rather than spelling `4`.
 
 ---
 

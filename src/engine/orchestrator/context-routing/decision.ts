@@ -46,7 +46,7 @@ export function rejectionReason(profileFit: ProfileFit, selected?: ProfileFit): 
   const reductionNote = currentCodeReductionNote(profileFit, ' after');
 
   if (profileFit.fit === 'overflow') {
-    return `Estimated ${profileFit.estimatedTokens} tokens overflows ${profileFit.contextLength}-token context${fallbackNote}${reductionNote}`;
+    return `The request is larger than the context window${fallbackNote}${reductionNote}`;
   }
 
   if (selected) {
@@ -64,15 +64,15 @@ export function selectedReason(profileFit: ProfileFit): string {
   const capabilityNote = profileFit.requiredWriteMode === 'direct' ? ', direct-write capable' : '';
   // Only a Prompt budget stops a brief, so a selected profile over its window has none.
   const budgetNote = profileFit.fit === 'overflow' ? '; no Prompt budget is set' : '';
-  return `Selected profile ${profileFit.profile.name} (${profileFit.fit}, estimated ${profileFit.estimatedTokens}/${profileFit.contextLength} tokens${fallbackNote}${capabilityNote}${reductionNote}${budgetNote})`;
+  return `Selected profile ${profileFit.profile.name} (${profileFit.fit}${fallbackNote}${capabilityNote}${reductionNote}${budgetNote})`;
 }
 
 function currentCodeReductionNote(profileFit: ProfileFit, prefix: string): string {
   if (profileFit.currentCodeContextMode === 'function-level') {
-    return `${prefix} current code reduced to function-level context from ${profileFit.untruncatedEstimatedTokens} whole-file tokens`;
+    return `${prefix} current code reduced to function-level context`;
   }
   if (profileFit.currentCodeContextMode === 'truncated') {
-    return `${prefix} current code truncated from ${profileFit.untruncatedEstimatedTokens} untruncated tokens`;
+    return `${prefix} current code truncated`;
   }
   return '';
 }

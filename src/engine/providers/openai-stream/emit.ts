@@ -1,6 +1,5 @@
 import type { RunnerCallRecorder } from '../../calls/recorder/types.js';
 import type { RunnerCallCredentialRedactor } from '../../calls/status.js';
-import type { RunnerCallUsage } from '../../calls/types.js';
 import type { OpenAICompatPolicy, OpenAICompatFinishReason } from '../openai-compat-policy.js';
 import type { StreamChoiceDelta } from './chunk.js';
 
@@ -44,7 +43,6 @@ export function emitToolUseDeltas(
 export function emitOpenAiTerminal(
   recorder: RunnerCallRecorder,
   finishReason: string | null,
-  usage: RunnerCallUsage | null,
   policy: OpenAICompatPolicy,
 ): void {
   if (finishReason !== null && !isPolicyFinishReason(policy, finishReason)) {
@@ -54,7 +52,6 @@ export function emitOpenAiTerminal(
         code: 'openai_unknown_finish_reason',
         message: `OpenAI response ended with unknown finish_reason ${finishReason}`,
       },
-      usage,
       nativeSessionId: null,
     });
     return;
@@ -62,7 +59,7 @@ export function emitOpenAiTerminal(
 
   switch (finishReason) {
     case 'stop':
-      recorder.finishCompleted({ usage, nativeSessionId: null });
+      recorder.finishCompleted({ nativeSessionId: null });
       return;
     case 'length':
       recorder.finishFailed({
@@ -71,7 +68,6 @@ export function emitOpenAiTerminal(
           code: 'output-token-limit',
           message: 'OpenAI response ended because the max token limit was reached',
         },
-        usage,
         nativeSessionId: null,
       });
       return;
@@ -82,7 +78,6 @@ export function emitOpenAiTerminal(
           code: 'openai_finish_reason_content_filter',
           message: 'OpenAI response was blocked by the content filter',
         },
-        usage,
         nativeSessionId: null,
       });
       return;
@@ -94,7 +89,6 @@ export function emitOpenAiTerminal(
           code: `openai_finish_reason_${finishReason}`,
           message: `OpenAI response requested unsupported ${finishReason}`,
         },
-        usage,
         nativeSessionId: null,
       });
       return;
@@ -108,7 +102,6 @@ export function emitOpenAiTerminal(
           code: 'openai_unknown_finish_reason',
           message: `OpenAI response ended with unknown finish_reason ${exhaustive}`,
         },
-        usage,
         nativeSessionId: null,
       });
     }

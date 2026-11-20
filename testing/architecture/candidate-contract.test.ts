@@ -22,7 +22,7 @@ import {
 
 const policy: OpenAICompatPolicy = {
   tokenField: 'max_tokens',
-  streamUsage: true,
+
   temperature: 'verbatim',
   effort: 'omit',
   reasoning: 'omit',
@@ -44,7 +44,7 @@ const providerContract = {
   modelIds: ['example-model'],
   rawRequest: {
     stream: true,
-    includeUsage: true,
+
     tokenField: 'max_tokens' as const,
     max: 8_192,
   },
@@ -60,7 +60,7 @@ const descriptor = {
   endpointPolicy: providerContract.endpointPolicy,
   credentialEnv: 'EXAMPLE_API_KEY',
   credentialPrefix: 'ex-',
-  billing: 'api-metered' as const,
+
   compatibility: 'unverified' as const,
   dataUse: 'unreviewed' as const,
   privacyURL: 'https://example.test/privacy',

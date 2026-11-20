@@ -24,7 +24,7 @@ const contract = {
   modelIds: ['example-model'],
   rawRequest: {
     stream: true,
-    includeUsage: true,
+
     tokenField: 'max_tokens' as const,
     max: 8192,
   },
@@ -34,7 +34,7 @@ const contract = {
 
 const policy = {
   tokenField: 'max_tokens' as const,
-  streamUsage: true,
+
   temperature: 'verbatim' as const,
   effort: 'omit' as const,
   reasoning: 'omit' as const,
@@ -52,7 +52,7 @@ const candidate = {
     endpointPolicy: contract.endpointPolicy,
     credentialEnv: contract.credentialEnv,
     credentialPrefix: contract.credentialPrefix,
-    billing: 'api-metered' as const,
+
     compatibility: 'unverified' as const,
     dataUse: 'no-training' as const,
     privacyURL: 'https://example.test/privacy',

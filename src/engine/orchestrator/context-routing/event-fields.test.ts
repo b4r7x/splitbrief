@@ -4,39 +4,27 @@ import { buildRoutingEventFields, type RoutingEventFields } from './event-fields
 function routingFields(overrides: Partial<RoutingEventFields> = {}): RoutingEventFields {
   return {
     fit: 'tight',
-    estimatedTokens: 24_310,
-    untruncatedEstimatedTokens: 24_310,
-    contextLength: 32_768,
-    usedConservativeContextLength: false,
     currentCodeTruncated: false,
     currentCodeContextMode: 'whole-file',
-    reason: 'Selected profile default (tight, estimated 24310/32768 tokens)',
+    reason: 'Selected profile default (tight)',
     ...overrides,
   };
 }
 
 describe('buildRoutingEventFields', () => {
-  it('keeps a known window', () => {
+  it('keeps the fit and routing reason', () => {
     expect(buildRoutingEventFields(routingFields())).toEqual({
       contextFit: 'tight',
-      estimatedTokens: 24_310,
-      untruncatedEstimatedTokens: 24_310,
-      contextLength: 32_768,
       currentCodeTruncated: false,
       currentCodeContextMode: 'whole-file',
-      routingReason: 'Selected profile default (tight, estimated 24310/32768 tokens)',
+      routingReason: 'Selected profile default (tight)',
     });
   });
 
-  it('leaves the window out of the event when it is a guess', () => {
-    const reason =
-      'Selected profile default (tight, estimated 6412/8192 tokens using conservative context-length fallback)';
+  it('keeps the routing reason for a fallback window', () => {
+    const reason = 'Selected a profile with the fallback context window';
     const fields = buildRoutingEventFields(
       routingFields({
-        estimatedTokens: 6_412,
-        untruncatedEstimatedTokens: 6_412,
-        contextLength: 8_192,
-        usedConservativeContextLength: true,
         reason,
       }),
     );
@@ -44,8 +32,6 @@ describe('buildRoutingEventFields', () => {
     expect(fields).not.toHaveProperty('contextLength');
     expect(fields).toEqual({
       contextFit: 'tight',
-      estimatedTokens: 6_412,
-      untruncatedEstimatedTokens: 6_412,
       currentCodeTruncated: false,
       currentCodeContextMode: 'whole-file',
       routingReason: reason,

@@ -298,13 +298,52 @@ describe('saveSummary', () => {
     const breakdown = sessions[0]?.summary?.taskBreakdown ?? [];
     expect(breakdown.map((row) => row.taskId)).toEqual([taskId('T001'), taskId('T002')]);
     expect(breakdown.find((row) => row.taskId === taskId('T001'))).toMatchObject({
-      implementerTokens: 500_000,
       tool: 'custom-endpoint',
     });
   });
 });
 
 describe('readSession', () => {
+  it('loads the seat and brief history from a summary with accounting fields', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-accounting';
+    const session = makeSession({ id: sessionId, feature: 'old run' });
+    const brief = {
+      taskId: taskId('T001'),
+      taskTitle: 'Write a greeting',
+      method: 'local',
+      retryCount: 1,
+      tool: 'codex',
+      kind: 'cli',
+      model: 'gpt-5',
+    } as const;
+    const stored = {
+      ...session,
+      status: 'complete' as const,
+      summary: {
+        ...makeSummary({ plannerTool: 'claude-code', plannerKind: 'cli' }),
+        tokenUsage: {
+          plannerInput: 120,
+          plannerOutput: 30,
+          implementerInput: 40,
+          implementerOutput: 10,
+          escalationInput: 0,
+          escalationOutput: 0,
+          reviewerInput: 0,
+          reviewerOutput: 0,
+        },
+        costBreakdown: { actualPlannerCost: 0, actualImplementerCost: 0.01, totalActualCost: 0.01 },
+        taskBreakdown: [{ ...brief, implementerTokens: 50, escalationTokens: 0, cost: 0.01 }],
+      },
+    };
+    writeSessionSubdir(tmp, sessionId, stored);
+
+    expect(readSession({ projectDir: tmp, sessionId })).toMatchObject({
+      status: 'complete',
+      summary: { plannerTool: 'claude-code', plannerKind: 'cli', taskBreakdown: [brief] },
+    });
+  });
+
   it('readSession returns the summary saved by saveSummary', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-read-1', feature: 'read-me' });

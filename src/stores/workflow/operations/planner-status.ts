@@ -24,7 +24,6 @@ export function closeStatusFallbacks(state: OperationsState, ts: number): Operat
         endedAt: ts,
         durationMs: durationBetween(operation.startedAt, ts),
         reason: null,
-        usage: operation.usage,
         partial: false,
       }),
     );
@@ -56,7 +55,6 @@ export function updateStatusFallback(
         endedAt: event.ts,
         durationMs: durationBetween(operation.startedAt, event.ts),
         reason: null,
-        usage: null,
         partial: false,
       }),
     );
@@ -78,7 +76,6 @@ export function updateStatusFallback(
     endedAt: null,
     durationMs: null,
     reason: null,
-    usage: null,
     warnings: [],
     partial: false,
     ...(runnerName !== undefined && { runnerName }),

@@ -96,7 +96,6 @@ describe('a stopped production implementer call', () => {
           seat: {
             ref: { ...ref, bus: createEventBus() },
             state: createInitialState('continuation residue'),
-            usageCategory: 'implementer',
           },
         });
       }

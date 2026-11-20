@@ -2,7 +2,7 @@ import { Box } from 'ink';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import {
@@ -14,7 +14,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type { RunnerCallCounterCoverage } from '../../../core/schemas/runner-call.js';
+
 import { groupEventsIntoSections } from '../../../core/sections/group.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -88,14 +88,6 @@ const rich = makeView({
     leadFiles: ['src/form.ts', 'src/validate.ts', 'src/form.test.ts'],
   },
 });
-
-const FULL_COVERAGE: RunnerCallCounterCoverage = {
-  input: 'reported',
-  output: 'reported',
-  cacheRead: 'reported',
-  cacheCreate: 'reported',
-  reasoning: 'reported',
-};
 
 beforeEach(() => {
   resetAllStores();
@@ -561,45 +553,6 @@ describe('closedTranscriptBlock', () => {
     expect(rows[first + 1]?.kind).toBe('callout-body');
     expect(lines.map((line) => line.slice(column).trimEnd()).join(' ')).toBe(finding);
     expect(lines.join('\n')).not.toContain('…');
-  });
-
-  it('names neither the money nor the tokens the run recorded', () => {
-    const view = deriveSummaryView({
-      record: makeRunRecord({
-        ref: { projectDir: '/tmp/closed-rows', sessionId: '2026-09-14-add-email-validation' },
-        ledger: null,
-        summary: makeSummary({
-          totalTasks: 3,
-          completedByLocal: 3,
-          tokenUsage: makeUsage({
-            plannerInput: 31_200,
-            implementerInput: 204_500,
-            reviewerInput: 18_700,
-            plannerCoverage: FULL_COVERAGE,
-            implementerCoverage: FULL_COVERAGE,
-            reviewerCoverage: FULL_COVERAGE,
-          }),
-          costBreakdown: {
-            actualPlannerCost: 0.2,
-            actualImplementerCost: 0.22,
-            totalActualCost: 0.42,
-            hasPricedUsage: true,
-            isActualPlannerCostKnown: true,
-            isActualImplementerCostKnown: true,
-            isTotalActualCostKnown: true,
-          },
-        }),
-      }),
-    });
-    const text = [false, true]
-      .flatMap((expanded) => blockRows(view, { expanded }).map(rowText))
-      .join('\n');
-
-    expect(text).toContain('2026-09-14-add-email-validation');
-    expect(text).not.toContain('$');
-    expect(text).not.toContain('0.42');
-    expect(text).not.toContain('31.2k');
-    expect(text).not.toMatch(/token|cost/iu);
   });
 
   it.each(['done', 'failed', 'skipped'] as const)(

@@ -67,7 +67,7 @@ sinks                      — WorkflowSinks (abort handler, queue handler)
 validator                  — validation pipeline
 isolation                  — run-scoped isolation handle (worktree default, staged-copy fallback)
 resumeHolder               — prior messages for stateless resume
-modelCache                 — pricing/cost lookups
+modelCache                 — model identity and context lookup
 drainPendingAttachments    — pulls attachments from store
 streamingSink              — a short live preview of an extracted-code implementer's output
 plannerContext             — the `@file` context the request carries to the planner
@@ -126,8 +126,7 @@ Events cover the full workflow lifecycle. A few examples:
   `content: 'markdown'`; plain logs omit it or use `content: 'plain'`. The text of a
   sub-agent carries `subagentId`, the tool's id for that sub-agent; the main text and
   older logs have none.
-- `runner_call_*` — normalized planner/implementer/backend call lifecycle, text deltas, usage, raw tool-use, safe activity, session IDs, warnings, errors, and completion, plus `runner_call_heartbeat`: a frame with nothing to show that still proves the tool is working, such as Claude Code's thinking-token estimates, at most one a second per call. A heartbeat moves the Build progress block's freshness clock (`lastRunnerEventTs`), paints no row, and stays out of `session.jsonl`
-- `cost_update` — cumulative token usage after each planner or implementer call
+- `runner_call_*` — normalized planner/implementer/backend call lifecycle, text deltas, raw tool-use, safe activity, session IDs, warnings, errors, and completion, plus `runner_call_heartbeat`: a frame with nothing to show that still proves the tool is working, such as Claude Code's thinking-token estimates, at most one a second per call. A heartbeat moves the Build progress block's freshness clock (`lastRunnerEventTs`), paints no row, and stays out of `session.jsonl`
 
 The full union has many variants, but the pattern is consistent: every event is a flat object with snake_case type, timestamp, optional phase, and domain-specific fields. The phase is the run's phase when the event is published. A run follows every state head committed for its session (`followCommittedState`), so a call's own events, its text and a recovery event never carry a phase the run has already left. A recovery issue keeps the phase its halt was raised in.
 
@@ -153,7 +152,6 @@ The recorder assigns an identity to each tool use whose upstream record has no i
 
 No record bound ends a call. The recorder keeps the call's result whole and cuts only the copy that it gives the feed and the call log. Each cut is noted once per code with a `call_warning` at `debug` severity on the `debug` surface (`runnerCallLimitWarning`), so the transcript and the activity block do not show it. This covers a cut of the answer text, the structured answer, a streamed tool input, the tool-use records (`RUNNER_CALL_TOOL_USE_MAX_ITEMS`, the first 256 records), stderr, a tool payload, subagent text, the warning count and the unknown-upstream records. Memory has one bound, `RUNNER_CALL_RETAINED_OUTPUT_MAX_BYTES` (64 MiB): a value up to that size stays whole. Past it, the recorder keeps the head and the tail of the reply and drops streamed text from the middle, and a CLI seat's parsed protocol events keep their head, their tail and every usage, session, warning and result event (`createHeadTailEventLog`). The call runs on, and the drop is a `debug` note. Only a seat's opt-in `maxToolCalls` ends a call on its count of tool calls: the recorder's `stopAfterToolUses` stops the call at the tool call after that number, and the call ends `truncated` with `runner_call_tool_use_stop`, the number and the last tool calls. A provider that ends the answer at its own output token limit (`finish_reason: length`) also ends the call `truncated`; that limit is the provider's, not a SPLITBRIEF bound.
 
-Runner-call usage preserves optional `reasoningTokens`. Legacy `TokenDelta` projections use the named `preserve_reasoning_metadata` policy: they carry reasoning tokens as metadata rather than folding them into `outputTokens`, because some providers already include reasoning in completion totals. Non-completed calls stay typed, so planner/implementer policy can preserve partial output or fail closed. Public consumers receive bounded/redacted projections, not raw backend payloads.
 
 Planner and implementer paths publish those call events through `publishRunnerCallEvent()`. The helper requires the call's working directory as `rootDir`, preserves the call's recorded axis words, and attaches workflow phase, optional task id, and a monotonic sequence before publishing projected `runner_call_*` `EngineEvent` values on the EventBus. Safe `runner_call_activity` projections carry bounded redacted labels keyed by stable activity ids, so the UI does not inspect raw tool payloads to render activity. File targets and their labels are relative to the call's working directory when the file is inside it. Outside paths stay absolute. A command activity also carries the tool's own `description` when the tool sends one. For a script of more than one line, `target` is its first line and `moreLines` counts the other lines. A native session id still publishes `runner_call_session_id`, but produces no activity row. When the tool reports the model it runs, that event also carries `resolvedModel`. The call's `model` stays the saved seat value, for example an alias. The engine does not import UI code or stores; the TUI sink projects these events into workflow stores.
 
@@ -175,7 +173,7 @@ Several sinks can subscribe to the bus. The JSONL, logger and call-evidence sink
 
 **Stdout JSON sink** (`createStdoutJsonSink`) — writes public NDJSON records to stdout. Live events pass the same payload bounds as every other external consumer before they are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
 
-**Stdout text sink** (`createStdoutTextSink`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. It folds each event into its own run view with `reduceRunView`, the same fold the TUI reads, and writes a `phase:` line when the view's phase changes. A `task <id>:` line reads the checks its brief last ran from that view, and the `done:` line reads the completed count. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` and `info` event's bounded message to stderr. A `debug` event reaches neither the screen nor stderr.
+**Stdout text sink** (`createStdoutTextSink`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. It folds each event into its own run view with `reduceRunView`, the same fold the TUI reads, and writes a `phase:` line when the view's phase changes. A `task <id>:` line reads the checks its brief last ran from that view, and the `done:` line reads the completed count. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` and `info` event's bounded message to stderr. A `debug` event reaches neither the screen nor stderr.
 
 Each `review_completed` prints one `review:` line with its scope, task anchor when present, verdict, and available blocking count. `workflow_complete` prints the run's `done:` line. It prints no review line, except `review: none (REVIEW is None)` before `done:` on a run with REVIEW None.
 
@@ -185,7 +183,7 @@ Each `review_completed` prints one `review:` line with its scope, task anchor wh
 
 **Logger sink** (`createLoggerSink`) — mirrors bounded events into the debug log at a level per event type. Writes nothing when the logger is disabled.
 
-**Call-evidence sink** (`createCallEvidenceSink`) — keeps the run's `runner_call_started`, `runner_call_usage`, `runner_call_completed` and `runner_call_error` events in memory, seeded from what the session already logged. The summary reads per-call usage from it (`resolveCallUsageEvidence`), so a call that completed a moment ago counts before its record reaches `session.jsonl`.
+**Call-evidence sink** (`createCallEvidenceSink`) keeps start and terminal call identities from the live run and earlier passes. Status uses these records to identify the runner when an older state has no seat kind.
 
 **Test observer** (`_eventSink` on `RunWorkflowOptions`, `run/init/options.ts`) — a test-only extra sink that integration tests subscribe to record the stream. No shipped entry point sets it.
 
@@ -239,14 +237,12 @@ The full path from engine to pixel:
 3. `addEvent` dispatches to workflow sub-stores synchronously:
    - `runViewStore` — folds the event into the run view: the phase, when the run first entered each phase, the seat wait, the halt, the briefs, what the run asks, why it stopped and the Apply clock (`reduceRunView`). `planner_questions_asked` sets the open question round and the next `user_message` clears it; `plan_card_opened` opens the plan card and `plan_approved`, `plan_rejected` or `plan_regenerated` closes it; `turn_interrupted` sets the files the stop kept and `run_failed` the error the run stopped on, and `workflow_resumed` clears both; `apply_started` starts the Apply clock and `apply_finished` stops it; `workflow_started` clears all of them. `recovery_prompted` carries the halt (`issue`) and the step the run resumes at (`at`); `recovery_resolved` with the same id, `workflow_cancelled`, `workflow_complete` and `workflow_started` clear it. `workflow_config` records the pass seats, and `runner_call_session_id` records the last reported model for each seat. This fold runs before the cancellation gate, so a late event still moves the view
    - `eventsStore` — appends the TUI-safe event-log projection
-   - `tokensStore` — updates cost and token usage
    - `lifecycleStore` — updates run status, queue depth, terminal workflow timing; it reads a phase change from the run view's fold of the same event
    - `operationsStore` — updates active/last runner operation lifecycle for compact status
 4. React components using `runViewStore.use((s) => s.briefs)` re-render when their selector output changes
 
-**Ordering invariant:** run view, then the cancellation gate, then safe retained event log, tokens, lifecycle and operations. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. After the gate, `addEvent()` computes the safe event-log projection, then passes the original raw event to the operational stores in the same call. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
+**Ordering invariant:** run view, then the cancellation gate, then safe retained event log, lifecycle and operations. Strictly synchronous — no await, no setTimeout, no microtask scheduling between them. After the gate, `addEvent()` computes the safe event-log projection, then passes the original raw event to the operational stores in the same call. React 19 + Ink batch synchronous store updates, so subscribers observe one consistent commit with all workflow stores updated together.
 
-`cost_update` events take a fast path: they skip the run view and the event log and only update tokens. This avoids growing the event log with high-frequency cost ticks.
 
 `workflow_cancelled` is canonical. UI cancel aborts the run with a recognizable reason, and `runWorkflow()` publishes `workflow_cancelled` for UI aborts as well as OS-signal shutdown. Approval-gate `user_cancelled` follows the same event path. The store projection freezes lifecycle/operation duration immediately and accepts late terminal runner/cost events idempotently.
 
@@ -278,7 +274,7 @@ The two serve different consumers: `state.json` is for the state machine (small,
 
 **Message records** (`kind: 'message'`). Written by the transcript buffer from planner and implementer streaming output. A planner call's text is written when the call settles: as a reply, or as the partial of a call that was cut or failed before it completed. A document the call lands is not written: it is the step's artifact, and the later step prompts carry it as an input. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes above 16 KB or when the call ends. If the call is aborted, `flushInterrupted()` writes a final marker with `interrupted: true`, including an empty marker when the call printed nothing or its text was already flushed. `readInterruptedPartial` reconstructs that call's assistant stream after the last `runner_call_started`, retaining the last 8,000 characters for the continuation prompt. An earlier call's text never supplies the next call's partial. The implementer buffer takes normal, retry and consult-guided output, including a direct writer's narration, and writes it to the checkout's log, not to the isolation directory the writer works in. In-process steers use that same checkout log. Context rebuild on resume reads these records to reconstruct the planner conversation: user turns and planner replies, without the implementer's output.
 
-**Summary records** (`kind: 'summary'`). Written by the compaction system (see SUBSYSTEMS.md section 11). Contains `text`, `summarizedUpTo` timestamp, optional `tokenEstimate`, and optional `structured` fields. On resume, only messages after the latest summary's `summarizedUpTo` are loaded.
+**Summary records** (`kind: 'summary'`). Written by the compaction system (see SUBSYSTEMS.md section 11). Contains `text`, `summarizedUpTo` timestamp and optional `structured` fields. On resume, only messages after the latest summary's `summarizedUpTo` are loaded.
 
 All three live in the same file because consumers need chronological ordering. Context rebuild reads message records and, when compaction exists, uses the latest summary record as a synthetic message before loading later messages. A separate file per record type would require merge-sorting at read time. Session-log writes and readers share bounded record-size limits; malformed or oversized lines are skipped with diagnostics rather than being silently treated as valid history.
 
@@ -286,7 +282,7 @@ All three live in the same file because consumers need chronological ordering. C
 
 `readRunEvents(ref)` inverts `toEngineEventEntry`: it reads the session log through `readSessionLogWithDiagnostics`, lifts each event record's `type`, `ts`, `phase` and `taskId` back out of the record and onto the payload, turns the ISO timestamp back into epoch milliseconds, and validates the result with the engine's event parser. A record whose type no longer exists in the schema, or whose data no longer parses, is skipped and counted — a retired variant cannot stop an old session from replaying. A type is reported in `unknownTypes` only when no record of that type parsed, so one bad payload does not condemn the variant. The returned array is wrapped in the two replay events: `replay_started` first, `replay_complete` last, both carrying the read diagnostics (lines read, events replayed, and what was skipped and why). Both sit on the log clock, never the wall clock: `replay_started.ts` is the first replayed event, `replay_complete.ts` is the last, and `replay_complete.durationMs` is the span between them — the stretch of run the replay covers, not how long the read took. A replay is therefore byte-identical across repeated reads of the same log. Those two events have no other publisher; they are infrastructure-phase, so the lifecycle reducer ignores their `phase`, and they render no transcript row. Replay lives in `engine` rather than `core` because `core` may not import the event schema.
 
-The consumer is `loadEvents`. It calls `resetWorkflow()` first — a loaded run replaces whatever was on screen, so no store may keep the previous run's briefs, tokens or lifecycle — then folds the whole array through the same reducers the live path runs per event and commits each store once. The event log is built by `mergeEventLog`, the batch form of `mergeEvent`: both share the command replacement and text merge helpers, and the batch form marks evicted entries in place and materializes once, so a 50k-event log costs a single pass rather than a whole-array copy per event past the cap.
+The consumer is `loadEvents`. It calls `resetWorkflow()` first — a loaded run replaces whatever was on screen, so no store may keep the previous run's briefs or lifecycle — then folds the whole array through the same reducers the live path runs per event and commits each store once. The event log is built by `mergeEventLog`, the batch form of `mergeEvent`: both share the command replacement and text merge helpers, and the batch form marks evicted entries in place and materializes once, so a 50k-event log costs a single pass rather than a whole-array copy per event past the cap.
 
 ---
 
@@ -383,7 +379,6 @@ See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for to
 
 ## Summary shape
 
-Summary usage data remains persisted for explicitly opened `/usage` details. It is not a main-screen cost counter.
 
 Source: `SummarySchema`. `saveFinalSession()` saves it to `summary.json` at the end of every run pass, inside the session row (`SessionSchema`: `id`, `feature`, `status`, `phase`, `stop`, `apply` and `summary`).
 
@@ -397,7 +392,6 @@ type Summary = {
   failed: number
   totalTime: number                       // ms, wall time from the first start
   activeTime?: number                     // ms the run ran, from its log; absent on older records
-  tokenUsage: TokenUsage
   escalationRate: number
 
   // Runner identity
@@ -410,16 +404,8 @@ type Summary = {
   mode?: WorkflowMode                     // older summaries only; a new run writes none
 
   // Per-task breakdown
-  taskBreakdown?: TaskTokenUsage[]
+  taskBreakdown?: BriefExecution[]
   phaseTimings?: Record<string, number>   // planning / implementing / review → ms, read from session.jsonl
-
-  // Spend
-  costBreakdown?: {
-    actualPlannerCost: number
-    actualImplementerCost: number
-    totalActualCost: number
-    providerCosts?: Record<string, { inputTokens: number; outputTokens: number; cost: number }>
-  }
 
   // Quality signals
   briefQuality?: { score: number; passed: boolean; errorCount: number; warningCount: number }
@@ -445,7 +431,6 @@ From `EngineEventSchema`. Every event carries `ts: number` (epoch ms); workflow-
   file: string; files?: string[]; action: 'create' | 'modify'; tool?: string; model?: string;
   axes?: readonly string[]; backendKind?: 'cli' | 'api' | 'shell' | 'agent';
   implementerProfile?: string; contextFit?: TaskContextFit;
-  estimatedTokens?: number; untruncatedEstimatedTokens?: number;
   contextLength?: number; currentCodeTruncated?: boolean;
   currentCodeContextMode?: CurrentCodeContextMode;
   routingReason?: string }
@@ -546,16 +531,6 @@ From `EngineEventSchema`. Every event carries `ts: number` (epoch ms); workflow-
   actionClass: ActionClass; taskId?: TaskId }
 
 // Cost
-{ type: 'cost_update'; tokenUsage: TokenUsage }
-// where TokenUsage = {
-//   plannerInput: number; plannerOutput: number;
-//   implementerInput: number; implementerOutput: number;
-//   escalationInput: number; escalationOutput: number;
-//   reviewerInput: number; reviewerOutput: number;
-//   plannerCacheRead?: number; plannerCacheCreate?: number;
-//   implementerCacheRead?: number; implementerCacheCreate?: number;
-//   ...the reviewer and escalation cache, reasoning and coverage counters
-// }   (TokenUsageSchema)
 
 // Planner heartbeat (emitted while the planner is running)
 { type: 'planner_heartbeat'; phase: Phase; elapsedMs: number; callId?: string }
@@ -607,4 +582,4 @@ From `EngineEventSchema`. Every event carries `ts: number` (epoch ms); workflow-
 
 **Where an `error` comes from.** The generic `error` event carries an optional `category`/`code` pair naming the halt that produced it. The codes under `category: 'recovery'` include `retry_exhausted` (the ladder halted a task: an unanswered question, a `cannot` answer or a pre_escalation deny), `review_failed` (the review failed with no fix work, or a fix cycle left the same blockers, or its call failed, `review/loop/halts.ts` and `review/failure.ts`) and `required_checks_unrunnable` (`review/checks/gate.ts`); a `category: 'recovery'` search of the orchestrator lists every code. An approval gate denial (`approval-denied`) raises its recovery issue without an `error` event. A task-start snapshot that could not be captured (`snapshot-failed`) publishes a plain `error` with no `category`/`code` (`task/start.ts`). Both reach consumers as `recovery_prompted`, which is also what fires the `on_halt` hook. Re-entering the task loop over an unresolved recovery publishes the matching `warning` (`recovery_pending_unresolved`) instead.
 
-`routingReason` on `task_started` is the router's sentence, for example `Selected profile default (fits, estimated 5075/1000000 tokens)`. The run log and the review packet keep it. The task-start row does not print it. The row names the BUILD seat from `tool`, `model` and `axes` (`Ollama · Qwen2.5 Coder 7B`) and does not print `implementerProfile`; a `tight` fit adds the estimate against the window (`~24,310 of 32K context tokens (tight)`), a `tight` fit on an assumed window adds the estimate alone (`~7,000 context tokens (tight)`), and an `overflow` fit adds the estimate alone (`~31,012 context tokens`). Fuller context-fit and per-task routing metadata is also retained in the run record; the engine emits it as plain event data and does not import UI code.
+`routingReason` on `task_started` is the router's sentence, for example `Selected profile default (fits)`. The run log and the review packet keep it. The task-start row does not print it. The row names the BUILD seat from `tool`, `model` and `axes` (`Ollama · Qwen2.5 Coder 7B`) and does not print `implementerProfile`; a `tight` fit adds the estimate against the window (`~24,310 of 32K context tokens (tight)`), a `tight` fit on an assumed window adds the estimate alone (`~7,000 context tokens (tight)`), and an `overflow` fit adds the estimate alone (`~31,012 context tokens`). Fuller context-fit and per-task routing metadata is also retained in the run record; the engine emits it as plain event data and does not import UI code.

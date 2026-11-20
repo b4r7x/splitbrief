@@ -20,7 +20,7 @@ import {
   guidanceConsult,
   scriptedTypedCall,
 } from '#testing/helpers/typed-planner.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -64,14 +64,13 @@ describe('retryAndRecord — retry budget', () => {
     const retry = vi.fn().mockResolvedValue({
       success: true,
       output: 'fixed',
-      usage: { inputTokens: 50, outputTokens: 25 },
     });
     const implementer = makeImplementer({ retry });
     const planner = makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) });
 
     const wctx = makeWorkflowContext({ callbacks, implementer, planner, bus });
     const setTrackedState = vi.fn();
-    const taskBreakdowns: TaskTokenUsage[] = [];
+    const taskBreakdowns: BriefExecution[] = [];
 
     const res = await retryAndRecord({
       wctx,
@@ -79,7 +78,7 @@ describe('retryAndRecord — retry budget', () => {
       initialError: 'tsc failed',
       state,
       taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns,
       setTrackedState,
     });
@@ -110,7 +109,6 @@ describe('retryAndRecord — retry budget', () => {
           return {
             success: true,
             output: 'fixed',
-            usage: { inputTokens: 20, outputTokens: 10 },
           };
         }),
     });
@@ -131,7 +129,7 @@ describe('retryAndRecord — retry budget', () => {
       initialChangedFiles: ['src/initial.ts'],
       state,
       taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -174,7 +172,7 @@ describe('retryAndRecord — retry budget', () => {
         initialError: 'test failed',
         state,
         taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
-        tokensBefore: { ...state.tokenUsage },
+
         taskBreakdowns: [],
         setTrackedState: vi.fn(),
       });
@@ -203,7 +201,6 @@ describe('retryAndRecord — retry budget', () => {
       success: false,
       output: 'still broken',
       error: 'tsc failed again',
-      usage: { inputTokens: 20, outputTokens: 10 },
     });
     let consults = 0;
     const planner = makePlanner({
@@ -233,7 +230,7 @@ describe('retryAndRecord — retry budget', () => {
       initialError: 'initial tsc failure',
       state,
       taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -289,7 +286,7 @@ describe('retryAndRecord — retry budget', () => {
       initialError: 'initial tsc failure',
       state,
       taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -335,7 +332,7 @@ describe('retryAndRecord — the exhaustion issue', () => {
       initialError: 'lint: unexpected any',
       state,
       taskStartSnapshot: await captureWorkspaceSnapshot(wctx.workspaceDir, wctx),
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -417,7 +414,7 @@ describe('retryAndRecord — recovery stop points', () => {
       initialError: 'initial validation failed',
       state,
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -477,7 +474,7 @@ describe('retryAndRecord — recovery stop points', () => {
       initialError: 'initial validation failed',
       state,
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -524,7 +521,7 @@ describe('retryAndRecord — recovery stop points', () => {
       initialError: 'initial validation failed',
       state,
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -548,7 +545,6 @@ describe('retryAndRecord — recovery stop points', () => {
       retry: vi.fn().mockResolvedValue({
         success: false,
         error: 'retry still failed',
-        usage: { inputTokens: 10, outputTokens: 5 },
       }),
     });
     const planner = makePlanner({
@@ -573,7 +569,7 @@ describe('retryAndRecord — recovery stop points', () => {
       initialError: 'initial validation failed',
       state,
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -704,7 +700,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       initialError: 'initial validation failed',
       state,
       taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
-      tokensBefore: { ...state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });

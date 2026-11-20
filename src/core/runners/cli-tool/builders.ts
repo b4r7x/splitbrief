@@ -1,4 +1,3 @@
-import type { RunnerBillingPosture } from '../billing.js';
 import type {
   CliAuthChannelId,
   CliAuthChannel,
@@ -66,7 +65,6 @@ export function authChannel(
   input: Readonly<{
     id: CliAuthChannelId;
     env: readonly string[];
-    billing: RunnerBillingPosture;
     hostKeychainPlatforms?: readonly NodeJS.Platform[];
     supportedPlatforms?: readonly NodeJS.Platform[];
   }>,
@@ -74,7 +72,6 @@ export function authChannel(
   return Object.freeze({
     id: input.id,
     env: Object.freeze([...input.env]),
-    billing: input.billing,
     hostKeychainPlatforms: Object.freeze([...(input.hostKeychainPlatforms ?? [])]),
     ...(input.supportedPlatforms === undefined
       ? {}

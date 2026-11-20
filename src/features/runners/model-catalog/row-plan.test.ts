@@ -119,7 +119,10 @@ describe('planModelRows on the captured listings', () => {
       expect(new Set(labels).size).toBe(2);
     }
     // Too narrow for the family beside the id: the id stays, and no cut opens on the separator.
-    expect(labelsAt(31)).toEqual([`${ELLIPSIS}deepseek-flash`, `${ELLIPSIS}deepseek-v4.1-flash`]);
+    expect(labelsAt(31)).toEqual([
+      `${ELLIPSIS}Flash · deepseek-flash`,
+      `${ELLIPSIS}deepseek-v4.1-flash`,
+    ]);
   });
 
   it.each(['opencode', 'kilo-code', 'cursor', 'codex', 'copilot', 'antigravity'] as const)(

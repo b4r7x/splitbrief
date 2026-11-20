@@ -1,5 +1,4 @@
 import { LIST_ROW_LABEL_FLOOR } from '../../../components/list-row/fit.js';
-import { formatContextLength } from '../../../core/formatting.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { formatModelName } from '../../../core/providers/model-display.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -29,7 +28,6 @@ interface RowCells {
   readonly chip: string;
   readonly tags: string;
   readonly prose: string;
-  readonly size: string;
   readonly catalogId: string | undefined;
 }
 
@@ -37,22 +35,14 @@ interface Rung {
   readonly catalogId: boolean;
   readonly chip: boolean;
   readonly prose: boolean;
-  readonly size: boolean;
 }
 
-const TAGS_ONLY: Rung = { catalogId: false, chip: false, prose: false, size: false };
+const TAGS_ONLY: Rung = { catalogId: false, chip: false, prose: false };
 
-/**
- * Every set of cells a list can keep, richest first: the size outranks the prose detail, the prose
- * the count, and the count the catalog id — a cut id names a model that does not exist and a bare
- * digit is not a value, so neither is ever cut; the list keeps them whole or not at all. Read as
- * four bits, the sets count down from all four cells to none. Provenance and vendor tags are
- * states, not prose, and stay in every set.
- */
-const RUNGS: readonly Rung[] = Array.from({ length: 16 }, (_, index) => {
-  const kept = 15 - index;
+/** The list drops catalog IDs first, then counts, then prose. Provenance tags stay. */
+const RUNGS: readonly Rung[] = Array.from({ length: 8 }, (_, index) => {
+  const kept = 7 - index;
   return {
-    size: (kept & 8) !== 0,
     prose: (kept & 4) !== 0,
     chip: (kept & 2) !== 0,
     catalogId: (kept & 1) !== 0,
@@ -91,9 +81,7 @@ function cellsOf(row: ModelRow, name: string): RowCells {
     name,
     chip: chipOf(row),
     tags: [provenance, model.vendorTag ?? ''].filter(Boolean).join(' '),
-    prose: automatic ? '' : (model.detail ?? ''),
-    // The Auto row carries no size; its word stands in that cell.
-    size: automatic ? AUTO_ROW_METADATA : formatContextLength(model.contextLength),
+    prose: automatic ? AUTO_ROW_METADATA : (model.detail ?? ''),
     catalogId: model.catalogModelId,
   };
 }
@@ -130,7 +118,7 @@ function nameRows(
 }
 
 function metadataAt(cells: RowCells, rung: Rung): string {
-  const detail = rung.prose && cells.prose !== '' ? cells.prose : rung.size ? cells.size : '';
+  const detail = rung.prose ? cells.prose : '';
   const body = [cells.tags, detail].filter(Boolean).join(' ');
   const id = rung.catalogId ? cells.catalogId : undefined;
   const withId = id === undefined ? body : body === '' ? id : `${body}${SOFT_SEP}${id}`;

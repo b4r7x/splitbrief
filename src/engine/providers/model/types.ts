@@ -1,7 +1,6 @@
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { RunnerKind, ProviderId } from '../../../core/schemas/enums.js';
-import type { PricingMode } from '../cost/pricing.js';
 import type { ModelCacheAccessor } from './runtime-snapshot.js';
 
 export type ResolvedModelSource =
@@ -47,7 +46,6 @@ export interface ResolvedModelCatalogEntry extends DetectedModel {
   readonly membership: ResolvedModelMembership;
   readonly isStale?: boolean;
   readonly canConfigure: boolean;
-  readonly pricingMode: PricingMode;
   /** `nativeReasoningEfforts` is the tool's floor ladder, not one the model published. */
   readonly effortFromFloor?: boolean;
 }

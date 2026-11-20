@@ -7,7 +7,7 @@ function authChannel(over: Partial<CliAuthChannel>): CliAuthChannel {
   return {
     id: 'session',
     env: [],
-    billing: 'subscription-included',
+
     hostKeychainPlatforms: [],
     ...over,
   };
@@ -19,20 +19,18 @@ describe('cliAuthChannelEnvKeys', () => {
     const provider = defaultCliAuthChannel('opencode');
     const session = defaultCliAuthChannel('codex');
 
-    expect(
-      cliAuthChannelEnvKeys({ ...provider, billing: 'subscription-included' }, processEnv),
-    ).toContain('OLLAMA_API_KEY');
-    expect(
-      cliAuthChannelEnvKeys({ ...session, billing: 'provider-dependent' }, processEnv),
-    ).toEqual([...session.env]);
+    expect(cliAuthChannelEnvKeys({ ...provider }, processEnv)).toContain('OLLAMA_API_KEY');
+    expect(cliAuthChannelEnvKeys({ ...session }, processEnv)).toEqual([...session.env]);
   });
 
   it('passes every provider API key to a provider-dependent tool', () => {
     expect(
-      cliAuthChannelEnvKeys(
-        authChannel({ id: 'provider-dependent', billing: 'provider-dependent' }),
-        { OLLAMA_API_KEY: 'k', KIMI_API_KEY: 'k', PATH: '/bin', HOME: '/h' },
-      ),
+      cliAuthChannelEnvKeys(authChannel({ id: 'provider-dependent' }), {
+        OLLAMA_API_KEY: 'k',
+        KIMI_API_KEY: 'k',
+        PATH: '/bin',
+        HOME: '/h',
+      }),
     ).toEqual(['OLLAMA_API_KEY', 'KIMI_API_KEY']);
   });
 
@@ -59,7 +57,6 @@ describe('cliAuthChannelEnvKeys', () => {
         authChannel({
           id: 'provider-dependent',
           env: ['OPENCODE_API_KEY'],
-          billing: 'provider-dependent',
         }),
         { OPENCODE_API_KEY: 'x', OLLAMA_API_KEY: 'y' },
       ),

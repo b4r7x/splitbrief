@@ -51,12 +51,10 @@ export function SetupItemRow({
                 ? {
                     ...layout,
                     identityWidth: width - availabilityWidth - CREW_IDENTITY_COLUMN,
-                    posture: false,
                   }
                 : layout
             }
             isCursor={isCursor}
-            width={width - availabilityWidth}
           />
           {unavailable && <Text color={t.warning}>{'  Unavailable'}</Text>}
         </Box>

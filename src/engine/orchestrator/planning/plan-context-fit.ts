@@ -43,6 +43,9 @@ export async function estimatePlanContextFits(
                 ...(item.routingBlockKind !== undefined && {
                   blocked: item.routingReason ?? item.routingBlockKind,
                 }),
+                ...(item.contextOverflow !== undefined && {
+                  contextOverflow: item.contextOverflow,
+                }),
               },
             ] as const,
           ],

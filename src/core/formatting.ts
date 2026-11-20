@@ -32,11 +32,6 @@ export function formatContextLength(tokens: number | undefined): string {
   return `${Math.floor(tokens / 1000)}K`;
 }
 
-export function formatCost(dollars: number): string {
-  if (!Number.isFinite(dollars)) return '$0.00';
-  return `$${Math.max(0, dollars).toFixed(2)}`;
-}
-
 export function formatTruncatedList(values: string[], max: number): string {
   const visible = values.slice(0, max).join(SOFT_SEP);
   const hidden = values.length - max;

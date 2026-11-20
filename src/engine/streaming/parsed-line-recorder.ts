@@ -1,4 +1,3 @@
-import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { RunnerCallRecorder } from '../calls/recorder/types.js';
 import type { ParsedLine, ParsedTextChannel } from '../runners/types.js';
 import type { TextChunkMarks } from '../events/types.js';
@@ -8,10 +7,8 @@ import {
 } from '../calls/output-limit.js';
 import { reconcileFinalText } from './final-text.js';
 import { contributesToResultText } from '../calls/result-text.js';
-import { accumulateTokenUsage } from '../calls/usage/accumulate.js';
 
 export interface ParsedLineRecorder {
-  readonly usage: TokenDelta | null;
   readonly sessionId: string | null;
   apply: (parsed: ParsedLine, marks?: Pick<TextChunkMarks, 'continues'>) => void;
 }
@@ -20,7 +17,6 @@ export function createParsedLineRecorder(opts: {
   recorder: RunnerCallRecorder;
   onText?: ((text: string, marks?: TextChunkMarks) => void) | undefined;
 }): ParsedLineRecorder {
-  let usage: TokenDelta | null = null;
   let sessionId: string | null = null;
   let activeToolUse: { id: string | null; name: string } | null = null;
   /**
@@ -82,9 +78,6 @@ export function createParsedLineRecorder(opts: {
   }
 
   return {
-    get usage() {
-      return usage;
-    },
     get sessionId() {
       return sessionId;
     },
@@ -96,14 +89,6 @@ export function createParsedLineRecorder(opts: {
         } else {
           applyDeltaText(channel, parsed.text, parsed.subagentId, marks);
         }
-      }
-
-      if (parsed.usage) {
-        const semantics =
-          parsed.usageSemantics ??
-          (parsed.isResult || parsed.channel === 'result' ? 'final' : 'delta');
-        usage = accumulateTokenUsage(usage, parsed.usage, semantics);
-        opts.recorder.usage({ usage: parsed.usage, semantics });
       }
 
       if (parsed.sessionId) {

@@ -457,7 +457,7 @@ describe('runner picker semantics integration', () => {
             kind: 'cli',
             roles: ['planner', 'implementer'],
             modelPolicy: 'auto-only',
-            billing: 'subscription-included',
+
             permissions: readyPermissions,
             status: { state: 'ready', remediation: null },
             available: true,
@@ -472,7 +472,7 @@ describe('runner picker semantics integration', () => {
             kind: 'cli',
             roles: ['planner', 'implementer'],
             modelPolicy: 'backend-default',
-            billing: 'provider-dependent',
+
             permissions: readyPermissions,
             status: { state: 'ready', remediation: null },
             available: true,
@@ -487,7 +487,7 @@ describe('runner picker semantics integration', () => {
             kind: 'cli',
             roles: ['planner', 'implementer'],
             modelPolicy: 'none',
-            billing: 'provider-dependent',
+
             permissions: readyPermissions,
             status: { state: 'ready', remediation: null },
             available: true,
@@ -503,7 +503,7 @@ describe('runner picker semantics integration', () => {
             kind: 'cli',
             roles: ['planner', 'implementer'],
             modelPolicy: 'per-call',
-            billing: 'provider-dependent',
+
             permissions: readyPermissions,
             status: { state: 'ready', remediation: null },
             available: true,
@@ -544,7 +544,7 @@ describe('runner picker semantics integration', () => {
           kind: 'cli',
           roles: ['planner', 'implementer'],
           modelPolicy: 'auto-only',
-          billing: 'subscription-included',
+
           permissions: {
             directWrite: false,
             network: true,
@@ -603,7 +603,7 @@ describe('runner picker semantics integration', () => {
         kind: 'api',
         roles: ['planner', 'implementer'],
         modelPolicy: 'per-call',
-        billing: 'api-metered',
+
         permissions: {
           directWrite: false,
           network: true,

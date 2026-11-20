@@ -67,7 +67,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implement: vi.fn().mockResolvedValue({
         success: true,
         output: 'code',
-        usage: { inputTokens: 20, outputTokens: 10 },
       }),
     });
     const defaultImplementer = makeImplementer({ implement: vi.fn() });
@@ -102,19 +101,15 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       tool: 'ollama',
       model: 'qwen-large',
       contextFit: expect.stringMatching(/fits|tight/),
-      estimatedTokens: expect.any(Number),
-      contextLength: 32768,
       routingReason: expect.stringContaining('Selected profile cheap-large'),
     });
-    expect(events.find((event) => event.type === 'task_tokens')).toMatchObject({
-      type: 'task_tokens',
+    expect(events.find((event) => event.type === 'task_settled')).toMatchObject({
+      type: 'task_settled',
       taskId: 'T001',
       implementerProfile: 'cheap-large',
       tool: 'ollama',
       model: 'qwen-large',
       contextFit: expect.stringMatching(/fits|tight/),
-      estimatedTokens: expect.any(Number),
-      contextLength: 32768,
       currentCodeContextMode: 'none',
       routingReason: expect.stringContaining('Selected profile cheap-large'),
     });
@@ -147,7 +142,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implement: vi.fn().mockResolvedValue({
         success: true,
         output: 'code',
-        usage: { inputTokens: 20, outputTokens: 10 },
       }),
     });
     const defaultImplementer = makeImplementer({ implement: vi.fn() });
@@ -202,7 +196,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         .mockImplementation(
           async ({ task: dispatchedTask }: { task: ReturnType<typeof makeTask> }) => {
             expect(dispatchedTask.currentCode).toBe(currentCode);
-            return { success: true, output: 'code', usage: { inputTokens: 20, outputTokens: 10 } };
+            return { success: true, output: 'code' };
           },
         ),
     });
@@ -271,7 +265,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         .mockImplementation(
           async ({ task: dispatchedTask }: { task: ReturnType<typeof makeTask> }) => {
             expect(dispatchedTask.currentCode).toBeUndefined();
-            return { success: true, output: 'code', usage: { inputTokens: 20, outputTokens: 10 } };
+            return { success: true, output: 'code' };
           },
         ),
     });

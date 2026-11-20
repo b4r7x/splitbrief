@@ -31,12 +31,10 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
   // the choice. The fitting profiles go first by rank, then the default profile, then the profile
   // with the largest window, which has the best chance to take the whole brief. A recovery pin
   // routes over the pinned profile alone, so it is the one usable profile.
-  const usable = profileFits.filter(
-    (profileFit) =>
-      !profileFit.credentialFailure &&
-      !profileFit.capabilityFailure &&
-      !(profileFit.userBudget && profileFit.fit === 'overflow'),
+  const capable = profileFits.filter(
+    (profileFit) => !profileFit.credentialFailure && !profileFit.capabilityFailure,
   );
+  const usable = capable.filter((profileFit) => profileFit.contextOverflow === undefined);
   const selected =
     usable
       .filter((profileFit) => profileFit.fit !== 'overflow')
@@ -74,6 +72,10 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
     const hasCredentialFailure = profileFits.some(
       (profileFit) => profileFit.credentialFailure !== undefined,
     );
+    const contextOverflow = capable
+      .flatMap(({ contextOverflow }) => (contextOverflow === undefined ? [] : [contextOverflow]))
+      .toSorted((left, right) => right.availableTokens - left.availableTokens)
+      .at(0);
 
     return {
       taskId: opts.task.id,
@@ -85,6 +87,7 @@ export function routeTaskToImplementerProfile(opts: RouteTaskOptions): RoutingDe
         largestOverflow?.untruncatedEstimatedTokens ??
         0,
       contextLength: representative?.contextLength ?? largestOverflow?.contextLength,
+      ...(contextOverflow !== undefined && { contextOverflow }),
       usedConservativeContextLength: representative?.usedConservativeContextLength ?? false,
       currentCodeTruncated:
         representative?.currentCodeTruncated ?? largestOverflow?.currentCodeTruncated ?? false,

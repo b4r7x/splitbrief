@@ -159,30 +159,9 @@ describe('picker tree geometry', () => {
             expect(lineOf(entry.row.slice(entry.column))).not.toContain(ELLIPSIS);
             continue;
           }
-          let modelAbove: (typeof disclosureEntries)[number] | undefined;
-          for (const item of disclosureEntries) {
-            if (item.rowIndex >= entry.rowIndex) break;
-            if (classified.some((child) => child.rowIndex === item.rowIndex)) continue;
-            modelAbove = item;
-          }
-          expect(modelAbove).toBeDefined();
-          if (modelAbove === undefined) continue;
-          expect(lineOf(modelAbove.row.slice(0, trailingColumn)).trimEnd()).toMatch(/\b1M$/);
-          const valueEdge = lastInkColumnBefore(modelAbove.row, trailingColumn);
-          const end = lastInkColumnBefore(entry.row, trailingColumn);
-          if (end === undefined || valueEdge === undefined) {
-            throw new Error('a child row or its parent paints nothing before the chevron');
-          }
           const words = lineOf(entry.row.slice(entry.column + 3, trailingColumn)).trim();
-          expect(lineOf(entry.row.slice(entry.column)), 'a child row cuts no word').not.toContain(
-            ELLIPSIS,
-          );
-          expect(
-            end === valueEdge ||
-              end === trailingColumn - 1 ||
-              (end < valueEdge && !words.includes(' ')),
-            `a route's value ends on the value edge or goes whole: ${words}`,
-          ).toBe(true);
+          expect(words).toMatch(/^\S/);
+          expect(words, 'a provider route keeps its complete words').not.toContain(ELLIPSIS);
         }
       } finally {
         await handle.unmount();

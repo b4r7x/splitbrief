@@ -21,7 +21,7 @@ import {
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import type { Check } from '../../../core/schemas/task.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
@@ -54,7 +54,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       checks: BRIEF_CHECKS,
     });
     const state = implementingState([task]);
-    const taskBreakdowns: TaskTokenUsage[] = [];
+    const taskBreakdowns: BriefExecution[] = [];
 
     writeFileSync(
       join(projectDir, 'deny-validation.mjs'),
@@ -70,7 +70,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       implement: vi.fn().mockImplementation(async ({ projectDir }: { projectDir: string }) => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = "world";\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       }),
     });
     const runCommand = vi
@@ -165,7 +165,7 @@ describe('runSingleTask — pre_validation hooks', () => {
     });
     const second = makeTask({ id: 'T002', suggestedFiles: ['src/other.ts'] });
     const state = implementingState([first, second]);
-    const taskBreakdowns: TaskTokenUsage[] = [];
+    const taskBreakdowns: BriefExecution[] = [];
 
     const calls = join(projectDir, 'hook-calls');
     writeFileSync(
@@ -183,7 +183,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       async ({ projectDir: runDir }: { projectDir: string }) => {
         mkdirSync(join(runDir, 'src'), { recursive: true });
         writeFileSync(join(runDir, 'src/hello.ts'), content);
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        return { success: true, output: 'ok' };
       };
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(write('export const hello = 1;\n')),

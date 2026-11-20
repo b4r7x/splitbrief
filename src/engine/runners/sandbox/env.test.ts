@@ -1739,8 +1739,6 @@ describe('backend compatibility fixtures', () => {
     // machine's environment.
     expect(defaultCliAuthChannel('opencode').env).toEqual([]);
     expect(defaultCliAuthChannel('kilo-code').env).toEqual([]);
-    expect(defaultCliAuthChannel('opencode').billing).toBe('provider-dependent');
-    expect(defaultCliAuthChannel('kilo-code').billing).toBe('provider-dependent');
   });
 });
 

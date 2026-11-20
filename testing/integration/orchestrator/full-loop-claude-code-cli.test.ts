@@ -115,7 +115,7 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
     });
 
     const planner = makePlanner({
-      typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
+      typedCall: typedCallFromTasks([task]),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nClaude Code CLI implementer passed validation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
@@ -207,11 +207,6 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
       failed: 0,
       implementerTool: 'claude-code',
       implementerModel: 'claude-sonnet-4-20250514',
-      tokenUsage: {
-        implementerInput: 90,
-        implementerOutput: 35,
-        implementerCacheRead: 30,
-      },
     });
     expect(summary.taskBreakdown).toEqual([
       expect.objectContaining({

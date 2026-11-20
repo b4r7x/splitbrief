@@ -86,7 +86,6 @@ function cachedModels(models: readonly DetectedModel[], limit = models.length): 
         ? {}
         : { outputModalities: [...model.outputModalities] }),
       ...(model.capabilities === undefined ? {} : { capabilities: [...model.capabilities] }),
-      ...(model.isFree === undefined ? {} : { isFree: model.isFree }),
     });
     if (result.success) sanitized.push(result.data);
   }

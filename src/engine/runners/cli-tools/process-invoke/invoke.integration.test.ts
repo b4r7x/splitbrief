@@ -104,7 +104,7 @@ const completed = {
   type: 'result',
   status: 'completed',
   text: '',
-  usage: null,
+
   nativeSessionId: null,
   error: null,
   partial: false,
@@ -114,7 +114,7 @@ const failed = {
   type: 'result',
   status: 'refused',
   text: 'partial answer',
-  usage: null,
+
   nativeSessionId: null,
   error: { code: 'fixture-refusal', message: 'fixture refused' },
   partial: true,
@@ -1124,7 +1124,6 @@ describe('invokeProcessCli', () => {
       is_error: true,
       result: 'Prompt is too long',
       session_id: 'claude-too-long',
-      usage: { input_tokens: 0, output_tokens: 0 },
     });
     const result = await run(
       claudeCodeImplementerAdapter,
@@ -2096,7 +2095,7 @@ describe('invokeProcessCli structured call after its terminal result', () => {
   function resultLine(fields: Readonly<Record<string, unknown>>): string {
     const result = {
       conversation_id: SESSION_ID,
-      usage: { input_tokens: 12, output_tokens: 5 },
+
       ...fields,
     };
     return `${JSON.stringify({ event: 'result', result })}\n`;
@@ -2187,7 +2186,7 @@ describe('invokeProcessCli structured call after its terminal result', () => {
       error: null,
       text: response,
       nativeSessionId: SESSION_ID,
-      usage: { inputTokens: 12, outputTokens: 5 },
+
       structured: { verdict: 'approved' },
     });
     expect(result.warnings.filter((warning) => warning.surface !== 'debug')).toEqual([]);
@@ -3265,11 +3264,7 @@ process.stdin.on('end', () => {
           expect(result.status).toBe('completed');
           expect(result.text).toBe('last');
           expect(result).toMatchObject({ structured: { answer: 'last' } });
-          expect(result.usage).toMatchObject(
-            mode === 'follow-up'
-              ? { inputTokens: 13, outputTokens: 12 }
-              : { inputTokens: 10, outputTokens: 5 },
-          );
+
           expect(await Promise.all(sends)).toEqual(
             mode === 'repeated' ? ['delivered', 'delivered'] : ['delivered'],
           );
@@ -3583,7 +3578,7 @@ describe('OpenCode process steering', () => {
         expect(await delivery).toBe('delivered');
         expect(result.status).toBe('completed');
         expect(result.text).toContain('PINEAPPLE');
-        expect(result.usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+
         expect(result.nativeSessionId).toBe('ses-steering');
         expect(JSON.stringify({ result, events: fixture.events })).not.toContain(
           fixture.shim.password,

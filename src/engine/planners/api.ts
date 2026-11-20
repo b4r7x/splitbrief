@@ -231,7 +231,7 @@ export function createApiPlanner(
         totalDeadlineMs: timeout,
         onCallEvent: callbacks.onCallEvent,
         callContext: sendContext,
-        invocationEvidence: apiInvocationEvidence(resolved, model),
+        invocationEvidence: apiInvocationEvidence(resolved),
         ...(responseFormat !== undefined && { responseFormat }),
       });
     return schema === undefined

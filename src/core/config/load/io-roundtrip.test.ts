@@ -360,6 +360,16 @@ describe('config roundtrip', () => {
       expect(yamlBlock(readFileSync(path, 'utf-8'), 'codebase')).toBe(unrelatedBlock);
     });
 
+    it('drops the retired spend setting when loading and rewriting older YAML', () => {
+      const dir = join(TMP, 'retired-spend');
+      writeConfigYaml(dir, { workflow: { show_spend: false, approve: 'plan' } });
+
+      const { config } = loadConfig(dir);
+      expect(config.workflow.approve).toBe('plan');
+      expect(config.workflow).not.toHaveProperty('showSpend');
+      expect(writeConfig(dir, config)).not.toContain('show_spend');
+    });
+
     it('converts snake_case keys to camelCase', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {

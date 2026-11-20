@@ -27,7 +27,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: 'I think you should write this yourself.',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -57,7 +56,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
         makeRunnerCallResult({
           status: 'completed',
           text: '```ts\nexport const leaked = true;\n```',
-          usage: null,
         }),
       );
       const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -86,7 +84,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nconst x = 1;\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -111,7 +108,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nexport const hello = () => "world";\n```',
-        usage: { inputTokens: 10, outputTokens: 20 },
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -126,7 +122,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
     });
 
     expect(result.success).toBe(true);
-    if (result.success) expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 20 });
 
     const written = readFileSync(join(projectDir, 'src/hello.ts'), 'utf-8');
     expect(written).toContain('export const hello');
@@ -137,7 +132,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nexport const denied = true;\n```',
-        usage: { inputTokens: 10, outputTokens: 20 },
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -166,7 +160,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nexport const value = "implementer";\n```',
-        usage: { inputTokens: 10, outputTokens: 20 },
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -203,7 +196,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nexport const a = 1;\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -235,7 +227,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\n<<<<<<< SEARCH \nexport const v0 = 0;\n=======\nexport const v0 = 42;\n>>>>>>> REPLACE\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -263,7 +254,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\n<<<<<<< SEARCH\nexport const a = 1;\n=======\nexport const a = 42;\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -293,7 +283,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nexport const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport const d = 4;\nexport const e = 5;\nexport const f = 6;\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -322,7 +311,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\n<<<<<<< SEARCH\nexport const a = 1;\n=======\nexport const a = 42;\n>>>>>>> REPLACE\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -351,7 +339,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nexport const sub = (a, b) => a - b;\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -378,7 +365,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\n<<<<<<< SEARCH\nexport const add = (a, b) => a + b;\n=======\nexport const add = (a, b) => a + b;\nexport const sub = (a, b) => a - b;\n>>>>>>> REPLACE\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
@@ -403,7 +389,6 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nexport const fresh = true;\n```',
-        usage: null,
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));

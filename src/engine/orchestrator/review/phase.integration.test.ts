@@ -143,7 +143,6 @@ function readReviewRecord(projectDir: string, sessionId: string) {
 function makeReviewer(
   review: (prompt: string, call: number) => ReviewVerdict = (prompt) =>
     passingReviewVerdict(prompt),
-  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
 ): { reviewer: ReturnType<typeof makePlanner>; prompts: string[] } {
   const prompts: string[] = [];
   const reviewer = makePlanner({
@@ -153,7 +152,6 @@ function makeReviewer(
         prompts.push(prompt);
         return review(prompt, call);
       },
-      usage === undefined ? undefined : { review: usage },
     ),
   });
   return { reviewer, prompts };
@@ -338,12 +336,10 @@ describe('runFinalReviewPhase', () => {
     };
     const { callbacks } = makeCallbacks({ onComplete });
     const { bus, events } = makeBusRecorder();
-    const { reviewer } = makeReviewer(
-      (prompt, call) =>
-        call === 1
-          ? failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' })
-          : passingReviewVerdict(prompt),
-      { inputTokens: 200, outputTokens: 40 },
+    const { reviewer } = makeReviewer((prompt, call) =>
+      call === 1
+        ? failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' })
+        : passingReviewVerdict(prompt),
     );
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
@@ -2036,9 +2032,9 @@ describe('runFinalReviewPhase', () => {
 
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const { reviewer } = makeReviewer(undefined, { inputTokens: 200, outputTokens: 40 });
+    const { reviewer } = makeReviewer();
 
-    const { state } = await runFinalReviewPhase({
+    await runFinalReviewPhase({
       modelCache: undefined,
       projectDir,
       workspaceDir: projectDir,
@@ -2053,12 +2049,8 @@ describe('runFinalReviewPhase', () => {
       summaryBase: SUMMARY_BASE,
     });
 
-    expect(state.tokenUsage.reviewerInput).toBe(200);
-    expect(state.tokenUsage.reviewerOutput).toBe(40);
     const persisted = loadState({ projectDir, sessionId });
     expect(persisted?.phase).toBe('final-review');
-    expect(persisted?.tokenUsage.reviewerInput).toBe(200);
-    expect(persisted?.tokenUsage.reviewerOutput).toBe(40);
   });
 
   it('reviews the task brief packet, falling back to current state tasks when tasks.md is missing', async () => {
@@ -2271,7 +2263,7 @@ describe('runFinalReviewPhase', () => {
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const { reviewer } = makeReviewer(undefined, { inputTokens: 1, outputTokens: 1 });
+    const { reviewer } = makeReviewer();
     const state = {
       ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
       plannerTool: 'claude-code',

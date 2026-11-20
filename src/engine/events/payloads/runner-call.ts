@@ -11,8 +11,6 @@ import {
   RunnerCallFailureStatusSchema,
   RunnerCallTextSemanticsSchema,
   RunnerCallToolUseSchema,
-  RunnerCallUsageSchema,
-  RunnerCallUsageSemanticsSchema,
   RunnerCallWarningSchema,
   runnerCallContextFields,
   runnerCallEndUnknown,
@@ -54,10 +52,6 @@ export const RunnerCallEventSchemas = [
     text: z.string(),
     subagentId: CallIdSchema.optional(),
     semantics: RunnerCallTextSemanticsSchema.optional(),
-  }),
-  strictCallPhaseEvent('runner_call_usage').extend({
-    usage: RunnerCallUsageSchema,
-    semantics: RunnerCallUsageSemanticsSchema,
   }),
   runnerCallToolUseEventSchema,
   strictCallPhaseEvent('runner_call_activity').extend({

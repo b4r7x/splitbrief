@@ -213,7 +213,6 @@ graph LR
     Bus --> Hook["hookSink → user hooks"]
     TUI --> Events["eventsStore"]
     TUI --> RunView["runViewStore"]
-    TUI --> Tokens["tokensStore"]
     TUI --> Lifecycle["lifecycleStore"]
     TUI --> Operations["operationsStore"]
     Events --> React["React re-renders"]
@@ -225,11 +224,10 @@ graph LR
 
 **`addEvent()`** is the bridge between engine events and React state. It updates five stores in a fixed order: the run view (phase, seat wait, halt, briefs, what the run asks, why it stopped and the Apply clock), events, tokens, lifecycle, operations. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all five stores updated.
 
-One optimization: `cost_update` events take a fast path that only touches the tokens store, skipping the other writes.
 
 The run view folds every event before this check, so a brief the stop cut still settles on it. If the lifecycle store's `cancelled` flag is set, `addEvent()` then drops every event that `acceptsEventAfterCancellation()` does not admit. That function admits `workflow_cancelled`, `turn_interrupted`, `review_completed`, and the `runner_call_*` events that settle a call (completion, error, warning, usage and session id), so a call cut by the stop still settles. This prevents other late-arriving events from a cancelled workflow from polluting the display.
 
-React components subscribe to individual store slices via `store.use(selector)`. A component that only reads `runViewStore.use((s) => s.briefs)` won't re-render when the token count changes. The store system makes selector-based subscriptions automatic — no `useMemo` or `useCallback` needed.
+React components subscribe to individual store slices via `store.use(selector)`. A component that only reads `runViewStore.use((s) => s.briefs)` only re-renders when the brief list changes. The store system makes selector-based subscriptions automatic — no `useMemo` or `useCallback` needed.
 
 ---
 
@@ -237,13 +235,13 @@ React components subscribe to individual store slices via `store.use(selector)`.
 
 Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
-**`state.json`** — the source of truth for resume. Overwritten on every phase transition via `transitionAndSave()`, which calls `saveState()`. Contains the current phase, task list with statuses, token usage, message queue, and any pending recovery state.
+**`state.json`** — the source of truth for resume. Overwritten on every phase transition via `transitionAndSave()`, which calls `saveState()`. Contains the current phase, task list with statuses, brief execution history, message queue, and any pending recovery state.
 
 **`session.jsonl`** — the full event log, append-only. The JSONL sink writes every `EngineEvent` as it's published. This is the audit trail and the source for context rebuild when resuming with a stateless backend.
 
 **`plan.json`, `plan.md`, `tasks.md`** — the plan the planning session compiled, and its two renderings. The user reviews `plan.md` on the plan card and may edit `plan.json`. A run planned by an older engine also holds `research.md`, `spec.md` and the other documents of the retired chain.
 
-**`summary.json`** — final cost, timing, task outcomes. Written at the end of each pass by `saveFinalSession()`, which also clears the default pointer if it still names the run and the run is closed. A resumed pass drops the stop the last pass recorded as it starts (`reopenSessionRecord`).
+**`summary.json`** — timing and task outcomes. Written at the end of each pass by `saveFinalSession()`, which also clears the default pointer if it still names the run and the run is closed. A resumed pass drops the stop the last pass recorded as it starts (`reopenSessionRecord`).
 
 **`snapshots/`** — the run's content-addressed snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, `pre-final-review`, the `post-task-<n>` snapshots of a checkout run, and for a run without a workspace or a checkout-mode run the accepted-run snapshot, plus the run ledger. There are no configurable trigger points. See [SUBSYSTEMS.md](./SUBSYSTEMS.md).
 
@@ -273,7 +271,7 @@ Evidence recording happens throughout: the evidence ledger tracks approvals, rej
 
 The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the summary, and calls `callbacks.onComplete(summary)`. `saveFinalSession()` writes `summary.json`. A workspace result with a passing review, or from a REVIEW None run, remains ready to apply; it remains eligible for the default selection until closure. Older runs without a workspace close on pass. See [Run status](./WORKFLOW.md#run-status).
 
-In the TUI, the run loop settles at rest on the same screen and re-reads its `RunRecord`. A ready run shows [the result menu](./FEATURES.md#run-result-menu). A closed run shows its summary as the last rows of the transcript. `/usage` owns the cost details. A configured reviewer has its own recorded cost line; otherwise review usage stays with the planner.
+In the TUI, the run loop settles at rest on the same screen and re-reads its `RunRecord`. A ready run shows [the result menu](./FEATURES.md#run-result-menu). A closed run shows its summary as the last rows of the transcript. the run record owns the cost details. A configured reviewer has its own recorded cost line; otherwise review usage stays with the planner.
 
 ---
 

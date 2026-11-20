@@ -8,7 +8,7 @@ const docs = {
   workflow: readFileSync(join(projectRoot, 'docs/WORKFLOW.md'), 'utf8'),
   approval: readFileSync(join(projectRoot, 'docs/APPROVAL-AND-RECOVERY.md'), 'utf8'),
   taskContract: readFileSync(join(projectRoot, 'docs/TASK-CONTRACT.md'), 'utf8'),
-  usage: readFileSync(join(projectRoot, 'docs/USAGE-EXAMPLES.md'), 'utf8'),
+
   cli: readFileSync(join(projectRoot, 'docs/CLI-REFERENCE.md'), 'utf8'),
   stores: readFileSync(join(projectRoot, 'docs/STORES-AND-UI.md'), 'utf8'),
   planners: readFileSync(join(projectRoot, 'docs/PLANNERS-AND-IMPLEMENTERS.md'), 'utf8'),
@@ -109,12 +109,6 @@ const claims = [
     "| `codex` | `--sandbox read-only --ask-for-approval never` exec, ambient config and rules ignored; a planning call's thread is kept on disk for the `exec resume` of the next one, and every other call is a fresh exec | `--sandbox workspace-write --ask-for-approval never` in the staged checkout |",
   ],
   [
-    'budget-never-invents-price',
-    'planners',
-    'SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none',
-  ],
-  ['budget-unknown-provider-cost-not-zero', 'configuration', 'Unknown provider cost is not zero.'],
-  [
     'prohibited-planner-mode-no-authority',
     'planners',
     'Planner mode does not grant artifact authority.',
@@ -134,10 +128,9 @@ const claims = [
     'testing',
     'Planner mode does not grant artifact authority.',
   ],
-  ['prohibited-unknown-cost-not-zero', 'configuration', 'Unknown provider cost is not zero.'],
 ] as const;
 
-const REQ_050_DIMENSIONS = ['publication', 'transport', 'roles', 'budget', 'prohibited'] as const;
+const REQ_050_DIMENSIONS = ['publication', 'transport', 'roles', 'prohibited'] as const;
 
 const ALL_DOCS = Object.values(docs).join('\n');
 
@@ -153,17 +146,6 @@ describe('Task Brief publication contract documentation', () => {
 
   it('never claims a CLI flag alone proves read-only behavior', () => {
     for (const claim of ['a flag proves', 'flag by itself proves', 'flag itself proves']) {
-      expect(ALL_DOCS, `docs must not claim "${claim}"`).not.toContain(claim);
-    }
-  });
-
-  it('never claims unknown cost equals zero', () => {
-    for (const claim of [
-      'unknown cost equals zero',
-      'unknown cost is zero',
-      'unknown cost is treated as zero',
-      'unknown cost is 0',
-    ]) {
       expect(ALL_DOCS, `docs must not claim "${claim}"`).not.toContain(claim);
     }
   });

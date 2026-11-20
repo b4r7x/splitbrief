@@ -17,7 +17,6 @@ import {
   recordStallCleared,
   recordStalled,
   recordUnknownUpstream,
-  recordUsage,
   recordWarning,
 } from './records.js';
 import type { RunnerCallRecorder, RunnerCallRecorderState } from './types.js';
@@ -76,7 +75,6 @@ export function createRunnerCallRecorder(opts: {
     stderr: (eventOpts) => recordStderr(state, eventOpts),
     toolUseDelta: (eventOpts) => recordToolUseDelta(state, eventOpts),
     toolUseDone: (eventOpts) => recordToolUseDone(state, eventOpts),
-    usage: (eventOpts) => recordUsage(state, eventOpts),
     sessionId: (eventOpts) => recordSessionId(state, eventOpts),
     warning: (eventOpts) => recordWarning(state, eventOpts),
     unknownUpstream: (eventOpts) => recordUnknownUpstream(state, eventOpts),

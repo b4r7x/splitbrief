@@ -299,8 +299,8 @@ describe('buildCommandContext', () => {
     expect(result).toBe('native');
   });
 
-  it('reports empty when the message port resolves to null', async () => {
-    const result = await build().copyTarget('cost');
+  it('reports empty when the brief port resolves to null', async () => {
+    const result = await build().copyTarget('brief');
 
     expect(readClipboardExecCalls()).toHaveLength(0);
     expect(result).toBe('empty');

@@ -231,7 +231,6 @@ function runOptions(opts: {
         const fixWork = opts.triage(prompt, call);
         return typeof fixWork === 'string' ? fixWork : { ...verdict, ...fixWork };
       },
-      undefined,
       opts.consult ?? (() => cannotConsult()),
     ),
   });

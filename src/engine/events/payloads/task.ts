@@ -13,7 +13,7 @@ import {
 } from '../../../core/schemas/workflow/consult-record.js';
 import { CONSULT_REASONS } from '../../../core/schemas/consult.js';
 import { TaskReviewRecoverySchema } from '../../../core/schemas/recovery/schemas.js';
-import { TaskTokenUsageSchema, TokenUsageSchema } from '../../../core/schemas/tokens.js';
+import { BriefExecutionSchema } from '../../../core/schemas/brief-execution.js';
 import { runnerCallContextFields } from '../../calls/schema.js';
 import { phaseEvent, stringArray, taskIdArray } from './fields.js';
 
@@ -47,20 +47,17 @@ const taskReviewRequestFields = {
     expected: stringArray,
     observed: stringArray,
   }),
-  cost: z.looseObject({
-    tokenUsage: TokenUsageSchema,
-    taskTokens: TaskTokenUsageSchema.optional(),
-    tool: z.string().optional(),
-    model: z.string().optional(),
-    implementerProfile: z.string().optional(),
-  }),
+  seat: z
+    .object({
+      tool: z.string().optional(),
+      model: z.string().optional(),
+      implementerProfile: z.string().optional(),
+    })
+    .optional(),
   routing: z
-    .looseObject({
+    .object({
       selectedProfile: z.string().optional(),
       fit: TaskContextFitSchema,
-      estimatedTokens: z.number(),
-      untruncatedEstimatedTokens: z.number(),
-      contextLength: z.number().optional(),
       currentCodeTruncated: z.boolean(),
       currentCodeContextMode: CurrentCodeContextModeSchema,
       reason: z.string(),
@@ -101,9 +98,6 @@ export const TaskEventSchemas = [
     backendKind: runnerCallContextFields.backendKind.optional(),
     implementerProfile: z.string().optional(),
     contextFit: TaskContextFitSchema.optional(),
-    estimatedTokens: z.number().optional(),
-    untruncatedEstimatedTokens: z.number().optional(),
-    contextLength: z.number().optional(),
     currentCodeTruncated: z.boolean().optional(),
     currentCodeContextMode: CurrentCodeContextModeSchema.optional(),
     routingReason: z.string().optional(),
@@ -140,32 +134,9 @@ export const TaskEventSchemas = [
   }),
   phaseEvent('task_touched_not_suggested').extend({ taskId: TaskIdSchema, files: stringArray }),
   phaseEvent('task_full_fail').extend({ taskId: TaskIdSchema, reason: z.string().optional() }),
-  phaseEvent('task_tokens').extend({
-    taskId: TaskIdSchema,
-    method: TaskCompletionMethodSchema,
-    implementerTokens: z.number().int().nonnegative(),
-    escalationTokens: z.number().int().nonnegative(),
-    implementerCacheReadTokens: z.number().nonnegative().optional(),
-    implementerCacheCreateTokens: z.number().nonnegative().optional(),
-    escalationCacheReadTokens: z.number().nonnegative().optional(),
-    escalationCacheCreateTokens: z.number().nonnegative().optional(),
-    implementerInputTokens: z.number().nonnegative().optional(),
-    implementerOutputTokens: z.number().nonnegative().optional(),
-    implementerReasoningTokens: z.number().nonnegative().optional(),
-    escalationInputTokens: z.number().nonnegative().optional(),
-    escalationOutputTokens: z.number().nonnegative().optional(),
-    escalationReasoningTokens: z.number().nonnegative().optional(),
-    retryCount: z.number().int().nonnegative(),
-    tool: z.string().optional(),
-    model: z.string().optional(),
-    implementerProfile: z.string().optional(),
-    contextFit: TaskContextFitSchema.optional(),
-    estimatedTokens: z.number().optional(),
-    untruncatedEstimatedTokens: z.number().optional(),
-    contextLength: z.number().optional(),
-    currentCodeTruncated: z.boolean().optional(),
-    currentCodeContextMode: CurrentCodeContextModeSchema.optional(),
-    routingReason: z.string().optional(),
+  z.object({
+    ...phaseEvent('task_settled').shape,
+    ...BriefExecutionSchema.partial({ taskTitle: true }).shape,
   }),
   phaseEvent('task_review_needed').extend(taskReviewRequestFields),
   phaseEvent('hint_failed').extend({ taskId: TaskIdSchema }),

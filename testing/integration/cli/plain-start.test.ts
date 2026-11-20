@@ -90,7 +90,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
     });
 
     const planner = makePlanner({
-      typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
+      typedCall: typedCallFromTasks([task]),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nPassed validation.\n\n### Verdict\npass\n',
         usage: { inputTokens: 60, outputTokens: 30 },

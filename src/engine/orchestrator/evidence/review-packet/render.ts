@@ -112,14 +112,15 @@ export function renderReviewPacketMarkdown(
   });
   const warnings = routingWarnings.flatMap((event) => {
     const reason = event.routingReason ?? event.message ?? event.outcome;
-    if (
-      reason === undefined ||
-      taskRouting.some((row) => row.taskId === event.taskId && row.routingReason === reason)
-    )
-      return [];
-    return [
-      `- ${event.taskId === undefined ? 'Routing' : event.taskId}: ${oneLineDisplayText(reason)}`,
-    ];
+    if (reason === undefined) return [];
+    const subject = event.taskId ?? 'Routing';
+    const label =
+      event.type === 'task_started'
+        ? `${subject} started`
+        : event.type === 'task_settled'
+          ? `${subject} settled`
+          : subject;
+    return [`- ${label}: ${oneLineDisplayText(reason)}`];
   });
   const checkpointLines =
     packet.checkpoints.items.length === 0

@@ -7,34 +7,21 @@ import { readSpecFileOrEmpty } from '../../../core/sessions/spec-files.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { readFinalReviewRecord } from '../../../core/review/store.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { sameCurrentBrief } from '../../../core/evidence/brief-hash.js';
-import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
-import type { ModelCacheAccessor } from '../../providers/model/runtime-snapshot.js';
 import {
   briefInFlight,
   getFailedTaskIds,
   getSkippedTaskIds,
 } from '../../../core/state/selectors.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
-import { resolveCallUsageEvidence } from './call-evidence.js';
-import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
-import {
-  applyTaskBreakdownCosts,
-  countLocalAndEscalatedTasks,
-  type BuildSummaryState,
-} from './task-metrics.js';
+import { resolveCallIdentities } from './call-evidence.js';
+import { recordedRunnerKind, type CallIdentity } from './call-identities.js';
+import { countLocalAndEscalatedTasks, type BuildSummaryState } from './task-metrics.js';
 
-/**
- * The seat names here are the run's **display identity** — the seat it is on
- * now. A seat swap moves them; it does not move the spend already booked
- * against the seat that produced it, which `buildSummary` reads from the saved
- * state instead.
- */
 export type SummaryBase = {
   feature: string;
   startTime: number;
@@ -53,17 +40,10 @@ export type SummaryBase = {
   reviewerSeat?: 'none';
   projectDir?: string;
   sessionId?: string;
-  pricingCache?: ModelCacheAccessor | undefined;
 };
 
 type BuildSummaryOptions = SummaryBase & {
   state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex'>;
-  /**
-   * The run's per-call usage records (`collectCallUsageEvidence`). A caller that
-   * holds the event stream can supply them; otherwise the run's own session
-   * supplies them, live or off its log.
-   */
-  callEvidence?: readonly CallUsageEvidence[];
 };
 
 function readReviewOutcome(projectDir: string, sessionId: string): Summary['review'] {
@@ -123,22 +103,37 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     startTime,
     plannerTool,
     plannerModel,
-    plannerKind,
+    plannerKind: savedPlannerKind,
     plannerAxes,
     implementerTool,
     implementerModel,
-    implementerKind,
+    implementerKind: savedImplementerKind,
     implementerAxes,
     reviewerTool,
     reviewerModel,
-    reviewerKind,
+    reviewerKind: savedReviewerKind,
     reviewerAxes,
     reviewerSeat,
     projectDir,
     sessionId,
-    pricingCache,
-    callEvidence,
   } = opts;
+  const kindsMissing =
+    savedPlannerKind === undefined ||
+    savedImplementerKind === undefined ||
+    (reviewerTool !== undefined && savedReviewerKind === undefined);
+  const calls =
+    kindsMissing && projectDir && sessionId
+      ? resolveCallIdentities({ projectDir, sessionId })
+      : undefined;
+  const inferredKind = (role: CallIdentity['role'], tool: string): RunnerKind | undefined => {
+    const kind = recordedRunnerKind(calls, role, tool);
+    return kind === 'ambiguous' ? undefined : kind;
+  };
+  const plannerKind = savedPlannerKind ?? inferredKind('planner', plannerTool);
+  const implementerKind = savedImplementerKind ?? inferredKind('implementer', implementerTool);
+  const reviewerKind =
+    savedReviewerKind ??
+    (reviewerTool === undefined ? undefined : inferredKind('review', reviewerTool));
   const { taskBreakdowns } = state;
   const totalTasks = state.tasks.length;
   const completionCounts = countLocalAndEscalatedTasks(state, taskBreakdowns);
@@ -148,57 +143,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   const failed = getFailedTaskIds(state).length;
   const totalTime = Date.now() - startTime;
   const escalationRate = totalTasks > 0 ? escalatedToPlanner / totalTasks : 0;
-  const tokenUsage =
-    projectDir && sessionId
-      ? reconcileTokenUsageWithSessionLog({
-          ref: { projectDir, sessionId },
-          booked: state.tokenUsage,
-        })
-      : state.tokenUsage;
-
-  // Spend is attributed to the seat that spent it. The saved state records that
-  // seat at the run's start and a seat swap never rewrites it, so a run that
-  // changed tools mid-flight is still costed against the tool it was on when
-  // the tokens were booked, while the summary it returns names the seat in use.
-  const plannerSpentTool = state.plannerTool ?? plannerTool;
-  const plannerSpentModel = state.plannerTool === undefined ? plannerModel : state.plannerModel;
-  const implementerSpentTool = state.implementerTool ?? implementerTool;
-  const implementerSpentModel =
-    state.implementerTool === undefined ? implementerModel : state.implementerModel;
-  const reviewerSpentTool = state.reviewerTool ?? reviewerTool;
-  const reviewerSpentModel = state.reviewerTool === undefined ? reviewerModel : state.reviewerModel;
-
-  // Per-call evidence is the run's own, so the run supplies it: from the live
-  // recorder while this process owns the bus, and from the session log for a run
-  // read back off disk. A caller holding the stream itself may pass its own.
-  const callUsage =
-    callEvidence ??
-    (projectDir && sessionId ? resolveCallUsageEvidence({ projectDir, sessionId }) : undefined);
-
-  const costBreakdown = calculateCostBreakdown(
-    {
-      tokenUsage,
-      plannerTool: plannerSpentTool,
-      implementerTool: implementerSpentTool,
-      plannerModel: plannerSpentModel,
-      implementerModel: implementerSpentModel,
-      ...(reviewerSpentTool !== undefined && { reviewerTool: reviewerSpentTool }),
-      ...(reviewerSpentModel !== undefined && { reviewerModel: reviewerSpentModel }),
-      taskBreakdowns,
-      ...(callUsage !== undefined && { callEvidence: callUsage }),
-    },
-    pricingCache,
-  );
-  const costedBreakdowns = applyTaskBreakdownCosts({
-    taskBreakdowns,
-    plannerTool: plannerSpentTool,
-    implementerTool: implementerSpentTool,
-    ...(plannerSpentModel !== undefined && { plannerModel: plannerSpentModel }),
-    ...(implementerSpentModel !== undefined && { implementerModel: implementerSpentModel }),
-    pricingCache,
-    ...(callUsage !== undefined && { callEvidence: callUsage }),
-  });
-
   let evidenceSummary: Summary['evidenceSummary'];
   let briefQuality: Summary['briefQuality'];
   let driftSummary: Summary['driftSummary'];
@@ -227,10 +171,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     skipped,
     failed,
     totalTime,
-    tokenUsage,
     escalationRate,
-    taskBreakdown: costedBreakdowns,
-    costBreakdown,
+    taskBreakdown: taskBreakdowns,
     plannerTool,
     plannerModel,
     ...(plannerKind !== undefined && { plannerKind }),

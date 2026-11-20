@@ -75,7 +75,6 @@ function omittedRequestOptions(
   const omitted: ApiContextOmittedRequestOption[] = [];
   if (effective.temperature.state === 'omitted-unsupported') omitted.push('temperature');
   if (effective.effort.state === 'omitted-unsupported') omitted.push('reasoning_effort');
-  if (!effective.streamUsage) omitted.push('stream_options.include_usage');
   return omitted;
 }
 

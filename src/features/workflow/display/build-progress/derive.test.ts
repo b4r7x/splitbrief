@@ -190,7 +190,7 @@ function runningOperation(overrides: Partial<RunningOperation> = {}): RunningOpe
     durationMs: null,
     partial: false,
     reason: null,
-    usage: null,
+
     warnings: [],
     ...overrides,
   };

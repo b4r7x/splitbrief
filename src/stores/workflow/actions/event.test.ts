@@ -3,7 +3,7 @@ import { addEvent } from './event.js';
 import { markCancellationRequested } from './interrupt.js';
 import { resetWorkflow } from './reset.js';
 import { eventsStore } from '../events/state.js';
-import { tokensStore } from '../tokens/state.js';
+
 import { lifecycleStore } from '../lifecycle/state.js';
 import { runViewStore } from '../run-view.js';
 import { operationsStore } from '../operations/state.js';
@@ -14,7 +14,6 @@ import {
   makeRetry,
   makeTaskStart,
   makeTaskComplete,
-  makeTaskTokens,
   makeReviewFixInsertedEvents,
 } from '#testing/helpers/events/task.js';
 
@@ -43,14 +42,12 @@ describe('addEvent — a republished plan', () => {
     const events = makeReviewFixInsertedEvents();
     for (const event of events) addEvent(event);
     const before = runViewStore.get().briefs;
-    const tokens = tokensStore.get();
     const log = eventsStore.get().events;
     const announcement = events.findLast((event) => event.type === 'tasks_planned');
     if (announcement === undefined) throw new Error('Missing inserted announcement');
     addEvent(announcement);
     addEvent(announcement);
     expect(runViewStore.get().briefs).toEqual(before);
-    expect(tokensStore.get()).toBe(tokens);
     expect(eventsStore.get().events).toBe(log);
     expect(runViewStore.get().briefs.taskMap.get('T006')).toMatchObject({
       status: 'in_progress',
@@ -267,11 +264,5 @@ describe('addEvent — cancelled gate', () => {
     addEvent(makeTaskComplete({ method: 'local' }));
     expect(runViewStore.get().briefs.taskMap.get('T001')?.status).toBe('done');
     expect(eventsStore.get().events.some((e) => e.type === 'task_completed')).toBe(false);
-  });
-
-  it('does not mutate tokens store after cancel', () => {
-    markCancellationRequested();
-    addEvent(makeTaskTokens());
-    expect(tokensStore.get().perTask).toEqual({});
   });
 });

@@ -25,8 +25,8 @@ import type { ScopedCliCatalogAttempt } from '../../../engine/detection/cli-cata
 import { buildPickerOptions } from '../../../features/runners/model-catalog/options.js';
 
 const ollamaModels: DetectedModel[] = [
-  { id: 'qwen2.5:7b', contextLength: 8192, isFree: true },
-  { id: 'llama3:8b', contextLength: 4096, isFree: true },
+  { id: 'qwen2.5:7b', contextLength: 8192 },
+  { id: 'llama3:8b', contextLength: 4096 },
 ];
 
 const deepseekModels: DetectedModel[] = [{ id: 'deepseek-r1' }];

@@ -1,5 +1,13 @@
 # Migration guides
 
+## Removal of usage analytics
+
+For headless JSON from `start --json`, `resume --json`, and `continue --json`, remove handlers for `cost_update` and `runner_call_usage` and remove reads of token counts and costs. Use `task_settled` for the method, retry count, seat, and route of a brief execution.
+
+For hooks, remove reads of token counts and costs from hook arguments. Use `post_task` to read the method and retries of a successful task with `${event.method}` and `${event.retries}`. See the [hook payloads](./HOOKS-CONFIG.md#hook-events).
+
+Older runs still open from their saved files. Older configuration files can contain `workflow.show_spend`. SPLITBRIEF ignores it, and you can delete the entry.
+
 Two releases changed enough to need one. The [run contract](#the-run-contract-2026-09) is the recent one; the EventBus release is below it. For the main changes of each release, see [`CHANGELOG.md`](../CHANGELOG.md) at the repository root.
 
 ---

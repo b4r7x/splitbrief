@@ -229,7 +229,6 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
         typedCall: typedCallFromTasks([greetTask()]),
         review: vi.fn().mockResolvedValue({
           text: '# Final review\n\n### Verdict\npass',
-          usage: { inputTokens: 1, outputTokens: 1 },
         }),
       });
 
@@ -254,7 +253,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
           writeFileSync(join(opts.projectDir, TARGET), SOURCE);
           if (calls.length === 1 && opts.checkoutDir !== undefined)
             changeCheckout(opts.checkoutDir);
-          return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+          return makeRunnerCallResult({ status: 'completed', text: 'done' });
         },
       });
     }

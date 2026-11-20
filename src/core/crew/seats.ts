@@ -7,7 +7,6 @@ import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { CLI_TOOL_IDS, isListedCliTool } from '../runners/cli-tool/catalog.js';
 import type { CliToolId } from '../runners/cli-tool/types.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
-import { runnerBillingPosture, type RunnerBillingPosture } from '../runners/billing.js';
 import type { Config } from '../schemas/config.js';
 import { assertNever } from '../../utils/type-guards.js';
 import {
@@ -28,7 +27,6 @@ export type CrewSeatRunner = Readonly<{
   runner: RunnerConfig;
   /** The composed seat identity, sanitized and ready to measure. */
   model: string;
-  posture: RunnerBillingPosture;
 }>;
 
 export type CrewSeat =
@@ -49,7 +47,6 @@ function seatRunner(runner: RunnerConfig, displayName?: string | undefined): Cre
   return {
     runner,
     model: formatSeatIdentity({ seat: runner, displayName }),
-    posture: runnerBillingPosture(runner),
   };
 }
 
@@ -81,7 +78,6 @@ export function deriveCrewSeats(
           label: CREW_SEAT_LABELS.review,
           source: reviewer.source,
           model: REVIEW_NONE.mark,
-          posture: 'unknown',
         }
       : {
           id: 'review',

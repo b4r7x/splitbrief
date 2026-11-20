@@ -552,7 +552,6 @@ describe('final review queue delivery', () => {
             }
             return failedReviewVerdict(prompt, 'The guard is missing.');
           },
-          { review: { inputTokens: 10, outputTokens: 5 } },
         ),
       });
 
@@ -571,7 +570,6 @@ describe('final review queue delivery', () => {
       expect(result.state.messageQueue[0]?.deliveredTo?.reviewer).toBeDefined();
       expect(loadState(opts)?.messageQueue[0]?.deliveredTo?.reviewer).toBeDefined();
       expect(opts.events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
-      expect(result.state.tokenUsage.reviewerInput).toBe(20);
     },
   );
 

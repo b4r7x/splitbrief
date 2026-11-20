@@ -1,7 +1,6 @@
 import { stopStore } from '../stop.js';
 import { closeApprovalPrompt } from '../../prompts/approval.js';
 import { eventsStore } from '../events/state.js';
-import { tokensStore } from '../tokens/state.js';
 import { lifecycleStore } from '../lifecycle/state.js';
 import { operationsStore } from '../operations/state.js';
 import { runViewStore } from '../run-view.js';
@@ -25,7 +24,6 @@ export function resetWorkflowControls(): void {
 
 export function resetWorkflowHistory(): void {
   eventsStore.reset();
-  tokensStore.reset();
   lifecycleStore.reset();
   operationsStore.reset();
   runViewStore.reset();

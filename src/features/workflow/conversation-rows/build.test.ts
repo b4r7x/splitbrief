@@ -24,7 +24,7 @@ import {
   makeTaskComplete,
   makeTaskSkipped,
   makeTaskStart,
-  makeTaskTokens,
+  makeBriefSettled,
 } from '#testing/helpers/events/task.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from './activity/rows.js';
@@ -67,7 +67,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       model: 'deepseek/deepseek-flash',
       axes: [],
       attempt: 0,
-      usageBoundary: 'aggregate',
+
       sequence: 415,
     },
     {
@@ -89,7 +89,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       model: 'deepseek/deepseek-flash',
       axes: [],
       attempt: 0,
-      usageBoundary: 'aggregate',
+
       sequence: 416,
       nativeSessionId: 'ses_ed4bf9e1dffehEzin1mygGWRGs',
     },
@@ -105,7 +105,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       model: 'deepseek/deepseek-flash',
       axes: [],
       attempt: 0,
-      usageBoundary: 'aggregate',
+
       sequence: 417,
       warning: {
         code: 'opencode-error',
@@ -129,7 +129,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       model: 'deepseek/deepseek-flash',
       axes: [],
       attempt: 0,
-      usageBoundary: 'aggregate',
+
       sequence: 417,
       activityId: 'implementer-1:warning:rw:763c296f02a6f316bfc6ef84',
       stage: 'warning',
@@ -158,7 +158,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       model: 'deepseek/deepseek-flash',
       axes: [],
       attempt: 0,
-      usageBoundary: 'aggregate',
+
       sequence: 418,
       status: 'failed',
       error: {
@@ -174,7 +174,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       startedAt: 1791727000961,
       endedAt: 1791727003410,
       durationMs: 2449,
-      usage: null,
+
       nativeSessionId: 'ses_ed4bf9e1dffehEzin1mygGWRGs',
     },
     {
@@ -189,7 +189,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       model: 'deepseek/deepseek-flash',
       axes: [],
       attempt: 0,
-      usageBoundary: 'aggregate',
+
       sequence: 418,
       activityId: 'implementer-1:terminal',
       stage: 'failed',
@@ -367,7 +367,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       model: 'opencode-go/deepseek-v4.1-flash',
       axes: ['high'],
       attempt: 0,
-      usageBoundary: 'aggregate',
+
       sequence: 419,
     },
     {
@@ -389,7 +389,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       model: 'opencode-go/deepseek-v4.1-flash',
       axes: ['high'],
       attempt: 0,
-      usageBoundary: 'aggregate',
+
       sequence: 420,
       nativeSessionId: 'ses_ed4bf81f5ffeJnkbVh4fsKPGKi',
     },
@@ -1694,7 +1694,7 @@ describe('buildConversationRows', () => {
           activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
           makePlannerStatus({ ts: 2, phase: 'researching' }),
           activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
-          makeTaskTokens({ ts: 3 }),
+          makeBriefSettled({ ts: 3 }),
           activity({ sequence: 4, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
         ],
       },
@@ -1775,7 +1775,7 @@ describe('buildConversationRows', () => {
         label: 'reading src/config.ts',
       }),
       makePlannerHeartbeat({ ts: 3 }),
-      makeTaskTokens({ ts: 4 }),
+      makeBriefSettled({ ts: 4 }),
       activity({
         sequence: 4,
         activityId: 'search-store',
@@ -1797,7 +1797,7 @@ describe('buildConversationRows', () => {
         label: 'planning task briefs',
       }),
       makePlannerHeartbeat({ ts: 7 }),
-      makeTaskTokens({ ts: 8 }),
+      makeBriefSettled({ ts: 8 }),
       activity({
         sequence: 7,
         activityId: 'read-docs',
@@ -1883,7 +1883,7 @@ describe('buildConversationRows', () => {
       read(role, runnerName, 2, 'b.ts'),
       makePlannerStatus({ ts: 2, phase: 'researching' }),
       read(role, runnerName, 3, 'c.ts'),
-      makeTaskTokens({ ts: 3 }),
+      makeBriefSettled({ ts: 3 }),
       read(role, runnerName, 4, 'd.ts'),
       makePlannerHeartbeat({ ts: 4 }),
       read(role, runnerName, 5, 'e.ts'),
@@ -2291,7 +2291,7 @@ describe('the Final review heading', () => {
   const events: EngineEvent[] = [
     makeTaskStart({ ts: 1_000 }),
     makeTaskComplete({ ts: 2_000 }),
-    makeTaskTokens({ ts: 2_100 }),
+    makeBriefSettled({ ts: 2_100 }),
     planCheck,
     { ...planCheck, ts: 3_100, status: 'done', passed: true, duration: 100 },
     {

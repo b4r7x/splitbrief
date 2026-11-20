@@ -2,6 +2,7 @@ import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
+import { formatBuildContextOverflow } from '../../context-routing/estimation.js';
 import { haltActions, chooseRecommended } from './actions.js';
 import { taskFiles } from './details.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
@@ -11,28 +12,7 @@ export interface ContextOverflowRecoveryOptions extends RecoveryBuilderBase {
   routingDecision?: RoutingDecision | undefined;
   phase?: Phase | undefined;
   selectedImplementerProfile?: string | undefined;
-  estimatedTokens?: number | undefined;
-  untruncatedEstimatedTokens?: number | undefined;
-  contextLength?: number | undefined;
   routingReason?: string | undefined;
-}
-
-function contextDetails(opts: {
-  estimatedTokens?: number | undefined;
-  untruncatedEstimatedTokens?: number | undefined;
-  contextLength?: number | undefined;
-  routingReason?: string | undefined;
-}): string[] {
-  return [
-    opts.estimatedTokens !== undefined
-      ? `Estimated prompt: ${opts.estimatedTokens} tokens`
-      : undefined,
-    opts.untruncatedEstimatedTokens !== undefined
-      ? `Untruncated estimate: ${opts.untruncatedEstimatedTokens} tokens`
-      : undefined,
-    opts.contextLength !== undefined ? `Context limit: ${opts.contextLength} tokens` : undefined,
-    opts.routingReason !== undefined ? `Routing: ${opts.routingReason}` : undefined,
-  ].filter((detail) => detail !== undefined);
 }
 
 function rejectedProfileDetails(routing: RoutingDecision | undefined): string[] {
@@ -48,10 +28,7 @@ export function buildContextOverflowRecoveryIssue(
 ): RecoveryIssue {
   const phase = opts.phase ?? 'implementing';
   const routing = opts.routingDecision;
-  const estimatedTokens = opts.estimatedTokens ?? routing?.estimatedTokens;
-  const untruncatedEstimatedTokens =
-    opts.untruncatedEstimatedTokens ?? routing?.untruncatedEstimatedTokens;
-  const contextLength = opts.contextLength ?? routing?.contextLength;
+  const overflow = routing?.contextOverflow;
   const routingReason = opts.routingReason ?? routing?.reason;
   const selectedImplementerProfile = opts.selectedImplementerProfile ?? routing?.selectedProfile;
   const actions = haltActions('context-overflow', [
@@ -70,19 +47,15 @@ export function buildContextOverflowRecoveryIssue(
     affectedTaskIds: [opts.task.id],
     message: `${opts.task.id} does not fit a capable implementer context`,
     details: [
-      ...contextDetails({
-        estimatedTokens,
-        untruncatedEstimatedTokens,
-        contextLength,
-        routingReason,
-      }),
+      ...(overflow === undefined ? [] : [formatBuildContextOverflow(overflow)]),
+      ...(routingReason === undefined ? [] : [`Routing: ${routingReason}`]),
+      'Reduce the required context or choose an implementer that can read more.',
       ...rejectedProfileDetails(routing),
     ],
     selectedImplementerProfile,
     facts: compactFacts({
-      estimatedTokens,
-      untruncatedEstimatedTokens,
-      contextLength,
+      requiredTokens: overflow?.requiredTokens,
+      availableTokens: overflow?.availableTokens,
       currentCodeTruncated: routing?.currentCodeTruncated,
       currentCodeContextMode: routing?.currentCodeContextMode,
       requiredWriteMode: routing?.requiredWriteMode,

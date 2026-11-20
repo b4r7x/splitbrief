@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildSummary } from './build.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -29,7 +29,7 @@ function makeState(overrides?: Partial<SummaryState>): SummaryState {
       makeTask({ id: 'T002', status: 'done' }),
       makeTask({ id: 'T003', status: 'done' }),
     ],
-    tokenUsage: makeUsage(),
+
     phase: 'complete',
     currentTaskIndex: 0,
     ...overrides,

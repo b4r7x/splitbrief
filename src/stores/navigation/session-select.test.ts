@@ -3,7 +3,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../core/state/machine.js';
 import {
@@ -31,7 +31,7 @@ import { eventsStore } from '../workflow/events/state.js';
 import { lifecycleStore } from '../workflow/lifecycle/state.js';
 import { runViewStore } from '../workflow/run-view.js';
 import { operationsStore } from '../workflow/operations/state.js';
-import { tokensStore } from '../workflow/tokens/state.js';
+
 import { routerStore } from './router.js';
 import { preparationStore } from './preparation.js';
 import {
@@ -130,7 +130,6 @@ function publishRun(feature: string) {
         ...createInitialState(feature),
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001', title: feature })],
-        tokenUsage: makeUsage({ plannerInput: feature.length }),
       },
       false,
     );
@@ -143,7 +142,6 @@ function onScreen() {
     events: eventsStore.get(),
     runView: runViewStore.get(),
     lifecycle: lifecycleStore.get(),
-    tokens: tokensStore.get(),
     operations: operationsStore.get(),
   };
 }
@@ -155,14 +153,9 @@ function countWrites(): () => number {
   const count = () => {
     writes += 1;
   };
-  unsubscribers = [
-    routerStore,
-    eventsStore,
-    runViewStore,
-    lifecycleStore,
-    tokensStore,
-    operationsStore,
-  ].map((store) => store.subscribe(count));
+  unsubscribers = [routerStore, eventsStore, runViewStore, lifecycleStore, operationsStore].map(
+    (store) => store.subscribe(count),
+  );
   return () => writes;
 }
 
@@ -334,7 +327,7 @@ describe('handleSessionSelect with a history read in flight', () => {
     expect(route.screen === 'workflow' && route.run.ref.sessionId).toBe('sess-b');
     expect(JSON.stringify(eventsStore.get().events)).toContain('run B');
     expect(runViewStore.get().briefs.taskMap.get('T001')?.title).toBe('run B');
-    expect(tokensStore.get().tokenUsage?.plannerInput).toBe('run B'.length);
+
     expect(runViewStore.get().phase).toBe('implementing');
   });
 

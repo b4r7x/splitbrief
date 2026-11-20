@@ -45,7 +45,7 @@ function cliItem(id: string, modelPolicy: PickerOption['modelPolicy'], automatic
       kind: 'cli',
       roles: ['planner', 'implementer'],
       modelPolicy,
-      billing: 'subscription-included',
+
       permissions: READY_CLI_PERMISSIONS,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -111,7 +111,7 @@ describe('right column models', () => {
       kind: 'api',
       roles: ['planner', 'implementer'],
       modelPolicy: 'per-call',
-      billing: 'api-metered',
+
       permissions: READY_CLI_PERMISSIONS,
       status: { state: 'ready', remediation: null },
       available: true,
@@ -144,7 +144,7 @@ describe('right column models', () => {
       kind: 'api' as const,
       roles: ['planner', 'implementer'] as const,
       modelPolicy: 'per-call' as const,
-      billing: 'api-metered' as const,
+
       permissions: {
         directWrite: false,
         network: true,
@@ -190,7 +190,7 @@ describe('right column models', () => {
           kind: 'shell',
           roles: ['planner', 'implementer'],
           modelPolicy: 'none',
-          billing: 'unknown',
+
           permissions: {
             directWrite: true,
             network: true,
@@ -213,7 +213,7 @@ describe('right column models', () => {
           kind: 'agent',
           roles: ['planner', 'implementer'],
           modelPolicy: 'none',
-          billing: 'unknown',
+
           permissions: {
             directWrite: true,
             network: true,
@@ -238,7 +238,7 @@ describe('right column models', () => {
         kind: 'cli',
         roles: ['implementer'],
         modelPolicy: 'backend-default',
-        billing: 'subscription-included',
+
         permissions: {
           directWrite: true,
           network: true,
@@ -262,7 +262,7 @@ describe('duplicate model rows', () => {
     kind: 'cli',
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
-    billing: 'subscription-included',
+
     permissions: {
       directWrite: false,
       network: true,
@@ -307,7 +307,7 @@ describe('duplicate model rows', () => {
         kind: 'cli',
         roles: ['planner', 'implementer'],
         modelPolicy: 'optional',
-        billing: 'subscription-included',
+
         permissions: {
           directWrite: false,
           network: true,
@@ -429,7 +429,7 @@ describe('auto is a selection policy, never catalog data', () => {
           kind: 'api',
           roles: ['planner', 'implementer'],
           modelPolicy: 'per-call',
-          billing: 'api-metered',
+
           permissions: READY_CLI_PERMISSIONS,
           status: { state: 'ready', remediation: null },
           available: true,
@@ -485,7 +485,7 @@ describe('auto is a selection policy, never catalog data', () => {
             kind: 'shell',
             roles: ['planner', 'implementer'],
             modelPolicy: 'none',
-            billing: 'unknown',
+
             permissions: READY_CLI_PERMISSIONS,
             status: { state: 'ready', remediation: null },
             available: true,
@@ -543,7 +543,7 @@ function apiPickerItem(id: string): PickerOption {
     kind: 'api',
     roles: ['implementer'],
     modelPolicy: 'per-call',
-    billing: 'api-metered',
+
     permissions: {
       directWrite: false,
       network: true,

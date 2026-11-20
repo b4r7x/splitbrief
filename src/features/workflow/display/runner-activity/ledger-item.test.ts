@@ -453,7 +453,7 @@ describe('runnerActivityLedgerItem', () => {
         endedAt: 2_000,
         durationMs: 1_000,
         partial: true,
-        usage: null,
+
         nativeSessionId: null,
       },
       2,

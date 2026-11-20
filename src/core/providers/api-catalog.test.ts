@@ -132,24 +132,24 @@ describe('API provider catalog', () => {
     }
   });
 
-  it('keeps service, offering, billing, and data-use posture independent', () => {
+  it('keeps service, offering, and data-use posture independent', () => {
     expect(API_PROVIDER_CATALOG.ollama).toMatchObject({
       service: 'ollama',
       offering: 'local',
-      billing: 'local',
+
       dataUse: 'local',
     });
     expect(API_PROVIDER_CATALOG['lm-studio']).toMatchObject({
       service: 'lm-studio',
       offering: 'local',
-      billing: 'local',
+
       dataUse: 'local',
     });
     expect(API_PROVIDER_CATALOG['llama-cpp']).toMatchObject({
       displayName: 'llama.cpp',
       service: 'llama-cpp',
       offering: 'local',
-      billing: 'local',
+
       dataUse: 'local',
       compatibility: 'beta',
       authDiscoveryMode: 'optional-api-key-unverified',

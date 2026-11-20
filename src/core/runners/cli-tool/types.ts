@@ -1,5 +1,4 @@
 import type { CliEffortChannel } from '../effort-channel.js';
-import type { RunnerBillingPosture } from '../billing.js';
 import type { RunnerRole } from '../seat-roles.js';
 import type { CliAuthPolicy } from './auth-channels.js';
 import type { CliVersionScheme } from './version.js';
@@ -104,8 +103,6 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   typedOutput: TypedOutputSupport;
   imageInput: ImageInputSupport;
   auth: CliAuthPolicy;
-  billing: RunnerBillingPosture;
-  isSubscription: boolean;
   sandbox: RolePolicy<CliSandboxPosture>;
   /**
    * Project-relative path prefixes — exact files, or directories with a

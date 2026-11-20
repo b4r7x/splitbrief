@@ -34,7 +34,6 @@ describe('createCommandPlanner with an agent runner', () => {
 
     const result = await planner.review('review prompt', projectDir, callbacks);
     expect(result.text).toContain('test output');
-    expect(result.usage).toBe(null);
   });
 
   it('handles command not found error', async () => {

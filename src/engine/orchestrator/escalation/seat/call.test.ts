@@ -88,7 +88,7 @@ describe('runSeatCall', () => {
     const ref = { projectDir, sessionId, bus };
     const state = makeImplState([makeTask()]);
     let calls = 0;
-    const discarded: string[] = [];
+
     const call = async (): Promise<SeatAttempt<string>> => {
       calls += 1;
       return calls === 1
@@ -106,7 +106,6 @@ describe('runSeatCall', () => {
         profile: 'default',
       },
       call,
-      (value) => discarded.push(value),
     );
     await vi.advanceTimersByTimeAsync(1);
 
@@ -130,7 +129,7 @@ describe('runSeatCall', () => {
     await expect(pending).resolves.toEqual({ ok: true, value: 'done' });
     expect(calls).toBe(2);
     // The attempt the wait replaces keeps its usage with the caller.
-    expect(discarded).toEqual(['limited']);
+
     expect(loadState(ref)?.seatWait).toBeUndefined();
     const ends = events.filter((event) => event.type === 'seat_wait_ended');
     expect(ends).toHaveLength(1);
@@ -150,7 +149,7 @@ describe('runSeatCall', () => {
     const { bus, events } = makeBusRecorder();
     const ref = { projectDir, sessionId, bus };
     const state = makeImplState([makeTask()]);
-    const discarded: string[] = [];
+
     let calls = 0;
     const call = async (): Promise<SeatAttempt<string>> => {
       calls += 1;
@@ -163,7 +162,6 @@ describe('runSeatCall', () => {
     const pending = runSeatCall(
       { ref, state, seat: 'build', runner: config.implementer, config },
       call,
-      (value) => discarded.push(value),
     );
     await Promise.race([started, pending]);
 
@@ -175,7 +173,7 @@ describe('runSeatCall', () => {
     });
     expect(calls).toBe(1);
     // The limited attempt goes back to the caller, which books its usage with the halt.
-    expect(discarded).toEqual([]);
+
     expect(loadState(ref)?.seatWait).toBeUndefined();
   });
 
@@ -204,7 +202,6 @@ describe('runSeatCall', () => {
     const pending = runSeatCall(
       { ref, state, seat: 'build', runner: config.implementer, config },
       call,
-      () => {},
     );
     await Promise.race([started, pending]);
 
@@ -243,7 +240,7 @@ describe('runSeatCall', () => {
     );
     const { bus, events } = makeBusRecorder();
     const controller = new AbortController();
-    const discarded: string[] = [];
+
     const call = async (): Promise<SeatAttempt<string>> => ({
       ok: false,
       failure: { message: 'HTTP 429 (retry-after: 120)' },
@@ -261,7 +258,6 @@ describe('runSeatCall', () => {
         signal: controller.signal,
       },
       call,
-      (value) => discarded.push(value),
     ).then(
       () => {
         outcome = 'resolved';
@@ -275,7 +271,7 @@ describe('runSeatCall', () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(outcome).toBe('stopped');
-    expect(discarded).toEqual(['limited']);
+
     expect(events.filter((event) => event.type === 'seat_wait_started')).toEqual([]);
     expect(loadState({ projectDir, sessionId })?.seatWait).toBeUndefined();
   });
@@ -313,7 +309,6 @@ describe('runSeatCall', () => {
     const pending = runSeatCall(
       { ref, state, seat: 'build', runner: switched.implementer, config: switched },
       call,
-      () => {},
     );
     await Promise.race([started, pending]);
 
@@ -347,7 +342,6 @@ describe('runSeatCall', () => {
     const pending = runSeatCall(
       { ref, state, seat: 'build', runner: config.implementer, config },
       call,
-      () => {},
     );
     await Promise.race([started, pending]);
 
@@ -378,7 +372,6 @@ describe('runSeatCall', () => {
     const pending = runSeatCall(
       { ref, state, seat: 'build', runner: CODEX, config: makeConfig({ implementer: CODEX }) },
       call,
-      () => {},
     );
     await vi.advanceTimersByTimeAsync(1);
 
@@ -427,7 +420,6 @@ describe('runSeatCall', () => {
     const pending = runSeatCall(
       { ref, state, seat: 'build', runner: config.implementer, config },
       call,
-      () => {},
     );
     await Promise.race([started, pending]);
 
@@ -461,7 +453,6 @@ describe('runSeatCall', () => {
         signal: controller.signal,
       },
       call,
-      () => {},
     );
     const settled = pending.then(
       () => 'resolved',
@@ -491,7 +482,6 @@ describe('runSeatCall', () => {
     const result = await runSeatCall(
       { ref, state, seat: 'build', runner: CODEX, config: makeConfig({ implementer: CODEX }) },
       async (): Promise<SeatAttempt<string>> => ({ ok: true, value: 'done' }),
-      () => {},
     );
 
     expect(result).toEqual({ ok: true, value: 'done' });
@@ -515,7 +505,6 @@ describe('runSeatCall', () => {
     const result = await runSeatCall(
       { ref, state, seat: 'build', runner: CODEX, config: makeConfig({ implementer: CODEX }) },
       call,
-      () => {},
     );
 
     expect(result.ok).toBe(false);
@@ -532,7 +521,7 @@ describe('runSeatCall', () => {
     const ref = { projectDir, sessionId, bus };
     const state = makeImplState([makeTask()]);
     let calls = 0;
-    const discarded: string[] = [];
+
     const call = async (): Promise<SeatAttempt<string>> => {
       calls += 1;
       return calls === 1
@@ -547,13 +536,12 @@ describe('runSeatCall', () => {
     const pending = runSeatCall(
       { ref, state, seat: 'build', runner: CODEX, config: makeConfig({ implementer: CODEX }) },
       call,
-      (value) => discarded.push(value),
     );
     await vi.runAllTimersAsync();
     await expect(pending).resolves.toEqual({ ok: true, value: 'done' });
 
     expect(calls).toBe(2);
-    expect(discarded).toEqual(['refused']);
+
     const retries = events.filter((event) => event.type === 'seat_retry');
     expect(retries).toHaveLength(1);
     expect(retries[0]).toMatchObject({ seat: 'build', attempt: 1, delayMs: 2_000 });
@@ -630,7 +618,6 @@ describe('the seat wait names the runner it waits on', () => {
       const pending = runSeatCall(
         { ref, state: makeImplState([makeTask()], STARTED), seat, runner, config: makeConfig() },
         call,
-        () => {},
       );
       await vi.advanceTimersByTimeAsync(1);
 

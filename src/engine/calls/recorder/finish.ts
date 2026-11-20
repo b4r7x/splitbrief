@@ -5,7 +5,7 @@ import {
   runnerCallCompletedEvent,
   runnerCallErrorEvent,
 } from '../status.js';
-import type { RunnerCallResult, RunnerCallUsage } from '../types.js';
+import type { RunnerCallResult } from '../types.js';
 import { emitStderrDiagnosticWarning } from './deltas.js';
 import { emit, noteLimit, snapshot } from './emit.js';
 import { boundedRunnerCallProviderType, hasPartialResult, runnerCallRawTail } from './fields.js';
@@ -14,17 +14,14 @@ import type { RunnerCallRecorder, RunnerCallRecorderState } from './types.js';
 function currentTerminalDefaults(
   state: RunnerCallRecorderState,
   opts: {
-    usage?: RunnerCallUsage | null | undefined;
     nativeSessionId?: string | null | undefined;
   },
 ): {
-  usage: RunnerCallUsage | null;
   nativeSessionId: string | null;
   partial: boolean;
 } {
   const current = snapshot(state);
   return {
-    usage: opts.usage === undefined ? current.usage : opts.usage,
     nativeSessionId:
       opts.nativeSessionId === undefined ? current.nativeSessionId : opts.nativeSessionId,
     partial: hasPartialResult(current),
@@ -41,7 +38,6 @@ export function finishCompleted(
     return finishFailed(state, {
       status: 'truncated',
       error: runnerCallLimitError(state.toolUseStop),
-      usage: defaults.usage,
       nativeSessionId: defaults.nativeSessionId,
       partial: true,
       endedAt: finishOpts.endedAt,
@@ -51,7 +47,6 @@ export function finishCompleted(
   const terminal = {
     startedAt: state.startedAt,
     endedAt: finishOpts.endedAt ?? Date.now(),
-    usage: defaults.usage,
     nativeSessionId: defaults.nativeSessionId,
     ...(finishOpts.structured !== undefined && { structured: finishOpts.structured }),
   };
@@ -126,7 +121,6 @@ export function finishFailed(
       endedAt: finishOpts.endedAt ?? Date.now(),
       status: state.toolUseStop === null ? finishOpts.status : 'truncated',
       error: callError,
-      usage: defaults.usage,
       nativeSessionId: defaults.nativeSessionId,
       partial: state.toolUseStop === null ? (finishOpts.partial ?? defaults.partial) : true,
       ...(rawTail !== undefined && { rawTail }),

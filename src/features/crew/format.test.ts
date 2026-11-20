@@ -3,7 +3,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { deriveCrewRows, type CrewRow as CrewBlockRow } from '../../core/crew/rows.js';
 import { getTerminalCellWidth } from '../../utils/display-text/width.js';
-import { billingWord } from '../../core/runners/billing.js';
+
 import {
   CREW_IDENTITY_COLUMN,
   formatCrewRow,
@@ -43,30 +43,6 @@ function blockRows(
 }
 
 describe('planSeatBlock', () => {
-  it.each([78, 70])('keeps the posture column at %i inner columns', (innerWidth) => {
-    const layout = planSeatBlock({
-      rows: FULL_CREW,
-      verdict: undefined,
-      innerWidth,
-      rowBudget: 12,
-    });
-
-    expect(layout.posture).toBe(true);
-    expect(blockRows(FULL_CREW, layout).some((row) => row.posture !== undefined)).toBe(true);
-  });
-
-  it('drops the posture column for the whole block once the identity would stop naming a model', () => {
-    const layout = planSeatBlock({
-      rows: FULL_CREW,
-      verdict: undefined,
-      innerWidth: 50,
-      rowBudget: 12,
-    });
-
-    expect(layout.posture).toBe(false);
-    for (const row of blockRows(FULL_CREW, layout)) expect(row.posture).toBeUndefined();
-  });
-
   it('fits every identity in the one block budget', () => {
     const layout = planSeatBlock({
       rows: FULL_CREW,
@@ -88,7 +64,7 @@ describe('planSeatBlock', () => {
       innerWidth: 78,
       rowBudget: 12,
     });
-    expect(layout.identityWidth).toBe(52);
+    expect(layout.identityWidth).toBe(66);
   });
 
   it('yields the verdict when rows overflow the budget', () => {
@@ -205,23 +181,7 @@ describe('formatCrewRow', () => {
     expect(content.startsWith(PLANNER_INHERITANCE.mark)).toBe(true);
   });
 
-  it('formats every posture cell with the word the one table returns', () => {
-    const layout = planSeatBlock({
-      rows: FULL_CREW,
-      verdict: undefined,
-      innerWidth: 78,
-      rowBudget: 12,
-    });
-
-    expect(FULL_CREW.some((row) => row.seat.posture === 'unknown')).toBe(true);
-    for (const row of FULL_CREW) {
-      const formatted = formatCrewRow({ row, layout });
-      expect(formatted.posture).toEqual(billingWord(row.seat.posture));
-      if (row.seat.posture === 'unknown') expect(formatted.posture).toBeUndefined();
-    }
-  });
-
-  it('renders a resolved posture as a non-empty lowercase word', () => {
+  it('omits the billing word from a wide crew row', () => {
     const row = CATALOGUED_CREW.find((candidate) => candidate.id === 'build');
     if (row === undefined) throw new Error('no build seat');
     const layout = planSeatBlock({
@@ -231,10 +191,8 @@ describe('formatCrewRow', () => {
       rowBudget: 12,
     });
 
-    expect(row.seat.posture).not.toBe('unknown');
     const formatted = formatCrewRow({ row, layout });
-    expect(formatted.posture).toEqual(billingWord(row.seat.posture));
-    expect(formatted.posture?.length).toBeGreaterThan(0);
-    expect(formatted.posture).toEqual(formatted.posture?.toLowerCase());
+    expect(formatted.content).not.toMatch(/\b(?:local|subscription|metered|provider)\b/i);
+    expect(formatted).not.toHaveProperty('posture');
   });
 });

@@ -1,8 +1,7 @@
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
-import { getPricingMode } from '../cost/pricing.js';
-import { ownerFor, stripUnpricedFields, metadataForBundledModel } from './entry-metadata.js';
+import { ownerFor, metadataForBundledModel } from './entry-metadata.js';
 import type { ResolvedModelCatalogEntry } from './types.js';
 
 /** The models.dev catalog lane's membership — produced for `api` runners only (REQ-B08). */
@@ -15,7 +14,7 @@ export function modelsDevSuggestion(
   }>,
 ): ResolvedModelCatalogEntry {
   const sourceProviderId = ownerFor(input.model, input.runnerId);
-  return stripUnpricedFields({
+  return {
     ...input.model,
     id: input.model.id,
     selectionId: input.model.id,
@@ -25,8 +24,7 @@ export function modelsDevSuggestion(
     source: 'models-dev',
     membership: CATALOG_SUGGESTION_MEMBERSHIP,
     canConfigure: true,
-    pricingMode: getPricingMode(input.runnerId),
-  });
+  };
 }
 
 export function bundledSuggestion(
@@ -64,20 +62,9 @@ export function bundledSuggestion(
     ...(input.model.maxOutputTokens === undefined
       ? {}
       : { maxOutputTokens: input.model.maxOutputTokens }),
-    ...(input.model.pricingInput === undefined ? {} : { pricingInput: input.model.pricingInput }),
-    ...(input.model.pricingOutput === undefined
-      ? {}
-      : { pricingOutput: input.model.pricingOutput }),
-    ...(input.model.pricingCacheRead === undefined
-      ? {}
-      : { pricingCacheRead: input.model.pricingCacheRead }),
-    ...(input.model.pricingCacheWrite === undefined
-      ? {}
-      : { pricingCacheWrite: input.model.pricingCacheWrite }),
-    ...(input.model.isFree === undefined ? {} : { isFree: input.model.isFree }),
   };
   const merged = metadata === null ? base : { ...metadata, ...base };
-  return stripUnpricedFields({
+  return {
     ...merged,
     id: input.model.name,
     selectionId: input.model.name,
@@ -94,8 +81,7 @@ export function bundledSuggestion(
     source: 'bundled-fallback',
     membership: 'bundled-suggestion',
     canConfigure: true,
-    pricingMode: getPricingMode(input.runnerId),
-  });
+  };
 }
 
 function lifecycleRank(lifecycle: string | undefined): number {

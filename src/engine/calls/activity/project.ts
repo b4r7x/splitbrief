@@ -121,7 +121,6 @@ export function projectRunnerCallActivity(
       return null;
     case 'call_started':
     case 'call_runtime_status':
-    case 'call_usage':
     case 'call_stalled':
     case 'call_stall_cleared':
     case 'call_heartbeat':

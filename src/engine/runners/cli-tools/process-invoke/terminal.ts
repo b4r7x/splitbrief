@@ -130,7 +130,6 @@ export function closedCallFinish(call: ProcessCall, closed: ProcessClose): () =>
   if (terminal.status === 'completed') {
     return () =>
       state.recorder.finishCompleted({
-        usage: terminal.usage,
         nativeSessionId: terminal.nativeSessionId,
         ...(terminal.structured !== undefined && { structured: terminal.structured }),
       });
@@ -152,7 +151,6 @@ export function closedCallFinish(call: ProcessCall, closed: ProcessClose): () =>
         refusalCode !== undefined
           ? { ...terminal.error, code: refusalCode }
           : (stderrHalt ?? terminal.error),
-      usage: terminal.usage,
       nativeSessionId: terminal.nativeSessionId,
       partial: terminal.partial,
     });

@@ -59,7 +59,6 @@ export function interruptedCallEvents(
         endedAt: lastTs,
         status: 'aborted',
         error: { code: 'runner_interrupted', message: PROCESS_EXIT_MESSAGE },
-        usage: null,
         nativeSessionId,
         partial: false,
         endUnknown: true,

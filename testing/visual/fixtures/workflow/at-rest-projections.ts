@@ -29,18 +29,10 @@ import {
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeMessage } from '../../../helpers/queue.js';
 import type { ReviewPacketSummary, Summary } from '../../../../src/core/schemas/summary.js';
-import type { CostBreakdown } from '../../../../src/core/schemas/cost.js';
-import type {
-  OfferingBillingPresentation,
-  ProviderRunMetadata,
-} from '../../../../src/core/schemas/cost.js';
+
 import { taskId, type Task } from '../../../../src/core/schemas/task.js';
-import type { TaskTokenUsage } from '../../../../src/core/schemas/tokens.js';
-import {
-  describeOfferingBillingPresentation,
-  resolveProviderRunMetadata,
-} from '../../../../src/engine/providers/cost/run-metadata.js';
-import { makeUsage } from '../../../helpers/factories/summary.js';
+import type { BriefExecution } from '../../../../src/core/schemas/brief-execution.js';
+
 import { buildLeftIsolationRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/isolation.js';
 import { buildRunnerInputTooLargeRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/runner-defect.js';
 import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/seat-down.js';
@@ -86,38 +78,6 @@ const BRIEFS = Object.freeze({
   blur: { id: taskId('T004'), title: 'Validate on blur in the form', file: FILES.form },
   docs: { id: taskId('T005'), title: 'Add docs for the validation error codes', file: FILES.docs },
 });
-
-interface FixtureRunnerBilling {
-  /** What the runner was metered for, or `null` when its offering never meters a token. */
-  readonly meteredCost: number | null;
-  readonly endpoint?: string;
-}
-
-/**
- * Billing identity read from the engine's own provider catalog, so a fixture crew reports the
- * offering and labels a real run of that crew would report rather than a transcribed guess.
- */
-function billingFacts(
-  runners: Readonly<Record<string, FixtureRunnerBilling>>,
-): Pick<CostBreakdown, 'providerRunMetadata' | 'offeringPresentations'> {
-  const providerRunMetadata: Record<string, ProviderRunMetadata> = {};
-  const offeringPresentations: Record<string, OfferingBillingPresentation> = {};
-  for (const [tool, runner] of Object.entries(runners)) {
-    const metadata = resolveProviderRunMetadata({
-      tool,
-      ...(runner.endpoint !== undefined && { normalizedEndpoint: runner.endpoint }),
-    });
-    if (metadata === undefined) {
-      throw new Error(`Summary fixture crew names a tool with no billing identity: ${tool}`);
-    }
-    providerRunMetadata[tool] = metadata;
-    offeringPresentations[tool] = describeOfferingBillingPresentation(metadata, {
-      hasUsage: runner.meteredCost !== null,
-      meteredCost: runner.meteredCost ?? 0,
-    });
-  }
-  return { providerRunMetadata, offeringPresentations };
-}
 
 function ledger(input: {
   readonly sessionId: string;
@@ -175,20 +135,14 @@ function legacyReview(packet: ReviewPacketSummary): Summary['review'] {
 
 const INTERRUPTED_BUILD_SESSION = 'visual-closed-ended';
 const COMPLETE_SESSION = 'visual-closed-complete';
-/**
- * The one crew in the gallery a run can actually be billed for: `resolvePricing` prices API
- * endpoints only, so a CLI seat — subscription or not — can never report a known dollar figure.
- */
-const READY_ENDPOINT = 'https://api.example.test/v1';
 const NEEDS_ATTENTION_SESSION = 'visual-closed-needs-attention';
 
-const INTERRUPTED_BUILD_TASKS: readonly TaskTokenUsage[] = [
+const INTERRUPTED_BUILD_TASKS: readonly BriefExecution[] = [
   {
     taskId: BRIEFS.validator.id,
     taskTitle: BRIEFS.validator.title,
     method: 'local',
-    implementerTokens: 41_200,
-    escalationTokens: 0,
+
     retryCount: 0,
     tool: 'ollama',
     model: 'qwen2.5-coder:7b',
@@ -197,8 +151,7 @@ const INTERRUPTED_BUILD_TASKS: readonly TaskTokenUsage[] = [
     taskId: BRIEFS.wire.id,
     taskTitle: BRIEFS.wire.title,
     method: 'escalated-full',
-    implementerTokens: 62_800,
-    escalationTokens: 44_000,
+
     retryCount: 2,
     tool: 'ollama',
     model: 'qwen2.5-coder:7b',
@@ -282,27 +235,10 @@ const INTERRUPTED_BUILD_SUMMARY: Readonly<Summary> = Object.freeze({
   failed: 0,
   totalTime: 581_000,
   activeTime: 581_000,
-  tokenUsage: makeUsage({
-    plannerInput: 17_400,
-    plannerOutput: 4_000,
-    implementerInput: 83_200,
-    implementerOutput: 20_800,
-    escalationInput: 35_200,
-    escalationOutput: 8_800,
-  }),
+
   escalationRate: 0.2,
   taskBreakdown: [...INTERRUPTED_BUILD_TASKS],
-  costBreakdown: {
-    actualPlannerCost: 0,
-    actualImplementerCost: 0,
-    totalActualCost: 0,
-    hasPricedUsage: false,
-    hasUnpricedUsage: true,
-    isActualPlannerCostKnown: false,
-    isActualImplementerCostKnown: false,
-    isTotalActualCostKnown: false,
-    ...billingFacts({ 'claude-code': { meteredCost: null }, ollama: { meteredCost: null } }),
-  },
+
   plannerTool: 'claude-code',
   plannerModel: 'claude-sonnet-4',
   implementerTool: 'ollama',
@@ -314,13 +250,12 @@ const INTERRUPTED_BUILD_SUMMARY: Readonly<Summary> = Object.freeze({
   stoppedAt: { taskId: BRIEFS.routeTests.id, partialFiles: [FILES.signupTest, FILES.signup] },
 });
 
-const READY_TASKS: readonly TaskTokenUsage[] = [
+const READY_TASKS: readonly BriefExecution[] = [
   {
     taskId: BRIEFS.validator.id,
     taskTitle: BRIEFS.validator.title,
     method: 'local',
-    implementerTokens: 62_400,
-    escalationTokens: 0,
+
     retryCount: 0,
     tool: 'custom-endpoint',
     model: 'gpt-5-mini',
@@ -329,8 +264,7 @@ const READY_TASKS: readonly TaskTokenUsage[] = [
     taskId: BRIEFS.wire.id,
     taskTitle: BRIEFS.wire.title,
     method: 'local',
-    implementerTokens: 88_700,
-    escalationTokens: 0,
+
     retryCount: 1,
     tool: 'custom-endpoint',
     model: 'gpt-5-mini',
@@ -339,8 +273,7 @@ const READY_TASKS: readonly TaskTokenUsage[] = [
     taskId: BRIEFS.routeTests.id,
     taskTitle: BRIEFS.routeTests.title,
     method: 'local',
-    implementerTokens: 53_400,
-    escalationTokens: 0,
+
     retryCount: 0,
     tool: 'custom-endpoint',
     model: 'gpt-5-mini',
@@ -477,32 +410,10 @@ const READY_SUMMARY: Readonly<Summary> = Object.freeze({
   failed: 0,
   totalTime: 727_000,
   activeTime: 727_000,
-  tokenUsage: makeUsage({
-    plannerInput: 25_200,
-    plannerOutput: 6_000,
-    implementerInput: 168_500,
-    implementerOutput: 36_000,
-    reviewerInput: 15_700,
-    reviewerOutput: 3_000,
-  }),
+
   escalationRate: 0,
   taskBreakdown: [...READY_TASKS],
-  costBreakdown: {
-    actualPlannerCost: 0.16,
-    actualImplementerCost: 0.22,
-    actualReviewerCost: 0.04,
-    totalActualCost: 0.42,
-    hasPricedUsage: true,
-    hasUnpricedUsage: false,
-    isActualPlannerCostKnown: true,
-    isActualImplementerCostKnown: true,
-    isActualReviewerCostKnown: true,
-    isTotalActualCostKnown: true,
-    providerCosts: {
-      'custom-endpoint': { inputTokens: 209_400, outputTokens: 45_000, cost: 0.42 },
-    },
-    ...billingFacts({ 'custom-endpoint': { meteredCost: 0.42, endpoint: READY_ENDPOINT } }),
-  },
+
   plannerTool: 'custom-endpoint',
   plannerModel: 'gpt-5.1',
   implementerTool: READY_BUILD.tool,
@@ -517,13 +428,12 @@ const READY_SUMMARY: Readonly<Summary> = Object.freeze({
   changedFiles: [FILES.formTest, FILES.form, FILES.signupTest, FILES.validate],
 });
 
-const NEEDS_ATTENTION_TASKS: readonly TaskTokenUsage[] = [
+const NEEDS_ATTENTION_TASKS: readonly BriefExecution[] = [
   {
     taskId: BRIEFS.validator.id,
     taskTitle: BRIEFS.validator.title,
     method: 'local',
-    implementerTokens: 48_600,
-    escalationTokens: 0,
+
     retryCount: 0,
     tool: 'claude-code',
     model: 'claude-haiku-4-5',
@@ -532,8 +442,7 @@ const NEEDS_ATTENTION_TASKS: readonly TaskTokenUsage[] = [
     taskId: BRIEFS.wire.id,
     taskTitle: BRIEFS.wire.title,
     method: 'escalated-full',
-    implementerTokens: 61_400,
-    escalationTokens: 39_800,
+
     retryCount: 2,
     tool: 'claude-code',
     model: 'claude-haiku-4-5',
@@ -542,8 +451,7 @@ const NEEDS_ATTENTION_TASKS: readonly TaskTokenUsage[] = [
     taskId: BRIEFS.routeTests.id,
     taskTitle: BRIEFS.routeTests.title,
     method: 'local',
-    implementerTokens: 23_400,
-    escalationTokens: 0,
+
     retryCount: 0,
     tool: 'claude-code',
     model: 'claude-haiku-4-5',
@@ -588,29 +496,10 @@ const NEEDS_ATTENTION_SUMMARY: Readonly<Summary> = Object.freeze({
   failed: 0,
   totalTime: 727_000,
   activeTime: 727_000,
-  tokenUsage: makeUsage({
-    plannerInput: 23_100,
-    plannerOutput: 5_800,
-    implementerInput: 107_600,
-    implementerOutput: 25_800,
-    escalationInput: 32_400,
-    escalationOutput: 7_400,
-    reviewerInput: 17_900,
-    reviewerOutput: 3_600,
-  }),
+
   escalationRate: 1 / 3,
   taskBreakdown: [...NEEDS_ATTENTION_TASKS],
-  costBreakdown: {
-    actualPlannerCost: 0,
-    actualImplementerCost: 0,
-    totalActualCost: 0,
-    hasPricedUsage: false,
-    hasUnpricedUsage: true,
-    isActualPlannerCostKnown: false,
-    isActualImplementerCostKnown: false,
-    isTotalActualCostKnown: false,
-    ...billingFacts({ 'claude-code': { meteredCost: null } }),
-  },
+
   plannerTool: 'claude-code',
   plannerModel: 'claude-sonnet-4',
   implementerTool: 'claude-code',
@@ -656,7 +545,7 @@ function savedState(
     }),
     plannerSessionId: null,
     startedAt: STARTED_AT_ISO,
-    tokenUsage: makeUsage(),
+
     plannerTool: 'claude-code',
     plannerModel: 'claude-sonnet-4',
     implementerTool: 'ollama',
@@ -1147,7 +1036,6 @@ function reviewNoneSummary(recorded: Readonly<Summary>): Readonly<Summary> {
     reviewerModel: _noModel,
     driftSummary: _noScopeReport,
     reviewPacket: _noPacket,
-    costBreakdown: _noReviewCost,
     ...summary
   } = recorded;
   const phaseTimings = { planning: 170_000, implementing: 492_000 };
@@ -1155,12 +1043,7 @@ function reviewNoneSummary(recorded: Readonly<Summary>): Readonly<Summary> {
   return {
     ...summary,
     reviewerSeat: 'none',
-    tokenUsage: makeUsage({
-      plannerInput: 25_200,
-      plannerOutput: 6_000,
-      implementerInput: 168_500,
-      implementerOutput: 36_000,
-    }),
+
     phaseTimings,
     totalTime: ran,
     activeTime: ran,

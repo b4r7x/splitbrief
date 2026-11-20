@@ -224,12 +224,7 @@ describe('api implementer — OpenAI-compatible path', () => {
 
   it('writes the bundled file to disk and returns success with usage', async () => {
     const code = bundle('src/hello.ts', 'create', 'export function hello() {\n  return "hi";\n}\n');
-    mockCompletion(() =>
-      makeOpenAiSseResponse([
-        { content: code },
-        { usage: { prompt_tokens: 100, completion_tokens: 50 } },
-      ]),
-    );
+    mockCompletion(() => makeOpenAiSseResponse([{ content: code }, {}]));
 
     const implementer = createApiImplementer(makeConfig());
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], action: 'create' });
@@ -243,19 +238,6 @@ describe('api implementer — OpenAI-compatible path', () => {
     });
 
     expect(result.success).toBe(true);
-    if (result.success)
-      expect(result.usage).toEqual({
-        inputTokens: 100,
-        outputTokens: 50,
-        counterCoverage: {
-          input: 'partial',
-          output: 'partial',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'missing',
-        },
-        providerTotals: { input: 100, output: 50 },
-      });
 
     const written = readFileSync(join(projectDir, 'src/hello.ts'), 'utf-8');
     expect(written).toContain('export function hello()');
@@ -398,7 +380,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     fetchMock.mockResolvedValue(
       makeOpenAiSseResponse([
         { content: bundle('src/retry.ts', 'create', 'export const x = 1;\n') },
-        { usage: { prompt_tokens: 10, completion_tokens: 5 } },
+        {},
       ]),
     );
 
@@ -430,7 +412,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     fetchMock.mockResolvedValue(
       makeOpenAiSseResponse([
         { content: bundle('src/retry.ts', 'modify', 'export const x = 2;\n') },
-        { usage: { prompt_tokens: 10, completion_tokens: 5 } },
+        {},
       ]),
     );
 
@@ -446,7 +428,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     fetchMock.mockImplementation(async () =>
       makeOpenAiSseResponse([
         { content: bundle('src/plan.ts', 'create', 'export const x = 1;\n') },
-        { usage: { prompt_tokens: 10, completion_tokens: 5 } },
+        {},
       ]),
     );
     const cfg = makeConfig({ implementer: remoteImplementerSeat });

@@ -160,7 +160,6 @@ function productionOutput(
       model,
       status: result.status,
       textBytes: Buffer.byteLength(result.text, 'utf8'),
-      usage: result.usage,
       terminal: result.status === 'completed' || result.status === 'truncated',
       cancellationProbe: 'pre-aborted-signal-tested-by-shared-stream',
       redirectPolicy: 'same-origin-only',

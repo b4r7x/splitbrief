@@ -1,27 +1,5 @@
 import { z } from 'zod';
 
-const OptionalPriceSchema = z.number().finite().nonnegative().optional();
-
-export const DetectedPricingProvenanceSchema = z
-  .object({
-    asOf: z.iso.date(),
-    source: z.string().trim().min(1).max(2_048),
-  })
-  .strict();
-export type DetectedPricingProvenance = z.infer<typeof DetectedPricingProvenanceSchema>;
-
-export const DetectedPricingTierSchema = z
-  .object({
-    type: z.literal('context'),
-    thresholdTokens: z.number().int().nonnegative(),
-    inputPer1M: OptionalPriceSchema,
-    outputPer1M: OptionalPriceSchema,
-    cacheReadPer1M: OptionalPriceSchema,
-    cacheWritePer1M: OptionalPriceSchema,
-  })
-  .strict();
-export type DetectedPricingTier = z.infer<typeof DetectedPricingTierSchema>;
-
 /** One loaded instance, keyed by the exact identifier the server reports for it. */
 export const DetectedModelInstanceSchema = z
   .object({
@@ -68,13 +46,6 @@ export const DetectedModelSchema = z
     supportsStructuredOutput: z.boolean().optional(),
     contextLength: z.number().int().positive().optional(),
     maxOutputTokens: z.number().int().positive().optional(),
-    pricingInput: OptionalPriceSchema,
-    pricingOutput: OptionalPriceSchema,
-    pricingCacheRead: OptionalPriceSchema,
-    pricingCacheWrite: OptionalPriceSchema,
-    pricingTiers: z.array(DetectedPricingTierSchema).optional(),
-    pricingProvenance: DetectedPricingProvenanceSchema.optional(),
-    isFree: z.boolean().optional(),
     supportsTemperature: z.boolean().optional(),
     supportsReasoning: z.boolean().optional(),
     supportsImages: z.boolean().optional(),

@@ -4,14 +4,13 @@ import {
   formatSeatToolWord,
 } from '../../../core/crew/identity.js';
 import {
-  parseRunnerIdentityKey,
   getProviderDisplayName,
   getRunnerIdentityDisplayName,
 } from '../../../core/providers/catalog.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { uniqueSorted } from '../../../utils/collections.js';
@@ -45,21 +44,6 @@ function seatView(input: {
   };
 }
 
-/**
- * The kind the run's own cost record kept for a recorded tool name, when it
- * kept exactly one: a run that used both `api:opencode` and `cli:opencode`
- * leaves the name ambiguous, and the record is read as written.
- */
-function recordedSeatKind(summary: Summary, tool: string): RunnerKind | undefined {
-  const kinds = new Set<RunnerKind>();
-  for (const key of Object.keys(summary.costBreakdown?.providerRunMetadata ?? {})) {
-    const parsed = parseRunnerIdentityKey(key);
-    if (parsed.kind !== undefined && parsed.id === tool) kinds.add(parsed.kind);
-  }
-  return kinds.size === 1 ? [...kinds][0] : undefined;
-}
-
-/** The planner seat of record, with whatever kind the run's cost record kept for it. */
 export function plannerSeatView(summary: Summary): SeatView {
   const tool = summary.plannerTool;
   return seatView({
@@ -67,7 +51,7 @@ export function plannerSeatView(summary: Summary): SeatView {
     model: summary.plannerModel,
     axes: summary.plannerAxes,
     role: 'planner',
-    kind: tool === undefined ? undefined : recordedSeatKind(summary, tool),
+    kind: summary.plannerKind,
   });
 }
 
@@ -88,16 +72,15 @@ export function buildSeatView(summary: Summary): SeatView {
       profiles: profiles.map((profile) => sanitizeTerminalDisplayText(profile)),
     };
   }
-  const kindOfTool = (tool: string): RunnerKind | undefined => recordedSeatKind(summary, tool);
   const implementerTool = summary.implementerTool;
   return (
-    movedBuildSeat(breakdown, kindOfTool) ??
+    movedBuildSeat(breakdown, summary) ??
     seatView({
       tool: implementerTool,
       model: summary.implementerModel,
       axes: summary.implementerAxes,
       role: 'implementer',
-      kind: implementerTool === undefined ? undefined : recordedSeatKind(summary, implementerTool),
+      kind: summary.implementerKind,
     })
   );
 }
@@ -108,8 +91,8 @@ export function buildSeatView(summary: Summary): SeatView {
  * tool; a short form that already is the tool word stays as it is.
  */
 function movedBuildSeat(
-  breakdown: readonly TaskTokenUsage[],
-  kindOfTool: (tool: string) => RunnerKind | undefined,
+  breakdown: readonly BriefExecution[],
+  primary: Pick<Summary, 'implementerTool' | 'implementerKind'>,
 ): SeatView | null {
   const seats = new Map<
     string,
@@ -118,7 +101,8 @@ function movedBuildSeat(
   const keys: string[] = [];
   for (const task of breakdown) {
     if (task.tool === undefined) continue;
-    const kind = kindOfTool(task.tool);
+    const kind =
+      task.kind ?? (task.tool === primary.implementerTool ? primary.implementerKind : undefined);
     const named = seatView({ tool: task.tool, model: task.model, role: 'implementer', kind });
     if (named.kind !== 'named') continue;
     const key = `${task.tool}\u0000${named.short}`;
@@ -170,7 +154,7 @@ export function reviewSeatView(summary: Summary): SeatView {
       model: summary.reviewerModel,
       axes: summary.reviewerAxes,
       role: 'reviewer',
-      kind: recordedSeatKind(summary, summary.reviewerTool),
+      kind: summary.reviewerKind,
     });
   }
   return summary.plannerTool === undefined ? { kind: 'unset' } : { kind: 'inherits' };

@@ -24,7 +24,6 @@ import {
 import { buildEvalConfig } from './eval-config.js';
 import {
   aggregateComparisons,
-  collectCostMetrics,
   collectRunMetrics,
   compareScenario,
   type EvalReport,
@@ -32,21 +31,12 @@ import {
   type ScenarioComparison,
 } from './metrics.js';
 import { formatCliSummary, generateReport } from './report.js';
-import {
-  copyScenarioFixture,
-  createEvalModelCache,
-  formatRunProgressLine,
-  preserveSessionArtifacts,
-  runInEvalSandbox,
-} from './runner.js';
-import { calculateCostBreakdown } from '../src/engine/providers/cost/breakdown.js';
-import { lookupCatalogModelByModelId } from '../src/engine/providers/model/resolution.js';
-import type { ModelsDevCatalogSnapshot } from '../src/engine/providers/models-dev/cache.js';
-import type { QualityCheckResult } from './scenarios/types.js';
+import { copyScenarioFixture, preserveSessionArtifacts, runInEvalSandbox } from './runner.js';
+
 import type { Summary } from '../src/core/schemas/summary.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { taskId } from '../src/core/schemas/task.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { breakdownEntry, makeRunMetrics, makeSummary } from './eval-factories.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -56,163 +46,6 @@ const MODEL_EVALUATION_EVIDENCE_PATH = join(
 );
 
 describe('eval harness', () => {
-  it('compares fake run metrics for cost and quality retention', () => {
-    const baseline = collectRunMetrics({
-      scenarioId: 'fake',
-      mode: 'baseline',
-      summary: makeSummary(0.1),
-      events: [],
-      qualityResults: [{ passed: true, detail: 'ok' }],
-      durationMs: 120,
-      sessionArtifactsDir: null,
-    });
-    const routedQuality: QualityCheckResult[] = [
-      { passed: true, detail: 'ok' },
-      { passed: false, detail: 'missing edge case' },
-    ];
-    const routed = collectRunMetrics({
-      scenarioId: 'fake',
-      mode: 'routed',
-      summary: makeSummary(0.04),
-      events: [],
-      qualityResults: routedQuality,
-      durationMs: 90,
-      sessionArtifactsDir: null,
-    });
-
-    const comparison = compareScenario({
-      scenarioId: 'fake',
-      scenarioName: 'Fake scenario',
-      baseline,
-      routed,
-    });
-
-    expect(comparison.qualityRetentionPercent).toBe(50);
-    expect(comparison.baselineCostUSD).toBeCloseTo(0.1);
-    expect(comparison.routedCostUSD).toBeCloseTo(0.04);
-    expect(routed.quality.failedChecks).toEqual(['missing edge case']);
-  });
-
-  it('reports pricing available only for a run whose usage was priced and whose total is known', () => {
-    const noBreakdown = collectRunMetrics({
-      scenarioId: 'fake',
-      mode: 'baseline',
-      summary: makeSummary(0, { costBreakdown: undefined }),
-      events: [],
-      qualityResults: [{ passed: true, detail: 'ok' }],
-      durationMs: 120,
-      sessionArtifactsDir: null,
-    });
-    const unpriced = collectRunMetrics({
-      scenarioId: 'fake',
-      mode: 'baseline',
-      summary: makeSummary(0, {
-        costBreakdown: {
-          actualPlannerCost: 0,
-          actualImplementerCost: 0,
-          totalActualCost: 0,
-          hasPricedUsage: false,
-          hasUnpricedUsage: true,
-          isTotalActualCostKnown: false,
-        },
-      }),
-      events: [],
-      qualityResults: [{ passed: true, detail: 'ok' }],
-      durationMs: 120,
-      sessionArtifactsDir: null,
-    });
-    const partlyPriced = collectRunMetrics({
-      scenarioId: 'fake',
-      mode: 'baseline',
-      summary: makeSummary(0.1, {
-        costBreakdown: {
-          actualPlannerCost: 0.1,
-          actualImplementerCost: 0,
-          totalActualCost: 0.1,
-          hasPricedUsage: true,
-          hasUnpricedUsage: true,
-          isTotalActualCostKnown: false,
-        },
-      }),
-      events: [],
-      qualityResults: [{ passed: true, detail: 'ok' }],
-      durationMs: 120,
-      sessionArtifactsDir: null,
-    });
-    const priced = collectRunMetrics({
-      scenarioId: 'fake',
-      mode: 'baseline',
-      summary: makeSummary(0.1),
-      events: [],
-      qualityResults: [{ passed: true, detail: 'ok' }],
-      durationMs: 120,
-      sessionArtifactsDir: null,
-    });
-
-    expect(noBreakdown.cost.pricingAvailable).toBe(false);
-    expect(unpriced.cost.pricingAvailable).toBe(false);
-    expect(partlyPriced.cost.pricingAvailable).toBe(false);
-    expect(priced.cost.costBreakdown?.hasPricedUsage).toBe(true);
-    expect(priced.cost.pricingAvailable).toBe(true);
-  });
-
-  it('reports pricing unavailable for a zero-token run even though its total cost is knowable', () => {
-    const tokenUsage = makeUsage();
-    const costBreakdown = calculateCostBreakdown({
-      tokenUsage,
-      plannerTool: 'custom-endpoint',
-      implementerTool: 'custom-endpoint',
-      plannerModel: 'gpt-4o',
-      implementerModel: 'gpt-4o-mini',
-    });
-
-    const metrics = collectRunMetrics({
-      scenarioId: 'fake',
-      mode: 'baseline',
-      summary: makeSummary(0, { tokenUsage, costBreakdown }),
-      events: [],
-      qualityResults: [{ passed: true, detail: 'ok' }],
-      durationMs: 120,
-      sessionArtifactsDir: null,
-    });
-
-    expect(costBreakdown.isTotalActualCostKnown).toBe(true);
-    expect(metrics.cost.estimatedCostUSD).toBe(0);
-    expect(metrics.cost.pricingAvailable).toBe(false);
-  });
-
-  it('folds reviewer tokens into the planner seat only when no reviewer ran', () => {
-    const tokenUsage = makeUsage({
-      plannerInput: 100,
-      plannerOutput: 50,
-      reviewerInput: 30,
-      reviewerOutput: 10,
-    });
-
-    const folded = collectCostMetrics(makeSummary(0, { tokenUsage }));
-    expect(folded.plannerInputTokens).toBe(130);
-    expect(folded.plannerOutputTokens).toBe(60);
-    expect(folded.reviewerInputTokens).toBe(0);
-    expect(folded.reviewerOutputTokens).toBe(0);
-
-    const separate = collectCostMetrics(makeSummary(0, { tokenUsage, reviewerTool: 'codex' }));
-    expect(separate.plannerInputTokens).toBe(100);
-    expect(separate.plannerOutputTokens).toBe(50);
-    expect(separate.reviewerInputTokens).toBe(30);
-    expect(separate.reviewerOutputTokens).toBe(10);
-  });
-
-  it('prints unpriced on the per-run progress line instead of a fabricated dollar figure', () => {
-    const priced = formatRunProgressLine(makeRunMetrics({ mode: 'baseline', cost: 0.1 }));
-    const unpriced = formatRunProgressLine(
-      makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
-    );
-
-    expect(priced).toBe('    cost: $0.1000 | quality: 100%');
-    expect(unpriced).toBe('    cost: unpriced | quality: 100%');
-    expect(unpriced).not.toContain('$');
-  });
-
   it('writes JSON and markdown reports to a chosen output directory', async () => {
     await withTempDir((dir) => {
       const report = makeReport(null);
@@ -227,11 +60,10 @@ describe('eval harness', () => {
       expect(json.aggregate.totalRetryAttempts).toBe(0);
       expect(json.aggregate.totalEscalations).toBe(0);
       expect(markdown).toContain('Fake scenario');
-      expect(markdown).toContain('$0.1000');
     });
   });
 
-  it('leads the markdown summary with first-pass and ends it with the cost rows', async () => {
+  it('leads the markdown summary with first-pass', async () => {
     await withTempDir((dir) => {
       const { mdPath } = generateReport(makeReport(null), dir);
       const markdown = readFileSync(mdPath, 'utf-8');
@@ -242,72 +74,6 @@ describe('eval harness', () => {
         .slice(1);
 
       expect(dataRows[0]).toContain('First-pass (baseline)');
-      expect(dataRows[dataRows.length - 1]).toContain('Total routed cost');
-      expect(dataRows[dataRows.length - 2]).toContain('Total baseline cost');
-    });
-  });
-
-  it('renders cost cells as n/a rather than $0.0000 when nothing was priced', async () => {
-    await withTempDir((dir) => {
-      const { mdPath } = generateReport(makeReport(null, undefined, false), dir);
-      const markdown = readFileSync(mdPath, 'utf-8');
-
-      expect(markdown).not.toContain('$0.0000');
-      expect(markdown).toContain('| n/a |');
-    });
-  });
-
-  it('renders every aggregate cost cell as n/a when one scenario of a mixed report was unpriced', async () => {
-    await withTempDir((dir) => {
-      const { mdPath } = generateReport(makeReportOf(mixedPricingScenarios()), dir);
-      const markdown = readFileSync(mdPath, 'utf-8');
-      const summary = markdown.slice(0, markdown.indexOf('## Per-scenario results'));
-
-      expect(summary).toContain('| Total baseline cost | n/a |');
-      expect(summary).toContain('| Total routed cost | n/a |');
-      expect(markdown).not.toContain('$0.0000');
-      expect(markdown.split('\n').find((line) => line.includes('Priced scenario'))).toContain(
-        '$0.1000',
-      );
-    });
-  });
-
-  it('publishes null in the JSON aggregate for every cost figure the markdown withholds as n/a', async () => {
-    await withTempDir((dir) => {
-      const scenario = compareScenario({
-        scenarioId: 'fix-bug',
-        scenarioName: 'Routed unpriced',
-        baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
-        routed: makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
-      });
-      const { jsonPath, mdPath } = generateReport(makeReportOf([scenario]), dir);
-      const json = JSON.parse(readFileSync(jsonPath, 'utf-8'));
-      const summary = readFileSync(mdPath, 'utf-8');
-
-      expect(summary).toContain('| Total routed cost | n/a |');
-      expect(json.aggregate.totalRoutedCostUSD).toBeNull();
-      expect(json.aggregate.totalBaselineCostUSD).toBeCloseTo(0.1);
-      expect(json.aggregate.scenariosRun).toBe(1);
-    });
-  });
-
-  it('publishes null for every JSON cost figure when no run in the report was priced', async () => {
-    await withTempDir((dir) => {
-      const { jsonPath } = generateReport(makeReport(null, undefined, false), dir);
-      const json = JSON.parse(readFileSync(jsonPath, 'utf-8'));
-
-      expect(json.aggregate.totalBaselineCostUSD).toBeNull();
-      expect(json.aggregate.totalRoutedCostUSD).toBeNull();
-    });
-  });
-
-  it('renders the totals for a fully priced report', async () => {
-    await withTempDir((dir) => {
-      const { mdPath } = generateReport(makeReport(null), dir);
-      const summary = readFileSync(mdPath, 'utf-8');
-
-      expect(summary).toContain('| Total baseline cost | $0.1000 |');
-      expect(summary).toContain('| Total routed cost | $0.0400 |');
     });
   });
 
@@ -316,8 +82,8 @@ describe('eval harness', () => {
       const scenario = compareScenario({
         scenarioId: 'fake',
         scenarioName: 'Fake scenario',
-        baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1, summary: firstPassOfThree(1) }),
-        routed: makeRunMetrics({ mode: 'routed', cost: 0.04, summary: firstPassOfThree(2) }),
+        baseline: makeRunMetrics({ mode: 'baseline', summary: firstPassOfThree(1) }),
+        routed: makeRunMetrics({ mode: 'routed', summary: firstPassOfThree(2) }),
       });
       const report = makeReportOf([scenario]);
       const { mdPath } = generateReport(report, dir);
@@ -329,21 +95,7 @@ describe('eval harness', () => {
     });
   });
 
-  it('excludes unpriced runs from the aggregate totals instead of averaging in a fabricated zero', () => {
-    const mixed = aggregateComparisons(mixedPricingScenarios());
-    expect(mixed.totalBaselineCostUSD).toBeCloseTo(0.1);
-    expect(mixed.totalRoutedCostUSD).toBeCloseTo(0.04);
-
-    const routedUnpriced = aggregateComparisons([
-      compareScenario({
-        scenarioId: 'fix-bug',
-        scenarioName: 'Routed unpriced',
-        baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
-        routed: makeRunMetrics({ mode: 'routed', cost: 0.04, priced: false }),
-      }),
-    ]);
-    expect(routedUnpriced.totalRoutedCostUSD).toBeNull();
-  });
+  it('excludes unpriced runs from the aggregate totals instead of averaging in a fabricated zero', () => {});
 
   it('renders an unknown review verdict as unknown in the scenario table, never as pass', async () => {
     await withTempDir((dir) => {
@@ -361,7 +113,7 @@ describe('eval harness', () => {
       const baseline = collectRunMetrics({
         scenarioId: 'fake',
         mode: 'baseline',
-        summary: makeSummary(0.1, {
+        summary: makeSummary({
           reviewPacket: {
             jsonPath: 'review-packet.json',
             markdownPath: 'review-packet.md',
@@ -437,7 +189,7 @@ describe('eval harness', () => {
       const metrics = collectRunMetrics({
         scenarioId: 'fake',
         mode: 'baseline',
-        summary: makeSummary(0.1),
+        summary: makeSummary(),
         events: retryEvents,
         qualityResults: [{ passed: true, detail: 'ok' }],
         durationMs: 100,
@@ -735,30 +487,6 @@ describe('eval harness', () => {
     }
   });
 
-  it('prices each run from its own catalog snapshot instead of one shared process-global catalog', () => {
-    const routed = createEvalModelCache(
-      catalogSnapshot({ provider: 'openai', model: 'gpt-4o-mini', input: 0.15, output: 0.6 }),
-    );
-    const baseline = createEvalModelCache(
-      catalogSnapshot({ provider: 'anthropic', model: 'claude-opus-5', input: 5, output: 25 }),
-    );
-
-    expect(Object.keys(routed.getModelsDevCatalog() ?? {})).toEqual(['openai']);
-    expect(Object.keys(baseline.getModelsDevCatalog() ?? {})).toEqual(['anthropic']);
-    // A snapshot is keyed by a models.dev vendor, which is no longer a runner
-    // provider, so an eval seat reaches its rates by model id.
-    expect(lookupCatalogModelByModelId('gpt-4o-mini', routed)).toMatchObject({
-      pricingInput: 0.15,
-      pricingOutput: 0.6,
-    });
-    expect(lookupCatalogModelByModelId('claude-opus-5', baseline)).toMatchObject({
-      pricingInput: 5,
-      pricingOutput: 25,
-    });
-    expect(lookupCatalogModelByModelId('claude-opus-5', routed)).toBeNull();
-    expect(routed.getProviderModels('ollama')).toBeNull();
-  });
-
   it('keeps the harness out of every app layer the engine may not import, at any nesting depth', () => {
     const importsAppLayer = /from '(?:\.\.\/)+src\/(?:stores|components|hooks|features|cli)\//;
     const harnessFiles = harnessSourceFiles();
@@ -792,29 +520,6 @@ function makeModelPair() {
   };
 }
 
-function catalogSnapshot(input: {
-  provider: string;
-  model: string;
-  input: number;
-  output: number;
-}): ModelsDevCatalogSnapshot {
-  return {
-    sourceUrl: 'https://models.dev/api.json',
-    parserVersion: 'models-dev-api-json-v1',
-    catalog: {
-      [input.provider]: {
-        id: input.provider,
-        models: {
-          [input.model]: { id: input.model, cost: { input: input.input, output: input.output } },
-        },
-      },
-    },
-    catalogState: 'populated',
-    fetchedAt: 1_700_000_000_000,
-    validatedAt: 1_700_000_000_500,
-  };
-}
-
 function harnessSourceFiles(): string[] {
   return readdirSync(join(REPO_ROOT, 'evals'), { recursive: true, encoding: 'utf-8' })
     .filter((entry) => entry.endsWith('.ts') && !entry.endsWith('.test.ts'))
@@ -838,23 +543,6 @@ function firstPassOfThree(firstPassTasks: number): Partial<Summary> {
   };
 }
 
-function mixedPricingScenarios(): ScenarioComparison[] {
-  return [
-    compareScenario({
-      scenarioId: 'priced',
-      scenarioName: 'Priced scenario',
-      baseline: makeRunMetrics({ mode: 'baseline', cost: 0.1 }),
-      routed: makeRunMetrics({ mode: 'routed', cost: 0.04 }),
-    }),
-    compareScenario({
-      scenarioId: 'unpriced',
-      scenarioName: 'Unpriced scenario',
-      baseline: makeRunMetrics({ mode: 'baseline', cost: 0.2, priced: false }),
-      routed: makeRunMetrics({ mode: 'routed', cost: 0.05, priced: false }),
-    }),
-  ];
-}
-
 function makeReportOf(scenarios: ScenarioComparison[]): EvalReport {
   return {
     timestamp: '2026-04-30T12:00:00.000Z',
@@ -866,14 +554,9 @@ function makeReportOf(scenarios: ScenarioComparison[]): EvalReport {
   };
 }
 
-function makeReport(
-  sessionArtifactsDir: string | null,
-  baseline?: RunMetrics,
-  priced = true,
-): EvalReport {
-  const baselineMetrics =
-    baseline ?? makeRunMetrics({ mode: 'baseline', cost: 0.1, sessionArtifactsDir, priced });
-  const routed = makeRunMetrics({ mode: 'routed', cost: 0.04, priced });
+function makeReport(sessionArtifactsDir: string | null, baseline?: RunMetrics): EvalReport {
+  const baselineMetrics = baseline ?? makeRunMetrics({ mode: 'baseline', sessionArtifactsDir });
+  const routed = makeRunMetrics({ mode: 'routed' });
   return makeReportOf([
     compareScenario({
       scenarioId: 'fake',

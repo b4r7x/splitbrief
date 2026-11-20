@@ -1,7 +1,6 @@
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { findKnownModel, type KnownModel } from '../../../core/providers/known-models.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
-import { getPricingMode } from '../cost/pricing.js';
 import { matchesModelsDevId } from './parsing.js';
 import type { ResolvedModelCatalogEntry } from './types.js';
 
@@ -96,24 +95,6 @@ function mergeRuntimeMetadata(
   return { ...enrichment, ...runtime };
 }
 
-/**
- * No runner that owns a catalog meters per token — CLI tools bill their own
- * subscription, `ollama`/`lm-studio` are local, `shell`/`agent` name no model —
- * so a catalog row never carries rates, whatever metadata it merged.
- */
-export function stripUnpricedFields(entry: ResolvedModelCatalogEntry): ResolvedModelCatalogEntry {
-  const {
-    pricingInput: _pricingInput,
-    pricingOutput: _pricingOutput,
-    pricingCacheRead: _pricingCacheRead,
-    pricingCacheWrite: _pricingCacheWrite,
-    pricingTiers: _pricingTiers,
-    isFree: _isFree,
-    ...unpriced
-  } = entry;
-  return unpriced;
-}
-
 export function runtimeEntry(
   input: Readonly<{
     runnerId: ProviderId;
@@ -132,7 +113,7 @@ export function runtimeEntry(
     modelsDevEntries: input.modelsDevEntries,
   });
   const merged = mergeRuntimeMetadata(input.model, metadata);
-  return stripUnpricedFields({
+  return {
     ...merged,
     id: input.model.id,
     selectionId: input.model.id,
@@ -144,6 +125,5 @@ export function runtimeEntry(
     membership: input.isStale ? 'stale' : 'confirmed',
     ...(input.isStale ? { isStale: true } : {}),
     canConfigure: true,
-    pricingMode: getPricingMode(input.runnerId),
-  });
+  };
 }

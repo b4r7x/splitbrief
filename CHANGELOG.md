@@ -11,9 +11,12 @@
 - Clear Context length, Prompt budget or Test command in Settings and press Enter to restore `auto`.
 - Review packets count validation results for the briefs in the current plan.
 - Review packets identify API and CLI runners by their own names, even when they share a tool name.
+- Review packets label logged BUILD starts and settlements in the routing section.
+- The model catalog cache omits prices for individual model modes.
 
 ### Removed
 
+- Removes the usage screen and cost copying. JSON output and hook events omit token counts and cost fields.
 - Custom command setup moves to your project configuration. The seat picker and CLI help omit those options.
 - Temperature, API call Timeout and Compaction format move from Settings to your project configuration.
 - SPLITBRIEF no longer sends a repository map to planners. API planners receive project instructions, attachments, and the contents of files named in the request.

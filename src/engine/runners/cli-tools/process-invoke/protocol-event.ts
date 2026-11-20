@@ -28,7 +28,6 @@ function droppableBytes(event: CliProtocolEvent): number | null {
       );
     case 'heartbeat':
       return 0;
-    case 'usage':
     case 'session':
     case 'warning':
     case 'result':
@@ -53,9 +52,6 @@ export function recordCliProtocolEvent(
           ...(event.semantics !== undefined && { semantics: event.semantics }),
         });
       }
-      return;
-    case 'usage':
-      recorder.usage({ usage: event.usage, semantics: event.semantics });
       return;
     case 'session':
       recorder.sessionId({

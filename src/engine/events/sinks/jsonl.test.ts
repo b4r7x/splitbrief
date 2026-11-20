@@ -255,17 +255,7 @@ describe('jsonlSink', () => {
         backendKind: 'cli',
         sequence: 0,
       },
-      {
-        type: 'runner_call_usage',
-        ts: 102,
-        phase: 'implementing',
-        callId: 'call-1',
-        role: 'implementer',
-        backendKind: 'cli',
-        sequence: 2,
-        usage: { inputTokens: 10, outputTokens: 5 },
-        semantics: 'final',
-      },
+
       {
         type: 'runner_call_completed',
         ts: 103,
@@ -280,7 +270,7 @@ describe('jsonlSink', () => {
         startedAt: 100,
         endedAt: 103,
         durationMs: 3,
-        usage: null,
+
         nativeSessionId: null,
       },
       {
@@ -297,7 +287,7 @@ describe('jsonlSink', () => {
         startedAt: 100,
         endedAt: 104,
         durationMs: 4,
-        usage: null,
+
         nativeSessionId: null,
       },
       {
@@ -317,7 +307,6 @@ describe('jsonlSink', () => {
     expect(lines.map((l) => l['type'])).toEqual([
       'runner_call_activity',
       'runner_call_started',
-      'runner_call_usage',
       'runner_call_completed',
       'runner_call_error',
       'planner_text',

@@ -89,7 +89,6 @@ function consultPlanner(script: readonly ConsultAnswer[]): {
       return makeRunnerCallResult({
         status: 'completed',
         text: JSON.stringify(next),
-        usage: { inputTokens: 10, outputTokens: 5 },
       });
     },
   });
@@ -173,7 +172,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: null }),
+      retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed' }),
     });
     const { planner, prompts } = consultPlanner([
       guidanceAnswer('The consumer may be edited', 'Edit src/consumer.ts within scope.'),
@@ -237,7 +236,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
           error: `Implementer is blocked: ${blocked.question}`,
           blocked,
         })
-        .mockResolvedValueOnce({ success: true, output: 'fixed', usage: null }),
+        .mockResolvedValueOnce({ success: true, output: 'fixed' }),
     });
     const { planner, prompts } = consultPlanner([
       guidanceAnswer('The type is wrong', 'Fix the type in src/consumer.ts.'),
@@ -288,7 +287,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
       notes: null,
     });
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', usage: null, report }),
+      retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed', report }),
     });
     const { planner } = consultPlanner([
       guidanceAnswer('The type is wrong', 'Fix the type in src/x.ts.'),

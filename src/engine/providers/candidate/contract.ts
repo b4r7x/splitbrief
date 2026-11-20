@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { RunnerBillingPostureSchema } from '../../../core/runners/billing.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import {
@@ -143,7 +142,6 @@ export const EndpointPolicySchema = z.discriminatedUnion('kind', [
 const RawRequestSchema = z
   .strictObject({
     stream: z.boolean(),
-    includeUsage: z.boolean(),
     tokenField: z.enum(['max_tokens', 'max_completion_tokens']),
     max: z.number().int().positive(),
     temperature: z.number().finite().optional(),
@@ -219,7 +217,6 @@ const ApiProviderDescriptorSchema = z
     endpointPolicy: EndpointPolicySchema,
     credentialEnv: EnvNameSchema.nullable(),
     credentialPrefix: z.string().min(1).nullable(),
-    billing: RunnerBillingPostureSchema,
     compatibility: z.enum(['verified', 'unverified', 'incompatible', 'beta', 'unknown']),
     dataUse: z.enum([
       'local',
@@ -249,11 +246,6 @@ const KnownModelSchema = z.strictObject({
   name: z.string().min(1),
   isDefault: z.boolean().optional(),
   contextLength: z.number().int().positive().optional(),
-  pricingInput: z.number().finite().nonnegative().optional(),
-  pricingOutput: z.number().finite().nonnegative().optional(),
-  pricingCacheRead: z.number().finite().nonnegative().optional(),
-  pricingCacheWrite: z.number().finite().nonnegative().optional(),
-  isFree: z.boolean().optional(),
   aliases: z.array(z.string().min(1)).readonly().optional(),
   provenance: z.string().min(1).optional(),
 });
@@ -263,7 +255,6 @@ function isOpenAICompatPolicy(value: unknown): value is OpenAICompatPolicy {
   const finishReasons = value.finishReasons;
   return (
     (value.tokenField === 'max_tokens' || value.tokenField === 'max_completion_tokens') &&
-    typeof value.streamUsage === 'boolean' &&
     (value.temperature === 'omit' || value.temperature === 'verbatim') &&
     (value.effort === 'omit' ||
       value.effort === 'verbatim' ||

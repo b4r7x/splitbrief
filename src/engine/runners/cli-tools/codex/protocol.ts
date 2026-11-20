@@ -1,7 +1,5 @@
-import type { TokenDelta } from '../../../../core/schemas/tokens.js';
 import { error } from '../../../../utils/error.js';
 import { isRecord, optionalString } from '../../../../utils/type-guards.js';
-import { toTokenDelta } from '../../../calls/usage/normalize.js';
 import { codexToolInput } from '../../../streaming/parse/codex-item.js';
 import type { CliProtocolEvent } from '../contract.js';
 import { lastMessageGroupText } from '../final-group.js';
@@ -17,7 +15,6 @@ function protocolFailure(
     type: 'result',
     status: 'failed',
     text: '',
-    usage: null,
     nativeSessionId: null,
     error: {
       code: message.includes('max_output_tokens') ? 'output-token-limit' : code,
@@ -141,24 +138,11 @@ function parseCodexRecord(record: Record<string, unknown>): readonly CliProtocol
     case 'turn.started':
       return [];
     case 'turn.completed': {
-      const hasUsage = Object.hasOwn(record, 'usage');
-      let usage: TokenDelta | null = null;
-      if (hasUsage && record.usage !== undefined) {
-        if (!isRecord(record.usage)) {
-          return [protocolFailure('malformed-codex-record', 'Codex terminal record is malformed')];
-        }
-        usage = toTokenDelta(record.usage);
-        if (usage === null && Object.keys(record.usage).length > 0) {
-          return [protocolFailure('malformed-codex-record', 'Codex usage record is malformed')];
-        }
-      }
       const events: CliProtocolEvent[] = [];
-      if (usage !== null) events.push({ type: 'usage', usage, semantics: 'final' });
       events.push({
         type: 'result',
         status: 'completed',
         text: '',
-        usage,
         nativeSessionId: null,
         error: null,
         partial: false,

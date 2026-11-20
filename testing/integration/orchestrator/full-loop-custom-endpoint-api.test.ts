@@ -86,7 +86,7 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
     });
 
     const planner = makePlanner({
-      typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
+      typedCall: typedCallFromTasks([task]),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nCustom-endpoint API implementer passed validation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },

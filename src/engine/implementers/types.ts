@@ -3,7 +3,6 @@ import type { ChangeDetectionKind } from '../change-detection.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
 import type { RunnerFailureOutcomeState } from '../runners/errors.js';
@@ -26,7 +25,6 @@ export interface ImplementerResult {
   /** Machine outcome behind a failure; the message is for humans, this is not. */
   outcome?: RunnerFailureOutcomeState | undefined;
   transportError?: RunnerCallError | undefined;
-  usage?: TokenDelta | undefined;
   /** What a `file-bundle-v1` response actually did on disk; absent for every other grammar. */
   applyResult?: BundleApplyResult | undefined;
   /** The direct writer's closing report, when its reply ended with a valid one. */

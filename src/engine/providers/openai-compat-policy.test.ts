@@ -8,7 +8,7 @@ import {
 
 const conservativePolicy: OpenAICompatPolicy = {
   tokenField: 'max_tokens',
-  streamUsage: false,
+
   temperature: 'omit',
   effort: 'omit',
   reasoning: 'omit',
@@ -145,13 +145,6 @@ describe('effective request policy', () => {
     expect(unconfigured.effort).toEqual({ state: 'not-configured' });
   });
 
-  it('does not claim stream usage is enabled while the policy omits it', () => {
-    const policy = resolveOpenAICompatPolicy({ provider: 'unregistered-provider' });
-
-    expect(policy.streamUsage).toBe(false);
-    expect(resolveEffectiveRequestOptions({ policy }).streamUsage).toBe(false);
-  });
-
   it('keeps a custom endpoint conservative across its whole result', () => {
     const policy = resolveOpenAICompatPolicy({
       provider: 'unregistered-provider',
@@ -166,7 +159,7 @@ describe('effective request policy', () => {
       maxTokens: 4096,
       temperature: { state: 'omitted-unsupported', configured: 0.7 },
       effort: { state: 'omitted-unsupported', configured: 'high' },
-      streamUsage: false,
+
       extraBody: undefined,
       finishReasons: OPENAI_COMPAT_STANDARD_FINISH_REASONS,
     });
@@ -190,14 +183,6 @@ describe('effective request policy', () => {
 
     expect(
       Object.keys(resolveEffectiveRequestOptions({ policy, temperature: 0.3 })).sort(),
-    ).toEqual([
-      'effort',
-      'extraBody',
-      'finishReasons',
-      'maxTokens',
-      'streamUsage',
-      'temperature',
-      'tokenField',
-    ]);
+    ).toEqual(['effort', 'extraBody', 'finishReasons', 'maxTokens', 'temperature', 'tokenField']);
   });
 });

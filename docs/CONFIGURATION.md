@@ -75,7 +75,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, and `agent`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both mean the model the tool itself has selected on this machine, read at preparation (see `kind: cli` below). |
-| `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
+| `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. |
 | `contextLength` | int > 0 | kind-dependent | Prompt budget. Unset (`auto`): SPLITBRIEF never stops a plan, a brief or a review on its size estimate; the tool or the provider handles its own context, and the model window only orders the choice of an implementer profile. Set: a task, brief or API packet whose estimate does not fit this number stops before the call. Every kind keeps the value. A planner or reviewer uses it only on the `api` kind, as the budget that its PLAN or REVIEW packet is measured against. Readiness reports the planner value on every kind. This field never changes the server. |
 | `temperature` | 0..2 | — | Sampling temperature. Every kind accepts the field, but SPLITBRIEF does not send it. The `api` kind omits it from every request for every provider (`resolveOpenAICompatPolicy`), so the server's own default applies. The `cli`, `shell` and `agent` kinds drop it, with the readiness warning `runners.<seat>.temperature-not-applied` ([§15](#15-validation-behavior)). |
 | `timeout` | ms | none | Total wall-clock budget for a call. No seat call (`api`, `cli`, `shell`, `agent`; planner, implementer and reviewer) has a default total, interactive or headless. Without a YAML `timeout`, a seat call has no total time limit. An `api` seat has no other deadline: no first-response or stream-idle limit applies. The check of the provider's model list is not a call: it waits up to one minute before the start, at the start and before each brief. After ten seconds the screen names the provider and the check, and Esc stops it. A set `timeout` is an opt-in limit, and it applies on every seat kind and every subprocess path. A `timeout` that fires after the final result line of a `cli` tool with a structured terminal ends the call with that result, not as a timeout ([PLANNERS-AND-IMPLEMENTERS.md §cli](./PLANNERS-AND-IMPLEMENTERS.md#cli)). On BUILD, two timeouts or idle cuts in a row on one brief halt the run as `runner-timeout-repeated` (*Seat down*), on every seat kind, `api` included. On PLAN, one timeout or cut halts as `planner-call-failed` (*Seat down*); on REVIEW, as `review-failed` with no verdict (*Needs you*: Try again, End run). In the interactive screen, an idle cut on a `shell` or `agent` planner or reviewer stops the call and waits for you instead: Resume or a typed note runs it again. Readiness warns about the `timeout` / `idleKillMs` pair only when both are set. |
@@ -170,10 +170,6 @@ Use `--on-seat-down halt` to disable automatic switching for headless `start`, `
 `--on-seat-down switch` and an unset policy apply the declared fallback when the switch conditions hold.
 `--on-seat-down switch` exits `2` if the config declares no fallback.
 
-### Pricing metadata
-
-Pricing is resolved from cached `models.dev` metadata first when available, then from runtime provider metadata or the bundled catalog. `models.dev` context pricing tiers are preserved: flat base rates apply below the tier threshold, and the highest matching context tier applies when prompt/cache context reaches that threshold. Local-only unpriced runners are displayed as local/unpriced rather than dollar-priced. Picker lane order is separate from this ladder — a CLI tool renders its own listing with the bundled `KNOWN_MODELS` aliases as the offline fallback, and an `api` runner adds models.dev rows beside its runtime list — and does not reorder pricing or context lookup; see [Model catalog lanes](./PLANNERS-AND-IMPLEMENTERS.md#model-catalog-lanes).
-
 ### `kind: cli`
 
 Subprocess of a known coding-agent CLI. The wrapper handles auth, model selection, and output parsing.
@@ -231,7 +227,7 @@ planner:
   variant: high
 ```
 
-**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Cursor, Command Code and Antigravity plan with their own plan recipes like every other CLI planner. The Antigravity planner and reviewer run agy's shell in its terminal sandbox, which blocks shell writes; agy's file tools need no prompt, and SPLITBRIEF fails the call when such a seat changes a file that git sees in the project.
+**When to use:** you want SPLITBRIEF to use an installed Claude Code, Codex, or OpenCode tool as planner. Cursor, Command Code and Antigravity plan with their own plan recipes like every other CLI planner. The Antigravity planner and reviewer run agy's shell in its terminal sandbox, which blocks shell writes; agy's file tools need no prompt, and SPLITBRIEF fails the call when such a seat changes a file that git sees in the project.
 
 ### `kind: api`
 
@@ -240,7 +236,7 @@ OpenAI-compatible HTTP endpoint.
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `provider` | non-empty string | yes | Any custom name |
-| `service` | non-empty string | yes | Billing/identity service behind the provider. Write it out in every API block. |
+| `service` | non-empty string | yes | Service behind the provider. Write it out in every API block. |
 | `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. Write it out in every API block. |
 | `apiBase` | non-empty string | yes | Base URL of your endpoint. |
 | `apiKey` | string | no | A custom provider must carry an **inline** key: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know (see [API-KEYS.md](./API-KEYS.md)). |
@@ -378,8 +374,8 @@ The reviewer is a planner-tier seat and shares the planner's admission set, so a
 
 ### Falling back to the planner
 
-- **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the run summary.
-- **A `reviewer` block:** the reviewer performs the review and gets its own priced line in both.
+- **No `reviewer` block:** the planner runner performs the review.
+- **A `reviewer` block:** the configured reviewer performs the review.
 - **`reviewer: none`:** no seat performs the review. See [REVIEW None](#review-none).
 - **The review seat's fallback:** `reviewer.fallback` when a `reviewer` block exists, else `planner.fallback`. See [`fallback`](#fallback).
 - **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. A mid-call account refusal, or a usage limit that the run does not wait for, raises a Seat down halt and can apply the review seat's configured fallback under the [switch conditions](./APPROVAL-AND-RECOVERY.md#seat-down). A review that ends as failed records `finalReviewStatus: "failed"` in the run summary and `finalReview.status` in the review packet, with the reviewer's identity in the error and the final-review evidence. SPLITBRIEF never silently hands the review back to the planner.
@@ -560,7 +556,7 @@ implementerProfiles:
 
 If `implementerProfiles.default` is omitted, SPLITBRIEF resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
-Task-start rows name the tool and model of the selected profile and, when the brief is `tight`, its estimate against the context window (`~24,310 of 32K context tokens (tight)`). A tight brief on a window SPLITBRIEF only assumes shows its estimate alone (`~7,000 context tokens (tight)`), and so does a brief over its window (`~31,012 context tokens`): with Prompt budget `auto`, the tool handles its own context. The full routing reason, which names the selected profile (`Selected profile default (fits, estimated 5075/1000000 tokens)`), stays in the run log, and the run's recorded per-task metadata carries richer routing and context data for post-run inspection.
+Task-start rows name the tool and model of the selected profile. The run records the routing decision.
 
 ---
 
@@ -751,7 +747,6 @@ workflow: {
   compactionFormat:       'auto' | 'freeform' | 'structured'; // default auto
 
   // Compatibility only; no rendered effect
-  showSpend?:             boolean; // default true
 
   // Retired: each loads with one notice and is ignored (§16)
   mode?:                  unknown;
@@ -776,7 +771,6 @@ workflow: {
 | `driftChainThreshold` (`drift_chain_threshold`) | retired | absent | Loads with one notice and changes nothing: SPLITBRIEF no longer scores drift chains. Delete it. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
-| `showSpend` (`show_spend`) | compatibility boolean | `true` | Accepted in config and changes nothing: no screen reads it. `/copy cost` copies the same spend text `/usage` reads rather than answering a switched-off display. Open `/usage` for usage details; there is no Show spend setting. |
 | `mode`, `speckit`, `brief_review`, `task_review`, `max_retries` | retired | absent | Each loads with one notice and changes nothing (§16). Delete them. |
 
 `resolveApproveLevel()` picks the level from the config, else `plan`; a run saves the level it ran with in `state.approve` only as a record. There is no CLI flag for it: `--approve` was removed. A headless run (`--json`, `--plain`) approves the plan card unattended; set `approve: none` to skip the card.
@@ -852,7 +846,6 @@ The `escalation` block is retired. The planner's consult replaces the intermedia
 
 A config that still carries the block loads with one notice and changes nothing: `escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.` Delete the block. There is no intermediate provider or model to configure, and the Crew section of Settings never had a row for it.
 
-**Pricing knownness.** Provider calls follow the same knownness rules as every other call. Unknown provider cost is not zero. A call whose price does not resolve leaves the run's USD figure absent or unknown, never `0`, and SPLITBRIEF never invents a rate to fill the gap.
 
 ---
 
@@ -994,9 +987,9 @@ palette:
       label: "Accept current run"
       description: "Mark the current run state as accepted"
       command: /run accept
-    - id: usage
-      label: "Show token usage"
-      command: /usage
+    - id: briefs
+      label: "Show briefs"
+      command: /tasks
 ```
 
 **When to use:** surfacing project-specific runbook actions inside SPLITBRIEF's TUI without leaving the session.
@@ -1133,7 +1126,7 @@ Declared for workflow commands (`start`, `resume`, `continue`) plus command-spec
 | `--planner-api-key-env <var>` | Planner API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue |
 | `--planner-args <arg>` | Append a planner CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue |
 | `--planner-output-format <format>` | Planner output format (`stream-json` \| `jsonl` \| `text` \| `opencode`); an admitted CLI keeps its own native parser and terminal protocol | start, resume, continue |
-| `--planner-context-length <tokens>` | Planner context length in tokens. Every kind keeps the value; only the `api` kind uses it, as the application context its PLAN packet is measured against | start, resume, continue |
+| `--planner-context-length <number>` | Planner context length in tokens. Every kind keeps the value; only the `api` kind uses it, as the application context its PLAN packet is measured against | start, resume, continue |
 | `--planner-effort <level>` | Planner effort hint (`off` \| `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` \| `ultra`). The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. | start, resume, continue |
 | `--implementer <p>` | Implementer provider override | start, resume, continue |
 | `--implementer-model <m>` | Implementer model override | start, resume, continue |
@@ -1141,14 +1134,14 @@ Declared for workflow commands (`start`, `resume`, `continue`) plus command-spec
 | `--implementer-api-key-env <var>` | Implementer API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue |
 | `--implementer-args <arg>` | Append an implementer CLI/shell arg (repeatable; kind=cli/shell/agent) | start, resume, continue |
 | `--implementer-output-format <format>` | Implementer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue |
-| `--implementer-context-length <tokens>` | Implementer context length (tokens) | start, resume, continue |
+| `--implementer-context-length <number>` | Implementer context length (tokens) | start, resume, continue |
 | `--reviewer <tool>` | Reviewer tool override | start, resume, continue |
 | `--reviewer-model <m>` | Reviewer model override | start, resume, continue |
 | `--reviewer-api-base <url>` | Reviewer API base URL (kind=api only; warns + ignored otherwise) | start, resume, continue |
 | `--reviewer-api-key-env <var>` | Reviewer API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue |
 | `--reviewer-args <arg>` | Append a reviewer CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue |
 | `--reviewer-output-format <format>` | Reviewer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue |
-| `--reviewer-context-length <tokens>` | Reviewer context length in tokens. Every kind keeps the value; only the `api` kind uses it, as the application context its REVIEW packet is measured against | start, resume, continue |
+| `--reviewer-context-length <number>` | Reviewer context length in tokens. Every kind keeps the value; only the `api` kind uses it, as the application context its REVIEW packet is measured against | start, resume, continue |
 | `--reviewer-effort <level>` | Reviewer effort hint (`off` \| `none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max` \| `ultra`). The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. | start, resume, continue |
 | `--project <dir>` | Project directory (default cwd) | most commands |
 | `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue |
@@ -1249,7 +1242,7 @@ key.
 | `plannerEstimateReview` | rejected — `plannerEstimateReview: Unknown config key …` | None. The estimate-review gate is gone; the plan card (§5 `approve`) is the remaining stop before implementation. |
 | `autoSplitOverflow` | rejected — `autoSplitOverflow: Unknown config key …` | None. An overflowing task is reported rather than split automatically; re-plan or narrow the feature description. |
 | `compiler` (the whole block) | rejected — `compiler: Unknown key "compiler" — briefs compile from the plan directly; remove the "compiler" block.` | None. Briefs compile from the plan directly. |
-| `workflow.maxBudget` (`max_budget`) | rejected — `workflow.maxBudget: Unknown config key …` | None. Budget gates are gone; a run reports what it spent and stops when you stop it. |
+| `workflow.maxBudget` (`max_budget`) | rejected — `workflow.maxBudget: Unknown config key …` | None. |
 | `workflow.budgetPauseThreshold` (`budget_pause_threshold`) | rejected — `workflow.budgetPauseThreshold: Unknown config key …` | None. There is no budget pause to threshold. |
 | `workflow.costGate` (`cost_gate`) | rejected — `workflow.costGate: Unknown config key …` | None. The cost-approval gate is gone; the plan card (§5 `approve`) is the remaining stop before implementation. |
 | `implementerProfiles.profiles.*.costTier` (`cost_tier`) | rejected — `cost_tier: Unknown config key …` | None. Routing is by capability — context window, then name — never by price. |
@@ -1332,9 +1325,9 @@ approval:
 # ---------- Custom palette actions ----------
 palette:
   customActions:
-    - id: usage
-      label: "Show token usage"
-      command: /usage
+    - id: briefs
+      label: "Show briefs"
+      command: /tasks
     - id: accept-run
       label: "Accept current run"
       command: /run accept
@@ -1360,7 +1353,7 @@ splitbrief start --allow-hooks "your feature description"
 
 Reference for the `kind: api` providers in SPLITBRIEF. Credential handling: [API-KEYS.md](./API-KEYS.md).
 
-### Service, offering, and billing
+### Service and offering
 
 API runners store **service** identity separately from **offering** semantics:
 
@@ -1368,13 +1361,12 @@ API runners store **service** identity separately from **offering** semantics:
 |---|---|
 | `service` | Stable provider identity (for example your own custom-endpoint name). |
 | `offering` | Commercial posture: `payg`, `free-quota`, `coding-subscription`, or `local`. |
-| `billing` | How SPLITBRIEF reports spend: `api-metered`, `provider-dependent`, `subscription-included`, `local`, or `unknown`. |
 
-Credential prefix or env presence validates the configured offering but **never chooses or changes** the offering. PAYG metered runs use dated pricing metadata when available; subscription-included runs never show a fictitious PAYG charge; local runs are labeled local/unpriced; opportunistic free pools on a custom endpoint are not presented as reproducible defaults.
+Credential prefix or env presence validates the configured offering but **never chooses or changes** the offering.
 
 ### Bundled model catalog
 
-`KNOWN_MODELS` is the offline picker fallback. Live native CLI rows — or, for an `api` provider, models.dev rows — hide `bundled-suggestion` placements in the picker (`buildRightRows`); `resolveModelCatalog` still emits them. For `api` runners pricing and context stay on models.dev first, as in [Pricing metadata](#pricing-metadata); a CLI tool's context comes from its own listing or this table.
+`KNOWN_MODELS` is the offline picker fallback. Live native CLI rows — or, for an `api` provider, models.dev rows — hide `bundled-suggestion` placements in the picker (`buildRightRows`); `resolveModelCatalog` still emits them. API runners use context from models.dev when available. A CLI tool's context comes from its own listing or this table.
 
 Recommendation labels mirror `KNOWN_MODELS`. No bundled row is **`recommended`**: every row is **`compatible-only`** — selectable, with no SPLITBRIEF quality claim.
 
@@ -1403,7 +1395,7 @@ Every `kind: api` block declares all three of `provider`, `service`, and `offeri
 - A block with a provider name of your own that omits `service` or `offering` fails validation with the missing path named in the error, for example `planner.service`.
 - Custom providers declare their own `service` and `offering` alongside an explicit `apiBase`.
 
-Writing the triple explicitly keeps save/load, run metadata, and billing presentation aligned.
+Writing the triple explicitly keeps the selected service and its credentials aligned.
 
 ### Named implementer profiles
 

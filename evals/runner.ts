@@ -7,11 +7,6 @@ import { plainUserMessage } from '../src/core/types/user-input.js';
 import { createEventBus } from '../src/engine/events/bus.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { runWorkflow } from '../src/engine/orchestrator/run/workflow.js';
-import type { ModelCacheAccessor } from '../src/engine/providers/model/runtime-snapshot.js';
-import {
-  loadModelsDevCatalogCache,
-  type ModelsDevCatalogSnapshot,
-} from '../src/engine/providers/models-dev/cache.js';
 import { prepareExecution } from '../src/engine/runners/prepare-execution/prepare.js';
 import { releasePreparedSession } from '../src/core/sessions/prepared-rollback.js';
 import { createCassetteRecorder } from '#testing/helpers/cassette/recorder.js';
@@ -126,7 +121,6 @@ async function runSingleEval(
   config: Config,
   mode: EvalMode,
   opts: { record: boolean; replay: boolean; cassetteDir: string; outputDir: string },
-  modelCache: ModelCacheAccessor | null,
 ): Promise<RunMetrics> {
   const { tmpDir, projectDir } = copyScenarioFixture(scenario, mode);
   createTestGitRepo(projectDir);
@@ -191,7 +185,6 @@ async function runSingleEval(
           prepared: preparation.execution,
           headless: true,
           eventBus: bus,
-          modelCache: modelCache ?? undefined,
           sinks: { setAbortHandler: () => undefined, setQueueHandler: () => undefined },
           callbacks: {
             onApprovalNeeded: async () => ({ approved: true }),
@@ -238,40 +231,11 @@ async function runSingleEval(
   });
 }
 
-/**
- * Pricing for a run comes from the snapshot the run loaded. Hydrating the app's
- * model-cache store instead would put every scenario of the process behind one
- * global catalog, which only ever accepts the first snapshot hydrated into it.
- */
-export function createEvalModelCache(snapshot: ModelsDevCatalogSnapshot): ModelCacheAccessor {
-  return {
-    getModelsDevCatalog: () => snapshot.catalog,
-    getProviderModels: () => null,
-  };
-}
-
-async function loadEvalPricingCache(): Promise<ModelCacheAccessor | null> {
-  let snapshot: ModelsDevCatalogSnapshot | null;
-  try {
-    snapshot = await loadModelsDevCatalogCache();
-  } catch {
-    snapshot = null;
-  }
-  if (snapshot === null) {
-    console.log(
-      'pricing unavailable: no cached models.dev catalog snapshot — costs will read unpriced',
-    );
-    return null;
-  }
-  return createEvalModelCache(snapshot);
-}
-
 export async function runEvalSuite(opts: EvalRunOptions): Promise<EvalReport> {
   if (opts.record && opts.replay) {
     throw new Error('Use either record or replay mode, not both');
   }
 
-  const modelCache = await loadEvalPricingCache();
   const comparisons: EvalReport['scenarios'] = [];
   const modelPair: ModelPair = {
     plannerModel: opts.plannerModel,
@@ -287,12 +251,12 @@ export async function runEvalSuite(opts: EvalRunOptions): Promise<EvalReport> {
 
     console.log(`  baseline (${opts.baselineImplementerModel})...`);
     const baselineConfig = buildEvalConfig(modelPair, 'baseline');
-    const baseline = await runSingleEval(scenario, baselineConfig, 'baseline', opts, modelCache);
+    const baseline = await runSingleEval(scenario, baselineConfig, 'baseline', opts);
     console.log(formatRunProgressLine(baseline));
 
     console.log(`  routed (${opts.routedImplementerModel})...`);
     const routedConfig = buildEvalConfig(modelPair, 'routed');
-    const routed = await runSingleEval(scenario, routedConfig, 'routed', opts, modelCache);
+    const routed = await runSingleEval(scenario, routedConfig, 'routed', opts);
     console.log(formatRunProgressLine(routed));
 
     comparisons.push(
@@ -317,6 +281,5 @@ export async function runEvalSuite(opts: EvalRunOptions): Promise<EvalReport> {
 }
 
 export function formatRunProgressLine(run: RunMetrics): string {
-  const cost = run.cost.pricingAvailable ? `$${run.cost.estimatedCostUSD.toFixed(4)}` : 'unpriced';
-  return `    cost: ${cost} | quality: ${Math.round(run.quality.score * 100)}%`;
+  return `    quality: ${Math.round(run.quality.score * 100)}%`;
 }

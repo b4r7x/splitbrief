@@ -1,7 +1,6 @@
 import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import { isAutomaticModel, resolveCliModel } from '../../../core/providers/automatic-model.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
-import { KNOWN_MODELS, knownModelAnswersTo } from '../../../core/providers/known-models.js';
 import type { ProviderId, RunnerKind } from '../../../core/schemas/enums.js';
 import { isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
@@ -172,23 +171,6 @@ export function lookupRuntimeModel(input: {
     ...(kind === undefined ? {} : { kind }),
   });
   return outcome.kind === 'found' ? outcome.model : null;
-}
-
-/**
- * Bundled lookup for a runner with no bundled provider of its own. KNOWN_MODELS
- * is provider-keyed, so a custom endpoint's model can only be found by scanning
- * every provider for a row that answers to the model id — with or without a
- * `vendor/` prefix.
- */
-export function findKnownModelByModelId(modelId: string): KnownModel | undefined {
-  const { bareId } = splitModelVendorPrefix(modelId);
-  for (const models of Object.values(KNOWN_MODELS)) {
-    const match = models.find(
-      (entry) => knownModelAnswersTo(entry, modelId) || knownModelAnswersTo(entry, bareId),
-    );
-    if (match !== undefined) return match;
-  }
-  return undefined;
 }
 
 export function lookupCatalogModelByModelId(

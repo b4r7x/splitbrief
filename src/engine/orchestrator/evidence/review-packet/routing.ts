@@ -7,11 +7,10 @@ export function buildRouting(
   events: PacketEvent[],
 ): ReviewPacket['routing'] {
   const { summary, state } = opts;
-  // A priced summary can combine separate settlements that reuse a task ID.
   const taskRouting = state.taskBreakdowns ?? summary.taskBreakdown ?? [];
   const routingWarnings = events.filter(
     (event) =>
-      ((event.type === 'task_started' || event.type === 'task_tokens') &&
+      ((event.type === 'task_started' || event.type === 'task_settled') &&
         (event.message !== undefined ||
           event.outcome === 'tight' ||
           event.outcome === 'overflow')) ||

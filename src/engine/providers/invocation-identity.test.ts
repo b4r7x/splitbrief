@@ -151,11 +151,6 @@ describe('direct API invocation identity', () => {
       model: 'qwen-coder',
       connectionKey: expect.stringMatching(/^api:[a-f0-9]{32}$/),
       observedChannel: { channel: 'api-key', evidenceId: 'api.credential.configured' },
-      billing: {
-        posture: 'local',
-        basis: 'local-transport',
-        evidenceId: 'api.lm-studio.loopback-transport',
-      },
     });
     for (const event of first) expect(event.invocationIdentity).toEqual(recorded);
     expect(JSON.stringify(first)).not.toContain(SECRET);
@@ -180,13 +175,13 @@ describe('direct API invocation identity', () => {
     ['the placeholder default key', 'ollama', {}, 'unknown'],
   ] as const)('reads %s as %s', (_name, provider, overrides, expected) => {
     const resolved = getProvider(provider, overrides);
-    expect(apiInvocationEvidence(resolved, 'm').dispatchAuthentication).toBe(expected);
+    expect(apiInvocationEvidence(resolved).dispatchAuthentication).toBe(expected);
   });
 
   it('treats a configured Ollama env credential as an API key without storing it', () => {
     vi.stubEnv('OLLAMA_LOCAL_API_KEY', 'ollama-env-canary-99');
     const resolved = getProvider('ollama', { apiKey: 'env:OLLAMA_LOCAL_API_KEY' });
-    const evidence = apiInvocationEvidence(resolved, 'llama3:8b');
+    const evidence = apiInvocationEvidence(resolved);
     const identity = snapshotApiInvocationIdentity({
       provider: 'ollama',
       model: 'llama3:8b',
@@ -208,7 +203,7 @@ describe('direct API invocation identity', () => {
       isLocal: true,
       listModels: async () => [],
     };
-    expect(apiInvocationEvidence(custom, 'm').dispatchAuthentication).toBe('unknown');
+    expect(apiInvocationEvidence(custom).dispatchAuthentication).toBe('unknown');
 
     const identity = snapshotApiInvocationIdentity({
       provider: 'ollama',
@@ -218,48 +213,13 @@ describe('direct API invocation identity', () => {
       now: 1,
     });
     expect(identity.observedChannel).toBeUndefined();
-    expect(identity.billing).toEqual({ posture: 'unknown', basis: 'unknown' });
-  });
-
-  it('bills a remote-backed model on a loopback server as unknown, not local', () => {
-    const resolved = getProvider('ollama', {});
-    const cloud = apiInvocationEvidence(resolved, 'qwen3-coder:480b-cloud');
-    const local = apiInvocationEvidence(resolved, 'llama3:8b');
-
-    const identity = (model: string, evidence: typeof cloud) =>
-      InvocationIdentitySchema.parse(
-        snapshotApiInvocationIdentity({
-          provider: 'ollama',
-          model,
-          connectionKey: undefined,
-          ...evidence,
-          now: 1,
-        }),
-      );
-    expect(identity('qwen3-coder:480b-cloud', cloud).billing).toEqual({
-      posture: 'unknown',
-      basis: 'unknown',
-    });
-    expect(identity('llama3:8b', local).billing).toEqual({
-      posture: 'local',
-      basis: 'local-transport',
-      evidenceId: 'api.ollama.loopback-transport',
-    });
   });
 
   it('keeps a custom provider unknown even with a real key', () => {
     const resolved = getProvider('acme', { apiBase: 'https://llm.example.com/v1', apiKey: SECRET });
-    const evidence = apiInvocationEvidence(resolved, 'acme-large');
+    const evidence = apiInvocationEvidence(resolved);
 
     expect(evidence).toEqual({ dispatchAuthentication: 'api-key' });
-    const identity = snapshotApiInvocationIdentity({
-      provider: 'acme',
-      model: 'acme-large',
-      connectionKey: undefined,
-      ...evidence,
-      now: 1,
-    });
-    expect(identity.billing).toEqual({ posture: 'unknown', basis: 'unknown' });
   });
 
   it('leaves a legacy dispatch without evidence unknown through the result and projection', async () => {
@@ -278,7 +238,7 @@ describe('direct API invocation identity', () => {
 
     const identity = events[0]?.invocationIdentity;
     expect(identity?.observedChannel).toBeUndefined();
-    expect(identity?.billing).toEqual({ posture: 'unknown', basis: 'unknown' });
+
     expect(collectRunnerCallResult(events).invocationIdentity).toEqual(identity);
     for (const engineEvent of project(events)) {
       expect(EngineEventSchema.parse(engineEvent)).toMatchObject({ invocationIdentity: identity });

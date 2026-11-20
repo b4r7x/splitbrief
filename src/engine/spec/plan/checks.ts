@@ -3,6 +3,7 @@ import { REVIEW_CHECK_ID } from '../../../core/schemas/review/verdict.js';
 import { isPathConfined } from '../../../lib/fs/confinement.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { protectedWriteClass } from '../../orchestrator/approval/action-classifier.js';
+import { formatBuildContextOverflow } from '../../orchestrator/context-routing/estimation.js';
 import { reviewerCommandRefusal } from '../../orchestrator/validation/reviewer-policy/refusal.js';
 import {
   refusedCheckErrors,
@@ -24,7 +25,9 @@ export function planRepairWarning(errors: readonly PlanCheckError[]): { message:
   return {
     message: [
       `The plan failed ${countNoun(errors.length, 'check')}. It goes back to the planner once to fix ${errors.length === 1 ? 'it' : 'them'}:`,
-      ...errors.map((error) => `- ${error.message}`),
+      ...errors.map((error) =>
+        error.detail === undefined ? `- ${error.message}` : `- ${error.message}\n  ${error.detail}`,
+      ),
     ].join('\n'),
   };
 }
@@ -154,11 +157,16 @@ export function checkPlan(
 
   for (const task of plan.tasks) {
     const estimate = taskFits.get(task.id);
-    if (estimate?.blocked !== undefined && estimate.fit === 'overflow') {
-      fail(
-        'context-overflow',
-        `Task ${task.id} does not fit the BUILD model’s context${contextFilesText(task, projectDir)}`,
-      );
+    if (
+      estimate?.blocked !== undefined &&
+      (estimate.fit === 'overflow' || estimate.contextOverflow !== undefined)
+    ) {
+      const overflow = estimate.contextOverflow;
+      errors.push({
+        code: 'context-overflow',
+        message: `Task ${task.id} does not fit the BUILD model’s context${contextFilesText(task, projectDir)}`,
+        ...(overflow !== undefined && { detail: formatBuildContextOverflow(overflow) }),
+      });
     } else if (estimate?.blocked !== undefined) {
       fail(
         'no-capable-worker',

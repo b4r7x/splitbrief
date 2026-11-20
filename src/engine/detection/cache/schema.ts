@@ -120,7 +120,6 @@ export const CachedModelSchema = z
     supportsImages: z.boolean().optional(),
     outputModalities: z.array(z.string().min(1).max(32)).max(8).readonly().optional(),
     capabilities: z.array(z.string().trim().min(1).max(64)).max(32).optional(),
-    isFree: z.boolean().optional(),
   })
   .strict();
 

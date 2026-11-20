@@ -63,10 +63,10 @@ function contextLengthCheck(
     return {
       id: `context.${role}.tight`,
       severity: 'warning',
-      summary: `${seat} context length ${contextLength} may be tight.`,
+      summary: `${seat} context window may be too small.`,
       fix:
         setting !== undefined
-          ? `Raise ${setting} to at least ${CONTEXT_FLOOR} tokens.`
+          ? `Increase ${setting} to allow a larger context window.`
           : `Raise or remove ${field} in .splitbrief/config.yaml to allow a larger context window.`,
       nextAction: 'raise-context',
       metadata: { role, contextLength, recommendedMinimum: CONTEXT_FLOOR },
@@ -76,7 +76,7 @@ function contextLengthCheck(
   return {
     id: `context.${role}.ok`,
     severity: 'ok',
-    summary: `${seat} context length ${contextLength} is configured.`,
+    summary: `${seat} context window has a configured limit.`,
     metadata: { role, contextLength, recommendedMinimum: CONTEXT_FLOOR },
   };
 }

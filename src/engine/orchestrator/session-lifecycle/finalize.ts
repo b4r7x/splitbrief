@@ -78,7 +78,6 @@ export function finalizeEndedRun(
       startTime: Date.parse(state.startedAt) || Date.now(),
       projectDir: ref.projectDir,
       sessionId: ref.sessionId,
-      ...(input.modelCache !== undefined && { pricingCache: input.modelCache }),
     }),
     state,
   });

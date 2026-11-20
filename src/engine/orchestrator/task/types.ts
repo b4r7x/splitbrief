@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
-import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
@@ -53,8 +53,7 @@ export type RetryAndRecordOptions = {
   initialAnswer?: string | undefined;
   /** The unfinished calls in a row before a consult that runs again, which its halt kept. */
   unfinishedCalls?: number | undefined;
-  tokensBefore: TokenUsage;
-  taskBreakdowns: TaskTokenUsage[];
+  taskBreakdowns: BriefExecution[];
   setTrackedState: (s: WorkflowState) => void;
 };
 

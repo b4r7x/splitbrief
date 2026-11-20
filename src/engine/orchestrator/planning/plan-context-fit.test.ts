@@ -64,7 +64,17 @@ describe('estimatePlanContextFits', () => {
     const fits = await estimatePlanContextFits(plan, { config, projectDir });
 
     expect([...fits]).toEqual([
-      ['T001', { fit: 'overflow', blocked: expect.any(String) }],
+      [
+        'T001',
+        {
+          fit: 'overflow',
+          blocked: expect.any(String),
+          contextOverflow: {
+            requiredTokens: expect.any(Number),
+            availableTokens: expect.any(Number),
+          },
+        },
+      ],
       ['T002', { fit: 'fits' }],
     ]);
   });
@@ -83,6 +93,7 @@ describe('estimatePlanContextFits', () => {
     expect((await estimatePlanContextFits(heavy, { config, projectDir })).get('T001')).toEqual({
       fit: 'overflow',
       blocked: expect.any(String),
+      contextOverflow: { requiredTokens: expect.any(Number), availableTokens: expect.any(Number) },
     });
   });
 

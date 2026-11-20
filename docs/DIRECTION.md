@@ -14,7 +14,7 @@ SPLITBRIEF is a CLI tool. CLI tools are loved when they respect the developer's 
 
 ### 2. Heartbeat over silence
 
-Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. Each reviewer check and each gate command at the run base publish `full_suite` running rows naming the check id and command. A reviewer check's byline and build block show its command and its clock. A gate command at the run base shows its id and clock at the end of the build block's counts line. While a reviewer check waits on the run of the same id at the run base, the byline and the activity line name that base command and its clock instead. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event 8s ago`, counting every second. Once a seat on a call has sent no output for 60 seconds (`UI_IDLE_WARN_MS`), the line names what the seat is doing: `No output for m:ss · running <command>` for a tool still open, `No output for m:ss · tools report when done` for a runner that reports tools only when they end, otherwise `No output for m:ss`. The watchdog's warn is `RUNNER_IDLE_WARN_MS` (five minutes by default, tunable per runner as `idleWarnMs`). It never ends the call.
+Any wait > 5 seconds must show proof of life: the current phase or a recent excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. Each reviewer check and each gate command at the run base publish `full_suite` running rows naming the check id and command. A reviewer check's byline and build block show its command and its clock. A gate command at the run base shows its id and clock at the end of the build block's counts line. While a reviewer check waits on the run of the same id at the run base, the byline and the activity line name that base command and its clock instead. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event 8s ago`, counting every second. Once a seat on a call has sent no output for 60 seconds (`UI_IDLE_WARN_MS`), the line names what the seat is doing: `No output for m:ss · running <command>` for a tool still open, `No output for m:ss · tools report when done` for a runner that reports tools only when they end, otherwise `No output for m:ss`. The watchdog's warn is `RUNNER_IDLE_WARN_MS` (five minutes by default, tunable per runner as `idleWarnMs`). It never ends the call.
 
 ### 3. One command for session continuity
 
@@ -38,9 +38,8 @@ A run is judged by whether the change holds up, not by what it cost. Three numbe
 |---|---|
 | First-pass rate | Share of tasks that passed validation on the implementer's first attempt — no retry, no escalation. This is what the Task Brief contract, the implementer prompt, and the isolation are tuned against. |
 | Cross-lab review effectiveness | What the planner's review of the run diff caught that the deterministic pipeline did not — logic errors and edge cases, where the cross-lab gap is widest. |
-| Spend | Reported alongside the other two, per run. Alone it proves nothing: a first-pass rate bought on the stronger tool is not a result. A run that recorded no priced usage reports that instead of a fabricated zero. |
 
-`evals/` is scored on the first two, not on spend.
+The eval suite measures task outcomes and review results.
 
 ---
 
@@ -59,7 +58,7 @@ Two levels:
 | Level | Seam | Use case |
 |---|---|---|
 | L1: Faux objects | Planner/Implementer interface | 90% of orchestrator tests. Declarative scripts: `{ tasks: [...], success: true }`. No network, <50ms. |
-| L2: Faux HTTP server | Localhost OpenAI/Anthropic SSE | Testing `api.ts` parser: rate limits, malformed SSE, token accounting. Real fetch hits localhost. |
+| L2: Faux HTTP server | Localhost OpenAI/Anthropic SSE | Testing `api.ts` parser: rate limits, malformed SSE. Real fetch hits localhost. |
 
 Existing infrastructure (cassette record/replay, shell runners) stays for e2e and integration. The faux layer fills the gap between "mock the interface with `vi.fn`" (implementation coupling) and "spawn a real process" (slow, flaky).
 
@@ -153,7 +152,7 @@ The value is the split itself. The stronger tool is used where quality changes t
 
 SPLITBRIEF orchestrates two coding tools: one plans and reviews, the other executes. SPLITBRIEF holds everything in between.
 
-The pairing is strongest cross-lab — planner and implementer from different model labs — because a model reviewing its own output repeats its own blind spots. Spend is a reported fact of a run, not the headline: a run should be able to say what it spent, and the claim the product makes is a reviewable change with evidence behind it.
+The pairing is strongest cross-lab — planner and implementer from different model labs — because a model reviewing its own output repeats its own blind spots.
 
 It owns:
 
@@ -464,7 +463,6 @@ This direction is successful when:
 - the implementer works in an isolated checkout where dependencies resolve and validation can actually run,
 - every accepted change lands in the user's real project directory, and never on top of a file the user changed underneath it,
 - correctness is decided by SPLITBRIEF's validation pipeline and the planner's review, never by the implementer's own claim,
-- a finished run can report what it actually spent, as a measurement rather than a headline,
 - the user can edit the plan before implementation,
 - manual user edits are never silently overwritten,
 - TUI explains current state without acting like a project-management tool,

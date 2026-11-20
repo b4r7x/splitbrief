@@ -84,7 +84,7 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
     const contexts: RunnerCallContext[] = [];
     const invoke = vi.fn().mockImplementation(async (opts: { callContext: RunnerCallContext }) => {
       contexts.push(opts.callContext);
-      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+      return makeRunnerCallResult({ status: 'completed', text: 'done' });
     });
     const implementer = createImplementerBase(
       makeBaseConfig({ extractsCode: false, backendKind: 'cli', invoke }),
@@ -127,7 +127,7 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
       makeRunnerCallResult({
         status: 'truncated',
         text: 'partial implementer output',
-        usage: { inputTokens: 7, outputTokens: 3 },
+
         error: { code: 'max_tokens', message: 'output limit reached' },
         partial: true,
       }),
@@ -147,7 +147,6 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
     if (!result.success) {
       expect(result.output).toBe('partial implementer output');
       expect(result.error).toBe('output limit reached');
-      expect(result.usage).toEqual({ inputTokens: 7, outputTokens: 3 });
     }
     expect(existsSync(join(projectDir, 'src/truncated.ts'))).toBe(false);
   });
@@ -159,7 +158,7 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
       return makeRunnerCallResult({
         status: 'aborted',
         text: 'partial before abort',
-        usage: { inputTokens: 1, outputTokens: 1 },
+
         error: { code: 'runner_interrupted', message: 'stream interrupted' },
         partial: true,
       });
@@ -179,7 +178,6 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
     if (!result.success) {
       expect(result.output).toBe('partial before abort');
       expect(result.error).toBe('Aborted');
-      expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1 });
     }
   });
 });

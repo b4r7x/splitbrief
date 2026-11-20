@@ -21,7 +21,7 @@ export function computeComposerHintBudget(input: { boxWidth: number; paddingX?: 
   );
 }
 
-// The hint carries keys and nothing else — token counts and money live in /usage. It stands down
+// The hint carries keys and stands down
 // whole rather than squeezing the input below its readable minimum.
 export function fitComposerHintKeys(keys: string, budget: number): string {
   return getTerminalCellWidth(keys) <= budget ? keys : '';

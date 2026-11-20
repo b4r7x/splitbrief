@@ -1556,7 +1556,7 @@ describe('a planner call that the run issues again on a fresh session', () => {
         startedAt: ts - 10,
         endedAt: ts,
         durationMs: 10,
-        usage: null,
+
         nativeSessionId: null,
       },
     ]);

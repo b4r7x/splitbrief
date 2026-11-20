@@ -1,8 +1,6 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
-import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import { persistApiApplyEvidence } from '../evidence/api-apply.js';
@@ -119,7 +117,6 @@ export function absorbBuildCorrectionsById(
 export async function runWithCorrectionPasses<
   T extends {
     success: boolean;
-    usage?: TokenDelta | null | undefined;
     applyResult?: BundleApplyResult | undefined;
   },
 >(opts: {
@@ -128,7 +125,6 @@ export async function runWithCorrectionPasses<
   pass: () => Promise<T>;
   absorb: () => number;
   signal?: AbortSignal | undefined;
-  onDiscardedUsage: (usage: TokenDelta) => void;
   application: {
     wctx: WorkflowPersistenceContext;
     state: () => WorkflowState;
@@ -136,14 +132,8 @@ export async function runWithCorrectionPasses<
     workspacePath: string;
   };
 }): Promise<T> {
-  let usage: TokenDelta | null | undefined;
-  let completedUsage: TokenDelta | null | undefined;
-  let completedBeforeAbort = false;
   const execute = async (call: () => Promise<T>): Promise<T> => {
     const result = await call();
-    if (result.usage != null) usage = accumulateTokenUsage(usage ?? null, result.usage);
-    completedBeforeAbort = !opts.signal?.aborted;
-    if (completedBeforeAbort) completedUsage = usage;
     if (result.applyResult !== undefined) {
       persistApiApplyEvidence({
         ...opts.application,
@@ -153,27 +143,11 @@ export async function runWithCorrectionPasses<
     }
     return result;
   };
-  const discardUsage = (): boolean => {
-    if (completedUsage == null) return false;
-    const discarded = completedUsage;
-    completedUsage = undefined;
-    opts.onDiscardedUsage(discarded);
-    return true;
-  };
-  try {
-    let result = await execute(opts.first);
-    while (result.success && !opts.signal?.aborted) {
-      await settleMidCallDeliveries(opts.ref);
-      if (opts.signal?.aborted || opts.absorb() === 0) break;
-      result = await execute(opts.pass);
-    }
-    // A completed call is booked on discard; only an interrupted call still belongs to its caller.
-    if (opts.signal?.aborted && discardUsage()) {
-      return completedBeforeAbort ? { ...result, usage: undefined } : result;
-    }
-    return { ...result, ...(usage != null && { usage }) };
-  } catch (err) {
-    discardUsage();
-    throw err;
+  let result = await execute(opts.first);
+  while (result.success && !opts.signal?.aborted) {
+    await settleMidCallDeliveries(opts.ref);
+    if (opts.signal?.aborted || opts.absorb() === 0) break;
+    result = await execute(opts.pass);
   }
+  return result;
 }

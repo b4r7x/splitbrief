@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../../core/schemas/task.js';
 import { type ReviewPacket, ReviewPacketSchema } from '../../../../core/schemas/review/packet.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
-import { renderReviewPacketMarkdown, stringifyReviewPacket } from './render.js';
+import { renderReviewPacketMarkdown } from './render.js';
 import { reusedNote } from '../../../../core/validation/reused-note.js';
 import { NULL_CACHE } from '../../../providers/model/runtime-snapshot.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
@@ -35,11 +35,8 @@ it('projects an older packet into the routing section and renders its refusal', 
     ...base,
     routing: undefined,
     cost: {
-      ...base.cost,
       taskRouting: taskRouting.map((route) => ({
         ...route,
-        implementerTokens: 4,
-        escalationTokens: 0,
       })),
       routingWarnings,
     },
@@ -51,20 +48,6 @@ it('projects an older packet into the routing section and renders its refusal', 
     ?.split('\n## ')[0];
   expect(routing).toContain('Selected the quick profile.');
   expect(routing).toContain('No profile can hold the brief.');
-});
-
-it('writes routing independently from the cost section', () => {
-  const base = makeReviewPacket();
-  const packet = ReviewPacketSchema.parse({
-    ...base,
-    routing: { taskRouting, routingWarnings },
-    cost: { tokenUsage: base.cost.tokenUsage, costBreakdown: null },
-  });
-  const json: unknown = JSON.parse(stringifyReviewPacket(packet));
-
-  expect(json).toMatchObject({ routing: { taskRouting, routingWarnings } });
-  expect(packet.cost).not.toHaveProperty('taskRouting');
-  expect(packet.cost).not.toHaveProperty('routingWarnings');
 });
 
 describe('renderReviewPacketMarkdown review seat', () => {

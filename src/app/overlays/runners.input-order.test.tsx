@@ -53,7 +53,7 @@ const LEFT = `${ESC}[D`;
 const ENTER = '\r';
 
 const ON_EFFORT = '▌ └─ effort max';
-const ON_SONNET = '▌ Sonnet 5.5 1M · claude-sonnet-5-5 ▾';
+const ON_SONNET = '▌ Sonnet 5.5 claude-sonnet-5-5 ▾';
 const TO_SONNET = [UP, UP];
 
 interface Case {
@@ -187,7 +187,7 @@ const TWINS: Case[] = [
     id: 'RA11',
     name: '⏎ Esc on a collapsed row with no expansion open',
     setup: [ESC],
-    start: '▌ Fable 5.1 1M · claude-fable-5-1 ▾',
+    start: '▌ Fable 5.1 claude-fable-5-1 ▾',
     steps: [ENTER, ESC],
   },
   {

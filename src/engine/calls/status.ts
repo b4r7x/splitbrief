@@ -3,7 +3,6 @@ import type {
   RunnerCallError,
   RunnerCallEvent,
   RunnerCallFailureStatus,
-  RunnerCallUsage,
 } from './types.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
 import { toErrorMessage } from '../../utils/format/errors.js';
@@ -107,7 +106,6 @@ export function runnerCallCompletedEvent(
   opts: {
     startedAt: number;
     endedAt: number;
-    usage: RunnerCallUsage | null;
     nativeSessionId: string | null;
     structured?: unknown;
   },
@@ -122,7 +120,6 @@ export function runnerCallCompletedEvent(
     endedAt: opts.endedAt,
     durationMs: Math.max(0, opts.endedAt - opts.startedAt),
     partial: false,
-    usage: opts.usage,
     nativeSessionId: opts.nativeSessionId,
     ...(opts.structured !== undefined && { structured: opts.structured }),
   };
@@ -135,7 +132,6 @@ export function runnerCallErrorEvent(
     endedAt: number;
     status: RunnerCallFailureStatus;
     error: RunnerCallError;
-    usage: RunnerCallUsage | null;
     nativeSessionId: string | null;
     partial: boolean;
     rawTail?: string | undefined;
@@ -153,7 +149,6 @@ export function runnerCallErrorEvent(
     endedAt: opts.endedAt,
     durationMs: Math.max(0, opts.endedAt - opts.startedAt),
     partial: opts.partial,
-    usage: opts.usage,
     nativeSessionId: opts.nativeSessionId,
     ...(opts.endUnknown && { endUnknown: true }),
   };

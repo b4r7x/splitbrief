@@ -215,7 +215,7 @@ describe('Antigravity role adapters', () => {
     }
   });
 
-  it('replays the captured stream: session, paired tool steps, streamed text, per-step usage', () => {
+  it('replays the captured stream: session, paired tool steps, streamed text', () => {
     const events = fixtureEvents();
     const tools = events.filter((event) => event.type === 'tool-use');
     const terminal = antigravityImplementerAdapter.terminal({
@@ -241,28 +241,12 @@ describe('Antigravity role adapters', () => {
     const streamed = events
       .flatMap((event) => (event.type === 'text' ? [event.text] : []))
       .join('');
-    const semantics = events
-      .filter((event) => event.type === 'usage')
-      .map((event) => event.semantics);
     expect(streamed).toBe('OK\n');
-    expect(semantics).toEqual(['delta', 'delta', 'delta', 'delta']);
     expect(terminal).toEqual({
       type: 'result',
       status: 'completed',
       text: 'OK\n',
-      usage: {
-        inputTokens: 59864,
-        outputTokens: 272,
-        reasoningTokens: 999,
-        cacheReadTokens: 0,
-        counterCoverage: {
-          input: 'reported',
-          output: 'reported',
-          cacheRead: 'reported',
-          cacheCreate: 'missing',
-          reasoning: 'reported',
-        },
-      },
+
       nativeSessionId: '50328626-c5df-4301-9da7-dee7ce900271',
       error: null,
       partial: false,

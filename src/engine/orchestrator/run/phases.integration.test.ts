@@ -100,12 +100,12 @@ const PRICED_MODEL_CACHE = makeModelCacheAccessor({
       models: {
         'claude-opus-5': {
           id: 'claude-opus-5',
-          cost: { input: 15, output: 75 },
+
           limit: { context: 200_000 },
         },
         'deepseek-v4-flash': {
           id: 'deepseek-v4-flash',
-          cost: { input: 0.3, output: 1.2 },
+
           limit: { context: 128_000 },
         },
       },
@@ -462,7 +462,6 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             implement: vi.fn().mockResolvedValue({
               success: true,
               output: 'code',
-              usage: { inputTokens: 50, outputTokens: 25 },
             }),
           }),
         ),

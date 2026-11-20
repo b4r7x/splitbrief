@@ -20,7 +20,6 @@ export interface TerminalUpdate {
   endedAt: number;
   durationMs: number;
   reason: string | null;
-  usage: unknown | null;
   partial: boolean;
 }
 
@@ -85,7 +84,6 @@ export function cancelRunningOperations(
       endedAt: cancellation.ts,
       durationMs: durationBetween(operation.startedAt, cancellation.ts),
       reason: cancellation.reason,
-      usage: operation.usage,
       partial: operation.partial,
     });
     byCallId.set(terminal.callId, terminal);
@@ -121,7 +119,6 @@ export function terminalizeRunningOperation(
     endedAt: update.endedAt,
     durationMs: update.durationMs,
     reason: cleanOperationReason(update.reason),
-    usage: update.usage ?? operation.usage,
     partial: update.partial,
     ...(operation.apiRuntimeStatus !== undefined && {
       apiRuntimeStatus: { ...operation.apiRuntimeStatus, phase: 'finished' },
@@ -159,7 +156,6 @@ function operationFromRunnerStart(event: EngineEventOf<'runner_call_started'>): 
     endedAt: null,
     durationMs: null,
     reason: null,
-    usage: null,
     warnings: [],
     partial: false,
     ...(event.taskId !== undefined && { taskId: event.taskId }),

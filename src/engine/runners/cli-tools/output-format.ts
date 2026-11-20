@@ -1,7 +1,5 @@
 import { error } from '../../../utils/error.js';
 import type { OutputFormat } from '../../../core/schemas/enums.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
 import { getLineParser } from '../../streaming/parse/select.js';
 import type { ParsedLine } from '../types.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
@@ -13,13 +11,6 @@ function parsedLineToProtocolEvents(parsed: ParsedLine): readonly CliProtocolEve
       type: 'text',
       channel: parsed.channel ?? (parsed.isResult ? 'result' : 'stdout'),
       text: parsed.text,
-    });
-  }
-  if (parsed.usage) {
-    events.push({
-      type: 'usage',
-      usage: parsed.usage,
-      semantics: parsed.usageSemantics ?? (parsed.isResult ? 'final' : 'delta'),
     });
   }
   if (parsed.sessionId) events.push({ type: 'session', nativeSessionId: parsed.sessionId });
@@ -49,7 +40,6 @@ function parsedLineToProtocolEvents(parsed: ParsedLine): readonly CliProtocolEve
       type: 'result',
       status: 'failed',
       text: parsed.text ?? '',
-      usage: parsed.usage ?? null,
       nativeSessionId: parsed.sessionId ?? null,
       error: { code: 'runner_result_error', message: parsed.text ?? 'Runner result failed' },
       partial: true,
@@ -64,17 +54,14 @@ const textExitTerminal: CliPlannerAdapter['terminal'] = ({ events }) => {
   );
   if (explicit !== undefined) return explicit;
 
-  let usage: TokenDelta | null = null;
   let nativeSessionId: string | null = null;
   for (const event of events) {
-    if (event.type === 'usage') usage = accumulateTokenUsage(usage, event.usage, event.semantics);
     if (event.type === 'session') nativeSessionId = event.nativeSessionId;
   }
   return {
     type: 'result',
     status: 'completed',
     text: '',
-    usage,
     nativeSessionId,
     error: null,
     partial: false,

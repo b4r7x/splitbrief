@@ -4,9 +4,8 @@ import { writeSpecFile } from '../../../core/sessions/spec-files.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import { buildSummary } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
 
 type SummaryState = Parameters<typeof buildSummary>[0]['state'];
 
@@ -17,7 +16,7 @@ function makeState(overrides?: Partial<SummaryState>): SummaryState {
       makeTask({ id: 'T002', status: 'done' }),
       makeTask({ id: 'T003', status: 'done' }),
     ],
-    tokenUsage: makeUsage(),
+
     phase: 'complete',
     currentTaskIndex: 0,
     ...overrides,
@@ -166,27 +165,18 @@ describe('buildSummary', () => {
     expect(summary.reviewerModel).toBe('custom-v4-flash');
   });
 
-  it('after a seat swap the identity is the new seat and the spend stays on the old one', () => {
+  it('after a seat swap it names the new seat', () => {
     const summary = buildSummary({
       feature: 'auth',
       state: makeState({
         tasks: [],
-        tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
-        implementerTool: 'custom-worker-api',
-        implementerModel: 'deepseek-v4-flash',
       }),
       startTime: Date.now() - 5000,
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
-      pricingCache: makePricedModelCache(),
     });
 
     expect(summary.implementerTool).toBe('ollama');
-    expect(summary.costBreakdown?.providerCosts?.['custom-worker-api']).toBeDefined();
-    expect(summary.costBreakdown?.providerCosts?.['ollama']).toBeUndefined();
-    // The swapped-away seat is priced; the seat now in use is not, so a
-    // breakdown that had followed the identity would read $0.00.
-    expect(summary.costBreakdown?.actualImplementerCost).toBeCloseTo(0.42, 10);
   });
 
   it('mix of local/escalated/skipped/failed → correct counts', () => {
@@ -197,7 +187,6 @@ describe('buildSummary', () => {
         makeTask({ id: 'T003', status: 'skipped' }),
         makeTask({ id: 'T004', status: 'failed' }),
       ],
-      tokenUsage: makeUsage({ plannerInput: 1000, implementerInput: 2000, escalationInput: 500 }),
     });
 
     const summary = buildSummary({
@@ -219,14 +208,13 @@ describe('buildSummary', () => {
   it('classifies escalated-intermediate task breakdowns as escalated in summaries', () => {
     const state = makeState({
       tasks: [makeTask({ id: 'T001', status: 'done' })],
-      tokenUsage: makeUsage({ implementerInput: 100, implementerOutput: 50 }),
+
       taskBreakdowns: [
         {
           taskId: taskId('T001'),
           taskTitle: 'Intermediate task',
           method: 'escalated-intermediate',
-          implementerTokens: 150,
-          escalationTokens: 0,
+
           retryCount: 1,
         },
       ],
@@ -261,30 +249,6 @@ describe('buildSummary', () => {
     expect(summary.totalTasks).toBe(0);
     expect(summary.escalationRate).toBe(0);
     expect(Number.isFinite(summary.escalationRate)).toBe(true);
-    if (!summary.costBreakdown) throw new Error('expected costBreakdown on summary');
-    expect(Number.isFinite(summary.costBreakdown.totalActualCost)).toBe(true);
-  });
-
-  it('token usage passed through correctly', () => {
-    const usage = makeUsage({
-      plannerInput: 100,
-      plannerOutput: 200,
-      implementerInput: 300,
-      implementerOutput: 400,
-      escalationInput: 50,
-      escalationOutput: 60,
-    });
-    const state = makeState({ tokenUsage: usage });
-
-    const summary = buildSummary({
-      feature: 'tokens',
-      state,
-      startTime: Date.now() - 1000,
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    });
-
-    expect(summary.tokenUsage).toEqual(usage);
   });
 
   it("the state's task breakdowns pass through to summary", () => {
@@ -293,8 +257,7 @@ describe('buildSummary', () => {
         taskId: taskId('T001'),
         taskTitle: 'task 1',
         method: 'local' as const,
-        implementerTokens: 100,
-        escalationTokens: 0,
+
         retryCount: 0,
       },
     ];
@@ -312,8 +275,7 @@ describe('buildSummary', () => {
         taskId: taskId('T001'),
         taskTitle: 'task 1',
         method: 'local' as const,
-        implementerTokens: 100,
-        escalationTokens: 0,
+
         retryCount: 0,
       },
     ]);
@@ -358,8 +320,7 @@ function breakdownWithProse() {
       taskId: taskId('T001'),
       taskTitle: `secret title ${SENTINEL}`,
       method: 'local' as const,
-      implementerTokens: 100,
-      escalationTokens: 0,
+
       retryCount: 0,
       tool: 'ollama',
       model: 'qwen-local',
@@ -413,7 +374,7 @@ describe('buildSummary seat identity kinds', () => {
   it('pairs the kind with the seat the summary names, not with the state-pinned seat', () => {
     const summary = buildSummary({
       feature: 'auth',
-      state: makeState({ plannerTool: 'retired-tool' }),
+      state: makeState(),
       startTime: Date.now() - 5000,
       plannerTool: 'claude-code',
       plannerKind: 'cli',

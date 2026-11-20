@@ -4,26 +4,26 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { briefInFlight } from '../../../core/state/selectors.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text/sanitize.js';
 import type { BriefRow, BriefRowState } from './view-model.js';
 
-/** Saved tasks name the current plan. Ledger and spend rows may belong to a plan before a rewind. */
+/** Saved tasks name the current plan. Ledger and execution rows may belong to a plan before a rewind. */
 export function briefRows(input: {
   summary: Summary;
   ledger: EvidenceLedger | null;
   currentTasks: Task[] | null;
 }): { current: BriefRow[]; earlier: BriefRow[] } {
   const { summary, ledger, currentTasks } = input;
-  const spend = foldBriefSpend(summary.taskBreakdown ?? []);
+  const executions = foldBriefExecutions(summary.taskBreakdown ?? []);
   const stoppedId = summary.stoppedAt?.taskId;
   const partialFiles = summary.stoppedAt?.partialFiles.length ?? 0;
   const ledgerTasks = ledger?.tasks ?? [];
   const usedLedger = new Set<EvidenceTask>();
-  const usedSpend = new Set<BookedBrief>();
+  const usedExecutions = new Set<BriefOutcome>();
   const current: BriefRow[] = [];
 
   if (currentTasks !== null) {
@@ -32,14 +32,14 @@ export function briefRows(input: {
         (entry) => entry.id === task.id && sameCurrentBrief(entry, task),
       );
       if (ledgerTask !== undefined) usedLedger.add(ledgerTask);
-      const booked = spend.find(
+      const booked = executions.find(
         (entry) =>
           entry.taskId === task.id &&
           entry.taskTitle === task.title &&
           task.status !== 'pending' &&
           (ledgerTask !== undefined || ledger === null),
       );
-      if (booked !== undefined) usedSpend.add(booked);
+      if (booked !== undefined) usedExecutions.add(booked);
       current.push(
         briefRow({
           id: task.id,
@@ -57,11 +57,11 @@ export function briefRows(input: {
   const earlier: BriefRow[] = [];
   for (const task of ledgerTasks) {
     if (usedLedger.has(task)) continue;
-    const booked = spend.find(
+    const booked = executions.find(
       (entry) =>
-        !usedSpend.has(entry) && entry.taskId === task.id && entry.taskTitle === task.title,
+        !usedExecutions.has(entry) && entry.taskId === task.id && entry.taskTitle === task.title,
     );
-    if (booked !== undefined) usedSpend.add(booked);
+    if (booked !== undefined) usedExecutions.add(booked);
     earlier.push(
       briefRow({
         id: task.id,
@@ -73,8 +73,8 @@ export function briefRows(input: {
       }),
     );
   }
-  for (const task of spend) {
-    if (usedSpend.has(task)) continue;
+  for (const task of executions) {
+    if (usedExecutions.has(task)) continue;
     earlier.push(
       briefRow({
         id: task.taskId,
@@ -89,22 +89,16 @@ export function briefRows(input: {
   return currentTasks === null ? { current: earlier, earlier: [] } : { current, earlier };
 }
 
-/**
- * One brief's folded spend: the completion the last execution earned, and the retries every
- * execution spent. Repeated executions of one brief are one booking — a summary written without
- * call evidence keeps each execution as its own record — and the fold matches the priced
- * summary's own fold of the same records. A rewound brief that reused an id under another title
- * is a different brief and stays a separate fold.
- */
-interface BookedBrief {
+/** Repeated executions of the same brief add retries and keep the latest method. */
+interface BriefOutcome {
   taskId: TaskId;
   taskTitle: string;
   method: TaskCompletionMethod;
   retryCount: number;
 }
 
-function foldBriefSpend(taskBreakdown: readonly TaskTokenUsage[]): BookedBrief[] {
-  const folded = new Map<string, BookedBrief>();
+function foldBriefExecutions(taskBreakdown: readonly BriefExecution[]): BriefOutcome[] {
+  const folded = new Map<string, BriefOutcome>();
   for (const entry of taskBreakdown) {
     const key = `${entry.taskId}\u0000${entry.taskTitle}`;
     const previous = folded.get(key);
@@ -141,7 +135,7 @@ export function stoppedAtForCurrentPlan(input: {
 function briefRow(input: {
   id: TaskId;
   title: string;
-  booked: BookedBrief | undefined;
+  booked: BriefOutcome | undefined;
   ledgerTask: EvidenceTask | undefined;
   stopped: boolean;
   partialFiles: number;

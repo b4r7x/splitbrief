@@ -18,7 +18,6 @@ export function eventContext(event: RunnerCallEvent): RunnerCallContext {
       invocationIdentity: event.invocationIdentity,
     }),
     ...(event.taskId !== undefined && { taskId: event.taskId }),
-    ...(event.usageBoundary !== undefined && { usageBoundary: event.usageBoundary }),
   };
 }
 

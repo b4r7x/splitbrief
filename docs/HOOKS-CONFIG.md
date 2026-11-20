@@ -2,7 +2,7 @@
 
 > **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands that fire at well-known moments during a SPLITBRIEF workflow. Lifecycle hooks are not React hooks.
 
-User-extensible hook system inspired by Claude Code. Declare commands in `.splitbrief/config.yaml` to fire at workflow events (pre/post task and pre/post validation, etc.). Used for `prettier --write` after each task, secret scanning, Slack notifications, custom validators — anything you can run from a script.
+User-extensible hook system inspired by Claude Code. Declare commands in `.splitbrief/config.yaml` to fire at workflow events (pre/post task and pre/post validation, etc.). Use hooks to run a formatter, scan for secrets, or send notifications.
 
 The pre_commit and post_commit hooks are retired; nonempty configuration is rejected.
 
@@ -12,8 +12,8 @@ The pre_commit and post_commit hooks are retired; nonempty configuration is reje
 # .splitbrief/config.yaml
 hooks:
   post_task:
-    - command: "npx"
-      args: ["prettier", "--write", "${event.file}"]
+    - command: "printf"
+      args: ["Completed %s\\n", "${event.taskId}"]
       on_failure: warn
 ```
 
@@ -31,7 +31,7 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 |------------------|---------------------------------------------|----------------------------------------------------------------------|
 | `pre_planning`   | Before any planner phase starts             | `feature`                                                            |
 | `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `files`, `action`, `index`, `total`       |
-| `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
+| `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `retries`, `duration`           |
 | `pre_validation` | Before a brief runs its checks              | `taskId`                                                             |
 | `post_validation`| After brief gate checks or plan and task checks before the final review, once per task that owns them (`checks_run` event) | `taskId`, `results` (`{ id, status }[]`)                         |
 | `pre_escalation` | Before the planner's consult runs           | `taskId`                                                             |
@@ -58,8 +58,8 @@ hooks:
       on_failure: block      # 'block' | 'warn' (default) | 'ignore'
 
   post_task:
-    - command: "npx"
-      args: ["prettier", "--write", "${event.file}"]
+    - command: "printf"
+      args: ["Completed %s\\n", "${event.taskId}"]
 ```
 
 The schema is strict: it rejects unknown keys.
@@ -80,7 +80,7 @@ To run a shell pipeline, put it in a script file:
 hooks:
   post_task:
     - command: ".splitbrief/hooks/scan.sh"
-      args: ["${event.file}"]
+      args: ["${event.taskId}"]
 ```
 
 Then make the script executable: `chmod +x .splitbrief/hooks/scan.sh`.
@@ -95,7 +95,7 @@ args: ["${event.file}", "--task=${event.taskId}"]
 
 | Placeholder          | Available in events with that field    | Resolution                               |
 |----------------------|----------------------------------------|------------------------------------------|
-| `${event.file}`      | task_*                     | Project-relative anchor path string      |
+| `${event.file}`      | `pre_task`                   | Project-relative anchor path string      |
 | `${event.files}`     | pre_task                   | JSON-stringified array of the brief's declared paths |
 | `${event.taskId}`    | task_*, checks_run, consult_answered | Branded TaskId string                    |
 | `${event.title}`     | task_started, task_completed           | Task description                         |
@@ -103,8 +103,9 @@ args: ["${event.file}", "--task=${event.taskId}"]
 | `${event.message}`   | error, warning             | String                                   |
 | `${event.results}`   | checks_run                             | JSON-stringified `{ id, status }[]`      |
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
-| `${event.duration}`  | task_completed                         | Number (ms): the brief's working time; time the run sat stopped, parked or halted is left out |
-| `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'consulted'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'` (older runs), `'failed'`, `'skipped'` |
+| `${event.duration}`  | `post_task`                            | Number (ms): the brief's working time; time the run sat stopped, parked or halted is left out |
+| `${event.method}`    | `post_task`                            | `'local'` or `'consulted'`                |
+| `${event.retries}`   | `post_task`                            | Number of retries for the completed task |
 | `${event.reason}`    | recovery_prompted                      | The halt's `RecoveryReason`, e.g. `'retry-exhausted'` |
 | `${event.headline}`  | recovery_prompted                      | The operator-facing sentence, e.g. `T003 failed` |
 | `${event.headlineSpans}` | recovery_prompted                  | JSON-stringified headline spans with `text` and an optional `seat` of `plan`, `build` or `review` |
@@ -125,7 +126,7 @@ Which placeholders resolve depends on the event type. Missing fields collapse to
 |-------------------|-----------------------------------------------------------------------------------|
 | `pre_planning`    | `${event.feature}`, `${event.ts}`, `${event.phase}`, `${event.type}`              |
 | `pre_task`        | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.files}`, `${event.action}`, `${event.index}`, `${event.total}` |
-| `post_task`       | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.method}`, `${event.retries}`, `${event.duration}` |
+| `post_task`       | `${event.taskId}`, `${event.title}`, `${event.method}`, `${event.retries}`, `${event.duration}` |
 | `pre_validation`  | `${event.taskId}`                                                                 |
 | `post_validation` | `${event.taskId}`, `${event.results}`                                             |
 | `pre_escalation`  | `${event.taskId}`                                                                 |
@@ -276,15 +277,15 @@ The trust digest has these limits:
 
 ## Writing your first hook
 
-Goal: auto-run Prettier after each task.
+Use a hook to print the ID of each task that succeeds.
 
 1. Edit `.splitbrief/config.yaml`:
 
 ```yaml
 hooks:
   post_task:
-    - command: "npx"
-      args: ["prettier", "--write", "${event.file}"]
+    - command: "printf"
+      args: ["Completed %s\\n", "${event.taskId}"]
       on_failure: warn
 ```
 
@@ -294,7 +295,7 @@ hooks:
 splitbrief start --allow-hooks "add login form"
 ```
 
-3. SPLITBRIEF runs the workflow. After each task succeeds, Prettier reformats the touched file.
+3. After each task succeeds, the hook writes its ID to the subprocess output.
 
 For a custom hook, write a script that returns exit 0 on success or non-zero on failure. Optional: write JSON to stdout (`{"decision":"deny","message":"..."}`) for explicit denials with a message.
 

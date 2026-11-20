@@ -13,7 +13,7 @@ import {
   parsePreparedConfig,
   type RunnerGate,
 } from '../../engine/runners/prepare-execution/prepared.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
@@ -56,7 +56,6 @@ function writeState(
     attempt: 0,
     plannerSessionId: null,
     startedAt: new Date().toISOString(),
-    tokenUsage: makeUsage(),
     tasks: [
       {
         id: 'T001',

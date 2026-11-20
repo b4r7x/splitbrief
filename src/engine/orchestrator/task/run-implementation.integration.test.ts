@@ -29,7 +29,7 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
 import { makeImplementerRetryInvoker } from '../escalation/make-implementer-retry-invoker.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
+
 import { transitionAndSave } from '../state-ops/transition.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 import { createQueueHandler } from '../queue/submit.js';
@@ -50,8 +50,11 @@ import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
 import { createSteeringPort, type SteerOutcome } from '../../calls/steering.js';
 import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import type { InvokeOpts } from '../../implementers/types.js';
-import { customRunnerSecurityPosture } from '../../runners/custom/posture.js';
-import type { ConfiguredCustomRunner } from '../../runners/custom/posture.js';
+
+import {
+  customRunnerSecurityPosture,
+  type ConfiguredCustomRunner,
+} from '../../runners/custom/posture.js';
 import { prepareCustomRunnerAdmission } from '../../runners/custom/admission.js';
 import type { RunnerGate } from '../../runners/prepare-execution/prepared.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
@@ -562,8 +565,7 @@ describe('runImplementation seat trouble', () => {
     ensureSessionDir(projectDir, sessionId);
     const task = makeTask({ id: 'T060', suggestedFiles: ['src/retry.ts'], action: 'create' });
     const state = makeImplState([task]);
-    const firstUsage = { inputTokens: 7, outputTokens: 3 };
-    const secondUsage = { inputTokens: 2, outputTokens: 1 };
+
     const implement = vi
       .fn()
       .mockResolvedValueOnce({
@@ -571,9 +573,8 @@ describe('runImplementation seat trouble', () => {
         output: 'busy',
         error: 'HTTP 503 Service Unavailable',
         outcome: 'non-zero-exit',
-        usage: firstUsage,
       })
-      .mockResolvedValueOnce({ success: true, output: '', usage: secondUsage });
+      .mockResolvedValueOnce({ success: true, output: '' });
     const implementer = makeImplementer({ implement });
     const tracked: WorkflowState[] = [];
     const wctx = makeWctx({ projectDir, sessionId, implementer });
@@ -605,10 +606,8 @@ describe('runImplementation seat trouble', () => {
     expect(implement).toHaveBeenCalledTimes(2);
     expect(result.state.attempt).toBe(state.attempt);
     // The attempt a retry replaces keeps its usage with the run.
-    expect(tracked.at(-1)?.tokenUsage.implementerInput).toBe(firstUsage.inputTokens);
-    expect(tracked.at(-1)?.tokenUsage.implementerOutput).toBe(firstUsage.outputTokens);
+
     // The surviving attempt's own usage comes back on the result.
-    expect(result.implResult.usage).toEqual(secondUsage);
   });
 
   it('waits out a near reset holding the BUILD profile the brief runs on', async () => {
@@ -811,25 +810,20 @@ describe('runImplementation correction at a stop', () => {
             return {
               success: true,
               output: 'completed',
-              usage:
-                calls.length === 1
-                  ? { inputTokens: 10, outputTokens: 4 }
-                  : { inputTokens: 7, outputTokens: 5 },
             };
           }
           if (calls.length === 3) {
             call.onOutput?.('partial correction');
             holder.abort.call?.();
             if (exit === 'throw') throw stopped();
-            return { success: false, output: '', usage: { inputTokens: 2, outputTokens: 1 } };
+            return { success: false, output: '' };
           }
-          return { success: true, output: 'continued', usage: { inputTokens: 3, outputTokens: 2 } };
+          return { success: true, output: 'continued' };
         },
       });
       const { wctx, abort } = stoppingWctx({ ...ref, implementer });
       holder.abort = abort;
       const continuation = vi.fn(async () => {
-        expect(loadState(ref)?.tokenUsage.implementerInput).toBe(17);
         return plainUserMessage(correction);
       });
       wctx.bus = bus;
@@ -849,18 +843,6 @@ describe('runImplementation correction at a stop', () => {
         expect(calls[3]?.continuation?.partial).toContain('partial correction');
         expect(calls[3]?.continuation?.steer).toContain(correction);
         expect(result.state.attempt).toBe(state.attempt);
-        expect(result.implResult.usage).toEqual({ inputTokens: 3, outputTokens: 2 });
-        const accounted = addUsageAndSave(
-          { ...ref, bus },
-          result.state,
-          'implementer',
-          result.implResult.usage,
-        );
-        expect(accounted.tokenUsage).toMatchObject({
-          implementerInput: 20,
-          implementerOutput: 11,
-        });
-        expect(loadState(ref)?.tokenUsage).toEqual(accounted.tokenUsage);
       } finally {
         await wctx.isolation.dispose();
       }
@@ -872,7 +854,7 @@ describe('runImplementation correction at a stop', () => {
     const sessionId = 'stop-correction-usage-session';
     ensureSessionDir(projectDir, sessionId);
     const task = makeTask({ id: 'T061', suggestedFiles: ['src/retry.ts'], action: 'create' });
-    const discardedUsage = { inputTokens: 7, outputTokens: 3 };
+
     const holder: { abort: { call: (() => void) | null } } = { abort: { call: null } };
     const implement = vi
       .fn()
@@ -885,7 +867,6 @@ describe('runImplementation correction at a stop', () => {
         output: 'busy',
         error: 'HTTP 503 Service Unavailable',
         outcome: 'non-zero-exit',
-        usage: discardedUsage,
       })
       .mockResolvedValueOnce({ success: true, output: '' });
     const { wctx, abort } = stoppingWctx({
@@ -924,7 +905,6 @@ describe('runImplementation correction at a stop', () => {
     const durable = loadState({ projectDir, sessionId });
     for (const saved of [result.state, durable]) {
       expect(saved?.lineages?.T061?.corrections).toEqual([correction]);
-      expect(saved?.tokenUsage.implementerInput).toBe(discardedUsage.inputTokens);
     }
   });
 
@@ -1353,7 +1333,7 @@ describe('runImplementation plan context', () => {
     const prompts: string[] = [];
     const invoke = vi.fn().mockImplementation(async (call: { prompt: string }) => {
       prompts.push(call.prompt);
-      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+      return makeRunnerCallResult({ status: 'completed', text: 'done' });
     });
     const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
     const state = makeImplState([task], {
@@ -1523,7 +1503,6 @@ describe('runImplementation fix tasks', () => {
         return makeRunnerCallResult({
           status: 'completed',
           text: 'nothing to change',
-          usage: null,
         });
       });
     const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
@@ -1647,7 +1626,7 @@ describe.each(['implementation', 'retry-invoker'] as const)(
                 implementer,
                 config: wctx.config,
                 createdByThisTask: [],
-                seat: { ref: { ...ref, bus }, state, usageCategory: 'implementer' },
+                seat: { ref: { ...ref, bus }, state },
               }),
           }));
         expect(result.applyResult).toMatchObject({
@@ -1696,7 +1675,6 @@ describe.each(['implementation', 'retry-invoker'] as const)(
           seat: {
             ref: { ...ref, bus },
             state: loadState(ref) ?? state,
-            usageCategory: 'implementer',
           },
         });
         expect(cold.applyResult).toMatchObject({ status: 'rejected', code: 'baseline-conflict' });
@@ -1753,7 +1731,6 @@ describe.each(['implementation', 'retry-invoker'] as const)(
               status: 'failed',
               text: '',
               error: { code: 'transport-error', message: 'connection lost' },
-              usage: { inputTokens: 10, outputTokens: 4 },
             });
           }
           return makeRunnerCallResult({
@@ -1768,7 +1745,6 @@ describe.each(['implementation', 'retry-invoker'] as const)(
                 },
               ],
             }),
-            usage: { inputTokens: 10, outputTokens: 4 },
           });
         });
         const implementer = createImplementerBase(
@@ -1794,7 +1770,7 @@ describe.each(['implementation', 'retry-invoker'] as const)(
               config: wctx.config,
               fileIgnoreProjectDir: projectDir,
               createdByThisTask: recordedApiCreatedPaths(ref, task, projectDir),
-              seat: { ref: { ...ref, bus }, state: current, usageCategory: 'implementer' },
+              seat: { ref: { ...ref, bus }, state: current },
             });
           }
           const result = await runImplementation({
@@ -1813,11 +1789,7 @@ describe.each(['implementation', 'retry-invoker'] as const)(
           const result = await call(implementer);
           expect(invoke).toHaveBeenCalledTimes(ending === 'modify-then-failure' ? 3 : 2);
           expect(result.success).toBe(ending === 'modify');
-          expect(result.usage).toEqual(
-            ending === 'modify-then-failure'
-              ? { inputTokens: 30, outputTokens: 12 }
-              : { inputTokens: 20, outputTokens: 8 },
-          );
+
           expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual(['src/owned.ts']);
           const receipt = readEvidenceLedger(ref)?.tasks.find(
             (entry) => entry.id === task.id,
@@ -1903,9 +1875,9 @@ describe('runImplementation corrections against the persisted head', () => {
             message,
             reviewNone: false,
           });
-          return { success: true, output: 'first', usage: { inputTokens: 10, outputTokens: 4 } };
+          return { success: true, output: 'first' };
         }
-        return { success: true, output: 'corrected', usage: { inputTokens: 7, outputTokens: 5 } };
+        return { success: true, output: 'corrected' };
       }),
     });
     const wctx = makeWctx({
@@ -1941,7 +1913,6 @@ describe('runImplementation corrections against the persisted head', () => {
     expect(result.implResult).toMatchObject({
       success: true,
       output: 'corrected',
-      usage: { inputTokens: 17, outputTokens: 9 },
     });
     for (const finalState of [result.state, loadState({ projectDir, sessionId })]) {
       expect(finalState?.attempt).toBe(2);

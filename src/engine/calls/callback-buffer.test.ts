@@ -39,7 +39,7 @@ function callCompleted(ts: number): RunnerCallEvent {
     endedAt: ts,
     durationMs: ts - 1,
     partial: false,
-    usage: null,
+
     nativeSessionId: null,
   };
 }
@@ -73,12 +73,11 @@ describe('createRunnerAttemptCallbackBuffer', () => {
       transport: { kind: 'stdout-final' },
       sessionScope: { kind: 'workflow', workflowSessionId: 'session-1' },
       taskId: 'T001',
-      usageBoundary: 'aggregate',
+
       invocationIdentity: {
         version: 1,
         capturedAt: 1,
         runner: { kind: 'cli', id: 'claude-code' },
-        billing: { posture: 'unknown', basis: 'unknown' },
       },
     });
     const events: RunnerCallEvent[] = [];

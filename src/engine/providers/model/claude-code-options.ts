@@ -2,8 +2,7 @@ import type { DetectedModel } from '../../../core/discovery/detection/model.js';
 import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
 import { findKnownModel } from '../../../core/providers/known-models.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
-import { getPricingMode } from '../cost/pricing.js';
-import { metadataForSelection, stripUnpricedFields } from './entry-metadata.js';
+import { metadataForSelection } from './entry-metadata.js';
 import type { ResolvedModelCatalogEntry } from './types.js';
 
 const DESCRIPTION_SEGMENT = ' · ';
@@ -61,7 +60,7 @@ export function claudeCodeOptionEntry(
     ...(label === undefined ? {} : { displayName: label }),
     ...(detail === undefined ? {} : { detail }),
   };
-  return stripUnpricedFields({
+  return {
     ...facts,
     ...base,
     selectionId: input.option.id,
@@ -71,8 +70,7 @@ export function claudeCodeOptionEntry(
     source: 'account-options',
     membership: 'bundled-suggestion',
     canConfigure: true,
-    pricingMode: getPricingMode(input.runnerId),
-  });
+  };
 }
 
 export function configuredRecovery(
@@ -96,7 +94,7 @@ export function configuredRecovery(
   // The tool's own model table knows the window of a full id its alias pins, models.dev or not.
   const contextLength =
     metadata?.contextLength ?? findKnownModel(input.runnerId, input.selectionId)?.contextLength;
-  return stripUnpricedFields({
+  return {
     ...(contextLength === undefined ? {} : { contextLength }),
     id: input.selectionId,
     selectionId: input.selectionId,
@@ -107,6 +105,5 @@ export function configuredRecovery(
     source: 'configured-recovery',
     membership: 'custom',
     canConfigure: true,
-    pricingMode: getPricingMode(input.runnerId),
-  });
+  };
 }

@@ -11,8 +11,7 @@ import {
   createRunnerCallCredentialRedactor,
   runnerCallInterruptedStatus,
 } from '../../calls/status.js';
-import { normalizeRunnerCallUsage } from '../../calls/usage/normalize.js';
-import type { RunnerCallContext, RunnerCallResult, RunnerCallUsage } from '../../calls/types.js';
+import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
 import {
   apiConnectionKey,
   snapshotApiInvocationIdentity,
@@ -28,7 +27,6 @@ import {
   type StreamCompletionEndpoint,
   effortField,
   responseFormatField,
-  usageField,
   temperatureField,
   tokenLimitFields,
   toProviderMessages,
@@ -104,12 +102,10 @@ export async function streamCompletion(
           ? undefined
           : apiConnectionKey(endpoint.provider, endpoint.apiBase),
       dispatchAuthentication: opts.invocationEvidence?.dispatchAuthentication ?? 'unknown',
-      localityEvidence: opts.invocationEvidence?.localityEvidence,
       now: Date.now(),
     });
   const recorder = createRunnerCallRecorder({
-    // This call makes exactly one provider request, so its usage is that request's.
-    context: { ...context, invocationIdentity, usageBoundary: 'single-request' },
+    context: { ...context, invocationIdentity },
     credentialValues,
     onEvent: opts.onCallEvent,
   });
@@ -130,7 +126,6 @@ export async function streamCompletion(
     if (status !== null) recorder.runtimeStatus(status);
   }
 
-  let usage: RunnerCallUsage | null = null;
   let finishReason: string | null = null;
 
   try {
@@ -146,7 +141,6 @@ export async function streamCompletion(
             messages: toProviderMessages(finalMessages, policy),
             ...temperatureField(policy, temperature),
             stream: true,
-            ...usageField(policy),
             ...tokenLimitFields(policy, maxTokens),
             ...effortField(policy, effort),
             ...responseFormatField(opts.responseFormat),
@@ -174,9 +168,6 @@ export async function streamCompletion(
           onProgress(TRUNCATION_WARNING);
         }
       }
-      if (chunk.usage) {
-        usage = normalizeRunnerCallUsage(chunk.usage) ?? usage;
-      }
     }
   } catch (err: unknown) {
     publishRuntime('settled');
@@ -188,7 +179,6 @@ export async function streamCompletion(
           status === 'timeout'
             ? { code: 'runner_interrupted', message: redactCredential(toErrorMessage(err)) }
             : RUNNER_CALL_STOPPED_ERROR,
-        usage,
         nativeSessionId: null,
       });
       throwRedactedAbort(opts.signal, redactCredential);
@@ -197,15 +187,14 @@ export async function streamCompletion(
       recorder.finishFailed({
         status: 'timeout',
         error: { code: err.kind, message: redactCredential(toErrorMessage(err)) },
-        usage,
         nativeSessionId: null,
       });
       throw redactThrownError(err, redactCredential);
     }
-    finishOpenAiFailure(recorder, err, endpoint, usage, credentialValues, redactCredential);
+    finishOpenAiFailure(recorder, err, endpoint, credentialValues, redactCredential);
   }
   publishRuntime('settled');
 
-  emitOpenAiTerminal(recorder, finishReason, usage, policy);
+  emitOpenAiTerminal(recorder, finishReason, policy);
   return recorder.finalResult();
 }

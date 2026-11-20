@@ -345,7 +345,7 @@ describe('Copilot JSON and text protocol adapters', () => {
       ...copilotPlannerProtocolEvents(
         JSON.stringify({
           type: 'assistant.message',
-          data: { text: 'compiled brief', usage: { input_tokens: 3, output_tokens: 2 } },
+          data: { text: 'compiled brief' },
         }),
       ),
       ...copilotPlannerProtocolEvents(
@@ -357,22 +357,7 @@ describe('Copilot JSON and text protocol adapters', () => {
     ];
     expect(events).toContainEqual({ type: 'session', nativeSessionId: 'sess-42' });
     expect(events).toContainEqual({ type: 'text', channel: 'assistant', text: 'compiled brief' });
-    expect(events).toContainEqual({
-      type: 'usage',
-      usage: {
-        inputTokens: 3,
-        outputTokens: 2,
-        counterCoverage: {
-          input: 'reported',
-          output: 'partial',
-          cacheRead: 'missing',
-          cacheCreate: 'missing',
-          reasoning: 'missing',
-        },
-        providerTotals: { output: 2 },
-      },
-      semantics: 'delta',
-    });
+
     expect(events).toContainEqual({
       type: 'tool-use',
       id: null,
@@ -383,7 +368,7 @@ describe('Copilot JSON and text protocol adapters', () => {
       type: 'result',
       status: 'completed',
       nativeSessionId: 'sess-42',
-      usage: { inputTokens: 3, outputTokens: 2 },
+
       error: null,
       partial: false,
     });
@@ -440,7 +425,7 @@ describe('Copilot JSON and text protocol adapters', () => {
     expect(terminal).toMatchObject({
       type: 'result',
       status: 'completed',
-      usage: null,
+
       nativeSessionId: 'sess-43',
       error: null,
       partial: false,

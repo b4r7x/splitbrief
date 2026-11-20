@@ -59,10 +59,8 @@ function view(
             taskId: oldTask.id,
             taskTitle: oldTask.title,
             method: 'local',
-            implementerTokens: 111,
-            escalationTokens: 22,
+
             retryCount: 3,
-            cost: 0.42,
           },
         ],
         ...summary,
@@ -271,16 +269,14 @@ describe('independent closed attribution proof', () => {
             taskId: done.id,
             taskTitle: done.title,
             method: 'local',
-            implementerTokens: 111,
-            escalationTokens: 0,
+
             retryCount: 1,
           },
           {
             taskId: done.id,
             taskTitle: done.title,
             method: 'local',
-            implementerTokens: 40,
-            escalationTokens: 7,
+
             retryCount: 2,
           },
         ],
@@ -305,16 +301,14 @@ describe('independent closed attribution proof', () => {
             taskId: oldTask.id,
             taskTitle: oldTask.title,
             method: 'local',
-            implementerTokens: 10,
-            escalationTokens: 0,
+
             retryCount: 1,
           },
           {
             taskId: oldTask.id,
             taskTitle: oldTask.title,
             method: 'escalated-full',
-            implementerTokens: 40,
-            escalationTokens: 60,
+
             retryCount: 2,
           },
         ],
@@ -339,16 +333,14 @@ describe('independent closed attribution proof', () => {
             taskId: oldTask.id,
             taskTitle: oldTask.title,
             method: 'local',
-            implementerTokens: 10,
-            escalationTokens: 0,
+
             retryCount: 0,
           },
           {
             taskId: newTask.id,
             taskTitle: newTask.title,
             method: 'local',
-            implementerTokens: 40,
-            escalationTokens: 0,
+
             retryCount: 0,
           },
         ],

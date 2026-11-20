@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { isRecord } from '../../../utils/type-guards.js';
-import { toProviderTokenDelta } from '../../calls/usage/normalize.js';
 import type { ParsedLine } from '../../runners/types.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './warnings.js';
 
@@ -21,17 +20,6 @@ const OpencodeStepFinishEvent = z.object({
   type: z.literal('step_finish'),
   part: z.object({
     type: z.literal('step-finish'),
-    tokens: z.object({
-      input: z.number(),
-      output: z.number(),
-      reasoning: z.number().optional(),
-      cache: z
-        .object({
-          read: z.number().optional(),
-          write: z.number().optional(),
-        })
-        .optional(),
-    }),
   }),
 });
 
@@ -93,28 +81,7 @@ export function parseOpencodeLine(line: string): ParsedLine {
   if (text.success) return withSession({ text: text.data.part.text, channel: 'assistant' }, event);
 
   const step = OpencodeStepFinishEvent.safeParse(event);
-  if (step.success) {
-    const { tokens } = step.data.part;
-    const usage = toProviderTokenDelta({
-      inputTokens: tokens.input,
-      outputTokens: tokens.output,
-      ...(tokens.reasoning !== undefined && { reasoningTokens: tokens.reasoning }),
-      ...(tokens.cache?.read !== undefined && { cacheReadTokens: tokens.cache.read }),
-      ...(tokens.cache?.write !== undefined && { cacheCreateTokens: tokens.cache.write }),
-    });
-    if (usage === null) {
-      return {
-        warning: [
-          parsedMalformedRecordWarning({
-            parser: 'opencode',
-            line: trimmed,
-            message: 'Malformed opencode token counts skipped',
-          }),
-        ],
-      };
-    }
-    return withSession({ usage }, event);
-  }
+  if (step.success) return withSession({}, event);
 
   const tool = OpencodeToolEvent.safeParse(event);
   if (tool.success) {

@@ -7,7 +7,14 @@ import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { CONFIG_RELATIVE_PATH } from '../../../src/core/config/load/document.js';
-import { sessionDir, sessionsRoot } from '../../../src/core/paths.js';
+import {
+  reviewPacketJsonPath,
+  reviewPacketMarkdownPath,
+  SESSION_LOG_FILE,
+  sessionDir,
+  sessionsRoot,
+} from '../../../src/core/paths.js';
+import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
@@ -87,6 +94,7 @@ function installShims(
   claudeCalls: string,
   haltedCallWrote: boolean,
   codexHold: string,
+  refusal: string,
 ): void {
   writeFakeNodeCli(
     binDir,
@@ -106,7 +114,7 @@ if (!args.includes('exec')) throw new Error('Unexpected codex invocation: ' + ar
 readFileSync(0, 'utf8');
 appendFileSync(${JSON.stringify(codexCalls)}, JSON.stringify({ model: args.includes('--model') ? args[args.indexOf('--model') + 1] : null }) + '\\n');
 ${haltedCallWrote ? WRITE_BOTH_FILES : ''}
-console.log(JSON.stringify({ type: 'error', message: 'Insufficient Balance' }));
+console.log(JSON.stringify({ type: 'error', message: ${JSON.stringify(refusal)} }));
 process.exit(1);`,
   );
   writeFakeNodeCli(
@@ -156,7 +164,11 @@ const GUIDANCE = JSON.stringify({
 });
 
 /** The project with BUILD on codex and both tools detected, before any run starts. */
-async function codexSeatFixture(haltedCallWrote: boolean, implementerModel: string) {
+async function codexSeatFixture(
+  haltedCallWrote: boolean,
+  implementerModel: string,
+  refusal = 'Insufficient Balance',
+) {
   fixture = createStopContinueFixture(() => '', {
     isolation: 'none',
     consult: () =>
@@ -174,7 +186,7 @@ async function codexSeatFixture(haltedCallWrote: boolean, implementerModel: stri
   const codexCalls = join(target.tmpDir, 'codex-calls.jsonl');
   const claudeCalls = join(target.tmpDir, 'claude-calls.jsonl');
   const codexHold = join(target.tmpDir, 'codex-hold');
-  installShims(binDir, codexCalls, claudeCalls, haltedCallWrote, codexHold);
+  installShims(binDir, codexCalls, claudeCalls, haltedCallWrote, codexHold, refusal);
   restorePath = activateSafeCliShimPath(binDir);
 
   const config = loadConfig(target.projectDir).config;
@@ -202,10 +214,15 @@ async function codexSeatFixture(haltedCallWrote: boolean, implementerModel: stri
   return { target, codexCalls, claudeCalls, codexHold };
 }
 
-async function codexHaltFixture(haltedCallWrote = false, implementerModel = PRIMARY_MODEL) {
+async function codexHaltFixture(
+  haltedCallWrote = false,
+  implementerModel = PRIMARY_MODEL,
+  refusal?: string,
+) {
   const { target, codexCalls, claudeCalls, codexHold } = await codexSeatFixture(
     haltedCallWrote,
     implementerModel,
+    refusal,
   );
   const options = { timeoutMs: 90_000, reapProjectDir: target.projectDir };
   const halted = await cli(target, ['start', 'smoke'], options);
@@ -298,13 +315,18 @@ writeSync(2, ${JSON.stringify(first)});`)}`,
   });
 
   it('halts BUILD on an account refusal, then finishes the run on the tool switch-seat names', async () => {
-    const { target, halted, sessionId, codexCalls, claudeCalls, options } =
-      await codexHaltFixture();
+    const { target, halted, sessionId, codexCalls, claudeCalls, options } = await codexHaltFixture(
+      false,
+      PRIMARY_MODEL,
+      'payment required',
+    );
     const ref = { projectDir: target.projectDir, sessionId };
     const haltState = loadState(ref);
 
     expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
     expect(halted.stderr).toContain('Seat down (runner-usage-limit)');
+    expect.soft(halted.stderr).toContain('Account issue with');
+    expect.soft(halted.stderr).toContain('Check your account settings');
     expect(halted.stderr).toContain(
       `Continue with: splitbrief continue ${sessionId} --action switch-seat:claude-code`,
     );
@@ -330,6 +352,16 @@ writeSync(2, ${JSON.stringify(first)});`)}`,
     expect(recordedCalls(codexCalls)).toEqual([{ model: PRIMARY_MODEL }]);
     expect(existsSync(claudeCalls)).toBe(false);
 
+    const oldRoutes = readFileSync(
+      join(import.meta.dirname, '../../fixtures/session-log/review-after-pause.jsonl'),
+      'utf8',
+    )
+      .split('\n')
+      .filter((line) => /"type":"(?:task_started|task_tokens)"/.test(line));
+    expect(oldRoutes).toHaveLength(2);
+    const sessionLog = join(sessionDir(target.projectDir, sessionId), SESSION_LOG_FILE);
+    writeFileSync(sessionLog, [...oldRoutes, readFileSync(sessionLog, 'utf8')].join('\n'));
+
     const switched = await cli(
       target,
       ['continue', sessionId, '--action', `switch-seat:claude-code:${SWITCHED_MODEL}`],
@@ -346,6 +378,23 @@ writeSync(2, ${JSON.stringify(first)});`)}`,
     expect(state?.pendingRecovery).toBeUndefined();
     expect(state?.reviewStatus).toBe('passed');
     expect(state?.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
+    const packet = ReviewPacketSchema.parse(
+      JSON.parse(readFileSync(reviewPacketJsonPath(ref), 'utf8')),
+    );
+    expect(packet.routing.routingWarnings.slice(0, 2)).toMatchObject(
+      ['task_started', 'task_settled'].map((type) => ({
+        type,
+        taskId: 'T001',
+        implementerProfile: 'default',
+        outcome: 'fits',
+        message: 'Selected profile default (fits)',
+      })),
+    );
+    const markdown = readFileSync(reviewPacketMarkdownPath(ref), 'utf8');
+    expect(markdown).toContain(
+      '- T001 started: Selected profile default (fits)\n- T001 settled: Selected profile default (fits)\n',
+    );
+    expect(markdown).not.toContain('1110/1000000');
     expect(state?.seatSwitches).toEqual([
       expect.objectContaining({
         seat: 'build',

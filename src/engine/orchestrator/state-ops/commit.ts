@@ -198,21 +198,16 @@ export function mutateState(input: MutationInput): WorkflowState {
                 messageQueue: mergeQueues(head.state, input.state),
               }
             : head.state
-          : input.operation === 'usage'
-            ? {
-                ...head.state,
-                messageQueue: mergeQueues(head.state, input.state),
-              }
-            : {
-                // Older engine seams pass the semantic state they are about to
-                // mutate, while the persisted head may have advanced through a
-                // queue/native-delivery writer. Keep that semantic input, but
-                // bind its revision to the head used by the CAS.
-                ...input.state,
-                stateVersion: head.state.stateVersion,
-                stateRevision: head.state.stateRevision ?? 0,
-                messageQueue: mergeQueues(head.state, input.state),
-              };
+          : {
+              // Older engine seams pass the semantic state they are about to
+              // mutate, while the persisted head may have advanced through a
+              // queue/native-delivery writer. Keep that semantic input, but
+              // bind its revision to the head used by the CAS.
+              ...input.state,
+              stateVersion: head.state.stateVersion,
+              stateRevision: head.state.stateRevision ?? 0,
+              messageQueue: mergeQueues(head.state, input.state),
+            };
     const recordedBase =
       head?.state.resumeUserMessages === undefined
         ? base

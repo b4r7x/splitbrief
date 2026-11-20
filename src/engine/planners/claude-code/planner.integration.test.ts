@@ -157,11 +157,11 @@ describe('createClaudeCodePlanner planning', () => {
         `printf '%s ' "$@" >> '${argvLog}'`,
         `printf '\\n' >> '${argvLog}'`,
         'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
-        `  printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 0, session_id: 'sess-old', usage: { input_tokens: 0, output_tokens: 0 }, errors: [expiredLine] })}'`,
+        `  printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, num_turns: 0, session_id: 'sess-old', errors: [expiredLine] })}'`,
         `  printf '%s\\n' '${expiredLine}' >&2`,
         '  exit 1',
         'fi',
-        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new', result: '# Research\nbody', usage: { input_tokens: 2, output_tokens: 2 } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new', result: '# Research\nbody' }).replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -212,7 +212,7 @@ describe('createClaudeCodePlanner planning', () => {
         `  printf '%s\\n' '${JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: 'Prompt is too long', session_id: 'sess-old' })}'`,
         '  exit 1',
         'fi',
-        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new', result: 'fresh', usage: { input_tokens: 2, output_tokens: 2 } })}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new', result: 'fresh' })}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -250,7 +250,7 @@ describe('createClaudeCodePlanner planning', () => {
               `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-new-unexpected' })}'`,
             ]
           : []),
-        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale resumed output', usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale resumed output' }).replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -311,7 +311,7 @@ Create the stream capture file.
         `printf '%s ' "$@" >> '${argvLog}'`,
         `printf '\\n' >> '${argvLog}'`,
         'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
-        `  printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-stream', result: tasksMarkdown, usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        `  printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-stream', result: tasksMarkdown }).replace(/'/g, "'\\''")}'`,
         '  exit 0',
         'fi',
         `printf '%s\\n' '${JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-stream' }).replace(/'/g, "'\\''")}'`,
@@ -372,7 +372,7 @@ Create the Claude retry file.
         'cat >/dev/null',
         `printf '%s ' "$@" >> '${argvLog}'`,
         `printf '\\n' >> '${argvLog}'`,
-        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-1', result: tasksMarkdown, usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-1', result: tasksMarkdown }).replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -412,7 +412,7 @@ Create the Claude retry file.
       [
         '#!/bin/bash',
         'cat >/dev/null',
-        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale injected output', usage: { input_tokens: 2, output_tokens: 2 } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale injected output' }).replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -477,7 +477,6 @@ Create the Claude retry file.
 
     await expect(planner.injectUserTurn?.({ text: 'continue', projectDir })).resolves.toEqual({
       status: 'delivered',
-      usage: null,
     });
   });
 
@@ -544,7 +543,6 @@ Create the Claude retry file.
         JSON.stringify({
           type: 'result',
           result: 'FINAL RESULT ONLY',
-          usage: { input_tokens: 2, output_tokens: 1 },
         }),
       ],
     });
@@ -556,7 +554,6 @@ Create the Claude retry file.
     // REQ-013: only the authoritative final assistant response is content; the
     // divergent partial is evidence at most and never joins the Brief.
     expect(result.text).toBe('FINAL RESULT ONLY');
-    expect(result.usage).toMatchObject({ inputTokens: 2, outputTokens: 1 });
   });
 
   it('delivers instructions through the admitted stdin prompt, never through argv', async () => {

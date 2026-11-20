@@ -2,7 +2,6 @@ import { briefContinuation, changedDeclaredFiles, changedDeclaredFilesNote } fro
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { lineageAttemptsOf } from '../../../core/state/lineage.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
-import type { WorkflowPersistenceContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
 import type { ImplementerLoopInput, ImplementerLoopState } from './types.js';
 import { withContinuationLoop, type ContinuationLoopBodyArgs } from '../continuation/loop.js';
@@ -10,7 +9,6 @@ import { approveWrite } from './gates/write.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat/call.js';
 import { unfinishedGuidance } from '../escalation/consult-guidance.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
 import {
   absorbBuildCorrections,
@@ -97,13 +95,9 @@ async function runAttempt(
         },
         async (attemptSignal) =>
           implementerSeatAttempt(
-            await produce(input, shared, { call, partial, seatRef }, attemptSignal),
+            await produce(input, shared, { call, partial }, attemptSignal),
             `Implementer call for ${task.id} failed`,
           ),
-        (discarded) => {
-          shared.state = addUsageAndSave(seatRef, shared.state, 'implementer', discarded.usage);
-          input.setTrackedState(shared.state);
-        },
       ),
   });
   return attempt.value;
@@ -181,13 +175,12 @@ async function produce(
   prepared: {
     call: ImplementerOptions;
     partial: string | undefined;
-    seatRef: WorkflowPersistenceContext;
   },
   attemptSignal: AbortSignal,
 ): Promise<ImplementerResult> {
   const { wctx, task, workspace, taskStartSnapshot } = input;
   const { projectDir, sessionId } = wctx;
-  const { call, partial, seatRef } = prepared;
+  const { call, partial } = prepared;
   await settleMidCallDeliveries({ projectDir, sessionId });
   absorbCorrections(input, shared);
   const correction = buildCorrectionInput(shared.state, task, wctx);
@@ -231,10 +224,6 @@ async function produce(
     },
     absorb: () => absorbCorrections(input, shared),
     signal: attemptSignal,
-    onDiscardedUsage: (usage) => {
-      shared.state = addUsageAndSave(seatRef, shared.state, 'implementer', usage);
-      input.setTrackedState(shared.state);
-    },
     application: {
       wctx,
       state: () => shared.state,

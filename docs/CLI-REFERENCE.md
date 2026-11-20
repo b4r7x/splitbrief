@@ -80,13 +80,13 @@ The warning reads `The plan seat reads no files, so it cannot open <p1>, <p2>. P
 splitbrief start [feature] [files...] \
   [--planner <tool>] [--planner-model <model>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
-  [--planner-output-format <format>] [--planner-context-length <tokens>] \
+  [--planner-output-format <format>] [--planner-context-length <number>] \
   [--implementer <provider>] [--implementer-model <model>] \
   [--implementer-api-base <url>] [--implementer-api-key-env <var>] [--implementer-args <arg>] \
-  [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
+  [--implementer-output-format <format>] [--implementer-context-length <number>] \
   [--reviewer <tool>] [--reviewer-model <model>] \
   [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
-  [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
+  [--reviewer-output-format <format>] [--reviewer-context-length <number>] \
   [--model <model>] [--provider <provider>] \
   [--planner-effort <level>] [--reviewer-effort <level>] \
   [--skills <ids>] [--project <dir>] \
@@ -105,7 +105,7 @@ splitbrief start [feature] [files...] \
 | `--planner-api-key-env <var>` | string | from config | Environment variable holding the planner API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` runners; ignored otherwise, with a readiness warning. |
 | `--planner-args <arg>` | string | from config | Append one planner CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
-| `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
+| `--planner-context-length <number>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Planner effort hint: `off`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. The seat's tool accepts a subset and reports what it rejects. A seat whose tool takes no effort flag does not get the value: the readiness warning `--planner-effort is ignored: <reason>.` (`config.warning`) names it, with the fix `Remove the flag from the command.` |
 | `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `kilo-code`, `cursor`, `command-code`, `antigravity`. `splitbrief start --help` prints the same list. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
@@ -113,14 +113,14 @@ splitbrief start [feature] [files...] \
 | `--implementer-api-key-env <var>` | string | from config | Environment variable holding the implementer API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` runners; ignored otherwise, with a readiness warning. |
 | `--implementer-args <arg>` | string | from config | Append one implementer CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-output-format <format>` | enum | from config | Implementer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
-| `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
+| `--implementer-context-length <number>` | number | from config | Implementer context length in tokens. |
 | `--reviewer <tool>` | string | from config | Reviewer tool. Same tools as `--planner`. Without any `--reviewer-*` flag and without a `reviewer` block in config, the planner keeps the review seat. `--reviewer` gives a None REVIEW a runner for that run. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--reviewer-model <model>` | string | from config | Reviewer model (CLI and API reviewers). |
 | `--reviewer-api-base <url>` | string | from config | Reviewer API base URL. Applies only to `api` runners; ignored for other kinds, with a readiness warning. |
 | `--reviewer-api-key-env <var>` | string | from config | Environment variable holding the reviewer API key; stored as an `env:<var>` reference. Applies only to `api` runners; ignored otherwise, with a readiness warning. |
 | `--reviewer-args <arg>` | string | from config | Append one reviewer CLI/shell argument. Repeatable. Applies to `cli`, `shell`, and `agent` runners. |
 | `--reviewer-output-format <format>` | enum | from config | Reviewer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
-| `--reviewer-context-length <tokens>` | number | from config | Reviewer context length in tokens. Consumed only by the `api` kind, where it sizes the request's `max_tokens` budget. |
+| `--reviewer-context-length <number>` | number | from config | Reviewer context length in tokens. Consumed only by the `api` kind, where it sizes the request's `max_tokens` budget. |
 | `--reviewer-effort <level>` | enum | — | Reviewer effort hint: `off`, `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. The seat's tool accepts a subset and reports what it rejects. Requires the review seat to have its own runner: with no `reviewer` block in config and no `--reviewer`, the run is refused with a message naming `--reviewer`. A None REVIEW is refused the same way. A configured reviewer whose tool takes no effort flag does not get the value: the readiness warning `--reviewer-effort is ignored: <reason>.` (`config.warning`) names it, with the fix `Remove the flag from the command.` |
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
@@ -642,13 +642,13 @@ The run screen needs a terminal. When starting a continuation without a terminal
 splitbrief resume [session-id-or-number] \
   [--planner <tool>] [--planner-model <model>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
-  [--planner-output-format <format>] [--planner-context-length <tokens>] \
+  [--planner-output-format <format>] [--planner-context-length <number>] \
   [--implementer <provider>] [--implementer-model <model>] \
   [--implementer-api-base <url>] [--implementer-api-key-env <var>] [--implementer-args <arg>] \
-  [--implementer-output-format <format>] [--implementer-context-length <tokens>] \
+  [--implementer-output-format <format>] [--implementer-context-length <number>] \
   [--reviewer <tool>] [--reviewer-model <model>] \
   [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
-  [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
+  [--reviewer-output-format <format>] [--reviewer-context-length <number>] \
   [--model <model>] [--provider <provider>] \
   [--planner-effort <level>] [--reviewer-effort <level>] \
   [--skills <ids>] [--project <dir>] \
@@ -831,7 +831,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 
 ### Headless event stream (`--json`)
 
-When `start`, `resume`, or an interrupted resumable `continue` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed` (with the `blocking` finding count, and, after an accept as is, `accepted` with who accepted, the note and `redChecks`: the id, the command and the last output line of each red check that the accept recorded), `final_review_incomplete` (the review never finished), `warning`, and `error`. Public records are bounded and secret-redacted before writing. When a tool check runs past 10 seconds, the `Checking tools · <tool> <check> 10s` line goes to stderr, so stdout keeps only these records. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. The plan card is approved unattended, which pre-confirms nothing (set `workflow.approve: none` to skip the card). A planner question writes an `input_required` record and exits non-zero with the `splitbrief continue <id>` line to answer it. The `user_message` event of that answer carries the round's `questions`. A seat call has no default end: after 5 minutes of no output the stream emits `runner_call_stalled`, and `runner_call_stall_cleared` when output returns, while the call continues. A CI job has its own timeout; an unattended caller sets `idleKillMs` or `timeout` on the seat. SIGINT, SIGTERM and SIGHUP stop the run resumably. The command writes `Run <id> stopped. Continue with: splitbrief continue <id>` on stderr and exits `130`, `143` or `129`. A signal during a headless Apply lets Apply finish and record its exit first, because Apply has no stop. Continuation retry prompts never park, recovery pauses such as unknown paid pricing exit non-zero, failed sessions exit non-zero, and a write to a protected path fails closed with `APPROVAL_REQUIRED` instead of waiting for input.
+When `start`, `resume`, or an interrupted resumable `continue` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed` (with the `blocking` finding count, and, after an accept as is, `accepted` with who accepted, the note and `redChecks`: the id, the command and the last output line of each red check that the accept recorded), `final_review_incomplete` (the review never finished), `warning`, and `error`. Public records are bounded and secret-redacted before writing. When a tool check runs past 10 seconds, the `Checking tools · <tool> <check> 10s` line goes to stderr, so stdout keeps only these records. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. The plan card is approved unattended, which pre-confirms nothing (set `workflow.approve: none` to skip the card). A planner question writes an `input_required` record and exits non-zero with the `splitbrief continue <id>` line to answer it. The `user_message` event of that answer carries the round's `questions`. A seat call has no default end: after 5 minutes of no output the stream emits `runner_call_stalled`, and `runner_call_stall_cleared` when output returns, while the call continues. A CI job has its own timeout; an unattended caller sets `idleKillMs` or `timeout` on the seat. SIGINT, SIGTERM and SIGHUP stop the run resumably. The command writes `Run <id> stopped. Continue with: splitbrief continue <id>` on stderr and exits `130`, `143` or `129`. A signal during a headless Apply lets Apply finish and record its exit first, because Apply has no stop. Continuation retry prompts never park, recovery pauses exit non-zero, failed sessions exit non-zero, and a write to a protected path fails closed with `APPROVAL_REQUIRED` instead of waiting for input.
 
 The `recovery_required` record carries `reason`, `status` (`awaiting-user` | `applying`; a `paused` status that an older run saved reads as `awaiting-user`), message, task/files when known, `availableActions`, and `recommendedAction`; `status` was added after the initial release and older consumers must treat it as optional. The record leaves out `files` when the list would pass the record's size limit. The command fails with exit code 1 for **every** pending recovery status — `applying` exits non-zero exactly like `awaiting-user` — and the error message names the recommended action and the command that continues the run.
 
@@ -888,7 +888,7 @@ done: 3 tasks
 - `task review <id>: <words>` or `task review: <words>` — one line for each task review, with the same words as the final review. `<id>` is the task the review followed, and it is absent when the completion names no task.
 - `review: Set aside <id>: <reason>` — one line after the review line for each failed check the reviewer set aside, with the reason it gave. A set-aside check no longer blocks the review. A task review writes the line with its own prefix: `task review <id>: Set aside <id>: <reason>`.
 - `review: none (REVIEW is None)` — the run had no review, because REVIEW is None. The line comes before `done:`, and the run exits `0`.
-- `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` is the run's completed tasks, read from its state when it completes (`completedTasks` on `workflow_complete`): a task a review-fix cycle completes again counts once, a `continue` counts the tasks an earlier process completed, and a task that did not complete does not count, so `<n>` can be less than the length of the task list. The line carries no token count: token and money figures belong to the run's own record and `/usage`, not to the plain stream.
+- `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` is the run's completed tasks, read from its state when it completes (`completedTasks` on `workflow_complete`): a task a review-fix cycle completes again counts once, a `continue` counts the tasks an earlier process completed, and a task that did not complete does not count, so `<n>` can be less than the length of the task list.
 
 Everything else the run emits is dropped — including `recovery_required`, which is a `--json` record. A halt no one is there to answer ends the plain stream. On a task halt, the failing task's `failed` line is the last line written, there is no `review:` or `done:` line, and the command exits 1. A halt after a failed final review follows its `review: failed` line and the closing `done:` line, and the command exits 1. The halt itself is not silent — stderr carries the block below in both headless renderings.
 

@@ -18,7 +18,7 @@ export type SeatFailure = Readonly<{
 /**
  * What one call attempt produced. The failure arm still carries the value the
  * caller must keep when the retries run out: an implementer result with its
- * output and usage, or a consult outcome.
+ * output or a consult outcome.
  */
 export type SeatAttempt<T> =
   | Readonly<{ ok: true; value: T }>
@@ -83,15 +83,12 @@ export function abortableDelay(ms: number, signal: AbortSignal | undefined): Pro
  * attempt as a `SeatAttempt`; a transient failure retries at most
  * `BOUNDS.transientRetries` times, then comes back as it is.
  * `onRetry` publishes the retry; aborting the signal aborts the backoff.
- * `onDiscarded` receives each attempt value a retry replaced, so its usage is
- * never lost.
  */
 export async function withSeatRetry<T>(
   call: (signal: AbortSignal) => Promise<SeatAttempt<T>>,
   opts: Readonly<{
     signal?: AbortSignal | undefined;
     onRetry?: ((info: SeatRetryInfo) => void) | undefined;
-    onDiscarded: (value: T) => void;
   }>,
 ): Promise<SeatAttempt<T>> {
   const signal = opts.signal ?? new AbortController().signal;
@@ -101,7 +98,6 @@ export async function withSeatRetry<T>(
     if (result.ok || !isTransientSeatFailure(result.failure) || attempt > BOUNDS.transientRetries) {
       return result;
     }
-    opts.onDiscarded(result.value);
     const delayMs = seatRetryDelayMs(result.failure, attempt, new Date(Date.now()));
     opts.onRetry?.({ attempt, delayMs });
     await abortableDelay(delayMs, signal);

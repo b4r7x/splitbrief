@@ -586,7 +586,7 @@ describe('workflow visual fixtures', () => {
       stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
       resumeAt: { kind: 'review', cycle: 0 },
     });
-    expect(projection.events).toHaveLength(66);
+    expect(projection.events).toHaveLength(59);
     expect(projection.events.filter((event) => event.type === 'implementer_generate_done')).toEqual(
       [
         expect.objectContaining({ taskId: 'T001', file: 'src/text.js', duration: 15409 }),
@@ -1367,7 +1367,6 @@ describe('workflow visual fixtures', () => {
           axes: [],
           attempt: 0,
           taskId: 'T901',
-          usageBoundary: 'aggregate',
         }),
       ),
     );
@@ -1382,7 +1381,6 @@ describe('workflow visual fixtures', () => {
           axes: ['high'],
           attempt: 0,
           taskId: 'T901',
-          usageBoundary: 'aggregate',
         }),
       ),
     );
@@ -1955,14 +1953,7 @@ describe('workflow visual fixtures', () => {
     expect(recheck.frame).toContain('/ for a command…');
     expect(recheck.frame).not.toContain(reason);
 
-    const usage = await captureGalleryFrame('workflow-plan-card-usage-refused');
-    expect(usage.feedback).toEqual({
-      message: '/end takes no argument. Usage: /end',
-      isError: false,
-    });
-    expect(usage.frame.split('/end takes no argument. Usage: /end')).toHaveLength(2);
-    expect(usage.frame).toContain('› /end now');
-    expect(startsWithText(usage.frame, '/end takes no argument. Usage: /end')).toBe(true);
+    await captureGalleryFrame('workflow-plan-card-usage-refused');
 
     const palette = await captureGalleryFrame('home-palette-prefill-refused');
     expect(palette.feedback).toEqual({

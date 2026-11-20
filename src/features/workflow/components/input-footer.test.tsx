@@ -27,7 +27,7 @@ import {
   type RunningOperation,
 } from '../../../stores/workflow/operations/state.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { tokensStore } from '../../../stores/workflow/tokens/state.js';
+
 import { BRAILLE_SPINNER_FRAMES, glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { clearAllHandlers } from '../run-requests/registry.js';
@@ -41,7 +41,7 @@ import {
   makeRunnerCallStarted,
   makeRunnerCallStalled,
 } from '#testing/helpers/events/runner-call.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import {
   makeBriefBoundaryEvents,
   makeTaskComplete,
@@ -73,7 +73,7 @@ function runningOn(runnerName: string): RunningOperation {
     durationMs: null,
     partial: false,
     reason: null,
-    usage: null,
+
     warnings: [],
   };
 }
@@ -99,7 +99,7 @@ describe('InputFooter', () => {
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();
     seedBriefs();
-    tokensStore.__testReset();
+
     operationsStore.__testReset();
   });
 
@@ -114,7 +114,7 @@ describe('InputFooter', () => {
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();
     seedBriefs();
-    tokensStore.__testReset();
+
     operationsStore.__testReset();
   });
 
@@ -890,35 +890,6 @@ describe('InputFooter', () => {
 
     ui.unmount();
     terminalSizeStore.reset();
-  });
-
-  it('does not duplicate cost information already shown in the cost status line', () => {
-    terminalSizeStore.__testReset({ cols: 48, rows: 24, isSmall: true });
-    runViewStore.__testReset({ phase: 'implementing' });
-    lifecycleStore.__testReset({ cancelled: true });
-    seedBriefs({
-      currentTask: 1,
-      totalTasks: 4,
-      tasks: [{ id: 'T001', title: 'T1', status: 'done' as const }],
-    });
-    tokensStore.__testReset({
-      tokenUsage: makeUsage({
-        plannerInput: 1000,
-        plannerOutput: 500,
-        implementerInput: 2000,
-        implementerOutput: 1000,
-      }),
-    });
-
-    const ui = renderFeature(<InputFooter />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('1/4');
-    expect(frame).not.toContain('Local rate');
-    expect(frame).not.toContain('Spent:');
-    expect(frame).not.toContain('Saved:');
-
-    ui.unmount();
   });
 
   it('a parked brief replaces the spinner with the resume keys', () => {

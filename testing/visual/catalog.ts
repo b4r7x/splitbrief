@@ -2216,14 +2216,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-task-rows-context-fit',
-      title: 'Workflow · brief rows with known, assumed and over-window context estimates',
+      title: 'Workflow · brief rows show files and seats',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'task-rows-context-fit',
-        title:
-          'The known-window tight row names its window; the assumed-window and over-window rows show the estimate alone',
+        title: 'Brief rows show their files and seats',
         kind: 'implementation',
-        marker: '~31,012 context tokens',
+        marker: 'T903',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5443,6 +5442,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-context-window',
+      title: 'Workflow · a review request is larger than the context window',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-context-window',
+        title: 'The halt shows how much context the call needs',
+        kind: 'question',
+        marker: 'The call needs 412,096 tokens',
+      },
+      elements: [{ id: 'question-panel', title: 'Recovery panel' }],
+    }),
+    defineScenario({
       id: 'workflow-recovery-review-failed',
       title: 'Workflow · a checkout final review that failed after its repair cycles',
       surface: screenSurface('workflow'),
@@ -7894,39 +7905,6 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-sessions-refused-applying',
         title: 'Overlay · a pick refused while Apply writes names the reason first',
         marker: 'Apply is still writing',
-      },
-    ],
-  }),
-  'usage-details': overlayGroup({
-    overlay: 'usage-details',
-    underlyingScreen: 'workflow',
-    panelTitle: 'Usage details panel',
-    checkpointTitle: 'Usage details ready',
-    scenarios: [
-      {
-        id: 'overlay-usage-details',
-        title: 'Overlay · usage details · priced run',
-        marker: 'Usage details',
-      },
-      {
-        id: 'overlay-usage-details-api-twin',
-        title: 'Overlay · usage details · an API endpoint named after a CLI tool',
-        marker: 'Usage details',
-      },
-      {
-        id: 'overlay-usage-details-legacy',
-        title: 'Overlay · usage details · sum recorded before per-request pricing',
-        marker: 'Usage details',
-      },
-      {
-        id: 'overlay-usage-details-unpriced',
-        title: 'Overlay · usage details · subscription tools with no published rate',
-        marker: 'Usage details',
-      },
-      {
-        id: 'overlay-usage-context-insufficient',
-        title: 'Overlay · usage details · the context a halted review never had',
-        marker: 'Usage details',
       },
     ],
   }),

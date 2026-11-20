@@ -24,29 +24,8 @@ export const StreamChoiceSchema = z.looseObject({
   finish_reason: z.string().nullable().optional(),
 });
 
-export const StreamUsageSchema = z
-  .looseObject({
-    prompt_tokens: z.number().nullable().optional(),
-    completion_tokens: z.number().nullable().optional(),
-    prompt_tokens_details: z
-      .looseObject({
-        cached_tokens: z.number().nullable().optional(),
-        cache_write_tokens: z.number().nullable().optional(),
-      })
-      .nullable()
-      .optional(),
-    completion_tokens_details: z
-      .looseObject({
-        reasoning_tokens: z.number().nullable().optional(),
-      })
-      .nullable()
-      .optional(),
-  })
-  .nullable();
-
 export const StreamChunkSchema = z.looseObject({
   choices: z.array(StreamChoiceSchema),
-  usage: StreamUsageSchema.optional(),
 });
 
 export type StreamChoiceDelta = z.infer<typeof StreamChoiceDeltaSchema>;
@@ -88,29 +67,6 @@ export function toStreamChunk(chunk: ChatCompletionChunk): StreamChunk {
       },
       ...(choice.finish_reason != null && { finish_reason: choice.finish_reason }),
     })),
-    usage: chunk.usage
-      ? {
-          prompt_tokens: chunk.usage.prompt_tokens,
-          completion_tokens: chunk.usage.completion_tokens,
-          ...(chunk.usage.prompt_tokens_details && {
-            prompt_tokens_details: {
-              ...(chunk.usage.prompt_tokens_details.cached_tokens !== undefined && {
-                cached_tokens: chunk.usage.prompt_tokens_details.cached_tokens,
-              }),
-              ...(chunk.usage.prompt_tokens_details.cache_write_tokens !== undefined && {
-                cache_write_tokens: chunk.usage.prompt_tokens_details.cache_write_tokens,
-              }),
-            },
-          }),
-          ...(chunk.usage.completion_tokens_details && {
-            completion_tokens_details: {
-              ...(chunk.usage.completion_tokens_details.reasoning_tokens !== undefined && {
-                reasoning_tokens: chunk.usage.completion_tokens_details.reasoning_tokens,
-              }),
-            },
-          }),
-        }
-      : null,
   };
 }
 

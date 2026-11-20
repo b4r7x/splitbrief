@@ -1,5 +1,4 @@
 import { ReviewPacketSchema, type ReviewPacket } from '../../../src/core/schemas/review/packet.js';
-import { makeUsage } from './summary.js';
 
 export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacket {
   return ReviewPacketSchema.parse({
@@ -87,6 +86,7 @@ export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacke
       path: null,
       present: false,
       briefHash: null,
+      routing: { taskRouting: [], routingWarnings: [] },
       finalReview: null,
       approvals: [],
       rejections: [],
@@ -118,12 +118,7 @@ export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacke
       failedTasks: [],
       warnings: [],
     },
-    cost: {
-      tokenUsage: makeUsage(),
-      costBreakdown: null,
-      taskRouting: [],
-      routingWarnings: [],
-    },
+    routing: { taskRouting: [], routingWarnings: [] },
     finalReview: {
       path: 'review.md',
       status: 'skipped',

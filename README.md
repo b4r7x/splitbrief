@@ -16,7 +16,7 @@ A model reviewing its own output repeats its own blind spots — the assumptions
 
 Same-lab still works — two instances of one tool are a valid configuration. You give up the blind-spot argument, not the pipeline.
 
-The split follows capability: the stronger tool spends its tokens on research, brief compilation, review, and the build's consults; the weaker one spends its tokens typing. See [Spend](#spend) for what the run reports.
+The planner researches the project, writes briefs, answers build questions, and reviews changes. The implementer writes the code.
 
 ## How it works
 
@@ -68,7 +68,7 @@ SPLITBRIEF opens each run's workspace before planning. It uses a Git worktree by
 
 CLI and agent runners write their own files. SPLITBRIEF writes the file contents that API and shell runners return. API runners can return a bundle of declared text files. SPLITBRIEF checks the whole bundle and asks for approval on protected paths before writing. A shell runner returns one file.
 
-The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, live token counts.
+The TUI shows planner and implementer working together as a conversation flow with event cards and inline diffs.
 
 ## Quick start
 
@@ -172,7 +172,7 @@ With `workflow.approve: plan` (the default) the plan card waits for your approva
 | `/queue show` | Show the count awaiting first delivery |
 | `/queue clear` | Remove messages awaiting first delivery |
 
-Those are the ones you reach for mid-run. The full set — `/crew`, `/usage`, `/stop` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
+Those are the ones you reach for mid-run. The full set — `/crew` and `/stop` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
 
 ## Configuration
 
@@ -253,7 +253,7 @@ reviewer:
   model: auto
 ```
 
-The reviewer only reviews: planning, Task Brief compilation, and the consult stay on the planner whatever this block says. Without it, review tokens are priced at the planner's rates and folded into the planner line. Full reference in [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
+The reviewer only reviews: planning, Task Brief compilation, and the consult stay on the planner whatever this block says. Without it, the planner reviews. Full reference in [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
 
 ### Implementer providers
 
@@ -308,21 +308,12 @@ SPLITBRIEF loads model metadata from [models.dev](https://models.dev) first. Run
 
 - Claude Code offers `auto`, `sonnet`, `opus`, `opusplan`, and `haiku` in the picker. Picking `auto` stores `model: auto`, which means the same thing as omitting `model`: no `--model` flag is passed and the tool uses its own default. Claude Code's older `default` spelling is read the same way.
 - For `opencode` and `kilo-code`, prefer automatic selection — leave `model` unset and configure the real default model in the tool itself before launching SPLITBRIEF.
-- Dollar pricing is shown only for real API providers. CLI tools, subscriptions, and local backends are intentionally unpriced.
 
 ### Small context windows
 
 When you set a Prompt budget and a file does not fit it, and the Task Brief names a target function, SPLITBRIEF switches from whole-file to function-level context — imports plus that function. If the brief names no function, the file is truncated in the middle instead. Small-context models can still modify large files this way, as long as the brief is specific about where the change goes. With Prompt budget `auto`, the file goes whole.
 
 ### API
-
-Per-token prices are not hardcoded here. They come from models.dev at startup and are shown next to each model in the picker, so the number you see is the one your provider charges today.
-
-## Spend
-
-SPLITBRIEF reports what a run spent when it knows the prices: token counts per seat always, and a dollar figure whenever every seat the run used is priced in the catalog. A run that recorded unpriced usage says so instead of publishing a figure it cannot stand behind.
-
-The figure is a fact about the run, not a target. Open `/usage` on a run to see it.
 
 ## Use the pipeline as skills
 

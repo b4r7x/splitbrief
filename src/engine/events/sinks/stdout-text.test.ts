@@ -251,21 +251,7 @@ describe('createStdoutTextSink', () => {
         retries: 0,
         duration: 12,
       },
-      {
-        type: 'cost_update',
-        ts,
-        phase: 'implementing',
-        tokenUsage: {
-          plannerInput: 1000,
-          plannerOutput: 500,
-          implementerInput: 400,
-          implementerOutput: 100,
-          escalationInput: 0,
-          escalationOutput: 0,
-          reviewerInput: 0,
-          reviewerOutput: 0,
-        },
-      },
+
       {
         type: 'review_completed',
         ts,

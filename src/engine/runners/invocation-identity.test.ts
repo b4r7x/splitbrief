@@ -14,7 +14,6 @@ describe('snapshotCliInvocationIdentity', () => {
         version: 1,
         capturedAt: NOW,
         runner: { kind: 'cli', id: tool },
-        billing: { posture: 'unknown', basis: 'unknown' },
       });
       expect(InvocationIdentitySchema.parse(identity)).toEqual(identity);
     },

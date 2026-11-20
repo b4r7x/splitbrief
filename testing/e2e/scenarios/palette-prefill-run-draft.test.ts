@@ -47,6 +47,10 @@ describe('e2e: a command taken from the palette over a typed run draft', {
       erased: true,
       kept: DRAFT,
     },
+    {
+      title: 'offers no /usage row and refuses /usage in the composer',
+      command: 'usage',
+    },
   ] as const)('$title when the run is left and reopened', async (step, context) => {
     fixture = createStopContinueFixture(escapingImplementerScript);
     const target = fixture;
@@ -132,6 +136,28 @@ describe('e2e: a command taken from the palette over a typed run draft', {
           await openRun();
 
           await shows('Type a correction…');
+          if (step.command === 'usage') {
+            child.write('\x0b');
+            await shows('Type a command…');
+            child.write('brws');
+            await shows(/brws[▏|]/u);
+            expect.soft(text()).toContain('Browse past sessions');
+            child.write('\x7f'.repeat('brws'.length));
+            await shows('Type a command…');
+            child.write('usage');
+            await shows(/usage[▏|]/u);
+            expect.soft(text()).toContain('No matching commands');
+            expect.soft(text()).not.toMatch(/▌\s+\/usage\b/u);
+            child.write('\x1b');
+            await shows('Type a correction…');
+
+            child.write('/usage');
+            await shows(/› \/usage/u);
+            child.write('\r');
+            await shows(/Unknown command: \/usage|Usage details/u);
+            expect(text()).toContain('Unknown command: /usage');
+            return;
+          }
           child.write(DRAFT);
           await shows(`› ${DRAFT}`);
           child.write('\x0b');

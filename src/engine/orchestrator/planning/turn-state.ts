@@ -23,7 +23,6 @@ import { withContinuationLoop, type ContinuationLoopBodyArgs } from '../continua
 import { createBusTextHandler, publishRunnerCallEvent } from '../publish/runner.js';
 import { askPlannerSession } from '../planner-session.js';
 import { imagesFromMessages } from '../queue/prompt.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { recordAnswers } from './answers.js';
@@ -193,9 +192,7 @@ export async function askTurn(
   shared.standingHeard = true;
   shared.images = [];
   shared.priorMessages = undefined;
-  const answered = loop.value;
-  shared.state = addUsageAndSave(wctx, shared.state, 'planner', answered.usage);
-  return answered;
+  return loop.value;
 }
 
 /**

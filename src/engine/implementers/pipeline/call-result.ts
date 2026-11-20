@@ -60,7 +60,6 @@ export function createImplementerCallContext(opts: {
     taskId: opts.taskId,
     // An API call's boundary is recorded by the completion that owns its one
     // HTTP request; a subprocess may make any number of provider requests.
-    ...(backendKind !== 'api' && { usageBoundary: 'aggregate' as const }),
   };
 }
 

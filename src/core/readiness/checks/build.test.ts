@@ -251,7 +251,7 @@ describe('readiness checks', () => {
       .sections.flatMap((section) => section.checks)
       .find((entry) => entry.id === 'context.implementer.tight');
     expect(check?.fix).toBe(
-      `Raise Settings > Tuning > ${kind === 'api' ? 'Context length' : 'Prompt budget'} to at least 32000 tokens.`,
+      `Increase Settings > Tuning > ${kind === 'api' ? 'Context length' : 'Prompt budget'} to allow a larger context window.`,
     );
     expect(check?.fix).not.toContain('config.yaml');
   });
@@ -276,7 +276,7 @@ describe('readiness checks', () => {
     expect(check?.fix).not.toContain('Settings');
   });
 
-  it('reports missing profile cost tier and inferred write mode as non-blocking info', () => {
+  it('reports inferred write mode as non-blocking info', () => {
     const config: Config = {
       ...makeConfig({
         planner: {

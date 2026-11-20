@@ -279,7 +279,6 @@ async function review(opts: {
         const reply = replies[Math.min(reviewCalls - 1, replies.length - 1)] ?? PASS_REVIEW;
         return reply(prompt);
       },
-      undefined,
       () => cannotConsult(),
     ),
   });
@@ -364,6 +363,9 @@ describe('a REVIEW that reached no verdict', () => {
     expect(issue?.facts?.apiContextCause).toBe('input-budget');
     expect(issue?.facts?.reviewFailureKind).toBe('insufficient-context');
     expect(issue?.availableActions).toContain('retry-same-worker');
+    expect(issue?.details).toContain(
+      'Pick a review seat with a larger context in /crew review, then choose Try again.',
+    );
 
     expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
     expect(events.find((event) => event.type === 'review_fix_started')).toBeUndefined();

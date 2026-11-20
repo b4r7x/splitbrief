@@ -2,9 +2,10 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, it } from 'vitest';
-import { resolveCallUsageEvidence } from '../orchestrator/summary/call-evidence.js';
+
 import { writeCommandShim } from '#testing/helpers/command-shim.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { resolveCallIdentities } from '../orchestrator/summary/call-evidence.js';
 
 const SESSION_ID = '2026-10-13-resumed-calls';
 
@@ -62,7 +63,7 @@ it('keeps every call distinct in the same session after a new process resumes it
       );
 
     runProcess();
-    const before = resolveCallUsageEvidence({ projectDir, sessionId: SESSION_ID });
+    const before = resolveCallIdentities({ projectDir, sessionId: SESSION_ID });
     expect(before).toHaveLength(6);
     expect(before?.slice(0, 2)).toEqual([
       expect.objectContaining({ role: 'planner', callId: expect.stringMatching(/^planner-/) }),
@@ -70,7 +71,7 @@ it('keeps every call distinct in the same session after a new process resumes it
     ]);
 
     runProcess();
-    const resumed = resolveCallUsageEvidence({ projectDir, sessionId: SESSION_ID });
+    const resumed = resolveCallIdentities({ projectDir, sessionId: SESSION_ID });
     expect(resumed).toHaveLength(12);
     expect(new Set(resumed?.map((call) => call.callId)).size).toBe(12);
     expect(resumed?.slice(0, 6).map((call) => call.callId)).toEqual(

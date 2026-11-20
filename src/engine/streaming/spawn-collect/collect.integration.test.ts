@@ -557,27 +557,6 @@ describe('spawnAndCollect', () => {
 
     expect(result.text).toContain('collected');
     expect(outputChunks.join('')).toContain('collected');
-    expect(result.usage).toBeNull();
-  });
-
-  it('accumulates usage from parsed lines', async () => {
-    const result = await spawnAndCollect({
-      callContext: callContext(),
-      command: 'node',
-      args: [
-        '-e',
-        'console.log("a"); console.log("Tokens: 10 sent, 5 received"); console.log("b"); console.log("Tokens: 20 sent, 10 received")',
-      ],
-      cwd: '.',
-      notFoundMessage: 'node not found',
-      // Ambient credentials would redact any parsed text that prefixes one, so
-      // an exact-text assertion states its own redaction inputs.
-      credentialValues: [],
-      onText: () => {},
-    });
-
-    expect(result.text).toBe('a\nb\n');
-    expect(result.usage).toEqual({ inputTokens: 30, outputTokens: 15 });
   });
 
   it('emits one failed terminal before rethrowing command-not-found', async () => {
@@ -1742,7 +1721,6 @@ describe('CLI implementer JSONL parsing', () => {
       }),
       JSON.stringify({
         type: 'turn.completed',
-        usage: { input_tokens: 100, output_tokens: 50 },
       }),
     ].join('\n');
 

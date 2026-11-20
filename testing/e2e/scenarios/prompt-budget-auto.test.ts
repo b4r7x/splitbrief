@@ -8,6 +8,9 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import {
   reviewPacketJsonPath,
   reviewPacketMarkdownPath,
+  SESSION_LOG_FILE,
+  STATE_FILE,
+  sessionDir,
   sessionsRoot,
 } from '../../../src/core/paths.js';
 import { ReviewPacketSchema } from '../../../src/core/schemas/review/packet.js';
@@ -122,10 +125,7 @@ async function startEndpoint(
         version: 1,
         files: [{ path: BIG_FILE, action: 'modify', content: source + DONE_LINE }],
       };
-      const reply = makeOpenAiSseResponse([
-        { content: JSON.stringify(bundle) },
-        { usage: { prompt_tokens: 100, completion_tokens: 50 } },
-      ]);
+      const reply = makeOpenAiSseResponse([{ content: JSON.stringify(bundle) }, {}]);
       response.writeHead(reply.status, { 'Content-Type': 'text/event-stream' });
       response.end(await reply.text());
     };
@@ -249,6 +249,57 @@ process.stdout.write(JSON.stringify(answer));
 }
 
 describe('e2e: the Prompt budget of an API BUILD seat', () => {
+  it('keeps the completed brief in state without writing usage analytics', async () => {
+    const { target, completions } = await prepareRun(undefined, { source: TIGHT_SOURCE });
+
+    const run = await cli(target, ['start', 'mark the big module done'], {
+      json: true,
+      timeoutMs: 60_000,
+    });
+
+    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+    expect(serverFailure).toBeUndefined();
+    expect(completions).toHaveLength(1);
+    const [sessionId] = readdirSync(sessionsRoot(target.projectDir));
+    if (sessionId === undefined) throw new Error('The run saved no session');
+    const ref = { projectDir: target.projectDir, sessionId };
+    const dir = sessionDir(ref.projectDir, ref.sessionId);
+    const state = z
+      .looseObject({ taskBreakdowns: z.array(z.record(z.string(), z.unknown())) })
+      .parse(JSON.parse(readFileSync(join(dir, STATE_FILE), 'utf8')));
+    expect.soft(state).not.toHaveProperty('tokenUsage');
+    expect(state.taskBreakdowns).toEqual([
+      expect.objectContaining({
+        taskId: 'T001',
+        method: 'local',
+        retryCount: 0,
+        tool: 'custom-endpoint',
+        kind: 'api',
+        model: MODEL,
+        implementerProfile: 'default',
+      }),
+    ]);
+    for (const entry of state.taskBreakdowns) {
+      expect
+        .soft(Object.keys(entry).filter((key) => /token|cost|amount|estimate|rate$/i.test(key)))
+        .toEqual([]);
+    }
+
+    const log = readFileSync(join(dir, SESSION_LOG_FILE), 'utf8');
+    expect(log).toContain('"type":"task_completed"');
+    expect.soft(log.match(/"type":"(?:cost_update|runner_call_usage)"/g)).toBeNull();
+    expect(run.stdout).toContain('"type":"task_completed"');
+    expect
+      .soft(
+        run.stdout.match(/"(?:[a-z]*(?:tokens?|cost|amount|pricing|estimated)[a-z]*|usage)"\s*:/gi),
+      )
+      .toBeNull();
+    expect.soft(run.stdout.match(/"type":"(?:cost_update|runner_call_usage)"/g)).toBeNull();
+    expect
+      .soft(JSON.parse(readFileSync(reviewPacketJsonPath(ref), 'utf8')))
+      .not.toHaveProperty('cost');
+  });
+
   it('sends a brief over the assumed window whole when no Prompt budget is set, and ends it done', async () => {
     const { target, completions, readCalls } = await prepareRun(undefined, { provider: 'codex' });
 
@@ -273,7 +324,7 @@ describe('e2e: the Prompt budget of an API BUILD seat', () => {
     const started = events.find((event) => event.type === 'task_started');
     expect(started).toMatchObject({ contextFit: 'overflow', backendKind: 'api', tool: 'codex' });
     expect(started?.routingReason).toMatch(
-      /^Selected profile default \(overflow, estimated \d+\/8192 tokens using conservative context-length fallback; no Prompt budget is set\)$/,
+      /^Selected profile default \(overflow using conservative context-length fallback; no Prompt budget is set\)$/,
     );
     const markdown = readFileSync(reviewPacketMarkdownPath(ref), 'utf8');
     const routing = markdown.split('## Routing\n')[1]?.split('\n## ')[0];
@@ -286,26 +337,6 @@ describe('e2e: the Prompt budget of an API BUILD seat', () => {
     expect(packet.routing.taskRouting).toMatchObject([
       { taskId: 'T001', tool: 'codex', kind: 'api', model: MODEL },
     ]);
-  });
-
-  it('shows a tight brief with its estimate and no guessed window', async () => {
-    const { target, completions } = await prepareRun(undefined, { source: TIGHT_SOURCE });
-
-    const run = await cli(target, ['start', 'mark the big module done']);
-
-    expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
-    expect(serverFailure).toBeUndefined();
-    expect(completions).toHaveLength(1);
-    const [sessionId] = readdirSync(sessionsRoot(target.projectDir));
-    if (sessionId === undefined) throw new Error('The run saved no session');
-    const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
-    const started = events.find((event) => event.type === 'task_started');
-    expect(started).toMatchObject({ contextFit: 'tight' });
-    expect(started).not.toHaveProperty('contextLength');
-    // Ink paints the transcript 80 columns wide, so the rows wrap at 80 too.
-    const transcript = transcriptText(events, 80);
-    expect(transcript).toMatch(/~[\d,]+ context tokens \(tight\)/);
-    expect(transcript).not.toContain(' of 8K');
   });
 
   it('stops the brief at the plan check when it does not fit the Prompt budget the user set', async () => {
@@ -325,6 +356,9 @@ describe('e2e: the Prompt budget of an API BUILD seat', () => {
     const opened = await openHaltedRun(target, { heading: FIT_ERROR });
     ui = opened.screen;
     expect(loadState(opened.ref)?.pendingRecovery?.reason).toBe('plan-checks-failed');
+    expect(opened.screen.lastFrame()).toMatch(
+      /The brief needs about [\d,]+ tokens\.\s+The BUILD seat can take at most 4,096\./,
+    );
   });
 
   it('stops the brief at the plan check when SPLITBRIEF_CONTEXT_LENGTH sets a Prompt budget it does not fit', async () => {
@@ -342,7 +376,7 @@ describe('e2e: the Prompt budget of an API BUILD seat', () => {
     expect(loadConfig(target.projectDir).config.implementer.contextLength).toBeUndefined();
   });
 
-  it('halts at once on the Prompt too large card when the provider refuses the whole brief, and the task row shows the estimate alone', async () => {
+  it('halts at once on the Prompt too large card when the provider refuses the whole brief, and keeps the brief row', async () => {
     const { target, completions } = await prepareRun(undefined, { refuse: true });
 
     const run = await cli(target, ['start', 'mark the big module done']);
@@ -358,7 +392,7 @@ describe('e2e: the Prompt budget of an API BUILD seat', () => {
     const { events } = await readRunEvents({ projectDir: target.projectDir, sessionId });
     // Ink paints the transcript 80 columns wide, so the rows wrap at 80 too.
     const transcript = transcriptText(events, 80);
-    expect(transcript).toMatch(/~[\d,]+ context tokens/);
+    expect(transcript).toContain('src/big.ts (modify)');
     expect(transcript).not.toContain('(overflow)');
   });
 });

@@ -1,6 +1,5 @@
 import { loadState } from '../../../core/state/persistence.js';
 import { readImplementerReport, type ImplementerReport } from '../../../core/schemas/consult.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { transitionAndSave } from '../state-ops/transition.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
@@ -80,11 +79,10 @@ async function runRetryStepAttempt(
   opts: RetryStepOpts,
   workspace: AttemptWorkspace,
 ): Promise<RetryStepResult> {
-  const { ctx, task, lastError, attempts, usageCategory, retryFailureFallback } = opts;
+  const { ctx, task, lastError, attempts, retryFailureFallback } = opts;
   const loop = await invokeRetryAttempt(opts, workspace);
   const retryResult = loop.value;
   let state = rebaseOnPersistedWorkflowState(ctx, loop.state);
-  state = addUsageAndSave(ctx, state, usageCategory, retryResult.usage);
 
   const applyResult = retryResult.applyResult;
   if (

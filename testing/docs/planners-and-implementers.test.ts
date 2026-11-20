@@ -102,7 +102,7 @@ describe('canonical CLI runner matrix docs', () => {
     expect(DOC).toContain('#### Canonical CLI runner matrix');
   });
 
-  it('keeps admitted support rows aligned with runtime IDs, versions, and postures', () => {
+  it('keeps admitted support rows aligned with runtime IDs and versions', () => {
     const support = admittedSupportSection();
 
     for (const id of CLI_TOOL_IDS) {
@@ -115,7 +115,6 @@ describe('canonical CLI runner matrix docs', () => {
       expect(support).toContain(descriptor.compatibility.testedVersion);
       expect(support).toContain(descriptor.compatibility.evidence.asOf);
       expect(support).toContain(formatModelPolicy(id));
-      expect(support).toContain(descriptor.billing);
 
       const admittedRow = support.split('\n').find((line) => line.startsWith(`| \`${id}\` |`));
       expect(admittedRow, `missing admitted support row for ${id}`).toBeDefined();

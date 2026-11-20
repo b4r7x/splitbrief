@@ -147,7 +147,6 @@ function runOptions(opts: {
         triagePrompts.push(prompt);
         return typeof fixWork === 'string' ? fixWork : { ...verdict, ...fixWork };
       },
-      undefined,
       () => cannotConsult(),
     ),
   });

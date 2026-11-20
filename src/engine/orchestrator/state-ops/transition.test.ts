@@ -6,10 +6,9 @@ import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { clearPendingQueue } from '../queue/clear.js';
 import { transitionAndSave } from './transition.js';
-import { addUsageAndSave } from './usage.js';
 
 describe('transitionAndSave', () => {
-  it.each(['transition', 'queue', 'usage'] as const)(
+  it.each(['transition', 'queue'] as const)(
     'does not persist a cleared message through a stale %s writer',
     (writer) => {
       const ref = setupProject();
@@ -21,19 +20,14 @@ describe('transitionAndSave', () => {
         });
         const cleared = clearPendingQueue({ ...ref, state: stale, bus }).state;
         const next =
-          writer === 'usage'
-            ? addUsageAndSave({ ...ref, bus }, stale, 'implementer', {
-                inputTokens: 1,
-                outputTokens: 1,
-              })
-            : writer === 'queue'
-              ? transitionAndSave(
-                  ref,
-                  stale,
-                  { type: 'MARK_INJECTING_NATIVE', id: makeQueuedMessage().id },
-                  { expectedRevision: cleared.stateRevision },
-                )
-              : transitionAndSave(ref, stale, { type: 'START' });
+          writer === 'queue'
+            ? transitionAndSave(
+                ref,
+                stale,
+                { type: 'MARK_INJECTING_NATIVE', id: makeQueuedMessage().id },
+                { expectedRevision: cleared.stateRevision },
+              )
+            : transitionAndSave(ref, stale, { type: 'START' });
 
         expect(next.messageQueue).toEqual([]);
         expect(loadState(ref)?.messageQueue).toEqual([]);

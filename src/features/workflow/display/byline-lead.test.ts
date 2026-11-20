@@ -153,7 +153,7 @@ describe('deriveBylineLead', () => {
       durationMs: null,
       partial: false,
       reason: null,
-      usage: null,
+
       warnings: [],
       apiRuntimeStatus: { phase: 'waiting-first-response', loadState: 'unknown', observedAt: NOW },
     };

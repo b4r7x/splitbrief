@@ -121,7 +121,7 @@ import {
 // A state.json write SPLITBRIEF renamed into place but could not confirm on disk (a failing disk,
 // EIO on a network mount): every write once `unconfirmed` is set, or only the `next` write made
 // from the named function, which `eio` fails before anything is written and `conflict` finds
-// changed by another writer (`conflict-twice`: that write and its retry); `thenEvery` makes every
+// changed by another writer. `thenEvery` makes every
 // later write unconfirmed too, or, after `enospc`, fails every later write on a full disk. Every
 // other write is real.
 const stateWrite = vi.hoisted(() => ({
@@ -130,7 +130,7 @@ const stateWrite = vi.hoisted(() => ({
   next: undefined as
     | {
         from: string;
-        fails: 'unconfirmed' | 'eio' | 'enospc' | 'conflict' | 'conflict-twice';
+        fails: 'unconfirmed' | 'eio' | 'enospc' | 'conflict';
         thenEvery?: true;
       }
     | undefined,
@@ -176,14 +176,13 @@ vi.mock('../../../lib/fs/atomic-write/write-sync.js', async (importOriginal) => 
         args[0].endsWith('/state.json') &&
         new Error().stack?.includes(` ${next.from} (`)
       ) {
-        stateWrite.next =
-          next.fails === 'conflict-twice' ? { ...next, fails: 'conflict' } : undefined;
+        stateWrite.next = undefined;
         if (next.thenEvery) stateWrite[next.fails === 'enospc' ? 'full' : 'unconfirmed'] = true;
         if (next.fails === 'enospc') throw enospc();
         if (next.fails === 'eio') {
           throw Object.assign(new Error(`EIO: i/o error, open '${args[0]}'`), { code: 'EIO' });
         }
-        if (next.fails === 'conflict' || next.fails === 'conflict-twice') {
+        if (next.fails === 'conflict') {
           return { kind: 'conflict', observedRevision: null };
         }
         const written = actual.confinedAtomicWriteFileSync(...args);
@@ -246,7 +245,7 @@ function emitReviewCall(callbacks: PlannerOutputCallbacks, runnerName: string): 
     startedAt,
     endedAt: startedAt + 1,
     durationMs: 1,
-    usage: null,
+
     nativeSessionId: null,
   });
 }
@@ -525,20 +524,17 @@ describe('runWorkflow — smoke', () => {
     };
     const onContinuationNeeded = vi.fn(async () => plainUserMessage('should not run'));
     const { callbacks } = makeCallbacks({ onContinuationNeeded });
-    const typedCall = typedCallAnswering(
-      async () => {
-        expect(pendingBoundaryInterrupt).toBe(false);
-        return planFromTasks([
-          makeTask({
-            id: 'T001',
-            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_completed event shows the planned task ran'],
-            typeDefs: 'type DrainTask = { file: string }',
-          }),
-        ]);
-      },
-      { inputTokens: 50, outputTokens: 25 },
-    );
+    const typedCall = typedCallAnswering(async () => {
+      expect(pendingBoundaryInterrupt).toBe(false);
+      return planFromTasks([
+        makeTask({
+          id: 'T001',
+          scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+          evidence: ['task_completed event shows the planned task ran'],
+          typeDefs: 'type DrainTask = { file: string }',
+        }),
+      ]);
+    });
 
     const summary = await runWorkflow({
       feature: 'stale boundary interrupt',
@@ -887,7 +883,7 @@ describe('runWorkflow — smoke', () => {
           _implementer: makeImplementer({
             implement: vi.fn().mockImplementation(async () => {
               controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-              return { success: false, output: '', usage: null };
+              return { success: false, output: '' };
             }),
           }),
         },
@@ -981,7 +977,7 @@ describe('runWorkflow — smoke', () => {
           _implementer: makeImplementer({
             implement: vi.fn().mockImplementation(async () => {
               chmodSync(statePath, 0o000);
-              return { success: true, output: '', usage: null };
+              return { success: true, output: '' };
             }),
           }),
         },
@@ -1018,7 +1014,7 @@ describe('runWorkflow — smoke', () => {
             _implementer: makeImplementer({
               implement: vi.fn().mockImplementation(async () => {
                 readOnly();
-                return { success: true, output: '', usage: null };
+                return { success: true, output: '' };
               }),
             }),
           }),
@@ -1160,7 +1156,7 @@ describe('runWorkflow — smoke', () => {
             return planFromTasks([makeTask({ id: 'T001' })]);
           }),
         });
-        const implement = vi.fn().mockResolvedValue({ success: true, output: '', usage: null });
+        const implement = vi.fn().mockResolvedValue({ success: true, output: '' });
         const options = {
           projectDir,
           _planner: planner,
@@ -1217,7 +1213,7 @@ describe('runWorkflow — smoke', () => {
             },
           ),
         });
-        const implement = vi.fn().mockResolvedValue({ success: true, output: '', usage: null });
+        const implement = vi.fn().mockResolvedValue({ success: true, output: '' });
         const options = {
           projectDir,
           _planner: planner,
@@ -1310,7 +1306,7 @@ describe('runWorkflow — smoke', () => {
               mkdirSync(join(workspace, 'build'), { recursive: true });
               writeFileSync(join(workspace, 'build/out.log'), 'ignored by the call\n');
               if (fails === 'read-only') chmodSync(sessionDir(projectDir, sessionId), 0o555);
-              return { success: true, output: '', usage: null };
+              return { success: true, output: '' };
             });
             const failed = await runWithStateWrite(
               sessionId,
@@ -1333,7 +1329,7 @@ describe('runWorkflow — smoke', () => {
               beforeSecondCall = contents(opts.projectDir);
               const ignored = join(opts.projectDir, 'build/out.log');
               ignoredBeforeSecondCall = existsSync(ignored) ? readFileSync(ignored, 'utf8') : null;
-              return { success: true, output: '', usage: null };
+              return { success: true, output: '' };
             });
             if (continuedIn === 'a new') {
               expect(failed.errors).toContain(notSaved(sessionId));
@@ -1410,7 +1406,7 @@ describe('runWorkflow — smoke', () => {
               unlinkSync(join(opts.projectDir, 'docs/old.md'));
               writeFileSync(join(opts.projectDir, 'docs/new.md'), 'new by the retry\n');
               writeFileSync(join(opts.projectDir, 'dirty.txt'), 'dirty by the retry\n');
-              return { success: true, output: '', usage: null };
+              return { success: true, output: '' };
             });
             // Armed on the first call's failure, so the save that fails is the retry's.
             const failed = await runWithStateWrite(
@@ -1441,7 +1437,7 @@ describe('runWorkflow — smoke', () => {
             let beforeSecondCall: Record<string, string | null> = {};
             const second = vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
               beforeSecondCall = contents(opts.projectDir);
-              return { success: true, output: '', usage: null };
+              return { success: true, output: '' };
             });
             const kept = loadOwnerWorkflowState(ref);
             const again = await runWithStateWrite(sessionId, undefined, 'start', {
@@ -1539,18 +1535,8 @@ describe('runWorkflow — smoke', () => {
       }),
     };
 
-    const kept = (sessionId: string) =>
-      `Another process kept changing the run state, so this change was not saved · .splitbrief/sessions/${sessionId}/state.json`;
     const changedBefore = (sessionId: string) =>
       `Another process changed the run state, so this change was not saved · .splitbrief/sessions/${sessionId}/state.json`;
-    const planUsage = {
-      _planner: makePlanner({
-        typedCall: typedCallFromTasks([makeTask({ id: 'T001' })], {
-          inputTokens: 50,
-          outputTokens: 25,
-        }),
-      }),
-    };
 
     it.each([
       ['planning', 'transitionAndSave', 'eio', 'planner_status', {}, notSavedEio],
@@ -1565,13 +1551,12 @@ describe('runWorkflow — smoke', () => {
         unconfirmed,
       ],
       ['a brief', 'recordWrites', 'eio', 'task_started', {}, notSavedEio],
-      ['planning', 'addUsageAndSave', 'conflict-twice', 'planner_status', planUsage, kept],
       ['planning', 'transitionAndSave', 'conflict', 'planner_status', {}, changedBefore],
     ] as const)(
       'a state write that fails during %s (%s, %s) fails the run with its cause, not as the seat failing',
       async (label, from, fails, armOn, seats, line) => {
         const sessionId = `seat-save-${label.replaceAll(' ', '-')}-${fails}-sid`;
-        const implement = vi.fn().mockResolvedValue({ success: true, output: '', usage: null });
+        const implement = vi.fn().mockResolvedValue({ success: true, output: '' });
         const run = await runWithStateWrite(sessionId, { from, fails }, armOn, {
           _implementer: makeImplementer({ implement }),
           ...seats,
@@ -1607,7 +1592,7 @@ describe('runWorkflow — smoke', () => {
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner({
-        typedCall: typedCallFromTasks([], { inputTokens: 50, outputTokens: 25 }),
+        typedCall: typedCallFromTasks([]),
       }),
     });
 
@@ -1698,14 +1683,11 @@ describe('runWorkflow — smoke', () => {
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner({
-        typedCall: typedCallAnswering(
-          async () => {
-            registerProcess(groupChild, { group: true });
-            entriesDuringRun = readRunnerPids({ projectDir, sessionId });
-            return planFromTasks([makeTask()]);
-          },
-          { inputTokens: 50, outputTokens: 25 },
-        ),
+        typedCall: typedCallAnswering(async () => {
+          registerProcess(groupChild, { group: true });
+          entriesDuringRun = readRunnerPids({ projectDir, sessionId });
+          return planFromTasks([makeTask()]);
+        }),
       }),
       _implementer: makeImplementer(),
     });
@@ -2366,7 +2348,7 @@ describe('runWorkflow — smoke', () => {
       _implementer: makeImplementer({
         implement: vi.fn().mockImplementation(async () => {
           controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-          return { success: false, output: '', usage: null };
+          return { success: false, output: '' };
         }),
       }),
     });
@@ -2407,7 +2389,7 @@ describe('runWorkflow — smoke', () => {
       _implementer: makeImplementer({
         implement: vi.fn().mockImplementation(async () => {
           controller.abort();
-          return { success: false, output: '', usage: null };
+          return { success: false, output: '' };
         }),
       }),
     });
@@ -2576,7 +2558,7 @@ describe('runWorkflow — smoke', () => {
       _implementer: makeImplementer({
         implement: vi.fn().mockImplementation(async () => {
           controller.abort();
-          return { success: false, output: '', usage: null };
+          return { success: false, output: '' };
         }),
       }),
     });
@@ -2639,17 +2621,14 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
       _planner: makePlanner({
-        typedCall: typedCallFromTasks(
-          [
-            makeTask({
-              id: 'T001',
-              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the planned task ran'],
-              typeDefs: 'type HelloTask = { file: string }',
-            }),
-          ],
-          { inputTokens: 50, outputTokens: 25 },
-        ),
+        typedCall: typedCallFromTasks([
+          makeTask({
+            id: 'T001',
+            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the planned task ran'],
+            typeDefs: 'type HelloTask = { file: string }',
+          }),
+        ]),
       }),
       _implementer: makeImplementer(),
     });
@@ -2664,7 +2643,7 @@ describe('runWorkflow — smoke', () => {
     const { callbacks } = makeCallbacks();
     const events: EngineEvent[] = [];
     const startedAt = Date.now();
-    const usage = { inputTokens: 3, outputTokens: 5 };
+
     const call: RunnerCallContext = {
       callId: 'planner-call-test',
       role: 'planner',
@@ -2694,13 +2673,7 @@ describe('runWorkflow — smoke', () => {
             channel: 'tool',
             toolUse: { id: 'tool-read-1', name: 'Read', input: { file_path: 'src/hello.ts' } },
           });
-          opts.callbacks.onCallEvent?.({
-            type: 'call_usage',
-            ts: startedAt + 1,
-            ...call,
-            usage,
-            semantics: 'delta',
-          });
+
           opts.callbacks.onCallEvent?.({
             type: 'call_completed',
             ts: startedAt + 2,
@@ -2711,7 +2684,7 @@ describe('runWorkflow — smoke', () => {
             startedAt,
             endedAt: startedAt + 2,
             durationMs: 2,
-            usage,
+
             nativeSessionId: null,
           });
           return planFromTasks([makeTask()]);
@@ -2726,7 +2699,7 @@ describe('runWorkflow — smoke', () => {
       'runner_call_started',
       'runner_call_tool_use',
       'runner_call_activity',
-      'runner_call_usage',
+
       'runner_call_completed',
     ]);
     expect(events.find((event) => event.type === 'runner_call_completed')).toMatchObject({
@@ -2948,10 +2921,7 @@ describe('runWorkflow — checkout run snapshot', () => {
         callbacks: makeCallbacks().callbacks,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
         _planner: makePlanner({
-          typedCall: typedCallFromTasks([makeTask({ id: 'T001' })], {
-            inputTokens: 50,
-            outputTokens: 25,
-          }),
+          typedCall: typedCallFromTasks([makeTask({ id: 'T001' })]),
         }),
         _implementer: makeImplementer(),
       });
@@ -3294,69 +3264,6 @@ describe('runWorkflow — recovery resume', () => {
     expect(persisted?.startedAt).toBe(originalStartMs);
   });
 
-  it('prices the resumed summary at the state-pinned runner identity while naming the seat in use', async () => {
-    const projectDir = setupProject();
-    const sessionId = 'sess-run-identity';
-    ensureSessionDir(projectDir, sessionId);
-    writeActive({ projectDir, sessionId });
-
-    const task = makeTask({ id: 'T001' });
-    const issue = buildRetryExhaustedRecoveryIssue({
-      task,
-      validationSummary: 'tsc failed',
-      attempts: 1,
-      createdAt: '2026-04-29T00:00:00.000Z',
-    });
-    // makeImplStateWithMetadata pins plannerTool 'claude-code' / implementer 'ollama' (qwen2.5).
-    const savedState = transition(implementingState([task]), {
-      type: 'SET_PENDING_RECOVERY',
-      issue,
-    });
-    saveState({ projectDir, sessionId }, savedState);
-
-    const { callbacks } = makeCallbacks();
-    // The new config switches the implementer to a custom endpoint: the resumed summary
-    // names that seat, and the cost breakdown still attributes the cumulative usage to the
-    // state-pinned runner that actually spent it.
-    const summary = await runWorkflow({
-      feature: 'feat',
-      projectDir,
-      config: makeConfig({
-        implementer: {
-          provider: 'custom-endpoint',
-          apiBase: 'https://api.example.com/v1',
-          apiKey: 'test-key',
-          model: 'deepseek-chat',
-        },
-        validation: { endChecks: false, testCommand: 'noop' },
-        workflow: {
-          approve: 'none',
-        },
-      }),
-      callbacks,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      savedState,
-      sessionId,
-      _planner: makePlanner({
-        isAvailable: async () => {
-          throw new Error(
-            'availability should not be checked while pending recovery is unresolved',
-          );
-        },
-      }),
-    });
-
-    expect(summary.plannerTool).toBe('claude-code');
-    expect(summary.plannerKind).toBe('cli');
-    expect(summary.implementerTool).toBe('custom-endpoint');
-    expect(summary.implementerModel).toBe('deepseek-chat');
-    expect(summary.implementerKind).toBe('api');
-    expect(summary).not.toHaveProperty('reviewerKind');
-    // Nothing was ever spent on the seat the run now names, so no cost may be
-    // attributed to it: the breakdown follows the state, not the identity.
-    expect(summary.costBreakdown?.providerCosts?.['custom-endpoint']).toBeUndefined();
-  });
-
   it('keeps the effort each seat runs at in the summary of the run', async () => {
     const projectDir = setupProject();
     const sessionId = 'sess-run-axes';
@@ -3457,7 +3364,7 @@ describe('runWorkflow — a run still in flight when its test ends', () => {
               { once: true },
             );
           });
-          return { success: false, output: '', usage: null };
+          return { success: false, output: '' };
         }),
       }),
     });

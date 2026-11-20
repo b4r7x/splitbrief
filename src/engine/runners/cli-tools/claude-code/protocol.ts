@@ -34,13 +34,6 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
       ...(parsed.textSemantics !== undefined && { semantics: parsed.textSemantics }),
     });
   }
-  if (parsed.usage !== undefined) {
-    events.push({
-      type: 'usage',
-      usage: parsed.usage,
-      semantics: parsed.usageSemantics ?? (parsed.isResult ? 'final' : 'delta'),
-    });
-  }
   // A tool is started from its first block until its `tool_result`; the whole input re-announces it.
   for (const toolUse of [...(parsed.toolUseStart ?? []), ...(parsed.toolUseInput ?? [])]) {
     events.push({
@@ -87,7 +80,6 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
         type: 'result',
         status: 'failed',
         text: parsed.text ?? '',
-        usage: parsed.usage ?? null,
         nativeSessionId: parsed.sessionId ?? null,
         error: { code: 'runner_result_error', message: parsed.text ?? 'Claude result failed' },
         partial: true,
@@ -97,7 +89,6 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
         type: 'result',
         status: 'completed',
         text: parsed.text ?? '',
-        usage: parsed.usage ?? null,
         nativeSessionId: parsed.sessionId ?? null,
         error: null,
         partial: false,

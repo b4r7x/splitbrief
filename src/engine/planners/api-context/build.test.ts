@@ -436,15 +436,12 @@ describe('the insufficiency the PLAN seat hands to recovery', () => {
     const measured: ApiContextDiagnostic = {
       ...diagnostic,
       budgetSource: 'observed-active',
-      omittedRequestOptions: ['temperature', 'stream_options.include_usage'],
+      omittedRequestOptions: ['temperature'],
     };
 
     expect(apiContextRecoveryFacts(measured)).toMatchObject({
       apiContextBudgetSource: 'observed-active',
-      apiContextOmittedRequestOptionsJson: JSON.stringify([
-        'temperature',
-        'stream_options.include_usage',
-      ]),
+      apiContextOmittedRequestOptionsJson: JSON.stringify(['temperature']),
     });
     expect(readApiContextDiagnostic(apiContextError(measured))).toEqual(measured);
   });

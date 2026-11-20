@@ -15,7 +15,7 @@ import { ClarificationQuestionSchema } from '../question.js';
 import { RecoveryIssueSchema } from '../recovery/schemas.js';
 import { StepRefSchema, StepCutSchema } from '../run-step.js';
 import { TaskSchema, TaskIdSchema } from '../task.js';
-import { TokenUsageSchema, TaskTokenUsageSchema } from '../tokens.js';
+import { BriefExecutionSchema } from '../brief-execution.js';
 import { ChangedFilesBaselineSchema } from './changed-files.js';
 import { nonnegativeInteger } from './consult-record.js';
 import { DiscoveredValidationSchema } from './discovered-validation.js';
@@ -75,8 +75,7 @@ const WorkflowStateFields = {
   plannerSessionId: z.string().nullable().optional(),
   startedAt: z.string(),
   completedAt: z.string().optional(),
-  tokenUsage: TokenUsageSchema,
-  taskBreakdowns: z.array(TaskTokenUsageSchema).optional(),
+  taskBreakdowns: z.array(BriefExecutionSchema).optional(),
   plannerTool: z.string().optional(),
   plannerModel: z.string().optional(),
   plannerKind: RunnerKindSchema.optional(),
@@ -219,6 +218,7 @@ const WorkflowStateFields = {
 };
 
 const LEGACY_STATE_KEYS = [
+  'tokenUsage',
   'fullSuiteBaseline',
   'fullSuiteBaselineStages',
   'validationBaseline',

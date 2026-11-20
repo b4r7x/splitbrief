@@ -4,7 +4,6 @@ import { sessionFileFailure } from '../../../core/sessions/errors.js';
 import { sessionRelativePath } from '../../../core/sessions/ownership-marker.js';
 import type { ConfigRevision } from '../../../lib/fs/atomic-write/types.js';
 import { type AppError, error, matches } from '../../../utils/error.js';
-import type { WorkflowPersistenceContext } from '../types.js';
 
 export const MAX_STATE_CONFLICT_RETRIES = 3;
 export const DEFAULT_STATE_CONFLICT_RETRIES = 1;
@@ -16,14 +15,8 @@ export type StateMutationOptions = Readonly<{
   conflictRetries?: number | undefined;
 }>;
 
-export type StateOperationContext = WorkflowPersistenceContext &
-  Readonly<{
-    expectedRevision?: StateOperationExpectedRevision | undefined;
-    conflictRetries?: number | undefined;
-  }>;
-
 export type StateOperationConflictData = Readonly<{
-  operation: 'transition' | 'queue' | 'usage';
+  operation: 'transition' | 'queue';
   expectedRevision: number | null;
   observedRevision: number | null;
   attempts: number;

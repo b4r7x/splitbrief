@@ -188,7 +188,6 @@ it('keeps different catalog words on both switch endpoints', () => {
 const suppressedRunnerCallTypes = [
   'runner_call_started',
   'runner_call_text_delta',
-  'runner_call_usage',
   'runner_call_tool_use',
   'runner_call_session_id',
   'runner_call_warning',
@@ -211,13 +210,6 @@ function suppressedRunnerCallEvent(type: (typeof suppressedRunnerCallTypes)[numb
       return makeRunnerCallStarted();
     case 'runner_call_text_delta':
       return { type, ...base, channel: 'assistant', text: 'hidden transcript' };
-    case 'runner_call_usage':
-      return {
-        type,
-        ...base,
-        usage: { inputTokens: 1, outputTokens: 2 },
-        semantics: 'delta',
-      };
     case 'runner_call_tool_use':
       return {
         type,
@@ -1159,7 +1151,7 @@ describe('event row dispatch', () => {
 
   it.each([
     ['balance', 'Balance spent on OpenCode CLI'],
-    ['billing', 'Billing refused by OpenCode CLI'],
+    ['billing', 'Account issue with OpenCode CLI'],
     ['quota', 'Quota spent on OpenCode CLI'],
   ] as const)('uses the recorded balance headline in the switch row', (accountCause, headline) => {
     const rows = eventRows({
@@ -1884,7 +1876,7 @@ describe('event row dispatch', () => {
     expect(text).not.toContain(secret);
   });
 
-  it('renders a tight fit on a task-start row as its estimate against the window', () => {
+  it('renders a tight brief with its target and seat', () => {
     const event: EngineEventOf<'task_started'> = {
       type: 'task_started',
       ts: 0,
@@ -1916,7 +1908,6 @@ describe('event row dispatch', () => {
     // MAIN112 F4 wraps task-header metadata label-atomically: a label that moves to a
     // continuation drops the ` · ` it broke on. Assert the facts, not the old wrap point.
     expect(normalized).not.toContain('worker cheap-cloud');
-    expect(normalized).toContain('~95,000 of 100K context tokens (tight)');
     expect(lines.every((line) => !line.trimEnd().endsWith('·'))).toBe(true);
     expect(normalized).not.toContain('current code reduced');
     expect(lines.every((line) => line.length <= 52)).toBe(true);

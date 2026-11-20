@@ -146,7 +146,6 @@ function setupBuild() {
     absorb,
     getState: () => state,
     correctionOptions: {
-      onDiscardedUsage: vi.fn(),
       application: {
         wctx: { ...ref, bus },
         state: () => state,
@@ -611,11 +610,11 @@ describe('runWithCorrectionPasses', () => {
       const controller = new AbortController();
       const delivery = Promise.withResolvers<void>();
       const returned = Promise.withResolvers<void>();
-      const completed = { inputTokens: 10, outputTokens: 4 };
+
       const complete = async (): Promise<ImplementerResult> => {
         trackMidCallDelivery(build.ref, 'pending-delivery', delivery.promise);
         returned.resolve();
-        return { success: true, output: 'completed', usage: completed };
+        return { success: true, output: 'completed' };
       };
       const pass = vi.fn(complete);
       const running = runWithCorrectionPasses({
@@ -629,7 +628,6 @@ describe('runWithCorrectionPasses', () => {
                 return {
                   success: true,
                   output: 'first',
-                  usage: { inputTokens: 3, outputTokens: 2 },
                 };
               },
         pass,
@@ -641,18 +639,9 @@ describe('runWithCorrectionPasses', () => {
       controller.abort();
       delivery.resolve();
       const result = await running;
-      const expected = call === 'first call' ? completed : { inputTokens: 13, outputTokens: 6 };
-      const discarded = build.correctionOptions.onDiscardedUsage.mock.calls;
 
       expect(result.output).toBe('completed');
-      expect(result.usage).toBeUndefined();
-      expect(discarded).toEqual([[expected]]);
-      expect((result.usage?.inputTokens ?? 0) + (discarded[0]?.[0].inputTokens ?? 0)).toBe(
-        expected.inputTokens,
-      );
-      expect((result.usage?.outputTokens ?? 0) + (discarded[0]?.[0].outputTokens ?? 0)).toBe(
-        expected.outputTokens,
-      );
+
       expect(pass).toHaveBeenCalledTimes(call === 'first call' ? 0 : 1);
     },
   );
@@ -718,38 +707,6 @@ describe('runWithCorrectionPasses', () => {
           'You may have seen this message already during your last call:',
         );
       expect(build.events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
-    },
-  );
-
-  it.each(['throw', 'return'] as const)(
-    'preserves completed usage when an interrupted pass exits by %s',
-    async (exit) => {
-      const build = setupBuild();
-      const controller = new AbortController();
-      const discarded: ImplementerResult['usage'][] = [];
-      const onDiscardedUsage = (usage: NonNullable<ImplementerResult['usage']>) => {
-        discarded.push(usage);
-      };
-      const pending = runWithCorrectionPasses({
-        ...build.correctionOptions,
-        ref: build.ref,
-        first: async (): Promise<ImplementerResult> => {
-          build.enqueue('correct this brief');
-          return { success: true, output: 'first', usage: { inputTokens: 10, outputTokens: 4 } };
-        },
-        pass: async (): Promise<ImplementerResult> => {
-          controller.abort();
-          if (exit === 'throw') throw new DOMException('Stopped', 'AbortError');
-          return { success: false, output: '', usage: { inputTokens: 2, outputTokens: 1 } };
-        },
-        absorb: build.absorb,
-        signal: controller.signal,
-        onDiscardedUsage,
-      });
-
-      if (exit === 'throw') await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-      else expect((await pending).usage).toEqual({ inputTokens: 2, outputTokens: 1 });
-      expect(discarded).toEqual([{ inputTokens: 10, outputTokens: 4 }]);
     },
   );
 
@@ -822,7 +779,6 @@ describe('runWithCorrectionPasses', () => {
       return {
         success: true,
         output: 'first',
-        usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 3, reasoningTokens: 2 },
       };
     });
     const steers: string[] = [];
@@ -831,7 +787,6 @@ describe('runWithCorrectionPasses', () => {
       return {
         success: true,
         output: 'corrected',
-        usage: { inputTokens: 7, outputTokens: 5, cacheReadTokens: 1, cacheCreateTokens: 6 },
       };
     });
 
@@ -847,13 +802,6 @@ describe('runWithCorrectionPasses', () => {
     expect(pass).toHaveBeenCalledTimes(1);
     expect(steers[0]).toContain('name the helper parseAmount');
     expect(result.output).toBe('corrected');
-    expect(result.usage).toEqual({
-      inputTokens: 17,
-      outputTokens: 9,
-      cacheReadTokens: 4,
-      cacheCreateTokens: 6,
-      reasoningTokens: 2,
-    });
   });
 
   it('runs only the first call when no messages arrive', async () => {
@@ -926,7 +874,7 @@ describe('runWithCorrectionPasses', () => {
     const build = setupBuild();
     const first = async () => {
       build.enqueue('first correction');
-      return { success: true, output: 'first', usage: { inputTokens: 1, outputTokens: 2 } };
+      return { success: true, output: 'first' };
     };
     const steers: string[] = [];
     const pass = vi.fn(async () => {
@@ -935,7 +883,6 @@ describe('runWithCorrectionPasses', () => {
       return {
         success: true,
         output: `pass ${steers.length}`,
-        usage: { inputTokens: 3, outputTokens: 4 },
       };
     });
 
@@ -953,7 +900,7 @@ describe('runWithCorrectionPasses', () => {
     expect(steers[1]).toContain('first correction');
     expect(steers[1]).toContain('second correction');
     expect(result.output).toBe('pass 2');
-    expect(result.usage).toEqual({ inputTokens: 7, outputTokens: 10 });
+
     expect(
       loadState(build.ref)?.messageQueue.every((m) => m.deliveredTo?.implementer !== undefined),
     ).toBe(true);
@@ -963,7 +910,7 @@ describe('runWithCorrectionPasses', () => {
     const build = setupBuild();
     const first = async () => {
       build.enqueue('first correction');
-      return { success: true, output: 'first', usage: { inputTokens: 1, outputTokens: 2 } };
+      return { success: true, output: 'first' };
     };
     const pass = vi.fn(async () => {
       build.enqueue('next correction');
@@ -971,7 +918,6 @@ describe('runWithCorrectionPasses', () => {
         success: false,
         output: 'failed pass',
         error: 'bad edit',
-        usage: { inputTokens: 3, outputTokens: 4 },
       };
     });
 
@@ -988,7 +934,6 @@ describe('runWithCorrectionPasses', () => {
       success: false,
       output: 'failed pass',
       error: 'bad edit',
-      usage: { inputTokens: 4, outputTokens: 6 },
     });
     expect(
       loadState(build.ref)?.messageQueue.find((m) => m.text === 'next correction')?.deliveredTo

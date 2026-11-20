@@ -525,16 +525,13 @@ describe('runHeadless — with a reviewer configured', () => {
       prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'no review' }),
       ...(plain && { plain: true }),
       _planner: makePlanner({
-        typedCall: typedCallFromTasks(
-          [
-            makeTask({
-              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
-              evidence: ['src/hello.test.ts passes'],
-              typeDefs: 'export type Hello = string;',
-            }),
-          ],
-          { inputTokens: 50, outputTokens: 25 },
-        ),
+        typedCall: typedCallFromTasks([
+          makeTask({
+            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
+            evidence: ['src/hello.test.ts passes'],
+            typeDefs: 'export type Hello = string;',
+          }),
+        ]),
       }),
       _implementer: makeImplementer(),
     });
@@ -603,16 +600,13 @@ describe('runHeadless — with a reviewer configured', () => {
     expect(prepared.gates).toContainEqual(expect.objectContaining({ slot: { role: 'reviewer' } }));
 
     const planner = makePlanner({
-      typedCall: typedCallFromTasks(
-        [
-          makeTask({
-            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
-            evidence: ['src/hello.test.ts passes'],
-            typeDefs: 'export type Hello = string;',
-          }),
-        ],
-        { inputTokens: 50, outputTokens: 25 },
-      ),
+      typedCall: typedCallFromTasks([
+        makeTask({
+          scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
+          evidence: ['src/hello.test.ts passes'],
+          typeDefs: 'export type Hello = string;',
+        }),
+      ]),
     });
 
     // `/bin/cat` echoes the prompt back, so the verdict never parses: the review

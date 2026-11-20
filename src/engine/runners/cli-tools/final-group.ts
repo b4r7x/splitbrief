@@ -1,5 +1,3 @@
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import { accumulateTokenUsage } from '../../calls/usage/accumulate.js';
 import { appendMessage } from '../../streaming/final-text.js';
 import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -43,17 +41,14 @@ export function finalGroupTerminal(input: {
   if (explicit !== undefined) return explicit;
 
   const groupText = input.includeFinalGroupText ? lastMessageGroupText(input.events) : '';
-  let usage: TokenDelta | null = null;
   let nativeSessionId: string | null = null;
   for (const event of input.events) {
-    if (event.type === 'usage') usage = accumulateTokenUsage(usage, event.usage, event.semantics);
     if (event.type === 'session') nativeSessionId = event.nativeSessionId;
   }
   return {
     type: 'result',
     status: 'completed',
     text: groupText,
-    usage,
     nativeSessionId,
     error: null,
     partial: false,
@@ -119,7 +114,6 @@ export function errorLineTerminal(input: {
     type: 'result',
     status: 'failed',
     text: '',
-    usage: group.usage,
     nativeSessionId: group.nativeSessionId,
     error: {
       code: input.errorCode,

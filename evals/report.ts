@@ -26,23 +26,7 @@ export function formatCliSummary(report: EvalReport): string[] {
   ];
 }
 
-function everyBaselinePriced(report: EvalReport): boolean {
-  return (
-    report.scenarios.length > 0 &&
-    report.scenarios.every((scenario) => scenario.baseline.cost.pricingAvailable)
-  );
-}
-
-function everyRoutedPriced(report: EvalReport): boolean {
-  return (
-    report.scenarios.length > 0 &&
-    report.scenarios.every((scenario) => scenario.routed.cost.pricingAvailable)
-  );
-}
-
 function formatMarkdown(report: EvalReport): string {
-  const baselinePriced = everyBaselinePriced(report);
-  const routedPriced = everyRoutedPriced(report);
   const lines: string[] = [];
   lines.push(`# Eval Report - ${report.timestamp}`);
   lines.push('');
@@ -70,19 +54,13 @@ function formatMarkdown(report: EvalReport): string {
   lines.push(
     `| Scenarios matched quality | ${report.aggregate.scenariosWhereRoutedMatchedBaseline}/${report.aggregate.scenariosRun} |`,
   );
-  lines.push(
-    `| Total baseline cost | ${formatCostUSD(report.aggregate.totalBaselineCostUSD, baselinePriced)} |`,
-  );
-  lines.push(
-    `| Total routed cost | ${formatCostUSD(report.aggregate.totalRoutedCostUSD, routedPriced)} |`,
-  );
   lines.push('');
   lines.push('## Per-scenario results');
   lines.push('');
   lines.push(
-    '| Scenario | First-pass (B) | First-pass (R) | Δ | Verdict (B) | Verdict (R) | Quality (B) | Quality (R) | Retention | Baseline $ | Routed $ |',
+    '| Scenario | First-pass (B) | First-pass (R) | Δ | Verdict (B) | Verdict (R) | Quality (B) | Quality (R) | Retention |',
   );
-  lines.push('|---|---|---|---|---|---|---|---|---|---|---|');
+  lines.push('|---|---|---|---|---|---|---|---|---|');
   for (const scenario of report.scenarios) {
     lines.push(formatScenarioRow(scenario));
   }
@@ -96,17 +74,11 @@ function formatScenarioRow(scenario: ScenarioComparison): string {
   const baselineFirstPass = `${Math.round(scenario.baseline.outcome.firstPassRate * 100)}%`;
   const routedFirstPass = `${Math.round(scenario.routed.outcome.firstPassRate * 100)}%`;
   const delta = formatDeltaPercent(scenario.firstPassRateDeltaPercent);
-  const baselineCost = scenario.baseline.cost.pricingAvailable
-    ? `$${scenario.baselineCostUSD.toFixed(4)}`
-    : 'n/a';
-  const routedCost = scenario.routed.cost.pricingAvailable
-    ? `$${scenario.routedCostUSD.toFixed(4)}`
-    : 'n/a';
   return `| ${scenario.scenarioName} | ${baselineFirstPass} | ${routedFirstPass} | ${delta} | ${formatVerdict(
     scenario.baseline.review.verdict,
   )} | ${formatVerdict(scenario.routed.review.verdict)} | ${baselineQuality} | ${routedQuality} | ${
     scenario.qualityRetentionPercent
-  }% | ${baselineCost} | ${routedCost} |`;
+  }% |`;
 }
 
 function formatReviewYield(report: EvalReport): string {
@@ -116,10 +88,6 @@ function formatReviewYield(report: EvalReport): string {
 
 function formatVerdict(verdict: ReviewMetrics['verdict']): string {
   return verdict ?? 'unknown';
-}
-
-function formatCostUSD(value: number | null, priced: boolean): string {
-  return priced && value !== null ? `$${value.toFixed(4)}` : 'n/a';
 }
 
 function formatDeltaPercent(delta: number): string {

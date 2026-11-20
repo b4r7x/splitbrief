@@ -84,7 +84,6 @@ Example, `src/features/workflow/`:
 | `run-requests/registry.ts` | Engine↔UI bridge. Module-scoped handler registry and the state of the run requests; the other `run-requests/` files read and write that state through its functions. |
 | `keyboard.ts` | Pure keyboard-action dispatchers (workflow-scope). |
 | `layout/snapshot.ts` | Pure geometry snapshots that read from multiple stores. |
-| `usage/derive.ts`, `usage/rows.ts` | Derive the token counts and cost amounts of the usage overlay, and its rows. |
 
 Tests live next to each file, such as `layout/snapshot.test.ts` and `usage/rows.test.ts`.
 

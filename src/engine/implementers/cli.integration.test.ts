@@ -95,27 +95,6 @@ function installTwoFileClaudeShim(relPaths: readonly string[]): void {
   chmodSync(shimPath, 0o755);
 }
 
-function installRecordingCodexShim(
-  writtenRelPath: string,
-  terminalLines: readonly string[],
-): { argvFile: string; stdinFile: string } {
-  const argvFile = join(shimDir, 'argv.txt');
-  const stdinFile = join(shimDir, 'stdin.txt');
-  const target = join(projectDir, writtenRelPath);
-  const shimPath = join(shimDir, 'codex');
-  const script = [
-    '#!/bin/bash',
-    `printf '%s\\n' "$@" > '${argvFile}'`,
-    `cat > '${stdinFile}'`,
-    `mkdir -p "$(dirname '${target}')"`,
-    `printf '%s' 'generated' > '${target}'`,
-    ...terminalLines.map((line) => `printf '%s\\n' '${line}'`),
-  ].join('\n');
-  writeFileSync(shimPath, `${script}\n`, 'utf8');
-  chmodSync(shimPath, 0o755);
-  return { argvFile, stdinFile };
-}
-
 const cliClaudeImplementer: CliImplementerConfig = {
   kind: 'cli',
   tool: 'claude-code',
@@ -623,96 +602,6 @@ describe('createCliImplementer (claude-code)', () => {
 
     expect(result.success).toBe(true);
   });
-
-  it('reports result usage from the structured terminal as implementer usage', async () => {
-    installRecordingClaudeShim('src/hello.ts');
-    const config = makeClaudeConfig();
-
-    const implementer = createCliImplementer(cliClaudeImplementer);
-    const result = await implementer.implement({
-      task: makeTask(),
-      projectDir,
-      config,
-      context: { ...defaultContext, dir: projectDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.usage).toEqual({
-      inputTokens: 5,
-      outputTokens: 2,
-      counterCoverage: {
-        input: 'reported',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { output: 2 },
-    });
-  });
-
-  it('prefers terminal usage over mid-stream usage samples', async () => {
-    installClaudeShimWithLines('src/hello.ts', [
-      '{"type":"stream_event","event":{"type":"message_delta","usage":{"input_tokens":5,"output_tokens":2}}}',
-      '{"type":"result","result":"done","usage":{"input_tokens":100,"output_tokens":40}}',
-    ]);
-    const config = makeClaudeConfig();
-
-    const implementer = createCliImplementer(cliClaudeImplementer);
-    const result = await implementer.implement({
-      task: makeTask(),
-      projectDir,
-      config,
-      context: { ...defaultContext, dir: projectDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.usage).toEqual({
-      inputTokens: 100,
-      outputTokens: 40,
-      counterCoverage: {
-        input: 'reported',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { output: 40 },
-    });
-  });
-
-  it('keeps mid-stream usage when the terminal result carries none', async () => {
-    installClaudeShimWithLines('src/hello.ts', [
-      '{"type":"stream_event","event":{"type":"message_delta","usage":{"input_tokens":5,"output_tokens":2}}}',
-      '{"type":"result","result":"done"}',
-    ]);
-    const config = makeClaudeConfig();
-
-    const implementer = createCliImplementer(cliClaudeImplementer);
-    const result = await implementer.implement({
-      task: makeTask(),
-      projectDir,
-      config,
-      context: { ...defaultContext, dir: projectDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.usage).toEqual({
-      inputTokens: 5,
-      outputTokens: 2,
-      counterCoverage: {
-        input: 'reported',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { output: 2 },
-    });
-  });
 });
 
 describe('createCliImplementer (exact-effect gate fixtures)', () => {
@@ -1007,104 +896,6 @@ it.each(['implement', 'retry'] as const)(
     expect(stdin).toBe(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n');
   },
 );
-
-describe('createCliImplementer (codex usage capture)', () => {
-  it.each(['implement', 'retry'] as const)(
-    'passes correction images to Codex on %s and retains the prompt paths',
-    async (method) => {
-      const { argvFile, stdinFile } = installRecordingCodexShim('src/hello.ts', [
-        '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}',
-        '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}',
-      ]);
-      const imagePath = join(projectDir, 'reference.png');
-      writeFileSync(imagePath, 'image fixture');
-      const call = {
-        task: makeTask(),
-        projectDir,
-        config: makeCodexConfig(),
-        context: defaultContext,
-        onOutput: vi.fn(),
-        images: [
-          {
-            id: 'reference',
-            kind: 'image' as const,
-            path: imagePath,
-            mimeType: 'image/png',
-            sizeBytes: 13,
-          },
-        ],
-        continuation: { steer: `Use the screenshot.\n[image:reference] = ${imagePath}` },
-      };
-      const implementer = createCliImplementer(cliCodexImplementer);
-      const result =
-        method === 'implement'
-          ? await implementer.implement(call)
-          : await implementer.retry({
-              ...call,
-              kind: 'correction',
-              attempt: 1,
-              error: 'fix layout',
-            });
-      expect(result.success).toBe(true);
-      const args = readArgv(argvFile);
-      const imageIndex = args.indexOf('--image');
-      expect(imageIndex).toBeGreaterThan(-1);
-      expect(args[imageIndex + 1]).toBe(imagePath);
-      expect(args.filter((arg) => arg === '--image')).toHaveLength(1);
-      expect(readFileSync(stdinFile, 'utf8')).toContain(`[image:reference] = ${imagePath}`);
-    },
-  );
-
-  it('reports turn usage as implementer usage, excluding cached input from input tokens', async () => {
-    const { argvFile, stdinFile } = installRecordingCodexShim('src/hello.ts', [
-      '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":4,"cached_input_tokens":6}}',
-    ]);
-    const config = makeCodexConfig();
-
-    const implementer = createCliImplementer(cliCodexImplementer);
-    const result = await implementer.implement({
-      task: makeTask(),
-      projectDir,
-      config,
-      context: { ...defaultContext, dir: projectDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-    expect(readArgv(argvFile).at(-1)).toBe('-');
-    expect(readFileSync(stdinFile, 'utf8')).toContain('src/hello.ts');
-    expect(result.usage).toEqual({
-      inputTokens: 4,
-      outputTokens: 4,
-      cacheReadTokens: 6,
-      counterCoverage: {
-        input: 'reported',
-        output: 'partial',
-        cacheRead: 'reported',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { input: 10, output: 4 },
-    });
-  });
-
-  it('succeeds and reports no usage when the turn carries no usage key', async () => {
-    installRecordingCodexShim('src/hello.ts', ['{"type":"turn.completed"}']);
-    const config = makeCodexConfig();
-
-    const implementer = createCliImplementer(cliCodexImplementer);
-    const result = await implementer.implement({
-      task: makeTask(),
-      projectDir,
-      config,
-      context: { ...defaultContext, dir: projectDir },
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.usage).toBeUndefined();
-  });
-});
 
 function installRecordingShim(
   command: string,
@@ -1472,7 +1263,7 @@ describe('createCliImplementer (a held answer and the configured timeout)', () =
     event: 'result',
     result: {
       conversation_id: 'agy-conversation-1',
-      usage: { input_tokens: 12, output_tokens: 5 },
+
       status: 'SUCCESS',
       response: answer,
     },
@@ -1480,7 +1271,6 @@ describe('createCliImplementer (a held answer and the configured timeout)', () =
   const claudeResult = JSON.stringify({
     type: 'result',
     result: answer,
-    usage: { input_tokens: 12, output_tokens: 5 },
   });
 
   // The pid file appears whole: a teardown that read it half written would signal group 0.
@@ -1505,10 +1295,16 @@ describe('createCliImplementer (a held answer and the configured timeout)', () =
   }
 
   function startBuild(config: CliImplementerConfig, signal?: AbortSignal) {
+    const answerReceived = Promise.withResolvers<void>();
     const eventTypes: RunnerCallEvent['type'][] = [];
     const publisher: ImplementerPublisher = {
       publishRunning: () => {},
-      publishCallEvent: ({ event }) => eventTypes.push(event.type),
+      publishCallEvent: ({ event }) => {
+        eventTypes.push(event.type);
+        if (event.type === 'call_session_id' && event.nativeSessionId === 'held-answer') {
+          answerReceived.resolve();
+        }
+      },
       publishDone: () => {},
       publishFailed: () => {},
       publishWarning: () => {},
@@ -1522,7 +1318,7 @@ describe('createCliImplementer (a held answer and the configured timeout)', () =
       phase: 'implementing',
       signal,
     });
-    return { eventTypes, result };
+    return { eventTypes, result, answerReceived: answerReceived.promise };
   }
 
   const callEnd = (type: RunnerCallEvent['type']) =>
@@ -1564,11 +1360,16 @@ describe('createCliImplementer (a held answer and the configured timeout)', () =
   });
 
   it('a Stop after the answer stays stopped by you when a timeout is set', async () => {
-    installAnsweringShim('claude', [`printf '%s\\n' '${claudeResult}'`, 'sleep 600']);
+    const terminal = JSON.stringify({ type: 'result', result: answer, session_id: 'held-answer' });
+    installAnsweringShim('claude', [`printf '%s\\n' '${terminal}'`, 'sleep 600']);
     const controller = new AbortController();
     const build = startBuild({ ...cliClaudeImplementer, timeout: 10_000 }, controller.signal);
 
-    await vi.waitFor(() => expect(build.eventTypes).toContain('call_usage'));
+    const first = await Promise.race([
+      build.answerReceived.then(() => 'answer'),
+      build.result.then(() => 'end'),
+    ]);
+    expect(first).toBe('answer');
     controller.abort();
 
     expect(await build.result).toMatchObject({

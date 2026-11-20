@@ -1,6 +1,4 @@
-import { formatContextLength } from '../../../core/formatting.js';
 import { UNSET_EFFORT_WORD } from '../../../core/runners/effort-channel.js';
-import { type RunnerBillingPosture, billingWord } from '../../../core/runners/billing.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text/truncate.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
@@ -54,8 +52,7 @@ function laneStatus(lane: CatalogLane): string | undefined {
 }
 
 /**
- * The byline sheds its least useful fact first so the billing word is the last segment standing:
- * capability words, then the version the tool row already prints, then the clause that qualifies
+ * The byline drops capability words, then the version the tool row already prints, then the clause that qualifies
  * the source, then the provenance itself.
  */
 function fitToolsByline(input: {
@@ -65,7 +62,6 @@ function fitToolsByline(input: {
   provenance: string | undefined;
   trust: string | undefined;
   capabilities: readonly string[];
-  billing: string | undefined;
   budget: number;
 }): string {
   const compose = (kept: number, version: boolean, trust: boolean, provenance: boolean): string =>
@@ -76,7 +72,6 @@ function fitToolsByline(input: {
       provenance ? input.provenance : undefined,
       provenance && trust ? input.trust : undefined,
       ...input.capabilities.slice(0, kept),
-      input.billing,
     ]
       .filter((part): part is string => part !== undefined)
       .join(SOFT_SEP);
@@ -136,7 +131,6 @@ export function formatToolsByline(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
   lane: CatalogLane;
   capabilities: readonly string[];
-  billing: RunnerBillingPosture;
   budget: number;
 }): string {
   const status = bylineDiagnostic({
@@ -159,21 +153,17 @@ export function formatToolsByline(input: {
     provenance,
     trust,
     capabilities: input.capabilities,
-    billing: billingWord(input.billing),
     budget: input.budget,
   });
 }
 
 /**
- * The Models column answers for the highlighted row: its label, its exact id, what it has chosen,
- * its size — and, where its listing says so, that it takes no tool calls, which a seat's agent
- * loop runs on.
+ * The Models column names the highlighted label, model ID, axes, and tool-call support.
  */
 export function formatModelsByline(input: {
   label: string;
   id: string;
   axes: readonly string[];
-  contextLength: number | undefined;
   supportsToolCalls?: boolean | undefined;
   autoRow?: { toolName: string } | undefined;
 }): string {
@@ -185,8 +175,6 @@ export function formatModelsByline(input: {
   const parts = [input.label];
   if (input.id !== '' && input.id !== input.label) parts.push(input.id);
   parts.push(...input.axes);
-  const size = formatContextLength(input.contextLength);
-  if (size !== '') parts.push(size);
   if (input.supportsToolCalls === false) parts.push('no tool calls');
   return parts.join(SOFT_SEP);
 }

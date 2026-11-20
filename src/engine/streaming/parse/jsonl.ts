@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { narrowRecord } from '../../../utils/type-guards.js';
-import { BackendTokenUsageSchema, toTokenDelta } from '../../calls/usage/normalize.js';
 import type { ParsedLine } from '../../runners/types.js';
 import { parseCodexToolItem } from './codex-item.js';
 import {
@@ -25,7 +24,6 @@ const ItemCompletedEvent = z.object({
 
 const TurnCompletedEvent = z.object({
   type: z.literal('turn.completed'),
-  usage: BackendTokenUsageSchema,
 });
 
 const ThreadStartedEvent = z.object({
@@ -80,12 +78,7 @@ export function parseJsonlLine(line: string): ParsedLine {
     const codexToolItem = parseCodexToolItem(event);
     if (codexToolItem) return codexToolItem;
 
-    const turn = TurnCompletedEvent.safeParse(event);
-    if (turn.success) {
-      const usage = toTokenDelta(turn.data.usage);
-      if (usage) return { usage, usageSemantics: 'final' };
-    }
-
+    if (TurnCompletedEvent.safeParse(event).success) return {};
     if (TurnStartedEvent.safeParse(event).success) return {};
     if (ItemUpdatedEvent.safeParse(event).success) return {};
 

@@ -1,10 +1,6 @@
-import type { z } from 'zod';
-import type { TokenDelta } from '../../../../core/schemas/tokens.js';
-import type { BackendTokenUsageSchema } from '../../../calls/usage/normalize.js';
 import type {
   ParsedTextChannel,
   ParsedTextSemantics,
-  ParsedUsageSemantics,
   ToolUseInfo,
   ToolUseDeltaInfo,
   ParsedWarningInfo,
@@ -22,8 +18,6 @@ export interface StreamParseResult {
   /** The model id an `init` frame reports: what the seat's model alias resolved to. */
   resolvedModel?: string | undefined;
   isError?: boolean | undefined;
-  usage?: TokenDelta | undefined;
-  usageSemantics?: ParsedUsageSemantics | undefined;
   /** Tools a `user` record's `tool_result` closed: the tool ran and answered. */
   toolUse?: ToolUseInfo[] | undefined;
   /** Tools an `assistant` record gave their whole input; each stays open until its result. */
@@ -45,7 +39,5 @@ export interface StreamParseResult {
 
 export const EMPTY_RESULT: StreamParseResult = Object.freeze({});
 
-export type MessageUsage = z.infer<typeof BackendTokenUsageSchema>;
-export type CollectMessageUsage = (event: Record<string, unknown>) => TokenDelta | undefined;
 /** The open tools by `tool_use_id`, so a `tool_result` closes a tool with its name and input. */
 export type OpenTools = Map<string, ToolUseInfo>;

@@ -25,7 +25,7 @@ Default pins include `opencode` → `opencode-go/deepseek-v4.1-flash` and `antig
 
 ## The manifest
 
-`.test-artifacts/live/manifest.json` records one row object per matrix row in execution order: the resolved `plan`/`build`/`review` seats (tool + model pin), the outcome (`pass` | `fail` | `skip`) with a reason for every fail/skip, task totals and token counts, the duration, and the per-row artifact paths. Each row's `summary.json` and `session.jsonl` are copied to `.test-artifacts/live/<row-id>/`, so a failed run leaves its evidence behind. A run that dies mid-matrix leaves a partial manifest — that is the evidence trail, not a bug.
+`.test-artifacts/live/manifest.json` records one row object per matrix row in execution order: the resolved `plan`/`build`/`review` seats (tool + model pin), the outcome (`pass` | `fail` | `skip`) with a reason for every fail/skip, task totals, the duration, and the per-row artifact paths. Each row's `summary.json` and `session.jsonl` are copied to `.test-artifacts/live/<row-id>/`, so a failed run leaves its evidence behind. A run that dies mid-matrix leaves a partial manifest — that is the evidence trail, not a bug.
 
 ## The release rule
 

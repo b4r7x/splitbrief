@@ -129,37 +129,6 @@ describe('invokeCommandRunner with timeout', () => {
     expect(result.text).not.toContain('assistant');
   });
 
-  it('accumulates usage from stream-json', async () => {
-    const line = JSON.stringify({
-      type: 'result',
-      result: 'done',
-      usage: { input_tokens: 11, output_tokens: 7 },
-    });
-    const result = await run(
-      {
-        command: 'sh',
-        args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', line],
-        outputFormat: 'stream-json',
-      },
-      {
-        timeoutMs: 30_000,
-      },
-    );
-    expect(result.text).toBe('done');
-    expect(result.usage).toEqual({
-      inputTokens: 11,
-      outputTokens: 7,
-      counterCoverage: {
-        input: 'reported',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { output: 7 },
-    });
-  });
-
   it('uses final stream-json result text instead of assistant draft text', async () => {
     const chunks: string[] = [];
     const lines = [
@@ -170,7 +139,6 @@ describe('invokeCommandRunner with timeout', () => {
       JSON.stringify({
         type: 'result',
         result: 'final text',
-        usage: { input_tokens: 11, output_tokens: 7 },
       }),
     ];
     const result = await run(
@@ -310,7 +278,6 @@ describe('invokeCommandRunner with timeout', () => {
       JSON.stringify({
         type: 'result',
         result: 'done',
-        usage: { input_tokens: 1, output_tokens: 1 },
       }),
     ];
     const events: RunnerCallEvent[] = [];
@@ -359,7 +326,6 @@ describe('invokeCommandRunner with timeout', () => {
         type: 'result',
         result: 'done',
         session_id: 'sess-timeout-structured',
-        usage: { input_tokens: 11, output_tokens: 7 },
       }),
     ];
     const events: RunnerCallEvent[] = [];

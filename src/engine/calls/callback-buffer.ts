@@ -112,7 +112,6 @@ export function createRunnerAttemptCallbackBuffer(
         invocationIdentity: event.invocationIdentity,
       }),
       ...(event.taskId !== undefined && { taskId: event.taskId }),
-      ...(event.usageBoundary !== undefined && { usageBoundary: event.usageBoundary }),
     };
   }
 

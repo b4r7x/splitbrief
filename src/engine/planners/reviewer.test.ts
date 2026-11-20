@@ -13,7 +13,6 @@ it('lets a planner hold the review seat', async () => {
       makeRunnerCallResult({
         status: 'completed',
         text: 'VERDICT: ship',
-        usage: { inputTokens: 120, outputTokens: 40 },
       }),
     isAvailable: async () => true,
     capabilities: ONE_SHOT_API_CAPS,
@@ -23,6 +22,5 @@ it('lets a planner hold the review seat', async () => {
     reviewer.review('review the run diff', '/project', { onOutput: () => {} }),
   ).resolves.toEqual({
     text: 'VERDICT: ship',
-    usage: { inputTokens: 120, outputTokens: 40 },
   });
 });

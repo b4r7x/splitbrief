@@ -2,7 +2,6 @@ import type { ImplementerOptions, ImplementerResult } from '../types.js';
 import type { RunnerCallStatus } from '../../calls/types.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { AppliedFile, BundleApplyResult, BundleBaseline } from '../file-bundle/contract.js';
 import { captureBundleBaseline } from '../file-bundle/baseline.js';
 import { parseFileBundle } from '../file-bundle/parse.js';
@@ -63,7 +62,6 @@ function bundleFailure(
   seat: BundleSeat,
   opts: ImplementerOptions,
   output: string,
-  usage: TokenDelta | null,
   applyResult: Exclude<BundleApplyResult, { status: 'applied' }>,
 ): ImplementerResult {
   seat.failTask(opts, applyResult.error);
@@ -72,7 +70,6 @@ function bundleFailure(
     output,
     error: applyResult.error,
     applyResult,
-    ...(usage !== null && { usage }),
   };
 }
 
@@ -105,7 +102,7 @@ export async function prepareCall(
     const error = `${captured.path}: ${captured.error}`;
     return {
       kind: 'refused',
-      result: bundleFailure(seat, opts, '', null, {
+      result: bundleFailure(seat, opts, '', {
         // The refusal precedes the call, so there is no call to name and no
         // response to have proposed a candidate.
         callId: null,
@@ -143,10 +140,9 @@ export async function applyBundleOutput(
     text: string;
     status: RunnerCallStatus;
     startTime: number;
-    usage: TokenDelta | null;
   },
 ): Promise<ImplementerResult> {
-  const { opts, baselines, callId, text, usage } = input;
+  const { opts, baselines, callId, text } = input;
 
   const parsed = parseFileBundle({
     text,
@@ -160,11 +156,10 @@ export async function applyBundleOutput(
       output: text,
       error: `Implementer is blocked: ${parsed.question}`,
       blocked: { question: parsed.question, filesNeeded: parsed.filesNeeded },
-      ...(usage !== null && { usage }),
     };
   }
   if (parsed.kind === 'rejected') {
-    return bundleFailure(seat, opts, text, usage, {
+    return bundleFailure(seat, opts, text, {
       callId,
       // A response the parser refused produced no candidate to apply.
       candidatePaths: [],
@@ -192,7 +187,7 @@ export async function applyBundleOutput(
     for (const file of created) owned.add(file.path);
     seat.createdByTask.set(creationScope(opts), owned);
   }
-  if (applyResult.status !== 'applied') return bundleFailure(seat, opts, text, usage, applyResult);
+  if (applyResult.status !== 'applied') return bundleFailure(seat, opts, text, applyResult);
 
   if (opts.phase) {
     const aggregate = aggregateApplied(applyResult.applied);
@@ -215,6 +210,5 @@ export async function applyBundleOutput(
     success: true,
     output: text,
     applyResult,
-    ...(usage !== null && { usage }),
   };
 }

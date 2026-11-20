@@ -9,7 +9,7 @@ import type { AttachmentFailureReason } from '../../attachments/failure.js';
 /** A returned string is a refusal: the command did nothing, and the string is the reason. */
 type CommandHandlerResult = void | string | Promise<void> | Promise<string | undefined>;
 
-export const COPY_TARGETS = ['message', 'brief', 'path', 'command', 'cost'] as const;
+export const COPY_TARGETS = ['message', 'brief', 'path', 'command'] as const;
 
 export type CopyTarget = (typeof COPY_TARGETS)[number];
 

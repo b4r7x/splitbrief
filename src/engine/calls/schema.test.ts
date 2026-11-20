@@ -3,7 +3,6 @@ import { RUNNER_CALL_TEXT_CHANNELS } from '../../core/schemas/runner-call.js';
 import {
   RunnerCallEventSchema,
   RunnerCallResultSchema,
-  RunnerCallUsageSchema,
   UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH,
 } from './schema.js';
 
@@ -13,17 +12,12 @@ const context = {
   backendKind: 'cli',
 } as const;
 
-const usage = {
-  inputTokens: 1,
-  outputTokens: 2,
-} as const;
-
 const terminalFields = {
   startedAt: 1,
   endedAt: 11,
   durationMs: 10,
   partial: false,
-  usage,
+
   nativeSessionId: null,
 } as const;
 
@@ -185,26 +179,6 @@ describe('RunnerCallEventSchema', () => {
   });
 });
 
-describe('RunnerCallUsageSchema', () => {
-  it('rejects negative and fractional token counts', () => {
-    expect(
-      RunnerCallUsageSchema.safeParse({
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreateTokens: 0,
-        reasoningTokens: 0,
-      }).success,
-    ).toBe(true);
-    expect(RunnerCallUsageSchema.safeParse({ inputTokens: -1, outputTokens: 0 }).success).toBe(
-      false,
-    );
-    expect(RunnerCallUsageSchema.safeParse({ inputTokens: 1.5, outputTokens: 0 }).success).toBe(
-      false,
-    );
-  });
-});
-
 describe('RunnerCallResultSchema', () => {
   it('keeps the aggregate result contract strict', () => {
     const result = {
@@ -216,7 +190,7 @@ describe('RunnerCallResultSchema', () => {
       endedAt: 11,
       durationMs: 10,
       text: 'done',
-      usage: null,
+
       nativeSessionId: null,
       toolUses: [],
       warnings: [],
@@ -226,12 +200,6 @@ describe('RunnerCallResultSchema', () => {
 
     expect(RunnerCallResultSchema.safeParse(result).success).toBe(true);
     expect(RunnerCallResultSchema.safeParse({ ...result, extra: true }).success).toBe(false);
-    expect(
-      RunnerCallResultSchema.safeParse({
-        ...result,
-        usage: { inputTokens: 1, outputTokens: -1 },
-      }).success,
-    ).toBe(false);
     expect(
       RunnerCallResultSchema.safeParse({
         ...result,

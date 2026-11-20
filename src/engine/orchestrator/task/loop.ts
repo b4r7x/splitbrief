@@ -1,6 +1,6 @@
 import { isTaskSettled, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import type { BoundaryPark, WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
 import { refreshAndPersistCode } from './refresh-code.js';
@@ -35,9 +35,8 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   const { wctx, setTrackedState, setCurrentTask } = opts;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
   let state = opts.initialState;
-  // Seed from persisted breakdowns so re-entry (resume / rewind / detached retry)
-  // keeps per-task cost identity for already-completed tasks (F-454).
-  const taskBreakdowns: TaskTokenUsage[] = [...(state.taskBreakdowns ?? [])];
+  // Keep previously settled brief records when the task loop resumes.
+  const taskBreakdowns: BriefExecution[] = [...(state.taskBreakdowns ?? [])];
   const resolvedProfiles = resolveImplementerProfiles(wctx.config);
   if (state.pendingRecovery) {
     publishWarning({

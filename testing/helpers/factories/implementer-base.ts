@@ -9,7 +9,6 @@ export function makeBaseConfig(overrides?: Partial<ImplementerBaseConfig>): Impl
       makeRunnerCallResult({
         status: 'completed',
         text: '```ts\nconst x = 1;\n```',
-        usage: { inputTokens: 10, outputTokens: 20 },
       }),
     ),
     ...overrides,

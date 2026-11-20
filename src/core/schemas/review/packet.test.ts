@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_PACKET_VERSION, ReviewPacketSchema } from './packet.js';
 import { ReviewPacketSummarySchema } from '../summary.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('review packet schema verdict fields', () => {
   it('accepts an old packet and discards its retired task tally', () => {
@@ -40,33 +39,33 @@ describe('review packet schema verdict fields', () => {
     expect(rollup.finalReviewFindingCounts).toEqual({ critical: 0, warning: 0, note: 0 });
   });
 
-  it('keeps the reviewer cost line through a packet round-trip', () => {
-    const base = ReviewPacketSchema.parse(packetBeforeVerdictFields());
-    const packet = ReviewPacketSchema.parse({
-      ...base,
-      cost: {
-        tokenUsage: makeUsage(),
-        costBreakdown: {
-          actualPlannerCost: 1,
-          actualImplementerCost: 0.5,
-          actualReviewerCost: 0.25,
-          totalActualCost: 1.75,
-          isActualReviewerCostKnown: true,
+  it('loads a packet with accounting fields and keeps the old routing section', () => {
+    const route = {
+      taskId: 'T001',
+      taskTitle: 'Write a greeting',
+      method: 'local',
+      retryCount: 0,
+      tool: 'codex',
+      model: 'gpt-5',
+      implementerProfile: 'default',
+    };
+    const packet = ReviewPacketSchema.parse(
+      packetBeforeVerdictFields([
+        {
+          ...route,
+          implementerTokens: 50,
+          escalationTokens: 0,
+          cost: 0.01,
         },
-        taskRouting: [],
-        routingWarnings: [],
-      },
-    });
+      ]),
+    );
 
-    const breakdown = packet.cost.costBreakdown;
-    if (!breakdown) throw new Error('expected a cost breakdown');
-    expect(breakdown.actualReviewerCost).toBe(0.25);
-    expect(breakdown.isActualReviewerCostKnown).toBe(true);
-    expect(breakdown.totalActualCost).toBe(1.75);
+    expect(packet.finalReview.status).toBe('skipped');
+    expect(packet.routing.taskRouting).toMatchObject([route]);
   });
 });
 
-function packetBeforeVerdictFields(): unknown {
+function packetBeforeVerdictFields(taskRouting: unknown[] = []): unknown {
   return {
     version: 1,
     sessionId: 's',
@@ -195,9 +194,16 @@ function packetBeforeVerdictFields(): unknown {
       warnings: [],
     },
     cost: {
-      tokenUsage: makeUsage(),
-      costBreakdown: null,
-      taskRouting: [],
+      tokenUsage: {
+        plannerInput: 120,
+        plannerOutput: 30,
+        implementerInput: 40,
+        implementerOutput: 10,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      costBreakdown: { actualPlannerCost: 0, actualImplementerCost: 0.01, totalActualCost: 0.01 },
+      taskRouting,
       routingWarnings: [],
     },
     finalReview: {

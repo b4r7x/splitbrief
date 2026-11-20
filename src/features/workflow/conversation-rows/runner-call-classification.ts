@@ -3,7 +3,6 @@ import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js
 type RunnerCallEvent = EngineEventOf<
   | 'runner_call_started'
   | 'runner_call_text_delta'
-  | 'runner_call_usage'
   | 'runner_call_tool_use'
   | 'runner_call_activity'
   | 'runner_call_session_id'
@@ -21,7 +20,6 @@ export function isRunnerCallEvent(event: EngineEvent): event is RunnerCallEvent 
   switch (event.type) {
     case 'runner_call_started':
     case 'runner_call_text_delta':
-    case 'runner_call_usage':
     case 'runner_call_tool_use':
     case 'runner_call_activity':
     case 'runner_call_session_id':

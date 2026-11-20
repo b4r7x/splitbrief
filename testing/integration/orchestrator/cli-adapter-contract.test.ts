@@ -438,7 +438,7 @@ function callResult(
     endedAt: 2,
     durationMs: 1,
     text: '',
-    usage: null,
+
     nativeSessionId: null,
     toolUses: [],
     warnings: [],

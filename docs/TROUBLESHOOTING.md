@@ -27,7 +27,7 @@ Every run writes its full `EngineEvent` stream to:
 .splitbrief/sessions/<session-id>/session.jsonl
 ```
 
-One JSON object per line, written by the JSONL sink through the protected session-log appender. See `EngineEventSchema` for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
+One JSON object per line, written by the JSONL sink through the protected session-log appender. See `EngineEventSchema` for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `error`, `warning`, and more.
 
 Inspect with `jq`:
 
@@ -48,7 +48,6 @@ jq 'select(.type == "full_suite" and .data.status != "running") | .data | {id, c
   .splitbrief/sessions/<id>/session.jsonl
 
 # Cost accumulation
-jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl
 
 # Runner-call warnings with grouping fields
 jq 'select(.type == "runner_call_warning") | {callId: .data.callId, phase, warning: .data.warning}' \
@@ -289,70 +288,6 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ---
 
-## Cost and billing
-
-### Symptom: Anthropic / OpenAI bill spiked after a single run
-
-**Likely cause:** The planner is configured with a frontier model (commonly Opus) and the implementer uses the same model. Every planner turn — each question round, the plan, its one repair, every consult and the review — is billed at the planner's price, and Opus pricing multiplies that fast.
-
-**Fix:**
-1. Open `.splitbrief/config.yaml` and inspect `planner.kind` and `planner.model`.
-2. Keep Opus for the planner only when you genuinely need its planning quality; for most work Sonnet 4.6 is the better quality point.
-3. Switch the implementer to a smaller runner: an `api` runner on an endpoint of your own with a smaller model, or `cli` with a Haiku-class model.
-4. Run `splitbrief status` to confirm the resolved configuration matches your intent.
-
-**Prevention:** Keep the two seats on different models — that asymmetry is the entire point of SPLITBRIEF.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/ARCHITECTURE.md](./ARCHITECTURE.md), [docs/VISION.md](./VISION.md).
-
----
-
-
-### Symptom: Cache hit percentage stuck at 0% in the cost status line
-
-**Likely cause:** The active runner does not surface `cache_read_input_tokens`. CLI runners (`claude-code`, `codex`, `opencode`, etc.) often emit aggregate token counts only, with no cache breakdown; the orchestrator reports what it receives.
-
-**Fix:**
-1. Confirm runner kind via `splitbrief status` or `.splitbrief/config.yaml`.
-2. If you require cache visibility, switch the planner / implementer to `kind: api`: the OpenAI-compatible stream reads `prompt_tokens_details.cached_tokens`, so cache counts appear whenever the endpoint reports them.
-3. For CLI runners, accept that the cache % will be `0` (or `n/a`) and rely on the absolute token totals instead.
-
-**Prevention:** Choose `api` runners when cache observability matters for cost analysis.
-
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md).
-
----
-
-### Symptom: Pricing column shows `n/a` and totals do not include a USD figure
-
-**Likely cause:** The model identifier returned by the runner is not in the bundled pricing catalog. SPLITBRIEF refuses to invent prices, so any unknown model defaults to `n/a`.
-
-**Fix:**
-1. Check the exact model string in `summary.json` under `runs[].model`.
-2. Check whether the provider returns pricing metadata during model discovery; runtime metadata can supply rates for models that are not bundled.
-3. If the model is widely used and missing upstream, open a PR adding it to the bundled model catalog.
-
-**Prevention:** Audit `summary.json` for any `n/a` row after introducing a new model. Treat USD totals as incomplete until pricing comes from models.dev, runtime provider metadata, or the bundled model catalog.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
-
----
-
-### Symptom: A run records zero implementer tokens
-
-**Likely cause:** The runner completed its call but its protocol carried no usage payload — `claude-code` and `codex` emit usage through their protocol terminal, and a runner that reports none records zero. That is no longer a silent zero: `recordTaskUsage` publishes exactly one warning with `category: 'cost'` and `code: 'implementer_usage_not_reported'` naming the runner and the task, so a run that did real work is distinguishable from one whose runner never reported. SPLITBRIEF never invents a price or synthesises token counts; a CLI runner staying structurally unpriced is by design, and the warning is the signal, not a defect.
-
-**Fix:**
-1. Read the warning in the transcript, `session.jsonl`, or `review-packet.json` (`escalations.warnings`) — it names the runner and the task.
-2. If the runner normally reports usage, upgrade or reconfigure the binary — the warning is the early sign of a version whose usage channel changed.
-3. If the runner genuinely has no usage channel, accept the zero and the warning per task; the run's cost posture is unknowable for that runner.
-
-**Prevention:** Check the review packet's warnings list after a run. One `implementer_usage_not_reported` warning per unpriced task is expected; a warning for a runner that used to report usage means the binary drifted.
-
-**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (token accounting), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (review-packet warnings list).
-
----
-
 ## Planner issues
 
 ### Symptom: `splitbrief start` stops with `Cannot start:` and names an `@file` input or the feature description
@@ -442,7 +377,6 @@ Files can be inside or outside the project. Relative paths use the project root.
    ```bash
    tail -20 .splitbrief/sessions/<id>/session.jsonl | jq .
    ```
-   When `cost_update` events stop arriving, the subprocess is live but produces no tokens. Check the remote provider status.
 2. Warm the model before the run so the first token arrives sooner — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
 3. Raise or remove `planner.timeout` (milliseconds) in `.splitbrief/config.yaml`. It is the total wall-clock budget of each planner call (Opus planning passes can take several minutes). Without it, the call has no time limit.
 4. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run. For an `api` planner, check that its `apiBase` is reachable. For a `cli` planner, check that the tool is on `PATH`.
@@ -504,7 +438,7 @@ A REVIEW account refusal raises a Seat down halt. A REVIEW usage limit raises on
 2. Fix the underlying runner (see the readiness families above), then re-run the review by continuing the run: it picks up at the review it reached.
 3. To get the review from the planner instead, remove the `reviewer` block (or point `/crew review` at the planner's tool) and resume. That is a decision you make, not one SPLITBRIEF makes for you.
 
-**Prevention:** Give a metered reviewer a `timeout` that fits a diff-sized read, and prefer a reviewer whose credentials do not expire mid-run.
+**Prevention:** Give a reviewer a `timeout` that fits a diff-sized read, and prefer a reviewer whose credentials do not expire mid-run.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/HOW-IT-WORKS.md](./HOW-IT-WORKS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
@@ -1371,21 +1305,6 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 **Prevention:** Point `VISUAL` at the editor you want, for example `cursor --wait` or `code --wait`. If `VISUAL` is empty and `EDITOR` is a terminal editor (`vi`, `vim`, `nano`), SPLITBRIEF will try safely detected GUI editors first so plan editing does not stay inside the TUI terminal when a GUI editor is available.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md#approval-the-plan-card) §Approval: the plan card.
-
----
-
-### Symptom: Cost status line shows blank or `--` instead of token / dollar values
-
-**Likely cause:** The active runner does not emit `cost_update` events; the TUI displays nothing rather than fabricating values.
-
-**Fix:**
-1. Confirm the runner kind via `splitbrief status`. CLI runners often skip cost events.
-2. Switch to `kind: api` for USD pricing when the provider/model is priced.
-3. If you must use a CLI runner and want approximate costs, post-process `summary.json` after the run rather than relying on the live status.
-
-**Prevention:** Use `api` runners when live USD cost feedback matters.
-
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 

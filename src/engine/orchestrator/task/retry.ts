@@ -9,7 +9,7 @@ import { publishError } from '../publish/notice.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
 import { raisePendingRecovery } from '../state-ops/halts.js';
 import { transitionAndSave } from '../state-ops/transition.js';
-import { recordSettledTaskUsage } from './record-usage.js';
+import { recordSettledBrief } from './record-settlement.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/retry.js';
 import { haltOf } from '../../../core/recovery/halt.js';
@@ -103,7 +103,7 @@ export async function continueLadder(
 async function escalateAndRecord(
   opts: RetryAndRecordOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
-  const { wctx, task, initialError, tokensBefore, taskBreakdowns, setTrackedState } = opts;
+  const { wctx, task, initialError, taskBreakdowns, setTrackedState } = opts;
   let state = opts.state;
   let result: Awaited<ReturnType<typeof handleRetryAndEscalation>>['result'];
   let asked: ConsultQuestion | undefined;
@@ -135,12 +135,11 @@ async function escalateAndRecord(
   let nextState = state;
   setTrackedState(nextState);
   if (result.completed || result.method === 'skipped') {
-    recordSettledTaskUsage({
+    recordSettledBrief({
       wctx,
       state: nextState,
       task,
       method: result.method,
-      tokensBefore,
       taskBreakdowns,
       retryCount: result.attempts,
       tool: result.tool ?? (result.completed ? nextState.implementerTool : undefined),

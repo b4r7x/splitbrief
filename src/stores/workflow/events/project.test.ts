@@ -56,7 +56,7 @@ describe('projectEventForTuiEventLog', () => {
           taskId: taskId('T001'),
           runnerName: 'codex',
           model: 'gpt-5-mini',
-          usage: { inputTokens: 1, outputTokens: 2 },
+
           nativeSessionId: 'native-session-1',
         }),
       ),
@@ -75,7 +75,7 @@ describe('projectEventForTuiEventLog', () => {
       startedAt: 1_000,
       endedAt: 2_500,
       durationMs: 1_500,
-      usage: null,
+
       nativeSessionId: null,
     });
   });

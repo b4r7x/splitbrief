@@ -17,8 +17,6 @@ function streamParsedLine(r: StreamParseResult): ParsedLine {
   return {
     ...(r.text !== undefined ? { text: r.text } : {}),
     ...(r.channel !== undefined ? { channel: r.channel } : {}),
-    ...(r.usage !== undefined ? { usage: r.usage } : {}),
-    ...(r.usageSemantics !== undefined ? { usageSemantics: r.usageSemantics } : {}),
     ...(r.isResult !== undefined ? { isResult: r.isResult } : {}),
     ...(r.isError !== undefined ? { isError: r.isError } : {}),
     ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),

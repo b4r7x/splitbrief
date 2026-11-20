@@ -50,26 +50,21 @@ export async function fetchModelsDevCatalog(
 /**
  * Model-keyed catalog lookup for a runner that has no catalog vendor of its own
  * — a custom endpoint. A `vendor/model` prefix narrows the search to that
- * vendor; a bare id searches every vendor and prefers a row that carries a rate.
+ * vendor; a bare id searches every vendor in catalog order.
  */
 export function findCatalogModelByIdentity(
   catalog: ModelsDevCatalog,
   identity: ModelVendorIdentity,
 ): DetectedModel | null {
-  let unpriced: DetectedModel | null = null;
   for (const [key, provider] of Object.entries(catalog)) {
     if (identity.vendor !== undefined && key !== identity.vendor && provider.id !== identity.vendor)
       continue;
     for (const model of Object.values(provider.models)) {
       if (model.id !== identity.bareId) continue;
-      const detected = modelToDetected(provider.id, model);
-      if (detected.pricingInput !== undefined && detected.pricingOutput !== undefined) {
-        return detected;
-      }
-      unpriced ??= detected;
+      return modelToDetected(provider.id, model);
     }
   }
-  return unpriced;
+  return null;
 }
 
 export function getModelsForProvider(

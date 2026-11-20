@@ -84,7 +84,7 @@ export function addWorkflowOptions(cmd: Command): Command {
       parseOutputFormatOption,
     )
     .option(
-      '--planner-context-length <tokens>',
+      '--planner-context-length <number>',
       'Planner context length',
       parsePositiveIntegerOption,
     )
@@ -116,7 +116,7 @@ export function addWorkflowOptions(cmd: Command): Command {
       parseOutputFormatOption,
     )
     .option(
-      '--implementer-context-length <tokens>',
+      '--implementer-context-length <number>',
       'Implementer context length',
       parsePositiveIntegerOption,
     )
@@ -148,7 +148,7 @@ export function addWorkflowOptions(cmd: Command): Command {
       parseOutputFormatOption,
     )
     .option(
-      '--reviewer-context-length <tokens>',
+      '--reviewer-context-length <number>',
       'Reviewer context length',
       parsePositiveIntegerOption,
     )

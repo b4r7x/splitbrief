@@ -1,3 +1,4 @@
+import { eventsStore } from '../../../src/stores/workflow/events/state.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type OverlayType, seatAxisFocus } from '../../../src/core/navigation/types.js';
@@ -22,11 +23,9 @@ import { resolveSeatDisplayName } from '../../../src/engine/providers/model/disp
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
-import type { CostBreakdown } from '../../../src/core/schemas/cost.js';
 import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
 import type { Session } from '../../../src/core/schemas/session.js';
 import { type Task, taskId } from '../../../src/core/schemas/task.js';
-import { type TokenUsage, ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
 import { deriveRunStatus, type RunStatus } from '../../../src/core/sessions/run/status.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { SOFT_SEP } from '../../../src/core/separators.js';
@@ -78,14 +77,12 @@ import {
   reportConfigSaveFailure,
 } from '../../../src/stores/project/save-feedback.js';
 import { configError } from '../../../src/core/config/errors.js';
-import { tokensStore } from '../../../src/stores/workflow/tokens/state.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { saveSessionDraft } from '../../../src/stores/ui/session-drafts.js';
 import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import { flushEffects } from '../../helpers/ink.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
-import { setRunHalt } from '../../helpers/stores.js';
 import { makePlanProposal, makeTaskSpec } from '../../helpers/factories/plan.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
@@ -899,12 +896,9 @@ function createOverlayFixture(options: {
   };
 }
 
-// The workflow screen resets the session-scoped stores in a mount
-// effect (`use-runner.ts:135`), which runs after this fixture has seeded
-// them — `resetWorkflow` clears the token totals a workflow overlay reads. The
-// first token reset after setup marks that wipe; replay after every sub-store has reset.
+// Reseed after the workflow screen resets the session stores.
 function reseedAfterWorkflowReset(seed: OverlaySeed): () => void {
-  const stop = tokensStore.subscribe(() => {
+  const stop = eventsStore.subscribe(() => {
     stop();
     queueMicrotask(seed);
   });
@@ -2357,85 +2351,6 @@ const createSessionsRefusedApplyingFixture: FixtureFactory = () => {
     afterMount: (write) => write('\r'),
   };
 };
-const USAGE_TS = 1_783_958_400_000;
-
-/**
- * A run read back from disk, so its money is the breakdown the engine recorded at the rates the
- * calls actually ran at — the only place a per-request estimate and its rate provenance exist.
- */
-function usageRoute(costBreakdown: CostBreakdown, tokenUsage: TokenUsage): () => RouteData {
-  return () => ({
-    screen: 'workflow',
-    run: makeRunRecord({
-      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: '2026-09-14-usage' },
-      feature: 'Report what each seat spent',
-      status: {
-        kind: 'open',
-        stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
-        resumeAt: { kind: 'planner', call: 'tasks' },
-      },
-      summary: makeSummary({ feature: 'Report what each seat spent', costBreakdown, tokenUsage }),
-    }),
-    execution: { kind: 'at-rest' },
-  });
-}
-
-/**
- * A review packet the seat could not hold, persisted with the halt and read back off the run's own
- * record — the diagnosis a reopened run still has. Every figure the refusal compared is here; the
- * panel that raised it carries none of them.
- */
-const USAGE_CONTEXT_HALT: RecoveryIssue = {
-  id: 'rec_visual_api_context',
-  reason: 'review-failed',
-  seat: 'review',
-  phase: 'final-review',
-  status: 'awaiting-user',
-  files: [],
-  affectedTaskIds: [],
-  message: 'The review seat was not given the context this call needs.',
-  details: ['Pick a review seat with a larger context in /crew review, then choose Try again.'],
-  facts: {
-    apiContextCode: 'insufficient-context',
-    apiContextSeat: 'review',
-    apiContextCause: 'input-budget',
-    apiContextModel: 'qwen3-coder-30b',
-    apiContextMissingSectionsJson: '[]',
-    reviewFailureKind: 'insufficient-context',
-    apiContextInputEstimate: 404_000,
-    apiContextEstimationMargin: 4_000,
-    apiContextRequiredOutputTokens: 4_096,
-    apiContextRequiredTokens: 412_096,
-    apiContextAvailableTokens: 32_768,
-    apiContextOutputCap: 8_192,
-  },
-  availableActions: ['retry-same-worker', 'end-run'],
-  recommendedAction: 'retry-same-worker',
-  createdAt: '2026-09-14T00:00:00.000Z',
-};
-
-/** The same run, stopped on that halt. */
-function usageContextRoute(): RouteData {
-  return {
-    screen: 'workflow',
-    run: makeRunRecord({
-      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: '2026-09-14-usage' },
-      feature: 'Review the bounded fixture branch',
-      status: {
-        kind: 'open',
-        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: USAGE_CONTEXT_HALT } },
-        resumeAt: { kind: 'review', cycle: 0 },
-      },
-      summary: makeSummary({
-        feature: 'Review the bounded fixture branch',
-        costBreakdown: USAGE_PRICED_BREAKDOWN,
-        tokenUsage: USAGE_TOKENS,
-      }),
-    }),
-    execution: { kind: 'at-rest' },
-  };
-}
-
 const PLAN_GATE_FEATURE = 'Fix the capped validation record';
 const PLAN_GATE_TASKS = [
   makeTask({
@@ -2603,357 +2518,6 @@ function planGateRoute(
   });
 }
 
-/** The crew the recorded breakdown was priced for, so the run on screen and its record agree. */
-const USAGE_CREW: VisualConfigOverrides = {
-  planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-5' },
-  implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.1-codex' },
-};
-
-/** The same crew with the local review seat the halt names, so the diagnosis and the run agree. */
-const USAGE_CONTEXT_CREW: VisualConfigOverrides = {
-  ...USAGE_CREW,
-  reviewer: {
-    kind: 'api',
-    provider: 'ollama',
-    model: 'qwen3-coder-30b',
-    apiBase: 'http://127.0.0.1:11434/v1',
-    contextLength: 32_768,
-  },
-};
-
-function seedUsageContextCounters(): void {
-  seedUsageCounters();
-  seedVisualConfig(USAGE_CONTEXT_CREW);
-  // The run view holds the halt, as the settle step lays it from the saved state at rest.
-  setRunHalt({ issue: USAGE_CONTEXT_HALT, at: { kind: 'review', cycle: 0 } });
-}
-
-/** Two seats that reported different amounts of what they spent: neither is filled out for it. */
-const USAGE_TOKENS: TokenUsage = {
-  ...ZERO_TOKEN_USAGE,
-  plannerInput: 124_000,
-  plannerOutput: 32_000,
-  plannerCacheRead: 90_400,
-  plannerReasoning: 8_100,
-  plannerCoverage: {
-    input: 'reported',
-    output: 'reported',
-    cacheRead: 'reported',
-    cacheCreate: 'missing',
-    reasoning: 'reported',
-  },
-  implementerInput: 812_000,
-  implementerOutput: 190_500,
-  implementerCoverage: {
-    input: 'reported',
-    output: 'reported',
-    cacheRead: 'missing',
-    cacheCreate: 'missing',
-    reasoning: 'missing',
-  },
-};
-
-/** A subscription planner that reported its counts and a review tool that reported none. */
-const USAGE_UNPRICED_TOKENS: TokenUsage = {
-  ...ZERO_TOKEN_USAGE,
-  plannerInput: 6,
-  plannerOutput: 2_309,
-  plannerCacheRead: 98_070,
-  plannerCacheCreate: 31_797,
-  plannerCoverage: {
-    input: 'reported',
-    output: 'reported',
-    cacheRead: 'reported',
-    cacheCreate: 'reported',
-    reasoning: 'missing',
-  },
-  reviewerCoverage: {
-    input: 'missing',
-    output: 'missing',
-    cacheRead: 'missing',
-    cacheCreate: 'missing',
-    reasoning: 'missing',
-  },
-};
-
-const USAGE_LEGACY_TOKENS: TokenUsage = {
-  ...ZERO_TOKEN_USAGE,
-  plannerInput: 9_800,
-  plannerOutput: 1_200,
-};
-
-function seedUsageTokens(tokenUsage: TokenUsage): void {
-  seedVisualConfig(USAGE_CREW);
-  addEvent({ type: 'cost_update', ts: USAGE_TS, phase: 'implementing', tokenUsage });
-}
-
-function seedUsageCounters(): void {
-  seedUsageTokens(USAGE_TOKENS);
-}
-
-/** One priced request, one the missing cache rate left incomplete, and two billing postures. */
-const USAGE_PRICED_BREAKDOWN: CostBreakdown = {
-  actualPlannerCost: 0.42,
-  actualImplementerCost: 1.18,
-  totalActualCost: 1.6,
-  hasPricedUsage: true,
-  requestEstimate: {
-    amount: null,
-    currency: 'USD',
-    basis: 'catalog-estimate',
-    completeness: 'partial',
-    knownSubtotal: 1.6,
-    reasons: ['reasoning-not-reported', 'missing-cache-rate'],
-    items: [
-      {
-        callId: 'call-planner-1',
-        role: 'planner',
-        usageBoundary: 'single-request',
-        amount: 0.42,
-        knownSubtotal: 0.42,
-        completeness: 'complete',
-        reasons: [],
-        billing: { posture: 'api-metered', basis: 'enforced-channel' },
-        rates: {
-          source: 'models-dev',
-          provider: 'anthropic',
-          model: 'claude-sonnet-4-5',
-          inputPer1M: 3,
-          outputPer1M: 15,
-          cacheReadPer1M: 0.3,
-          capturedAt: VISUAL_PUBLISHED_AT,
-          rateAsOf: '2026-06-01',
-        },
-      },
-      {
-        callId: 'call-implementer-1',
-        role: 'implementer',
-        usageBoundary: 'single-request',
-        amount: null,
-        knownSubtotal: 1.18,
-        completeness: 'partial',
-        reasons: ['missing-cache-rate'],
-        billing: { posture: 'api-metered', basis: 'observed-invocation' },
-        rates: {
-          source: 'bundled-fallback',
-          provider: 'openai',
-          model: 'gpt-5.1-codex',
-          inputPer1M: 1.25,
-          outputPer1M: 10,
-          selectedThresholdTokens: 200_000,
-          capturedAt: VISUAL_PUBLISHED_AT,
-        },
-      },
-    ],
-  },
-  providerRunMetadata: {
-    'claude-code': {
-      service: 'claude-code',
-      offering: 'payg',
-      normalizedEndpoint: 'cli://claude-code',
-      billing: 'api-metered',
-      asOf: '2026-01-01',
-      billingAttribution: {
-        posture: 'api-metered',
-        basis: 'enforced-channel',
-        evidenceId: 'cli.claude-code.api-key',
-      },
-    },
-    codex: {
-      service: 'codex',
-      offering: 'coding-subscription',
-      normalizedEndpoint: 'cli://codex',
-      billing: 'subscription-included',
-      asOf: '2026-01-01',
-      billingAttribution: { posture: 'unknown', basis: 'unknown' },
-    },
-  },
-};
-
-/** A sum kept before per-request pricing existed: an amount with no rates and no provenance. */
-const USAGE_LEGACY_BREAKDOWN: CostBreakdown = {
-  actualPlannerCost: 0.3,
-  actualImplementerCost: 0,
-  totalActualCost: 0.3,
-  hasPricedUsage: true,
-};
-
-/** Two subscription CLI seats: nothing has a published rate, so nothing is estimated. */
-const USAGE_UNPRICED_BREAKDOWN: CostBreakdown = {
-  actualPlannerCost: 0,
-  actualImplementerCost: 0,
-  totalActualCost: 0,
-  hasUnpricedUsage: true,
-  requestEstimate: {
-    amount: null,
-    currency: 'USD',
-    basis: 'unavailable',
-    completeness: 'unavailable',
-    knownSubtotal: 0,
-    reasons: ['unpriced-model'],
-    items: (
-      [
-        ['call-planner-1', 'planner', 'cli:claude-code', 'haiku'],
-        ['call-planner-2', 'planner', 'cli:claude-code', 'haiku'],
-        ['call-review-1', 'review', 'cli:antigravity', 'gemini-3-pro'],
-      ] as const
-    ).map(([callId, role, provider, model]) => ({
-      callId,
-      role,
-      usageBoundary: 'single-request' as const,
-      amount: null,
-      knownSubtotal: 0,
-      completeness: 'unavailable' as const,
-      reasons: ['unpriced-model' as const],
-      billing: { posture: 'unknown' as const, basis: 'unknown' as const },
-      rates: {
-        source: 'unpriced' as const,
-        provider,
-        model,
-        inputPer1M: 0,
-        outputPer1M: 0,
-        capturedAt: VISUAL_PUBLISHED_AT,
-      },
-    })),
-  },
-  providerRunMetadata: {
-    'cli:claude-code': {
-      service: 'claude-code',
-      offering: 'coding-subscription',
-      normalizedEndpoint: 'cli:claude-code',
-      billing: 'unknown',
-      asOf: '',
-      billingAttribution: { posture: 'unknown', basis: 'unknown' },
-    },
-    'cli:antigravity': {
-      service: 'antigravity',
-      offering: 'coding-subscription',
-      normalizedEndpoint: 'cli:antigravity',
-      billing: 'unknown',
-      asOf: '',
-      billingAttribution: { posture: 'unknown', basis: 'unknown' },
-    },
-  },
-};
-
-const createUsageDetailsFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'usage-details',
-    seed: seedUsageCounters,
-    underlyingScreen: 'workflow',
-    workflowRoute: usageRoute(USAGE_PRICED_BREAKDOWN, USAGE_TOKENS),
-  });
-const createUsageDetailsUnpricedFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'usage-details',
-    seed: () => seedUsageTokens(USAGE_UNPRICED_TOKENS),
-    underlyingScreen: 'workflow',
-    workflowRoute: usageRoute(USAGE_UNPRICED_BREAKDOWN, USAGE_UNPRICED_TOKENS),
-  });
-const createUsageDetailsLegacyFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'usage-details',
-    seed: () => seedUsageTokens(USAGE_LEGACY_TOKENS),
-    underlyingScreen: 'workflow',
-    workflowRoute: usageRoute(USAGE_LEGACY_BREAKDOWN, USAGE_LEGACY_TOKENS),
-  });
-
-/**
- * The same name spent twice: a custom API endpoint named `opencode` and the CLI tool of that
- * name. The billing rows must name the endpoint literally and the tool by its catalog name.
- */
-const USAGE_API_TWIN_BREAKDOWN: CostBreakdown = {
-  actualPlannerCost: 0.42,
-  actualImplementerCost: 1.18,
-  totalActualCost: 1.6,
-  hasPricedUsage: true,
-  hasUnpricedUsage: true,
-  providerCosts: {
-    'api:opencode': { inputTokens: 400_000, outputTokens: 20_000, cost: 1.18 },
-  },
-  requestEstimate: {
-    amount: null,
-    currency: 'USD',
-    basis: 'catalog-estimate',
-    completeness: 'partial',
-    knownSubtotal: 1.18,
-    reasons: ['unpriced-model'],
-    items: [
-      {
-        callId: 'call-api-1',
-        role: 'implementer',
-        usageBoundary: 'single-request',
-        amount: 1.18,
-        knownSubtotal: 1.18,
-        completeness: 'complete',
-        reasons: [],
-        billing: { posture: 'api-metered', basis: 'observed-invocation' },
-        rates: {
-          source: 'models-dev',
-          provider: 'api:opencode',
-          model: 'gpt-5',
-          inputPer1M: 1.25,
-          outputPer1M: 10,
-          capturedAt: VISUAL_PUBLISHED_AT,
-        },
-      },
-      {
-        callId: 'call-cli-1',
-        role: 'planner',
-        usageBoundary: 'single-request',
-        amount: null,
-        knownSubtotal: 0,
-        completeness: 'unavailable',
-        reasons: ['unpriced-model'],
-        billing: { posture: 'unknown', basis: 'unknown' },
-      },
-    ],
-  },
-  providerRunMetadata: {
-    'api:opencode': {
-      service: 'opencode',
-      offering: 'payg',
-      normalizedEndpoint: 'https://my-endpoint.example/v1',
-      billing: 'api-metered',
-      asOf: '',
-      billingAttribution: {
-        posture: 'api-metered',
-        basis: 'observed-invocation',
-        evidenceId: 'api.observed.api-key',
-      },
-    },
-    'cli:opencode': {
-      service: 'opencode',
-      offering: 'coding-subscription',
-      normalizedEndpoint: 'cli:opencode',
-      billing: 'subscription-included',
-      asOf: '',
-      billingAttribution: { posture: 'unknown', basis: 'unknown' },
-    },
-  },
-  offeringPresentations: {
-    'api:opencode': { costLabel: '$1.18', billingLabel: 'api-metered' },
-    'cli:opencode': { costLabel: 'subscription-included', billingLabel: 'subscription-included' },
-  },
-};
-
-const createUsageDetailsApiTwinFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'usage-details',
-    seed: () => {
-      seedUsageCounters();
-      seedVisualConfig({ ...USAGE_CREW, implementer: BUILD_API_TWIN_SEAT });
-    },
-    underlyingScreen: 'workflow',
-    workflowRoute: usageRoute(USAGE_API_TWIN_BREAKDOWN, USAGE_TOKENS),
-  });
-const createUsageContextFixture: FixtureFactory = () =>
-  createOverlayFixture({
-    overlay: 'usage-details',
-    seed: seedUsageContextCounters,
-    underlyingScreen: 'workflow',
-    workflowRoute: usageContextRoute,
-  });
 const createEditorFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'editor',
@@ -3521,8 +3085,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
                 taskId: OLD_PLAN_TASK.id,
                 taskTitle: OLD_PLAN_TASK.title,
                 method: 'local',
-                implementerTokens: 100,
-                escalationTokens: 0,
+
                 retryCount: 0,
               },
             ],
@@ -3543,11 +3106,6 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-sessions-refused-applying'), createSessionsRefusedApplyingFixture],
-  [scenarioId('overlay-usage-details'), createUsageDetailsFixture],
-  [scenarioId('overlay-usage-details-legacy'), createUsageDetailsLegacyFixture],
-  [scenarioId('overlay-usage-details-unpriced'), createUsageDetailsUnpricedFixture],
-  [scenarioId('overlay-usage-details-api-twin'), createUsageDetailsApiTwinFixture],
-  [scenarioId('overlay-usage-context-insufficient'), createUsageContextFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
   [scenarioId('overlay-editor-not-saved'), createEditorNotSavedFixture],
   [scenarioId('overlay-editor-missing-context-file'), createEditorMissingContextFileFixture],

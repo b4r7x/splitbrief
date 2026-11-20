@@ -1,9 +1,4 @@
-import { ZERO_TOKEN_USAGE, type TokenUsage } from '../../../src/core/schemas/tokens.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
-
-export function makeUsage(overrides?: Partial<TokenUsage>): TokenUsage {
-  return { ...ZERO_TOKEN_USAGE, ...overrides };
-}
 
 export function makeSummary(overrides?: Partial<Summary>): Summary {
   return {
@@ -14,7 +9,6 @@ export function makeSummary(overrides?: Partial<Summary>): Summary {
     skipped: 0,
     failed: 0,
     totalTime: 10000,
-    tokenUsage: makeUsage(),
     escalationRate: 0,
     ...overrides,
   };

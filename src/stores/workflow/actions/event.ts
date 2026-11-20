@@ -5,19 +5,12 @@ import type { LifecycleState } from '../lifecycle/types.js';
 import { mergeEvent } from '../events/merge.js';
 import { projectEventForTuiEventLog } from '../events/project.js';
 import { _eventsInternal } from '../events/state.js';
-import { updateTokens } from '../tokens/update.js';
-import { _tokensInternal } from '../tokens/state.js';
 import { _operationsInternal } from '../operations/state.js';
 import { updateOperations } from '../operations/reducer.js';
 import { _runViewInternal, runViewStore } from '../run-view.js';
 import { reduceRunView } from '../../../core/run-view/reduce.js';
 
 export function addEvent(event: EngineEvent): void {
-  if (event.type === 'cost_update') {
-    _tokensInternal.set((s) => updateTokens(s, event));
-    return;
-  }
-
   // Before the cancellation gate: a stop ends a live seat wait after it cancels the run, and a brief
   // the stop cut settles on the view.
   const previousView = runViewStore.get();
@@ -30,8 +23,6 @@ export function addEvent(event: EngineEvent): void {
   if (eventForLog !== null) {
     _eventsInternal.set((s) => ({ ...s, events: mergeEvent(s.events, eventForLog) }));
   }
-
-  _tokensInternal.set((s) => updateTokens(s, event));
 
   _lifecycleInternal.set((s) => reduceLifecycle(s, event, view.phase !== previousView.phase));
 
@@ -56,7 +47,6 @@ function acceptsEventAfterCancellation(event: EngineEvent): boolean {
     case 'runner_call_error':
     case 'runner_call_completed':
     case 'runner_call_warning':
-    case 'runner_call_usage':
     case 'runner_call_session_id':
       return true;
     default:

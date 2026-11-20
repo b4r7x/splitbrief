@@ -7,18 +7,14 @@ import type {
   RunnerCallResultSchema,
   RunnerCallStatusSchema,
   RunnerCallTextSemanticsSchema,
-  RunnerCallUsageSchema,
-  RunnerCallUsageSemanticsSchema,
   RunnerCallWarningSchema,
 } from './schema.js';
 
 export type RunnerCallStatus = z.infer<typeof RunnerCallStatusSchema>;
 export type RunnerCallFailureStatus = z.infer<typeof RunnerCallFailureStatusSchema>;
-export type RunnerCallUsageSemantics = z.infer<typeof RunnerCallUsageSemanticsSchema>;
 export type RunnerCallTextSemantics = z.infer<typeof RunnerCallTextSemanticsSchema>;
 
 export type RunnerCallContext = z.infer<typeof RunnerCallContextSchema>;
-export type RunnerCallUsage = z.infer<typeof RunnerCallUsageSchema>;
 export type RunnerCallError = z.infer<typeof RunnerCallErrorSchema>;
 export type RunnerCallWarningInput = z.input<typeof RunnerCallWarningSchema>;
 export type RunnerCallWarning = z.infer<typeof RunnerCallWarningSchema>;

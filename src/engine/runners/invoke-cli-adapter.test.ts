@@ -95,7 +95,7 @@ function claudeCapture(deltas: readonly string[]): readonly string[] {
       message: { content: [{ type: 'text', text: message }] },
     }),
     streamEvent({ type: 'content_block_stop' }),
-    streamEvent({ type: 'message_delta', usage: { input_tokens: 4, output_tokens: 2 } }),
+    streamEvent({ type: 'message_delta' }),
     streamEvent({ type: 'message_stop' }),
     JSON.stringify({ type: 'rate_limit_event', session_id: SESSION_ID }),
     JSON.stringify({ type: 'result', session_id: SESSION_ID, result: message }),
@@ -319,7 +319,7 @@ describe('synchronous CLI frame consumers', () => {
     expect(processCall.messageStarts).toEqual(messageStarts);
     expect(recorder.snapshot()).toMatchObject({
       text: processCall.result.text,
-      usage: processCall.result.usage,
+
       nativeSessionId: SESSION_ID,
     });
     const activity = (events: readonly RunnerCallEvent[]) =>

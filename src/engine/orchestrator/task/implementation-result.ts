@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
-import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { BriefExecution } from '../../../core/schemas/brief-execution.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { haltOf } from '../../../core/recovery/halt.js';
 import { isAbortError } from '../../../utils/abort.js';
@@ -15,7 +15,6 @@ import { retentionError } from '../isolation/retention.js';
 import { isResumableWorkspaceStop } from '../isolation/thrown-call.js';
 import { publishError } from '../publish/notice.js';
 import { rebaseOnPersistedWorkflowState } from '../state-ops/head.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { recordApprovalDenial } from './gates/attempt.js';
 import { retryAndRecord } from './retry.js';
 import { runImplementation, type RunImplementationResult } from './run-implementation.js';
@@ -25,8 +24,7 @@ type ImplementationStepOptions = {
   task: Task;
   state: WorkflowState;
   taskStartSnapshot: ChangedFilesSnapshot;
-  tokensBefore: TokenUsage;
-  taskBreakdowns: TaskTokenUsage[];
+  taskBreakdowns: BriefExecution[];
   setTrackedState: (s: WorkflowState) => void;
 };
 
@@ -40,15 +38,7 @@ function unreportedWords(outcome: RunnerFailureOutcomeState): string {
 export async function handleFailedImplementation(
   opts: ImplementationStepOptions & { implState: RunImplementationResult },
 ): Promise<WorkflowState> {
-  const {
-    wctx,
-    task,
-    implState,
-    taskStartSnapshot,
-    tokensBefore,
-    taskBreakdowns,
-    setTrackedState,
-  } = opts;
+  const { wctx, task, implState, taskStartSnapshot, taskBreakdowns, setTrackedState } = opts;
   let state = opts.state;
 
   if (implState.preApplyApprovalDenied) {
@@ -111,7 +101,6 @@ export async function handleFailedImplementation(
     }),
     state,
     taskStartSnapshot,
-    tokensBefore,
     taskBreakdowns,
     setTrackedState,
   });
@@ -136,7 +125,7 @@ type ImplementationStep =
 export async function runImplementationStep(
   opts: ImplementationStepOptions,
 ): Promise<ImplementationStep> {
-  const { wctx, task, taskStartSnapshot, tokensBefore, taskBreakdowns, setTrackedState } = opts;
+  const { wctx, task, taskStartSnapshot, taskBreakdowns, setTrackedState } = opts;
   let state = opts.state;
   let implState: RunImplementationResult;
   try {
@@ -172,14 +161,13 @@ export async function runImplementationStep(
       initialError: toErrorMessage(err),
       state,
       taskStartSnapshot,
-      tokensBefore,
       taskBreakdowns,
       setTrackedState,
     });
     return { outcome: 'failed', state: retry.state };
   }
 
-  state = addUsageAndSave(wctx, implState.state, 'implementer', implState.implResult.usage);
+  state = implState.state;
   setTrackedState(state);
 
   const applyStatus = implState.implResult.applyResult?.status;

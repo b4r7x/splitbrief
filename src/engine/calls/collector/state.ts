@@ -12,7 +12,6 @@ import {
 } from '../stderr-diagnostics.js';
 import type {
   RunnerCallContext,
-  RunnerCallUsage,
   RunnerCallResult,
   RunnerCallWarning,
   RunnerCallError,
@@ -26,7 +25,6 @@ export interface RunnerCallCollectionState {
   endedAt: number | null;
   durationMs: number | null;
   text: string;
-  usage: RunnerCallUsage | null;
   nativeSessionId: string | null;
   structured?: unknown;
   toolUses: RunnerCallResult['toolUses'];

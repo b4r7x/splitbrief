@@ -251,7 +251,7 @@ describe('usePickerCatalog catalog diagnostic', () => {
       diagnostic: capturedCatalog?.catalogDiagnostic,
       lane: 'ready',
       capabilities: ['Network', 'Shell'],
-      billing: 'provider-dependent',
+
       budget: 108,
     });
 

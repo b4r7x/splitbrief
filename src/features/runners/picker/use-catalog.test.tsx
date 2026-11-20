@@ -29,7 +29,7 @@ import { parseCursorNativeModelCatalog } from '../../../engine/runners/cli-tools
 import { parseOpenCodeNativeModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/opencode.js';
 import { nativeCliCatalogToDetectedModels } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
 import type { NativeCliModelCatalog } from '../../../engine/runners/cli-tools/probe/native-catalog/entries.js';
-import { formatToolsByline } from './byline.js';
+
 import { formatModelCatalogGuidance } from './catalog-guidance.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../../../core/runners/cli-tool/catalog.js';
@@ -1488,22 +1488,7 @@ describe('usePickerCatalog count', () => {
     expect(formatModelCatalogGuidance(item, catalog.modelCounts).headline).toContain(
       '37 models detected',
     );
-    expect(
-      formatToolsByline({
-        toolName: item.displayName,
-        version: undefined,
-        modelCount: catalog.modelRowCount,
-        rowNoun: 'model',
-        rowNounPlural: 'models',
-        source: undefined,
-        unverifiedForPlan: false,
-        diagnostic: undefined,
-        lane: 'ready',
-        capabilities: [],
-        billing: item.billing,
-        budget: 200,
-      }),
-    ).toContain('37 models');
+
     ui.unmount();
   });
 });

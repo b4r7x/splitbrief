@@ -13,7 +13,7 @@ import type { EngineEvent } from '../src/engine/events/types.js';
 
 describe('outcome metrics', () => {
   it('counts a task as first-pass only when it completed locally with zero retries', () => {
-    const summary = makeSummary(0, {
+    const summary = makeSummary({
       totalTasks: 4,
       completedByLocal: 1,
       escalatedToPlanner: 2,
@@ -49,7 +49,7 @@ describe('outcome metrics', () => {
     const metrics = collectRunMetrics({
       scenarioId: 'fake',
       mode: 'baseline',
-      summary: makeSummary(0.1, { escalatedToPlanner: 0 }),
+      summary: makeSummary({ escalatedToPlanner: 0 }),
       events: escalations,
       qualityResults: [{ passed: true, detail: 'ok' }],
       durationMs: 100,
@@ -60,7 +60,7 @@ describe('outcome metrics', () => {
         scenarioId: 'fake',
         scenarioName: 'Fake scenario',
         baseline: metrics,
-        routed: makeRunMetrics({ mode: 'routed', cost: 0.04 }),
+        routed: makeRunMetrics({ mode: 'routed' }),
       }),
     ]);
 
@@ -71,7 +71,7 @@ describe('outcome metrics', () => {
   });
 
   it('divides first-pass tasks by the run total, not by completed tasks', () => {
-    const summary = makeSummary(0, {
+    const summary = makeSummary({
       totalTasks: 4,
       completedByLocal: 2,
       taskBreakdown: [breakdownEntry('T001', 'local', 0), breakdownEntry('T002', 'local', 0)],
@@ -92,7 +92,7 @@ describe('outcome metrics', () => {
   });
 
   it('takes failed and skipped counts from the summary when the total exceeds breakdown plus failed plus skipped', () => {
-    const summary = makeSummary(0, {
+    const summary = makeSummary({
       totalTasks: 10,
       completedByLocal: 3,
       skipped: 2,
@@ -119,7 +119,7 @@ describe('outcome metrics', () => {
   });
 
   it('treats an absent task breakdown as an empty list, never as zero total tasks', () => {
-    const summary = makeSummary(0, { totalTasks: 2, completedByLocal: 0 });
+    const summary = makeSummary({ totalTasks: 2, completedByLocal: 0 });
 
     const metrics = collectRunMetrics({
       scenarioId: 'fake',
@@ -140,7 +140,7 @@ describe('outcome metrics', () => {
     const baseline = collectRunMetrics({
       scenarioId: 'fake',
       mode: 'baseline',
-      summary: makeSummary(0, {
+      summary: makeSummary({
         totalTasks: 4,
         completedByLocal: 1,
         taskBreakdown: [breakdownEntry('T001', 'local', 0)],
@@ -153,7 +153,7 @@ describe('outcome metrics', () => {
     const routed = collectRunMetrics({
       scenarioId: 'fake',
       mode: 'routed',
-      summary: makeSummary(0, {
+      summary: makeSummary({
         totalTasks: 2,
         completedByLocal: 1,
         taskBreakdown: [breakdownEntry('T001', 'local', 0)],
@@ -183,7 +183,7 @@ describe('review metrics', () => {
     findingCounts: { critical: number; warning: number; note: number },
     overrides: Partial<Summary> = {},
   ): Summary {
-    return makeSummary(0, {
+    return makeSummary({
       ...overrides,
       reviewPacket: {
         jsonPath: 'review-packet.json',
@@ -261,7 +261,7 @@ describe('review metrics', () => {
     const metrics = collectRunMetrics({
       scenarioId: 'fake',
       mode: 'baseline',
-      summary: makeSummary(0),
+      summary: makeSummary(),
       events: [],
       qualityResults: [],
       durationMs: 100,

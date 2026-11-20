@@ -6,6 +6,7 @@ import type { ResolvedImplementerProfile } from '../../../core/config/accessors/
 import { createImplementerPublisher } from '../publish/runner.js';
 import type { Implementer } from '../../implementers/types.js';
 import { error } from '../../../utils/error.js';
+import { formatBuildContextOverflow } from './estimation.js';
 
 export function configForProfile(
   config: WorkflowContext['config'],
@@ -58,12 +59,11 @@ export function retryProfileForTask(state: WorkflowState, task: Task): string | 
 }
 
 export function routingBlockMessage(decision: RoutingDecision): string {
-  const context =
-    decision.contextLength === undefined
-      ? `${decision.estimatedTokens} estimated tokens`
-      : `${decision.estimatedTokens}/${decision.contextLength} estimated tokens`;
   return [
-    `Task ${decision.taskId} cannot be routed to an implementer profile (${context}).`,
+    `Task ${decision.taskId} cannot be routed to an implementer profile.`,
+    ...(decision.contextOverflow === undefined
+      ? []
+      : [formatBuildContextOverflow(decision.contextOverflow)]),
     'Pause and revise the plan, reduce required context, or configure a larger implementer profile.',
     decision.reason,
   ].join(' ');

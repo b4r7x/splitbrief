@@ -479,7 +479,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       description: `${PROMPT_HEAD}${'create the change proof module\n'.repeat(65_536)}${PROMPT_TAIL}`,
     };
     const planner = makePlanner({
-      typedCall: typedCallFromTasks([task], { inputTokens: 40, outputTokens: 20 }),
+      typedCall: typedCallFromTasks([task]),
     });
 
     const feature = 'prove direct writer promotion';

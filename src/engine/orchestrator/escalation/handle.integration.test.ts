@@ -116,7 +116,6 @@ function consultPlanner(
       return makeRunnerCallResult({
         status: 'completed',
         text: JSON.stringify(next),
-        usage: { inputTokens: 10, outputTokens: 5 },
       });
     },
   });
@@ -129,7 +128,6 @@ function failingImplementer(failures?: number): ReturnType<typeof makeImplemente
     success: false,
     output: '',
     error: 'still broken',
-    usage: { inputTokens: 10, outputTokens: 5 },
   };
   const retry = vi.fn();
   if (failures === undefined) return makeImplementer({ retry: retry.mockResolvedValue(failed) });
@@ -479,7 +477,7 @@ describe('handleRetryAndEscalation', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValueOnce({ success: true, output: 'fixed', usage: null }),
+      retry: vi.fn().mockResolvedValueOnce({ success: true, output: 'fixed' }),
     });
     const { planner } = consultPlanner([
       guidanceAnswer('The export is missing', 'Add the named export.', 'src/greet.ts'),
@@ -1275,7 +1273,7 @@ describe('handleRetryAndEscalation step order', () => {
     };
   }
 
-  it('a consult-guided attempt that passes books its call and completes as consulted', async () => {
+  it('a consult-guided attempt that passes completes as consulted', async () => {
     const run = await ladderOrder({
       answers: [guidanceAnswer('The export is missing', 'Add the named export.')],
       retries: [{ success: true, output: 'fixed' }],
@@ -1286,7 +1284,7 @@ describe('handleRetryAndEscalation step order', () => {
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'implementer call',
       'task_completed',
     ]);
@@ -1324,17 +1322,17 @@ describe('handleRetryAndEscalation step order', () => {
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'implementer call',
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'implementer call',
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'tasks_planned',
       'task_replaced',
     ]);
@@ -1368,7 +1366,7 @@ describe('handleRetryAndEscalation step order', () => {
       'consult asked after 1 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'implementer call',
       'error',
       'recovery_prompted runner-timeout-repeated',
@@ -1392,7 +1390,7 @@ describe('handleRetryAndEscalation step order', () => {
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'implementer call',
       'error',
       'recovery_prompted runner-unauthenticated',
@@ -1426,7 +1424,7 @@ describe('handleRetryAndEscalation step order', () => {
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'implementer call',
     ]);
     expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
@@ -1447,7 +1445,6 @@ describe('handleRetryAndEscalation step order', () => {
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
     ]);
     expect(run.result).toEqual({ completed: false, method: 'failed', attempts: 0 });
     expect(run.lineage).toEqual({ returned: 1, saved: 1 });
@@ -1498,12 +1495,12 @@ describe('handleRetryAndEscalation step order', () => {
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'implementer call',
       'consult asked after 0 unfinished calls',
       'planner call',
       'consult_answered',
-      'cost_update',
+
       'planner_questions_asked',
       'recovery_prompted retry-exhausted',
     ]);

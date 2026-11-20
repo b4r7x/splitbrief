@@ -1,5 +1,4 @@
 import type { SteeringPort } from '../calls/steering.js';
-import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
@@ -86,9 +85,8 @@ export type PlannerUserTurnOptions = {
   callContext?: RunnerCallContext | undefined;
 };
 
-/** Delivery is decided by the seat's session, never by whether the turn reported usage. */
 export type PlannerUserTurnResult =
-  | { status: 'delivered'; usage: TokenDelta | null }
+  | { status: 'delivered' }
   | { status: 'not-delivered'; reason: 'not-ready' };
 
 export interface PlannerCallbacks {
@@ -127,7 +125,7 @@ export interface Planner extends RunnerRuntime {
     prompt: string,
     projectDir: string,
     callbacks: PlannerOutputCallbacks,
-  ): Promise<{ text: string; usage: TokenDelta | null }>;
+  ): Promise<{ text: string }>;
 
   /** The binding `requestTyped` calls this seat through. */
   typedCall(ctx: TypedCallContext): TypedSeatCall;
@@ -135,12 +133,12 @@ export interface Planner extends RunnerRuntime {
   summarize(
     messages: PlannerSummaryMessage[],
     opts?: PlannerSummaryOptions | undefined,
-  ): Promise<{ text: string; usage: TokenDelta | null }>;
+  ): Promise<{ text: string }>;
 
   summarizeStructured?(
     messages: PlannerSummaryMessage[],
     opts?: PlannerStructuredSummaryOptions | undefined,
-  ): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }>;
+  ): Promise<{ text: string; structured: StructuredSummary | null }>;
 
   injectUserTurn?: (opts: PlannerUserTurnOptions) => Promise<PlannerUserTurnResult>;
 

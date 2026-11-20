@@ -3,7 +3,7 @@ import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
+
 import { resetAllStores, seedBriefs } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { glyph, spinnerFrames } from '../../../../lib/glyphs.js';
@@ -11,11 +11,11 @@ import { CREW_LABEL_WIDTH, PLANNER_INHERITANCE } from '../../../../core/crew/ide
 import type { EngineEvent } from '../../../../engine/events/types.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text/width.js';
 import { configStore } from '../../../../stores/project/config.js';
-import { modelCacheStore } from '../../../../stores/discovery/model-cache/state.js';
+
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle/state.js';
 import { runViewStore } from '../../../../stores/workflow/run-view.js';
 import type { WorkflowTask } from '../../../../core/run-view/briefs.js';
-import { tokensStore } from '../../../../stores/workflow/tokens/state.js';
+
 import { addEvent } from '../../../../stores/workflow/actions/event.js';
 import { hydrateFromState } from '../../../../stores/workflow/actions/hydrate.js';
 import { Sidebar } from './panel.js';
@@ -1030,67 +1030,6 @@ describe('Sidebar — a crew wider than the seat column', () => {
     expect(frame).toContain('BUILD');
     expect(frame).toContain('REVIEW');
 
-    ui.unmount();
-  });
-});
-
-describe('Sidebar — usage lives in /usage', () => {
-  // The same priced fixture `useCostStats` uses: a run whose tokens do carry a price, so an amount
-  // would be painted if the footer still asked for one.
-  function seedPricedRun(): void {
-    tokensStore.__testReset({
-      tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
-    });
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({
-        implementer: {
-          kind: 'api',
-          provider: 'custom-endpoint',
-          model: 'priced-model',
-          apiBase: 'https://api.example.test/v1',
-          apiKey: 'test-key',
-        },
-      }),
-    });
-    modelCacheStore.hydrateModelsDevCatalog({
-      catalog: {
-        vendor: {
-          id: 'vendor',
-          models: { 'priced-model': { id: 'priced-model', cost: { input: 1, output: 2 } } },
-        },
-      },
-      fetchedAt: 1,
-      validatedAt: 1,
-    });
-  }
-
-  it('paints no local row or money for a run whose usage is priced', async () => {
-    seedBriefs({ tasks: [task('1', 'done'), task('2', 'done')] });
-    seedPricedRun();
-
-    const ui = renderFeature(<Sidebar width={40} />);
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).not.toMatch(/\blocal\b/u);
-    expect(frame).not.toContain('$');
-    expect(frame).not.toContain('3.00');
-    ui.unmount();
-  });
-
-  it('paints no token total for a run whose usage is priced', async () => {
-    seedBriefs({ tasks: [task('1', 'done'), task('2', 'done')] });
-    seedPricedRun();
-
-    const ui = renderFeature(<Sidebar width={40} />);
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).not.toContain('1,000,000');
-    expect(frame).not.toContain('2000k');
-    expect(frame).not.toMatch(/\btokens?\b/i);
-    expect(frame).not.toMatch(/\blocal\b/u);
     ui.unmount();
   });
 });

@@ -131,8 +131,6 @@ export function WorkflowFooter({
   readClipboardImage?: typeof readSystemClipboardImage | undefined;
   listProjectFiles?: typeof listFiles | undefined;
 }) {
-  // The in-box hint is a key cluster and nothing else: what a run spent is named in /usage, and how
-  // it ended in the rail and the closed block, not beside the caret.
   const boxHints: ComposerBoxHints = { keys: boxHintOverride?.keys ?? '' };
   const composerSession = mode === 'review' ? `review:${reviewEpoch ?? 0}` : 'non-review';
   // The width the composer box actually renders at — the terminal inside the gutter — so the

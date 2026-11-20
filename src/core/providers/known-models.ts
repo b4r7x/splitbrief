@@ -23,11 +23,6 @@ export interface KnownModel {
   isDefault?: boolean;
   contextLength?: number;
   maxOutputTokens?: number;
-  pricingInput?: number;
-  pricingOutput?: number;
-  pricingCacheRead?: number;
-  pricingCacheWrite?: number;
-  isFree?: boolean;
   aliases?: string[];
   catalogProvider?: CatalogVendorId;
   catalogModelId?: string;

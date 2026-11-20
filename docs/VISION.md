@@ -12,8 +12,6 @@ An orchestrator for two coding tools. One plans, the other executes, the review 
 
 The argument for the split is quality, not price. A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff — so an implementer and a reviewer from **different labs** catch issues a same-lab pair misses, and the gap is widest on logic errors and edge cases ([MindStudio](https://www.mindstudio.ai/blog/cross-vendor-ai-agent-review-claude-codex), [Augment Code](https://www.augmentcode.com/guides/adversarial-code-review) report the effect; SPLITBRIEF has not measured it — see [DIRECTION.md](./DIRECTION.md#what-we-measure)). SPLITBRIEF is built around that pairing: the review seat reads what the implementer wrote, and a deterministic pipeline (the plan's checks and the project gate the plan names, run by SPLITBRIEF) — not the implementer's own opinion — decides whether the change is correct.
 
-What a run spent is reported after it finishes, when the prices are known. It is a fact about the run, not the reason to switch.
-
 ## What SPLITBRIEF is NOT
 
 - **NOT a universal AI connector** — we don't "connect any AI to any AI"

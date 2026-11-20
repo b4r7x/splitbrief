@@ -7,17 +7,12 @@ import type {
 } from '../../../core/schemas/runner-call.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type {
   CliArgumentValidation,
   CliAuthorityCategory,
   CliParsedSemanticArg,
 } from './validate-args.js';
-import type {
-  RunnerCallFailureStatus,
-  RunnerCallTextSemantics,
-  RunnerCallUsageSemantics,
-} from '../../calls/types.js';
+import type { RunnerCallFailureStatus, RunnerCallTextSemantics } from '../../calls/types.js';
 import type { UsageLimitWindow } from '../../../core/recovery/usage-limit-step.js';
 
 import type { SpawnStdinWriter } from '../../../lib/process/spawn/types.js';
@@ -56,7 +51,6 @@ type CliProtocolTerminalEvent =
       type: 'result';
       status: 'completed';
       text: string;
-      usage: TokenDelta | null;
       nativeSessionId: string | null;
       error: null;
       partial: false;
@@ -66,7 +60,6 @@ type CliProtocolTerminalEvent =
       type: 'result';
       status: RunnerCallFailureStatus;
       text: string;
-      usage: TokenDelta | null;
       nativeSessionId: string | null;
       error: Readonly<{
         code: string;
@@ -86,7 +79,6 @@ export type CliProtocolEvent =
       /** `final` restates a block already emitted as deltas; absent means append. */
       semantics?: RunnerCallTextSemantics | undefined;
     }>
-  | Readonly<{ type: 'usage'; usage: TokenDelta; semantics: RunnerCallUsageSemantics }>
   | Readonly<{ type: 'session'; nativeSessionId: string; resolvedModel?: string | undefined }>
   | Readonly<{
       type: 'tool-use-delta';

@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { toTokenDelta } from '../../../calls/usage/normalize.js';
+
 import { CLI_TOOL_CATALOG } from '../../../../core/runners/cli-tool/catalog.js';
 import { CURSOR_CLI_ADMISSION_VERDICT } from '../../../../core/runners/cli-tool/builders.js';
-import { isRecord } from '../../../../utils/type-guards.js';
+
 import { CLI_PROMPT_SENTINEL } from '../candidate-contract.js';
 import { cursorProtocolEvents } from './protocol.js';
 import { CLI_CONFORMANCE_CANDIDATES } from './conformance.js';
@@ -302,29 +302,5 @@ describe('Cursor role adapters', () => {
     expect(terminalOf(fixtureEvents(NARRATED_VERDICT_FIXTURE)).text).toBe(
       'The first word of notes.txt is alpha.\nVERDICT: PASS',
     );
-  });
-
-  it('usage maps to a TokenDelta', () => {
-    const resultLine = fixtureNdjsonLines().find((line) => {
-      let value: unknown;
-      try {
-        value = JSON.parse(line);
-      } catch {
-        return false;
-      }
-      return isRecord(value) && value.type === 'result';
-    });
-    expect(resultLine).toBeDefined();
-    if (resultLine === undefined) return;
-
-    const record: unknown = JSON.parse(resultLine);
-    expect(isRecord(record) && isRecord(record.usage)).toBe(true);
-    if (!isRecord(record) || !isRecord(record.usage)) return;
-
-    const expected = toTokenDelta(record.usage);
-    expect(expected).not.toBeNull();
-    const events = cursorProtocolEvents(resultLine);
-    expect(events).toContainEqual({ type: 'usage', usage: expected, semantics: 'final' });
-    expect(terminalOf(events).usage).toEqual(expected);
   });
 });

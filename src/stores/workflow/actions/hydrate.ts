@@ -1,13 +1,5 @@
-import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue/state.js';
-import { taskAttemptTotalTokens } from '../tokens/update.js';
-import {
-  _tokensInternal,
-  type PerTaskTokens,
-  type TaskAttemptTokens,
-  type TokensState,
-} from '../tokens/state.js';
 import { _lifecycleInternal } from '../lifecycle/state.js';
 import type { LifecycleState } from '../lifecycle/types.js';
 import { _runViewInternal } from '../run-view.js';
@@ -15,15 +7,13 @@ import { settleReviewNone, settleRunView } from '../../../core/run-view/settle.j
 
 /**
  * The saved state, laid over the stores the replayed log already rebuilt. The log is the narrative
- * and the state is the record of where the run stands, so four facts come from the state and win:
- * the phase, the halt, the brief list, and what the run has spent. A run read back from disk is at
+ * and the state is the record of where the run stands, so the state supplies the phase, the halt, and the brief list. A run read back from disk is at
  * rest — it never claims to be running, whatever the last event on the log happened to be.
  * `reviewNone` is REVIEW None in the config the next pass runs on.
  */
 export function hydrateFromState(state: WorkflowState, reviewNone: boolean): void {
   _runViewInternal.set((view) => settleRunView(view, state, reviewNone));
   _lifecycleInternal.set((current) => lifecycleFromState(current, state));
-  _tokensInternal.set((current) => ({ ...current, ...tokensStateFromState(state) }));
 }
 
 /** REVIEW moved while a halt waits on a live run: the run stays as it is and only the halt reads anew. */
@@ -59,33 +49,6 @@ function lifecycleFromState(current: LifecycleState, state: WorkflowState): Life
     };
   }
   return { ...base, status: 'paused', endedAt: null, durationMs: null };
-}
-
-function tokensStateFromState(state: WorkflowState): Pick<TokensState, 'tokenUsage' | 'perTask'> {
-  return {
-    tokenUsage: state.tokenUsage,
-    perTask: perTaskTokens(state),
-  };
-}
-
-function perTaskTokens(state: WorkflowState): Record<string, PerTaskTokens> {
-  const perTask: Record<string, PerTaskTokens> = {};
-  for (const breakdown of state.taskBreakdowns ?? []) {
-    const attempt: TaskAttemptTokens = {
-      method: breakdown.method,
-      implementerTokens: breakdown.implementerTokens,
-      escalationTokens: breakdown.escalationTokens,
-      retryCount: breakdown.retryCount,
-      ...definedTaskUsageFields(breakdown, TASK_USAGE_ATTEMPT_KEYS),
-    };
-    const attempts = [...(perTask[breakdown.taskId]?.attempts ?? []), attempt];
-    perTask[breakdown.taskId] = {
-      title: breakdown.taskTitle,
-      totalTokens: attempts.reduce((sum, a) => sum + taskAttemptTotalTokens(a), 0),
-      attempts,
-    };
-  }
-  return perTask;
 }
 
 function timestampFromIso(value: string): number | null {

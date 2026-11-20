@@ -15,18 +15,13 @@ const textBytes = (events: readonly CliProtocolEvent[]): number =>
   events.reduce((sum, event) => sum + (event.type === 'text' ? event.text.length : 0), 0);
 
 describe('createProtocolEventLog', () => {
-  it('drops text from the middle of a long call and keeps its head, its final group and its usage total', () => {
+  it('drops text from the middle of a long call and keeps its head, its final group', () => {
     const log = createProtocolEventLog(MAX_BYTES);
     log.push({ type: 'session', nativeSessionId: 'session-1' });
     log.push(text('first message'));
     for (let turn = 0; turn < 100; turn += 1) {
       log.push(text(`narration ${turn} ${'x'.repeat(90)}`));
       log.push({ type: 'tool-use', id: `t${turn}`, name: 'read', input: { path: 'a.ts' } });
-      log.push({
-        type: 'usage',
-        usage: { inputTokens: 3, outputTokens: 2 },
-        semantics: 'delta',
-      });
     }
     log.push(text('final answer'));
 
@@ -41,7 +36,7 @@ describe('createProtocolEventLog', () => {
     expect(terminal).toMatchObject({
       status: 'completed',
       text: 'final answer',
-      usage: { inputTokens: 300, outputTokens: 200 },
+
       nativeSessionId: 'session-1',
     });
   });
@@ -53,7 +48,7 @@ describe('createProtocolEventLog', () => {
       type: 'result',
       status: 'completed',
       text: 'final answer',
-      usage: null,
+
       nativeSessionId: null,
       error: null,
       partial: false,

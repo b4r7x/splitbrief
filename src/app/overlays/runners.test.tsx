@@ -655,7 +655,7 @@ describe('ToolModelPicker model catalog', () => {
     });
   });
 
-  it('enriches the configured Claude Code alias when the models.dev lane lands, without adding catalog rows', async () => {
+  it('keeps the configured Claude Code alias when the models.dev lane lands', async () => {
     const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
 
@@ -683,10 +683,7 @@ describe('ToolModelPicker model catalog', () => {
       validatedAt: 100,
     });
 
-    // The alias is the row and keeps its own name; models.dev only tells it how large it is.
-    await vi.waitFor(() => {
-      expect(checkedModelLines(frameText(ui)).join('')).toContain('1M');
-    });
+    await tick(20);
 
     const after = checkedModelLines(frameText(ui));
     expect(after).toHaveLength(1);
@@ -1529,7 +1526,7 @@ describe('ToolModelPicker on a tool that is not ready', () => {
   });
 
   const AUTO_ROW = '▌ auto tool decides';
-  const ASTRA_ROW = '▌ GPT-6-Astra 272K ▾';
+  const ASTRA_ROW = '▌ GPT-6-Astra ▾';
   const modelCursorOf = (frame: string) =>
     modelColumnLines(stripAnsiStyles(frame))
       .filter((line) => line.includes(glyph('liveBar')))

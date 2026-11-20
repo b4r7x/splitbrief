@@ -8,6 +8,7 @@ import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool/catalog.js'
 import {
   cacheIdentity,
   catalogState,
+  MODELS_DEV_CATALOG_URL,
   persistSnapshot,
 } from '../../../src/engine/providers/models-dev/store.js';
 import { terminalSequences } from '../../../src/lib/terminal/control.js';
@@ -19,6 +20,83 @@ import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { PtyExitEvent } from '../../integration/cli/pty/capability.js';
 import { terminatePtyProcessGroup } from '../../integration/cli/pty/monitor.js';
 import { runWithPtyChild, safeChildEnvironment } from '../../integration/cli/pty/run.js';
+
+it('omits model mode prices from the catalog cache on startup', async (context) => {
+  await withTempDir('home-catalog-refresh', async (dir) => {
+    const home = join(dir, 'home');
+    const projectDir = join(dir, 'project');
+    mkdirSync(home);
+    mkdirSync(join(projectDir, '.git', 'objects'), { recursive: true });
+    mkdirSync(join(projectDir, '.git', 'refs', 'heads'), { recursive: true });
+    writeFileSync(join(projectDir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    writeConfig(
+      projectDir,
+      makeConfig({
+        planner: { kind: 'shell', command: '/usr/bin/true' },
+        implementer: { kind: 'agent', command: '/usr/bin/true', model: 'fixture' },
+      }),
+    );
+    const provider = { body: { service_tier: 'priority' } };
+    const catalog = {
+      openai: {
+        id: 'openai',
+        models: {
+          fixture: {
+            id: 'fixture',
+            experimental: { modes: { fast: { provider, cost: { input: 2.5, output: 20 } } } },
+          },
+        },
+      },
+    };
+    const preload = join(dir, 'catalog.mjs');
+    writeFileSync(
+      preload,
+      `globalThis.fetch = async (url) => {
+        if (String(url) !== ${JSON.stringify(MODELS_DEV_CATALOG_URL)}) throw new Error('Unexpected fetch');
+        return Response.json(${JSON.stringify(catalog)});
+      };`,
+    );
+    const { cachePath } = cacheIdentity({ cacheDir: join(home, SPLITBRIEF_DIR, 'cache') });
+    const result = await runWithPtyChild(
+      {
+        requirement: process.env.SPLITBRIEF_REQUIRE_PTY === '1' ? 'required' : 'optional',
+        argv: ['--import', 'tsx', '--import', preload, 'src/cli.ts', '--project', projectDir],
+        spawnOptions: {
+          name: 'xterm-256color',
+          cols: 100,
+          rows: 30,
+          cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+          env: { ...safeChildEnvironment(home), XDG_STATE_HOME: join(dir, 'state') },
+        },
+      },
+      async (child) => {
+        const exited = Promise.withResolvers<PtyExitEvent>();
+        let output = '';
+        const dataListener = child.onData((data) => {
+          output += data;
+        });
+        const exitListener = child.onExit(exited.resolve);
+        try {
+          await vi.waitFor(() => expect(existsSync(cachePath), output).toBe(true), {
+            timeout: 20_000,
+          });
+          expect(JSON.parse(readFileSync(cachePath, 'utf8'))).toHaveProperty(
+            'catalog.openai.models.fixture.experimental.modes.fast',
+            { provider },
+          );
+        } finally {
+          try {
+            await terminatePtyProcessGroup(child, exited.promise);
+          } finally {
+            dataListener.dispose();
+            exitListener.dispose();
+          }
+        }
+      },
+    );
+    if (result) context.skip(result.reason);
+  });
+});
 
 it('handles the first key and quits the real CLI while the cache parser and the tool checks remain held', async (context) => {
   await withTempDir('home-boot-quit', async (dir) => {

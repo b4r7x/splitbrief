@@ -35,15 +35,11 @@ function isReviewCall(input: TypedInvokeInput): boolean {
  * What a fake reviewer answers to a review call the test does not script: a passing verdict.
  * Any other call is the caller's.
  */
-function unscriptedReviewAnswer(
-  input: TypedInvokeInput,
-  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
-): RunnerCallResult | null {
+function unscriptedReviewAnswer(input: TypedInvokeInput): RunnerCallResult | null {
   if (!isReviewCall(input)) return null;
   return makeRunnerCallResult({
     status: 'completed',
     text: JSON.stringify(passingReviewVerdict(input.prompt)),
-    usage: usage ?? null,
   });
 }
 
@@ -240,18 +236,16 @@ export function planQuestionsFrom(
  */
 export function typedCallAnswering(
   answer: (prompt: string, ctx: TypedCallContext) => PlanResult | Promise<PlanResult>,
-  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
 ): Mock<Planner['typedCall']> {
   return vi.fn((ctx: TypedCallContext) => ({
     seat: ctx.seat,
     typedOutput: mockTypedOutput(ctx.seat),
     canResume: false,
     invoke: async ({ prompt, schema }: TypedInvokeInput) =>
-      unscriptedReviewAnswer({ prompt, schema }, usage) ??
+      unscriptedReviewAnswer({ prompt, schema }) ??
       makeRunnerCallResult({
         status: 'completed',
         text: JSON.stringify({ result: await answer(prompt, ctx) }),
-        usage: usage ?? null,
       }),
   }));
 }
@@ -263,13 +257,6 @@ export function typedCallPlanAndReview(
     call: number,
     callbacks: PlannerOutputCallbacks,
   ) => ReviewVerdict | string,
-  usage?:
-    | Readonly<{
-        plan?: Readonly<{ inputTokens: number; outputTokens: number }>;
-        review?: Readonly<{ inputTokens: number; outputTokens: number }>;
-      }>
-    | undefined,
-  /** The answer to a consult call, recognized by the consult prompt's title. */
   consult?: ((prompt: string) => ConsultAnswer) | undefined,
 ): Mock<Planner['typedCall']> {
   let reviewCalls = 0;
@@ -286,7 +273,6 @@ export function typedCallPlanAndReview(
               ? consult(prompt)
               : { result: plan() },
           ),
-          usage: usage?.plan ?? null,
         });
       const answered = review(prompt, ++reviewCalls, ctx.callbacks);
       return makeRunnerCallResult({
@@ -295,18 +281,14 @@ export function typedCallPlanAndReview(
           typeof answered === 'string'
             ? answered
             : JSON.stringify({ fixTasks: [], rejected: [], ask: null, ...answered }),
-        usage: usage?.review ?? null,
       });
     },
   }));
 }
 
 /** A planner seat whose every typed call returns the plan the scripted briefs stand for. */
-export function typedCallFromTasks(
-  tasks: readonly Task[],
-  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
-): Mock<Planner['typedCall']> {
-  return typedCallAnswering(() => planFromTasks(tasks), usage);
+export function typedCallFromTasks(tasks: readonly Task[]): Mock<Planner['typedCall']> {
+  return typedCallAnswering(() => planFromTasks(tasks));
 }
 
 /**
@@ -315,18 +297,16 @@ export function typedCallFromTasks(
  */
 export function consultCallAnswering(
   answer: (prompt: string, ctx: TypedCallContext) => ConsultAnswer,
-  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
 ): Mock<Planner['typedCall']> {
   return vi.fn((ctx: TypedCallContext) => ({
     seat: ctx.seat,
     typedOutput: mockTypedOutput(ctx.seat),
     canResume: false,
     invoke: async ({ prompt, schema }: TypedInvokeInput) =>
-      unscriptedReviewAnswer({ prompt, schema }, usage) ??
+      unscriptedReviewAnswer({ prompt, schema }) ??
       makeRunnerCallResult({
         status: 'completed',
         text: JSON.stringify(answer(prompt, ctx)),
-        usage: usage ?? null,
       }),
   }));
 }
@@ -368,21 +348,19 @@ export function cannotConsult(reason = 'The blockers need a design change the pl
 export function typedCallPlanAndConsult(
   plan: () => PlanResult,
   consult: () => ConsultAnswer,
-  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
 ): Mock<Planner['typedCall']> {
-  const consultCall = consultCallAnswering(() => consult(), usage);
+  const consultCall = consultCallAnswering(() => consult());
   return vi.fn((ctx: TypedCallContext) => {
     const call = consultCall(ctx);
     return {
       ...call,
       invoke: async ({ prompt, schema }: TypedInvokeInput) =>
-        unscriptedReviewAnswer({ prompt, schema }, usage) ??
+        unscriptedReviewAnswer({ prompt, schema }) ??
         (prompt.includes('# Consult')
           ? call.invoke({ prompt })
           : makeRunnerCallResult({
               status: 'completed',
               text: JSON.stringify({ result: plan() }),
-              usage: usage ?? null,
             })),
     };
   });

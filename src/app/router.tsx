@@ -9,7 +9,6 @@ import { SkillsPicker } from './overlays/skills.js';
 import { SessionsPicker } from './overlays/sessions.js';
 import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
-import { UsageOverlay } from './overlays/usage.js';
 import { ToolModelPicker } from './overlays/runners.js';
 import type { RuntimeCommandDef } from '../core/runtime/commands/types.js';
 import type { OverlayType, Screen } from '../core/navigation/types.js';
@@ -147,8 +146,6 @@ function renderOverlay({
           {...(interactionDeps === undefined ? {} : { deps: interactionDeps.home.sessionSelect })}
         />
       );
-    case 'usage-details':
-      return <UsageOverlay />;
     case 'editor':
       return <EditorOverlay />;
     default:

@@ -50,6 +50,13 @@ describe('--allow-repo-runners', () => {
 });
 
 describe('runner selection help', () => {
+  it('shows a numeric argument for every context length override', () => {
+    const help = addWorkflowOptions(new Command()).helpInformation();
+    for (const seat of ['planner', 'implementer', 'reviewer']) {
+      expect(help).toContain(`--${seat}-context-length <number>`);
+    }
+  });
+
   it.each([
     { label: 'Planner tool', admitted: PLANNER_TOOL_IDS },
     { label: 'Reviewer tool', admitted: PLANNER_TOOL_IDS },

@@ -187,6 +187,41 @@ describe('loadState', () => {
     expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
   });
 
+  it.each([3, 4])('keeps brief history from a v%i state with accounting fields', (version) => {
+    const ref = { projectDir: makeTmp(), sessionId: SESSION_ID };
+    const dir = join(ref.projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, ref.sessionId);
+    mkdirSync(dir, { recursive: true });
+    const current = version === 3 ? makeLegacyV3State('old run') : createInitialState('old run');
+    const brief = {
+      taskId: 'T001',
+      taskTitle: 'Write a greeting',
+      method: 'consulted',
+      retryCount: 2,
+      tool: 'codex',
+      model: 'gpt-5',
+      kind: 'cli',
+      implementerProfile: 'default',
+      routingReason: 'The default profile fits.',
+    };
+    const stored = {
+      ...current,
+      tokenUsage: {
+        plannerInput: 120,
+        plannerOutput: 30,
+        implementerInput: 40,
+        implementerOutput: 10,
+        escalationInput: 3,
+        escalationOutput: 2,
+      },
+      taskBreakdowns: [{ ...brief, implementerTokens: 50, escalationTokens: 5, cost: 0.01 }],
+    };
+    writeFileSync(join(dir, 'state.json'), JSON.stringify(stored));
+
+    const loaded = loadState(ref);
+
+    expect(loaded).toMatchObject({ feature: 'old run', stateVersion: 4, taskBreakdowns: [brief] });
+  });
+
   it('loads an old v4 snapshot with the retired decision-confirm field without rewriting it', () => {
     const dir = makeTmp();
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);

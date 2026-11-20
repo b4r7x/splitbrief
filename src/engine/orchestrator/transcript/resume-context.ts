@@ -9,7 +9,6 @@ import { publishWarning } from '../publish/notice.js';
 import { publishDebug } from '../publish/notice.js';
 import { buildResumeContext } from './rebuild.js';
 import { compactResumeTranscript, keepRecentCountForThreshold } from './compaction.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import { resolveCompactionFormat } from '../../../core/schemas/compaction.js';
 import {
   PLANNER_SESSION_EXPIRED_CODE,
@@ -38,24 +37,22 @@ export type AutoCompactResumeOpts = {
   signal?: AbortSignal | undefined;
 };
 
-export async function autoCompactResumeContext(
-  opts: AutoCompactResumeOpts,
-): Promise<WorkflowState> {
+export async function autoCompactResumeContext(opts: AutoCompactResumeOpts): Promise<void> {
   const threshold = opts.config.workflow.compactionThreshold;
-  if (threshold === undefined) return opts.state;
+  if (threshold === undefined) return;
   const summarize = opts.planner.summarize;
-  if (opts.planner.capabilities.supportsSelfSummarisation !== true || !summarize) return opts.state;
+  if (opts.planner.capabilities.supportsSelfSummarisation !== true || !summarize) return;
 
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const rebuilt = await buildResumeContext({ ref });
-  if (rebuilt.messages.length <= threshold) return opts.state;
+  if (rebuilt.messages.length <= threshold) return;
 
   try {
     const format = resolveCompactionFormat(
       opts.config.workflow.compactionFormat,
       opts.config.planner.kind,
     );
-    const result = await compactResumeTranscript({
+    await compactResumeTranscript({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
       workspaceDir: opts.workspaceDir,
@@ -75,20 +72,13 @@ export async function autoCompactResumeContext(
           message: 'Structured compaction returned invalid JSON; saved freeform summary instead.',
         }),
     });
-    return addUsageAndSave(
-      { projectDir: opts.projectDir, sessionId: opts.sessionId, bus: opts.bus },
-      opts.state,
-      'planner',
-      result.usage,
-    );
   } catch (err) {
-    if (opts.signal?.aborted || isAbortError(err)) return opts.state;
+    if (opts.signal?.aborted || isAbortError(err)) return;
     publishDebug({
       bus: opts.bus,
       phase: 'researching',
       message: labelError('Transcript auto-compaction failed', err),
     });
-    return opts.state;
   }
 }
 

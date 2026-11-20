@@ -1,5 +1,3 @@
-import type { TokenDelta } from '../../../../core/schemas/tokens.js';
-import { toProviderTokenDelta } from '../../../calls/usage/normalize.js';
 import { isRecord, optionalString } from '../../../../utils/type-guards.js';
 import type { CliProtocolEvent } from '../contract.js';
 
@@ -20,7 +18,6 @@ function protocolFailure(code: string, message: string): AntigravityTerminalEven
     type: 'result',
     status: 'failed',
     text: '',
-    usage: null,
     nativeSessionId: null,
     error: { code, message },
     partial: false,
@@ -31,26 +28,8 @@ function malformed(message: string): AntigravityTerminalEvent {
   return protocolFailure('malformed-antigravity-record', message);
 }
 
-function tokenCount(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
-
 // `output_tokens` includes `thinking_tokens` (`total_tokens` is input plus output in every captured
 // frame) and the output counter excludes reasoning, so the thinking share is carved out of it.
-function tokenDelta(raw: unknown): TokenDelta | null {
-  if (!isRecord(raw)) return null;
-  const inputTokens = tokenCount(raw.input_tokens);
-  const output = tokenCount(raw.output_tokens);
-  if (inputTokens === undefined || output === undefined) return null;
-  const reasoningTokens = tokenCount(raw.thinking_tokens);
-  const cacheReadTokens = tokenCount(raw.cache_read_tokens);
-  return toProviderTokenDelta({
-    inputTokens,
-    outputTokens: output - (reasoningTokens ?? 0),
-    ...(reasoningTokens !== undefined && { reasoningTokens }),
-    ...(cacheReadTokens !== undefined && { cacheReadTokens }),
-  });
-}
 
 function parseToolStep(step: Record<string, unknown>): readonly CliProtocolEvent[] {
   const info = isRecord(step.tool_info) ? step.tool_info : {};
@@ -73,15 +52,11 @@ function parseToolStep(step: Record<string, unknown>): readonly CliProtocolEvent
   ];
 }
 
-// Each `agent_response` step reports its own usage and the `result` frame reports the turn total,
-// so steps are booked as deltas and the terminal's usage replaces them rather than adding on.
 function parseResponseStep(step: Record<string, unknown>): readonly CliProtocolEvent[] {
   const events: CliProtocolEvent[] = [];
   if (typeof step.text_delta === 'string' && step.text_delta.length > 0) {
     events.push({ type: 'text', channel: 'assistant', text: step.text_delta });
   }
-  const usage = step.state === 'DONE' ? tokenDelta(step.usage) : null;
-  if (usage !== null) events.push({ type: 'usage', usage, semantics: 'delta' });
   return events;
 }
 
@@ -110,7 +85,6 @@ function parseStep(step: Record<string, unknown>): readonly CliProtocolEvent[] {
 function parseResult(result: Record<string, unknown>): AntigravityTerminalEvent {
   const status = optionalString(result.status, { trim: true, nonEmpty: true }) ?? 'UNKNOWN';
   const text = typeof result.response === 'string' ? result.response : '';
-  const usage = tokenDelta(result.usage);
   const nativeSessionId =
     optionalString(result.conversation_id, { trim: true, nonEmpty: true }) ?? null;
   if (status === 'SUCCESS') {
@@ -118,7 +92,6 @@ function parseResult(result: Record<string, unknown>): AntigravityTerminalEvent 
       type: 'result',
       status: 'completed',
       text,
-      usage,
       nativeSessionId,
       error: null,
       partial: false,
@@ -136,7 +109,6 @@ function parseResult(result: Record<string, unknown>): AntigravityTerminalEvent 
     type: 'result',
     status: 'failed',
     text,
-    usage,
     nativeSessionId,
     // agy names its stdin "stream input": a line it cannot read is the prompt SPLITBRIEF sent.
     error: {

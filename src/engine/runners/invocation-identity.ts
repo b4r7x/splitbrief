@@ -1,19 +1,12 @@
-import { getApiProviderDescriptor } from '../../core/providers/api-catalog.js';
 import type { CliToolId } from '../../core/runners/cli-tool/types.js';
 import {
   InvocationIdentitySchema,
   type InvocationIdentity,
 } from '../../core/schemas/invocation-identity.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { isRemoteBackedOllamaModel } from '../providers/ollama.js';
 import type { ApiDispatchAuthentication, ProviderDef } from '../providers/types.js';
 import type { RunnerCallContext } from '../calls/types.js';
 
-/**
- * The durable identity of one CLI invocation. The tool's own sign-in decides
- * how the call authenticates and what it bills to, so the record names only
- * the tool, and its billing is unknown.
- */
 export function snapshotCliInvocationIdentity({
   tool,
   now,
@@ -22,7 +15,6 @@ export function snapshotCliInvocationIdentity({
     version: 1,
     capturedAt: now,
     runner: { kind: 'cli', id: tool },
-    billing: { posture: 'unknown', basis: 'unknown' },
   };
 }
 
@@ -37,21 +29,8 @@ export function withCliInvocationIdentity({
   };
 }
 
-/**
- * Transport-policy evidence for one API dispatch: the resolved provider's
- * endpoint passed its catalog loopback policy. `remoteBacked` records a model
- * the local server is known to route upstream.
- */
-export type ApiLocalityEvidence = Readonly<{
-  transport: 'loopback';
-  evidenceId: string;
-  remoteBacked: boolean;
-}>;
-
-/** The nonsecret facts a resolved provider contributes to its dispatch identity. */
 export type ApiInvocationEvidence = Readonly<{
   dispatchAuthentication: ApiDispatchAuthentication;
-  localityEvidence?: ApiLocalityEvidence | undefined;
 }>;
 
 const API_AUTHENTICATION_EVIDENCE = {
@@ -73,38 +52,16 @@ export function apiConnectionKey(provider: string, apiBase: string): string | un
   return `api:${sha256Hex(`${provider}\n${endpoint}`).slice(0, 32)}`;
 }
 
-/**
- * Reads the evidence off the provider that builds the client. Only a catalog
- * provider whose endpoint policy is loopback proves local transport; a custom
- * endpoint on localhost proves nothing about where the model runs.
- */
-export function apiInvocationEvidence(provider: ProviderDef, model: string): ApiInvocationEvidence {
-  const dispatchAuthentication = provider.dispatchAuthentication?.() ?? 'unknown';
-  const descriptor = getApiProviderDescriptor(provider.name);
-  if (descriptor?.endpointPolicy.kind !== 'loopback') return { dispatchAuthentication };
-  return {
-    dispatchAuthentication,
-    localityEvidence: {
-      transport: 'loopback',
-      evidenceId: `api.${descriptor.id}.loopback-transport`,
-      remoteBacked: descriptor.id === 'ollama' && isRemoteBackedOllamaModel(model),
-    },
-  };
+export function apiInvocationEvidence(provider: ProviderDef): ApiInvocationEvidence {
+  return { dispatchAuthentication: provider.dispatchAuthentication?.() ?? 'unknown' };
 }
 
-/**
- * The durable identity of one direct API request, taken at dispatch for the
- * exact model and connection. The credential source decides the method only
- * when it proves one; neither it nor HTTP transport names a tariff. Proven
- * loopback transport bills as local unless the model is routed upstream.
- */
 export function snapshotApiInvocationIdentity({
   provider,
   model,
   connectionKey,
   configuredChannel,
   dispatchAuthentication,
-  localityEvidence,
   now,
 }: Readonly<{
   provider: string | undefined;
@@ -112,17 +69,8 @@ export function snapshotApiInvocationIdentity({
   connectionKey: string | undefined;
   configuredChannel?: InvocationIdentity['configuredChannel'];
   dispatchAuthentication: ApiDispatchAuthentication;
-  localityEvidence?: ApiLocalityEvidence | undefined;
   now: number;
 }>): InvocationIdentity {
-  const localBilling =
-    localityEvidence !== undefined && !localityEvidence.remoteBacked
-      ? ({
-          posture: 'local',
-          basis: 'local-transport',
-          evidenceId: localityEvidence.evidenceId,
-        } as const)
-      : undefined;
   return {
     version: 1,
     capturedAt: now,
@@ -140,6 +88,5 @@ export function snapshotApiInvocationIdentity({
         evidenceId: API_AUTHENTICATION_EVIDENCE[dispatchAuthentication],
       },
     }),
-    billing: localBilling ?? { posture: 'unknown', basis: 'unknown' },
   };
 }

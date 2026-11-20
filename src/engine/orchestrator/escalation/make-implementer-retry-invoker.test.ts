@@ -25,7 +25,7 @@ import { createWriteSequencer } from '../../../utils/serial-executor.js';
 import { recordedApiCreatedPaths } from '../evidence/target-writes.js';
 import { recordApiApplyEvidence, recordApiRevertEvidence } from '../evidence/api-apply.js';
 import { withContinuationLoop } from '../continuation/loop.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
+
 import { recordBriefCorrection } from '../state-ops/corrections.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
@@ -41,7 +41,7 @@ function makeRecordingImplementer() {
   const implementer = makeImplementer({
     retry: async (opts: RetryOptions) => {
       received = opts;
-      return { success: true, output: 'fixed', usage: { inputTokens: 1, outputTokens: 1 } };
+      return { success: true, output: 'fixed' };
     },
   });
   return { implementer, getReceived: () => received };
@@ -78,7 +78,6 @@ describe('makeImplementerRetryInvoker', () => {
         seat: {
           ref: { ...ref, bus: createEventBus() },
           state: makeImplState([task]),
-          usageCategory: 'implementer',
         },
       });
 
@@ -122,7 +121,6 @@ describe('makeImplementerRetryInvoker', () => {
       seat: {
         ref: { ...ref, bus: createEventBus() },
         state: corrected,
-        usageCategory: 'implementer',
       },
     });
 
@@ -169,7 +167,6 @@ describe('makeImplementerRetryInvoker', () => {
             seat: {
               ref: { ...ref, bus },
               state: makeImplState([makeTask()]),
-              usageCategory: 'implementer',
             },
           });
 
@@ -245,7 +242,7 @@ describe('makeImplementerRetryInvoker', () => {
         implementer,
         config: makeConfig(),
         createdByThisTask,
-        seat: { ref: { ...ref, bus: createEventBus() }, state, usageCategory: 'implementer' },
+        seat: { ref: { ...ref, bus: createEventBus() }, state },
       });
 
       expect(getReceived()?.createdByThisTask).toEqual(
@@ -294,7 +291,6 @@ describe('makeImplementerRetryInvoker', () => {
       seat: {
         ref: { ...ref, bus: createEventBus(), implementerProfile: 'big' },
         state,
-        usageCategory: 'implementer',
       },
     });
     let settled = false;
@@ -381,7 +377,7 @@ describe('makeImplementerRetryInvoker', () => {
       projectDir: ref.projectDir,
       config: makeConfig(),
       implementer,
-      seat: { ref: { ...ref, bus }, state, usageCategory: 'implementer' },
+      seat: { ref: { ...ref, bus }, state },
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
     const callsBeforeDelivery = calls.length;
@@ -425,16 +421,12 @@ describe('makeImplementerRetryInvoker', () => {
           return {
             success: true,
             output: 'retried',
-            usage:
-              retries === 1
-                ? { inputTokens: 10, outputTokens: 4 }
-                : { inputTokens: 3, outputTokens: 2 },
           };
         },
         implement: async () => {
           abort?.();
           if (exit === 'throw') throw new DOMException('Stopped', 'AbortError');
-          return { success: false, output: '', usage: { inputTokens: 2, outputTokens: 1 } };
+          return { success: false, output: '' };
         },
       });
       const invoker = makeImplementerRetryInvoker({
@@ -444,13 +436,12 @@ describe('makeImplementerRetryInvoker', () => {
         languageContext: buildLanguageContext('typescript'),
         phase: 'implementing',
       });
-      const continued = await withContinuationLoop({
+      await withContinuationLoop({
         ctx: {
           ...ref,
           bus,
           callbacks: makeCallbacks({
             onContinuationNeeded: async () => {
-              expect(loadState(ref)?.tokenUsage.implementerInput).toBe(10);
               return plainUserMessage('continue this retry');
             },
           }).callbacks,
@@ -475,24 +466,11 @@ describe('makeImplementerRetryInvoker', () => {
             seat: {
               ref: { ...ref, bus },
               state: loadState(ref) ?? state,
-              usageCategory: 'implementer',
             },
           }),
       });
 
       expect(retries).toBe(2);
-      expect(continued.value.usage).toEqual({ inputTokens: 3, outputTokens: 2 });
-      const accounted = addUsageAndSave(
-        { ...ref, bus },
-        continued.state,
-        'implementer',
-        continued.value.usage,
-      );
-      expect(accounted.tokenUsage).toMatchObject({
-        implementerInput: 13,
-        implementerOutput: 6,
-      });
-      expect(loadState(ref)?.tokenUsage).toEqual(accounted.tokenUsage);
     },
   );
 
@@ -558,7 +536,7 @@ describe('makeImplementerRetryInvoker', () => {
       implementer,
       config: makeConfig(),
       createdByThisTask: [],
-      seat: { ref: { ...ref, bus }, state, usageCategory: 'implementer' },
+      seat: { ref: { ...ref, bus }, state },
     });
 
     expect(result.success).toBe(false);
@@ -609,14 +587,13 @@ describe('makeImplementerRetryInvoker', () => {
       seat: {
         ref: { ...ref, bus: createEventBus() },
         state: { ...makeImplState([task]), plan },
-        usageCategory: 'implementer',
       },
     });
 
     expect(result).toEqual({
       success: true,
       output: 'fixed',
-      usage: { inputTokens: 1, outputTokens: 1 },
+
       runner: config.implementer,
     });
 
@@ -669,7 +646,6 @@ describe('makeImplementerRetryInvoker', () => {
       seat: {
         ref: { ...ref, bus: createEventBus() },
         state: makeImplState([makeTask()]),
-        usageCategory: 'implementer',
       },
     });
 
@@ -691,7 +667,6 @@ describe('makeImplementerRetryInvoker', () => {
       const implement = vi.fn(async (_call: ImplementerOptions) => ({
         success: true,
         output: 'corrected',
-        usage: { inputTokens: 7, outputTokens: 5 },
       }));
       const retry = vi.fn(async (_call: RetryOptions) => {
         const message = {
@@ -714,7 +689,7 @@ describe('makeImplementerRetryInvoker', () => {
           message,
           reviewNone: false,
         });
-        return { success: true, output: 'retried', usage: { inputTokens: 10, outputTokens: 4 } };
+        return { success: true, output: 'retried' };
       });
       const implementer = makeImplementer({ implement, retry });
       const config = makeConfig({
@@ -747,7 +722,6 @@ describe('makeImplementerRetryInvoker', () => {
             },
           },
           state,
-          usageCategory: 'implementer',
         },
       });
 
@@ -774,7 +748,7 @@ describe('makeImplementerRetryInvoker', () => {
       expect(result).toMatchObject({
         success: true,
         output: 'corrected',
-        usage: { inputTokens: 17, outputTokens: 9 },
+
         runner: config.implementer,
       });
       const saved = loadState(ref);
@@ -819,7 +793,7 @@ describe('makeImplementerRetryInvoker', () => {
       projectDir: '/staged',
       implementer,
       config: makeConfig(),
-      seat: { ref: { ...ref, bus }, state: initial, usageCategory: 'implementer' },
+      seat: { ref: { ...ref, bus }, state: initial },
     });
 
     expect(getReceived()?.continuation?.steer).toContain('preserve the public signature');
@@ -871,7 +845,7 @@ describe('makeImplementerRetryInvoker', () => {
       projectDir: ref.projectDir,
       implementer,
       config: makeConfig(),
-      seat: { ref: { ...ref, bus }, state, usageCategory: 'implementer' },
+      seat: { ref: { ...ref, bus }, state },
     });
 
     expect(result.success).toBe(false);

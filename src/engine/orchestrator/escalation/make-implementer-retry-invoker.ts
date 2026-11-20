@@ -5,7 +5,6 @@ import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import { lineageAttemptsOf } from '../../../core/state/lineage.js';
 import type { SeatAttempt } from '../../runners/seat-failure/transient.js';
-import { addUsageAndSave } from '../state-ops/usage.js';
 import {
   absorbBuildCorrections,
   buildCorrectionInput,
@@ -118,9 +117,6 @@ export function makeImplementerRetryInvoker(opts: {
           }),
         absorb,
         signal: attemptSignal,
-        onDiscardedUsage: (usage) => {
-          state = addUsageAndSave(seat.ref, state, seat.usageCategory, usage);
-        },
         application: {
           wctx: seat.ref,
           state: () => state,
@@ -148,9 +144,6 @@ export function makeImplementerRetryInvoker(opts: {
         },
       },
       produce,
-      (discarded) => {
-        state = addUsageAndSave(seat.ref, state, seat.usageCategory, discarded.usage);
-      },
     );
     return attempt.value;
   };

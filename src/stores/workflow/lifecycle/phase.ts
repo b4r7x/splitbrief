@@ -30,7 +30,6 @@ const RUNNER_HEARTBEAT_EVENT_TYPES = new Set<EngineEvent['type']>([
   'runner_call_started',
   'runner_call_heartbeat',
   'runner_call_activity',
-  'runner_call_usage',
   'runner_call_warning',
   'runner_call_completed',
   'runner_call_error',

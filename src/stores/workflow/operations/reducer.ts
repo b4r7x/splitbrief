@@ -191,11 +191,6 @@ function updateRunningOperations(state: OperationsState, event: EngineEvent): Op
           : operation,
       );
     }
-    case 'runner_call_usage':
-      return updateKnownOperation(state, event.callId, (operation) => ({
-        ...operation,
-        usage: event.usage,
-      }));
     case 'runner_call_warning':
       return updateKnownOperation(state, event.callId, (operation) =>
         operation.status === 'running' && showsWarningOnPrimarySurface(event.warning)
@@ -209,7 +204,6 @@ function updateRunningOperations(state: OperationsState, event: EngineEvent): Op
           endedAt: event.endedAt,
           durationMs: event.durationMs,
           reason: null,
-          usage: event.usage,
           partial: false,
         }),
       );
@@ -220,7 +214,6 @@ function updateRunningOperations(state: OperationsState, event: EngineEvent): Op
           endedAt: event.endedAt,
           durationMs: event.durationMs,
           reason: event.error.message,
-          usage: event.usage,
           partial: event.partial,
         }),
       );

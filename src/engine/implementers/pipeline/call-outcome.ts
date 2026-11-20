@@ -1,7 +1,5 @@
 import type { ImplementerOptions, ImplementerResult } from '../types.js';
 import type { RunnerCallResult } from '../../calls/types.js';
-import { runnerCallTokenDelta } from '../../calls/usage/normalize.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { BundleBaseline } from '../file-bundle/contract.js';
 import { toErrorMessage } from '../../../utils/format/errors.js';
 import type { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
@@ -37,8 +35,6 @@ type ReturnedCall = Readonly<{
  */
 export async function callOutcome(seat: CallSeat, call: ReturnedCall): Promise<ImplementerResult> {
   const { opts, callResult, implBuffer } = call;
-  const usage = runnerCallTokenDelta(callResult.usage);
-  const usageField = usage !== null ? { usage } : {};
   const outputText = callResult.text;
 
   const escaped = await checkoutEscape(seat.publisher, opts, call.checkoutDir, call.checkoutBefore);
@@ -57,7 +53,6 @@ export async function callOutcome(seat: CallSeat, call: ReturnedCall): Promise<I
         output: outputText,
         error,
         outcome: 'implementer-left-isolation',
-        ...usageField,
       };
     }
     seat.failTask(opts, changes);
@@ -66,7 +61,6 @@ export async function callOutcome(seat: CallSeat, call: ReturnedCall): Promise<I
       output: outputText,
       error: changes,
       outcome: 'checkout-changed',
-      ...usageField,
     };
   }
 
@@ -87,7 +81,6 @@ export async function callOutcome(seat: CallSeat, call: ReturnedCall): Promise<I
       ...(callResult.error.code === 'prompt-transport-error' && {
         transportError: callResult.error,
       }),
-      ...usageField,
     };
   }
 
@@ -101,10 +94,9 @@ export async function callOutcome(seat: CallSeat, call: ReturnedCall): Promise<I
       error: `Implementer is blocked: ${report.question}`,
       report,
       blocked: { question: report.question, filesNeeded: report.filesNeeded },
-      ...usageField,
     };
   }
-  return writeOutput(seat, call, outputText, usage, report);
+  return writeOutput(seat, call, outputText, report);
 }
 
 function directReport(
@@ -141,12 +133,10 @@ async function writeOutput(
   seat: CallSeat,
   call: ReturnedCall,
   outputText: string,
-  usage: TokenDelta | null,
   report: ImplementerReport | undefined,
 ): Promise<ImplementerResult> {
   const { opts, changeBaseline, startTime } = call;
   const { task, projectDir, config, phase } = opts;
-  const usageField = usage !== null ? { usage } : {};
 
   let noChange = false;
   try {
@@ -158,7 +148,6 @@ async function writeOutput(
         text: outputText,
         status: call.callResult.status,
         startTime,
-        usage,
       });
     }
 
@@ -172,7 +161,7 @@ async function writeOutput(
       });
       if (!result.success) {
         seat.failTask(opts, result.error);
-        return { success: false, output: outputText, error: result.error, ...usageField };
+        return { success: false, output: outputText, error: result.error };
       }
       if (phase) {
         seat.publisher?.publishDone({
@@ -187,7 +176,7 @@ async function writeOutput(
           kept: opts.continuation?.kept,
         });
       }
-      return { success: true, output: outputText, ...usageField };
+      return { success: true, output: outputText };
     }
 
     if (seat.detectChanges && changeBaseline) {
@@ -211,7 +200,6 @@ async function writeOutput(
           output: outputText,
           error: changes.output,
           outcome: 'no-staged-change',
-          ...usageField,
         };
       }
     }
@@ -222,7 +210,6 @@ async function writeOutput(
       success: false,
       output: outputText,
       error,
-      ...usageField,
     };
   }
 
@@ -242,6 +229,5 @@ async function writeOutput(
     success: true,
     output: outputText,
     ...(report !== undefined && { report }),
-    ...usageField,
   };
 }

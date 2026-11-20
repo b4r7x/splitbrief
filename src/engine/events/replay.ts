@@ -1,9 +1,12 @@
+import { RoutingReasonSchema } from '../../core/schemas/brief-execution.js';
 import type { SessionLogEventEntry } from '../../core/schemas/session-log.js';
 import { readSessionLogWithDiagnostics } from '../../core/sessions/log/reader.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
-import { isRecord } from '../../utils/type-guards.js';
+import { isRecord, narrowRecord } from '../../utils/type-guards.js';
 import { parseEngineEvent } from './schema.js';
 import type { EngineEvent, EngineEventOf } from './types.js';
+
+const RETIRED_ACCOUNTING_EVENTS = new Set(['cost_update', 'runner_call_usage']);
 
 export interface RunReplayDiagnostics {
   total: number;
@@ -61,7 +64,7 @@ export async function readRunEvents(
       }
       continue;
     }
-    if (entry.kind !== 'event') continue;
+    if (entry.kind !== 'event' || RETIRED_ACCOUNTING_EVENTS.has(entry.type)) continue;
     eventEntries += 1;
     const event = parsedEvents[index];
     if (event === null || event === undefined) {
@@ -112,11 +115,46 @@ export async function readRunEvents(
   };
 }
 
+export function normalizeLoggedTaskRouting(entry: SessionLogEventEntry): SessionLogEventEntry {
+  if (entry.type !== 'task_started' && entry.type !== 'task_tokens') return entry;
+  const {
+    estimatedTokens: _estimated,
+    untruncatedEstimatedTokens: _untruncated,
+    contextLength: _limit,
+    ...data
+  } = narrowRecord(entry.data) ?? {};
+  if (typeof data.routingReason === 'string') {
+    data.routingReason = RoutingReasonSchema.parse(data.routingReason);
+  }
+  return {
+    ...entry,
+    type: entry.type === 'task_tokens' ? 'task_settled' : entry.type,
+    data,
+  };
+}
+
 /** One logged line read back as the event that wrote it, timestamp quirks included. */
-export function engineEventFromLogEntry(entry: SessionLogEventEntry): EngineEvent | null {
+export function engineEventFromLogEntry(logged: SessionLogEventEntry): EngineEvent | null {
+  const entry = normalizeLoggedTaskRouting(logged);
+  if (RETIRED_ACCOUNTING_EVENTS.has(entry.type)) return null;
   const ts = entryTimestamp(entry.ts);
   if (ts === null) return null;
-  const data = isRecord(entry.data) ? entry.data : {};
+  const data = isRecord(entry.data) ? { ...entry.data } : {};
+  if (entry.type.startsWith('runner_call_')) {
+    delete data.usageBoundary;
+    const identity = narrowRecord(data.invocationIdentity);
+    if (identity !== null && identity.version === 1) {
+      const { billing: _billing, ...invocationIdentity } = identity;
+      data.invocationIdentity = invocationIdentity;
+    }
+    if (entry.type === 'runner_call_completed' || entry.type === 'runner_call_error') {
+      delete data.usage;
+    }
+  }
+  if (entry.type === 'task_review_needed') {
+    data.seat ??= narrowRecord(data.cost) ?? undefined;
+    delete data.cost;
+  }
   return parseEngineEvent({
     ...data,
     type: entry.type,

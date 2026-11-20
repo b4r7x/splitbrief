@@ -386,11 +386,11 @@ describe('CLI tool catalog', () => {
     ]);
   });
 
-  it('keeps auth and billing as one explicit channel', () => {
+  it('keeps one explicit authentication channel', () => {
     expect(defaultCliAuthChannel('codex')).toEqual({
       id: 'session',
       env: [],
-      billing: 'subscription-included',
+
       hostKeychainPlatforms: [],
     });
     expect(CLI_TOOL_CATALOG['claude-code'].auth.env).toEqual([]);
@@ -545,13 +545,12 @@ describe('CLI tool catalog', () => {
     ).not.toBe('compatible');
   });
 
-  it('names the subscription channel as the Claude Code default', () => {
+  it('names the session channel as the Claude Code default', () => {
     // The subscription the user already pays for is the planner default
     // everywhere; no platform resolves a fresh Claude Code runner to metered
     // billing. `.specify/memory/constitution.md` Principle I.
     expect(defaultCliAuthChannel('claude-code')).toMatchObject({
       id: 'session',
-      billing: 'subscription-included',
     });
   });
 });

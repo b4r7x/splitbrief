@@ -1,26 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { RunnerCallCounterCoverage } from '../../../../core/schemas/runner-call.js';
-import { createInitialState } from '../../../../core/state/machine.js';
-import { addUsage } from '../../../orchestrator/tokens.js';
+
 import type { CliProtocolEvent } from '../contract.js';
 import { parseAntigravityLine } from './protocol.js';
 
 const FIXTURES = join(import.meta.dirname, '../../../../../testing/fixtures/antigravity');
 
 type ToolUseEvent = Extract<CliProtocolEvent, { type: 'tool-use' }>;
-type UsageEvent = Extract<CliProtocolEvent, { type: 'usage' }>;
 type ResultEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
 // agy reports input, output, thinking and cache reads; it never reports cache writes.
-const AGY_COVERAGE: RunnerCallCounterCoverage = {
-  input: 'reported',
-  output: 'reported',
-  cacheRead: 'reported',
-  cacheCreate: 'missing',
-  reasoning: 'reported',
-};
 
 function fixtureEvents(name: string): readonly CliProtocolEvent[] {
   return readFileSync(join(FIXTURES, name), 'utf8')
@@ -31,10 +21,6 @@ function fixtureEvents(name: string): readonly CliProtocolEvent[] {
 
 function toolUses(events: readonly CliProtocolEvent[]): ToolUseEvent[] {
   return events.filter((event): event is ToolUseEvent => event.type === 'tool-use');
-}
-
-function usages(events: readonly CliProtocolEvent[]): UsageEvent[] {
-  return events.filter((event): event is UsageEvent => event.type === 'usage');
 }
 
 function terminalOf(events: readonly CliProtocolEvent[]): ResultEvent | undefined {
@@ -102,83 +88,20 @@ describe('parseAntigravityLine', () => {
     expect(events.at(-1)).toBe(terminal);
   });
 
-  it('reads the agy 1.3.1 stream: session, text delta, usage and a completed result', () => {
+  it('reads the agy 1.3.1 stream: session, text delta and a completed result', () => {
     expect(fixtureEvents('stream-json-1.3.1.ndjson')).toEqual([
       { type: 'session', nativeSessionId: 'df8f4fa7-413a-4ccd-b70f-908f44494fa6' },
       { type: 'text', channel: 'assistant', text: 'ok\n' },
       {
-        type: 'usage',
-        semantics: 'delta',
-        usage: {
-          inputTokens: 13888,
-          outputTokens: 1,
-          reasoningTokens: 84,
-          cacheReadTokens: 0,
-          counterCoverage: AGY_COVERAGE,
-        },
-      },
-      {
         type: 'result',
         status: 'completed',
         text: 'ok\n',
-        usage: {
-          inputTokens: 13888,
-          outputTokens: 1,
-          reasoningTokens: 84,
-          cacheReadTokens: 0,
-          counterCoverage: AGY_COVERAGE,
-        },
+
         nativeSessionId: 'df8f4fa7-413a-4ccd-b70f-908f44494fa6',
         error: null,
         partial: false,
       },
     ]);
-  });
-
-  it('books each response step as a usage delta whose sum is the result total', () => {
-    const events = fixtureEvents('stream-json.ndjson');
-    const deltas = usages(events);
-
-    expect(deltas).toHaveLength(4);
-    expect(deltas[0]).toEqual({
-      type: 'usage',
-      semantics: 'delta',
-      usage: {
-        inputTokens: 14018,
-        outputTokens: 76,
-        reasoningTokens: 674,
-        cacheReadTokens: 0,
-        counterCoverage: AGY_COVERAGE,
-      },
-    });
-    const summed = deltas.reduce(
-      (total, event) => ({
-        inputTokens: total.inputTokens + event.usage.inputTokens,
-        outputTokens: total.outputTokens + event.usage.outputTokens,
-        reasoningTokens: total.reasoningTokens + (event.usage.reasoningTokens ?? 0),
-        cacheReadTokens: total.cacheReadTokens + (event.usage.cacheReadTokens ?? 0),
-      }),
-      { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
-    );
-    expect(terminalOf(events)?.usage).toEqual({ ...summed, counterCoverage: AGY_COVERAGE });
-    expect(summed).toEqual({
-      inputTokens: 59864,
-      outputTokens: 272,
-      reasoningTokens: 999,
-      cacheReadTokens: 0,
-    });
-  });
-
-  it('says which counters agy reports, so the seat total of a new run is not a legacy record', () => {
-    const events = fixtureEvents('stream-json.ndjson');
-    for (const event of usages(events)) expect(event.usage.counterCoverage).toEqual(AGY_COVERAGE);
-    expect(terminalOf(events)?.usage?.counterCoverage).toEqual(AGY_COVERAGE);
-
-    const state = usages(events).reduce(
-      (current, event) => addUsage(current, 'implementer', event.usage),
-      createInitialState('feature'),
-    );
-    expect(state.tokenUsage.implementerCoverage).toEqual(AGY_COVERAGE);
   });
 
   it('carries a json-schema call structured_output on the completed terminal', () => {
@@ -217,7 +140,7 @@ describe('parseAntigravityLine', () => {
         type: 'result',
         status: 'failed',
         text: 'partial answer',
-        usage: null,
+
         nativeSessionId: 'conv-1',
         error: { code: 'antigravity-result-failed', message: 'Individual quota reached.' },
         partial: true,
@@ -304,7 +227,7 @@ describe('parseAntigravityLine', () => {
         type: 'result',
         status: 'failed',
         text: '',
-        usage: null,
+
         nativeSessionId: null,
         error: {
           code: 'malformed-antigravity-json',

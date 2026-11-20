@@ -9,10 +9,8 @@ import {
   RUNNER_CALL_ROLES,
   RUNNER_CALL_STATUSES,
   RunnerCallTextChannelSchema,
-  RunnerCallUsageContractSchema,
   RUNNER_CALL_WARNING_SEVERITIES,
   RUNNER_CALL_WARNING_SURFACES,
-  RUNNER_CALL_USAGE_SEMANTICS,
 } from '../../core/schemas/runner-call.js';
 import {
   PlannerArtifactTransportSchema,
@@ -20,7 +18,6 @@ import {
 } from '../../core/schemas/planner-artifact.js';
 import { InvocationIdentitySchema } from '../../core/schemas/invocation-identity.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
-import { UsageBoundarySchema } from '../../core/schemas/usage-evidence.js';
 import { USAGE_LIMIT_WINDOWS } from '../../core/recovery/usage-limit-step.js';
 
 export const UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH = 4096;
@@ -39,7 +36,6 @@ export const RunnerCallRoleSchema = z.enum(RUNNER_CALL_ROLES);
 export const RunnerCallBackendKindSchema = z.enum(RUNNER_CALL_BACKEND_KINDS);
 export const RunnerCallChannelSchema = z.enum(RUNNER_CALL_CHANNELS);
 export const RunnerCallStatusSchema = z.enum(RUNNER_CALL_STATUSES);
-export const RunnerCallUsageSemanticsSchema = z.enum(RUNNER_CALL_USAGE_SEMANTICS);
 export const RunnerCallWarningSeveritySchema = z.enum(RUNNER_CALL_WARNING_SEVERITIES);
 export const RunnerCallWarningSurfaceSchema = z.enum(RUNNER_CALL_WARNING_SURFACES);
 export const RunnerCallActivityStageSchema = z.enum(RUNNER_CALL_ACTIVITY_STAGES);
@@ -62,12 +58,9 @@ export const runnerCallContextFields = {
   sessionScope: PlannerSessionScopeSchema.optional(),
   invocationIdentity: InvocationIdentitySchema.optional(),
   taskId: TaskIdSchema.optional(),
-  usageBoundary: UsageBoundarySchema.optional(),
 } as const;
 
 export const RunnerCallContextSchema = z.strictObject(runnerCallContextFields);
-
-export const RunnerCallUsageSchema = RunnerCallUsageContractSchema;
 
 export const RunnerCallApiRuntimeStatusSchema = z.strictObject({
   phase: z.enum(['waiting-first-response', 'streaming', 'finished']),
@@ -146,7 +139,6 @@ export const runnerCallTerminalFields = {
   startedAt: timestampMillis,
   endedAt: timestampMillis,
   durationMs: nonnegativeInteger,
-  usage: RunnerCallUsageSchema.nullable(),
   nativeSessionId: nullableSessionId,
 } as const;
 
@@ -181,10 +173,6 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
   callEvent('call_tool_use_done', {
     channel: z.literal('tool'),
     toolUse: RunnerCallToolUseSchema,
-  }),
-  callEvent('call_usage', {
-    usage: RunnerCallUsageSchema,
-    semantics: RunnerCallUsageSemanticsSchema,
   }),
   callEvent('call_session_id', {
     nativeSessionId: z.string().min(1).max(512),
@@ -227,7 +215,6 @@ const runnerCallResultBaseFields = {
   endedAt: timestampMillis,
   durationMs: nonnegativeInteger,
   text: z.string(),
-  usage: RunnerCallUsageSchema.nullable(),
   nativeSessionId: nullableSessionId,
   toolUses: z.array(RunnerCallToolUseSchema),
   warnings: z.array(RunnerCallWarningSchema),

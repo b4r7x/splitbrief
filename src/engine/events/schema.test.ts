@@ -238,46 +238,6 @@ describe('parseEngineEvent', () => {
     expect(parseEngineEvent(debug)).toEqual(debug);
   });
 
-  it('accepts explicit cache fields on task token events', () => {
-    expect(
-      parseEngineEvent({
-        type: 'task_tokens',
-        ts: 1,
-        phase: 'implementing',
-        taskId: 'T001',
-        method: 'local',
-        implementerTokens: 0,
-        escalationTokens: 0,
-        implementerCacheReadTokens: 1_000_000,
-        implementerCacheCreateTokens: 0,
-        escalationCacheReadTokens: 0,
-        escalationCacheCreateTokens: 0,
-        retryCount: 0,
-      }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'task_tokens',
-        implementerCacheReadTokens: 1_000_000,
-      }),
-    );
-  });
-
-  it('rejects negative cache fields on task token events', () => {
-    expect(
-      parseEngineEvent({
-        type: 'task_tokens',
-        ts: 1,
-        phase: 'implementing',
-        taskId: 'T001',
-        method: 'local',
-        implementerTokens: 0,
-        escalationTokens: 0,
-        implementerCacheReadTokens: -1,
-        retryCount: 0,
-      }),
-    ).toBeNull();
-  });
-
   it('rejects unknown event types', () => {
     expect(parseEngineEvent({ type: 'not_real', ts: 1, phase: 'idle' })).toBeNull();
   });
@@ -346,7 +306,7 @@ describe('parseEngineEvent', () => {
       endedAt: 11,
       durationMs: 10,
       partial: false,
-      usage: null,
+
       nativeSessionId: null,
     } as const;
 

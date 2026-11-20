@@ -413,7 +413,7 @@ export const EASY_TIER: LiveTier = {
 export function easyAssertions({ summary, projectDir }: LiveRunResult): void {
   expect(summary.failed).toBe(0);
   expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
-  expect(summary.tokenUsage.implementerInput).toBeGreaterThan(0);
+
   expect(evaluateTsArtifact(join(projectDir, 'src/live-easy.ts'), 'mod.liveEasy')).toBe(
     'live-easy',
   );
@@ -437,8 +437,7 @@ export const HEAVY_TIER: LiveTier = {
 export function heavyAssertions({ summary }: LiveRunResult): void {
   expect(summary.failed).toBe(0);
   expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
-  expect(summary.tokenUsage.plannerInput).toBeGreaterThan(0);
-  expect(summary.tokenUsage.implementerInput).toBeGreaterThan(0);
+
   expect(summary.reviewPacket).toBeDefined();
   expect(typeof summary.reviewPacket?.finalReviewStatus).toBe('string');
   expect(summary.evidenceSummary).toBeDefined();
@@ -547,8 +546,7 @@ export type LiveManifestRow = Readonly<{
   reason?: string | undefined;
   totalTasks?: number | undefined;
   failedTasks?: number | undefined;
-  plannerInputTokens?: number | undefined;
-  implementerInputTokens?: number | undefined;
+
   /** Model calls per seat, so a run measures calls-per-feature across brief-granularity changes. */
   calls?: Readonly<{ planner: number; implementer: number; review: number }> | undefined;
   briefs?: readonly Readonly<{ id: string; durationMs: number }>[] | undefined;
@@ -638,11 +636,11 @@ export function releaseMatrixAssertions(
   const artifact = MATRIX_TIERS[tier].artifact;
   expect(summary.failed).toBe(0);
   expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
-  expect(summary.tokenUsage.implementerInput).toBeGreaterThan(0);
+
   expect(evaluateTsArtifact(join(projectDir, artifact.path), artifact.accessor)).toBe(
     artifact.expected,
   );
-  expect(summary.tokenUsage.plannerInput).toBeGreaterThan(0);
+
   expect(summary.reviewPacket).toBeDefined();
   expect(typeof summary.reviewPacket?.finalReviewStatus).toBe('string');
   for (const task of summary.taskBreakdown ?? []) {
@@ -697,8 +695,7 @@ export async function recordLiveMatrixRun(opts: {
         durationMs: Date.now() - opts.startedAt,
         totalTasks: summary?.totalTasks,
         failedTasks: summary?.failed,
-        plannerInputTokens: summary?.tokenUsage.plannerInput,
-        implementerInputTokens: summary?.tokenUsage.implementerInput,
+
         artifacts,
       },
       opts.root,

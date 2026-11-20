@@ -115,7 +115,6 @@ async function sentBack(opts: {
         prompts.push(prompt);
         return passingReviewVerdict(prompt);
       },
-      undefined,
       () => cannotConsult(),
     ),
   });

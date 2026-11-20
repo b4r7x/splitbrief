@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { PhaseSchema, ApproveLevelSchema, WorkflowModeSchema } from '../../schemas/enums.js';
 import { TaskSchema } from '../../schemas/task.js';
-import { TaskTokenUsageSchema, TokenUsageSchema } from '../../schemas/tokens.js';
+import { BriefExecutionSchema } from '../../schemas/brief-execution.js';
 import { RecoveryIssueSchema } from '../../schemas/recovery/schemas.js';
 import { DiscoveredValidationSchema } from '../../schemas/workflow/discovered-validation.js';
 import { QueuedMessageSchema } from '../../schemas/workflow/queue.js';
@@ -20,8 +20,7 @@ export const legacyWorkflowStateSchema = z
     tasks: z.array(TaskSchema),
     plannerSessionId: z.string().nullable().optional(),
     startedAt: z.string(),
-    tokenUsage: TokenUsageSchema,
-    taskBreakdowns: z.array(TaskTokenUsageSchema).optional(),
+    taskBreakdowns: z.array(BriefExecutionSchema).optional(),
     plannerTool: z.string().optional(),
     plannerModel: z.string().optional(),
     implementerTool: z.string().optional(),

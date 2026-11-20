@@ -30,9 +30,7 @@ export function factSpans(fact: CopyFact): readonly CopySegment[] {
 
 /**
  * The run in one row per stage: what the plan asked for, what the build did, what the review
- * said and what landed. It never says what the run cost: the view carries no money and no token
- * counts, and the record keeps them for the reader who opens `/usage`. Every brief, every file
- * and every earlier finding stay in `recordRows`.
+ * said and what landed. Every brief, file and earlier finding stays in `recordRows`.
  */
 export function runRows(view: SummaryView, form: SummaryForm = 'whole'): RunRow[] {
   const times = phaseTimes(view.phases, view.ran);

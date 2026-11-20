@@ -116,7 +116,6 @@ export async function runConsultAttempt(
     method: 'consulted',
     transitionType: 'VALIDATION_PASS',
     commitSuffix: 'after consult',
-    usageCategory: 'implementer',
     retryFailureFallback: 'Consult-guided retry failed to produce valid code',
     invokeRetry: makeImplementerRetryInvoker({
       context: ctx.context,

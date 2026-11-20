@@ -1,6 +1,5 @@
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { TaskId } from '../../../core/schemas/task.js';
-import type { TokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import { redactSecrets } from '../../../utils/redact/secrets.js';
 import { projectRunnerCallEvents } from '../../calls/event-projection.js';
@@ -85,10 +84,6 @@ export function publishPlannerStatus(
     ...(model !== undefined && { model }),
     ...(extra?.call !== undefined && { call: extra.call }),
   });
-}
-
-export function publishCostUpdate(ctx: BusContext, tokenUsage: TokenUsage): void {
-  ctx.bus.publish({ type: 'cost_update', ts: Date.now(), phase: ctx.phase, tokenUsage });
 }
 
 export function publishImplementerGenerateRunning(

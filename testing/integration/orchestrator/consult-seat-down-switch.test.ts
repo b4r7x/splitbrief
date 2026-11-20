@@ -118,7 +118,6 @@ function planSeat(turns: readonly ConsultTurn[], calls: string[], consultPrompts
   const typedCall = typedCallPlanAndConsult(
     () => planFromTasks([task]),
     () => guidanceConsult(GUIDANCE),
-    USAGE,
   );
   let consults = 0;
   return makePlanner({

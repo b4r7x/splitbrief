@@ -2,7 +2,6 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow/state.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow/changed-files.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
-import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { ImplementerReport } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type {
@@ -13,7 +12,6 @@ import type {
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
-import type { UsageCategory } from '../tokens.js';
 import type { IsolationRole } from '../isolation/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle/contract.js';
 import { HAND_BACK_MAX_CHARS } from '../../../core/pipeline-spec/ladder.js';
@@ -135,8 +133,6 @@ export type SuccessMethod = Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
 export type RetrySeatTarget = Readonly<{
   ref: WorkflowPersistenceContext & Pick<WorkflowContext, 'modelCache' | 'implementerProfile'>;
   state: WorkflowState;
-  /** The usage category the tokens of a discarded attempt are recorded under. */
-  usageCategory: UsageCategory;
 }>;
 
 export type RetryInvokeArgs = {
@@ -162,7 +158,6 @@ export type RetryInvokeArgs = {
   continuation?: ImplementerOptions['continuation'];
   /** Receives the call's output, the partial a stop of this call continues on. */
   recordOutput?: ((text: string) => void) | undefined;
-  /** The seat-trouble wrapper's target; the step supplies the live state and usage category. */
   seat: RetrySeatTarget;
 };
 
@@ -172,7 +167,6 @@ export type RetryInvokeResult = Pick<ImplementerResult, 'transportError'> & {
   /** The runner's final text, carried through from `ImplementerResult.output`. */
   output?: string | undefined;
   outcome?: RunnerFailureOutcomeState | undefined;
-  usage?: TokenDelta | null | undefined;
   applyResult?: BundleApplyResult | undefined;
   /** The runner config the invocation actually used; absent when it matches the step's config. */
   runner?: Config['implementer'] | undefined;
@@ -189,7 +183,6 @@ export type RetryStepOpts = {
   method: SuccessMethod;
   transitionType: 'VALIDATION_PASS';
   commitSuffix?: string | undefined;
-  usageCategory: UsageCategory;
   retryFailureFallback: string;
   isolationRole?: IsolationRole | undefined;
   resultTool?: string | undefined;

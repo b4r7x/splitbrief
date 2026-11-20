@@ -74,7 +74,6 @@ describe('the consult with REVIEW None', { timeout: 90_000 }, () => {
           consults += 1;
           return guidanceConsult('Use the from-retry marker from validate.mjs.');
         },
-        { inputTokens: 140, outputTokens: 90 },
       ),
     });
     const implementer = makeImplementer({

@@ -50,7 +50,7 @@ export function cliTool(
     roles: ['planner', 'implementer'],
     modelPolicy: 'optional',
     modelCapability: deriveModelCatalogCapability('optional', true),
-    billing: 'subscription-included',
+
     permissions: readyPermissions,
     status: { state: 'ready', remediation: null },
     available: true,

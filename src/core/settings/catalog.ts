@@ -46,8 +46,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'implementer.contextLength',
     label: 'Context length',
     section: 'Tuning',
-    description:
-      'Stop a brief that does not fit this many tokens (auto = no stop; the tool handles its own context)',
+    description: 'Stop a brief above this limit. With auto, the tool manages context.',
     kind: 'number',
     min: 1024,
     integer: true,

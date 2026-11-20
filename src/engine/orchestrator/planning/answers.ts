@@ -81,7 +81,9 @@ export async function settle(
           reason: 'plan-checks-failed',
           phase: state.phase,
           message: 'The plan failed its checks again after one repair.',
-          details: outcome.errors.map((error) => error.message),
+          details: outcome.errors.flatMap(({ message, detail }) =>
+            detail === undefined ? [message] : [message, detail],
+          ),
           createdAt: nowIso(),
         }),
       );

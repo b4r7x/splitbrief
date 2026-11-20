@@ -1,12 +1,12 @@
 import type { Task } from '../../../src/core/schemas/task.js';
-import type { TokenDelta } from '../../../src/core/schemas/tokens.js';
+
 import type { Implementer } from '../../../src/engine/implementers/types.js';
 
 export type FauxImplementStep = {
   success: boolean;
   output?: string;
   error?: string;
-  usage?: TokenDelta;
+
   delayMs?: number;
   throws?: Error;
 };
@@ -45,7 +45,6 @@ export function fauxImplementer(opts?: {
         success: script?.success ?? false,
         output: script?.output ?? '',
         error: script?.error,
-        usage: script?.usage,
       };
     },
 
@@ -58,7 +57,6 @@ export function fauxImplementer(opts?: {
         success: script?.success ?? false,
         output: script?.output ?? '',
         error: script?.error,
-        usage: script?.usage,
       };
     },
 

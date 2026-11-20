@@ -110,7 +110,7 @@ describe('compactResumeTranscript', () => {
               { role: 'user', text: 'Earlier work' },
               { role: 'assistant', text: 'before queue' },
             ]);
-            return { text: 'Before queue summarized', usage: null };
+            return { text: 'Before queue summarized' };
           },
           summarizeStructured: async (messages, opts) => {
             expect(messages).toEqual([{ role: 'assistant', text: 'before queue' }]);
@@ -118,7 +118,6 @@ describe('compactResumeTranscript', () => {
             return {
               text: 'Before queue summarized',
               structured: { ...structured, goal: 'Before queue summarized' },
-              usage: null,
             };
           },
         },
@@ -194,7 +193,7 @@ describe('compactResumeTranscript', () => {
           },
         },
       });
-      expect(result).toEqual({ summary: '', entriesRemoved: 0, usage: null });
+      expect(result).toEqual({ summary: '', entriesRemoved: 0 });
       expect((await buildResumeContext({ ref })).messages).toEqual([
         { role: 'assistant', content: 'working' },
       ]);
@@ -246,7 +245,6 @@ describe('compactResumeTranscript', () => {
           return {
             text: 'PELICAN-42 summarized',
             structured: { ...structured, goal: 'PELICAN-42 summarized' },
-            usage: null,
           };
         },
       },
@@ -281,7 +279,7 @@ describe('compactResumeTranscript', () => {
       planner: {
         summarize: async (messages) => {
           expect(messages).toEqual([{ role: 'user', text: message.text }]);
-          return { text: 'PELICAN-42 summarized', usage: null };
+          return { text: 'PELICAN-42 summarized' };
         },
       },
     });
@@ -364,7 +362,7 @@ describe('compactResumeTranscript', () => {
               { role: 'user', text: message.text },
               { role: 'assistant', text: 'heard' },
             ]);
-            return { text: 'PELICAN-42 summarized', usage: null };
+            return { text: 'PELICAN-42 summarized' };
           },
         },
       });
@@ -386,56 +384,11 @@ describe('compactResumeTranscript', () => {
               { role: 'user', text: 'PELICAN-42 summarized' },
               { role: 'user', text: later.text },
             ]);
-            return { text: 'PELICAN-42 and HERON-73 summarized', usage: null };
+            return { text: 'PELICAN-42 and HERON-73 summarized' };
           },
         },
       });
       expect(loadState(ref)?.resumeUserMessages).toEqual([]);
     },
   );
-
-  it('surfaces the planner usage from the summarization call', async () => {
-    const { projectDir, sessionId } = setupProject();
-    writeSessionLog(projectDir, sessionId, [
-      { kind: 'message', ts: 1000, role: 'user', phase: 'planning', text: 'first' },
-      { kind: 'message', ts: 1001, role: 'assistant', phase: 'planning', text: 'second' },
-      { kind: 'message', ts: 1002, role: 'user', phase: 'planning', text: 'third' },
-    ]);
-
-    const result = await compactResumeTranscript({
-      projectDir,
-      sessionId,
-      keepRecentCount: 1,
-      planner: {
-        summarize: async () => ({
-          text: '## Summary',
-          usage: { inputTokens: 1200, outputTokens: 90 },
-        }),
-      },
-    });
-
-    expect(result.summary).toBe('## Summary');
-    expect(result.usage).toEqual({ inputTokens: 1200, outputTokens: 90 });
-  });
-
-  it('returns null usage when nothing needs summarizing', async () => {
-    const { projectDir, sessionId } = setupProject();
-    writeSessionLog(projectDir, sessionId, [
-      { kind: 'message', ts: 1000, role: 'user', phase: 'planning', text: 'only message' },
-    ]);
-
-    const result = await compactResumeTranscript({
-      projectDir,
-      sessionId,
-      keepRecentCount: 10,
-      planner: {
-        summarize: async () => {
-          throw new Error('should not summarize');
-        },
-      },
-    });
-
-    expect(result.entriesRemoved).toBe(0);
-    expect(result.usage).toBeNull();
-  });
 });

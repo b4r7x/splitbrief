@@ -131,7 +131,7 @@ export function makePassingTask(id = 'T001') {
 
 export function makePassingPlanner(overrides?: Partial<Planner>): Planner {
   return makePlanner({
-    typedCall: typedCallFromTasks([makePassingTask()], { inputTokens: 100, outputTokens: 50 }),
+    typedCall: typedCallFromTasks([makePassingTask()]),
     ...overrides,
   });
 }

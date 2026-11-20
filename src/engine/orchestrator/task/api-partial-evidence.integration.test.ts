@@ -182,7 +182,7 @@ describe('partial evidence and resume', () => {
       state: implState.state,
       implState,
       taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-      tokensBefore: { ...implState.state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -311,7 +311,7 @@ describe('partial evidence and resume', () => {
       state: implState.state,
       implState,
       taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-      tokensBefore: { ...implState.state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -440,7 +440,7 @@ describe('a partial apply in the checkout mode', () => {
       state: implState.state,
       implState,
       taskStartSnapshot,
-      tokensBefore: { ...implState.state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
@@ -511,7 +511,7 @@ describe('a partial apply in the checkout mode', () => {
       state: implState.state,
       implState,
       taskStartSnapshot,
-      tokensBefore: { ...implState.state.tokenUsage },
+
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });

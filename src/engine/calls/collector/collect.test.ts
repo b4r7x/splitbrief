@@ -19,7 +19,7 @@ const completedTerminal = {
   durationMs: 19,
   partial: false,
   error: null,
-  usage: null,
+
   nativeSessionId: 'native-1',
 } as const;
 
@@ -28,7 +28,7 @@ const timeoutTerminal = {
   endedAt: 15,
   durationMs: 14,
   partial: true,
-  usage: null,
+
   nativeSessionId: null,
 } as const;
 
@@ -68,18 +68,7 @@ describe('collectRunnerCallResult', () => {
       { type: 'call_started', ...base },
       { type: 'call_text_delta', ...base, channel: 'assistant', text: 'hello ' },
       { type: 'call_text_delta', ...base, channel: 'assistant', text: 'world' },
-      {
-        type: 'call_usage',
-        ...base,
-        semantics: 'delta',
-        usage: { inputTokens: 5, outputTokens: 2 },
-      },
-      {
-        type: 'call_usage',
-        ...base,
-        semantics: 'final',
-        usage: { inputTokens: 8, outputTokens: 3 },
-      },
+
       { type: 'call_session_id', ...base, nativeSessionId: 'native-1' },
       {
         type: 'call_tool_use_done',
@@ -109,7 +98,7 @@ describe('collectRunnerCallResult', () => {
       endedAt: 20,
       durationMs: 19,
       text: 'hello world',
-      usage: { inputTokens: 8, outputTokens: 3 },
+
       nativeSessionId: 'native-1',
       toolUses: [{ id: 'tool-1', name: 'read_file', input: { path: 'a.ts' } }],
       warnings: [
@@ -345,7 +334,7 @@ describe('collectRunnerCallResult', () => {
         endedAt: 10,
         durationMs: 9,
         partial: true,
-        usage: null,
+
         nativeSessionId: null,
       },
     ]);

@@ -6,7 +6,6 @@ import {
   temperatureField,
   toOpenAIRequest,
   tokenLimitFields,
-  usageField,
   type OpenAIResponseFormat,
   type StreamClient,
 } from './request.js';
@@ -23,7 +22,7 @@ type MockStream = Awaited<ReturnType<MockClient['chat']['completions']['create']
 function emptyStopStream(): MockStream {
   const finishReason: 'stop' = 'stop';
   return (async function* () {
-    yield { choices: [{ delta: {}, finish_reason: finishReason }], usage: null };
+    yield { choices: [{ delta: {}, finish_reason: finishReason }] };
   })();
 }
 
@@ -49,7 +48,7 @@ async function captureBody(
 
 const reasoningPolicy: OpenAICompatPolicy = {
   tokenField: 'max_completion_tokens',
-  streamUsage: true,
+
   temperature: 'omit',
   effort: 'clamp-xhigh',
   reasoning: 'reasoning_effort',
@@ -59,7 +58,7 @@ const reasoningPolicy: OpenAICompatPolicy = {
 
 const samplingPolicy: OpenAICompatPolicy = {
   tokenField: 'max_tokens',
-  streamUsage: true,
+
   temperature: 'verbatim',
   effort: 'omit',
   reasoning: 'omit',
@@ -160,7 +159,7 @@ describe('streamCompletion request body', () => {
 describe('policy-driven request fields', () => {
   const syntheticPolicy: OpenAICompatPolicy = {
     tokenField: 'max_completion_tokens',
-    streamUsage: false,
+
     temperature: 'omit',
     effort: 'map-medium-to-high',
     reasoning: 'reasoning_effort',
@@ -173,7 +172,6 @@ describe('policy-driven request fields', () => {
     expect(temperatureField(syntheticPolicy, 0.2)).toEqual({});
     expect(effortField(syntheticPolicy, 'medium')).toEqual({ reasoning_effort: 'high' });
     expect(effortField(syntheticPolicy, 'xhigh')).toEqual({ reasoning_effort: 'xhigh' });
-    expect(usageField(syntheticPolicy)).toEqual({});
 
     expect(
       toOpenAIRequest({
@@ -182,7 +180,7 @@ describe('policy-driven request fields', () => {
         policy: syntheticPolicy,
         temperature: 0.2,
         stream: true,
-        stream_options: { include_usage: true },
+
         max_tokens: 512,
         reasoning_effort: 'medium',
       }),
@@ -209,7 +207,7 @@ describe('policy-driven request fields', () => {
         policy: unknownPolicy,
         temperature: 0.2,
         stream: true,
-        stream_options: { include_usage: true },
+
         max_tokens: 512,
         max_completion_tokens: 256,
         reasoning_effort: 'high',

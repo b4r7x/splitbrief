@@ -155,7 +155,7 @@ export function createApiImplementer(
         timeoutMs: impl.timeout,
         onCallEvent: opts.onCallEvent,
         callContext: opts.callContext,
-        invocationEvidence: apiInvocationEvidence(provider, model),
+        invocationEvidence: apiInvocationEvidence(provider),
       });
     },
 

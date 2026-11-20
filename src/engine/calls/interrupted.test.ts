@@ -56,7 +56,7 @@ function completed(callId: string, ts: number): EngineEvent {
     startedAt: 0,
     endedAt: ts,
     durationMs: ts,
-    usage: null,
+
     nativeSessionId: null,
   };
 }
@@ -90,7 +90,7 @@ describe('interruptedCallEvents', () => {
       startedAt: 30,
       endedAt: 45,
       durationMs: 15,
-      usage: null,
+
       endUnknown: true,
     });
     expect(closed[1]).toMatchObject({

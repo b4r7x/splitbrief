@@ -114,7 +114,6 @@ function rawRequestBody(
     model,
     messages: [{ role: 'user', content: CONFORMANCE_PROMPT }],
     stream: request.stream,
-    ...(request.includeUsage ? { stream_options: { include_usage: true } } : {}),
     ...token,
     ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
     ...(request.effort === undefined || request.effort === 'omit'

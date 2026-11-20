@@ -17,7 +17,7 @@ SPLITBRIEF orchestrates two coding tools. One plans and reviews, the other execu
 
 You choose the transport. SPLITBRIEF does not favour one over the other.
 
-The planner thinks, the implementer types, and the implementer never certifies its own work. The advantage compounds when the two tools come from different labs: a reviewer from a different model family does not inherit the implementer's blind spots. Lower spend follows from the split — it is a result, not the headline.
+The planner thinks, the implementer types, and the implementer never certifies its own work. The advantage compounds when the two tools come from different labs: a reviewer from a different model family does not inherit the implementer's blind spots.
 
 ---
 

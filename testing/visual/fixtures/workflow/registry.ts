@@ -1634,10 +1634,7 @@ const checkpointPredicates = [
       'T902 Register the bounded fixture projection',
     ),
   ],
-  [
-    checkpointId('task-rows-context-fit'),
-    includesTranscript('~24,310 of 32K context tokens (tight)', '~7,000 context tokens (tight)'),
-  ],
+  [checkpointId('task-rows-context-fit'), includesTranscript('T901', 'T902', 'T903')],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
   [checkpointId('review'), includesAll('Confirm with a reason', WORKFLOW_FIXTURE_TEXT.review)],
@@ -2517,6 +2514,7 @@ const checkpointPredicates = [
     checkpointId('recovery-checks-missing-program'),
     includesAll('mocha: command not found', 'Run the checks again'),
   ],
+  [checkpointId('recovery-context-window'), includesAll('The call needs 412,096 tokens', '32,768')],
   [
     checkpointId('recovery-checks-unrunnable'),
     includesAll('validation.render is not set', 'Run the checks again'),

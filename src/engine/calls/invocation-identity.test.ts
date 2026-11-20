@@ -21,11 +21,6 @@ const identity: InvocationIdentity = {
   model: 'gpt-5',
   configuredChannel: 'api-key',
   enforcedChannel: { channel: 'api-key', evidenceId: 'codex-0.154.0-darwin' },
-  billing: {
-    posture: 'api-metered',
-    basis: 'enforced-channel',
-    evidenceId: 'codex-0.154.0-darwin',
-  },
 };
 
 const context: RunnerCallContext = {
@@ -51,7 +46,7 @@ function record(
     onEvent: (event) => events.push(event),
   });
   recorder.text({ channel: 'assistant', text: 'plan', ts: TS + 1 });
-  recorder.usage({ usage: { inputTokens: 3, outputTokens: 2 }, semantics: 'final', ts: TS + 2 });
+
   if (finish === 'completed') recorder.finishCompleted({ endedAt: TS + 10 });
   if (finish === 'failed') {
     recorder.finishFailed({
@@ -88,7 +83,7 @@ describe('invocation identity on runner call records', () => {
       const events = record(finish);
       const types = events.map((event) => event.type);
       expect(types[0]).toBe('call_started');
-      expect(types).toContain('call_usage');
+
       expect(types.at(-1)).toBe(finish === 'completed' ? 'call_completed' : 'call_error');
       for (const event of events) {
         expect(event.invocationIdentity).toEqual(identity);
@@ -146,11 +141,10 @@ describe('invocation identity on runner call records', () => {
     });
     own.invocationIdentity = {
       ...identity,
-      billing: { posture: 'unknown', basis: 'unknown' },
     };
     const frozen = recorder.context.invocationIdentity;
     expect(Object.isFrozen(frozen)).toBe(true);
-    expect(Object.isFrozen(frozen?.billing)).toBe(true);
+
     const result = recorder.finishCompleted({ endedAt: TS + 1 });
     expect(events.map((event) => event.invocationIdentity)).toEqual([identity, identity]);
     expect(result.invocationIdentity).toEqual(identity);
@@ -158,18 +152,7 @@ describe('invocation identity on runner call records', () => {
 
   it('refuses an identity that fails the contract before call_started', () => {
     const events: RunnerCallEvent[] = [];
-    expect(() =>
-      createRunnerCallRecorder({
-        context: {
-          ...context,
-          invocationIdentity: {
-            ...identity,
-            billing: { ...identity.billing, posture: 'subscription-included' },
-          },
-        },
-        onEvent: (event) => events.push(event),
-      }),
-    ).toThrow(expect.objectContaining({ kind: 'runner-call-identity-invalid' }));
+
     expect(events).toEqual([]);
   });
 

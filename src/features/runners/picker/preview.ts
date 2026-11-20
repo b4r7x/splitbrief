@@ -4,7 +4,6 @@ import { formatModelName } from '../../../core/providers/model-display.js';
 import { localProviderStartup } from '../../../core/readiness/checks/availability.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool/catalog.js';
 import type { RouteAuthState } from '../../../core/runners/route-auth.js';
-import { billingWord } from '../../../core/runners/billing.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { providerOracleCommand } from '../../../engine/runners/cli-tools/probe/provider-oracle.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
@@ -50,12 +49,6 @@ function localConnectionPaneLines(item: PickerOption): string[] {
   return [...remedy, '⏎ opens its address, its token and a check.', '', 'Nothing is saved yet.'];
 }
 
-function postureLine(item: PickerOption): string {
-  return [billingWord(item.billing), ...formatPermissionLabels(item.permissions)]
-    .filter(Boolean)
-    .join(SOFT_SEP);
-}
-
 export function terminalPaneFor(
   item: PickerOption,
   catalog: Pick<PickerCatalog, 'plannerIdentity' | 'savedRunner'>,
@@ -88,7 +81,7 @@ export function terminalPaneFor(
         'Review uses the same',
         'tool and model:',
         { whole: catalog.plannerIdentity },
-        { whole: postureLine(item) },
+        { whole: formatPermissionLabels(item.permissions).join(SOFT_SEP) },
         '',
         'Pick a tool for a separate setup.',
       ],
@@ -186,7 +179,6 @@ export function resolvePreview(
       diagnostic: catalog.catalogDiagnostic,
       lane: catalog.catalogLane,
       capabilities: formatPermissionLabels(tool.permissions),
-      billing: tool.billing,
       budget: Math.max(0, ctx.bylineBudget - spent),
     });
   };
@@ -198,7 +190,6 @@ export function resolvePreview(
         label,
         id: '',
         axes: [],
-        contextLength: undefined,
         autoRow: { toolName: tool.displayName },
       });
     }
@@ -212,7 +203,6 @@ export function resolvePreview(
       label,
       id,
       axes: modelBylineAxes({ model, id, effortDraft: catalog.effortDraft }),
-      contextLength: model.contextLength,
       supportsToolCalls: model.supportsToolCalls,
     });
   };

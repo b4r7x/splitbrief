@@ -1,7 +1,5 @@
-import type { TokenDelta } from '../../../../core/schemas/tokens.js';
 import { error } from '../../../../utils/error.js';
 import { isRecord, optionalString } from '../../../../utils/type-guards.js';
-import { toTokenDelta } from '../../../calls/usage/normalize.js';
 import type { CliProtocolEvent } from '../contract.js';
 
 type CommandCodeTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
@@ -11,7 +9,6 @@ function protocolFailure(code: string, message: string): CommandCodeTerminalEven
     type: 'result',
     status: 'failed',
     text: '',
-    usage: null,
     nativeSessionId: null,
     error: { code, message },
     partial: false,
@@ -35,17 +32,9 @@ function parseEventRecord(record: Record<string, unknown>): readonly CliProtocol
 }
 
 function parseResultRecord(record: Record<string, unknown>): readonly CliProtocolEvent[] {
-  let usage: TokenDelta | null = null;
-  if (record.usage !== undefined) {
-    if (!isRecord(record.usage)) return [malformedRecord()];
-    usage = toTokenDelta(record.usage);
-    if (usage === null && Object.keys(record.usage).length > 0) return [malformedRecord()];
-  }
-
   const events: CliProtocolEvent[] = [];
   const sessionId = optionalString(record.sessionId, { trim: true, nonEmpty: true });
   if (sessionId !== undefined) events.push({ type: 'session', nativeSessionId: sessionId });
-  if (usage !== null) events.push({ type: 'usage', usage, semantics: 'final' });
 
   if (optionalString(record.subtype, { trim: true, nonEmpty: true }) !== 'success') {
     // A failed frame carries its reason in `error` as a plain string and omits
@@ -67,7 +56,6 @@ function parseResultRecord(record: Record<string, unknown>): readonly CliProtoco
     type: 'result',
     status: 'completed',
     text: optionalString(record.finalText) ?? '',
-    usage,
     nativeSessionId: sessionId ?? null,
     error: null,
     partial: false,

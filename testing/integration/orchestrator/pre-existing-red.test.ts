@@ -178,7 +178,6 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
       typedCall: typedCallPlanAndReview(
         () => ({ ...planFromTasks([task]), gate: ['npm test'] }),
         (prompt) => passingReviewVerdict(prompt),
-        { plan: { inputTokens: 140, outputTokens: 90 } },
       ),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nThe red validation stage was red before the run.',
@@ -315,7 +314,6 @@ describe('a brief check that runs the red suite of the project gate', { timeout:
       typedCall: typedCallPlanAndReview(
         () => ({ ...planFromTasks([task]), gate: ['node validate.mjs'] }),
         (prompt) => passingReviewVerdict(prompt),
-        { plan: { inputTokens: 140, outputTokens: 90 } },
         (prompt) => {
           consults.push(prompt);
           return answers.consult?.(consults.length) ?? cannotConsult();
