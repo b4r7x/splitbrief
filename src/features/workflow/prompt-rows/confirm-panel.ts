@@ -1,7 +1,6 @@
 import { planListRows } from '../../../components/list-row/plan.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { countNoun } from '../../../utils/pluralize.js';
 import { fitKeyLegend } from '../../../components/key-legend.js';
 import type { OverlayCard } from '../../../components/overlays/panel.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
@@ -75,50 +74,8 @@ export type ConfirmFrame =
 
 type ConfirmSubject = Pick<TieredApprovalRequest, 'actionClass' | 'actionDescription'>;
 
-export function ownConfirmFrame(
-  paintWidth: number,
-  request: ConfirmSubject,
-  composerLegend = '',
-  boxRows?: number,
-): ConfirmFrame {
-  const available = approvalBoxTextWidth(paintWidth);
-  const { actionClass, actionDescription } = request;
-  const options = getConfirmOptions(actionClass);
-  const text = [
-    approvalTitle(actionClass),
-    getApprovalConfirmLabel(actionClass),
-    composerLegend,
-    ...chooseLegends(actionClass),
-    ...formatApprovalActionDescription(actionDescription).split('\n'),
-    ...(options.some((option) => option.key === 'r')
-      ? [CONFIRM_QUESTION, CONFIRM_REASON_OPTIONAL, CONFIRM_REASON_HINTS]
-      : []),
-  ];
-  const widest = Math.max(
-    ...text.map(getTerminalCellWidth),
-    ...planListRows(options, { width: available }).map((line) => line.cells),
-  );
-  const frame = { width: Math.min(available, widest), kind: 'box' } as const;
-  if (boxRows === undefined || frame.width === available) return frame;
-  const fit = fitConfirmPanel({ ...request, frame, boxRows });
-  if (fit.subject.length === 0) {
-    const action = textOfFirstFact(request);
-    const combined = planListRows(
-      options.map((option) => ({ ...option, name: option.name + SOFT_SEP + action })),
-      { width: available },
-    );
-    return {
-      ...frame,
-      width: Math.min(available, Math.max(widest, ...combined.map((line) => line.cells + 1))),
-    };
-  }
-  const titleWithCount =
-    fit.hidden > 0 && fit.title && !fit.markRow
-      ? getTerminalCellWidth(
-          approvalTitle(actionClass) + '  … ' + countNoun(fit.hidden, 'more line'),
-        )
-      : 0;
-  return { ...frame, width: Math.min(available, Math.max(widest, titleWithCount)) };
+export function ownConfirmFrame(paintWidth: number): ConfirmFrame {
+  return { width: approvalBoxTextWidth(paintWidth), kind: 'box' };
 }
 
 export function textOfFirstFact(request: ConfirmSubject) {
@@ -372,8 +329,5 @@ export function getConfirmPanelRows(request: TieredApprovalRequest, frame: Confi
 
 export function getApprovalPromptRows(state: ApprovalPromptState, cols: number): number {
   if (state.status !== 'pending') return 0;
-  return getConfirmPanelRows(
-    state.request,
-    ownConfirmFrame(getChromeContentWidth(cols), state.request),
-  );
+  return getConfirmPanelRows(state.request, ownConfirmFrame(getChromeContentWidth(cols)));
 }

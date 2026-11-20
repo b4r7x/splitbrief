@@ -22,7 +22,6 @@ import {
   createReviewInputHandler,
   type ReviewInputEffects,
 } from '../../review-gate/input-handler.js';
-import { useWorkflowKeys } from '../use-keys.js';
 import { resolveInputHint } from '../../input-hints.js';
 import { continueRun } from '../../../../engine/orchestrator/run/continue.js';
 import {
@@ -212,8 +211,6 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     inputMode,
     openExternalEditor: deps?.reviewInput?.openExternalEditor,
   });
-
-  useWorkflowKeys({ isActive: !promptPending });
 
   const parked = stopStore.use((s) => s.phase === 'parked');
 

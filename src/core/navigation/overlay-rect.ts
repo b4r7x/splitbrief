@@ -25,21 +25,14 @@ export function overlayWidth(input: { cols: number; density: OverlayDensity }): 
   );
 }
 
-export function overlayGutterRows(rows: number): number {
-  return Math.min(2, Math.floor(Math.max(0, rows - 18) / 6));
-}
-
 export function overlayInnerRowCapacity(input: { rows: number; outerChromeRows: number }): number {
-  return Math.max(
-    0,
-    input.rows - overlayGutterRows(input.rows) - OVERLAY_FRAME_ROWS - input.outerChromeRows,
-  );
+  return Math.max(0, input.rows - OVERLAY_FRAME_ROWS - input.outerChromeRows);
 }
 
 export interface OverlayRect {
   width: number;
   innerWidth: number;
-  maxOuterRows: number;
+  height: number;
   innerRows: number;
 }
 
@@ -49,11 +42,10 @@ export function overlayRect(input: {
   density: OverlayDensity;
 }): OverlayRect {
   const width = overlayWidth(input);
-  const maxOuterRows = input.rows - overlayGutterRows(input.rows);
   return {
     width,
     innerWidth: width - OVERLAY_FRAME_COLS,
-    maxOuterRows,
-    innerRows: maxOuterRows - OVERLAY_FRAME_ROWS,
+    height: input.rows,
+    innerRows: overlayInnerRowCapacity({ rows: input.rows, outerChromeRows: 0 }),
   };
 }

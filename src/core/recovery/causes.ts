@@ -97,13 +97,17 @@ export function isPlannerCannotDetail(detail: string): boolean {
 /** What a halt of the planning phase says while a plan correction stands on the run. */
 export const PLAN_CORRECTION_GOES_AGAIN = 'Your plan correction goes again with this step.';
 
+export function isRecoveryQuestion(detail: string): boolean {
+  return detail.startsWith('Question: ');
+}
+
 /**
  * The line the halt asks the user to read: the planner's question, why it cannot be done, or the
  * plan correction that goes again.
  */
 export function isAskedDetail(detail: string): boolean {
   return (
-    detail.startsWith('Question: ') ||
+    isRecoveryQuestion(detail) ||
     isPlannerCannotDetail(detail) ||
     detail.startsWith(PLAN_CORRECTION_GOES_AGAIN)
   );

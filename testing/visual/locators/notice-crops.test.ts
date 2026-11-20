@@ -33,6 +33,37 @@ it('fills the save notice and keeps discovery above it', async () => {
   }
 });
 
+it('captures the centered preparation notice, its key legend and the composer', async () => {
+  const scenario = findVisualScenario('home-preparation-failed');
+  if (!scenario) throw new Error('Missing preparation scenario');
+  const checkpoint = requireCheckpoint(scenario);
+  const size = viewport({ cols: 120, rows: 40 });
+  const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+  try {
+    const grid = await createFrameGrid(scenario, size, await handle.waitForCheckpoint());
+    const locator = resolveElementLocator({
+      scenario,
+      checkpoint,
+      grid,
+      elementId: 'preparation-notice',
+    });
+    const crop = createCropCellGrid({ frame: grid, locator });
+    const lines = crop.cells.map((row) => row.map((cell) => cell.grapheme).join(''));
+    expect(lines[0]).toContain('try again');
+    const notice = lines[1] ?? '';
+    const composer = lines.findLast((line) => line.includes('╭')) ?? '';
+    expect(composer.trim()).toMatch(/^╭─+╮$/u);
+    expect(notice.trim().length).toBeLessThan(composer.trim().length);
+    for (const row of [lines[0] ?? '', notice]) {
+      const left = row.length - row.trimStart().length;
+      const right = row.length - row.trimEnd().length;
+      expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
+    }
+  } finally {
+    await handle.unmount();
+  }
+});
+
 it('keeps the frame around a shortened, clickable draft path', async () => {
   const scenario = findVisualScenario('home-draft-not-saved');
   if (!scenario) throw new Error('Missing draft scenario');

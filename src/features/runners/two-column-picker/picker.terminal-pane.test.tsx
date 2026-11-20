@@ -110,8 +110,8 @@ describe('TwoColumnPicker terminal rows', () => {
     expect(frame).toContain(TERMINAL_PANE.label);
     expect(frame).toContain(`⏎ ${TERMINAL_PANE.verb}`);
 
-    // Both columns match columnHeight (maxVisible: 18 + inner chrome: 4 = 22 rows at 40 terminal rows).
-    const COLUMN_HEIGHT = 22;
+    // The title, byline and key legend take six of the forty terminal rows.
+    const COLUMN_HEIGHT = 34;
     const lines = frame.split('\n');
     const opens = lines.findIndex((line) => line.includes('╭'));
     const cardClose = lines.findIndex((line) => line.includes('╯'));

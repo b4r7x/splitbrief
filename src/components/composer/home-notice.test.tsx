@@ -97,22 +97,22 @@ describe('Home notice above the composer', () => {
     forceUnicodeGlyphs();
   });
 
-  it('frames a three-row error on its own left edge, as wide as its widest row, at 120 columns', async () => {
+  it('centers a three-row error above the input, as wide as its widest row, at 120 columns', async () => {
     const ui = renderHome(120, 40, 108);
     await flushEffects();
     feedbackStore.setError(DRAFT_NOT_SAVED);
     await flushEffects();
 
     const rows = plainRows(ui.lastFrame());
-    const top = rows.findIndex((row) => row.startsWith('╭'));
-    expect(rows.slice(top, top + 5)).toEqual(
+    const top = rows.findIndex((row) => row.trimStart().startsWith('╭'));
+    expect(rows.slice(top, top + 5).map((row) => row.trimStart())).toEqual(
       framed(
         ['Draft not saved: permission denied ·', `${DRAFT_PATH} ·`, 'quit again leaves without it'],
         '✗ ',
         100,
       ),
     );
-    // The composer box sits directly under the notice, both on the column's left edge.
+    expect(rows[top]?.indexOf('╭')).toBe(4);
     expect(rows[top + 5]).toBe(`╭${'─'.repeat(106)}╮`);
   });
 
@@ -146,8 +146,8 @@ describe('Home notice above the composer', () => {
     await flushEffects();
 
     const rows = plainRows(ui.lastFrame());
-    const top = rows.findIndex((row) => row.startsWith('╭'));
-    expect(rows.slice(top, top + 5)).toEqual(
+    const top = rows.findIndex((row) => row.trimStart().startsWith('╭'));
+    expect(rows.slice(top, top + 5).map((row) => row.trimStart())).toEqual(
       framed(
         [
           'Draft not saved: permission denied ·',
@@ -168,8 +168,8 @@ describe('Home notice above the composer', () => {
     await flushEffects();
 
     const rows = plainRows(ui.lastFrame());
-    const first = rows.findIndex((row) => row.startsWith('▌'));
-    expect(rows.slice(first, first + 5)).toEqual(
+    const first = rows.findIndex((row) => row.trimStart().startsWith('▌'));
+    expect(rows.slice(first, first + 5).map((row) => row.trimStart())).toEqual(
       barred(
         [
           'SPLITBRIEF keeps the config it loaded before ·',
@@ -182,6 +182,7 @@ describe('Home notice above the composer', () => {
         54,
       ),
     );
+    expect(rows[first]?.indexOf('▌')).toBe(1);
     expect(rows[first + 5]).toBe(`╭${'─'.repeat(54)}╮`);
     expect(inputHeightStore.get().rows).toBe(8);
   });
@@ -193,7 +194,7 @@ describe('Home notice above the composer', () => {
     await flushEffects();
 
     const rows = plainRows(ui.lastFrame());
-    const first = rows.findIndex((row) => row.startsWith('▌'));
+    const first = rows.findIndex((row) => row.trimStart().startsWith('▌'));
     expect(rows.slice(first, first + 6)).toEqual([
       ...barred(
         [
@@ -217,8 +218,10 @@ describe('Home notice above the composer', () => {
     await flushEffects();
 
     const rows = plainRows(ui.lastFrame());
-    const top = rows.findIndex((row) => row.startsWith('╭'));
-    expect(rows.slice(top, top + 3)).toEqual(framed(['Copied the brief to the clipboard'], '', 37));
+    const top = rows.findIndex((row) => row.trimStart().startsWith('╭'));
+    expect(rows.slice(top, top + 3).map((row) => row.trimStart())).toEqual(
+      framed(['Copied the brief to the clipboard'], '', 37),
+    );
     const frame = ui.lastFrame() ?? '';
     expect(colorOf(frame, '╭')).toBe(inkOf(defaultTheme.border));
     expect(colorOf(frame, 'Copied the brief')).toBe(inkOf(defaultTheme.textDim));

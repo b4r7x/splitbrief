@@ -1127,7 +1127,7 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('uses the palette height as a maximum and brings the hint up under a single result', async () => {
+  it('keeps the full palette height and the bottom legend when only one result matches', async () => {
     const feature = 'zzzuniquesessionfeature';
     const session = makeSession({
       id: 'sess-height',
@@ -1143,7 +1143,7 @@ describe('CommandPaletteOverlay', () => {
     onTestFinished(instance.unmount);
     await flushEffects();
 
-    const browsing = panelHeight(instance.lastFrame() ?? '');
+    expect.soft(panelHeight(instance.lastFrame() ?? '')).toBe(40);
     expect(paletteResultRows(instance.lastFrame() ?? '').length).toBeGreaterThan(1);
 
     await write(instance, feature);
@@ -1151,12 +1151,10 @@ describe('CommandPaletteOverlay', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(paletteResultRows(frame)).toHaveLength(1);
-    expect.soft(panelHeight(frame)).toBeLessThan(browsing);
+    expect.soft(panelHeight(frame)).toBe(40);
     const lines = stripAnsiStyles(frame).split('\n');
-    const result = lines.findLastIndex((line) => line.includes(feature));
     const hint = lines.findIndex((line) => line.includes('↑↓ select'));
-    expect(result).toBeGreaterThanOrEqual(0);
-    expect(hint - result).toBe(2);
+    expect(hint).toBe(37);
   });
 });
 

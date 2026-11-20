@@ -142,6 +142,9 @@ describe('e2e: a command taken from the palette over a typed home draft', {
                 await shows('Type a command…');
                 child.write('crew');
                 await shows(/▌ \/crew/);
+                const lines = text().split('\n');
+                expect(lines[0]).toMatch(/╭─+╮/u);
+                expect(lines[viewport.rows - 1]).toMatch(/╰─+╯/u);
                 child.write('\r');
                 await shows(/│ › \/crew\s+│/);
               };

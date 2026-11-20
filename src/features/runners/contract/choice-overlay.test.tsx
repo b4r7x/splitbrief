@@ -162,12 +162,15 @@ describe('ContractChoiceOverlay', () => {
     const top = lines.findIndex((line) => line.includes('\u256D'));
     const bottom = lines.findLastIndex((line) => line.includes('\u2570'));
     expect(top).toBeGreaterThanOrEqual(0);
-    expect(bottom - top + 1).toBeLessThanOrEqual(18);
+    expect(bottom - top + 1).toBe(18);
 
     const hint = lines.findIndex((line) => line.includes('continue'));
-    // OverlayPanel already spaces the hint by one row, so the card block ends two rows above it.
-    expect(lines[hint - 1]?.replace(/[\u2502\u256D\u256E\u2570\u256F]/g, '').trim()).toBe('');
-    expect(lines[hint - 2]).toContain('written directly to your tree');
+    const lastCard = lines.findIndex((line) => line.includes('written directly to your tree'));
+    expect(lastCard).toBeGreaterThan(top);
+    expect(hint).toBeGreaterThan(lastCard + 1);
+    expect(
+      lines.slice(lastCard + 1, hint).every((line) => line.replaceAll('│', '').trim() === ''),
+    ).toBe(true);
     ui.unmount();
   });
 

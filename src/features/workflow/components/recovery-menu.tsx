@@ -2,6 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { ScrollableDocument } from '../../../components/scrollable-document/document.js';
 import { ListRows } from '../../../components/list-row/rows.js';
 import { planListRows } from '../../../components/list-row/plan.js';
 import { slashHandoffPending } from '../slash-handoff.js';
@@ -42,12 +43,27 @@ export function RecoveryMenu({
   const reviewNone = runViewStore.use((view) => view.reviewNone);
   const stepReadsNone = runViewStore.use(haltReadsNoWords);
   const actions = recoveryMenuRows(issue, briefFinished, reviewNone);
-  const lines = planListRows(actions, { width: Math.max(1, width - 4) });
+  const fullLines = planListRows(actions, { width: Math.max(1, width - 4) });
   const initialAction = Math.max(
     0,
     actions.findIndex((item) => item.badge !== undefined),
   );
-  const fit = fitRecoveryMenu({ issue, width, boxRows: clampedBoxRows, actionRows: lines.length });
+  const fit = fitRecoveryMenu({
+    issue,
+    width,
+    boxRows: clampedBoxRows,
+    actionLines: fullLines,
+  });
+
+  const question = fit.question;
+  const inline = question !== undefined && clampedBoxRows === 1;
+  const listWidth = inline ? Math.max(1, fit.innerWidth - question.width - 1) : fit.innerWidth;
+  const lines = inline
+    ? planListRows(
+        actions.map(({ key, name, nameParts }) => ({ key, name, nameParts })),
+        { width: listWidth },
+      )
+    : fullLines;
 
   // Every action resolves the prompt, `switch-seat` included: the driver answers it by opening
   // the seat's own picker on the offered tool, which is the one place a seat's tool and model are
@@ -89,24 +105,44 @@ export function RecoveryMenu({
             : [{ key: 'tab', verb: 'edit the words' }]),
       ])
     : `${composerLegend}${SOFT_SEP}${RESULT_MENU_UNFOCUSED_LEGEND}`;
+  const paged = question !== undefined && question.height < question.lines.length;
+  const panelLegend = focused && paged ? `pgup/pgdn question${SOFT_SEP}${legend}` : legend;
   return (
     <InlineMenuPanel
       width={width}
       height={clampedBoxRows}
       framed={fit.framed}
       focused={focused}
-      legend={fit.legend ? legend : undefined}
+      legend={fit.legend ? panelLegend : undefined}
     >
       {fit.summaryRows > 0 && (
         <PromptBody prompt={fit.summary} height={fit.summaryRows} width={fit.innerWidth} />
       )}
       {fit.divided && <Text color={t.border}>{'─'.repeat(fit.innerWidth)}</Text>}
-      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+      <Box flexDirection={inline ? 'row' : 'column'} flexGrow={1} overflow="hidden">
+        {question && question.height > 0 && (
+          <Box width={question.width} marginRight={inline ? 1 : 0} flexShrink={0}>
+            <ScrollableDocument
+              key={issue.id}
+              height={question.height}
+              isActive={focused && paged}
+              showScrollIndicators={false}
+              rows={question.lines.map((line, index) => ({
+                key: String(index),
+                node: (
+                  <Text color={t.textDim} wrap="truncate">
+                    {line}
+                  </Text>
+                ),
+              }))}
+            />
+          </Box>
+        )}
         <ListRows
           lines={lines}
           selectedIndex={selectedIndex}
           focused={focused}
-          width={fit.innerWidth}
+          width={listWidth}
           rowBudget={fit.listRows}
           getKey={(index) => actions[index]?.action ?? ''}
         />

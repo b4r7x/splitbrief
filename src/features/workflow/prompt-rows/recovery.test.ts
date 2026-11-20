@@ -47,10 +47,10 @@ describe('getRecoveryPromptRows', () => {
 
 describe('fitRecoveryMenu', () => {
   function fitMenu(issue: ReturnType<typeof makeRecoveryIssue>, width: number, boxRows: number) {
-    const actionRows = planListRows(recoveryMenuRows(issue, false, false), {
+    const actionLines = planListRows(recoveryMenuRows(issue, false, false), {
       width: Math.max(1, width - 4),
-    }).length;
-    return fitRecoveryMenu({ issue, width, boxRows, actionRows });
+    });
+    return fitRecoveryMenu({ issue, width, boxRows, actionLines });
   }
 
   function layout(width: number, boxRows: number) {
@@ -116,11 +116,8 @@ describe('fitRecoveryMenu', () => {
   });
 
   it.each([
-    ['Question: ', 4, 8],
-    ['Question: ', 4, 9],
     ['Planner said: ', 4, 8],
     ['Planner said: ', 4, 9],
-    ['Question: ', 3, 8],
     [PLAN_CORRECTION_GOES_AGAIN, 3, 8],
   ] as const)(
     'gives up the border before the row that starts with %s on a %i-action halt of %i rows',

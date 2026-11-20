@@ -119,8 +119,8 @@ export function Notice({ layout }: { layout: NoticeLayout }) {
         : text,
   }));
 
-  if (layout.form === 'framed') {
-    return (
+  const content =
+    layout.form === 'framed' ? (
       <Box
         flexDirection="column"
         borderStyle={borderStyleFor('round')}
@@ -136,20 +136,23 @@ export function Notice({ layout }: { layout: NoticeLayout }) {
           </Text>
         ))}
       </Box>
-    );
-  }
-  return (
-    <Box flexDirection="column" width={layout.width} flexShrink={0} backgroundColor={t.overlayBg}>
-      {rows.map((row) => (
-        <Text key={row.key} wrap="truncate-end">
-          <Text color={tone}>{`${glyph('noticeBarStart')} ${row.lead}`}</Text>
-          <Text color={ink}>
-            {row.text}
-            {' '.repeat(Math.max(0, textCells - row.cells))}
+    ) : (
+      <Box flexDirection="column" width={layout.width} flexShrink={0} backgroundColor={t.overlayBg}>
+        {rows.map((row) => (
+          <Text key={row.key} wrap="truncate-end">
+            <Text color={tone}>{`${glyph('noticeBarStart')} ${row.lead}`}</Text>
+            <Text color={ink}>
+              {row.text}
+              {' '.repeat(Math.max(0, textCells - row.cells))}
+            </Text>
+            <Text color={tone}>{` ${glyph('noticeBarEnd')}`}</Text>
           </Text>
-          <Text color={tone}>{` ${glyph('noticeBarEnd')}`}</Text>
-        </Text>
-      ))}
+        ))}
+      </Box>
+    );
+  return (
+    <Box width="100%" height={layout.height} flexShrink={0} justifyContent="center">
+      {content}
     </Box>
   );
 }

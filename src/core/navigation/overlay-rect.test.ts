@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   OVERLAY_DENSITIES,
   type OverlayDensity,
-  overlayGutterRows,
   overlayInnerRowCapacity,
   overlayRect,
   overlayWidth,
@@ -34,18 +33,12 @@ describe('overlayWidth', () => {
   });
 });
 
-describe('overlayGutterRows', () => {
-  it('adds breathing room as the terminal gets taller, capped at two rows', () => {
-    expect([18, 24, 30, 40].map(overlayGutterRows)).toEqual([0, 1, 2, 2]);
-  });
-});
-
 describe('overlayInnerRowCapacity', () => {
-  it('leaves room for the frame rows and the gutter around the panel', () => {
+  it('reserves only frame and content chrome rows', () => {
     const capacity = (rows: number) => overlayInnerRowCapacity({ rows, outerChromeRows: 4 });
 
     expect(capacity(10)).toBe(2);
-    expect(capacity(40)).toBe(30);
+    expect(capacity(40)).toBe(32);
     expect(capacity(4)).toBe(0);
   });
 });
@@ -55,8 +48,8 @@ describe('overlayRect', () => {
     expect(overlayRect({ cols: 120, rows: 40, density: 'roomy' })).toEqual({
       width: 84,
       innerWidth: 78,
-      maxOuterRows: 38,
-      innerRows: 34,
+      height: 40,
+      innerRows: 36,
     });
   });
 
@@ -64,7 +57,7 @@ describe('overlayRect', () => {
     expect(overlayRect({ cols: 60, rows: 18, density: 'wide' })).toEqual({
       width: 56,
       innerWidth: 50,
-      maxOuterRows: 18,
+      height: 18,
       innerRows: 14,
     });
   });

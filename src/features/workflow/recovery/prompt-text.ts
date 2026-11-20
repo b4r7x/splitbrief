@@ -1,5 +1,5 @@
 import { formatTruncatedList } from '../../../core/formatting.js';
-import { isAskedDetail } from '../../../core/recovery/causes.js';
+import { isAskedDetail, isRecoveryQuestion } from '../../../core/recovery/causes.js';
 import { formatResetAt, stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -50,11 +50,9 @@ export function formatMiddotList(values: string[], max: number): string {
 }
 
 /**
- * The issue and its facts at the panel's text width; the menu under them holds the actions.
- * `askedRows` puts the asked row before the task and its files, on at most that many rows, for a
- * panel too short to reach it. A cut asked row with no fact after it takes the blank row under the
- * headline as one more row of its own. When a fact follows it, the blank row stays, and the panel's
- * clip drops that row first.
+ * On a short panel the question or planner reason moves ahead of the task and files.
+ * A question stays whole. A reason uses the given row budget and can take the blank
+ * row under the headline when it is the only fact.
  */
 export function recoveryPromptSummaryRows(
   issue: RecoveryIssue,
@@ -96,6 +94,7 @@ export function recoveryPromptSummaryRows(
  */
 function fitAskedDetail(detail: string, room: number, rows: number): string {
   const text = oneLineDisplayText(detail);
+  if (isRecoveryQuestion(detail)) return text;
   let cells = room * rows;
   while (cells > 1) {
     const fitted = truncateTerminalDisplayText(text, cells);

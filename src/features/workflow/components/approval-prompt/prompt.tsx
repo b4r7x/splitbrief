@@ -103,7 +103,7 @@ export function ApprovalPrompt({
     cardFrame !== undefined && confirmCardFits(state.request, cardFrame, clampedBoxRows ?? rows)
       ? cardFrame
       : // The box can use the page's whole width when the facts need it.
-        ownConfirmFrame(paintWidth, state.request, composerLegend, clampedBoxRows ?? rows);
+        ownConfirmFrame(paintWidth);
 
   return (
     <ConfirmApprovalPrompt

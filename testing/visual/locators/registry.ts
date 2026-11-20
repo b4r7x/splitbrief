@@ -97,10 +97,9 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     rowsBelow: 4,
   },
   'home:preparation-notice': {
-    kind: 'marker',
-    description: 'Start blocker above the composer',
-    rowsAbove: 1,
-    rowsBelow: 4,
+    kind: 'layout',
+    description: 'Start blocker with its keys and composer',
+    resolve: resolveHomeComposer,
   },
   'workflow:preparation-panel': {
     kind: 'layout',
@@ -176,7 +175,8 @@ function resolveHomeComposer(context: LocatorContext): CellRect {
     throw new Error('No home composer box is painted above the bottom margin');
   }
   let top = boxTop - 1;
-  const edge = (y: number) => cellAt(context.grid, x, y);
+  const noticeX = context.grid.cells[top]?.findIndex((cell) => cell.grapheme.trim() !== '');
+  const edge = (y: number) => cellAt(context.grid, noticeX ?? -1, y);
   if (edge(top) === '╰' || edge(top) === '+') {
     while (top > 0 && (edge(top - 1) === '│' || edge(top - 1) === '|')) top--;
     if (edge(top - 1) === '╭' || edge(top - 1) === '+') top--;

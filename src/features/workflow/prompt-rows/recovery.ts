@@ -1,14 +1,16 @@
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
-import { isAskedDetail } from '../../../core/recovery/causes.js';
+import { isAskedDetail, isRecoveryQuestion } from '../../../core/recovery/causes.js';
 import {
   clipPromptBodyRows,
   countPromptBodyRows,
   promptBodyRows,
   type PromptBodyLine,
 } from './body.js';
-import { recoveryPromptSummaryRows } from '../recovery/prompt-text.js';
+import { recoveryPromptSummaryRows, type PromptRow } from '../recovery/prompt-text.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import { planListRows } from '../../../components/list-row/plan.js';
+import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
+import { listRowLead } from '../../../components/list-row/lead.js';
+import { planListRows, type ListLine } from '../../../components/list-row/plan.js';
 import { recoveryMenuRows } from '../recovery/menu-label.js';
 import { runViewStore } from '../../../stores/workflow/run-view.js';
 import { selectTaskListView } from '../../../core/run-view/briefs.js';
@@ -46,28 +48,29 @@ export function getRecoveryPromptRows(issue: RecoveryIssue, cols: number): numbe
   );
 }
 
-/**
- * What a recovery menu of `width` columns keeps in a box of `boxRows`. A short panel keeps its
- * content before its chrome: the selected action, the headline (it carries the cut mark when it is
- * the only summary row), one mark row that names every side hiding actions, and the legend. Then
- * the border and the other actions: every action shows before a second summary row does. Then a
- * second summary row for the mark, the divider, and the rest of the summary, in that order. A cut
- * that would hide the row the halt asks the user to read puts that row first, whole while it fits,
- * and the rows after it give way; the summary then takes the divider's row. When the border leaves
- * no room for that row, the border gives way before it. The list scrolls, so every action stays
- * reachable.
- */
+interface RecoveryMenuFit {
+  innerWidth: number;
+  framed: boolean;
+  summary: PromptRow[];
+  summaryRows: number;
+  legend: boolean;
+  divided: boolean;
+  listRows: number;
+  question?: { lines: string[]; height: number; width: number };
+}
+
+/** Keep the question readable and at least the selected action in view on a short terminal. */
 export function fitRecoveryMenu(input: {
   issue: RecoveryIssue;
   width: number;
   boxRows: number;
-  actionRows: number;
-}) {
+  actionLines: ListLine[];
+}): RecoveryMenuFit {
   const { issue, width, boxRows } = input;
   const innerWidth = Math.max(MIN_TEXT_WIDTH, width - RECOVERY_PROMPT_HORIZONTAL_CHROME);
   const fullSummary = recoveryPromptSummaryRows(issue, innerWidth);
   const fullRows = promptBodyRows(fullSummary, innerWidth);
-  const actionCount = Math.max(input.actionRows, 1);
+  const actionCount = Math.max(input.actionLines.length, 1);
   const listFloor = Math.min(2, actionCount);
   const askedRow = (row: PromptBodyLine): boolean =>
     row.kind === 'facts-line' && isAskedDetail(row.text.trimStart());
@@ -106,10 +109,58 @@ export function fitRecoveryMenu(input: {
       listRows: innerHeight - summaryRows - (legend ? 1 : 0) - (divided ? 1 : 0),
     };
   };
-  const showsAsked = (menu: ReturnType<typeof fitted>): boolean =>
-    clipPromptBodyRows(promptBodyRows(menu.summary, innerWidth), menu.summaryRows).some(askedRow);
-  const menu = fitted(boxRows >= 1 + listFloor + 1 + RECOVERY_PROMPT_BORDER_ROWS);
-  if (!menu.framed || !fullRows.some(askedRow) || showsAsked(menu)) return menu;
-  const bare = fitted(false);
-  return showsAsked(bare) ? bare : menu;
+  const visibleSummary = (menu: RecoveryMenuFit) =>
+    clipPromptBodyRows(promptBodyRows(menu.summary, innerWidth), menu.summaryRows);
+  let menu = fitted(boxRows >= 1 + listFloor + 1 + RECOVERY_PROMPT_BORDER_ROWS);
+  if (menu.framed && fullRows.some(askedRow) && !visibleSummary(menu).some(askedRow)) {
+    const bare = fitted(false);
+    if (visibleSummary(bare).some(askedRow)) menu = bare;
+  }
+  if (menu.summaryRows >= fullRows.length) return menu;
+  const questions =
+    issue.reason === 'plan-questions-exhausted'
+      ? issue.details
+      : issue.details.filter(isRecoveryQuestion);
+  const headline = fullSummary[0];
+  if (!questions.length || !headline) return menu;
+  // A one-row panel puts the selected action beside the question.
+  const inline = boxRows === 1;
+  const actionWidth = inline
+    ? Math.min(
+        Math.ceil(innerWidth / 2),
+        Math.max(
+          1,
+          ...input.actionLines.map((line) =>
+            getTerminalCellWidth(listRowLead('active') + line.keyCell + line.name),
+          ),
+        ),
+      )
+    : 0;
+  const questionWidth = inline ? Math.max(1, innerWidth - actionWidth - 1) : innerWidth;
+  const questionRows = promptBodyRows(
+    [headline, { kind: 'facts', items: questions, grid: false }],
+    questionWidth,
+  ).flatMap((row) => (row.kind === 'facts-line' ? [row.text] : []));
+  const shown = visibleSummary(menu).flatMap((row) =>
+    row.kind === 'facts-line' ? [row.text] : [],
+  );
+  if (shown.join('\n').includes(questionRows.join('\n'))) return menu;
+
+  const paged = questionRows.length > boxRows - 1;
+  const legend = boxRows >= (paged ? 3 : questionRows.length + 2);
+  const summaryRows = Number(boxRows >= (paged ? 5 : questionRows.length + 3));
+  const spare = boxRows - summaryRows - Number(legend);
+  const framed = spare >= questionRows.length + listFloor + RECOVERY_PROMPT_BORDER_ROWS;
+  const available = spare - (framed ? RECOVERY_PROMPT_BORDER_ROWS : 0);
+  const height = inline ? 1 : Math.max(0, Math.min(questionRows.length, available - 1));
+  return {
+    innerWidth,
+    framed,
+    summary: [headline],
+    summaryRows,
+    legend,
+    divided: false,
+    listRows: Math.max(1, available - height),
+    question: { lines: questionRows, height, width: questionWidth },
+  };
 }

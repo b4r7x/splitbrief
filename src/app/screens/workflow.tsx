@@ -25,6 +25,7 @@ import {
   usePanelKeys,
   usePanels,
 } from '../../features/workflow/hooks/workflow-screen/use-panels.js';
+import { useWorkflowKeys } from '../../features/workflow/hooks/use-keys.js';
 import { useAtRestByline } from '../../features/workflow/hooks/workflow-screen/use-at-rest-byline.js';
 import { closedBlockKey } from '../../features/workflow/closed/block.js';
 import { transcriptTail } from '../../features/workflow/conversation-rows/blocks/tail.js';
@@ -189,6 +190,9 @@ export function WorkflowScreen({
     halted: recoveryIssue !== null,
     atRest: model.atRestRecord !== undefined,
     parked,
+  });
+  useWorkflowKeys({
+    isActive: !model.promptPending && !(panels.recovery.focused && layout.contentHeight === 0),
   });
   const covered = useSessionPreparationTakesPage();
   const retryPreparation = () => observePreparationCleanup(retrySessionPreparation());

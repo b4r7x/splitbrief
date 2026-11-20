@@ -7,14 +7,15 @@
 - Setup and the tool picker show "Needs sign-in" when a tool needs you to sign in.
 - Review packets list BUILD routes in settlement order, including briefs a validation hook skips after BUILD runs, and explain routing refusals.
 - The transcript shows each plan’s goal, brief count, criteria count and file links together. Older runs show one link for each planning document.
-- Menu shortcuts stay visible while you type. Command lists align names and descriptions. Filtered palettes, completions and confirmations fit their contents. Page Up and Page Down reveal the rest of a long confirmation.
-- Messages above the input now look the same on Home, on the run screen, in Settings, in Setup and in the tool picker: a small box in the colour of the message, with ✗ for a failure and ⚠ for a refusal or a step you need to take. A long message drops the box for coloured edges before it is cut.
+- Menu shortcuts stay visible while you type. Command lists align names and descriptions. Overlays keep their full height as you filter. Command suggestions and confirmation panels span the full width of the input. Page Up and Page Down reveal the rest of a long confirmation.
+- Messages are centered above the input. They now look the same on Home, on the run screen, in Settings, in Setup and in the tool picker: a small box in the colour of the message, with ✗ for a failure and ⚠ for a refusal or a step you need to take. A long message drops the box for coloured edges before it is cut.
 - A long path in a message keeps its first folder and its file name instead of breaking in the middle of a folder name.
 - "Tool check failed" and "Tools not checked" now show as that message above the input on Home, at every terminal size. While the first check runs, Home shows only "Checking your tools…" in a small box.
 - On a small terminal Home shows a one-row `splitbrief` heading where the logo does not fit, and the Recent sessions list uses it when that shows more sessions.
 
 ### Fixed
 
+- Short recovery panels keep the question in view as you scroll through the actions. Page Up and Page Down let you read a question that spans several screens.
 - Recovery shows the field that needs attention, names the checkout when a tool writes outside it, and keeps the original reason when you skip a brief.
 - The run screen shows which work stopped and which briefs belong to an earlier plan. Command suggestions cover the action panel, and a run with no changed files offers **Close run**.
 

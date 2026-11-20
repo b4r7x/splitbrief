@@ -180,7 +180,7 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     : formatKeyHints([SELECT_HINT, CLOSE_HINT]);
 
   return (
-    <OverlayPanel anchorTop hint={hint} density={PANEL_DENSITY}>
+    <OverlayPanel hint={hint} density={PANEL_DENSITY}>
       <Box marginBottom={1}>
         <FilterInput filter={query} placeholder="Type a command…" />
       </Box>

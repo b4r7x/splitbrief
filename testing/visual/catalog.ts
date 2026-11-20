@@ -4979,7 +4979,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery-plan-questions-long',
         title: 'Plan questions halt with 8 questions and the stored plan correction',
         kind: 'question',
-        marker: 'Your plan correction goes again',
+        marker: 'Which store keeps the greeting?',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -5282,12 +5282,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-long-question-draft',
-      title: 'Workflow · a two-row draft keeps the question and every action on a short panel',
+      title: 'Workflow · a long question above a two-row draft',
       surface: screenSurface('workflow'),
       viewports: [viewport({ cols: 60, rows: 18 })],
       checkpoint: {
         id: 'long-question-draft',
-        title: 'Recovery menu that keeps the question and every action over a two-row draft',
+        title: 'Recovery menu with the whole question over a two-row draft',
         kind: 'question',
         marker: 'Question: Projection',
       },
@@ -5299,7 +5299,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-masked-question',
-      title: 'Workflow · a short panel cuts a question inside a masked value',
+      title: 'Workflow · a short panel keeps the whole question with a masked value',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'masked-question',

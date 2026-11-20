@@ -4200,7 +4200,7 @@ const longQuestionRecoveryProjection: WorkflowFixtureProjection = {
 
 const OPEN_QUOTE_ERROR = `cannot find module ./foo and the build stopped ${'with more words here '.repeat(4).trimEnd()}`;
 
-/** A question that quotes a header, cut inside the masked value on a short panel. */
+/** A question that quotes a header whose value must stay masked when the question wraps. */
 const maskedQuestionRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-recovery-masked-question'),
   feature: WORKFLOW_FEATURE,

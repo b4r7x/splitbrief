@@ -76,7 +76,7 @@ export function SettingsOverlay() {
     maxRows: PANEL_NOTICE_ROWS,
   });
   const listBudget = availableRows({
-    rows: rect.maxOuterRows,
+    rows: rect.height,
     chromeRows:
       BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0) + panelNoticeRows(notice),
   });

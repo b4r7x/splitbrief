@@ -342,8 +342,10 @@ describe('SetupScreen', () => {
       }
       const rows = contentRows(ui);
       // The notice opens on its bar, or on its frame one row above the words.
-      const noticeIndex = rows.findIndex((row) => /^[|│▌] Saved /u.test(row));
-      const noticeTop = /^[+╭]/u.test(rows[noticeIndex - 1] ?? '') ? noticeIndex - 1 : noticeIndex;
+      const noticeIndex = rows.findIndex((row) => /^[|│▌] Saved /u.test(row.trimStart()));
+      const noticeTop = /^[+╭]/u.test(rows[noticeIndex - 1]?.trimStart() ?? '')
+        ? noticeIndex - 1
+        : noticeIndex;
       expect(noticeTop).toBeGreaterThan(0);
       expect(rows[noticeTop - 1]?.replace(/[|│]/gu, '').trim()).toBe('');
       expect(feedbackStore.get().message).toBe(

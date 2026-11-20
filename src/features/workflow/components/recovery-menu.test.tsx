@@ -770,32 +770,24 @@ it('wraps the whole planner reason of a review stuck halt at 80x24', async () =>
   ui.unmount();
 });
 
-it('cuts a question taller than the panel with … and keeps the action rows and the mark', async () => {
+it.each([8, 9, 10])('keeps the whole question in %i rows as the actions scroll', async (height) => {
   const asked = `Question: ${LONG_ASKED_TEXT}`;
   const issue = askedIssue(asked, FOUR_ACTIONS, 'retry-same-worker');
-  const ui = renderFeature(
-    <RecoveryMenu
-      issue={issue}
-      width={getChromeContentWidth(60)}
-      clampedBoxRows={panelBoxRows(18)}
-      focused
-      onFocusChange={() => {}}
-      onResolve={() => {}}
-    />,
-  );
-  await flushEffects();
-  const rows = frameRows(ui);
-  const headline = rows.findIndex((row) => row.includes('Needs you'));
-  expect(headline, rows.join('\n')).toBeGreaterThan(-1);
-  expect(rows).toHaveLength(panelBoxRows(18));
-  expect(rows[headline + 1], rows.join('\n')).toContain('Question: greet.ts needs');
-  expect(rows[headline + 1], rows.join('\n')).toContain('…');
-  expect(compact(asked).startsWith(compact(shownQuestion(rows)))).toBe(true);
-  expect(shownQuestion(rows).length).toBeGreaterThan(40);
-  expect(rows[headline + 2], rows.join('\n')).toMatch(/… \d+ more lines/);
-  for (const action of FOUR_ACTIONS) expect(actionShown(rows, issue, action)).toBe(true);
-  expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
-  ui.unmount();
+  const ui = mountBox(issue, height);
+  try {
+    await flushEffects();
+    expect(actionShown(frameRows(ui), issue, 'end-run')).toBe(false);
+    for (const action of FOUR_ACTIONS) {
+      const rows = frameRows(ui);
+      expect(rows).toHaveLength(height);
+      expect(compact(panelText(rows))).toContain(compact(asked));
+      expect(actionShown(rows, issue, action)).toBe(true);
+      ui.stdin.write('\u001b[B');
+      await flushEffects();
+    }
+  } finally {
+    ui.unmount();
+  }
 });
 
 it('gives the blank row to a cut reason at 60x18', async () => {
@@ -865,7 +857,7 @@ it.each([
   ["'api_token': 'abc'", 15, SINGLE_QUOTE],
   ['"token": "abcdefgh hijk"', 20, PLANNER_QUOTE],
 ])(
-  'keeps a cut question on a short panel when the panel masks %s at filler %i above %s',
+  'keeps the whole question on a short panel when the panel masks %s at filler %i above %s',
   async (value, filler, below) => {
     const words = 'Should we keep this? '.repeat(2).slice(0, filler);
     const ui = mountBox(
@@ -878,7 +870,7 @@ it.each([
     );
     await flushEffects();
     const rows = frameRows(ui);
-    expect(rows.find((row) => row.includes('Question: ')) ?? '', rows.join('\n')).toContain('…');
+    expect(compact(panelText(rows))).toContain(compact('then more words '.repeat(10)));
     expect(rows.join('\n')).not.toContain('hunter2');
     ui.unmount();
   },
@@ -1037,12 +1029,6 @@ function panelText(rows: readonly string[]): string {
   return rows.map((row) => row.replace(/^[│|] */, '').replace(/ *[│|]$/, '')).join(' ');
 }
 
-/** The question as the panel shows it, up to the `…` that cuts it or the task row after it. */
-function shownQuestion(rows: readonly string[]): string {
-  const text = panelText(rows);
-  return text.slice(text.indexOf('Question: ')).split(/…|Brief T001/)[0] ?? '';
-}
-
 function compact(text: string): string {
   return text.replace(/\s/g, '');
 }
@@ -1174,9 +1160,7 @@ it('names Continue in the typed-correction legend under REVIEW None', async () =
 });
 
 it.each([
-  ['Question: ', 10, FOUR_ACTIONS],
   ['Planner said: ', 10, FOUR_ACTIONS],
-  ['Question: ', 9, THREE_ACTIONS],
   ['Planner said: ', 9, THREE_ACTIONS],
 ] as const)(
   'keeps %s on a panel of %i rows with no divider once every action has its row, and marks the rest',
@@ -1200,11 +1184,8 @@ it.each([
 );
 
 it.each([
-  ['Question: ', 4, 8],
-  ['Question: ', 4, 9],
   ['Planner said: ', 4, 8],
   ['Planner said: ', 4, 9],
-  ['Question: ', 3, 8],
 ] as const)(
   'keeps %s and each of %i actions on a panel of %i rows that gives up its border for them',
   async (label, count, box) => {
@@ -1287,8 +1268,7 @@ it.each([
   );
   await flushEffects();
   const rows = frameRows(ui);
-  expect(compact(shownQuestion(rows)).length).toBeGreaterThan(5 * 60);
-  expect(compact(asked).startsWith(compact(shownQuestion(rows)))).toBe(true);
+  expect(compact(panelText(rows))).toContain(compact(asked));
   ui.unmount();
 });
 
@@ -1308,18 +1288,46 @@ it('names the changes End run keeps once a brief finished', async () => {
   expect(await row()).toMatch(/End run {2,}closes this run, keeps its changes/);
 });
 
-it('leaves a 7-row panel on the headline that carries the cut mark', async () => {
-  // The actions take every row but the headline's at this height, so the headline carries the mark
-  // that names every fact.
-  const issue = askedIssue(`Question: ${LONG_ASKED_TEXT}`, FOUR_ACTIONS, 'retry-same-worker');
+it('shares a single row between the question and the action the arrow keys select', async () => {
+  const issue = askedIssue('Question: Which file?', FOUR_ACTIONS, 'retry-same-worker');
+  const ui = mountBox(issue, 1);
+  try {
+    await flushEffects();
+    expect(frameRows(ui)).toHaveLength(1);
+    expect(frameRows(ui)[0]).toContain('Question: Which file?');
+    expect(frameRows(ui)[0]).toMatch(/Which file\? +[|▌] r {2}Try again/u);
+    ui.stdin.write('\u001b[B');
+    await flushEffects();
+    expect(frameRows(ui)[0]).toContain('Question: Which file?');
+    expect(frameRows(ui)[0]).toContain('Decide for me');
+  } finally {
+    ui.unmount();
+  }
+});
+
+it('pages a question longer than the terminal independently of the selected action', async () => {
+  const asked = `Question: Which source? ${LONG_ASKED_TEXT.repeat(3)} End of question?`;
+  const issue = askedIssue(asked, FOUR_ACTIONS, 'retry-same-worker');
   const ui = mountBox(issue, 7);
-  await flushEffects();
-  const rows = frameRows(ui);
-  expect(rows.some((row) => row.includes('Question: '))).toBe(false);
-  expect(rows[1]).toContain('T001 failed');
-  expect(rows[1]).toMatch(/… \d+ more lines/);
-  expect(rows.some((row) => row.includes('↓ more'))).toBe(true);
-  ui.unmount();
+  try {
+    await flushEffects();
+    expect(panelText(frameRows(ui))).toContain('Question: Which source?');
+    expect(panelText(frameRows(ui))).toContain('pgup/pgdn');
+    for (let page = 0; page < 8; page++) {
+      ui.stdin.write('\u001b[6~');
+      await flushEffects();
+    }
+    expect(compact(panelText(frameRows(ui)))).toContain('Endofquestion?');
+    ui.stdin.write('\u001b[B');
+    await flushEffects();
+    expect(actionShown(frameRows(ui), issue, 'decide-for-me')).toBe(true);
+    expect(compact(panelText(frameRows(ui)))).toContain('Endofquestion?');
+    ui.stdin.write('\u001b[H');
+    await flushEffects();
+    expect(panelText(frameRows(ui))).toContain('Question: Which source?');
+  } finally {
+    ui.unmount();
+  }
 });
 
 function retryExhaustedIssue() {
@@ -1510,34 +1518,24 @@ it.each([
   [60, 18],
   [80, 24],
 ])(
-  'counts each hidden planner question of a halt in the cut mark at %ix%i',
-  async (terminalCols, terminalRows) => {
-    const issue = questionsHalt(EIGHT_QUESTIONS, false);
-    const ui = await mountPanel(issue, terminalRows, terminalCols);
-    const rows = frameRows(ui);
-    const text = compact(panelText(rows));
-    const shown = EIGHT_QUESTIONS.filter((question) => text.includes(compact(question)));
-    const hidden = Number(/… (\d+) more lines?/.exec(rows.join('\n'))?.[1] ?? 0);
-    expect(shown.length + hidden, rows.join('\n')).toBe(EIGHT_QUESTIONS.length);
-    expect(actionShown(rows, issue, 'revise'), rows.join('\n')).toBe(true);
-    expectHiddenActionsMarked(rows, issue);
-    expect(rows.some((row) => row.includes('↑↓ select · ⏎ confirm'))).toBe(true);
-    ui.unmount();
-  },
-);
-
-it.each([
-  [60, 18],
-  [80, 24],
-  [120, 40],
-])(
-  'shows the plan correction line whole under 8 planner questions at %ix%i',
+  'keeps all eight unanswered planner questions readable at %ix%i',
   async (terminalCols, terminalRows) => {
     const issue = questionsHalt(EIGHT_QUESTIONS, true);
     const ui = await mountPanel(issue, terminalRows, terminalCols);
-    const rows = frameRows(ui);
-    expect(compact(panelText(rows)), rows.join('\n')).toContain(compact(CORRECTION_GOES_AGAIN));
-    ui.unmount();
+    try {
+      const first = frameRows(ui);
+      expect(actionShown(first, issue, 'revise')).toBe(true);
+      let read = compact(panelText(first));
+      if (!read.includes(compact(CORRECTION_GOES_AGAIN))) {
+        ui.stdin.write('\u001b[6~');
+        await flushEffects();
+        read += compact(panelText(frameRows(ui)));
+      }
+      for (const question of EIGHT_QUESTIONS) expect(read).toContain(compact(question));
+      expect(read).toContain(compact(CORRECTION_GOES_AGAIN));
+    } finally {
+      ui.unmount();
+    }
   },
 );
 

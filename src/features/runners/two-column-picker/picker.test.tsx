@@ -1252,7 +1252,7 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
-  it('fills the panel with 18 list rows at 30 terminal rows (capped by VISIBLE_ROWS_CAP)', async () => {
+  it('fills the panel with 20 list rows at 30 terminal rows', async () => {
     terminalSizeStore.__testReset({ cols: 140, rows: 30, isSmall: false });
     const items: Tool[] = Array.from({ length: 30 }, (_, i) => ({
       id: `tool-${i}`,
@@ -1280,9 +1280,9 @@ describe('TwoColumnPicker', () => {
 
     const frame = ui.lastFrame() ?? '';
     const renderedRows = frame.split('\n').filter((line) => /\bTool \d+\b/.test(line));
-    expect(renderedRows).toHaveLength(18);
-    expect(frame).toContain('Tool 17');
-    expect(frame).not.toContain('Tool 18');
+    expect(renderedRows).toHaveLength(20);
+    expect(frame).toContain('Tool 19');
+    expect(frame).not.toContain('Tool 20');
     ui.unmount();
   });
 
@@ -1483,7 +1483,7 @@ describe('TwoColumnPicker', () => {
   });
 
   it.each([
-    { cols: 120, rows: 40, left: 3, right: 41, visible: 18, custom: false },
+    { cols: 120, rows: 40, left: 3, right: 41, visible: 30, custom: false },
     { cols: 60, rows: 18, left: 3, right: 41, visible: 8, custom: false },
     { cols: 120, rows: 40, left: 9, right: 9, visible: 9, custom: false },
     { cols: 120, rows: 40, left: 3, right: 9, visible: 9, custom: true },
@@ -1697,8 +1697,8 @@ describe('TwoColumnPicker', () => {
     const close40 = lines40.findIndex((line) => line.includes('╰'));
     const height40 = close40 - open40 + 1;
 
-    expect(height5).toBe(22);
-    expect(height40).toBe(22);
+    expect(height5).toBe(34);
+    expect(height40).toBe(34);
     expect(height5).toBe(height40);
   });
 

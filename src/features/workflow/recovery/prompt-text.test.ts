@@ -205,38 +205,17 @@ it('fits the Files row of an Apply cut off with 2000 files left in well under a 
 });
 
 it.each([
-  ['prose', `Question: ${'greet.ts needs a locale table, and no brief names it. '.repeat(20)}`],
-  ['a long path', `Question: read ${'src/feature/'.repeat(40)}greet.ts`],
-  ['wide words', `Question: ${'世界の言語を読む、'.repeat(30)}`],
-])('fits asked %s on the rows it is given, at every width', (_label, asked) => {
-  for (let width = 24; width <= 100; width += 1) {
-    for (const askedRows of [1, 2, 3, 5]) {
-      // The asked row is the summary's only fact, so a cut one takes the blank row: it starts
-      // under the headline and the body gives it askedRows + 1 rows.
-      const issue = makeRecoveryIssue({
-        details: [asked],
-        taskId: undefined,
-        taskTitle: undefined,
-        files: [],
-        affectedTaskIds: [],
-      });
-      const summary = recoveryPromptSummaryRows(issue, width, askedRows);
-      const askedFact = summary[1];
-      expect(askedFact?.kind, `${width}/${askedRows}`).toBe('facts');
-      expect(
-        summary.some((row) => row.kind === 'blank'),
-        `${width}/${askedRows}`,
-      ).toBe(false);
-      const facts = promptBodyRows(summary, width).flatMap((row) =>
-        row.kind === 'facts-line' ? [row.text] : [],
+  `Question: Read ${'src/feature/'.repeat(40)}greet.ts?`,
+  `Question: ${'世界の言語を読む、'.repeat(30)}`,
+  'Question: Should the deploy use token: abc_def_ghi for the build or wait for the owner?',
+])('keeps the complete masked question at every summary budget', (asked) => {
+  const issue = makeRecoveryIssue({ details: [asked] });
+  for (const width of [24, 60, 100]) {
+    for (const rows of [1, 2, 5]) {
+      const facts = recoveryPromptSummaryRows(issue, width, rows).find(
+        (row) => row.kind === 'facts',
       );
-      expect(facts, `${width}/${askedRows}`).toHaveLength(askedRows + 1);
-      const fitted = askedFact?.kind === 'facts' ? (askedFact.items[0] ?? '') : '';
-      // A cut at the recovered budget ends on `…`; a text that now fits whole is the whole text.
-      expect(
-        fitted === oneLineDisplayText(asked) || fitted.endsWith('…'),
-        `${width}/${askedRows}`,
-      ).toBe(true);
+      expect(facts?.items[0]).toBe(oneLineDisplayText(asked));
     }
   }
 });
@@ -265,7 +244,7 @@ it('keeps the blank row above an asked row that fits whole', () => {
   expect(formatRecoveryPrompt(issue).split('\n')[1]).toBe('');
 });
 
-it('keeps the blank row above a cut asked row with task, file and later facts', () => {
+it('keeps the blank row above a full question with task, file and later facts', () => {
   const issue = makeRecoveryIssue({
     details: [
       `Question: ${'Which file holds the locales? '.repeat(4)}`.trimEnd(),
@@ -276,7 +255,7 @@ it('keeps the blank row above a cut asked row with task, file and later facts', 
   expect(summary[1]).toEqual({ kind: 'blank' });
   const factsRow = summary[2];
   expect(factsRow?.kind === 'facts' ? factsRow.items : []).toEqual([
-    'Question: Which file holds the locale…',
+    issue.details[0],
     'Brief T001 · Fix login validation',
     'Files src/auth/session.ts',
     'Last error: blocked',
@@ -298,48 +277,11 @@ it('keeps the blank row when an asked row with task and file facts fits whole', 
   expect(recoveryPromptSummaryRows(issue, 120)[1]).toEqual({ kind: 'blank' });
 });
 
-it('cuts an asked row with an open quote by the room alone', () => {
-  const words = 'then more words '.repeat(12);
-  const question = `Question: Should we keep this? Should "password": "please rotate it now ${words}`;
-  const issue = makeRecoveryIssue({ details: [question, 'Last error: cannot find "foo"'] });
-  const facts = recoveryPromptSummaryRows(issue, 54, 2).find((row) => row.kind === 'facts');
-  expect(facts?.kind === 'facts' ? facts.items[0] : '').toBe(
-    'Question: Should we keep this? Should "password": "please rotate it now then more words then more wor…',
-  );
-});
-
-it('gives a panel too narrow for a cut the mark alone', () => {
-  const issue = makeRecoveryIssue({ details: ['Question: Which file?'] });
-  const facts = recoveryPromptSummaryRows(issue, 3, 1).find((row) => row.kind === 'facts');
-  expect(facts?.kind === 'facts' ? facts.items[0] : '').toBe('…');
-});
-
-function askedRow(detail: string, width: number, rows: number): string {
-  const facts = recoveryPromptSummaryRows(
-    makeRecoveryIssue({ details: [detail] }),
-    width,
-    rows,
-  ).find((row) => row.kind === 'facts');
-  return facts?.kind === 'facts' ? (facts.items[0] ?? '') : '';
-}
-
-it.each<[number, number, string, string]>([
-  [40, 1, 'Question: short', 'Question: short'],
-  [40, 1, `Question: ${'x'.repeat(27)}`, `Question: ${'x'.repeat(27)}`],
-  [40, 1, `Question: ${'x'.repeat(28)}`, `Question: ${'x'.repeat(28)}`],
-  [40, 1, `Question: ${'x'.repeat(29)}`, `Question: ${'x'.repeat(27)}…`],
-  [40, 1, `Question: ${'x'.repeat(200)}`, `Question: ${'x'.repeat(27)}…`],
-  [40, 2, `Question: ${'x'.repeat(200)}`, `Question: ${'x'.repeat(65)}…`],
-  [40, 1, `Question: ${'日'.repeat(20)}`, `Question: ${'日'.repeat(13)}…`],
-  [
-    50,
-    2,
-    'Question: Should the deploy use the token' +
-      ': abc_def_ghi for the build or wait for the owner to say which?',
-    'Question: Should the deploy use the token: ***REDACTED*** for the build or wait for the ow…',
-  ],
-])('keeps the longest asked-row cut', (width, rows, detail, expected) => {
-  expect(askedRow(detail, width, rows)).toBe(expected);
+it('still cuts a planner reason to the available rows', () => {
+  const reason = `Planner said: ${'More context. '.repeat(20)}`;
+  const issue = makeRecoveryIssue({ details: [reason] });
+  const facts = recoveryPromptSummaryRows(issue, 40, 1).find((row) => row.kind === 'facts');
+  expect(facts?.items[0]).toBe('Planner said: More context. More cont…');
 });
 
 it('preserves the canonical retry cause when an old message starts with its seat', () => {

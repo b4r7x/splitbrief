@@ -91,10 +91,11 @@ describe('promptBodyRows', () => {
     expect(countPromptBodyRows(trailingControlSummary, 20)).toBe(3);
   });
 
-  it('drops the blank row a cut asked row spent, so its text starts under the headline', () => {
+  it('measures every wrapped row of a long recovery question', () => {
+    const question = `Question: ${'Which file holds the locales? '.repeat(4)}`.trimEnd();
     const summary = recoveryPromptSummaryRows(
       makeRecoveryIssue({
-        details: [`Question: ${'Which file holds the locales? '.repeat(4)}`.trimEnd()],
+        details: [question],
         taskId: undefined,
         taskTitle: undefined,
         files: [],
@@ -103,14 +104,9 @@ describe('promptBodyRows', () => {
       40,
       1,
     );
-    expect(summary[1]?.kind).toBe('facts');
     const rows = promptBodyRows(summary, 40);
-
-    expect(rows[1]).toMatchObject({
-      kind: 'facts-line',
-      text: '  Question: Which file holds the ',
-    });
-    expect(rows.some((row) => row.kind === 'blank')).toBe(false);
+    const facts = rows.flatMap((row) => (row.kind === 'facts-line' ? [row.text.trim()] : []));
+    expect(facts.join(' ')).toBe(question);
     expect(countPromptBodyRows(summary, 40)).toBe(rows.length);
   });
 
@@ -474,27 +470,20 @@ describe('promptBodyRows', () => {
     );
   });
 
-  it('keeps a cut asked fact whole with its … when facts follow it, and marks the rest', () => {
+  it('keeps a long recovery question intact before the remaining facts', () => {
+    const question = `Question: ${'Which file holds the locales? '.repeat(4)}`.trimEnd();
     const summary = recoveryPromptSummaryRows(
-      makeRecoveryIssue({
-        details: [
-          `Question: ${'Which file holds the locales? '.repeat(4)}`.trimEnd(),
-          'Last error: blocked',
-        ],
-      }),
+      makeRecoveryIssue({ details: [question, 'Last error: blocked'] }),
       40,
       1,
     );
-    const clipped = clipPromptBodyRows(promptBodyRows(summary, 40), 3);
-
-    expect(clipped).toEqual([
-      expect.objectContaining({ kind: 'headline' }),
-      { kind: 'facts-line', text: '  Question: Which file holds the locale…' },
-      { kind: 'facts-line', text: '  … 3 more lines' },
-    ]);
+    const rows = promptBodyRows(summary, 40);
+    const facts = rows.flatMap((row) => (row.kind === 'facts-line' ? [row.text.trim()] : []));
+    expect(facts.join(' ')).toContain(`${question} Brief T001`);
+    expect(facts.at(-1)).toBe('Last error: blocked');
   });
 
-  it('keeps the rows of an asked fact that fits its recovered budget whole', () => {
+  it('drops the optional blank row before either line of a recovery question', () => {
     const summary = recoveryPromptSummaryRows(
       makeRecoveryIssue({
         details: ['Question: Which file holds the locales?'],
@@ -508,13 +497,12 @@ describe('promptBodyRows', () => {
     );
     const rows = promptBodyRows(summary, 40);
 
-    expect(rows).toHaveLength(3);
-    expect(rows.some((row) => row.kind === 'blank')).toBe(false);
+    expect(rows[1]).toEqual({ kind: 'blank' });
     expect(rows.at(-1)).toMatchObject({
       kind: 'facts-line',
       text: expect.stringMatching(/locales\?\s*$/),
     });
-    expect(clipPromptBodyRows(rows, 3)).toEqual(rows);
+    expect(clipPromptBodyRows(rows, 3)).toEqual(rows.filter((row) => row.kind !== 'blank'));
   });
 
   it('gives way whole for a wrapped fact that ends on …', () => {

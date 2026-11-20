@@ -1,7 +1,6 @@
 import { Box } from 'ink';
 import { planListRows, type ListRowModel } from '../../list-row/plan.js';
 import { ListRow } from '../../list-row/row.js';
-import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { computeCompletionOverlayRows } from './layout.js';
 import { CompletionPanel } from './panel.js';
 
@@ -22,20 +21,15 @@ export function CompletionList({
 }) {
   const room = Math.max(1, width - 4);
   let lines = planListRows(rows, { width: room });
-  let gutter = 0;
   if (lines.length > maxVisible) {
-    gutter = String(rows.length).length + 4;
+    const gutter = String(rows.length).length + 4;
     lines = planListRows(rows, { width: Math.max(1, room - gutter) });
   }
   if (lines.length === 0) return null;
-  const frame = Math.min(
-    width,
-    4 + Math.max(getTerminalCellWidth(footer), ...lines.map((line) => line.cells + gutter)),
-  );
   const height = computeCompletionOverlayRows({ itemCount: lines.length, maxVisible });
   const panel = (
     <CompletionPanel
-      width={frame}
+      width={width}
       items={lines}
       selectedIndex={selectedIndex}
       entryIndex={(line) => line.row}

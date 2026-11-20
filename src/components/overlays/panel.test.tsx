@@ -85,6 +85,22 @@ describe('OverlayPanel title', () => {
 });
 
 describe('OverlayPanel sizing', () => {
+  it.each([
+    [120, 40],
+    [80, 24],
+    [60, 18],
+  ])('fills %i × %i with a short list', (cols, rows) => {
+    terminalSizeStore.__testReset({ cols, rows });
+    const lines = renderPanelLines(
+      <OverlayPanel title="Skills" hint="esc close" density="roomy">
+        <Text>No skills found</Text>
+      </OverlayPanel>,
+    );
+    expect(lines[0]?.trim()).toMatch(/^[╭+]/u);
+    expect(lines[rows - 1]?.trim()).toMatch(/^[╰+]/u);
+    expect(lines[rows - 3]).toContain('esc close');
+  });
+
   it('sizes the panel from its density and the terminal width', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const wide = renderPanelLines(

@@ -1,14 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
-import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { join } from 'node:path';
+import { writeConfig } from '../../../src/core/config/load/io.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
+import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/retry.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { readActive, writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { buildReviewFailedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/review-failed.js';
+import { conversationScrollStore } from '../../../src/stores/workflow/conversation-scroll.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, type renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { openHaltedRun } from '../helpers/halted-run-screen.js';
 import {
   cli,
@@ -135,6 +142,37 @@ async function openNoProgressHalt() {
   return opened;
 }
 
+/** Reopens a saved question with the CLI state reader and the workflow screen. */
+async function openSavedConsultHalt() {
+  const projectDir = createTempDir('halt-question-replay');
+  onTestFinished(() => cleanupTempDir(projectDir));
+  const ref = { projectDir, sessionId: 'saved-halt' };
+  const task = makeTask({ id: 'T001', title: 'Read a stored stop' });
+  const issue = buildRetryExhaustedRecoveryIssue({
+    id: 'rec-question',
+    task,
+    phase: 'implementing',
+    attempts: 3,
+    question: QUESTION,
+    allowRetryOverride: true,
+    createdAt: '2026-10-11T00:00:00.000Z',
+  });
+  writeConfig(projectDir, makeConfig());
+  saveState(ref, {
+    ...createInitialState(task.title),
+    phase: 'implementing',
+    tasks: [task],
+    pendingRecovery: issue,
+  });
+  writeActive(ref);
+  const target = { projectDir, stateHome: join(projectDir, 'state') };
+  const status = await cli(target, ['status']);
+  expect(status.exitCode, status.stderr).toBe(0);
+  const opened = await openHaltedRun(target, { heading: 'Needs you' });
+  ui = opened.screen;
+  return opened;
+}
+
 describe('e2e: a halt panel too short for its text', () => {
   it('shows the whole question, marks the cut lines at 80x24, and keeps the actions and the legend', async () => {
     const opened = await openConsultHalt();
@@ -161,38 +199,24 @@ describe('e2e: a halt panel too short for its text', () => {
     [60, 18],
     [80, 24],
     [100, 20],
-  ])('keeps a long question that wraps on a %dx%d panel', async (cols, rows) => {
-    const opened = await openConsultHalt();
-
-    terminalSizeStore.__testReset({ cols, rows, isSmall: true });
-    await flushEffects();
-    const frame = stripAnsiStyles(opened.screen.lastFrame());
-
-    expect(frame).toContain('Needs you · T001 needs your answer');
-    expect(frame).toContain('Question: greet.ts needs');
-    expect(frame).toMatch(/… \d+ more lines/);
-    expect(frame).toContain('Decide for me');
-    expect(frame).toContain('End run');
-    expect(frame).toContain('↑↓ select · ⏎ confirm');
-  });
-
-  it.each([
     [140, 16],
     [140, 17],
     [80, 16],
-  ])('keeps the question and every action on a %dx%d panel', async (cols, rows) => {
-    const opened = await openConsultHalt();
-
-    terminalSizeStore.__testReset({ cols, rows, isSmall: true });
-    await flushEffects();
-    const frame = stripAnsiStyles(opened.screen.lastFrame());
-
-    expect(frame, frame).toContain('Question: greet.ts needs');
-    for (const action of ['Try again', 'Decide for me', 'Skip brief', 'End run'])
-      expect(frame, frame).toContain(action);
-    expect(frame, frame).toContain('↑↓ select · ⏎ confirm');
-    expect(frame, frame).not.toContain('↓ more');
-  });
+  ])(
+    'reopens the saved halt with the whole question as the actions scroll at %dx%d',
+    async (cols, rows) => {
+      const opened = await openSavedConsultHalt();
+      terminalSizeStore.__testReset({ cols, rows, isSmall: true });
+      await flushEffects();
+      for (const action of ['Try again', 'Decide for me', 'Skip brief', 'End run']) {
+        const frame = stripAnsiStyles(opened.screen.lastFrame());
+        expect(frame.replace(/[│|\s]/gu, '')).toContain(QUESTION.replace(/\s/gu, ''));
+        expect(frame).toContain(action);
+        opened.screen.stdin.write('\u001b[B');
+        await flushEffects();
+      }
+    },
+  );
 
   it('keeps the task and its files under the long question at 80x24', async () => {
     const opened = await openConsultHalt();
@@ -205,24 +229,6 @@ describe('e2e: a halt panel too short for its text', () => {
     expect(question).toBeGreaterThan(-1);
     expect(question).toBeLessThan(frame.indexOf('Brief T001'));
     expect(frame).toContain('Files src/greet.ts');
-  });
-
-  it('puts the cut question on the row under the headline at 60x18', async () => {
-    const opened = await openConsultHalt();
-
-    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
-    await flushEffects();
-    const rows = stripAnsiStyles(opened.screen.lastFrame()).split('\n');
-
-    const headline = rows.findLastIndex((row) =>
-      row.includes('Needs you · T001 needs your answer'),
-    );
-    expect(headline, rows.join('\n')).toBeGreaterThan(-1);
-    const next = panelRow(rows[headline + 1]);
-    expect(next, rows.join('\n')).not.toBe('');
-    expect(next).toContain('Question: greet.ts needs');
-    expect(next.endsWith('…'), rows.join('\n')).toBe(true);
-    expect(panelRow(rows[headline + 2]), rows.join('\n')).toMatch(/^… \d+ more lines?$/);
   });
 
   it('keeps the cut planner reason above the task review actions at 60x18', async () => {
@@ -274,35 +280,34 @@ describe('e2e: a halt panel too short for its text', () => {
     expect(frame).toContain('↑↓ select · ⏎ confirm');
   });
 
-  it('marks the cut lines and the hidden actions at every height from 16 down to 12 rows', async () => {
-    const opened = await openConsultHalt();
-
-    for (const rows of [16, 15, 14, 13, 12]) {
-      terminalSizeStore.__testReset({ cols: 140, rows, isSmall: true });
-      await flushEffects();
-      const frame = stripAnsiStyles(opened.screen.lastFrame());
-
-      expect(frame, `140x${rows}`).toContain('Needs you');
-      expect(frame, `140x${rows}`).toMatch(/… \d+ more lines/);
-      expect(frame, `140x${rows}`).toMatch(/Try again {2,}recommended/);
-      expectHiddenActionsMarked(frame, `140x${rows}`);
-      expect(frame, `140x${rows}`).toContain('↑↓ select · ⏎ confirm');
-    }
+  it('pages a saved question without moving the transcript behind the menu', async () => {
+    const { screen } = await openSavedConsultHalt();
+    terminalSizeStore.__testReset({ cols: 60, rows: 12, isSmall: true });
+    await flushEffects();
+    expect(stripAnsiStyles(screen.lastFrame())).toContain('pgup/pgdn question');
+    const position = conversationScrollStore.get().scrollOffset;
+    screen.stdin.write('\u001b[5~');
+    await flushEffects();
+    expect(conversationScrollStore.get().scrollOffset).toBe(position);
   });
 
-  it('keeps the selected action and marks the actions on both sides after one ↓ press', async () => {
-    const opened = await openConsultHalt();
-    opened.screen.stdin.write('\u001b[B');
+  it('keeps the chosen action while the terminal shrinks to 12 rows', async () => {
+    const { screen } = await openSavedConsultHalt();
+    screen.stdin.write('\u001b[B');
     await flushEffects();
-
     for (const rows of [16, 15, 14, 13, 12]) {
       terminalSizeStore.__testReset({ cols: 140, rows, isSmall: true });
       await flushEffects();
-      const frame = stripAnsiStyles(opened.screen.lastFrame());
-
-      expect(frame, `140x${rows}`).toMatch(/d\s+Decide for me/);
-      expectHiddenActionsMarked(frame, `140x${rows}`);
-      expect(frame, `140x${rows}`).toContain('↑↓ select · ⏎ confirm');
+      const frame = stripAnsiStyles(screen.lastFrame());
+      expect(frame).toMatch(/d\s+Decide for me/);
+      expect(frame).toContain('Question: greet.ts needs');
+      if (!frame.includes('Which file holds the locales?')) {
+        screen.stdin.write('\u001b[6~');
+        await flushEffects();
+        expect(stripAnsiStyles(screen.lastFrame())).toContain('Which file holds the locales?');
+        screen.stdin.write('\u001b[5~');
+        await flushEffects();
+      }
     }
   });
 });
@@ -310,10 +315,4 @@ describe('e2e: a halt panel too short for its text', () => {
 /** The words of a panel row, inside its border and its padding. */
 function panelRow(row: string | undefined): string {
   return ((row ?? '').split(/[│|]/u)[1] ?? '').trim();
-}
-
-/** Try again, Decide for me, Skip brief and End run: each one off screen sits behind a mark on its side. */
-function expectHiddenActionsMarked(frame: string, label: string): void {
-  if (!/r\s+Try again/.test(frame)) expect(frame, label).toContain('↑ more');
-  if (!/a\s+End run/.test(frame)) expect(frame, label).toContain('↓ more');
 }

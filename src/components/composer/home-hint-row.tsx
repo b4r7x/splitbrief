@@ -8,7 +8,7 @@ interface HomeHintRowProps {
   hintLine: string | null;
 }
 
-/** The reserved home rows above the box: the status, then the notice on the box's left edge, or one blank row. */
+/** The status and notice share the center of the composer. An empty slot keeps one row. */
 export function HomeHintRow({ height, notice, hintLine }: HomeHintRowProps) {
   const theme = useTheme();
   return (

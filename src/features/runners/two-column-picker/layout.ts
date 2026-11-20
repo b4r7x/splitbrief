@@ -2,7 +2,7 @@ import { getScrollViewportContentWidth } from '../../../components/scrollbar.js'
 import { availableRows } from '../../../components/pickers/scroll-offset.js';
 import { getTerminalCellWidth } from '../../../utils/display-text/width.js';
 import { wrapOnWords } from '../picker/byline.js';
-import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
+import { overlayRect } from '../../../core/navigation/overlay-rect.js';
 
 const INNER_PADDING = 4;
 export const COLUMN_GAP = 3;
@@ -10,7 +10,6 @@ const OUTER_CHROME_ROWS = 6;
 export const INNER_CHROME_ROWS = 4;
 /** The least room between the title and a step label that shares its row. */
 const HEAD_GAP = 2;
-const VISIBLE_ROWS_CAP = 18;
 
 export function pickerLayout(input: {
   minRowWidth: number;
@@ -20,7 +19,7 @@ export function pickerLayout(input: {
   stepLabel: string | undefined;
 }) {
   const { cols, rows, title, stepLabel } = input;
-  const totalBoxWidth = overlayWidth({ cols, density: 'wide' });
+  const { width: totalBoxWidth, height } = overlayRect({ cols, rows, density: 'wide' });
   const splitWidth = Math.floor((totalBoxWidth - COLUMN_GAP) / 2);
   // Each list reserves two cells for the scrollbar, in addition to the panel padding.
   const singlePane = getScrollViewportContentWidth(splitWidth - INNER_PADDING) < input.minRowWidth;
@@ -34,13 +33,10 @@ export function pickerLayout(input: {
     : stepLabel
       ? [stepLabel]
       : [];
-  const maxVisible = Math.min(
-    availableRows({
-      rows,
-      chromeRows: OUTER_CHROME_ROWS + INNER_CHROME_ROWS + (headStacked ? stepLabelLines.length : 0),
-    }),
-    VISIBLE_ROWS_CAP,
-  );
+  const maxVisible = availableRows({
+    rows: height,
+    chromeRows: OUTER_CHROME_ROWS + INNER_CHROME_ROWS + (headStacked ? stepLabelLines.length : 0),
+  });
   const columnHeight = maxVisible + INNER_CHROME_ROWS;
   // The odd cell goes to the Models column, which carries the longer strings.
   const leftBoxWidth = singlePane ? totalBoxWidth : splitWidth;

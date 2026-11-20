@@ -14,6 +14,8 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { sessionDir } from '../../../src/core/paths.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
+import { saveState } from '../../../src/core/state/persistence.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
 import { LONG_COMPOSER_DRAFT } from '../../visual/fixtures/common.js';
 import { wholeFrames } from '../helpers/whole-frames.js';
@@ -184,9 +186,10 @@ describe('e2e: a refused attachment on Home', { timeout: 120_000 }, () => {
               const width = Math.max(...notice.texts.map((text) => text.length)) + 6;
               expect(notice.top.trim()).toBe(`╭${'─'.repeat(width - 2)}╮`);
               expect(notice.bottom.trim()).toBe(`╰${'─'.repeat(width - 2)}╯`);
-              // The composer box starts directly under the notice, on the same left edge.
               expect(notice.composer.trim()).toMatch(/^╭─+╮$/u);
-              expect(notice.top.indexOf('╭')).toBe(notice.composer.indexOf('╭'));
+              const left = notice.top.indexOf('╭') - notice.composer.indexOf('╭');
+              const right = notice.composer.indexOf('╮') - notice.top.indexOf('╮');
+              expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
               expect(width).toBeLessThan(notice.composer.trim().length);
             },
             { timeout: 15_000 },
@@ -258,4 +261,40 @@ describe('e2e: the Home heading on a small terminal', { timeout: 120_000 }, () =
       (reason) => context.skip(reason),
     );
   });
+});
+
+it('spans the workflow composer with one matching slash command in a reopened run', {
+  timeout: 60_000,
+}, async (context) => {
+  const feature = 'Check the word count';
+  await onHome(
+    { cols: 120, rows: 40 },
+    async ({ rows, write }) => {
+      write('\x12');
+      await vi.waitFor(() => expect(rows().join('\n')).toContain('↑↓ select · ⏎ open'));
+      write('\r');
+      await vi.waitFor(() => expect(rows().join('\n')).toContain('/ for a command'), {
+        timeout: 10_000,
+      });
+      write('/scr');
+      await vi.waitFor(() => expect(rows().join('\n')).toContain('Scroll conversation'));
+      const lines = rows();
+      const option = lines.findIndex((line) => line.includes('Scroll conversation'));
+      const input = lines.findIndex((line) => line.includes('› /scr'));
+      expect(input).toBeGreaterThan(option);
+      const composer = lines[input - 1];
+      expect(composer).toMatch(/^ +╭─+╮$/u);
+      expect(lines[option - 1]).toBe(composer);
+    },
+    (reason) => context.skip(reason),
+    (projectDir) => {
+      const ref = { projectDir, sessionId: 'word-count' };
+      const at = '2026-10-11T00:00:00.000Z';
+      saveState(ref, { ...createInitialState(feature), closed: { as: 'ended', at } });
+      saveSummary(
+        ref,
+        makeSession({ id: ref.sessionId, feature, status: 'ended', completedAt: Date.parse(at) }),
+      );
+    },
+  );
 });

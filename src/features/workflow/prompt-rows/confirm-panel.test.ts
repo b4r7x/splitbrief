@@ -22,7 +22,7 @@ describe('fitConfirmPanel', () => {
     fitConfirmPanel({
       actionClass: 'runner_trust',
       actionDescription,
-      frame: ownConfirmFrame(getChromeContentWidth(60), request),
+      frame: ownConfirmFrame(getChromeContentWidth(60)),
       boxRows,
     });
 
@@ -113,10 +113,7 @@ describe('fitConfirmPanel', () => {
       fitConfirmPanel({
         actionClass: 'destructive',
         actionDescription: '.splitbrief/state.json',
-        frame: ownConfirmFrame(getChromeContentWidth(120), {
-          actionClass: 'destructive',
-          actionDescription: '.splitbrief/state.json',
-        }),
+        frame: ownConfirmFrame(getChromeContentWidth(120)),
         boxRows,
       });
     expect(destructive(8)).toMatchObject({ framed: false, note: true, label: true, hidden: 0 });
@@ -204,10 +201,7 @@ describe('fitConfirmPanel', () => {
     fitConfirmPanel({
       actionClass: 'write_out_of_scope',
       actionDescription: longPath,
-      frame: ownConfirmFrame(getChromeContentWidth(60), {
-        actionClass: 'write_out_of_scope',
-        actionDescription: longPath,
-      }),
+      frame: ownConfirmFrame(getChromeContentWidth(60)),
       boxRows,
     });
 

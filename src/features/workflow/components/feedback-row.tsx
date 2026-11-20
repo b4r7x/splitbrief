@@ -138,17 +138,8 @@ export function FeedbackRow({
           legendWidth,
         );
 
-  // A message keeps the row whether or not a panel owns the keys, as the one notice on the
-  // composer's left edge. Every other word keeps the transcript's grammar: a mark in the mark slot —
-  // the legend's pointer, the byline's pip, the composer's border — and every word on the text
-  // column its chevron opens on. A caller's prose hint leaves the slot empty.
-  if (notice !== null) {
-    return (
-      <Box flexDirection="column" height={notice.height} flexShrink={0}>
-        <Notice layout={notice} />
-      </Box>
-    );
-  }
+  // A notice keeps its row while a panel owns the keys.
+  if (notice !== null) return <Notice layout={notice} />;
   const keyHintFitted = keyHint === '' ? '' : fitKeyLegend(keyHint, legendWidth);
   let word = '';
   let isLegend = false;

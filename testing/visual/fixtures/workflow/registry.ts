@@ -2308,21 +2308,9 @@ const checkpointPredicates = [
         .includes('Your plan correction goes again with this step.'),
   ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
-  // The line of the correction is whole at each size. A tall panel lists each question.
   [
     checkpointId('recovery-plan-questions-long'),
-    (context) => {
-      const words = stripAnsiStyles(context.output).replace(/[\s│]+/g, ' ');
-      return (
-        words.includes('Your plan correction goes again with this step.') &&
-        (context.viewport.cols < 120 ||
-          [
-            'Which store keeps the greeting?',
-            'Does the module export a default or a named function?',
-            'Should the help text show an example?',
-          ].every((question) => words.includes(question)))
-      );
-    },
+    includesAll('Which store keeps the greeting?', 'Send a correction'),
   ],
   [checkpointId('recovery-review'), includesAll()],
   [
@@ -2434,13 +2422,7 @@ const checkpointPredicates = [
   [checkpointId('long-question'), includesAll('T901 needs your answer', 'Question: Projection')],
   [
     checkpointId('long-question-draft'),
-    includesAll(
-      'T901 needs your answer',
-      'Question: Projection',
-      'Skip brief',
-      'End run',
-      'untouched',
-    ),
+    includesAll('Question: Projection', 'this brief?', 'untouched'),
   ],
   [
     checkpointId('masked-question'),

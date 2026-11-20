@@ -173,17 +173,20 @@ describe('ApprovalPrompt confirm tier', () => {
     }
   });
 
-  it('fits the confirm frame to its longest line', () => {
-    const viewport = { cols: 120, rows: 40 };
-    const path = '.splitbrief/sessions/previous-release-with-reviewed-changes/state.json';
+  it.each([
+    { cols: 120, rows: 40 },
+    { cols: 80, rows: 24 },
+    { cols: 60, rows: 18 },
+  ])('spans the workflow composer for a short confirmation at $cols columns', (viewport) => {
     terminalSizeStore.__testReset(viewport);
-    void openApprovalPrompt(makeConfirmRequest(path));
+    void openApprovalPrompt(makeConfirmRequest('.git/config'));
     const ui = renderFeature(<ApprovalPrompt />, viewport);
     try {
       const row = stripColor(ui.lastFrame())
         .split('\n')
-        .find((line) => line.includes(path));
-      expect(row?.slice(row.indexOf(path) + path.length)).toMatch(/^ [|│┃]$/u);
+        .find((line) => line.includes('.git/config'));
+      expect(row).toMatch(/^[|│┃].*[|│┃]$/u);
+      expect(row).toHaveLength(viewport.cols - 2);
     } finally {
       ui.unmount();
     }

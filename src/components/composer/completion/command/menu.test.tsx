@@ -89,28 +89,30 @@ describe('CommandCompletionMenu', () => {
     terminalSizeStore.reset();
   });
 
-  it('fits the completion frame to the widest option including its description', () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 40 });
-    const description = 'Copy the command from the most recent failed check';
-    const ui = render(
-      <Box width={100}>
-        <CommandCompletionMenu
-          filtered={[
-            { name: 'brief', description: 'Copy the brief' },
-            { name: 'command', description },
-          ]}
-          selectedIndex={0}
-          maxVisible={3}
-        />
-      </Box>,
-    );
-    try {
-      const row = rowContaining(panelLines(ui.lastFrame() ?? ''), description);
-      expect(row.slice(row.indexOf(description) + description.length)).toMatch(/^ [|│]$/u);
-    } finally {
-      ui.unmount();
-    }
-  });
+  it.each([120, 80, 60])(
+    'spans the supplied composer width for one match at %i columns',
+    (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 24 });
+      const width = cols - 2;
+      const ui = render(
+        <Box width={width}>
+          <CommandCompletionMenu
+            filtered={[{ name: 'brief', description: 'Copy the brief' }]}
+            selectedIndex={0}
+            maxVisible={3}
+            width={width}
+          />
+        </Box>,
+      );
+      try {
+        const row = rowContaining(panelLines(ui.lastFrame() ?? ''), 'Copy the brief');
+        expect(row).toMatch(/^[|│].*[|│]$/u);
+        expect(row).toHaveLength(width);
+      } finally {
+        ui.unmount();
+      }
+    },
+  );
 
   it('keeps command shortcuts visible as a de-badged dim key when descriptions overflow', () => {
     const ui = render(

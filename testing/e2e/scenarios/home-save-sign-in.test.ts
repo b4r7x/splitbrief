@@ -193,9 +193,12 @@ process.exit(1);`,
                 expect(rows[last + 1]?.trim()).toMatch(/^╰─+╯$/u);
                 expect(rows[first - 1]?.trim().length).toBe(body[0]?.length);
               }
-              // The notice stands on the composer's own left edge, directly above its box.
               expect(rows[composerRow]?.trim()).toMatch(/^╭─+╮$/u);
-              expect(rows[first]?.indexOf(open.trim())).toBe(rows[composerRow]?.indexOf('╭'));
+              const composer = rows[composerRow] ?? '';
+              const notice = rows[first] ?? '';
+              const left = notice.indexOf(open.trim()) - composer.indexOf('╭');
+              const right = composer.lastIndexOf('╮') - notice.lastIndexOf(close.trim());
+              expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
               const message = body
                 .map((row) => row.slice(open.length, -close.length).trim())
                 .join(' ')

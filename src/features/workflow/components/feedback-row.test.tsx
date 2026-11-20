@@ -76,7 +76,7 @@ function barred(rows: readonly string[], lead: string, width: number): string[] 
 function plainRows(frame: string | undefined): string[] {
   return stripAnsiStyles(frame ?? '')
     .split('\n')
-    .map((row) => row.trimEnd());
+    .map((row) => row.trim());
 }
 
 it('gives the stop menu the legend row when it fills the body exactly', () => {
@@ -104,12 +104,12 @@ describe('FeedbackRow', () => {
     resetAllStores();
   });
 
-  it('frames a one-row report on the composer edge, as wide as its words', () => {
+  it('centers a one-row report across the available composer width', () => {
     feedbackStore.setInfo('Queued for PLAN · ctrl+⏎ sends now');
 
     const ui = renderFeature(<FeedbackRow />);
 
-    // The footer's gutter puts the row on the composer's left border; the box starts there.
+    expect(stripAnsiStyles(ui.lastFrame()).split('\n')[0]?.indexOf(FRAME.tl)).toBe(31);
     expect(plainRows(ui.lastFrame())).toEqual(
       framed(['Queued for PLAN · ctrl+⏎ sends now'], '', 38),
     );

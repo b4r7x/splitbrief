@@ -896,7 +896,7 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it('closes the help block one blank row above the legend', async () => {
+  it('leaves blank rows between the help block and the bottom legend', async () => {
     overlayStore.open('settings', 'workflow.isolation');
     const ui = renderAt(100, 40);
     await tick(20);
@@ -905,7 +905,9 @@ describe('SettingsOverlay', () => {
 
     expect(options).toBeGreaterThan(indexOfLine(lines, 'Where the build seat writes its changes'));
     expect(panelText(lines[options + 1] ?? '')).toBe('');
-    expect(lines[options + 2]).toContain('↑↓ select');
+    const legend = indexOfLine(lines, '↑↓ select');
+    expect(legend).toBeGreaterThan(options + 1);
+    expect(lines.slice(options + 1, legend).every((line) => panelText(line) === '')).toBe(true);
 
     ui.unmount();
   });
